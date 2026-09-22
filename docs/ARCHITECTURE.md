@@ -1,10 +1,8 @@
 # QuantSuite — Architecture
 
-Technical contracts for the fused application. Read `../project.md` first for
-scope and rationale.
+Technical contracts for the fused application. See [README](../README.md) for the current application scope.
 
-> **V3 (2026-08-15, see [PLAN-V3.md](PLAN-V3.md)):** where this document
-> disagrees with PLAN-V3, PLAN-V3 wins. The deltas: manifests declare
+> **Current module model:** manifests declare
 > `"app"` + `"appOrder"` instead of a `rail` block (apps live in
 > `modules/apps.json`; the rail lists apps); `status` gained `"stub"`;
 > the modules `view`/`code` are `terminal`/`canvas` now; every module renders
@@ -12,7 +10,7 @@ scope and rationale.
 > settings via `QSettingsModal` + `registerSettingsSections`); §10's circular
 > launcher model was replaced in V2 already and `/` is the Dashboard.
 >
-> **QuantZen split (2026-08-25, PLAN-V3 §7):** QuantZen is an *app* now — the
+> **App grouping:** QuantZen is an *app* now — the
 > rail's top entry over `notes`, `plan`, `finance` — and the module formerly
 > called QuantZen is `notes` / QuantNotes (plugin `notes`, route `/notes`,
 > CSS `[data-module="notes"]` with the `--qn-` prefix). QuantAgent is
@@ -479,7 +477,7 @@ from its `build.rs` — the list Tauri derives the permission identifiers from:
 | Plugin | Commands |
 |---|---|
 | `mcp` | 76 |
-| `notes` | 26 (was 54 before the Notion rewrite, PLAN-V3 §7a) |
+| `notes` | 26 |
 | `hud` | 41 |
 | `algo` | 35 |
 | `canvas` | 34 declared, 27 real |

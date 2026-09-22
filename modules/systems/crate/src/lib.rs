@@ -866,7 +866,7 @@ async fn screenshot_to_clipboard(window: tauri::Window) -> Result<(), String> {
         .outer_position()
         .map_err(|e| format!("Window position: {e}"))?;
     let size = window.outer_size().map_err(|e| format!("Window size: {e}"))?;
-    let (mut wx, mut wy, mut ww, mut wh) = (pos.x, pos.y, size.width as i32, size.height as i32);
+    let (wx, wy, ww, wh) = (pos.x, pos.y, size.width as i32, size.height as i32);
 
     // Real window handle so the clipboard is owned by our GUI thread on Windows.
     #[cfg(windows)]
@@ -876,12 +876,7 @@ async fn screenshot_to_clipboard(window: tauri::Window) -> Result<(), String> {
     // resize border (~7px) — that overhang bleeds the taskbar/desktop into the
     // shot. The DWM extended frame bounds are the true visible window rect.
     #[cfg(windows)]
-    if let Some((dx, dy, dw, dh)) = dwm_frame_bounds(hwnd_isize) {
-        wx = dx;
-        wy = dy;
-        ww = dw;
-        wh = dh;
-    }
+    let (wx, wy, ww, wh) = dwm_frame_bounds(hwnd_isize).unwrap_or((wx, wy, ww, wh));
 
     // 1. Capture the monitor + crop to the window rect (heavy work, off-thread).
     let (bytes, png_bytes, rw, rh) = tauri::async_runtime::spawn_blocking(
