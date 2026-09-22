@@ -62,7 +62,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: '. -> target'
-          key: ${{ matrix.name }}
+          key: ${{ matrix.platform }}-${{ matrix.name }}
           cache-on-failure: true
       - name: Linux system dependencies
         if: runner.os == 'Linux'
