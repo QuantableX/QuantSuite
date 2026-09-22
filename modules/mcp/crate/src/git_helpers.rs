@@ -8,12 +8,14 @@ use std::process::Command;
 /// CREATE_NO_WINDOW — the release binary has no console; without the flag
 /// every git call flashes a console window in installed builds.
 fn git() -> Command {
-    let mut cmd = Command::new("git");
+    let cmd = Command::new("git");
     #[cfg(windows)]
-    {
+    let cmd = {
         use std::os::windows::process::CommandExt;
+        let mut cmd = cmd;
         cmd.creation_flags(0x08000000);
-    }
+        cmd
+    };
     cmd
 }
 

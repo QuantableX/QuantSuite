@@ -153,7 +153,7 @@ fn newest_since(files: Vec<PathBuf>, since: SystemTime) -> Vec<PathBuf> {
         .filter_map(|p| mtime(&p).map(|t| (t, p)))
         .filter(|(t, _)| *t >= cutoff)
         .collect();
-    dated.sort_by(|a, b| b.0.cmp(&a.0));
+    dated.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     dated.into_iter().map(|(_, p)| p).collect()
 }
 

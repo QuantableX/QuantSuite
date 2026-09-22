@@ -16,7 +16,9 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
-use crate::settings::{build_python_command, hide_console_window, resolve_python_path};
+#[cfg(windows)]
+use crate::settings::hide_console_window;
+use crate::settings::{build_python_command, resolve_python_path};
 use crate::AppState;
 
 /// Key of the forge in the suite's process register: one entry, Running

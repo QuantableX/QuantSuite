@@ -1082,7 +1082,7 @@ pub fn suggest_connections(
         })
         .filter(|s| !s.shared_terms.is_empty())
         .collect();
-    out.sort_by(|a, b| b.shared_terms.len().cmp(&a.shared_terms.len()));
+    out.sort_by_key(|entry| std::cmp::Reverse(entry.shared_terms.len()));
     out.truncate(limit as usize);
     Ok(out)
 }

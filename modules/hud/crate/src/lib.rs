@@ -742,7 +742,7 @@ async fn list_os_screenshots(custom_folder: Option<String>) -> Result<Vec<OsScre
             }
         }
     }
-    results.sort_by(|a, b| b.modified.cmp(&a.modified));
+    results.sort_by_key(|entry| std::cmp::Reverse(entry.modified));
     if results.len() > 50 { results.truncate(50); }
     Ok(results)
 }
@@ -2001,4 +2001,3 @@ pub fn init() -> TauriPlugin<Wry> {
         ]))
         .build()
 }
-

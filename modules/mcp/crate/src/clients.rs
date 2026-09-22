@@ -949,15 +949,11 @@ fn stdio_of<'a>(target: &'a Target<'a>) -> Result<Stdio<'a>, String> {
 fn cli_command(binary: &str, args: &[String]) -> tokio::process::Command {
     // On Windows the npm-installed CLIs are .cmd scripts that need cmd /C;
     // native .exe binaries run through it just as well.
-    let mut cmd = if cfg!(windows) {
-        let mut c = tokio::process::Command::new("cmd");
-        c.arg("/C").arg(binary).args(args);
-        c
-    } else {
-        let mut c = tokio::process::Command::new(binary);
-        c.args(args);
-        c
-    };
+    let mut cmd = tokio::process::Command::new(if cfg!(windows) { "cmd" } else { binary });
+    if cfg!(windows) {
+        cmd.arg("/C").arg(binary);
+    }
+    cmd.args(args);
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     cmd

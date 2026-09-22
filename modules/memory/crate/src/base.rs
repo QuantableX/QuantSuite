@@ -198,7 +198,7 @@ fn walk(dir: &Path, rel: &str, depth: usize, cfg: &Discovery, units: &mut Vec<Un
             entries.push((name, entry.path(), ft.is_dir()));
         }
     }
-    entries.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    entries.sort_by_key(|entry| entry.0.to_lowercase());
 
     for (name, path, is_dir) in entries {
         if is_hidden(&name) {

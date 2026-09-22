@@ -140,7 +140,7 @@ impl ProcessManager {
 
     pub async fn stop_all(&self) {
         let mut processes = self.processes.lock().await;
-        for (_, entry) in processes.iter_mut() {
+        for entry in processes.values_mut() {
             if let Some(ref mut child) = entry.child {
                 let _ = child.kill().await;
             }

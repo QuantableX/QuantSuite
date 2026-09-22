@@ -865,7 +865,7 @@ fn build_sankey(conn: &Connection) -> Result<SankeyData, String> {
         .iter()
         .filter(|i| i.kind == "income" && i.monthly_cents > 0)
         .collect();
-    incoming.sort_by(|a, b| b.monthly_cents.cmp(&a.monthly_cents));
+    incoming.sort_by_key(|entry| std::cmp::Reverse(entry.monthly_cents));
     for item in incoming {
         nodes.push(SankeyNode {
             id: format!("in:{}", item.id),

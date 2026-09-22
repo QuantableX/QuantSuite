@@ -877,7 +877,7 @@ fn list_trash(
             });
         }
     }
-    out.sort_by(|a, b| b.deleted_at_ms.cmp(&a.deleted_at_ms));
+    out.sort_by_key(|entry| std::cmp::Reverse(entry.deleted_at_ms));
     Ok(out)
 }
 
