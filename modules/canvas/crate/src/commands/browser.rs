@@ -1,6 +1,8 @@
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(serde::Deserialize)]
+// Keep the same IPC payload on every platform; only Win32 clipping reads it.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub struct ClipRect {
     pub x: i32,
     pub y: i32,
@@ -51,6 +53,9 @@ pub async fn set_browser_clip_region(
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| format!("Webview '{}' not found", label))?;
+
+    #[cfg(not(target_os = "windows"))]
+    let _ = (&webview, full_width, full_height, &obscuring_rects);
 
     #[cfg(target_os = "windows")]
     {
@@ -157,11 +162,13 @@ pub async fn browser_disable_fullscreen(app: AppHandle, label: String) -> Result
         .get_webview(&label)
         .ok_or_else(|| format!("Webview '{}' not found", label))?;
 
-    let window = webview.window();
-    let label_clone = label.clone();
+    #[cfg(not(target_os = "windows"))]
+    let _ = &webview;
 
     #[cfg(target_os = "windows")]
     {
+        let window = webview.window();
+        let label_clone = label.clone();
         // Entries of closed webviews would otherwise pile up for every tab ever
         // opened; the hook itself dies with its webview.
         {

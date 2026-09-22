@@ -16,15 +16,19 @@
 //!
 //! [`guard`] covers 1 and 2 per window, [`rebuild_overlays`] covers 3.
 
+#[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::{Emitter, Manager, WebviewWindow, WindowEvent};
+use tauri::{Emitter, WebviewWindow, WindowEvent};
+#[cfg(target_os = "windows")]
+use tauri::Manager;
 
 /// Event the page listens for; it re-applies its current tucked/expanded
 /// geometry (`pages/hud/index.vue`, `reapplyGeometry`).
 const RECOVER_EVENT: &str = "hud:recover";
 
 /// Every window this module builds; destroyed together on a rebuild.
+#[cfg(target_os = "windows")]
 const OVERLAY_LABELS: [&str; 5] = [
     super::HUD_WINDOW,
     "dual-right",
@@ -73,8 +77,10 @@ pub(crate) fn recover(window: WebviewWindow, why: &'static str) {
 
 /// Set while a rebuild is in flight: the browser process serves every overlay,
 /// so its exit is reported once per window and must rebuild once.
+#[cfg(target_os = "windows")]
 pub(crate) struct RebuildState(AtomicBool);
 
+#[cfg(target_os = "windows")]
 impl Default for RebuildState {
     fn default() -> Self {
         Self(AtomicBool::new(false))
@@ -84,6 +90,7 @@ impl Default for RebuildState {
 /// Tear down every overlay window and build the primary one again; its page
 /// recreates the dual pane. Off the main thread because `build()` deadlocks
 /// there (see the note on `open_hud`).
+#[cfg(target_os = "windows")]
 pub(crate) fn rebuild_overlays(app: tauri::AppHandle, reason: String) {
     let Some(state) = app.try_state::<RebuildState>() else {
         return;

@@ -1892,6 +1892,7 @@ pub fn init() -> TauriPlugin<Wry> {
             app.manage(PickedColorState(Mutex::new(None)));
             app.manage(ScreenshotPreviewState(Mutex::new(None)));
             app.manage(RevealState(Default::default()));
+            #[cfg(target_os = "windows")]
             app.manage(resilience::RebuildState::default());
             proximity::init(app);
             config::import_legacy_config();
