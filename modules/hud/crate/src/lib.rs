@@ -1266,6 +1266,8 @@ async fn close_dual_window(app: tauri::AppHandle) -> Result<(), String> {
 /// Show a native Win32 notification popup with OK button and chime
 #[tauri::command]
 async fn show_notification_popup(message: String) -> Result<(), String> {
+    #[cfg(not(target_os = "windows"))]
+    let _ = &message;
     std::thread::spawn(move || {
         #[cfg(target_os = "windows")]
         unsafe {

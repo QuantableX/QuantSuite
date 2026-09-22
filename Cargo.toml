@@ -57,7 +57,8 @@ all = { level = "deny", priority = -1 }
 [workspace.dependencies]
 # "unstable" is required by the `canvas` module: its embedded browser attaches a
 # child Webview to the main window via the multi-webview API.
-tauri = { version = "2", features = ["tray-icon", "image-png", "unstable"] }
+# HUD overlays require transparent windows on macOS as well.
+tauri = { version = "2", features = ["tray-icon", "image-png", "unstable", "macos-private-api"] }
 tauri-build = { version = "2", features = [] }
 tauri-plugin = { version = "2", features = ["build"] }
 tauri-plugin-dialog = "2"

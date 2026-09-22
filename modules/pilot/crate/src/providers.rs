@@ -49,7 +49,7 @@ pub fn base_cmd(exe: &Path) -> Command {
         .extension()
         .map(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
         .unwrap_or(false);
-    let mut cmd = if is_script {
+    let cmd = if is_script {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(exe);
         c
@@ -57,10 +57,12 @@ pub fn base_cmd(exe: &Path) -> Command {
         Command::new(exe)
     };
     #[cfg(windows)]
-    {
+    let cmd = {
         use std::os::windows::process::CommandExt;
+        let mut cmd = cmd;
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
+        cmd
+    };
     cmd
 }
 

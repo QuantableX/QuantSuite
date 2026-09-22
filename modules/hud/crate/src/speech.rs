@@ -185,11 +185,11 @@ fn requirements_hash(p: &Paths, cuda: bool) -> String {
     format!("{h:016x}")
 }
 
-fn no_window(cmd: &mut Command) {
+fn no_window(_cmd: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
+        _cmd.creation_flags(0x0800_0000);
     }
 }
 
