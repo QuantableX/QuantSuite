@@ -26,10 +26,12 @@ import {
   Activity,
   RefreshCw,
   Command,
+  Download,
 } from 'lucide-vue-next'
 
 const router = useRouter()
 const ws = useWorkspaces()
+const updates = useSuiteUpdates()
 const query = ref('')
 const opening = ref(false)
 const now = ref(new Date())
@@ -201,6 +203,16 @@ onUnmounted(stopLive)
             <Search :size="14" /><span>Search anything</span><kbd>Ctrl K</kbd>
           </button>
           <QScreenshotButton />
+          <button
+            v-if="updates.available.value"
+            class="home-icon home-update"
+            :aria-label="`Install QuantSuite ${updates.update.value?.version} and restart`"
+            :title="updates.busy.value ? updates.status.value : `Install QuantSuite ${updates.update.value?.version} and restart`"
+            :disabled="updates.busy.value"
+            @click="updates.install"
+          >
+            <Download :size="17" />
+          </button>
           <button
             class="home-icon"
             aria-label="Suite settings"
@@ -456,7 +468,6 @@ onUnmounted(stopLive)
               ><ArrowRight :size="14" />
             </button>
           </section>
-          <SuiteUpdates />
         </aside>
       </div>
       <footer class="home-footer">
@@ -592,6 +603,13 @@ onUnmounted(stopLive)
 .home-icon:hover,
 .home-search-trigger:hover {
   background: var(--qss-bg-hover);
+}
+.home-update {
+  color: var(--qss-accent) !important;
+}
+.home-update:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 .home-hero {
   position: relative;

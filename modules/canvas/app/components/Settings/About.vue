@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Module information; application updates belong to the suite main menu.
+// Module information; application updates belong to the suite (Settings → General).
 const runtimeConfig = useRuntimeConfig()
 </script>
 

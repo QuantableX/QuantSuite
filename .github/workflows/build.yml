@@ -123,5 +123,11 @@ jobs:
       - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}
+        # A rebuilt tag replaces the files of its existing release in place.
         run: |
-          gh release create "$GITHUB_REF_NAME" release/* --verify-tag --title "QuantSuite $GITHUB_REF_NAME" --generate-notes --latest
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --latest
+          else
+            gh release create "$GITHUB_REF_NAME" release/* --verify-tag --title "QuantSuite $GITHUB_REF_NAME" --generate-notes --latest
+          fi

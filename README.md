@@ -15,9 +15,10 @@ Get **QuantSuite 1.0.0** from [GitHub Releases](https://github.com/QuantableX/Qu
 | macOS Intel and Apple Silicon | Universal `.dmg` |
 | Linux x64 (Ubuntu 24.04+ or equivalent) | `.AppImage`, `.deb` or `.rpm` |
 
-Open the **QuantSuite main menu** using the logo at the top left. Its QuantSuite
-card shows the installed version and **Check for updates**. Save your work before
-choosing **Install & restart**. Updates are signed and apply to the entire suite;
+QuantSuite checks for updates once at every start. When one is available, a
+download button appears next to the settings button on the home screen; it
+installs the update and restarts. **Settings → General** shows the installed
+version and **Check for updates**. Save your work before installing. Updates are signed and apply to the entire suite;
 individual modules do not check their former repositories. Linux automatic
 updates require the AppImage installation; package-manager installations can
 install the new `.deb` or `.rpm` from Releases.

@@ -26,7 +26,7 @@ fn require_suite(window: &WebviewWindow) -> Result<(), String> {
     if window.label() == "main" || window.label().starts_with("suite-") {
         Ok(())
     } else {
-        Err("Updates are available from the QuantSuite main menu.".into())
+        Err("Updates are available from the QuantSuite main window.".into())
     }
 }
 

@@ -48,9 +48,10 @@ https://github.com/QuantableX/QuantSuite/releases/latest/download/latest.json
 
 The signed updater uses NSIS on Windows, the universal application archive on
 macOS, and AppImage on Linux. Both macOS architecture entries point to the same
-universal archive. Debian/RPM users install the next package manually. Updates
-are user initiated from the QuantSuite main menu; there are no module-local
-update commands or background checks of legacy repositories.
+universal archive. Debian/RPM users install the next package manually. The main
+window checks once per start; installing is always user initiated, from the
+download button in the home topbar or Settings → General. There are no
+module-local update commands or background checks of legacy repositories.
 
 The Rust backend retains the checked update, verifies signatures before
 installation, serializes concurrent requests across windows, and rejects install

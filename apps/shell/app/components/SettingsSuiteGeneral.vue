@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * Suite → General — the shell's section in the unified settings modal (V3).
- * Owns suite-level behaviour: workspace startup and Windows autostart today;
+ * Owns suite-level behaviour: the suite version and updates, workspace startup
+ * and Windows autostart today;
  * agent approval modes and motion preferences collect here as they land.
  */
 import { qs } from '@quantsuite/core'
@@ -53,6 +54,8 @@ onMounted(async () => {
 
 <template>
   <div>
+    <SuiteUpdates />
+
     <div class="qsu-row">
       <div class="qsu-row-text">
         <p class="qsu-label">Reopen last workspace on start</p>
