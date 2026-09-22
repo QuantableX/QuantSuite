@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-read-dir-tree"
+description = "Enables the read_dir_tree command without any pre-configured scope."
+commands.allow = ["read_dir_tree"]
+
+[[permission]]
+identifier = "deny-read-dir-tree"
+description = "Denies the read_dir_tree command without any pre-configured scope."
+commands.deny = ["read_dir_tree"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-embedding-config"
+description = "Enables the get_embedding_config command without any pre-configured scope."
+commands.allow = ["get_embedding_config"]
+
+[[permission]]
+identifier = "deny-get-embedding-config"
+description = "Denies the get_embedding_config command without any pre-configured scope."
+commands.deny = ["get_embedding_config"]

@@ -1,0 +1,43 @@
+[package]
+name = "tauri-plugin-canvas"
+links = "tauri-plugin-canvas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantCanvas — spec-driven agentic development environment, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_canvas"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+
+git2 = { version = "0.19", features = ["vendored-openssl"] }
+ignore = "0.4"
+# Search: one code path for literal, whole-word, case-sensitive and regex
+# queries — see `build_matcher` in src/commands/fs.rs.
+regex = "1"
+base64 = "0.22"
+url = "2"
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }

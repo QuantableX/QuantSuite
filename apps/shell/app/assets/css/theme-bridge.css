@@ -1,0 +1,256 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   The theme bridge — one theme for every module (PLAN-V2 E6).
+
+   Decision reversed 2026-08-14: the suite HAS a shared design system now.
+   Every module already routes its colors through CSS custom properties;
+   this file redefines each module's own token names to the suite tokens,
+   scoped under its `[data-module]` root. One file retints all of them —
+   no module stylesheet is touched, and removing a block restores that
+   module's original look.
+
+   Role mapping, applied uniformly:
+     page bg → --qss-bg · sidebars/headers → --qss-bg-raised ·
+     cards/inputs → --qss-bg-card · hover → --qss-bg-hover ·
+     borders → --qss-border(-subtle) · text tiers → --qss-text* ·
+     accent → --qss-accent (the one blue) · radii → --qss-radius(-lg)
+
+   Deliberately NOT remapped:
+     - QuantView's --positive/--negative: market green/red is semantics,
+       not styling.
+     - QuantHUD: its overlay windows are transparent surfaces with their
+       own compositing tricks; retinting them blind risks breaking the
+       overlay. It gets the treatment in its own pass.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Shared derived values */
+:root {
+  --qss-accent-hover: color-mix(in srgb, var(--qss-accent) 86%, #fff);
+  --qss-accent-soft: color-mix(in srgb, var(--qss-accent) 30%, transparent);
+  --qss-scroll-thumb: #2e2e34;
+  --qss-scroll-thumb-hover: #3a3a41;
+}
+
+/* One scrollbar for the whole application. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--qss-scroll-thumb);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--qss-scroll-thumb-hover);
+  background-clip: content-box;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Control normalization (E6): one size language for the controls that sit
+   in every module's primary chrome. The palettes were unified above; the
+   SIZES were hardcoded per app — 32px circles here, 24px pills there. The
+   high-traffic toolbar/header controls are pinned to shared metrics below.
+
+   Selector classes are doubled (`.x.x`) to outrank the modules' scoped
+   rules by specificity instead of resorting to !important. Body-level
+   buttons (forms, dialogs, CTAs) keep their module sizing — this pass is
+   about the chrome the eye compares across modules.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --qss-ctl-h: 28px;
+  --qss-ctl-font: 12px;
+  --qss-ctl-radius: 8px;
+}
+
+/* Buttons don't inherit fonts by default — this alone removes a lot of
+   visual noise across the eight apps. */
+[data-module] :is(button, input, select, textarea) {
+  font-family: inherit;
+}
+
+/* Text controls: switchers, nav pills, ghost buttons. */
+[data-module='systems'] :is(.qs-switcher__btn.qs-switcher__btn, .qs-viewsel__btn.qs-viewsel__btn),
+[data-module='notes'] .qn-search.qn-search,
+[data-module='terminal'] .btn-ghost.btn-ghost,
+[data-module='mcp'] :is(.btn-primary.btn-primary, .btn-sm.btn-sm),
+[data-module='algo'] :is(.action-btn.action-btn, .detect-btn.detect-btn) {
+  height: var(--qss-ctl-h);
+  padding: 0 12px;
+  border-radius: var(--qss-ctl-radius);
+  font-size: var(--qss-ctl-font);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Icon controls: square, same height as the text controls beside them.
+   (QuantCode's .sidebar-toggle corner buttons are deliberately NOT here —
+   they are full-height corner wedges whose placement the 28px box broke.) */
+[data-module='mcp'] .btn-icon.btn-icon,
+[data-module='algo'] .btn-icon.btn-icon,
+[data-module='canvas'] .nav-btn.nav-btn {
+  width: var(--qss-ctl-h);
+  height: var(--qss-ctl-h);
+  padding: 0;
+  border-radius: var(--qss-ctl-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── QuantNotes ── */
+[data-module='notes'] {
+  font-family: var(--qss-font-sans);
+  --qn-bg: var(--qss-bg);
+  --qn-bg-sidebar: var(--qss-bg-raised);
+  --qn-bg-card: var(--qss-bg-card);
+  --qn-bg-hover: var(--qss-bg-hover);
+  --qn-bg-input: var(--qss-bg-card);
+  --qn-bg-canvas: var(--qss-bg);
+  --qn-border: var(--qss-border);
+  --qn-border-subtle: var(--qss-border-subtle);
+  --qn-text: var(--qss-text);
+  --qn-text-secondary: var(--qss-text-secondary);
+  --qn-text-muted: var(--qss-text-muted);
+  --qn-accent: var(--qss-accent);
+  --qn-accent-hover: var(--qss-accent-hover);
+  --qn-selection: var(--qss-accent-soft);
+  --qn-success: var(--qss-success);
+  --qn-error: var(--qss-error);
+  --qn-warning: var(--qss-warning);
+  --qn-radius: var(--qss-radius);
+  --qn-radius-lg: var(--qss-radius-lg);
+  --qn-scrollbar-thumb: var(--qss-scroll-thumb);
+  --qn-scrollbar-thumb-hover: var(--qss-scroll-thumb-hover);
+  --qn-scrollbar-track: transparent;
+}
+
+/* ── QuantSystems ── */
+[data-module='systems'] {
+  font-family: var(--qss-font-sans);
+  --qs-bg: var(--qss-bg);
+  --qs-bg-sidebar: var(--qss-bg-raised);
+  --qs-bg-card: var(--qss-bg-card);
+  --qs-bg-hover: var(--qss-bg-hover);
+  /* Inputs sit on cards: the page ground keeps them visibly recessed, where
+     the card colour made them vanish (user: "I can't see the input fields"). */
+  --qs-bg-input: var(--qss-bg);
+  --qs-border: var(--qss-border);
+  --qs-border-subtle: var(--qss-border-subtle);
+  --qs-text: var(--qss-text);
+  --qs-text-secondary: var(--qss-text-secondary);
+  --qs-text-muted: var(--qss-text-muted);
+  --qs-accent: var(--qss-accent);
+  --qs-accent-hover: var(--qss-accent-hover);
+  --qs-selection: var(--qss-accent-soft);
+  --qs-success: var(--qss-success);
+  --qs-error: var(--qss-error);
+  --qs-warning: var(--qss-warning);
+  --qs-radius: var(--qss-radius);
+  --qs-radius-lg: var(--qss-radius-lg);
+  --qs-scrollbar-thumb: var(--qss-scroll-thumb);
+  --qs-scrollbar-thumb-hover: var(--qss-scroll-thumb-hover);
+  --qs-scrollbar-track: transparent;
+}
+
+/* ── QuantAlgo ── */
+[data-module='algo'] {
+  font-family: var(--qss-font-sans);
+  --qa-bg: var(--qss-bg);
+  --qa-bg-sidebar: var(--qss-bg-raised);
+  --qa-bg-card: var(--qss-bg-card);
+  --qa-bg-hover: var(--qss-bg-hover);
+  /* Inputs sit on cards: the page ground keeps them visibly recessed. */
+  --qa-bg-input: var(--qss-bg);
+  --qa-border: var(--qss-border);
+  --qa-border-subtle: var(--qss-border-subtle);
+  --qa-text: var(--qss-text);
+  --qa-text-secondary: var(--qss-text-secondary);
+  --qa-text-muted: var(--qss-text-muted);
+  --qa-accent: var(--qss-accent);
+  --qa-accent-hover: var(--qss-accent-hover);
+  --qa-success: var(--qss-success);
+  --qa-error: var(--qss-error);
+  --qa-warning: var(--qss-warning);
+  --qa-radius: var(--qss-radius);
+  --qa-radius-lg: var(--qss-radius-lg);
+  --qa-scrollbar-thumb: var(--qss-scroll-thumb);
+  --qa-scrollbar-thumb-hover: var(--qss-scroll-thumb-hover);
+  --qa-scrollbar-track: transparent;
+}
+
+/* ── QuantCode ──
+ *
+ * `.qc-skin` is the hook for hosting a canvas-styled component OUTSIDE the
+ * canvas module: QuantConsole's left sidebar renders the shared FileExplorer,
+ * whose styles read `--qc-*`. One selector list, so the mapping cannot fork. */
+[data-module='canvas'],
+.qc-skin {
+  font-family: var(--qss-font-sans);
+  --qc-bg: var(--qss-bg);
+  --qc-bg-window: var(--qss-bg);
+  --qc-bg-surface: var(--qss-bg-card);
+  --qc-bg-header: var(--qss-bg-raised);
+  --qc-bg-titlebar: var(--qss-bg-raised);
+  --qc-bg-input: var(--qss-bg-card);
+  --qc-border: var(--qss-border);
+  --qc-border-subtle: var(--qss-border-subtle);
+  --qc-text: var(--qss-text);
+  --qc-text-muted: var(--qss-text-secondary);
+  --qc-text-dim: var(--qss-text-muted);
+  --qc-accent: var(--qss-accent);
+  --color-accent: var(--qss-accent);
+  --color-accent-hover: var(--qss-accent-hover);
+  --color-accent-muted: var(--qss-accent-soft);
+  --font-sans: var(--qss-font-sans);
+  --font-mono: var(--qss-font-mono);
+  --qc-font-mono: var(--qss-font-mono);
+  --qc-scrollbar-thumb: var(--qss-scroll-thumb);
+  --qc-scrollbar-thumb-hover: var(--qss-scroll-thumb-hover);
+  --qc-scrollbar-track: transparent;
+}
+
+/* ── QuantView ── */
+[data-module='terminal'] {
+  font-family: var(--qss-font-sans);
+  --surface-0: var(--qss-bg);
+  --surface-1: var(--qss-bg-raised);
+  --surface-2: var(--qss-bg-card);
+  --surface-3: var(--qss-bg-hover);
+  --border: var(--qss-border);
+  --text-primary: var(--qss-text);
+  --text-secondary: var(--qss-text-secondary);
+  --muted: var(--qss-text-muted);
+  --accent: var(--qss-accent);
+  --accent-hover: var(--qss-accent-hover);
+  --warning: var(--qss-warning);
+  /* --positive / --negative stay: market green/red is meaning, not theme. */
+  --scrollbar-thumb: var(--qss-scroll-thumb);
+  --scrollbar-thumb-hover: var(--qss-scroll-thumb-hover);
+  --scrollbar-track: transparent;
+}
+
+/* ── QuantMCP ── */
+[data-module='mcp'] {
+  font-family: var(--qss-font-sans);
+  --bg-primary: var(--qss-bg);
+  --bg-secondary: var(--qss-bg-raised);
+  --bg-card: var(--qss-bg-card);
+  --bg-hover: var(--qss-bg-hover);
+  --border: var(--qss-border);
+  --text-primary: var(--qss-text);
+  --text-secondary: var(--qss-text-secondary);
+  --text-muted: var(--qss-text-muted);
+  --accent: var(--qss-accent);
+  --accent-hover: var(--qss-accent-hover);
+  --success: var(--qss-success);
+  --error: var(--qss-error);
+  --warning: var(--qss-warning);
+  --radius: var(--qss-radius);
+  --radius-lg: var(--qss-radius-lg);
+}
+

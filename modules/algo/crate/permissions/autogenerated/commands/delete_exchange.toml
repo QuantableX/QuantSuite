@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-exchange"
+description = "Enables the delete_exchange command without any pre-configured scope."
+commands.allow = ["delete_exchange"]
+
+[[permission]]
+identifier = "deny-delete-exchange"
+description = "Denies the delete_exchange command without any pre-configured scope."
+commands.deny = ["delete_exchange"]

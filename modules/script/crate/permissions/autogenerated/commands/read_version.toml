@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-read-version"
+description = "Enables the read_version command without any pre-configured scope."
+commands.allow = ["read_version"]
+
+[[permission]]
+identifier = "deny-read-version"
+description = "Denies the read_version command without any pre-configured scope."
+commands.deny = ["read_version"]

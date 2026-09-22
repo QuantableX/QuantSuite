@@ -1,0 +1,35 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the canvas module."
+permissions = [
+  "allow-read-dir-tree",
+  "allow-read-file",
+  "allow-write-file",
+  "allow-create-file",
+  "allow-delete-file",
+  "allow-rename-file",
+  "allow-search-files",
+  "allow-read-file-binary",
+  "allow-git-status",
+  "allow-git-diff",
+  "allow-git-stage",
+  "allow-git-branch-list",
+  "allow-git-log",
+  "allow-git-commit-files",
+  "allow-timeline-snapshot",
+  "allow-timeline-list",
+  "allow-timeline-read",
+  "allow-workspace-storage-dir",
+  "allow-load-canvas-state",
+  "allow-save-canvas-state",
+  "allow-navigate-browser",
+  "allow-eval-browser",
+  "allow-get-browser-url",
+  "allow-set-browser-clip-region",
+  "allow-find-in-browser",
+  "allow-browser-request-new-tab",
+  "allow-browser-disable-fullscreen",
+  "allow-load-browser-data",
+  "allow-save-browser-data",
+]

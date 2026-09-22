@@ -1,0 +1,5 @@
+# GPU inference: the CUDA runtime libraries CTranslate2 loads at run time,
+# as pip wheels — no CUDA toolkit install needed. engine.py adds their
+# `bin/` directories to the DLL search path before ctranslate2 is imported.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12

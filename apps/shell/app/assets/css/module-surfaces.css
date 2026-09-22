@@ -1,0 +1,135 @@
+/* Module surfaces share the dashboard's spacing and tonal hierarchy.
+   Keep the dashboard, editor internals and transparent HUD windows independent. */
+[data-module]:not([data-module='hud']) {
+  --qss-module-chrome: color-mix(in srgb, var(--qss-bg) 65%, var(--qss-bg-raised));
+  --qss-text-muted: color-mix(in srgb, var(--qss-text) 64%, var(--qss-bg));
+  --qss-surface-padding: clamp(20px, 2.4vw, 36px);
+  --qss-surface-radius: 16px;
+}
+
+[data-module]:not([data-module='hud']) :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--qss-accent);
+  outline-offset: 3px;
+}
+
+/* Explicit control classes avoid touching Monaco, xterm, charts or note content. */
+[data-module] .btn.btn,
+[data-module] :is(.qf-btn, .qh-btn, .qp-btn, .qsc-btn) {
+  border-radius: 8px;
+}
+[data-module='algo'] .btn-primary,
+[data-module='mcp'] .btn-primary,
+[data-module='systems'] .btn-primary {
+  color: var(--qss-accent-ink);
+}
+
+/* QuantZen */
+[data-module='notes'] .qn-coll.qn-coll { padding: 0 var(--qss-surface-padding) 20px; }
+[data-module='notes'] .qn-coll__top.qn-coll__top { padding-top: 30px; gap: 28px; flex-wrap: wrap; }
+[data-module='notes'] .qn-coll__name.qn-coll__name { font-size: 27px; font-weight: 500; letter-spacing: -.035em; padding-bottom: 16px; }
+[data-module='notes'] .qn-coll__stage.qn-coll__stage { margin-top: 12px; }
+[data-module='finance'] { --qf-radius: 8px; --qf-radius-lg: 16px; --qf-text-muted: var(--qss-text-muted); }
+[data-module='finance'] .qf-plan__sheet.qf-plan__sheet { width: min(1080px, 100%); gap: 18px; padding: var(--qss-surface-padding); }
+[data-module='finance'] .qf-pl.qf-pl { padding: 20px; border: 1px solid var(--qss-border); border-radius: 14px; background: var(--qss-bg-raised); }
+[data-module='finance'] .qf-pl__head.qf-pl__head { padding: 0 0 16px; }
+[data-module='finance'] .qf-pl__title.qf-pl__title h2 { font-size: 15px; font-weight: 500; text-transform: none; letter-spacing: -.015em; }
+[data-module='finance'] .qf-pl__total.qf-pl__total { font-size: 20px; font-weight: 500; letter-spacing: -.03em; }
+[data-module='finance'] .qf-plan__foot.qf-plan__foot { padding: 24px; flex-wrap: wrap; background: linear-gradient(110deg, var(--qss-bg-card), var(--qss-bg-raised)); }
+[data-module='finance'] .qf-plan__leftover strong { font-size: 32px; font-weight: 500; }
+[data-module='finance'] .qf-plan__note.qf-plan__note { text-align: left; }
+[data-module='plan'] { --qp-radius: 8px; --qp-radius-lg: 14px; --qp-text-muted: var(--qss-text-muted); }
+[data-module='habit'] { --qh-radius: 8px; --qh-radius-lg: 14px; --qh-text-muted: var(--qss-text-muted); }
+[data-module='flow'] .qflow-tabs.qflow-tabs { gap: 6px; }
+[data-module='flow'] .qflow-tabs a { padding: 7px 14px; border: 1px solid transparent; border-radius: 8px; color: var(--qss-text-secondary); }
+[data-module='flow'] .qflow-tabs a.is-active { border-color: var(--qss-border); }
+
+/* QuantView: generous page framing; data tables keep their working density. */
+[data-module='algo'] .main-content.main-content,
+[data-module='mcp'] .main-content.main-content { padding: var(--qss-surface-padding); }
+[data-module='algo'] .dashboard.dashboard { max-width: 1440px; margin: 0 auto; padding: 0; height: auto; min-height: 100%; overflow: visible; gap: 20px; container: algo-overview / inline-size; }
+[data-module='algo'] .dashboard__top.dashboard__top { gap: 20px; }
+[data-module='algo'] .stat.stat { flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 12px; background: var(--qss-bg); }
+[data-module='algo'] .card__head.card__head { flex-wrap: wrap; }
+[data-module='algo'] .card--table.card--table { min-height: 220px; }
+[data-module='algo'] .card--activity.card--activity { min-height: 120px; }
+[data-module='algo'] .card.card,
+[data-module='systems'] .card.card { border: 1px solid var(--qss-border); border-radius: var(--qss-surface-radius); background: var(--qss-bg-raised); box-shadow: none; }
+[data-module='algo'] .card__title.card__title { font-size: 15px; font-weight: 500; text-transform: none; letter-spacing: -.015em; }
+[data-module='algo'] .stat__value.stat__value { font-family: var(--qss-font-sans); font-size: 34px; font-weight: 500; letter-spacing: -.045em; }
+[data-module='algo'] :is(.bots-page__title, .exchange-page__title, .charts__title) { font-size: 27px; font-weight: 500; letter-spacing: -.035em; }
+[data-module='algo'] .table th { padding-top: 12px; padding-bottom: 12px; color: var(--qss-text-secondary); font-size: 10px; letter-spacing: .08em; }
+[data-module='algo'] .table td { padding-top: 13px; padding-bottom: 13px; }
+[data-module='systems'] :is(.qs-overview, .qs-backtest, .qs-live, .qs-settings) { max-width: 1520px; margin-inline: auto; }
+[data-module='script'] .qsc-library.qsc-library { padding: var(--qss-surface-padding); }
+[data-module='script'] .qsc-script-card.qsc-script-card { border-radius: 14px; background: var(--qss-bg-raised); }
+[data-module='script'] .qsc-script-grid.qsc-script-grid { gap: 16px; }
+[data-module='script'] .qsc-library-controls.qsc-library-controls { margin-bottom: 22px; }
+[data-module='terminal'] :is(.metrics-shell, .metrics-page) { --surface-2: var(--qss-bg-raised); }
+[data-module='terminal'] .metric-card.metric-card { border-radius: 14px; }
+
+/* QuantAgent */
+[data-module='mcp'] .page-title.page-title { font-size: 27px; font-weight: 500; letter-spacing: -.035em; }
+[data-module='mcp'] .page-header.page-header { margin-bottom: 28px; }
+[data-module='mcp'] :is(.stat-card.stat-card, .section.section, .mcp-card.mcp-card, .tool-card.tool-card, .script-card.script-card) { border: 1px solid var(--qss-border); border-radius: 14px; background: var(--qss-bg-raised); }
+[data-module='mcp'] .stat-value.stat-value { font-size: 32px; font-weight: 500; letter-spacing: -.04em; }
+[data-module='memory'] { --qm-radius: 8px; --qm-radius-lg: 16px; --qm-text-muted: var(--qss-text-muted); }
+[data-module='pilot'] .qp-empty.qp-empty { margin: clamp(20px, 4vw, 64px); border: 1px solid var(--qss-border); border-radius: 20px; background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--qss-text) 4%, transparent), transparent 65%), var(--qss-bg-raised); }
+[data-module='pilot'] .qp-empty-face.qp-empty-face { width: 140px; margin-bottom: 18px; }
+[data-module='pilot'] .qp-empty-title.qp-empty-title { font-size: 28px; font-weight: 500; letter-spacing: -.035em; }
+[data-module='pilot'] .qp-empty-text.qp-empty-text { max-width: 320px; margin-top: 6px; font-size: 13px; }
+
+/* QuantSpace: frame the workspace without changing editor/terminal geometry. */
+[data-module='console'] .console-empty.console-empty { gap: 16px; margin: 28px; border: 1px solid var(--qss-border); border-radius: 18px; background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--qss-text) 4%, transparent), transparent 65%), var(--qss-bg-raised); }
+[data-module='console'] .console-empty h1 { font-size: 28px; font-weight: 500; letter-spacing: -.035em; }
+[data-module='console'] .console-shell.console-shell { padding: 12px 20px; border-radius: 10px; background: var(--qss-bg-card); }
+
+[data-module='notes'] .qn-tabs__tab.qn-tabs__tab { padding: 9px 12px; }
+[data-module='notes'] .qn-vt.qn-vt { padding-block: 14px; }
+[data-module='notes'] .qn-table__scroll.qn-table__scroll { border: 1px solid var(--qn-border); border-radius: 12px; }
+[data-module='notes'] .qn-table th { padding-block: 13px; background: var(--qn-bg-sidebar); }
+[data-module='notes'] .qn-table td { padding-block: 7px; }
+[data-module='notes'] .qn-board__col.qn-board__col { background: var(--qn-bg-sidebar); border-color: var(--qn-border-subtle); border-radius: 14px; }
+[data-module='notes'] .qn-board__head.qn-board__head { padding: 14px; }
+[data-module='notes'] .qn-board__cards.qn-board__cards { gap: 10px; padding: 0 10px 10px; }
+[data-module='notes'] .qn-board__card.qn-board__card { padding: 16px; border-radius: 10px; background: var(--qn-bg); }
+[data-module='finance'] .qfunds.qfunds { padding: var(--qss-surface-padding); }
+[data-module='finance'] .qfunds-section-head h2 { font-size: 27px; font-weight: 500; letter-spacing: -.035em; }
+[data-module='finance'] .qfunds-balance.qfunds-balance { padding: 26px; margin-top: 24px; border: 1px solid var(--qss-border); border-radius: 16px; background: linear-gradient(120deg, var(--qss-bg-raised), var(--qss-bg)); }
+[data-module='finance'] .qfunds-metrics.qfunds-metrics { margin-block: 18px; }
+[data-module='habit'] .qh-stats__total.qh-stats__total,
+[data-module='habit'] .qh-stats__card.qh-stats__card { border-radius: 14px; padding: 22px; }
+[data-module='habit'] .qh-stats__total strong { font-size: 32px; font-weight: 500; }
+[data-module='terminal'] .terminal-workspace { padding: var(--qss-surface-padding); container: terminal-workspace / inline-size; }
+[data-module='terminal'] .terminal-workspace .card { border: 1px solid var(--qss-border); border-radius: 14px; background: var(--qss-bg-raised); overflow: hidden; }
+[data-module='terminal'] .terminal-workspace > .grid { gap: 16px; }
+[data-module='terminal'] .terminal-workspace > .grid > .card { padding: 20px; }
+[data-module='terminal'] .terminal-workspace table th { padding-block: 14px; }
+[data-module='terminal'] .terminal-workspace table td { padding-block: 14px; }
+[data-module='terminal'] .terminal-workspace .btn-primary { color: var(--qss-accent-ink); }
+[data-module='systems'] :is(.qs-live__title.qs-live__title, .qs-backtest__title.qs-backtest__title, .qs-settings__title.qs-settings__title) { font-size: 27px; font-weight: 500; letter-spacing: -.035em; }
+[data-module='systems'] :is(.qs-live.qs-live, .qs-backtest.qs-backtest, .qs-settings.qs-settings) { padding: var(--qss-surface-padding); }
+[data-module='systems'] .qs-live__head.qs-live__head { flex-wrap: wrap; gap: 16px; margin-bottom: 26px; }
+@media (max-width: 1700px) {
+  [data-module='systems'] :is(.qs-backtest.qs-backtest, .qs-settings.qs-settings) { padding: 12px; }
+}
+[data-module='mcp'] .action-card.action-card { background: var(--qss-bg-raised); border-radius: 14px; padding: 24px 20px; }
+[data-module='mcp'] .section-title.section-title { font-size: 15px; font-weight: 500; }
+[data-module='script'] .qsf-page.qsf-page { padding: var(--qss-surface-padding); }
+[data-module='script'] .qsf-overview.qsf-overview { border-radius: 14px; overflow: hidden; }
+[data-module='script'] .qsf-overview strong { font-size: 28px; }
+
+@container terminal-workspace (max-width: 850px) {
+  [data-module='terminal'] .terminal-workspace > .grid-cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container algo-overview (max-width: 680px) {
+  [data-module='algo'] .dashboard__top.dashboard__top { grid-template-columns: minmax(0, 1fr); }
+}
+@container terminal-workspace (max-width: 520px) {
+  [data-module='terminal'] .terminal-workspace > .grid-cols-3,
+  [data-module='terminal'] .terminal-workspace > .grid-cols-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1100px) {
+  [data-module='algo'] .titlebar-center.titlebar-center { grid-template-columns: minmax(0, 1fr) auto; padding-inline: 10px; }
+  [data-module='algo'] .status-right.status-right { display: none; }
+}

@@ -1,0 +1,5 @@
+{
+  "$schema": "../../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "QuantSuite Dev",
+  "identifier": "com.quantable.quantsuite.dev"
+}

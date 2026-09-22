@@ -1,0 +1,27 @@
+{
+  "gateway": {
+    "port": 3747,
+    "host": "0.0.0.0"
+  },
+  "agents": {
+    "workspaceRoot": "/home/openclaw/workspaces",
+    "list": [
+      { "id": "orchestrator", "workspace": "orchestrator", "model": "claude-sonnet-4-5" },
+      { "id": "coder", "workspace": "coder", "model": "claude-sonnet-4-5" },
+      { "id": "researcher", "workspace": "researcher", "model": "claude-haiku-4-5" },
+      { "id": "analyst", "workspace": "analyst", "model": "claude-haiku-4-5" },
+      { "id": "monitor", "workspace": "monitor", "model": "claude-haiku-4-5" }
+    ]
+  },
+  "tools": {
+    "agentToAgent": {
+      "enabled": true,
+      "allow": [
+        "orchestrator->coder",
+        "orchestrator->researcher",
+        "orchestrator->analyst",
+        "orchestrator->monitor"
+      ]
+    }
+  }
+}

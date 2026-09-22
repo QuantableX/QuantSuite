@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-book-fund-plan"
+description = "Enables the book_fund_plan command without any pre-configured scope."
+commands.allow = ["book_fund_plan"]
+
+[[permission]]
+identifier = "deny-book-fund-plan"
+description = "Denies the book_fund_plan command without any pre-configured scope."
+commands.deny = ["book_fund_plan"]

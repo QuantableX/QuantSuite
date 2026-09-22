@@ -1,0 +1,300 @@
+
+
+/* ============= Theme Variables ============= */
+
+@theme {
+  --color-accent: #a0a0a8;
+  --color-accent-hover: #b8b8c0;
+  --color-accent-muted: #a0a0a833;
+  --color-brand: #f97316;
+  --color-terminal-green: #22d3ee;
+  --color-status-idle: #57606f;
+  --color-status-thinking: #a0a0a8;
+  --color-status-live: #2ed573;
+  --color-status-error: #ff4757;
+  --font-mono: "CaskaydiaCove Nerd Font", ui-monospace, "Cascadia Code", "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+
+
+/* ---- Dark theme (default) ---- */
+/* Hierarchy matches QuantMCP: bg-primary (#18181e) < bg-secondary (#1f1f25) < bg-card (#24242a) */
+:root {
+  --qc-bg: #18181e;
+  --qc-bg-titlebar: #1f1f25;
+  --qc-bg-window: #1f1f25;
+  --qc-bg-header: #292930;
+  --qc-bg-surface: #313139;
+  --qc-bg-input: #18181e;
+  --qc-border: #47474f;
+  --qc-border-subtle: #4a4a55;
+  --qc-text: #d4d4d8;
+  --qc-text-muted: #9a9aa5;
+  --qc-text-dim: #6e6e7a;
+  --qc-scrollbar-track: #18181e;
+  --qc-scrollbar-thumb: #47474f;
+  --qc-scrollbar-thumb-hover: #5a5a64;
+  --qc-dot-grid: #3a3a42;
+  --qc-dot-grid-bright: #505058;
+  --qc-accent: #6e8efb;
+  --qc-font-mono: 'CaskaydiaCove Nerd Font', 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+}
+
+
+
+/* ---- Light theme ---- */
+[data-theme="light"] {
+  --qc-bg: #d8d8de;
+  --qc-bg-titlebar: #e0e0e5;
+  --qc-bg-window: #e0e0e5;
+  --qc-bg-header: #e6e6ec;
+  --qc-bg-surface: #c8c8d0;
+  --qc-bg-input: #d8d8de;
+  --qc-border: #a5a5af;
+  --qc-border-subtle: #9a9aa5;
+  --qc-text: #24242c;
+  --qc-text-muted: #484856;
+  --qc-text-dim: #6a6a78;
+  --qc-scrollbar-track: #d8d8de;
+  --qc-scrollbar-thumb: #a0a0aa;
+  --qc-scrollbar-thumb-hover: #8a8a95;
+  --qc-dot-grid: #adadb5;
+  --qc-dot-grid-bright: #8d8d97;
+  --qc-accent: #4f6ef7;
+}
+
+
+
+/* ============= Base Styles ============= */
+
+[data-module="canvas"] *,
+[data-module="canvas"] *::before,
+[data-module="canvas"] *::after {
+  box-sizing: border-box;
+}
+
+
+
+[data-module="canvas"] {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--qc-bg);
+  color: var(--qc-text);
+  font-family: var(--font-sans);
+  /* The suite base (shell.css: 13px/1.55) — the module font-size setting
+     scales it via --qc-font-size, scoped here rather than on <html>. */
+  font-size: var(--qc-font-size, 13px);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+
+[data-module="canvas"] ::selection {
+  background-color: var(--color-accent-muted);
+  color: var(--qc-text);
+}
+
+
+
+/* ============= Canvas Dot Grid ============= */
+
+[data-module="canvas"] .canvas-dot-grid {
+  background-image: radial-gradient(
+    circle,
+    var(--qc-dot-grid) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+  background-position: center center;
+}
+
+
+
+[data-module="canvas"] .canvas-dot-grid-scaled {
+  background-image: radial-gradient(
+    circle,
+    var(--qc-dot-grid) 1px,
+    transparent 1px
+  );
+  background-size: calc(24px * var(--canvas-scale, 1)) calc(24px * var(--canvas-scale, 1));
+  background-position:
+    calc(var(--canvas-offset-x, 0) * 1px)
+    calc(var(--canvas-offset-y, 0) * 1px);
+}
+
+
+
+/* ============= Scrollbar Styles ============= */
+
+[data-module="canvas"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+
+
+[data-module="canvas"] ::-webkit-scrollbar-track {
+  background: var(--qc-scrollbar-track);
+}
+
+
+
+[data-module="canvas"] ::-webkit-scrollbar-thumb {
+  background: var(--qc-scrollbar-thumb);
+  border-radius: 3px;
+}
+
+
+
+[data-module="canvas"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--qc-scrollbar-thumb-hover);
+}
+
+
+
+[data-module="canvas"] ::-webkit-scrollbar-corner {
+  background: var(--qc-scrollbar-track);
+}
+
+
+
+/* ============= Monaco Editor ============= */
+
+[data-module="canvas"] .monaco-editor-container {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+
+
+[data-module="canvas"] .monaco-editor-container .monaco-editor {
+  position: absolute !important;
+}
+
+
+
+[data-module="canvas"] .monaco-editor-container .monaco-editor .overflow-guard {
+  border-radius: 0;
+}
+
+
+
+[data-module="canvas"] .monaco-editor .minimap {
+  opacity: 0.6;
+}
+
+
+
+/* ============= Console Pane =============
+ *
+ * A canvas terminal window renders `ConsolePane`, and the pane's own stylesheet
+ * lives under `[data-module="console"]` — a selector cannot be under two module
+ * attributes at once, so everything the pane needs from a module stylesheet
+ * needs a copy here. What follows is only the part that a scoped style could not
+ * have carried in the first place: xterm's runtime DOM, the highlight pseudo
+ * element, and inheritance from the canvas layout root.
+ */
+
+/* The pane separates "is drawn" from "owns the keyboard" itself, so nothing here
+ * has to force it visible.
+ *
+ * The module layout root carries `select-none` and `user-select`
+ * inherits, which left a block's command as the one part of a terminal that
+ * could not be selected — its output re-asserts `text` for itself, so the output
+ * copied and the command above it did not. The console's own chrome opts back
+ * out element by element, so handing the subtree what it has in the console page
+ * is enough. */
+[data-module="canvas"] .console-pane {
+  user-select: text;
+}
+
+
+
+/* xterm builds its DOM at runtime, below anything a scoped style can reach, so
+ * these have to sit in a module stylesheet — which is why the console keeps the
+ * same four rules under its own attribute rather than in `Pane.vue`. Without
+ * them an alternate-screen program (claude, htop, lazygit) renders at its
+ * natural height inside the window instead of filling it. */
+[data-module="canvas"] .console-alt .xterm {
+  height: 100%;
+}
+
+
+
+[data-module="canvas"] .console-alt .xterm-viewport {
+  overflow-y: auto !important;
+}
+
+
+
+[data-module="canvas"] .console-alt .xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+
+
+
+[data-module="canvas"] .console-alt .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--qss-border);
+  border-radius: 3px;
+}
+
+
+
+/* `::highlight()` paints ranges the pane registers with `CSS.highlights`, so a
+ * search match needs no wrapper element — and no rule means no paint, which is
+ * an in-session search that silently finds nothing. Two names: every match, and
+ * the one the user is standing on. */
+[data-module="canvas"] .cbo-line::highlight(console-find) {
+  background-color: color-mix(in srgb, var(--qss-warning) 30%, transparent);
+  color: var(--qss-text);
+}
+
+
+
+[data-module="canvas"] .cbo-line::highlight(console-find-active) {
+  background-color: var(--qss-warning);
+  color: var(--qss-accent-ink);
+}
+
+
+
+/* ============= Utility Classes ============= */
+
+[data-module="canvas"] .no-drag {
+  -webkit-app-region: no-drag;
+}
+
+
+
+[data-module="canvas"] .drag-region {
+  -webkit-app-region: drag;
+}
+
+
+
+[data-module="canvas"] .transition-fast {
+  transition: all 0.1s ease;
+}
+
+
+
+[data-module="canvas"] .transition-normal {
+  transition: all 0.2s ease;
+}
+
+
+
+/* ============= File Tree ============= */
+
+
+/* Pointer-based file drag */
+body.qc-file-dragging {
+  cursor: grabbing !important;
+  user-select: none !important;
+}

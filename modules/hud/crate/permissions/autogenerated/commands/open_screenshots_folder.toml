@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-open-screenshots-folder"
+description = "Enables the open_screenshots_folder command without any pre-configured scope."
+commands.allow = ["open_screenshots_folder"]
+
+[[permission]]
+identifier = "deny-open-screenshots-folder"
+description = "Denies the open_screenshots_folder command without any pre-configured scope."
+commands.deny = ["open_screenshots_folder"]

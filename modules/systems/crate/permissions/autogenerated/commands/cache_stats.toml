@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-cache-stats"
+description = "Enables the cache_stats command without any pre-configured scope."
+commands.allow = ["cache_stats"]
+
+[[permission]]
+identifier = "deny-cache-stats"
+description = "Denies the cache_stats command without any pre-configured scope."
+commands.deny = ["cache_stats"]

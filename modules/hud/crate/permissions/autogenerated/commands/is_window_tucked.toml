@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-is-window-tucked"
+description = "Enables the is_window_tucked command without any pre-configured scope."
+commands.allow = ["is_window_tucked"]
+
+[[permission]]
+identifier = "deny-is-window-tucked"
+description = "Denies the is_window_tucked command without any pre-configured scope."
+commands.deny = ["is_window_tucked"]

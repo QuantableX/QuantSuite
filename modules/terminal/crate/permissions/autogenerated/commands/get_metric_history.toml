@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-metric-history"
+description = "Enables the get_metric_history command without any pre-configured scope."
+commands.allow = ["get_metric_history"]
+
+[[permission]]
+identifier = "deny-get-metric-history"
+description = "Denies the get_metric_history command without any pre-configured scope."
+commands.deny = ["get_metric_history"]

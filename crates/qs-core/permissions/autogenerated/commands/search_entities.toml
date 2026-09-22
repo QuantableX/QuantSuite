@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-search-entities"
+description = "Enables the search_entities command without any pre-configured scope."
+commands.allow = ["search_entities"]
+
+[[permission]]
+identifier = "deny-search-entities"
+description = "Denies the search_entities command without any pre-configured scope."
+commands.deny = ["search_entities"]

@@ -1,0 +1,22 @@
+{
+  "id": "pilot",
+  "title": "QuantPilot",
+  "description": "The suite's agent harness — the real agent TUIs (Claude Code, Codex, pi, omp, OpenCode, Gemini, or your own) in a terminal, with sessions per workspace, the suite as context, and a face that knows what they are doing",
+  "status": "migrated",
+  "phase": null,
+  "app": "quantagent",
+  "appOrder": 1,
+  "routes": {
+    "root": "/pilot",
+    "home": "/pilot"
+  },
+  "plugin": "pilot",
+  "publishes": [
+    "pilot.session.launched",
+    "pilot.turn.completed"
+  ],
+  "subscribes": [],
+  "entities": [],
+  "sidecars": [],
+  "capabilities": []
+}

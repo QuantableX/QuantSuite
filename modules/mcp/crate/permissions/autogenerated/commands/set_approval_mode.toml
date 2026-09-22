@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-approval-mode"
+description = "Enables the set_approval_mode command without any pre-configured scope."
+commands.allow = ["set_approval_mode"]
+
+[[permission]]
+identifier = "deny-set-approval-mode"
+description = "Denies the set_approval_mode command without any pre-configured scope."
+commands.deny = ["set_approval_mode"]

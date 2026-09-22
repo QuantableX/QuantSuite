@@ -1,0 +1,26 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the QuantFinance module: the monthly plan items, its totals, the cash-flow Sankey, saving targets, funds, savings plans and settings."
+permissions = [
+  "allow-list-items",
+  "allow-get-item",
+  "allow-create-item",
+  "allow-update-item",
+  "allow-delete-item",
+  "allow-summary",
+  "allow-sankey",
+  "allow-goals",
+  "allow-create-target",
+  "allow-update-target",
+  "allow-delete-target",
+  "allow-get-app-settings",
+  "allow-update-app-settings",
+  "allow-backup-database",
+  "allow-funds-overview",
+  "allow-save-fund-account",
+  "allow-add-fund-entry",
+  "allow-delete-fund-record",
+  "allow-save-fund-plan",
+  "allow-book-fund-plan",
+]

@@ -1,0 +1,86 @@
+{
+  "id": "notes",
+  "title": "QuantNotes",
+  "description": "One note collection in table, board, list, gallery and calendar views",
+  "status": "migrated",
+  "phase": 2,
+  "app": "quantzen",
+  "appOrder": 1,
+  "source": "C:/Projects/QuantZen",
+  "routes": {
+    "root": "/notes",
+    "home": "/notes"
+  },
+  "plugin": "notes",
+  "publishes": [
+    "notes.note.created",
+    "notes.note.updated"
+  ],
+  "subscribes": [
+    "core.theme.changed"
+  ],
+  "entities": [
+    "note",
+    "property",
+    "view"
+  ],
+  "sidecars": [],
+  "capabilities": [
+    {
+      "name": "search",
+      "command": "plugin:notes|search",
+      "description": "Full-text search across every note's title and body.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search words, matched against title and body." }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "list_notes",
+      "command": "plugin:notes|list_notes",
+      "description": "List the collection's notes with their property values.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "includeArchived": { "type": "boolean", "description": "true to include archived notes." }
+        },
+        "required": ["includeArchived"]
+      }
+    },
+    {
+      "name": "create_note",
+      "command": "plugin:notes|create_note",
+      "description": "Create a note, optionally nested under a parent and with property values.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Note title; a new note starts untitled when omitted." },
+          "parentId": { "type": "string", "description": "Id of the parent note to nest under." },
+          "properties": { "type": "object", "description": "Initial property values, keyed by property id." }
+        }
+      }
+    },
+    {
+      "name": "set_note_property",
+      "command": "plugin:notes|set_note_property",
+      "description": "Set one property value on one note.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Note id." },
+          "propertyId": { "type": "string", "description": "Property id." },
+          "value": { "description": "New value; its type follows the property's type." }
+        },
+        "required": ["id", "propertyId", "value"]
+      }
+    }
+  ],
+  "migrateFrom": "~/.quantzen"
+}

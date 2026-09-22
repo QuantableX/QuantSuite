@@ -1,0 +1,18 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the QuantScript module: the indicator scripts, their checks and their versions."
+permissions = [
+  "allow-list-scripts",
+  "allow-open-scripts-folder",
+  "allow-read-script",
+  "allow-check-script",
+  "allow-save-script",
+  "allow-list-versions",
+  "allow-read-version",
+  "allow-restore-version",
+  "allow-create-script",
+  "allow-delete-script",
+  "allow-lint-script",
+  "allow-script-python",
+]

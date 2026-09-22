@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-fund-record"
+description = "Enables the delete_fund_record command without any pre-configured scope."
+commands.allow = ["delete_fund_record"]
+
+[[permission]]
+identifier = "deny-delete-fund-record"
+description = "Denies the delete_fund_record command without any pre-configured scope."
+commands.deny = ["delete_fund_record"]

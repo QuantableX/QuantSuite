@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-close-dual-window"
+description = "Enables the close_dual_window command without any pre-configured scope."
+commands.allow = ["close_dual_window"]
+
+[[permission]]
+identifier = "deny-close-dual-window"
+description = "Denies the close_dual_window command without any pre-configured scope."
+commands.deny = ["close_dual_window"]

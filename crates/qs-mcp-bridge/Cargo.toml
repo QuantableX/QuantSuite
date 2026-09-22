@@ -1,0 +1,18 @@
+[package]
+name = "qs-mcp-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Exposes QuantSuite module capabilities as agent-callable MCP tools"
+
+[lib]
+name = "qs_mcp_bridge"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# New code: held to the full lint gate (see workspace root).
+[lints]
+workspace = true

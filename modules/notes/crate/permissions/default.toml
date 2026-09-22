@@ -1,0 +1,32 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the QuantNotes module: the note collection, its property schema, its views, search and settings."
+permissions = [
+  "allow-list-notes",
+  "allow-get-note",
+  "allow-create-note",
+  "allow-update-note-meta",
+  "allow-set-note-property",
+  "allow-save-note-content",
+  "allow-move-note",
+  "allow-archive-note",
+  "allow-restore-note",
+  "allow-delete-note",
+  "allow-empty-trash",
+  "allow-list-backlinks",
+  "allow-list-properties",
+  "allow-create-property",
+  "allow-update-property",
+  "allow-delete-property",
+  "allow-list-views",
+  "allow-create-view",
+  "allow-update-view",
+  "allow-delete-view",
+  "allow-search",
+  "allow-get-setting",
+  "allow-set-setting",
+  "allow-get-app-settings",
+  "allow-update-app-settings",
+  "allow-backup-database",
+]

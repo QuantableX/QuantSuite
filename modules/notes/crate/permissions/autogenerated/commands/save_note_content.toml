@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-save-note-content"
+description = "Enables the save_note_content command without any pre-configured scope."
+commands.allow = ["save_note_content"]
+
+[[permission]]
+identifier = "deny-save-note-content"
+description = "Denies the save_note_content command without any pre-configured scope."
+commands.deny = ["save_note_content"]

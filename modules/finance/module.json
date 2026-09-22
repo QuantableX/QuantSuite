@@ -1,0 +1,44 @@
+{
+  "id": "finance",
+  "title": "QuantFinance",
+  "description": "Monthly budget, cash flow, funds and savings plans",
+  "status": "migrated",
+  "phase": null,
+  "app": "quantzen",
+  "appOrder": 4,
+  "routes": {
+    "root": "/finance",
+    "home": "/finance"
+  },
+  "plugin": "finance",
+  "publishes": [
+    "finance.plan.changed"
+  ],
+  "subscribes": [
+    "core.theme.changed"
+  ],
+  "entities": [
+    "plan_item"
+  ],
+  "sidecars": [],
+  "capabilities": [
+    {
+      "name": "sankey",
+      "command": "plugin:finance|sankey",
+      "description": "The plan as a flow: nodes and links from income to saving, fixed costs and leftover.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "summary",
+      "command": "plugin:finance|summary",
+      "description": "The monthly totals: in, saving, fixed costs and what is left over.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "create_item",
+      "command": "plugin:finance|create_item",
+      "description": "Add a recurring line to the plan. Plans money; it never moves any.",
+      "sideEffects": "write"
+    }
+  ]
+}

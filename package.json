@@ -1,0 +1,38 @@
+{
+  "name": "quantsuite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "One desktop application unifying the Quant modules",
+  "workspaces": [
+    "apps/shell",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@quantsuite/shell",
+    "build": "npm run build --workspace=@quantsuite/shell",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev --config apps/src-tauri/tauri.dev.conf.json",
+    "tauri:build": "tauri build",
+    "check": "npm run check:modules && npm run check:css && npm run check:isolation && npm run check:ts && npm run check:components && npm run check:commands && npm run check:rust",
+    "check:modules": "node scripts/validate-modules.mjs",
+    "check:css": "node scripts/check-css-isolation.mjs",
+    "check:isolation": "node scripts/check-module-isolation.mjs",
+    "check:components": "node scripts/check-component-resolution.mjs",
+    "check:commands": "node scripts/check-sync-commands.mjs",
+    "check:ts": "npm run typecheck --workspace=@quantsuite/shell",
+    "check:rust": "cargo clippy --workspace --all-targets",
+    "test:mcp": "node scripts/test-mcp-server.mjs",
+    "test:script": "node --test scripts/test-script-workbench.mjs",
+    "check:distribution": "node scripts/check-distribution.mjs",
+    "test:distribution": "node --test scripts/test-distribution.mjs",
+    "test:systems": "node --test scripts/test-systems-queue.mjs",
+    "check:release": "node scripts/check-release.mjs",
+    "test:release": "node --test scripts/test-release.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

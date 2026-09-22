@@ -1,0 +1,15 @@
+Your private QuantScript library
+
+Put your indicator .py files in this folder, then refresh QuantScript's library.
+Use New indicator in the app to create a starter script.
+Scripts register with REGISTER = {"my_key": MyIndicator}.
+Keep dependent scripts together. Forge parameter versions live in versions/.
+
+The installer contains the engine and this note only. It does not include your
+scripts, parameter versions, library.json research metadata, or editor history.
+Share the newly built setup.exe, not a copy of your populated software folder.
+Back up this folder separately before moving or removing your installation.
+
+QuantScript Settings shows the active folder. To use a different writable
+location, set QUANTSCRIPT_INDICATORS_DIR before starting QuantSuite.
+Restart running engines and bots after changing scripts.

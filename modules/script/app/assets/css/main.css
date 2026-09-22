@@ -1,0 +1,462 @@
+/*
+ * QuantScript — module stylesheet (docs/PLAN-QUANTSCRIPT.md).
+ *
+ * Every rule is scoped under `[data-module="script"]` (ARCHITECTURE.md §9);
+ * no tokens of its own — the suite palette (`--qss-*`) is the palette. The
+ * shared vocabulary lives here (buttons, chips, inputs, panels, the grade
+ * chip); layout that belongs to one component stays in that component.
+ */
+
+[data-module="script"] {
+  background: var(--qss-bg);
+  color: var(--qss-text);
+  font-family: var(--qss-font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-module="script"] button,
+[data-module="script"] input,
+[data-module="script"] select,
+[data-module="script"] textarea {
+  font: inherit;
+  color: inherit;
+}
+
+[data-module="script"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-module="script"] ::-webkit-scrollbar-thumb { background: var(--qss-border); border-radius: 4px; }
+
+[data-module="script"] .mono {
+  font-family: var(--qss-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+[data-module="script"] .muted { color: var(--qss-text-muted); }
+[data-module="script"] .secondary { color: var(--qss-text-secondary); }
+
+/* ── Buttons ── */
+
+[data-module="script"] .qsc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--qss-border);
+  border-radius: 7px;
+  background: var(--qss-bg-card);
+  color: var(--qss-text);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--qss-dur-instant) var(--qss-ease-out),
+    border-color var(--qss-dur-instant) var(--qss-ease-out),
+    color var(--qss-dur-instant) var(--qss-ease-out);
+}
+[data-module="script"] .qsc-btn:hover:not(:disabled) {
+  background: var(--qss-bg-hover);
+  border-color: var(--qss-text-muted);
+}
+[data-module="script"] .qsc-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+[data-module="script"] .qsc-btn.is-primary {
+  background: var(--qss-accent);
+  border-color: var(--qss-accent);
+  color: var(--qss-accent-ink);
+}
+[data-module="script"] .qsc-btn.is-primary:hover:not(:disabled) {
+  background: var(--qss-accent-hover, var(--qss-accent));
+  border-color: var(--qss-accent-hover, var(--qss-accent));
+}
+[data-module="script"] .qsc-btn.is-danger {
+  border-color: color-mix(in srgb, var(--qss-error) 45%, transparent);
+  color: var(--qss-error);
+}
+[data-module="script"] .qsc-btn.is-sm {
+  height: 24px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+[data-module="script"] .qsc-btn.is-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--qss-text-secondary);
+}
+[data-module="script"] .qsc-btn.is-ghost:hover:not(:disabled) {
+  background: var(--qss-bg-hover);
+  border-color: transparent;
+  color: var(--qss-text);
+}
+/* Square icon button — the sidebar's New / Reload, the tab close. */
+[data-module="script"] .qsc-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--qss-text-secondary);
+  cursor: pointer;
+}
+[data-module="script"] .qsc-icon-btn:hover:not(:disabled) {
+  background: var(--qss-bg-hover);
+  color: var(--qss-text);
+}
+[data-module="script"] .qsc-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+[data-module="script"] .qsc-btn:focus-visible,
+[data-module="script"] .qsc-icon-btn:focus-visible,
+[data-module="script"] .qsc-input:focus-visible {
+  outline: 2px solid var(--qss-accent);
+  outline-offset: -1px;
+}
+
+/* ── Inputs ── */
+
+[data-module="script"] .qsc-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--qss-border);
+  border-radius: 7px;
+  background: var(--qss-bg);
+  color: var(--qss-text);
+  font-size: 12px;
+  outline: none;
+}
+[data-module="script"] .qsc-input::placeholder { color: var(--qss-text-muted); }
+[data-module="script"] .qsc-input:focus { border-color: var(--qss-text-muted); }
+
+/* ── Chips ── */
+
+[data-module="script"] .qsc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--qss-border);
+  border-radius: 999px;
+  background: var(--qss-bg-card);
+  color: var(--qss-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+[data-module="script"] .qsc-chip.is-ok { color: var(--qss-success); border-color: color-mix(in srgb, var(--qss-success) 35%, transparent); }
+[data-module="script"] .qsc-chip.is-warn { color: var(--qss-warning); border-color: color-mix(in srgb, var(--qss-warning) 35%, transparent); }
+[data-module="script"] .qsc-chip.is-error { color: var(--qss-error); border-color: color-mix(in srgb, var(--qss-error) 35%, transparent); }
+
+[data-module="script"] .qsc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--qss-text-muted);
+  flex-shrink: 0;
+}
+[data-module="script"] .qsc-dot.is-ok { background: var(--qss-success); }
+[data-module="script"] .qsc-dot.is-bad { background: var(--qss-error); }
+[data-module="script"] .qsc-dot.is-warn { background: var(--qss-warning); }
+
+/* The grade chip: the registry's one score, coloured by what it means. */
+[data-module="script"] .qsc-grade {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 34px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--qss-bg-hover);
+  color: var(--qss-text-secondary);
+  font-family: var(--qss-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  justify-content: center;
+  white-space: nowrap;
+}
+[data-module="script"] .qsc-grade.is-certified { background: color-mix(in srgb, var(--qss-success) 18%, transparent); color: var(--qss-success); }
+[data-module="script"] .qsc-grade.is-top { color: var(--qss-text); }
+[data-module="script"] .qsc-grade.is-weak { color: var(--qss-text-muted); }
+[data-module="script"] .qsc-grade.is-fail { background: color-mix(in srgb, var(--qss-error) 14%, transparent); color: var(--qss-error); }
+[data-module="script"] .qsc-grade.is-none { color: var(--qss-text-muted); font-weight: 500; }
+
+/* ── Panels (the right sidebar's sections) ── */
+
+[data-module="script"] .qsc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-module="script"] .qsc-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--qss-text-muted);
+  margin-bottom: 2px;
+}
+[data-module="script"] .qsc-panel-empty {
+  font-size: 12px;
+  color: var(--qss-text-muted);
+}
+[data-module="script"] .qsc-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  min-width: 0;
+}
+[data-module="script"] .qsc-meta-label {
+  width: 64px;
+  flex-shrink: 0;
+  color: var(--qss-text-muted);
+}
+[data-module="script"] .qsc-meta-value {
+  flex: 1;
+  min-width: 0;
+  color: var(--qss-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Notices ── */
+
+[data-module="script"] .qsc-note {
+  padding: 8px 10px;
+  border: 1px solid var(--qss-border);
+  border-radius: 8px;
+  background: var(--qss-bg-card);
+  color: var(--qss-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+[data-module="script"] .qsc-note.is-error {
+  border-color: color-mix(in srgb, var(--qss-error) 40%, transparent);
+  color: var(--qss-error);
+}
+[data-module="script"] .qsc-note.is-warn {
+  border-color: color-mix(in srgb, var(--qss-warning) 40%, transparent);
+  color: var(--qss-warning);
+}
+[data-module="script"] .qsc-note.is-ok {
+  border-color: color-mix(in srgb, var(--qss-success) 40%, transparent);
+  color: var(--qss-success);
+}
+[data-module="script"] .qsc-pre {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--qss-bg);
+  color: var(--qss-text-secondary);
+  font-family: var(--qss-font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
+
+/* A line the user can jump to (a syntax error, a class). */
+[data-module="script"] .qsc-link {
+  color: var(--qss-text);
+  text-decoration: underline;
+  text-decoration-color: var(--qss-text-muted);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+[data-module="script"] .qsc-link:hover { text-decoration-color: var(--qss-text); }
+
+@keyframes qsc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+[data-module="script"] .qsc-pulse { animation: qsc-pulse 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-module="script"] .qsc-pulse { animation: none; }
+}
+
+/* ── The forge (docs/PLAN-QUANTSCRIPT.md §2): cards, tables, tab bar, tags ── */
+
+[data-module="script"] .qsc-card {
+  border: 1px solid var(--qss-border);
+  border-radius: var(--qss-radius);
+  background: var(--qss-bg-card);
+  padding: 14px 16px;
+}
+[data-module="script"] .qsc-card.is-flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+[data-module="script"] .qsc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+[data-module="script"] .qsc-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--qss-text-muted);
+  border-bottom: 1px solid var(--qss-border);
+  white-space: nowrap;
+}
+[data-module="script"] .qsc-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--qss-border-subtle);
+  vertical-align: middle;
+  color: var(--qss-text-secondary);
+}
+[data-module="script"] .qsc-table tbody tr:last-child td {
+  border-bottom: none;
+}
+[data-module="script"] .qsc-table tr.is-clickable {
+  cursor: pointer;
+}
+[data-module="script"] .qsc-table tr.is-clickable:hover td {
+  background: var(--qss-bg-hover);
+}
+[data-module="script"] .qsc-table tr.is-current td {
+  background: var(--qss-bg-hover);
+}
+[data-module="script"] .qsc-table th.num,
+[data-module="script"] .qsc-table td.num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+[data-module="script"] .qsc-table td.strong {
+  color: var(--qss-text);
+  font-weight: 600;
+}
+
+[data-module="script"] .qsc-tabbar {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--qss-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--qss-bg-card);
+}
+[data-module="script"] .qsc-tabbtn {
+  position: relative;
+  min-width: 84px;
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: var(--qss-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--qss-dur-instant) var(--qss-ease-out), background var(--qss-dur-instant) var(--qss-ease-out);
+}
+[data-module="script"] .qsc-tabbtn + .qsc-tabbtn {
+  border-left: 1px solid var(--qss-border);
+}
+[data-module="script"] .qsc-tabbtn:hover {
+  color: var(--qss-text);
+}
+[data-module="script"] .qsc-tabbtn.is-active {
+  background: var(--qss-accent);
+  color: var(--qss-accent-ink);
+}
+[data-module="script"] .qsc-tabbtn .qsc-tab-live {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: qsc-pulse 1.4s ease-in-out infinite;
+}
+
+[data-module="script"] .qsc-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--qss-border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--qss-text-muted);
+  white-space: nowrap;
+}
+[data-module="script"] .qsc-tag.is-ok { color: var(--qss-success); border-color: color-mix(in srgb, var(--qss-success) 45%, transparent); }
+[data-module="script"] .qsc-tag.is-error { color: var(--qss-error); border-color: color-mix(in srgb, var(--qss-error) 45%, transparent); }
+[data-module="script"] .qsc-tag.is-accent { color: var(--qss-text); border-color: var(--qss-text-muted); }
+[data-module="script"] .qsc-tag.is-running { color: var(--qss-text); border-color: var(--qss-text-muted); animation: qsc-pulse 1.4s ease-in-out infinite; }
+
+[data-module="script"] .qsc-select {
+  height: 28px;
+  padding: 0 28px 0 9px;
+  border: 1px solid var(--qss-border);
+  border-radius: 7px;
+  background-color: var(--qss-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239a9aa3' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  color: var(--qss-text);
+  font-size: 12px;
+  appearance: none;
+  cursor: pointer;
+  outline: none;
+}
+[data-module="script"] .qsc-select:focus { border-color: var(--qss-text-muted); }
+
+[data-module="script"] .qsc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--qss-text-secondary);
+  cursor: pointer;
+}
+[data-module="script"] .qsc-check input { accent-color: var(--qss-accent); }
+
+[data-module="script"] .qsc-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--qss-text-muted);
+}
+[data-module="script"] .qsc-ok { color: var(--qss-success); }
+[data-module="script"] .qsc-err { color: var(--qss-error); }
+[data-module="script"] .qsc-warn { color: var(--qss-warning); }
+
+[data-module="script"] button:focus-visible,
+[data-module="script"] a:focus-visible,
+[data-module="script"] summary:focus-visible,
+[data-module="script"] [role="tab"]:focus-visible {
+  outline: 1px solid var(--qss-text);
+  outline-offset: 2px;
+}
+[data-module="script"] .qsf-picker-search { display: flex; align-items: center; gap: 16px; }
+[data-module="script"] .qsf-picker-search .qsc-input { flex: 1; }
+[data-module="script"] .qsf-picker-search .qsc-check { white-space: nowrap; }
+[data-module="script"] .qsf-advanced summary { font-size: 12px; color: var(--qss-text-muted); cursor: pointer; margin: 8px 0; }
+[data-module="script"] .qsf-keys { max-height: 220px; overflow-y: auto; }

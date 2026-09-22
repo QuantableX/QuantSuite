@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-write-agent-md"
+description = "Enables the write_agent_md command without any pre-configured scope."
+commands.allow = ["write_agent_md"]
+
+[[permission]]
+identifier = "deny-write-agent-md"
+description = "Denies the write_agent_md command without any pre-configured scope."
+commands.deny = ["write_agent_md"]

@@ -1,0 +1,91 @@
+{
+  "id": "algo",
+  "title": "QuantAlgo",
+  "description": "Manual system evaluation and automated trading bots",
+  "status": "migrated",
+  "phase": 2,
+  "app": "quantview",
+  "appOrder": 3,
+  "source": "C:/Projects/QuantAlgo",
+  "routes": {
+    "root": "/algo",
+    "home": "/algo/manual"
+  },
+  "plugin": "algo",
+  "publishes": [
+    "algo.bot.started",
+    "algo.bot.stopped",
+    "algo.trade.executed",
+    "algo.backtest.completed"
+  ],
+  "subscribes": [
+    "systems.signal.generated",
+    "market.symbol.selected"
+  ],
+  "entities": [
+    "strategy",
+    "backtest",
+    "exchange",
+    "trade"
+  ],
+  "sidecars": [
+    {
+      "id": "python-engine",
+      "kind": "python",
+      "shared": true,
+      "lazy": true
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "list_strategies",
+      "command": "plugin:algo|list_strategies",
+      "description": "List trading strategies.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "get_trade_stats",
+      "command": "plugin:algo|get_trade_stats",
+      "description": "Aggregate trade statistics for the journal.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "run_backtest",
+      "command": "plugin:algo|run_backtest",
+      "description": "Backtest a strategy. Compute only - places no orders.",
+      "sideEffects": "compute"
+    },
+    {
+      "name": "list_bots",
+      "command": "plugin:algo|list_bots",
+      "description": "Every trading bot with its status and live snapshot (equity, cash, open positions).",
+      "sideEffects": "read"
+    },
+    {
+      "name": "start_bot",
+      "command": "plugin:algo|start_bot",
+      "description": "Start a bot by id (see list_bots). PLACES REAL ORDERS when the bot is in live mode.",
+      "sideEffects": "external",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bot_id": { "type": "string", "description": "The bot to start, from list_bots." }
+        },
+        "required": ["bot_id"]
+      }
+    },
+    {
+      "name": "stop_bot",
+      "command": "plugin:algo|stop_bot",
+      "description": "Stop a running bot by id; without an id every bot stops.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bot_id": { "type": "string", "description": "The bot to stop; omit to stop all." }
+        }
+      }
+    }
+  ],
+  "migrateFrom": "<data_dir>/quantalgo"
+}

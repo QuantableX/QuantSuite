@@ -1,0 +1,26 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the QuantPlan module: calendars, events, occurrences, reminders, search and settings."
+permissions = [
+  "allow-list-calendars",
+  "allow-create-calendar",
+  "allow-update-calendar",
+  "allow-delete-calendar",
+  "allow-get-event",
+  "allow-create-event",
+  "allow-update-event",
+  "allow-delete-event",
+  "allow-list-occurrences",
+  "allow-override-occurrence",
+  "allow-truncate-series",
+  "allow-find-free-slots",
+  "allow-list-reminders",
+  "allow-set-reminders",
+  "allow-search",
+  "allow-get-setting",
+  "allow-set-setting",
+  "allow-get-app-settings",
+  "allow-update-app-settings",
+  "allow-backup-database",
+]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-connect-snippet"
+description = "Enables the get_connect_snippet command without any pre-configured scope."
+commands.allow = ["get_connect_snippet"]
+
+[[permission]]
+identifier = "deny-get-connect-snippet"
+description = "Denies the get_connect_snippet command without any pre-configured scope."
+commands.deny = ["get_connect_snippet"]

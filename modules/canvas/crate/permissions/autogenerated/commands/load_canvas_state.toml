@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-load-canvas-state"
+description = "Enables the load_canvas_state command without any pre-configured scope."
+commands.allow = ["load_canvas_state"]
+
+[[permission]]
+identifier = "deny-load-canvas-state"
+description = "Denies the load_canvas_state command without any pre-configured scope."
+commands.deny = ["load_canvas_state"]

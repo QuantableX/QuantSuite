@@ -1,0 +1,149 @@
+{
+  "id": "script",
+  "title": "QuantScript",
+  "description": "The Indicator Smithery: every indicator script viewed, edited and versioned, checked in a sandbox before it lands in the registry — and the forge that certifies them",
+  "status": "migrated",
+  "phase": 9,
+  "app": "quantview",
+  "appOrder": 2,
+  "routes": {
+    "root": "/script",
+    "home": "/script"
+  },
+  "plugin": "script",
+  "publishes": [
+    "script.file.saved",
+    "script.file.created",
+    "script.file.deleted"
+  ],
+  "subscribes": [],
+  "entities": [],
+  "sidecars": [],
+  "capabilities": [
+    {
+      "name": "list",
+      "command": "plugin:script|list_scripts",
+      "description": "Every indicator script of the Smithery (QuantScript/indicators/*.py) with the classes it holds, the registry keys they register, each key's certification (score, grade, certified — the worst track), the version history counts, and the archive of deleted scripts. Compact by default: hypotheses, defaults and per-track verdicts are left out — read a script or the QuantAlgo registry for those. Indicator scripts are private, discovered from the active library, and excluded from the installer.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "refresh": { "type": "boolean", "description": "Re-read the registry and re-probe Python instead of answering from the cache." },
+          "compact": { "type": "boolean", "description": "Default true. false returns the full registry view of every class (hypothesis, defaults, parameter space, per-track verdicts) — large." }
+        }
+      }
+    },
+    {
+      "name": "read",
+      "command": "plugin:script|read_script",
+      "description": "One script's source with its SHA-256 and latest recorded version. Opening records a baseline version on first sight and an 'external' version when the file changed outside QuantScript since the last one. contract.py (the contract every script obeys) can be read too, read-only.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "The script's file name, e.g. extremes.py — no path." }
+        },
+        "required": ["file"]
+      }
+    },
+    {
+      "name": "check",
+      "command": "plugin:script|check_script",
+      "description": "Verify a candidate version of a script WITHOUT writing it: syntax (line and column), then a sandbox copy of the whole package imports the registry with the candidate in place and runs every registered class of the file through the contract — a signal() pass on a synthetic regime frame; depth 'full' adds the causality and scale-invariance validators. 'blocking' = must not be saved (syntax, import, cannot register); failed laws are reported. Roughly 1.3 s (quick) to 2 s (full).",
+      "sideEffects": "compute",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "The script's file name the candidate would replace (or a new <key>.py)." },
+          "content": { "type": "string", "description": "The full candidate source." },
+          "depth": { "type": "string", "enum": ["quick", "full"], "description": "Default quick." }
+        },
+        "required": ["file", "content"]
+      }
+    },
+    {
+      "name": "save",
+      "command": "plugin:script|save_script",
+      "description": "Write a script as a new version. The quick check runs first in the sandbox; a candidate that would not import or cannot register comes back with saved=false and its check attached, and nothing is written. Unchanged content returns unchanged=true. The versions history is append-only. A running QuantSystems engine loads the registry at start and needs a restart to see the change; QuantAlgo reloads by itself.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "The script's file name, e.g. extremes.py, or indicators/__init__.py as __init__.py." },
+          "content": { "type": "string", "description": "The full new source." },
+          "message": { "type": "string", "description": "What changed — the version's message." }
+        },
+        "required": ["file", "content"]
+      }
+    },
+    {
+      "name": "versions",
+      "command": "plugin:script|list_versions",
+      "description": "A script's version history, newest first: version number, SHA-256, size, message, author (baseline | user | external | restore | template | delete | agent), whether it passed the sandbox check, and when. No content — use read_version for that.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "The script's file name." }
+        },
+        "required": ["file"]
+      }
+    },
+    {
+      "name": "read_version",
+      "command": "plugin:script|read_version",
+      "description": "One recorded version of a script with its full content — for a diff against the current file, or to bring back what a deleted script held.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "The script's file name." },
+          "version": { "type": "integer", "description": "The version number from versions." }
+        },
+        "required": ["file", "version"]
+      }
+    },
+    {
+      "name": "restore",
+      "command": "plugin:script|restore_version",
+      "description": "Write an earlier version back as a NEW version (checked like a save, never a rewind). Restoring the latest version of a deleted script recreates the file.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "The script's file name." },
+          "version": { "type": "integer", "description": "The version to bring back." }
+        },
+        "required": ["file", "version"]
+      }
+    },
+    {
+      "name": "create",
+      "command": "plugin:script|create_script",
+      "description": "A new indicator script from the QuantScript template — a complete EMA-distance regime rule with hysteresis that passes every contract law — written as <key>.py and registering `key` through REGISTER / WARMUP (no edit of indicators/__init__.py). The key is checked against the registry in the sandbox first; a taken key is refused. Edit the hypothesis and the mechanism afterwards with save.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string", "description": "The registry key: a letter, then lowercase letters, digits and underscores (at most 40) — what a strategy passes to self.regime(key)." },
+          "class_name": { "type": "string", "description": "The indicator class, CapitalizedWords." },
+          "name": { "type": "string", "description": "Display name (the class's `name`); defaults to the class name." }
+        },
+        "required": ["key", "class_name"]
+      }
+    },
+    {
+      "name": "delete",
+      "command": "plugin:script|delete_script",
+      "description": "Delete a script made in the suite (registration 'discovered', or one that registers nothing). Its last content is recorded as a final 'delete' version first, so the archive keeps it and restore can bring it back. The forge's explicit modules (imported by indicators/__init__.py), the registry file and the contract are refused.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "The script's file name." }
+        },
+        "required": ["file"]
+      }
+    }
+  ]
+}

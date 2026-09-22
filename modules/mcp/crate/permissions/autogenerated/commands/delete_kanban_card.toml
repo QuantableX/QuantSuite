@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-kanban-card"
+description = "Enables the delete_kanban_card command without any pre-configured scope."
+commands.allow = ["delete_kanban_card"]
+
+[[permission]]
+identifier = "deny-delete-kanban-card"
+description = "Denies the delete_kanban_card command without any pre-configured scope."
+commands.deny = ["delete_kanban_card"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-review-memory-quality"
+description = "Enables the review_memory_quality command without any pre-configured scope."
+commands.allow = ["review_memory_quality"]
+
+[[permission]]
+identifier = "deny-review-memory-quality"
+description = "Denies the review_memory_quality command without any pre-configured scope."
+commands.deny = ["review_memory_quality"]

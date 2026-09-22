@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-funds-overview"
+description = "Enables the funds_overview command without any pre-configured scope."
+commands.allow = ["funds_overview"]
+
+[[permission]]
+identifier = "deny-funds-overview"
+description = "Denies the funds_overview command without any pre-configured scope."
+commands.deny = ["funds_overview"]

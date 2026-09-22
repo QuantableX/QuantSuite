@@ -1,0 +1,45 @@
+[package]
+name = "tauri-plugin-mcp"
+links = "tauri-plugin-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantMCP — universal MCP manager and host, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_mcp"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+jsonc-parser = { version = "0.33.2", features = ["cst"] }
+tokio = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# The embedded MCP server.
+axum = "0.8"
+async-stream = "0.3"
+futures = "0.3"
+tower-http = { version = "0.6", features = ["cors"] }
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+qs-mcp-bridge = { path = "../../../crates/qs-mcp-bridge" }
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+# Five migrated functions take 8-9 arguments. Splitting their signatures is a
+# refactor of module internals, not a lint fix, and carries behaviour risk.
+too_many_arguments = "allow"

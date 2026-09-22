@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-write-memory-md"
+description = "Enables the write_memory_md command without any pre-configured scope."
+commands.allow = ["write_memory_md"]
+
+[[permission]]
+identifier = "deny-write-memory-md"
+description = "Denies the write_memory_md command without any pre-configured scope."
+commands.deny = ["write_memory_md"]

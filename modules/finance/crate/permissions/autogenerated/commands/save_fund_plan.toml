@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-save-fund-plan"
+description = "Enables the save_fund_plan command without any pre-configured scope."
+commands.allow = ["save_fund_plan"]
+
+[[permission]]
+identifier = "deny-save-fund-plan"
+description = "Denies the save_fund_plan command without any pre-configured scope."
+commands.deny = ["save_fund_plan"]

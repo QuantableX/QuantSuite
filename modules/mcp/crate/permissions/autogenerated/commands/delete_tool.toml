@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-tool"
+description = "Enables the delete_tool command without any pre-configured scope."
+commands.allow = ["delete_tool"]
+
+[[permission]]
+identifier = "deny-delete-tool"
+description = "Denies the delete_tool command without any pre-configured scope."
+commands.deny = ["delete_tool"]

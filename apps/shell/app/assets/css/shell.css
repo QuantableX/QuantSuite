@@ -1,0 +1,357 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   QuantSuite shell.
+
+   The ONE Tailwind import for the whole application. Module stylesheets must
+   not carry their own — see docs/ARCHITECTURE.md §9. QuantCode's `@theme`
+   block moves here when that module lands.
+
+   The `--qss-*` variables are the suite's design system — since E6 the ONLY
+   one. `theme-bridge.css` remaps every module's own token names onto these,
+   so all eight surfaces share one palette, one accent, one set of radii.
+   (The old "no shared design system, by decision" stance was reversed by
+   the user on 2026-08-14.)
+   ───────────────────────────────────────────────────────────────────────── */
+
+@import 'tailwindcss';
+@import './theme-bridge.css';
+@import './module-surfaces.css';
+
+/* Tailwind v4 auto-detects sources relative to the stylesheet's own project.
+   `modules/` sits outside apps/shell/, so without these it scans the shell only
+   and generates NOTHING for the modules — no `flex`, no `h-full`, no `absolute`.
+   QuantCode builds its entire layout from utilities, which is exactly why it
+   collapsed while the hand-written-CSS modules looked fine. */
+@source '../../../../../modules';
+@source '../../../../../packages/ui';
+
+/* Nerd Font, bundled rather than relied on from the OS font list.
+   WebView2/Chromium builds its DirectWrite collection from MACHINE-WIDE fonts
+   only — a per-user (HKCU) install is invisible to the renderer, so every
+   terminal glyph fell back to tofu even with the font "installed". Shipping
+   the file makes the terminals independent of install scope entirely.
+   `block` keeps xterm from measuring cell width against a fallback face and
+   locking in a misaligned grid. */
+@font-face {
+  font-family: 'CaskaydiaCove Nerd Font';
+  src: url('/fonts/CaskaydiaCoveNerdFont-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'CaskaydiaCove Nerd Font';
+  src: url('/fonts/CaskaydiaCoveNerdFont-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'CaskaydiaCove Nerd Font';
+  src: url('/fonts/CaskaydiaCoveNerdFont-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'CaskaydiaCove Nerd Font';
+  src: url('/fonts/CaskaydiaCoveNerdFont-BoldItalic.ttf') format('truetype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+}
+
+:root {
+  color-scheme: dark;
+
+  /*
+    The Rectury-reference palette (PLAN-V2 E6), monochrome by decision
+    (2026-08-14): SPACING and tonal steps do the separating, not borders.
+    The chrome — titlebar, rail, drawer strip — is the DARKEST layer, nearly
+    black, so the bars read as a separate frame around the lighter module
+    panel. The accent is light grey/white: the suite stays monochrome; the
+    only colours are semantic (success/error/warning, market green/red).
+  */
+  --qss-bg-chrome: #171717;
+  --qss-bg: #212121;
+  --qss-bg-raised: #272727;
+  --qss-bg-card: #2e2e2e;
+  --qss-bg-hover: #353535;
+  /* Overlay surface above bg-card — menus and popovers float on this. */
+  --qss-bg-overlay: #313136;
+
+  --qss-border: #333333;
+  --qss-border-subtle: #2b2b2b;
+
+  --qss-text: #e3e3e6;
+  --qss-text-secondary: #9a9aa3;
+  --qss-text-muted: #67676f;
+
+  --qss-accent: #c9c9d1;
+  /* Dark ink for text ON the light accent (primary buttons). */
+  --qss-accent-ink: #131315;
+  --qss-success: #2ed573;
+  --qss-error: #ff4757;
+  --qss-warning: #ffa502;
+
+  /* The wordmark alone is serif — the one distinctive glyph in the chrome. */
+  --qss-font-brand: Georgia, 'Times New Roman', serif;
+
+  --qss-radius: 10px;
+  --qss-radius-lg: 14px;
+
+  /* Elevation scale — sm for chips and rows, md for popovers and cards, lg for menus and modals. */
+  --qss-shadow-sm: 0 2px 6px rgba(0,0,0,.35);
+  --qss-shadow-md: 0 6px 18px rgba(0,0,0,.4);
+  --qss-shadow-lg: 0 10px 30px rgba(0,0,0,.45);
+
+  /* Shell chrome dimensions (PLAN-V2 §2). Rail: 60px minus the 5px the
+     stage's right gutter costs — the module panel keeps its full width and
+     shifts left instead of shrinking (user request 2026-08-21). */
+  --qss-titlebar-h: 38px;
+  --qss-rail-w: 55px;
+  /* 41px = the 33px tab row plus the 8px gutter that used to be .qss-stage's
+     padding-bottom. Same colour as the strip, so the eye always read the two
+     as one bar and the labels as sitting too high in it (user request
+     2026-08-26); owning both centres them honestly. */
+  --qss-drawer-bar-h: 41px;
+
+  /* Module chrome dimensions (V3): every module renders the same 51px
+     three-section header and 220px sidebars — QuantCode's geometry, now the
+     suite's. Components in packages/ui consume these; modules never hardcode
+     their own header height again. */
+  --qss-module-header-h: 51px;
+  --qss-sidebar-w: 220px;
+
+  /* Wordmark sizing (V3.1). The PNGs in packages/ui/src/assets/logos are all
+     exported 1280px wide and cropped tight to their ink, so their intrinsic
+     HEIGHT already is the cap height: size a wordmark by height and every
+     module reads at the same letter size no matter how long its name is.
+     Sizing by width does the opposite — QUANTTERMINAL ends up ~30% smaller
+     than QUANTALGO. Never give a wordmark a width or a max-width that bites.
+     18px is the ceiling for the 220px header cap: the widest mark
+     (QuantTerminal, 10.24:1) is 184px there, inside the 188px content box. */
+  --qss-wordmark-h: 18px;
+  --qss-wordmark-h-menu: 14px;
+
+  /* Motion (DESIGN.md §2, un-parked with V3). Animate transform and opacity
+     only; exits at ~60% of the entrance duration. */
+  --qss-dur-instant: 90ms;
+  --qss-dur-fast: 140ms;
+  --qss-dur-base: 220ms;
+  --qss-dur-entrance: 320ms;
+  --qss-dur-slow: 460ms;
+  --qss-ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --qss-ease-in: cubic-bezier(0.6, 0, 0.9, 0.3);
+  --qss-ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --qss-ease-spring: linear(0, 0.006, 0.086, 0.235, 0.44, 0.65, 0.822, 0.937, 0.993, 1.017, 1.019, 1.01, 1.003, 0.999, 0.998, 1);
+
+  --qss-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --qss-font-mono: 'CaskaydiaCove Nerd Font', 'Cascadia Code', 'JetBrains Mono', ui-monospace, Consolas, monospace;
+}
+
+html,
+body,
+#__nuxt {
+  height: 100%;
+  margin: 0;
+  background: var(--qss-bg);
+  color: var(--qss-text);
+  font: 400 13px/1.55 var(--qss-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+  QuantHUD's overlay windows (labels other than `main` and `suite-*`).
+  They are `transparent: true` surfaces — everything from the document root
+  down must stop painting, or the overlay's shapes (the edge half-circles)
+  sit in an opaque rectangle. Same lesson the old circular launcher taught.
+*/
+html.qss-overlay-window,
+html.qss-overlay-window body,
+html.qss-overlay-window #__nuxt {
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--qss-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--qss-border);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #5a5a64;
+}
+
+/* The container every module route renders inside. Its `data-module`
+   attribute is what module stylesheets scope themselves to (§9), which is what
+   keeps eight stylesheets from restyling each other. */
+.qss-module-root {
+  height: 100%;
+  overflow: auto;
+}
+
+/* The `.qss-foot` sidebar-footer pattern is gone with V3: Settings lives in
+   every module header's gear (→ QSettingsModal), not at the foot of each
+   sidebar. */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Settings-section controls (V3) — the form language inside QSettingsModal.
+
+   Section components live in the modules but must look identical, so the
+   classes are global and token-based (QuantCode's sm-* design, generalized).
+   ───────────────────────────────────────────────────────────────────────── */
+.qsu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+}
+.qsu-row + .qsu-row {
+  border-top: 1px solid var(--qss-border-subtle);
+}
+
+.qsu-row-text {
+  min-width: 0;
+}
+.qsu-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--qss-text);
+}
+.qsu-hint {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--qss-text-muted);
+}
+
+/* Toggle — QuantCode's sm-track/sm-thumb shape. */
+.qsu-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 32px;
+  height: 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--qss-bg-hover);
+  cursor: pointer;
+  transition: background var(--qss-dur-fast) var(--qss-ease-out);
+}
+.qsu-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--qss-text-secondary);
+  transition: transform var(--qss-dur-fast) var(--qss-ease-out), background var(--qss-dur-fast) var(--qss-ease-out);
+}
+.qsu-toggle.is-on {
+  background: var(--qss-accent);
+}
+.qsu-toggle.is-on::after {
+  transform: translateX(16px);
+  background: var(--qss-accent-ink);
+}
+/* A toggle whose backing state is unknown or mid-write (autostart reads the OS
+   entry, which can fail) must not look like a settable "off". */
+.qsu-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Segmented option buttons (theme pickers, mode switches). */
+.qsu-seg {
+  display: flex;
+  gap: 6px;
+}
+.qsu-seg-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--qss-border);
+  border-radius: 8px;
+  background: var(--qss-bg-card);
+  color: var(--qss-text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--qss-dur-fast) var(--qss-ease-out), color var(--qss-dur-fast) var(--qss-ease-out), border-color var(--qss-dur-fast) var(--qss-ease-out);
+}
+.qsu-seg-btn:hover {
+  color: var(--qss-text);
+  background: var(--qss-bg-hover);
+}
+.qsu-seg-btn.is-active {
+  background: var(--qss-accent);
+  border-color: var(--qss-accent);
+  color: var(--qss-accent-ink);
+}
+
+/* Selects. */
+.qsu-select {
+  min-width: 160px;
+  padding: 7px 10px;
+  border: 1px solid var(--qss-border);
+  border-radius: 8px;
+  background: var(--qss-bg-card);
+  color: var(--qss-text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Action buttons. */
+.qsu-btn {
+  padding: 8px 14px;
+  border: 1px solid var(--qss-border);
+  border-radius: 8px;
+  background: var(--qss-bg-card);
+  color: var(--qss-text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--qss-dur-fast) var(--qss-ease-out);
+}
+.qsu-btn:hover {
+  background: var(--qss-bg-hover);
+}
+.qsu-btn--primary {
+  background: var(--qss-accent);
+  border-color: var(--qss-accent);
+  color: var(--qss-accent-ink);
+}
+.qsu-btn--primary:hover {
+  background: color-mix(in srgb, var(--qss-accent) 88%, white);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Reduced motion (DESIGN.md §2): `prefers-reduced-motion: reduce` collapses
+   every duration to 1ms, globally — enforced here at the shell, not per
+   component, exactly as the design doc specifies. 1ms rather than `none`, so
+   transition/animation *end* events still fire and nothing that waits on one
+   hangs. Modules' own per-component reduced-motion rules remain harmless on
+   top of this.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

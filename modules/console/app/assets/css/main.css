@@ -1,0 +1,369 @@
+/*
+ * QuantConsole — module stylesheet.
+ *
+ * Every rule is scoped under `[data-module="console"]` (ARCHITECTURE.md §9).
+ * An unscoped `.pane` or `.bar` here would restyle every other module, and the
+ * failure is invisible until someone compares screenshots.
+ *
+ * No tokens of its own: the suite palette (`--qss-*`) is the palette, and the
+ * one exception the plan allows — a configurable ANSI palette — is a setting
+ * read by the pane in JS, not CSS (docs/PLAN-CONSOLE.md §1).
+ */
+
+[data-module="console"] .console-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--qss-bg);
+  color: var(--qss-text);
+}
+
+/* ------------------------------------------------------------------ launcher --
+   Warp's title bar has a search field in the middle; this is that field. It is a
+   button, because what it opens is the palette — but it has to *read* as a field,
+   so it is sized and coloured like one.
+
+   `align-self: center` is load-bearing: the header's centre slot stretches its
+   children, and a stretched button is 50px tall in a 51px bar. */
+[data-module="console"] .console-launch {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(420px, 100%);
+  height: 28px;
+  margin: 0 auto;
+  padding: 0 8px;
+  border: 1px solid var(--qss-border);
+  border-radius: 8px;
+  background: var(--qss-bg-raised);
+  color: var(--qss-text-muted);
+  font-family: var(--qss-font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color var(--qss-dur-fast) var(--qss-ease-out),
+    background var(--qss-dur-fast) var(--qss-ease-out),
+    color var(--qss-dur-fast) var(--qss-ease-out);
+}
+[data-module="console"] .console-launch:hover {
+  border-color: var(--qss-accent);
+  background: var(--qss-bg-hover);
+  color: var(--qss-text-secondary);
+}
+/* One focus ring for the module (plan §3.5) — every chrome surface, same ring. */
+[data-module="console"] .console-launch:focus-visible,
+[data-module="console"] .console-btn:focus-visible,
+[data-module="console"] .console-shell:focus-visible {
+  outline: 2px solid var(--qss-accent);
+  outline-offset: -1px;
+}
+
+[data-module="console"] .console-launch-ico {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+[data-module="console"] .console-launch-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-module="console"] .console-launch-key {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--qss-border);
+  border-radius: 4px;
+  font-family: var(--qss-font-mono);
+  /* Kbd chip: UI-meta size (plan §3.1; Warp's kbd chips are 11px too). */
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* Narrow window: the icon and the shortcut still say what it is, the label is the
+   part that can go. */
+@media (max-width: 720px) {
+  [data-module="console"] .console-launch-text,
+  [data-module="console"] .console-launch-key {
+    display: none;
+  }
+  [data-module="console"] .console-launch {
+    width: 32px;
+    justify-content: center;
+  }
+}
+
+[data-module="console"] .console-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* The dock overlays the stage; opening/resizing it must not reflow its PTYs. */
+[data-module="console"] .console-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-module="console"] .console-dock {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 10;
+}
+
+[data-module="console"] .console-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── the stage: one box per tab, all mounted ── */
+
+[data-module="console"] .console-tab-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+/* One split leaf — an empty placeholder since the panes moved out of the tree.
+   It still earns its keep: the tree lays these out, and the dividers it draws
+   between them are the seams the tiles below leave open. */
+[data-module="console"] .console-leaf {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A pane, positioned over the leaf it belongs to.
+
+   The panes are rendered as siblings of the split tree rather than inside its
+   leaf slot, because a split moves a leaf from one component instance to
+   another and Vue answers that by destroying and rebuilding it — which takes
+   the xterm instance with it and looks, from the outside, exactly like the
+   split killed the program that was running. Out here the pane is keyed by its
+   session slot, so a split only ever changes four numbers on it.
+
+   `position` and the four edges come from `.console-pane` plus the inline
+   geometry; this rule only has to lift the tiles above the tree and restore the
+   focus ring that used to be drawn on the leaf (now underneath an opaque
+   background, where nobody would see it). */
+[data-module="console"] .console-tile {
+  z-index: 1;
+  /* **Load-bearing.** While the panes lived inside the split tree, every leaf sat
+     in a `.console-split-node`, which clips. Out here they are siblings of the
+     tree and nothing clips them: anything a pane cannot fit — an xterm grid a row
+     too tall for its box, most visibly — escaped downward, made the module page
+     scrollable, and showed up under the pane as a second, ghostly terminal. */
+  overflow: hidden;
+}
+
+[data-module="console"] .console-tile.has-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border: 1px solid transparent;
+  transition: border-color var(--qss-dur-fast) var(--qss-ease-out);
+}
+
+[data-module="console"] .console-tile.has-ring.is-focused::after {
+  border-color: color-mix(in srgb, var(--qss-accent) 42%, transparent);
+}
+
+[data-module="console"] .console-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--qss-border);
+  border-radius: 6px;
+  background: var(--qss-bg-raised);
+  color: var(--qss-text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--qss-dur-instant) var(--qss-ease-out),
+    color var(--qss-dur-instant) var(--qss-ease-out);
+}
+[data-module="console"] .console-btn:hover:not(:disabled) {
+  background: var(--qss-bg-hover);
+  color: var(--qss-text);
+}
+[data-module="console"] .console-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── copy confirmation ── */
+
+[data-module="console"] .console-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 58px;
+  transform: translateX(-50%);
+  z-index: 4;
+  padding: 5px 11px;
+  border: 1px solid var(--qss-border);
+  border-radius: 999px;
+  background: var(--qss-bg-overlay);
+  color: var(--qss-text-secondary);
+  font-size: 11px;
+  box-shadow: var(--qss-shadow-sm);
+  pointer-events: none;
+  animation: console-toast-in var(--qss-dur-fast) var(--qss-ease-out);
+}
+
+@keyframes console-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ── empty state / shell picker ── */
+
+[data-module="console"] .console-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+[data-module="console"] .console-empty h1 {
+  /* UI text size — 14px was one of the one-offs the §3.1 scale forbids. */
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--qss-text);
+}
+[data-module="console"] .console-empty p {
+  font-size: 12px;
+  color: var(--qss-text-muted);
+  max-width: 44ch;
+}
+[data-module="console"] .console-shells {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 260px;
+}
+[data-module="console"] .console-shell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 11px;
+  border: 1px solid var(--qss-border);
+  border-radius: 6px;
+  background: var(--qss-bg-raised);
+  color: var(--qss-text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--qss-dur-instant) var(--qss-ease-out);
+}
+[data-module="console"] .console-shell:hover {
+  background: var(--qss-bg-hover);
+}
+[data-module="console"] .console-shell-group {
+  margin-bottom: 2px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--qss-text-muted);
+}
+[data-module="console"] .console-shell-hint {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--qss-text-muted);
+}
+
+[data-module="console"] .console-error {
+  /* Above the panes, which are absolutely positioned over the whole stage. */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--qss-error) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--qss-error) 40%, transparent);
+  font-size: 12px;
+  color: var(--qss-text);
+}
+[data-module="console"] .console-error code {
+  font-family: var(--qss-font-mono);
+  font-size: 11px;
+  color: var(--qss-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* The left sidebar's guest: the canvas FileExplorer, filling the panel. It
+   paints its own background from the `--qc-*` tokens `.qc-skin` maps. */
+[data-module="console"] .console-explorer-host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+[data-module="console"] .console-explorer-host > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The right panel: groups above, the footer links pinned below. */
+[data-module="console"] .console-groups-host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+[data-module="console"] .console-groups-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+[data-module="console"] .console-error-close {
+  flex: none;
+  margin-left: auto;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--qss-bg-hover);
+  color: var(--qss-text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}

@@ -1,0 +1,17 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the QuantHabit module: the habit list, daily checks, pause/resume, per-year data, statistics and settings."
+permissions = [
+  "allow-list-habits",
+  "allow-create-habit",
+  "allow-update-habit",
+  "allow-pause-habit",
+  "allow-resume-habit",
+  "allow-delete-habit",
+  "allow-set-check",
+  "allow-year-checks",
+  "allow-stats",
+  "allow-get-app-settings",
+  "allow-update-app-settings",
+]

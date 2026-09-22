@@ -1,0 +1,10 @@
+{
+  "$comment": "Suite apps — the rail's vertical entries (V3). A module declares its membership via the `app` + `appOrder` fields in its own module.json; `dashboard` is the shell's start page and owns no modules. `logo` keys into packages/ui/src/logos.ts.",
+  "apps": [
+    { "id": "dashboard", "title": "Home", "order": 0, "route": "/", "logo": "suite-q" },
+    { "id": "quantzen", "title": "QuantZen", "order": 1, "logo": "QuantZen" },
+    { "id": "quantview", "title": "QuantView", "order": 2, "logo": "QuantView" },
+    { "id": "quantagent", "title": "QuantAgent", "order": 3, "logo": "QuantAgent" },
+    { "id": "quantspace", "title": "QuantSpace", "order": 4, "logo": "QuantSpace" }
+  ]
+}

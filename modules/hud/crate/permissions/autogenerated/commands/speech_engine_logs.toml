@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-speech-engine-logs"
+description = "Enables the speech_engine_logs command without any pre-configured scope."
+commands.allow = ["speech_engine_logs"]
+
+[[permission]]
+identifier = "deny-speech-engine-logs"
+description = "Denies the speech_engine_logs command without any pre-configured scope."
+commands.deny = ["speech_engine_logs"]

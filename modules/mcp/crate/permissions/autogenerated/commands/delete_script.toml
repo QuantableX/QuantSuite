@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-script"
+description = "Enables the delete_script command without any pre-configured scope."
+commands.allow = ["delete_script"]
+
+[[permission]]
+identifier = "deny-delete-script"
+description = "Denies the delete_script command without any pre-configured scope."
+commands.deny = ["delete_script"]

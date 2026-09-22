@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-equity-curve"
+description = "Enables the get_equity_curve command without any pre-configured scope."
+commands.allow = ["get_equity_curve"]
+
+[[permission]]
+identifier = "deny-get-equity-curve"
+description = "Denies the get_equity_curve command without any pre-configured scope."
+commands.deny = ["get_equity_curve"]

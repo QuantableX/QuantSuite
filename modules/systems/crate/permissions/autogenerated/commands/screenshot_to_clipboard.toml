@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-screenshot-to-clipboard"
+description = "Enables the screenshot_to_clipboard command without any pre-configured scope."
+commands.allow = ["screenshot_to_clipboard"]
+
+[[permission]]
+identifier = "deny-screenshot-to-clipboard"
+description = "Denies the screenshot_to_clipboard command without any pre-configured scope."
+commands.deny = ["screenshot_to_clipboard"]

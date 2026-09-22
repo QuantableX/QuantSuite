@@ -1,0 +1,35 @@
+{
+  "id": "hud",
+  "title": "QuantHUD",
+  "description": "Always-on-top overlay, screen capture and quick actions",
+  "status": "migrated",
+  "phase": 6,
+  "source": "C:/Projects/QuantHUD",
+  "routes": {
+    "root": "/hud",
+    "home": "/hud"
+  },
+  "plugin": "hud",
+  "ownWindow": {
+    "command": "plugin:hud|open_hud"
+  },
+  "publishes": [
+    "hud.capture.taken"
+  ],
+  "subscribes": [
+    "algo.trade.executed"
+  ],
+  "entities": [
+    "capture"
+  ],
+  "sidecars": [
+    {
+      "id": "quantvoice",
+      "kind": "python",
+      "shared": false,
+      "lazy": true
+    }
+  ],
+  "capabilities": [],
+  "migrateFrom": "<config_dir>/quanthub"
+}

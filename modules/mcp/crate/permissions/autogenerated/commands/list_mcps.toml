@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-list-mcps"
+description = "Enables the list_mcps command without any pre-configured scope."
+commands.allow = ["list_mcps"]
+
+[[permission]]
+identifier = "deny-list-mcps"
+description = "Denies the list_mcps command without any pre-configured scope."
+commands.deny = ["list_mcps"]

@@ -1,0 +1,42 @@
+# Package name follows the Tauri plugin convention: `tauri-plugin-<name>` is how
+# Tauri derives the plugin name (`qs`) and therefore the permission identifiers
+# (`qs:default`). The `links` key is what exposes the generated permission files
+# to the app's build script — without it, tauri-build reports
+# "Permission qs:default not found".
+#
+# The library is still `qs_core`, so dependents write `qs_core::init()` and the
+# directory stays `crates/qs-core`.
+[package]
+name = "tauri-plugin-qs"
+links = "tauri-plugin-qs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantSuite core: event bus, database, settings, tray, window lifecycle, process register"
+
+[lib]
+name = "qs_core"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+# The plugin is registered once by the app; qs-core only needs `ManagerExt` to
+# read and write the OS autostart entry from its settings commands.
+tauri-plugin-autostart = { workspace = true }
+qs-mcp-bridge = { path = "../qs-mcp-bridge" }
+
+# New code: held to the full lint gate (see workspace root).
+[lints]
+workspace = true

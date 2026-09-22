@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-worktree-status"
+description = "Enables the pilot_worktree_status command without any pre-configured scope."
+commands.allow = ["pilot_worktree_status"]
+
+[[permission]]
+identifier = "deny-pilot-worktree-status"
+description = "Denies the pilot_worktree_status command without any pre-configured scope."
+commands.deny = ["pilot_worktree_status"]

@@ -1,0 +1,77 @@
+/* QuantMemory — scoped to [data-module="memory"], vars prefixed --qm-.
+   The palette maps the shell tokens; the module adds only what the vault
+   needs: link colours (live vs. broken) and the graph's node tints. */
+:root {
+  --qm-bg: var(--qss-bg, #18181e);
+  --qm-bg-raised: var(--qss-bg-raised, #1f1f25);
+  --qm-bg-card: var(--qss-bg-card, #292930);
+  --qm-bg-hover: var(--qss-bg-hover, #313139);
+  --qm-border: var(--qss-border, #47474f);
+  --qm-border-subtle: var(--qss-border-subtle, #35353d);
+  --qm-text: var(--qss-text, #d4d4d8);
+  --qm-text-secondary: var(--qss-text-secondary, #9a9aa5);
+  --qm-text-muted: var(--qss-text-muted, #6e6e7a);
+  --qm-accent: var(--qss-accent, #a0a0a8);
+
+  /* A wikilink that resolves, and one that points at nothing (yet). */
+  --qm-link: #60a5fa;
+  --qm-link-broken: #d29a3f;
+
+  --qm-graph-node: #5b9bd5;
+  --qm-graph-node-ghost: #6e6e7a;
+  --qm-graph-edge: #47474f;
+
+  --qm-radius: 6px;
+  --qm-radius-lg: 10px;
+}
+
+[data-module="memory"] {
+  background: var(--qm-bg);
+  color: var(--qm-text);
+  font-family: var(--qss-font-sans, system-ui, sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-module="memory"] button,
+[data-module="memory"] input,
+[data-module="memory"] select,
+[data-module="memory"] textarea {
+  font: inherit;
+}
+
+[data-module="memory"] ::-webkit-scrollbar { width: 6px; height: 6px; }
+[data-module="memory"] ::-webkit-scrollbar-thumb { background: var(--qm-border); border-radius: 3px; }
+
+[data-module="memory"] .mono {
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+}
+
+/* Tag chip — the one visual for a tag everywhere in the module. */
+[data-module="memory"] .qm-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--qm-border-subtle);
+  background: var(--qm-bg-card);
+  color: var(--qm-text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+[data-module="memory"] .qm-tag.is-active {
+  border-color: var(--qm-link);
+  color: var(--qm-link);
+}
+
+/* Wikilinks inside the rendered preview. */
+[data-module="memory"] .q-md a[href^="#qm:"] {
+  color: var(--qm-link);
+  border-bottom: 1px dashed color-mix(in srgb, var(--qm-link) 50%, transparent);
+}
+[data-module="memory"] .q-md a[href^="#qm-new:"] {
+  color: var(--qm-link-broken);
+  border-bottom: 1px dashed color-mix(in srgb, var(--qm-link-broken) 50%, transparent);
+}

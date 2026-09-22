@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pause-habit"
+description = "Enables the pause_habit command without any pre-configured scope."
+commands.allow = ["pause_habit"]
+
+[[permission]]
+identifier = "deny-pause-habit"
+description = "Denies the pause_habit command without any pre-configured scope."
+commands.deny = ["pause_habit"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-runtime-state"
+description = "Enables the pilot_runtime_state command without any pre-configured scope."
+commands.allow = ["pilot_runtime_state"]
+
+[[permission]]
+identifier = "deny-pilot-runtime-state"
+description = "Denies the pilot_runtime_state command without any pre-configured scope."
+commands.deny = ["pilot_runtime_state"]

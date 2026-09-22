@@ -1,0 +1,894 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PermissionFile",
+  "description": "Permission file that can define a default permission, a set of permissions or a list of inlined permissions.",
+  "type": "object",
+  "properties": {
+    "default": {
+      "description": "The default permission set for the plugin",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DefaultPermission"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "set": {
+      "description": "A list of permissions sets defined",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PermissionSet"
+      }
+    },
+    "permission": {
+      "description": "A list of inlined permissions",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Permission"
+      }
+    }
+  },
+  "definitions": {
+    "DefaultPermission": {
+      "description": "The default permission set of the plugin.\n\nWorks similarly to a permission with the \"default\" identifier.",
+      "type": "object",
+      "required": [
+        "permissions"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PermissionSet": {
+      "description": "A set of direct permissions grouped together under a new name.",
+      "type": "object",
+      "required": [
+        "description",
+        "identifier",
+        "permissions"
+      ],
+      "properties": {
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does.",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PermissionKind"
+          }
+        }
+      }
+    },
+    "Permission": {
+      "description": "Descriptions of explicit privileges of commands.\n\nIt can enable commands to be accessible in the frontend of the application.\n\nIf the scope is defined it can be used to fine grain control the access of individual or multiple commands.",
+      "type": "object",
+      "required": [
+        "identifier"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri internal convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commands": {
+          "description": "Allowed or denied commands when using this permission.",
+          "default": {
+            "allow": [],
+            "deny": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Commands"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Allowed or denied scoped when using this permission.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Scopes"
+            }
+          ]
+        },
+        "platforms": {
+          "description": "Target platforms this permission applies. By default all platforms are affected by this permission.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Target"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "description": "Allowed and denied commands inside a permission.\n\nIf two commands clash inside of `allow` and `deny`, it should be denied by default.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Allowed command.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "description": "Denied command, which takes priority.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Scopes": {
+      "description": "An argument for fine grained behavior control of Tauri commands.\n\nIt can be of any serde serializable type and is used to allow or prevent certain actions inside a Tauri command. The configured scope is passed to the command and will be enforced by the command implementation.\n\n## Example\n\n```json { \"allow\": [{ \"path\": \"$HOME/**\" }], \"deny\": [{ \"path\": \"$HOME/secret.txt\" }] } ```",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Data that defines what is allowed by the scope.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        "deny": {
+          "description": "Data that defines what is denied by the scope. This should be prioritized by validation logic.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      }
+    },
+    "Value": {
+      "description": "All supported ACL values.",
+      "anyOf": [
+        {
+          "description": "Represents a null JSON value.",
+          "type": "null"
+        },
+        {
+          "description": "Represents a [`bool`].",
+          "type": "boolean"
+        },
+        {
+          "description": "Represents a valid ACL [`Number`].",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Number"
+            }
+          ]
+        },
+        {
+          "description": "Represents a [`String`].",
+          "type": "string"
+        },
+        {
+          "description": "Represents a list of other [`Value`]s.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        {
+          "description": "Represents a map of [`String`] keys to [`Value`]s.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      ]
+    },
+    "Number": {
+      "description": "A valid ACL number.",
+      "anyOf": [
+        {
+          "description": "Represents an [`i64`].",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "Represents a [`f64`].",
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "Target": {
+      "description": "Platform target.",
+      "oneOf": [
+        {
+          "description": "MacOS.",
+          "type": "string",
+          "enum": [
+            "macOS"
+          ]
+        },
+        {
+          "description": "Windows.",
+          "type": "string",
+          "enum": [
+            "windows"
+          ]
+        },
+        {
+          "description": "Linux.",
+          "type": "string",
+          "enum": [
+            "linux"
+          ]
+        },
+        {
+          "description": "Android.",
+          "type": "string",
+          "enum": [
+            "android"
+          ]
+        },
+        {
+          "description": "iOS.",
+          "type": "string",
+          "enum": [
+            "iOS"
+          ]
+        }
+      ]
+    },
+    "PermissionKind": {
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "Enables the analyze_chart command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-analyze-chart",
+          "markdownDescription": "Enables the analyze_chart command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the analyze_chart command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-analyze-chart",
+          "markdownDescription": "Denies the analyze_chart command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the capture_screen command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-capture-screen",
+          "markdownDescription": "Enables the capture_screen command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the capture_screen command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-capture-screen",
+          "markdownDescription": "Denies the capture_screen command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the close_dual_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-dual-window",
+          "markdownDescription": "Enables the close_dual_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the close_dual_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-dual-window",
+          "markdownDescription": "Denies the close_dual_window command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the close_hud command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-hud",
+          "markdownDescription": "Enables the close_hud command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the close_hud command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-hud",
+          "markdownDescription": "Denies the close_hud command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the close_screenshot_preview command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-screenshot-preview",
+          "markdownDescription": "Enables the close_screenshot_preview command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the close_screenshot_preview command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-screenshot-preview",
+          "markdownDescription": "Denies the close_screenshot_preview command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the copy_screenshot_to_clipboard command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-copy-screenshot-to-clipboard",
+          "markdownDescription": "Enables the copy_screenshot_to_clipboard command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the copy_screenshot_to_clipboard command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-copy-screenshot-to-clipboard",
+          "markdownDescription": "Denies the copy_screenshot_to_clipboard command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_dual_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-dual-window",
+          "markdownDescription": "Enables the create_dual_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_dual_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-dual-window",
+          "markdownDescription": "Denies the create_dual_window command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_app_icon command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-app-icon",
+          "markdownDescription": "Enables the get_app_icon command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_app_icon command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-app-icon",
+          "markdownDescription": "Denies the get_app_icon command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_available_monitors command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-available-monitors",
+          "markdownDescription": "Enables the get_available_monitors command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_available_monitors command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-available-monitors",
+          "markdownDescription": "Denies the get_available_monitors command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_cursor_position command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-cursor-position",
+          "markdownDescription": "Enables the get_cursor_position command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_cursor_position command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-cursor-position",
+          "markdownDescription": "Denies the get_cursor_position command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_default_screenshots_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-default-screenshots-folder",
+          "markdownDescription": "Enables the get_default_screenshots_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_default_screenshots_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-default-screenshots-folder",
+          "markdownDescription": "Denies the get_default_screenshots_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_picked_color command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-picked-color",
+          "markdownDescription": "Enables the get_picked_color command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_picked_color command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-picked-color",
+          "markdownDescription": "Denies the get_picked_color command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_screenshot_preview_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-screenshot-preview-path",
+          "markdownDescription": "Enables the get_screenshot_preview_path command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_screenshot_preview_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-screenshot-preview-path",
+          "markdownDescription": "Denies the get_screenshot_preview_path command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_selected_region command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-selected-region",
+          "markdownDescription": "Enables the get_selected_region command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_selected_region command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-selected-region",
+          "markdownDescription": "Denies the get_selected_region command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the is_window_tucked command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-is-window-tucked",
+          "markdownDescription": "Enables the is_window_tucked command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the is_window_tucked command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-is-window-tucked",
+          "markdownDescription": "Denies the is_window_tucked command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the launch_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-launch-app",
+          "markdownDescription": "Enables the launch_app command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the launch_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-launch-app",
+          "markdownDescription": "Denies the launch_app command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_os_screenshots command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-os-screenshots",
+          "markdownDescription": "Enables the list_os_screenshots command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_os_screenshots command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-os-screenshots",
+          "markdownDescription": "Denies the list_os_screenshots command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-config",
+          "markdownDescription": "Enables the load_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-config",
+          "markdownDescription": "Denies the load_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_color_picker_overlay command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-color-picker-overlay",
+          "markdownDescription": "Enables the open_color_picker_overlay command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_color_picker_overlay command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-color-picker-overlay",
+          "markdownDescription": "Denies the open_color_picker_overlay command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_hud command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-hud",
+          "markdownDescription": "Enables the open_hud command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_hud command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-hud",
+          "markdownDescription": "Denies the open_hud command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_region_selector command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-region-selector",
+          "markdownDescription": "Enables the open_region_selector command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_region_selector command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-region-selector",
+          "markdownDescription": "Denies the open_region_selector command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_screenshot_preview command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-screenshot-preview",
+          "markdownDescription": "Enables the open_screenshot_preview command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_screenshot_preview command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-screenshot-preview",
+          "markdownDescription": "Denies the open_screenshot_preview command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_screenshots_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-screenshots-folder",
+          "markdownDescription": "Enables the open_screenshots_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_screenshots_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-screenshots-folder",
+          "markdownDescription": "Denies the open_screenshots_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pick_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pick-file",
+          "markdownDescription": "Enables the pick_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pick_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pick-file",
+          "markdownDescription": "Denies the pick_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pick_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pick-folder",
+          "markdownDescription": "Enables the pick_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pick_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pick-folder",
+          "markdownDescription": "Denies the pick_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pick_screen_color command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pick-screen-color",
+          "markdownDescription": "Enables the pick_screen_color command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pick_screen_color command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pick-screen-color",
+          "markdownDescription": "Denies the pick_screen_color command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_screenshot_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-screenshot-file",
+          "markdownDescription": "Enables the read_screenshot_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_screenshot_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-screenshot-file",
+          "markdownDescription": "Denies the read_screenshot_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_screenshot_thumbnail command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-screenshot-thumbnail",
+          "markdownDescription": "Enables the read_screenshot_thumbnail command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_screenshot_thumbnail command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-screenshot-thumbnail",
+          "markdownDescription": "Denies the read_screenshot_thumbnail command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-config",
+          "markdownDescription": "Enables the save_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-config",
+          "markdownDescription": "Denies the save_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_temp_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-temp-image",
+          "markdownDescription": "Enables the save_temp_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_temp_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-temp-image",
+          "markdownDescription": "Denies the save_temp_image command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_picked_color command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-picked-color",
+          "markdownDescription": "Enables the set_picked_color command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_picked_color command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-picked-color",
+          "markdownDescription": "Denies the set_picked_color command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_selected_region command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-selected-region",
+          "markdownDescription": "Enables the set_selected_region command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_selected_region command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-selected-region",
+          "markdownDescription": "Denies the set_selected_region command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_window_position command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-window-position",
+          "markdownDescription": "Enables the set_window_position command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_window_position command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-window-position",
+          "markdownDescription": "Denies the set_window_position command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the setup_window_size command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-setup-window-size",
+          "markdownDescription": "Enables the setup_window_size command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the setup_window_size command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-setup-window-size",
+          "markdownDescription": "Denies the setup_window_size command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the show_notification_popup command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-show-notification-popup",
+          "markdownDescription": "Enables the show_notification_popup command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the show_notification_popup command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-show-notification-popup",
+          "markdownDescription": "Denies the show_notification_popup command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the show_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-show-window",
+          "markdownDescription": "Enables the show_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the show_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-show-window",
+          "markdownDescription": "Denies the show_window command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_apply_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-apply-settings",
+          "markdownDescription": "Enables the speech_apply_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_apply_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-apply-settings",
+          "markdownDescription": "Denies the speech_apply_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-cancel",
+          "markdownDescription": "Enables the speech_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-cancel",
+          "markdownDescription": "Denies the speech_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-devices",
+          "markdownDescription": "Enables the speech_devices command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-devices",
+          "markdownDescription": "Denies the speech_devices command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_engine_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-engine-logs",
+          "markdownDescription": "Enables the speech_engine_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_engine_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-engine-logs",
+          "markdownDescription": "Denies the speech_engine_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_engine_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-engine-start",
+          "markdownDescription": "Enables the speech_engine_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_engine_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-engine-start",
+          "markdownDescription": "Denies the speech_engine_start command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_engine_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-engine-stop",
+          "markdownDescription": "Enables the speech_engine_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_engine_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-engine-stop",
+          "markdownDescription": "Denies the speech_engine_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_setup command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-setup",
+          "markdownDescription": "Enables the speech_setup command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_setup command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-setup",
+          "markdownDescription": "Denies the speech_setup command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-start",
+          "markdownDescription": "Enables the speech_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-start",
+          "markdownDescription": "Denies the speech_start command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-status",
+          "markdownDescription": "Enables the speech_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-status",
+          "markdownDescription": "Denies the speech_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the speech_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-speech-stop",
+          "markdownDescription": "Enables the speech_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the speech_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-speech-stop",
+          "markdownDescription": "Denies the speech_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_speech_recognition command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-speech-recognition",
+          "markdownDescription": "Enables the start_speech_recognition command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_speech_recognition command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-speech-recognition",
+          "markdownDescription": "Denies the start_speech_recognition command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_speech_recognition command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-speech-recognition",
+          "markdownDescription": "Enables the stop_speech_recognition command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_speech_recognition command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-speech-recognition",
+          "markdownDescription": "Denies the stop_speech_recognition command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the tuck_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-tuck-window",
+          "markdownDescription": "Enables the tuck_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the tuck_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-tuck-window",
+          "markdownDescription": "Denies the tuck_window command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the hud module.\n#### This default permission set includes:\n\n- `allow-capture-screen`\n- `allow-get-cursor-position`\n- `allow-get-available-monitors`\n- `allow-load-config`\n- `allow-save-config`\n- `allow-tuck-window`\n- `allow-show-window`\n- `allow-is-window-tucked`\n- `allow-setup-window-size`\n- `allow-set-window-position`\n- `allow-open-region-selector`\n- `allow-set-selected-region`\n- `allow-get-selected-region`\n- `allow-pick-screen-color`\n- `allow-pick-folder`\n- `allow-pick-file`\n- `allow-launch-app`\n- `allow-get-app-icon`\n- `allow-get-default-screenshots-folder`\n- `allow-list-os-screenshots`\n- `allow-read-screenshot-file`\n- `allow-read-screenshot-thumbnail`\n- `allow-open-screenshots-folder`\n- `allow-copy-screenshot-to-clipboard`\n- `allow-open-color-picker-overlay`\n- `allow-set-picked-color`\n- `allow-get-picked-color`\n- `allow-open-screenshot-preview`\n- `allow-get-screenshot-preview-path`\n- `allow-close-screenshot-preview`\n- `allow-create-dual-window`\n- `allow-close-dual-window`\n- `allow-show-notification-popup`\n- `allow-speech-status`\n- `allow-speech-setup`\n- `allow-speech-start`\n- `allow-speech-stop`\n- `allow-speech-cancel`\n- `allow-speech-devices`\n- `allow-speech-apply-settings`\n- `allow-speech-engine-start`\n- `allow-speech-engine-stop`\n- `allow-speech-engine-logs`\n- `allow-analyze-chart`\n- `allow-save-temp-image`\n- `allow-open-hud`\n- `allow-close-hud`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permissions for the hud module.\n#### This default permission set includes:\n\n- `allow-capture-screen`\n- `allow-get-cursor-position`\n- `allow-get-available-monitors`\n- `allow-load-config`\n- `allow-save-config`\n- `allow-tuck-window`\n- `allow-show-window`\n- `allow-is-window-tucked`\n- `allow-setup-window-size`\n- `allow-set-window-position`\n- `allow-open-region-selector`\n- `allow-set-selected-region`\n- `allow-get-selected-region`\n- `allow-pick-screen-color`\n- `allow-pick-folder`\n- `allow-pick-file`\n- `allow-launch-app`\n- `allow-get-app-icon`\n- `allow-get-default-screenshots-folder`\n- `allow-list-os-screenshots`\n- `allow-read-screenshot-file`\n- `allow-read-screenshot-thumbnail`\n- `allow-open-screenshots-folder`\n- `allow-copy-screenshot-to-clipboard`\n- `allow-open-color-picker-overlay`\n- `allow-set-picked-color`\n- `allow-get-picked-color`\n- `allow-open-screenshot-preview`\n- `allow-get-screenshot-preview-path`\n- `allow-close-screenshot-preview`\n- `allow-create-dual-window`\n- `allow-close-dual-window`\n- `allow-show-notification-popup`\n- `allow-speech-status`\n- `allow-speech-setup`\n- `allow-speech-start`\n- `allow-speech-stop`\n- `allow-speech-cancel`\n- `allow-speech-devices`\n- `allow-speech-apply-settings`\n- `allow-speech-engine-start`\n- `allow-speech-engine-stop`\n- `allow-speech-engine-logs`\n- `allow-analyze-chart`\n- `allow-save-temp-image`\n- `allow-open-hud`\n- `allow-close-hud`"
+        }
+      ]
+    }
+  }
+}

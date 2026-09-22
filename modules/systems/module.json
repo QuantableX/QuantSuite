@@ -1,0 +1,59 @@
+{
+  "id": "systems",
+  "title": "QuantSystems",
+  "description": "Multi-system quantitative evaluation suite",
+  "status": "migrated",
+  "mergedInto": "algo",
+  "phase": 1,
+  "app": "quantview",
+  "appOrder": 3,
+  "source": "C:/Projects/QuantSystems",
+  "routes": {
+    "root": "/systems",
+    "home": "/systems"
+  },
+  "plugin": "systems",
+  "publishes": [
+    "systems.engine.status",
+    "systems.backtest.completed",
+    "systems.signal.generated"
+  ],
+  "subscribes": [
+    "market.symbol.selected",
+    "core.theme.changed"
+  ],
+  "entities": [
+    "system",
+    "backtest",
+    "universe_snapshot"
+  ],
+  "sidecars": [
+    {
+      "id": "python-engine",
+      "kind": "python",
+      "shared": true,
+      "lazy": true
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "list_systems",
+      "command": "plugin:systems|list_systems",
+      "description": "List the evaluation systems and their readiness.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "run_manual_backtest",
+      "command": "plugin:systems|run_backtest",
+      "description": "Run a rotation backtest for a system over its configured range.",
+      "sideEffects": "compute"
+    },
+    {
+      "name": "live_eval",
+      "command": "plugin:systems|live_eval",
+      "description": "Score today's universe for a system without trading.",
+      "sideEffects": "compute"
+    }
+  ],
+  "migrateFrom": "~/.quantsystems"
+}

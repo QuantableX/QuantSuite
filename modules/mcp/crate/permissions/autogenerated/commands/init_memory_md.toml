@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-init-memory-md"
+description = "Enables the init_memory_md command without any pre-configured scope."
+commands.allow = ["init_memory_md"]
+
+[[permission]]
+identifier = "deny-init-memory-md"
+description = "Denies the init_memory_md command without any pre-configured scope."
+commands.deny = ["init_memory_md"]

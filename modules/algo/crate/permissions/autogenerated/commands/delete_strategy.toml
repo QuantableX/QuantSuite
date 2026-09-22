@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-strategy"
+description = "Enables the delete_strategy command without any pre-configured scope."
+commands.allow = ["delete_strategy"]
+
+[[permission]]
+identifier = "deny-delete-strategy"
+description = "Denies the delete_strategy command without any pre-configured scope."
+commands.deny = ["delete_strategy"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-open-color-picker-overlay"
+description = "Enables the open_color_picker_overlay command without any pre-configured scope."
+commands.allow = ["open_color_picker_overlay"]
+
+[[permission]]
+identifier = "deny-open-color-picker-overlay"
+description = "Denies the open_color_picker_overlay command without any pre-configured scope."
+commands.deny = ["open_color_picker_overlay"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-memory-meta"
+description = "Enables the set_memory_meta command without any pre-configured scope."
+commands.allow = ["set_memory_meta"]
+
+[[permission]]
+identifier = "deny-set-memory-meta"
+description = "Denies the set_memory_meta command without any pre-configured scope."
+commands.deny = ["set_memory_meta"]

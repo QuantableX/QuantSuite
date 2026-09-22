@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-backup-database"
+description = "Enables the backup_database command without any pre-configured scope."
+commands.allow = ["backup_database"]
+
+[[permission]]
+identifier = "deny-backup-database"
+description = "Denies the backup_database command without any pre-configured scope."
+commands.deny = ["backup_database"]

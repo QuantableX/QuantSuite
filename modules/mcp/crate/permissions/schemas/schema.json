@@ -1,0 +1,1230 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PermissionFile",
+  "description": "Permission file that can define a default permission, a set of permissions or a list of inlined permissions.",
+  "type": "object",
+  "properties": {
+    "default": {
+      "description": "The default permission set for the plugin",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DefaultPermission"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "set": {
+      "description": "A list of permissions sets defined",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PermissionSet"
+      }
+    },
+    "permission": {
+      "description": "A list of inlined permissions",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Permission"
+      }
+    }
+  },
+  "definitions": {
+    "DefaultPermission": {
+      "description": "The default permission set of the plugin.\n\nWorks similarly to a permission with the \"default\" identifier.",
+      "type": "object",
+      "required": [
+        "permissions"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PermissionSet": {
+      "description": "A set of direct permissions grouped together under a new name.",
+      "type": "object",
+      "required": [
+        "description",
+        "identifier",
+        "permissions"
+      ],
+      "properties": {
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does.",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PermissionKind"
+          }
+        }
+      }
+    },
+    "Permission": {
+      "description": "Descriptions of explicit privileges of commands.\n\nIt can enable commands to be accessible in the frontend of the application.\n\nIf the scope is defined it can be used to fine grain control the access of individual or multiple commands.",
+      "type": "object",
+      "required": [
+        "identifier"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri internal convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commands": {
+          "description": "Allowed or denied commands when using this permission.",
+          "default": {
+            "allow": [],
+            "deny": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Commands"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Allowed or denied scoped when using this permission.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Scopes"
+            }
+          ]
+        },
+        "platforms": {
+          "description": "Target platforms this permission applies. By default all platforms are affected by this permission.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Target"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "description": "Allowed and denied commands inside a permission.\n\nIf two commands clash inside of `allow` and `deny`, it should be denied by default.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Allowed command.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "description": "Denied command, which takes priority.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Scopes": {
+      "description": "An argument for fine grained behavior control of Tauri commands.\n\nIt can be of any serde serializable type and is used to allow or prevent certain actions inside a Tauri command. The configured scope is passed to the command and will be enforced by the command implementation.\n\n## Example\n\n```json { \"allow\": [{ \"path\": \"$HOME/**\" }], \"deny\": [{ \"path\": \"$HOME/secret.txt\" }] } ```",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Data that defines what is allowed by the scope.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        "deny": {
+          "description": "Data that defines what is denied by the scope. This should be prioritized by validation logic.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      }
+    },
+    "Value": {
+      "description": "All supported ACL values.",
+      "anyOf": [
+        {
+          "description": "Represents a null JSON value.",
+          "type": "null"
+        },
+        {
+          "description": "Represents a [`bool`].",
+          "type": "boolean"
+        },
+        {
+          "description": "Represents a valid ACL [`Number`].",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Number"
+            }
+          ]
+        },
+        {
+          "description": "Represents a [`String`].",
+          "type": "string"
+        },
+        {
+          "description": "Represents a list of other [`Value`]s.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        {
+          "description": "Represents a map of [`String`] keys to [`Value`]s.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      ]
+    },
+    "Number": {
+      "description": "A valid ACL number.",
+      "anyOf": [
+        {
+          "description": "Represents an [`i64`].",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "Represents a [`f64`].",
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "Target": {
+      "description": "Platform target.",
+      "oneOf": [
+        {
+          "description": "MacOS.",
+          "type": "string",
+          "enum": [
+            "macOS"
+          ]
+        },
+        {
+          "description": "Windows.",
+          "type": "string",
+          "enum": [
+            "windows"
+          ]
+        },
+        {
+          "description": "Linux.",
+          "type": "string",
+          "enum": [
+            "linux"
+          ]
+        },
+        {
+          "description": "Android.",
+          "type": "string",
+          "enum": [
+            "android"
+          ]
+        },
+        {
+          "description": "iOS.",
+          "type": "string",
+          "enum": [
+            "iOS"
+          ]
+        }
+      ]
+    },
+    "PermissionKind": {
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "Enables the add_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-kanban-card",
+          "markdownDescription": "Enables the add_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the add_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-kanban-card",
+          "markdownDescription": "Denies the add_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the add_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-mcp",
+          "markdownDescription": "Enables the add_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the add_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-mcp",
+          "markdownDescription": "Denies the add_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the add_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-project",
+          "markdownDescription": "Enables the add_project command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the add_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-project",
+          "markdownDescription": "Denies the add_project command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the add_script command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-script",
+          "markdownDescription": "Enables the add_script command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the add_script command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-script",
+          "markdownDescription": "Denies the add_script command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the add_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-tool",
+          "markdownDescription": "Enables the add_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the add_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-tool",
+          "markdownDescription": "Denies the add_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the archive_done_kanban_cards command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-archive-done-kanban-cards",
+          "markdownDescription": "Enables the archive_done_kanban_cards command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the archive_done_kanban_cards command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-archive-done-kanban-cards",
+          "markdownDescription": "Denies the archive_done_kanban_cards command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the archive_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-archive-kanban-card",
+          "markdownDescription": "Enables the archive_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the archive_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-archive-kanban-card",
+          "markdownDescription": "Denies the archive_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the clear_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-clear-logs",
+          "markdownDescription": "Enables the clear_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the clear_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-clear-logs",
+          "markdownDescription": "Denies the clear_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the connect_clients command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-connect-clients",
+          "markdownDescription": "Enables the connect_clients command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the connect_clients command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-connect-clients",
+          "markdownDescription": "Denies the connect_clients command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the connect_mcp_entry command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-connect-mcp-entry",
+          "markdownDescription": "Enables the connect_mcp_entry command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the connect_mcp_entry command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-connect-mcp-entry",
+          "markdownDescription": "Denies the connect_mcp_entry command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-kanban-card",
+          "markdownDescription": "Enables the delete_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-kanban-card",
+          "markdownDescription": "Denies the delete_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-mcp",
+          "markdownDescription": "Enables the delete_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-mcp",
+          "markdownDescription": "Denies the delete_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-project",
+          "markdownDescription": "Enables the delete_project command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-project",
+          "markdownDescription": "Denies the delete_project command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_script command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-script",
+          "markdownDescription": "Enables the delete_script command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_script command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-script",
+          "markdownDescription": "Denies the delete_script command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-tool",
+          "markdownDescription": "Enables the delete_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-tool",
+          "markdownDescription": "Denies the delete_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the forget_client command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-forget-client",
+          "markdownDescription": "Enables the forget_client command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the forget_client command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-forget-client",
+          "markdownDescription": "Denies the forget_client command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_agent_md_paths command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-agent-md-paths",
+          "markdownDescription": "Enables the get_agent_md_paths command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_agent_md_paths command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-agent-md-paths",
+          "markdownDescription": "Denies the get_agent_md_paths command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_all_mcp_statuses command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-all-mcp-statuses",
+          "markdownDescription": "Enables the get_all_mcp_statuses command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_all_mcp_statuses command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-all-mcp-statuses",
+          "markdownDescription": "Denies the get_all_mcp_statuses command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_approval_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-approval-mode",
+          "markdownDescription": "Enables the get_approval_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_approval_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-approval-mode",
+          "markdownDescription": "Denies the get_approval_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_codebase_index_stats command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-codebase-index-stats",
+          "markdownDescription": "Enables the get_codebase_index_stats command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_codebase_index_stats command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-codebase-index-stats",
+          "markdownDescription": "Denies the get_codebase_index_stats command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_codebase_index_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-codebase-index-status",
+          "markdownDescription": "Enables the get_codebase_index_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_codebase_index_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-codebase-index-status",
+          "markdownDescription": "Denies the get_codebase_index_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_connect_snippet command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-connect-snippet",
+          "markdownDescription": "Enables the get_connect_snippet command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_connect_snippet command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-connect-snippet",
+          "markdownDescription": "Denies the get_connect_snippet command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_mcp_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-mcp-config",
+          "markdownDescription": "Enables the get_mcp_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_mcp_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-mcp-config",
+          "markdownDescription": "Denies the get_mcp_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_mcp_server_port command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-mcp-server-port",
+          "markdownDescription": "Enables the get_mcp_server_port command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_mcp_server_port command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-mcp-server-port",
+          "markdownDescription": "Denies the get_mcp_server_port command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_mcp_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-mcp-status",
+          "markdownDescription": "Enables the get_mcp_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_mcp_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-mcp-status",
+          "markdownDescription": "Denies the get_mcp_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_memory_md_paths command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-memory-md-paths",
+          "markdownDescription": "Enables the get_memory_md_paths command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_memory_md_paths command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-memory-md-paths",
+          "markdownDescription": "Denies the get_memory_md_paths command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_quantmcp_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-quantmcp-enabled",
+          "markdownDescription": "Enables the get_quantmcp_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_quantmcp_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-quantmcp-enabled",
+          "markdownDescription": "Denies the get_quantmcp_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_script_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-script-path",
+          "markdownDescription": "Enables the get_script_path command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_script_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-script-path",
+          "markdownDescription": "Denies the get_script_path command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_tool_preferences command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-tool-preferences",
+          "markdownDescription": "Enables the get_tool_preferences command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_tool_preferences command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-tool-preferences",
+          "markdownDescription": "Denies the get_tool_preferences command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_workspace_index_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-workspace-index-settings",
+          "markdownDescription": "Enables the get_workspace_index_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_workspace_index_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-workspace-index-settings",
+          "markdownDescription": "Denies the get_workspace_index_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the index_project_codebase command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-index-project-codebase",
+          "markdownDescription": "Enables the index_project_codebase command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the index_project_codebase command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-index-project-codebase",
+          "markdownDescription": "Denies the index_project_codebase command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the init_agent_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-init-agent-md",
+          "markdownDescription": "Enables the init_agent_md command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the init_agent_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-init-agent-md",
+          "markdownDescription": "Denies the init_agent_md command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the init_memory_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-init-memory-md",
+          "markdownDescription": "Enables the init_memory_md command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the init_memory_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-init-memory-md",
+          "markdownDescription": "Denies the init_memory_md command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_agentos_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-agentos-tools",
+          "markdownDescription": "Enables the list_agentos_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_agentos_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-agentos-tools",
+          "markdownDescription": "Denies the list_agentos_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_archived_kanban_cards command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-archived-kanban-cards",
+          "markdownDescription": "Enables the list_archived_kanban_cards command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_archived_kanban_cards command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-archived-kanban-cards",
+          "markdownDescription": "Denies the list_archived_kanban_cards command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_bridge_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-bridge-tools",
+          "markdownDescription": "Enables the list_bridge_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_bridge_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-bridge-tools",
+          "markdownDescription": "Denies the list_bridge_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_clients command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-clients",
+          "markdownDescription": "Enables the list_clients command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_clients command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-clients",
+          "markdownDescription": "Denies the list_clients command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_codebase_index_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-codebase-index-tools",
+          "markdownDescription": "Enables the list_codebase_index_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_codebase_index_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-codebase-index-tools",
+          "markdownDescription": "Denies the list_codebase_index_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_kanban_cards command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-kanban-cards",
+          "markdownDescription": "Enables the list_kanban_cards command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_kanban_cards command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-kanban-cards",
+          "markdownDescription": "Denies the list_kanban_cards command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_kanban_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-kanban-tools",
+          "markdownDescription": "Enables the list_kanban_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_kanban_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-kanban-tools",
+          "markdownDescription": "Denies the list_kanban_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-logs",
+          "markdownDescription": "Enables the list_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-logs",
+          "markdownDescription": "Denies the list_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_mcps command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-mcps",
+          "markdownDescription": "Enables the list_mcps command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_mcps command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-mcps",
+          "markdownDescription": "Denies the list_mcps command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_projects command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-projects",
+          "markdownDescription": "Enables the list_projects command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_projects command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-projects",
+          "markdownDescription": "Denies the list_projects command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_scripts command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-scripts",
+          "markdownDescription": "Enables the list_scripts command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_scripts command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-scripts",
+          "markdownDescription": "Denies the list_scripts command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-tools",
+          "markdownDescription": "Enables the list_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-tools",
+          "markdownDescription": "Denies the list_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_worktree_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-worktree-tools",
+          "markdownDescription": "Enables the list_worktree_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_worktree_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-worktree-tools",
+          "markdownDescription": "Denies the list_worktree_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-kanban-card",
+          "markdownDescription": "Enables the move_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-kanban-card",
+          "markdownDescription": "Denies the move_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_kanban_card_to_workspace command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-kanban-card-to-workspace",
+          "markdownDescription": "Enables the move_kanban_card_to_workspace command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_kanban_card_to_workspace command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-kanban-card-to-workspace",
+          "markdownDescription": "Denies the move_kanban_card_to_workspace command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the process_start_servers command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-process-start-servers",
+          "markdownDescription": "Enables the process_start_servers command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the process_start_servers command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-process-start-servers",
+          "markdownDescription": "Denies the process_start_servers command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the process_stop_servers command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-process-stop-servers",
+          "markdownDescription": "Enables the process_stop_servers command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the process_stop_servers command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-process-stop-servers",
+          "markdownDescription": "Denies the process_stop_servers command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_agent_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-agent-md",
+          "markdownDescription": "Enables the read_agent_md command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_agent_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-agent-md",
+          "markdownDescription": "Denies the read_agent_md command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-file",
+          "markdownDescription": "Enables the read_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-file",
+          "markdownDescription": "Denies the read_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_memory_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-memory-md",
+          "markdownDescription": "Enables the read_memory_md command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_memory_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-memory-md",
+          "markdownDescription": "Denies the read_memory_md command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the reorder_projects command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-reorder-projects",
+          "markdownDescription": "Enables the reorder_projects command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the reorder_projects command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-reorder-projects",
+          "markdownDescription": "Denies the reorder_projects command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the reset_agent_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-reset-agent-md",
+          "markdownDescription": "Enables the reset_agent_md command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the reset_agent_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-reset-agent-md",
+          "markdownDescription": "Denies the reset_agent_md command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the review_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-review-kanban-card",
+          "markdownDescription": "Enables the review_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the review_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-review-kanban-card",
+          "markdownDescription": "Denies the review_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the scan_clients command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-scan-clients",
+          "markdownDescription": "Enables the scan_clients command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the scan_clients command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-scan-clients",
+          "markdownDescription": "Denies the scan_clients command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the select_project_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-select-project-folder",
+          "markdownDescription": "Enables the select_project_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the select_project_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-select-project-folder",
+          "markdownDescription": "Denies the select_project_folder command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_approval_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-approval-mode",
+          "markdownDescription": "Enables the set_approval_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_approval_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-approval-mode",
+          "markdownDescription": "Denies the set_approval_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_project_index_filter command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-project-index-filter",
+          "markdownDescription": "Enables the set_project_index_filter command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_project_index_filter command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-project-index-filter",
+          "markdownDescription": "Denies the set_project_index_filter command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_quantmcp_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-quantmcp-enabled",
+          "markdownDescription": "Enables the set_quantmcp_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_quantmcp_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-quantmcp-enabled",
+          "markdownDescription": "Denies the set_quantmcp_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_tool_preference command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-tool-preference",
+          "markdownDescription": "Enables the set_tool_preference command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_tool_preference command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-tool-preference",
+          "markdownDescription": "Denies the set_tool_preference command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_workspace_index_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-workspace-index-settings",
+          "markdownDescription": "Enables the set_workspace_index_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_workspace_index_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-workspace-index-settings",
+          "markdownDescription": "Denies the set_workspace_index_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-mcp",
+          "markdownDescription": "Enables the start_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-mcp",
+          "markdownDescription": "Denies the start_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-mcp",
+          "markdownDescription": "Enables the stop_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-mcp",
+          "markdownDescription": "Denies the stop_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the test_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-test-tool",
+          "markdownDescription": "Enables the test_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the test_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-test-tool",
+          "markdownDescription": "Denies the test_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the toggle_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-toggle-mcp",
+          "markdownDescription": "Enables the toggle_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the toggle_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-toggle-mcp",
+          "markdownDescription": "Denies the toggle_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the toggle_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-toggle-tool",
+          "markdownDescription": "Enables the toggle_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the toggle_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-toggle-tool",
+          "markdownDescription": "Denies the toggle_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the unarchive_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-unarchive-kanban-card",
+          "markdownDescription": "Enables the unarchive_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the unarchive_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-unarchive-kanban-card",
+          "markdownDescription": "Denies the unarchive_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-kanban-card",
+          "markdownDescription": "Enables the update_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-kanban-card",
+          "markdownDescription": "Denies the update_kanban_card command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-mcp",
+          "markdownDescription": "Enables the update_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_mcp command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-mcp",
+          "markdownDescription": "Denies the update_mcp command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-project",
+          "markdownDescription": "Enables the update_project command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-project",
+          "markdownDescription": "Denies the update_project command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_script command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-script",
+          "markdownDescription": "Enables the update_script command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_script command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-script",
+          "markdownDescription": "Denies the update_script command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-tool",
+          "markdownDescription": "Enables the update_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_tool command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-tool",
+          "markdownDescription": "Denies the update_tool command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the write_agent_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-write-agent-md",
+          "markdownDescription": "Enables the write_agent_md command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_agent_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-write-agent-md",
+          "markdownDescription": "Denies the write_agent_md command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the write_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-write-file",
+          "markdownDescription": "Enables the write_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-write-file",
+          "markdownDescription": "Denies the write_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the write_memory_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-write-memory-md",
+          "markdownDescription": "Enables the write_memory_md command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_memory_md command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-write-memory-md",
+          "markdownDescription": "Denies the write_memory_md command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-get-tool-preferences`\n- `allow-set-tool-preference`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-review-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-get-tool-preferences`\n- `allow-set-tool-preference`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-review-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`"
+        }
+      ]
+    }
+  }
+}

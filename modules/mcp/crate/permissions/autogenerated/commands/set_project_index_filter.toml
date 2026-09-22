@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-project-index-filter"
+description = "Enables the set_project_index_filter command without any pre-configured scope."
+commands.allow = ["set_project_index_filter"]
+
+[[permission]]
+identifier = "deny-set-project-index-filter"
+description = "Denies the set_project_index_filter command without any pre-configured scope."
+commands.deny = ["set_project_index_filter"]

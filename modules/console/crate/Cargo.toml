@@ -1,0 +1,32 @@
+[package]
+name = "tauri-plugin-console"
+links = "tauri-plugin-console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantConsole — suite-wide terminal console, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_console"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+base64 = "0.22"
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+# `tokio::process` + `timeout` for the agent one-shot: a command an agent runs
+# needs a deadline and a killed child, and `std::process` has neither.
+tokio = { workspace = true }
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+# The PTY layer, shared with QuantCanvas (docs/PLAN-CONSOLE.md §4).
+qs-pty = { path = "../../../crates/qs-pty" }
+
+# New code: held to the full lint gate (see workspace root).
+[lints]
+workspace = true

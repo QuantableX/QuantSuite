@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-open-screenshot-preview"
+description = "Enables the open_screenshot_preview command without any pre-configured scope."
+commands.allow = ["open_screenshot_preview"]
+
+[[permission]]
+identifier = "deny-open-screenshot-preview"
+description = "Denies the open_screenshot_preview command without any pre-configured scope."
+commands.deny = ["open_screenshot_preview"]

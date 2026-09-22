@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-update-exchange"
+description = "Enables the update_exchange command without any pre-configured scope."
+commands.allow = ["update_exchange"]
+
+[[permission]]
+identifier = "deny-update-exchange"
+description = "Denies the update_exchange command without any pre-configured scope."
+commands.deny = ["update_exchange"]

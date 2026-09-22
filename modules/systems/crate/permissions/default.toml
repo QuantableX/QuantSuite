@@ -1,0 +1,20 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the QuantSystems module: settings, system configs, the evaluation engine and its cache."
+permissions = [
+  "allow-get-app-settings",
+  "allow-update-app-settings",
+  "allow-list-systems",
+  "allow-get-system-config",
+  "allow-save-system-config",
+  "allow-start-engine",
+  "allow-stop-engine",
+  "allow-engine-status",
+  "allow-live-eval",
+  "allow-run-backtest",
+  "allow-browse-universe",
+  "allow-cache-stats",
+  "allow-clear-cache",
+  "allow-screenshot-to-clipboard",
+]

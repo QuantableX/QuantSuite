@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-count-entities"
+description = "Enables the count_entities command without any pre-configured scope."
+commands.allow = ["count_entities"]
+
+[[permission]]
+identifier = "deny-count-entities"
+description = "Denies the count_entities command without any pre-configured scope."
+commands.deny = ["count_entities"]

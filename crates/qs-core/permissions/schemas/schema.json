@@ -1,0 +1,666 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PermissionFile",
+  "description": "Permission file that can define a default permission, a set of permissions or a list of inlined permissions.",
+  "type": "object",
+  "properties": {
+    "default": {
+      "description": "The default permission set for the plugin",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DefaultPermission"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "set": {
+      "description": "A list of permissions sets defined",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PermissionSet"
+      }
+    },
+    "permission": {
+      "description": "A list of inlined permissions",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Permission"
+      }
+    }
+  },
+  "definitions": {
+    "DefaultPermission": {
+      "description": "The default permission set of the plugin.\n\nWorks similarly to a permission with the \"default\" identifier.",
+      "type": "object",
+      "required": [
+        "permissions"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PermissionSet": {
+      "description": "A set of direct permissions grouped together under a new name.",
+      "type": "object",
+      "required": [
+        "description",
+        "identifier",
+        "permissions"
+      ],
+      "properties": {
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does.",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PermissionKind"
+          }
+        }
+      }
+    },
+    "Permission": {
+      "description": "Descriptions of explicit privileges of commands.\n\nIt can enable commands to be accessible in the frontend of the application.\n\nIf the scope is defined it can be used to fine grain control the access of individual or multiple commands.",
+      "type": "object",
+      "required": [
+        "identifier"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri internal convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commands": {
+          "description": "Allowed or denied commands when using this permission.",
+          "default": {
+            "allow": [],
+            "deny": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Commands"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Allowed or denied scoped when using this permission.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Scopes"
+            }
+          ]
+        },
+        "platforms": {
+          "description": "Target platforms this permission applies. By default all platforms are affected by this permission.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Target"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "description": "Allowed and denied commands inside a permission.\n\nIf two commands clash inside of `allow` and `deny`, it should be denied by default.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Allowed command.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "description": "Denied command, which takes priority.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Scopes": {
+      "description": "An argument for fine grained behavior control of Tauri commands.\n\nIt can be of any serde serializable type and is used to allow or prevent certain actions inside a Tauri command. The configured scope is passed to the command and will be enforced by the command implementation.\n\n## Example\n\n```json { \"allow\": [{ \"path\": \"$HOME/**\" }], \"deny\": [{ \"path\": \"$HOME/secret.txt\" }] } ```",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Data that defines what is allowed by the scope.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        "deny": {
+          "description": "Data that defines what is denied by the scope. This should be prioritized by validation logic.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      }
+    },
+    "Value": {
+      "description": "All supported ACL values.",
+      "anyOf": [
+        {
+          "description": "Represents a null JSON value.",
+          "type": "null"
+        },
+        {
+          "description": "Represents a [`bool`].",
+          "type": "boolean"
+        },
+        {
+          "description": "Represents a valid ACL [`Number`].",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Number"
+            }
+          ]
+        },
+        {
+          "description": "Represents a [`String`].",
+          "type": "string"
+        },
+        {
+          "description": "Represents a list of other [`Value`]s.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        {
+          "description": "Represents a map of [`String`] keys to [`Value`]s.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      ]
+    },
+    "Number": {
+      "description": "A valid ACL number.",
+      "anyOf": [
+        {
+          "description": "Represents an [`i64`].",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "Represents a [`f64`].",
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "Target": {
+      "description": "Platform target.",
+      "oneOf": [
+        {
+          "description": "MacOS.",
+          "type": "string",
+          "enum": [
+            "macOS"
+          ]
+        },
+        {
+          "description": "Windows.",
+          "type": "string",
+          "enum": [
+            "windows"
+          ]
+        },
+        {
+          "description": "Linux.",
+          "type": "string",
+          "enum": [
+            "linux"
+          ]
+        },
+        {
+          "description": "Android.",
+          "type": "string",
+          "enum": [
+            "android"
+          ]
+        },
+        {
+          "description": "iOS.",
+          "type": "string",
+          "enum": [
+            "iOS"
+          ]
+        }
+      ]
+    },
+    "PermissionKind": {
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "Enables the agent_call_claim command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-agent-call-claim",
+          "markdownDescription": "Enables the agent_call_claim command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the agent_call_claim command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-agent-call-claim",
+          "markdownDescription": "Denies the agent_call_claim command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the agent_call_complete command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-agent-call-complete",
+          "markdownDescription": "Enables the agent_call_complete command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the agent_call_complete command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-agent-call-complete",
+          "markdownDescription": "Denies the agent_call_complete command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the agent_pending_calls command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-agent-pending-calls",
+          "markdownDescription": "Enables the agent_pending_calls command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the agent_pending_calls command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-agent-pending-calls",
+          "markdownDescription": "Denies the agent_pending_calls command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the agent_tool_decision command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-agent-tool-decision",
+          "markdownDescription": "Enables the agent_tool_decision command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the agent_tool_decision command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-agent-tool-decision",
+          "markdownDescription": "Denies the agent_tool_decision command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the agent_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-agent-tools",
+          "markdownDescription": "Enables the agent_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the agent_tools command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-agent-tools",
+          "markdownDescription": "Denies the agent_tools command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the app_version command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-app-version",
+          "markdownDescription": "Enables the app_version command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the app_version command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-app-version",
+          "markdownDescription": "Denies the app_version command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the autostart_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-autostart-enabled",
+          "markdownDescription": "Enables the autostart_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the autostart_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-autostart-enabled",
+          "markdownDescription": "Denies the autostart_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the count_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-count-entities",
+          "markdownDescription": "Enables the count_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the count_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-count-entities",
+          "markdownDescription": "Denies the count_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_entity command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-entity",
+          "markdownDescription": "Enables the delete_entity command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_entity command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-entity",
+          "markdownDescription": "Denies the delete_entity command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the emit_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-emit-event",
+          "markdownDescription": "Enables the emit_event command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the emit_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-emit-event",
+          "markdownDescription": "Denies the emit_event command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_setting command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-setting",
+          "markdownDescription": "Enables the get_setting command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_setting command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-setting",
+          "markdownDescription": "Denies the get_setting command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-settings",
+          "markdownDescription": "Enables the get_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-settings",
+          "markdownDescription": "Denies the get_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the link_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-link-entities",
+          "markdownDescription": "Enables the link_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the link_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-link-entities",
+          "markdownDescription": "Denies the link_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the linked_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-linked-entities",
+          "markdownDescription": "Enables the linked_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the linked_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-linked-entities",
+          "markdownDescription": "Denies the linked_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-entities",
+          "markdownDescription": "Enables the list_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-entities",
+          "markdownDescription": "Denies the list_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_module_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-module-window",
+          "markdownDescription": "Enables the open_module_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_module_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-module-window",
+          "markdownDescription": "Denies the open_module_window command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the process_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-process-list",
+          "markdownDescription": "Enables the process_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the process_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-process-list",
+          "markdownDescription": "Denies the process_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the quit command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-quit",
+          "markdownDescription": "Enables the quit command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the quit command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-quit",
+          "markdownDescription": "Denies the quit command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the recent_events command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-recent-events",
+          "markdownDescription": "Enables the recent_events command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the recent_events command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-recent-events",
+          "markdownDescription": "Denies the recent_events command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the search_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-search-entities",
+          "markdownDescription": "Enables the search_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the search_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-search-entities",
+          "markdownDescription": "Denies the search_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_autostart command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-autostart",
+          "markdownDescription": "Enables the set_autostart command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_autostart command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-autostart",
+          "markdownDescription": "Denies the set_autostart command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_circular_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-circular-window",
+          "markdownDescription": "Enables the set_circular_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_circular_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-circular-window",
+          "markdownDescription": "Denies the set_circular_window command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_setting command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-setting",
+          "markdownDescription": "Enables the set_setting command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_setting command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-setting",
+          "markdownDescription": "Denies the set_setting command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the suite_paths command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-suite-paths",
+          "markdownDescription": "Enables the suite_paths command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the suite_paths command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-suite-paths",
+          "markdownDescription": "Denies the suite_paths command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the unlink_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-unlink-entities",
+          "markdownDescription": "Enables the unlink_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the unlink_entities command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-unlink-entities",
+          "markdownDescription": "Denies the unlink_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the upsert_entity command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-upsert-entity",
+          "markdownDescription": "Enables the upsert_entity command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the upsert_entity command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-upsert-entity",
+          "markdownDescription": "Denies the upsert_entity command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the window_hide command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-window-hide",
+          "markdownDescription": "Enables the window_hide command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the window_hide command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-window-hide",
+          "markdownDescription": "Denies the window_hide command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the window_new command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-window-new",
+          "markdownDescription": "Enables the window_new command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the window_new command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-window-new",
+          "markdownDescription": "Denies the window_new command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the window_show command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-window-show",
+          "markdownDescription": "Enables the window_show command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the window_show command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-window-show",
+          "markdownDescription": "Denies the window_show command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the window_toggle command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-window-toggle",
+          "markdownDescription": "Enables the window_toggle command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the window_toggle command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-window-toggle",
+          "markdownDescription": "Denies the window_toggle command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle and the agent tool catalogue. process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle and the agent tool catalogue. process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`"
+        }
+      ]
+    }
+  }
+}

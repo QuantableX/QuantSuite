@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-backlinks"
+description = "Enables the get_backlinks command without any pre-configured scope."
+commands.allow = ["get_backlinks"]
+
+[[permission]]
+identifier = "deny-get-backlinks"
+description = "Denies the get_backlinks command without any pre-configured scope."
+commands.deny = ["get_backlinks"]

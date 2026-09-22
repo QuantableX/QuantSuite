@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-index-project-codebase"
+description = "Enables the index_project_codebase command without any pre-configured scope."
+commands.allow = ["index_project_codebase"]
+
+[[permission]]
+identifier = "deny-index-project-codebase"
+description = "Denies the index_project_codebase command without any pre-configured scope."
+commands.deny = ["index_project_codebase"]

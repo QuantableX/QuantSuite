@@ -1,0 +1,13 @@
+{
+  "id": "flow",
+  "title": "QuantFlow",
+  "description": "Calendar, habits and progress in one daily workspace",
+  "status": "migrated",
+  "phase": null,
+  "app": "quantzen",
+  "appOrder": 2,
+  "routes": {
+    "root": "/flow",
+    "home": "/flow"
+  }
+}

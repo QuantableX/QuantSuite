@@ -1,0 +1,44 @@
+{
+  "id": "console",
+  "title": "QuantConsole",
+  "description": "Suite-wide terminal console — plain xterm terminals with tabs and splits",
+  "status": "migrated",
+  "phase": 6,
+  "app": "quantspace",
+  "appOrder": 3,
+  "routes": {
+    "root": "/console",
+    "home": "/console"
+  },
+  "plugin": "console",
+  "publishes": [
+    "console.session.opened",
+    "console.session.closed"
+  ],
+  "subscribes": [
+    "core.workspace.opened",
+    "core.theme.changed",
+    "core.setting.changed"
+  ],
+  "entities": [
+    "console_session"
+  ],
+  "sidecars": [],
+  "capabilities": [
+    {
+      "name": "run_command",
+      "command": "plugin:console|run_command",
+      "description": "Run a shell command in a one-shot process and return its output and exit code. Requires the setting `console / agent.exec.enabled` to be on; it ships off.",
+      "sideEffects": "external",
+      "schema": {
+        "type": "object",
+        "required": ["command"],
+        "properties": {
+          "command": { "type": "string" },
+          "cwd": { "type": "string" },
+          "timeoutMs": { "type": "number" }
+        }
+      }
+    }
+  ]
+}

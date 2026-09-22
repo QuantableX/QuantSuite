@@ -1,0 +1,75 @@
+{
+  "id": "habit",
+  "title": "QuantHabit",
+  "description": "Habit tracker — a year of day rows, one checkbox column per habit, with streaks and completion stats",
+  "status": "migrated",
+  "mergedInto": "flow",
+  "phase": null,
+  "app": "quantzen",
+  "appOrder": 3,
+  "routes": {
+    "root": "/habit",
+    "home": "/habit"
+  },
+  "plugin": "habit",
+  "publishes": [
+    "habit.habit.changed"
+  ],
+  "subscribes": [
+    "core.theme.changed"
+  ],
+  "entities": [
+    "habit"
+  ],
+  "sidecars": [],
+  "capabilities": [
+    {
+      "name": "list_habits",
+      "command": "plugin:habit|list_habits",
+      "description": "List every habit with its start day, pause intervals and current pause state.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "stats",
+      "command": "plugin:habit|stats",
+      "description": "Per-habit statistics for one year: eligible and checked days, completion rate, current and best streak.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "year": { "type": "integer", "description": "Calendar year, e.g. 2026." }
+        },
+        "required": ["year"]
+      }
+    },
+    {
+      "name": "create_habit",
+      "command": "plugin:habit|create_habit",
+      "description": "Create a habit. It starts today — earlier days are not part of its life.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "The habit's name, e.g. \"Read 20 minutes\"." },
+          "daysMask": { "type": "integer", "description": "Tracked weekdays as a bitmask, bit 0 = Monday … bit 6 = Sunday; omit for every day (127). Untracked days don't count and don't break streaks." }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "set_check",
+      "command": "plugin:habit|set_check",
+      "description": "Tick or untick one habit on one day. Days before the habit started, future days and paused days are rejected.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Habit id." },
+          "day": { "type": "string", "description": "Local calendar day, YYYY-MM-DD." },
+          "checked": { "type": "boolean", "description": "true to tick, false to untick." }
+        },
+        "required": ["id", "day", "checked"]
+      }
+    }
+  ]
+}

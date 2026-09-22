@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-list-exchanges"
+description = "Enables the list_exchanges command without any pre-configured scope."
+commands.allow = ["list_exchanges"]
+
+[[permission]]
+identifier = "deny-list-exchanges"
+description = "Denies the list_exchanges command without any pre-configured scope."
+commands.deny = ["list_exchanges"]

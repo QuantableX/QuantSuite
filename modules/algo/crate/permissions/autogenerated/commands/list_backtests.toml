@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-list-backtests"
+description = "Enables the list_backtests command without any pre-configured scope."
+commands.allow = ["list_backtests"]
+
+[[permission]]
+identifier = "deny-list-backtests"
+description = "Denies the list_backtests command without any pre-configured scope."
+commands.deny = ["list_backtests"]

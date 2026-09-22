@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-window-new"
+description = "Enables the window_new command without any pre-configured scope."
+commands.allow = ["window_new"]
+
+[[permission]]
+identifier = "deny-window-new"
+description = "Denies the window_new command without any pre-configured scope."
+commands.deny = ["window_new"]

@@ -1,0 +1,31 @@
+{
+  "id": "mcp",
+  "title": "QuantMCP",
+  "description": "Universal MCP manager and host",
+  "status": "migrated",
+  "phase": 3,
+  "app": "quantagent",
+  "appOrder": 2,
+  "source": "C:/Projects/QuantMCP",
+  "routes": {
+    "root": "/mcp",
+    "home": "/mcp"
+  },
+  "plugin": "mcp",
+  "publishes": [
+    "mcp.server.started",
+    "mcp.server.stopped",
+    "mcp.tool.invoked",
+    "mcp.client.connected",
+    "mcp.client.disconnected",
+    "mcp.client.installed"
+  ],
+  "subscribes": [],
+  "entities": [
+    "mcp_server",
+    "tool"
+  ],
+  "sidecars": [],
+  "capabilities": [],
+  "migrateFrom": "~/.config"
+}

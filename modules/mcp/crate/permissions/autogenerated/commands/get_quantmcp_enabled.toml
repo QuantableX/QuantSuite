@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-quantmcp-enabled"
+description = "Enables the get_quantmcp_enabled command without any pre-configured scope."
+commands.allow = ["get_quantmcp_enabled"]
+
+[[permission]]
+identifier = "deny-get-quantmcp-enabled"
+description = "Denies the get_quantmcp_enabled command without any pre-configured scope."
+commands.deny = ["get_quantmcp_enabled"]

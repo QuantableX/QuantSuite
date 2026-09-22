@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-unarchive-kanban-card"
+description = "Enables the unarchive_kanban_card command without any pre-configured scope."
+commands.allow = ["unarchive_kanban_card"]
+
+[[permission]]
+identifier = "deny-unarchive-kanban-card"
+description = "Denies the unarchive_kanban_card command without any pre-configured scope."
+commands.deny = ["unarchive_kanban_card"]

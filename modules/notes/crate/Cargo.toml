@@ -1,0 +1,32 @@
+[package]
+name = "tauri-plugin-notes"
+links = "tauri-plugin-notes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantNotes — Pages, Boards, Canvas and Vector, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_notes"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }

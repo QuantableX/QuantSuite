@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-list-trades"
+description = "Enables the list_trades command without any pre-configured scope."
+commands.allow = ["list_trades"]
+
+[[permission]]
+identifier = "deny-list-trades"
+description = "Denies the list_trades command without any pre-configured scope."
+commands.deny = ["list_trades"]

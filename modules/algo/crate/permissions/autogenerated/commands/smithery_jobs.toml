@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-smithery-jobs"
+description = "Enables the smithery_jobs command without any pre-configured scope."
+commands.allow = ["smithery_jobs"]
+
+[[permission]]
+identifier = "deny-smithery-jobs"
+description = "Denies the smithery_jobs command without any pre-configured scope."
+commands.deny = ["smithery_jobs"]

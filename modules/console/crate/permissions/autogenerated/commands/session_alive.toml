@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-session-alive"
+description = "Enables the session_alive command without any pre-configured scope."
+commands.allow = ["session_alive"]
+
+[[permission]]
+identifier = "deny-session-alive"
+description = "Denies the session_alive command without any pre-configured scope."
+commands.deny = ["session_alive"]

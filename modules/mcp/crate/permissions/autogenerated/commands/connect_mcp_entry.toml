@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-connect-mcp-entry"
+description = "Enables the connect_mcp_entry command without any pre-configured scope."
+commands.allow = ["connect_mcp_entry"]
+
+[[permission]]
+identifier = "deny-connect-mcp-entry"
+description = "Denies the connect_mcp_entry command without any pre-configured scope."
+commands.deny = ["connect_mcp_entry"]

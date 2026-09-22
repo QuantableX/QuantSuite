@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-toggle-mcp"
+description = "Enables the toggle_mcp command without any pre-configured scope."
+commands.allow = ["toggle_mcp"]
+
+[[permission]]
+identifier = "deny-toggle-mcp"
+description = "Denies the toggle_mcp command without any pre-configured scope."
+commands.deny = ["toggle_mcp"]

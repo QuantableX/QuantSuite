@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-create-strategy-from-indicator"
+description = "Enables the create_strategy_from_indicator command without any pre-configured scope."
+commands.allow = ["create_strategy_from_indicator"]
+
+[[permission]]
+identifier = "deny-create-strategy-from-indicator"
+description = "Denies the create_strategy_from_indicator command without any pre-configured scope."
+commands.deny = ["create_strategy_from_indicator"]

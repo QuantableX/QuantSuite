@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-link-entities"
+description = "Enables the link_entities command without any pre-configured scope."
+commands.allow = ["link_entities"]
+
+[[permission]]
+identifier = "deny-link-entities"
+description = "Denies the link_entities command without any pre-configured scope."
+commands.deny = ["link_entities"]

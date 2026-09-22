@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-setup-window-size"
+description = "Enables the setup_window_size command without any pre-configured scope."
+commands.allow = ["setup_window_size"]
+
+[[permission]]
+identifier = "deny-setup-window-size"
+description = "Denies the setup_window_size command without any pre-configured scope."
+commands.deny = ["setup_window_size"]

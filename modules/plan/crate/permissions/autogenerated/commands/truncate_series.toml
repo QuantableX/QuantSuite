@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-truncate-series"
+description = "Enables the truncate_series command without any pre-configured scope."
+commands.allow = ["truncate_series"]
+
+[[permission]]
+identifier = "deny-truncate-series"
+description = "Denies the truncate_series command without any pre-configured scope."
+commands.deny = ["truncate_series"]

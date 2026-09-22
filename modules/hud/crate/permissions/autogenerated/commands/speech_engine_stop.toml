@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-speech-engine-stop"
+description = "Enables the speech_engine_stop command without any pre-configured scope."
+commands.allow = ["speech_engine_stop"]
+
+[[permission]]
+identifier = "deny-speech-engine-stop"
+description = "Denies the speech_engine_stop command without any pre-configured scope."
+commands.deny = ["speech_engine_stop"]

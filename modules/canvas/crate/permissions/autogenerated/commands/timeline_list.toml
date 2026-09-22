@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-timeline-list"
+description = "Enables the timeline_list command without any pre-configured scope."
+commands.allow = ["timeline_list"]
+
+[[permission]]
+identifier = "deny-timeline-list"
+description = "Denies the timeline_list command without any pre-configured scope."
+commands.deny = ["timeline_list"]

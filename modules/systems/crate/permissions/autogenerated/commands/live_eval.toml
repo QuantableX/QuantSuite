@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-live-eval"
+description = "Enables the live_eval command without any pre-configured scope."
+commands.allow = ["live_eval"]
+
+[[permission]]
+identifier = "deny-live-eval"
+description = "Denies the live_eval command without any pre-configured scope."
+commands.deny = ["live_eval"]

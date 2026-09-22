@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-update-event"
+description = "Enables the update_event command without any pre-configured scope."
+commands.allow = ["update_event"]
+
+[[permission]]
+identifier = "deny-update-event"
+description = "Denies the update_event command without any pre-configured scope."
+commands.deny = ["update_event"]

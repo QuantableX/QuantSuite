@@ -1,0 +1,29 @@
+node_modules/
+.nuxt/
+.output/
+dist/
+target/
+*.log
+.DS_Store
+.env
+.env.local
+*.key
+*.p12
+*.pfx
+*.bundle
+
+# local / generated
+.claude/
+.qs-worktrees/
+__pycache__/
+.venv/
+*.db
+*.db-wal
+*.db-shm
+=ro
+
+# Private scripts, parameter versions, and migration backups. Never bundled.
+/QuantScript/
+
+# Legacy workspace metadata is migrated to the private suite home.
+.quantcode/

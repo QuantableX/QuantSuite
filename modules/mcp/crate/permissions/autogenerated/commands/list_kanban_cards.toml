@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-list-kanban-cards"
+description = "Enables the list_kanban_cards command without any pre-configured scope."
+commands.allow = ["list_kanban_cards"]
+
+[[permission]]
+identifier = "deny-list-kanban-cards"
+description = "Denies the list_kanban_cards command without any pre-configured scope."
+commands.deny = ["list_kanban_cards"]

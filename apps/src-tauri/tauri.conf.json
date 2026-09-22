@@ -1,0 +1,134 @@
+{
+  "$schema": "../../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "QuantSuite",
+  "version": "1.0.0",
+  "identifier": "com.quantable.quantsuite",
+  "build": {
+    "beforeDevCommand": "npm run dev --workspace=@quantsuite/shell",
+    "beforeBuildCommand": "npm run check:distribution && npm run build --workspace=@quantsuite/shell",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../shell/.output/public"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "QuantSuite",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "resizable": true,
+        "maximized": true,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true,
+        "visible": false,
+        "center": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": {
+      "../../sidecars/python/codebase_index/__init__.py": "sidecars/python/codebase_index/__init__.py",
+      "../../sidecars/python/codebase_index/cli.py": "sidecars/python/codebase_index/cli.py",
+      "../../sidecars/python/codebase_index/db.py": "sidecars/python/codebase_index/db.py",
+      "../../sidecars/python/codebase_index/embeddings.py": "sidecars/python/codebase_index/embeddings.py",
+      "../../sidecars/python/codebase_index/requirements.txt": "sidecars/python/codebase_index/requirements.txt",
+      "../../sidecars/python/codebase_index/semantic.py": "sidecars/python/codebase_index/semantic.py",
+      "../../sidecars/python/codebase_index/structural.py": "sidecars/python/codebase_index/structural.py",
+      "../../sidecars/python/codebase_index/utils.py": "sidecars/python/codebase_index/utils.py",
+      "../../sidecars/python/codebase_index/vector_backend.py": "sidecars/python/codebase_index/vector_backend.py",
+      "../../sidecars/python/quantalgo/__init__.py": "sidecars/python/quantalgo/__init__.py",
+      "../../sidecars/python/quantalgo/__main__.py": "sidecars/python/quantalgo/__main__.py",
+      "../../sidecars/python/quantalgo/backtest_engine.py": "sidecars/python/quantalgo/backtest_engine.py",
+      "../../sidecars/python/quantalgo/indicators.py": "sidecars/python/quantalgo/indicators.py",
+      "../../sidecars/python/quantalgo/models.py": "sidecars/python/quantalgo/models.py",
+      "../../sidecars/python/quantalgo/regime.py": "sidecars/python/quantalgo/regime.py",
+      "../../sidecars/python/quantalgo/runner.py": "sidecars/python/quantalgo/runner.py",
+      "../../sidecars/python/quantalgo/strategy.py": "sidecars/python/quantalgo/strategy.py",
+      "../../sidecars/python/quantvoice/__init__.py": "sidecars/python/quantvoice/__init__.py",
+      "../../sidecars/python/quantvoice/__main__.py": "sidecars/python/quantvoice/__main__.py",
+      "../../sidecars/python/quantvoice/engine.py": "sidecars/python/quantvoice/engine.py",
+      "../../sidecars/python/quantvoice/requirements-cuda.txt": "sidecars/python/quantvoice/requirements-cuda.txt",
+      "../../sidecars/python/quantvoice/requirements.txt": "sidecars/python/quantvoice/requirements.txt",
+      "../../sidecars/python/quantvoice/rpc.py": "sidecars/python/quantvoice/rpc.py",
+      "../../sidecars/python/requirements.txt": "sidecars/python/requirements.txt",
+      "../../sidecars/python/rotation_lab/__init__.py": "sidecars/python/rotation_lab/__init__.py",
+      "../../sidecars/python/rotation_lab/__main__.py": "sidecars/python/rotation_lab/__main__.py",
+      "../../sidecars/python/rotation_lab/backtest/__init__.py": "sidecars/python/rotation_lab/backtest/__init__.py",
+      "../../sidecars/python/rotation_lab/backtest/engine.py": "sidecars/python/rotation_lab/backtest/engine.py",
+      "../../sidecars/python/rotation_lab/backtest/indicators.py": "sidecars/python/rotation_lab/backtest/indicators.py",
+      "../../sidecars/python/rotation_lab/backtest/market.py": "sidecars/python/rotation_lab/backtest/market.py",
+      "../../sidecars/python/rotation_lab/backtest/metrics.py": "sidecars/python/rotation_lab/backtest/metrics.py",
+      "../../sidecars/python/rotation_lab/backtest/signals.py": "sidecars/python/rotation_lab/backtest/signals.py",
+      "../../sidecars/python/rotation_lab/backtest/smithery/__init__.py": "sidecars/python/rotation_lab/backtest/smithery/__init__.py",
+      "../../sidecars/python/rotation_lab/backtest/universe.py": "sidecars/python/rotation_lab/backtest/universe.py",
+      "../../sidecars/python/rotation_lab/config.py": "sidecars/python/rotation_lab/config.py",
+      "../../sidecars/python/rotation_lab/data/__init__.py": "sidecars/python/rotation_lab/data/__init__.py",
+      "../../sidecars/python/rotation_lab/data/cache.py": "sidecars/python/rotation_lab/data/cache.py",
+      "../../sidecars/python/rotation_lab/data/ohlcv.py": "sidecars/python/rotation_lab/data/ohlcv.py",
+      "../../sidecars/python/rotation_lab/data/ranking/__init__.py": "sidecars/python/rotation_lab/data/ranking/__init__.py",
+      "../../sidecars/python/rotation_lab/data/ranking/base.py": "sidecars/python/rotation_lab/data/ranking/base.py",
+      "../../sidecars/python/rotation_lab/data/ranking/cmc_snapshot.py": "sidecars/python/rotation_lab/data/ranking/cmc_snapshot.py",
+      "../../sidecars/python/rotation_lab/data/ranking/local_reconstruct.py": "sidecars/python/rotation_lab/data/ranking/local_reconstruct.py",
+      "../../sidecars/python/rotation_lab/data/ranking/registry.py": "sidecars/python/rotation_lab/data/ranking/registry.py",
+      "../../sidecars/python/rotation_lab/data/stablecoins.py": "sidecars/python/rotation_lab/data/stablecoins.py",
+      "../../sidecars/python/rotation_lab/main.py": "sidecars/python/rotation_lab/main.py",
+      "../../sidecars/python/rotation_lab/rpc.py": "sidecars/python/rotation_lab/rpc.py",
+      "../../sidecars/python/smithery/__init__.py": "sidecars/python/smithery/__init__.py",
+      "../../sidecars/python/smithery/backtest.py": "sidecars/python/smithery/backtest.py",
+      "../../sidecars/python/smithery/contract.py": "sidecars/python/smithery/contract.py",
+      "../../sidecars/python/smithery/data.py": "sidecars/python/smithery/data.py",
+      "../../sidecars/python/smithery/evidence.py": "sidecars/python/smithery/evidence.py",
+      "../../sidecars/python/smithery/execution.py": "sidecars/python/smithery/execution.py",
+      "../../sidecars/python/smithery/forge.py": "sidecars/python/smithery/forge.py",
+      "../../sidecars/python/smithery/indicators/__init__.py": "sidecars/python/smithery/indicators/__init__.py",
+      "../../sidecars/python/smithery/indicators/_discover.py": "sidecars/python/smithery/indicators/_discover.py",
+      "../../sidecars/python/smithery/monte_carlo.py": "sidecars/python/smithery/monte_carlo.py",
+      "../../sidecars/python/smithery/optimize.py": "sidecars/python/smithery/optimize.py",
+      "../../sidecars/python/smithery/parallel.py": "sidecars/python/smithery/parallel.py",
+      "../../sidecars/python/smithery/quality.py": "sidecars/python/smithery/quality.py",
+      "../../sidecars/python/smithery/quantscript.py": "sidecars/python/smithery/quantscript.py",
+      "../../sidecars/python/smithery/registry.py": "sidecars/python/smithery/registry.py",
+      "../../sidecars/python/smithery/research.py": "sidecars/python/smithery/research.py",
+      "../../sidecars/python/smithery/robustness.py": "sidecars/python/smithery/robustness.py",
+      "../../sidecars/python/smithery/variants.py": "sidecars/python/smithery/variants.py",
+      "../../sidecars/python/smithery/workspace.py": "sidecars/python/smithery/workspace.py",
+      "../../docs/QUANTSCRIPT-FOLDER.txt": "QuantScript/indicators/README.txt"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "",
+    "category": "DeveloperTool",
+    "shortDescription": "QuantSuite",
+    "longDescription": "One desktop application unifying the Quant modules.",
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZGMTIyNTlDRUFGMjkzNjQKUldSa2svTHFuQ1VTYjIrMHhmajAwNGlpS1MwdTExVGdSR2poaWd4dHZpVmUrS29BcFdRSjlIeHEK",
+      "endpoints": [
+        "https://github.com/QuantableX/QuantSuite/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

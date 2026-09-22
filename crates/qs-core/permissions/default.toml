@@ -1,0 +1,35 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle and the agent tool catalogue. process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions."
+permissions = [
+  "allow-get-settings",
+  "allow-get-setting",
+  "allow-set-setting",
+  "allow-emit-event",
+  "allow-recent-events",
+  "allow-upsert-entity",
+  "allow-delete-entity",
+  "allow-list-entities",
+  "allow-count-entities",
+  "allow-search-entities",
+  "allow-link-entities",
+  "allow-unlink-entities",
+  "allow-linked-entities",
+  "allow-process-list",
+  "allow-set-circular-window",
+  "allow-window-new",
+  "allow-window-show",
+  "allow-window-hide",
+  "allow-window-toggle",
+  "allow-quit",
+  "allow-autostart-enabled",
+  "allow-set-autostart",
+  "allow-app-version",
+  "allow-suite-paths",
+  "allow-agent-tools",
+  "allow-agent-tool-decision",
+  "allow-agent-pending-calls",
+  "allow-agent-call-claim",
+  "allow-agent-call-complete",
+]

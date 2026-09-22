@@ -1,0 +1,30 @@
+[package]
+name = "tauri-plugin-habit"
+links = "tauri-plugin-habit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantHabit — daily habit columns over a year of day rows, with streaks and completion stats, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_habit"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }

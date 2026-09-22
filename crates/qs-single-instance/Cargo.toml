@@ -1,0 +1,28 @@
+[package]
+name = "qs-single-instance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Single-instance guard whose second-instance handshake cannot hang"
+
+[dependencies]
+tauri = { workspace = true }
+log = { workspace = true }
+qs-core = { package = "tauri-plugin-qs", path = "../qs-core" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# Off Windows there is nothing to fix — see the note in lib.rs.
+[target.'cfg(not(windows))'.dependencies]
+tauri-plugin-single-instance = "2"
+
+[lints]
+workspace = true

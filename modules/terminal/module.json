@@ -1,0 +1,32 @@
+{
+  "id": "terminal",
+  "title": "QuantTerminal",
+  "description": "Investing dashboard and trading terminal",
+  "status": "migrated",
+  "phase": 5,
+  "app": "quantview",
+  "appOrder": 1,
+  "source": "C:/Projects/QuantView",
+  "routes": {
+    "root": "/terminal",
+    "home": "/terminal"
+  },
+  "plugin": "terminal",
+  "publishes": [
+    "market.symbol.selected",
+    "market.data.refreshed"
+  ],
+  "subscribes": [
+    "algo.trade.executed",
+    "systems.backtest.completed"
+  ],
+  "entities": [
+    "symbol",
+    "watchlist",
+    "journal_entry",
+    "research_note"
+  ],
+  "sidecars": [],
+  "capabilities": [],
+  "migrateFrom": "C:/Projects/QuantView/quantview.db"
+}

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-speech-engine-start"
+description = "Enables the speech_engine_start command without any pre-configured scope."
+commands.allow = ["speech_engine_start"]
+
+[[permission]]
+identifier = "deny-speech-engine-start"
+description = "Denies the speech_engine_start command without any pre-configured scope."
+commands.deny = ["speech_engine_start"]

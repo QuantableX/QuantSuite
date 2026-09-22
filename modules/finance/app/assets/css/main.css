@@ -1,0 +1,114 @@
+/* Flow colours — the colour of a line is its MEANING, not a preference.
+
+   Green in, yellow set aside, red gone. Saving is deliberately not red: the
+   money has not left, it has only moved somewhere that is still yours, and
+   colouring it like a cost makes a healthy plan look alarming. The names are
+   the FlowColor union in app/types/index.ts and are derived from the item's
+   kind in the crate — there is no colour picker. */
+:root {
+  --qf-flow-income: #3f8f5f;
+  --qf-flow-saving: #bfa02f;
+  --qf-flow-expense: #b4494c;
+  /* Not committed to anything yet — its own tone, so it reads as neither
+     spent nor saved. */
+  --qf-flow-leftover: #4a7fa5;
+
+  --qf-bg: var(--qss-bg, #18181e);
+  --qf-bg-raised: var(--qss-bg-raised, #1f1f25);
+  --qf-bg-card: var(--qss-bg-card, #292930);
+  --qf-bg-hover: var(--qss-bg-hover, #313139);
+  --qf-bg-input: var(--qss-bg-card, #18181e);
+  --qf-border: var(--qss-border, #47474f);
+  --qf-border-subtle: var(--qss-border-subtle, #35353d);
+  --qf-text: var(--qss-text, #d4d4d8);
+  --qf-text-secondary: var(--qss-text-secondary, #9a9aa5);
+  --qf-text-muted: var(--qss-text-muted, #6e6e7a);
+  --qf-accent: var(--qss-accent, #a0a0a8);
+  --qf-positive: #3f8f5f;
+  --qf-negative: #b04a4a;
+
+  --qf-radius: 6px;
+  --qf-radius-lg: 10px;
+}
+
+[data-module="finance"] {
+  background: var(--qf-bg);
+  color: var(--qf-text);
+  font-family: var(--qss-font-sans, system-ui, sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-module="finance"] button,
+[data-module="finance"] input,
+[data-module="finance"] select,
+[data-module="finance"] textarea {
+  font: inherit;
+}
+
+/* Amounts line up only with tabular figures; proportional digits make a
+   column of numbers dance. */
+[data-module="finance"] .qf-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+[data-module="finance"] .qf-pos { color: var(--qf-positive); }
+[data-module="finance"] .qf-neg { color: var(--qf-negative); }
+
+[data-module="finance"] .mono {
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+}
+
+[data-module="finance"] ::-webkit-scrollbar { width: 6px; height: 6px; }
+[data-module="finance"] ::-webkit-scrollbar-thumb { background: var(--qf-border); border-radius: 3px; }
+
+[data-module="finance"] .qf-dot {
+  --qf-c: var(--qf-flow-expense);
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--qf-c);
+}
+
+[data-module="finance"] .qf-dot[data-color='income'] { --qf-c: var(--qf-flow-income); }
+[data-module="finance"] .qf-dot[data-color='saving'] { --qf-c: var(--qf-flow-saving); }
+[data-module="finance"] .qf-dot[data-color='expense'] { --qf-c: var(--qf-flow-expense); }
+[data-module="finance"] .qf-dot[data-color='leftover'] { --qf-c: var(--qf-flow-leftover); }
+
+
+[data-module="finance"] .qf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--qf-border);
+  border-radius: var(--qf-radius);
+  background: var(--qf-bg-card);
+  color: var(--qf-text-secondary);
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+[data-module="finance"] .qf-btn:hover {
+  border-color: var(--qf-accent);
+  color: var(--qf-text);
+}
+
+[data-module="finance"] .qf-input,
+[data-module="finance"] .qf-select {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--qf-border);
+  border-radius: var(--qf-radius);
+  background: var(--qf-bg-input);
+  color: var(--qf-text);
+  outline: none;
+}
+
+[data-module="finance"] .qf-input:focus,
+[data-module="finance"] .qf-select:focus {
+  border-color: var(--qf-accent);
+}

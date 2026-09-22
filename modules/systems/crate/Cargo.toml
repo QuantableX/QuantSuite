@@ -1,0 +1,50 @@
+# Package name follows the Tauri plugin convention so the plugin resolves to
+# `systems` and its permissions to `systems:default`. `links` exposes the
+# generated permission files to the app build. See ARCHITECTURE.md §2.
+[package]
+name = "tauri-plugin-systems"
+links = "tauri-plugin-systems"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantSystems — multi-system quantitative evaluation, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_systems"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }
+# The engine's stderr goes to the suite log rather than to a frontend event
+# nobody listened for — see the stderr drain in `start`.
+log = { workspace = true }
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+
+# Native window capture for the titlebar screenshot action.
+xcap = "0.9"
+arboard = "3"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_Graphics_Dwm",
+] }
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-archive-done-kanban-cards"
+description = "Enables the archive_done_kanban_cards command without any pre-configured scope."
+commands.allow = ["archive_done_kanban_cards"]
+
+[[permission]]
+identifier = "deny-archive-done-kanban-cards"
+description = "Denies the archive_done_kanban_cards command without any pre-configured scope."
+commands.deny = ["archive_done_kanban_cards"]

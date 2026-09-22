@@ -1,0 +1,18 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the pilot module."
+permissions = [
+  "allow-pilot-status",
+  "allow-pilot-contexts",
+  "allow-pilot-settings-get",
+  "allow-pilot-settings-set",
+  "allow-pilot-sessions-list",
+  "allow-pilot-session-create",
+  "allow-pilot-session-open",
+  "allow-pilot-session-launch",
+  "allow-pilot-session-stop",
+  "allow-pilot-session-delete",
+  "allow-pilot-session-update",
+  "allow-pilot-runtime-state",
+]

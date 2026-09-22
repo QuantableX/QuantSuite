@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-ohlcv"
+description = "Enables the get_ohlcv command without any pre-configured scope."
+commands.allow = ["get_ohlcv"]
+
+[[permission]]
+identifier = "deny-get-ohlcv"
+description = "Denies the get_ohlcv command without any pre-configured scope."
+commands.deny = ["get_ohlcv"]

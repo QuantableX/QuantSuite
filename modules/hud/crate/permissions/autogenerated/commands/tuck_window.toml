@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-tuck-window"
+description = "Enables the tuck_window command without any pre-configured scope."
+commands.allow = ["tuck_window"]
+
+[[permission]]
+identifier = "deny-tuck-window"
+description = "Denies the tuck_window command without any pre-configured scope."
+commands.deny = ["tuck_window"]

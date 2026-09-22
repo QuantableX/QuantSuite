@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-browse-universe"
+description = "Enables the browse_universe command without any pre-configured scope."
+commands.allow = ["browse_universe"]
+
+[[permission]]
+identifier = "deny-browse-universe"
+description = "Denies the browse_universe command without any pre-configured scope."
+commands.deny = ["browse_universe"]

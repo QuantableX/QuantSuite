@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-reset-agent-md"
+description = "Enables the reset_agent_md command without any pre-configured scope."
+commands.allow = ["reset_agent_md"]
+
+[[permission]]
+identifier = "deny-reset-agent-md"
+description = "Denies the reset_agent_md command without any pre-configured scope."
+commands.deny = ["reset_agent_md"]

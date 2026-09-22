@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-bot-positions"
+description = "Enables the get_bot_positions command without any pre-configured scope."
+commands.allow = ["get_bot_positions"]
+
+[[permission]]
+identifier = "deny-get-bot-positions"
+description = "Denies the get_bot_positions command without any pre-configured scope."
+commands.deny = ["get_bot_positions"]

@@ -1,0 +1,654 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PermissionFile",
+  "description": "Permission file that can define a default permission, a set of permissions or a list of inlined permissions.",
+  "type": "object",
+  "properties": {
+    "default": {
+      "description": "The default permission set for the plugin",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DefaultPermission"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "set": {
+      "description": "A list of permissions sets defined",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PermissionSet"
+      }
+    },
+    "permission": {
+      "description": "A list of inlined permissions",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Permission"
+      }
+    }
+  },
+  "definitions": {
+    "DefaultPermission": {
+      "description": "The default permission set of the plugin.\n\nWorks similarly to a permission with the \"default\" identifier.",
+      "type": "object",
+      "required": [
+        "permissions"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PermissionSet": {
+      "description": "A set of direct permissions grouped together under a new name.",
+      "type": "object",
+      "required": [
+        "description",
+        "identifier",
+        "permissions"
+      ],
+      "properties": {
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does.",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PermissionKind"
+          }
+        }
+      }
+    },
+    "Permission": {
+      "description": "Descriptions of explicit privileges of commands.\n\nIt can enable commands to be accessible in the frontend of the application.\n\nIf the scope is defined it can be used to fine grain control the access of individual or multiple commands.",
+      "type": "object",
+      "required": [
+        "identifier"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri internal convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commands": {
+          "description": "Allowed or denied commands when using this permission.",
+          "default": {
+            "allow": [],
+            "deny": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Commands"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Allowed or denied scoped when using this permission.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Scopes"
+            }
+          ]
+        },
+        "platforms": {
+          "description": "Target platforms this permission applies. By default all platforms are affected by this permission.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Target"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "description": "Allowed and denied commands inside a permission.\n\nIf two commands clash inside of `allow` and `deny`, it should be denied by default.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Allowed command.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "description": "Denied command, which takes priority.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Scopes": {
+      "description": "An argument for fine grained behavior control of Tauri commands.\n\nIt can be of any serde serializable type and is used to allow or prevent certain actions inside a Tauri command. The configured scope is passed to the command and will be enforced by the command implementation.\n\n## Example\n\n```json { \"allow\": [{ \"path\": \"$HOME/**\" }], \"deny\": [{ \"path\": \"$HOME/secret.txt\" }] } ```",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Data that defines what is allowed by the scope.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        "deny": {
+          "description": "Data that defines what is denied by the scope. This should be prioritized by validation logic.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      }
+    },
+    "Value": {
+      "description": "All supported ACL values.",
+      "anyOf": [
+        {
+          "description": "Represents a null JSON value.",
+          "type": "null"
+        },
+        {
+          "description": "Represents a [`bool`].",
+          "type": "boolean"
+        },
+        {
+          "description": "Represents a valid ACL [`Number`].",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Number"
+            }
+          ]
+        },
+        {
+          "description": "Represents a [`String`].",
+          "type": "string"
+        },
+        {
+          "description": "Represents a list of other [`Value`]s.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        {
+          "description": "Represents a map of [`String`] keys to [`Value`]s.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      ]
+    },
+    "Number": {
+      "description": "A valid ACL number.",
+      "anyOf": [
+        {
+          "description": "Represents an [`i64`].",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "Represents a [`f64`].",
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "Target": {
+      "description": "Platform target.",
+      "oneOf": [
+        {
+          "description": "MacOS.",
+          "type": "string",
+          "enum": [
+            "macOS"
+          ]
+        },
+        {
+          "description": "Windows.",
+          "type": "string",
+          "enum": [
+            "windows"
+          ]
+        },
+        {
+          "description": "Linux.",
+          "type": "string",
+          "enum": [
+            "linux"
+          ]
+        },
+        {
+          "description": "Android.",
+          "type": "string",
+          "enum": [
+            "android"
+          ]
+        },
+        {
+          "description": "iOS.",
+          "type": "string",
+          "enum": [
+            "iOS"
+          ]
+        }
+      ]
+    },
+    "PermissionKind": {
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "Enables the browser_disable_fullscreen command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-browser-disable-fullscreen",
+          "markdownDescription": "Enables the browser_disable_fullscreen command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the browser_disable_fullscreen command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-browser-disable-fullscreen",
+          "markdownDescription": "Denies the browser_disable_fullscreen command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the browser_request_new_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-browser-request-new-tab",
+          "markdownDescription": "Enables the browser_request_new_tab command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the browser_request_new_tab command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-browser-request-new-tab",
+          "markdownDescription": "Denies the browser_request_new_tab command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-file",
+          "markdownDescription": "Enables the create_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-file",
+          "markdownDescription": "Denies the create_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-file",
+          "markdownDescription": "Enables the delete_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-file",
+          "markdownDescription": "Denies the delete_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the eval_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-eval-browser",
+          "markdownDescription": "Enables the eval_browser command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the eval_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-eval-browser",
+          "markdownDescription": "Denies the eval_browser command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the find_in_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-find-in-browser",
+          "markdownDescription": "Enables the find_in_browser command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the find_in_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-find-in-browser",
+          "markdownDescription": "Denies the find_in_browser command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_browser_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-browser-url",
+          "markdownDescription": "Enables the get_browser_url command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_browser_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-browser-url",
+          "markdownDescription": "Denies the get_browser_url command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the git_branch_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-git-branch-list",
+          "markdownDescription": "Enables the git_branch_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the git_branch_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-git-branch-list",
+          "markdownDescription": "Denies the git_branch_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the git_commit_files command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-git-commit-files",
+          "markdownDescription": "Enables the git_commit_files command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the git_commit_files command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-git-commit-files",
+          "markdownDescription": "Denies the git_commit_files command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the git_diff command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-git-diff",
+          "markdownDescription": "Enables the git_diff command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the git_diff command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-git-diff",
+          "markdownDescription": "Denies the git_diff command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the git_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-git-log",
+          "markdownDescription": "Enables the git_log command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the git_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-git-log",
+          "markdownDescription": "Denies the git_log command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the git_stage command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-git-stage",
+          "markdownDescription": "Enables the git_stage command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the git_stage command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-git-stage",
+          "markdownDescription": "Denies the git_stage command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the git_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-git-status",
+          "markdownDescription": "Enables the git_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the git_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-git-status",
+          "markdownDescription": "Denies the git_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_browser_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-browser-data",
+          "markdownDescription": "Enables the load_browser_data command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_browser_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-browser-data",
+          "markdownDescription": "Denies the load_browser_data command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_canvas_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-canvas-state",
+          "markdownDescription": "Enables the load_canvas_state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_canvas_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-canvas-state",
+          "markdownDescription": "Denies the load_canvas_state command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the navigate_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-navigate-browser",
+          "markdownDescription": "Enables the navigate_browser command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the navigate_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-navigate-browser",
+          "markdownDescription": "Denies the navigate_browser command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_dir_tree command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-dir-tree",
+          "markdownDescription": "Enables the read_dir_tree command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_dir_tree command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-dir-tree",
+          "markdownDescription": "Denies the read_dir_tree command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-file",
+          "markdownDescription": "Enables the read_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-file",
+          "markdownDescription": "Denies the read_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_file_binary command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-file-binary",
+          "markdownDescription": "Enables the read_file_binary command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_file_binary command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-file-binary",
+          "markdownDescription": "Denies the read_file_binary command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the rename_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-rename-file",
+          "markdownDescription": "Enables the rename_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the rename_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-rename-file",
+          "markdownDescription": "Denies the rename_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_browser_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-browser-data",
+          "markdownDescription": "Enables the save_browser_data command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_browser_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-browser-data",
+          "markdownDescription": "Denies the save_browser_data command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_canvas_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-canvas-state",
+          "markdownDescription": "Enables the save_canvas_state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_canvas_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-canvas-state",
+          "markdownDescription": "Denies the save_canvas_state command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the search_files command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-search-files",
+          "markdownDescription": "Enables the search_files command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the search_files command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-search-files",
+          "markdownDescription": "Denies the search_files command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_browser_clip_region command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-browser-clip-region",
+          "markdownDescription": "Enables the set_browser_clip_region command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_browser_clip_region command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-browser-clip-region",
+          "markdownDescription": "Denies the set_browser_clip_region command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the timeline_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-timeline-list",
+          "markdownDescription": "Enables the timeline_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the timeline_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-timeline-list",
+          "markdownDescription": "Denies the timeline_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the timeline_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-timeline-read",
+          "markdownDescription": "Enables the timeline_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the timeline_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-timeline-read",
+          "markdownDescription": "Denies the timeline_read command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the timeline_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-timeline-snapshot",
+          "markdownDescription": "Enables the timeline_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the timeline_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-timeline-snapshot",
+          "markdownDescription": "Denies the timeline_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the workspace_storage_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-workspace-storage-dir",
+          "markdownDescription": "Enables the workspace_storage_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the workspace_storage_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-workspace-storage-dir",
+          "markdownDescription": "Denies the workspace_storage_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the write_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-write-file",
+          "markdownDescription": "Enables the write_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-write-file",
+          "markdownDescription": "Denies the write_file command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-navigate-browser`\n- `allow-eval-browser`\n- `allow-get-browser-url`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-browser-request-new-tab`\n- `allow-browser-disable-fullscreen`\n- `allow-load-browser-data`\n- `allow-save-browser-data`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-navigate-browser`\n- `allow-eval-browser`\n- `allow-get-browser-url`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-browser-request-new-tab`\n- `allow-browser-disable-fullscreen`\n- `allow-load-browser-data`\n- `allow-save-browser-data`"
+        }
+      ]
+    }
+  }
+}

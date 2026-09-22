@@ -1,0 +1,32 @@
+[package]
+name = "tauri-plugin-terminal"
+links = "tauri-plugin-terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantTerminal — investing dashboard and trading terminal, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_terminal"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+chrono = { workspace = true }
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+
+# New code, not a migrated backend: held to the full lint gate.
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true }

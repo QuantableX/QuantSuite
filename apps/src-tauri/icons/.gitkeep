@@ -1,0 +1,11 @@
+# Place your icons here:
+# - icon.ico (Windows)
+# - icon.icns (macOS)
+# - icon.png (Linux/tray)
+# - 32x32.png
+# - 128x128.png
+# - 128x128@2x.png
+#
+# You can use the logo from QuantHUD Prototype/logo.png
+# and convert it using: npx @tauri-apps/cli icon path/to/logo.png
+

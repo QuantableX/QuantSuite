@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-memory-context"
+description = "Enables the memory_context command without any pre-configured scope."
+commands.allow = ["memory_context"]
+
+[[permission]]
+identifier = "deny-memory-context"
+description = "Denies the memory_context command without any pre-configured scope."
+commands.deny = ["memory_context"]

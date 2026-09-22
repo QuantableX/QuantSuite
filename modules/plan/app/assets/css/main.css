@@ -1,0 +1,152 @@
+/* Calendar colours. `data-color` on an event block keys into these; the names
+   are the CalendarColor union in app/types/index.ts. A calendar stores the
+   NAME, never a hex — a hex would not survive a theme change. */
+:root {
+  --qp-cal-slate: #6b7280;
+  --qp-cal-blue: #4a6fa5;
+  --qp-cal-green: #3f8f5f;
+  --qp-cal-amber: #a3762f;
+  --qp-cal-red: #b04a4a;
+  --qp-cal-purple: #7a5aa8;
+  --qp-cal-pink: #a8547f;
+  --qp-cal-teal: #3f8f8f;
+  --qp-cal-orange: #b0703a;
+  --qp-cal-lime: #7a9a3f;
+  --qp-cal-mint: #4aa87f;
+  --qp-cal-cyan: #3f8fa8;
+  --qp-cal-indigo: #5a5fa8;
+  --qp-cal-brown: #8a6a52;
+
+  /* Surfaces. QuantPlan borrows the suite palette rather than inventing one;
+     these exist so the module can be read at a glance in its own files. */
+  --qp-bg: var(--qss-bg, #18181e);
+  --qp-bg-raised: var(--qss-bg-raised, #1f1f25);
+  --qp-bg-card: var(--qss-bg-card, #292930);
+  --qp-bg-hover: var(--qss-bg-hover, #313139);
+  --qp-bg-input: var(--qss-bg-card, #18181e);
+  --qp-border: var(--qss-border, #47474f);
+  --qp-border-subtle: var(--qss-border-subtle, #35353d);
+  --qp-text: var(--qss-text, #d4d4d8);
+  --qp-text-secondary: var(--qss-text-secondary, #9a9aa5);
+  --qp-text-muted: var(--qss-text-muted, #6e6e7a);
+  --qp-accent: var(--qss-accent, #a0a0a8);
+  --qp-now: #d05a5a;
+
+  --qp-radius: 6px;
+  --qp-radius-lg: 10px;
+  /* One hour of grid. Everything in the time grid is derived from this. */
+  --qp-hour-h: 48px;
+  --qp-gutter-w: 56px;
+}
+
+[data-module="plan"] {
+  background: var(--qp-bg);
+  color: var(--qp-text);
+  font-family: var(--qss-font-sans, system-ui, sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-module="plan"] button,
+[data-module="plan"] input,
+[data-module="plan"] select,
+[data-module="plan"] textarea {
+  font: inherit;
+}
+
+[data-module="plan"] .mono {
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+}
+
+[data-module="plan"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+[data-module="plan"] ::-webkit-scrollbar-thumb {
+  background: var(--qp-border);
+  border-radius: 3px;
+}
+
+/* One event chip, every view: the week grid, the month cells and the agenda
+   all colour an event through this. */
+[data-module="plan"] .qp-ev {
+  --qp-c: var(--qp-cal-slate);
+  border-left: 3px solid var(--qp-c);
+  background: color-mix(in srgb, var(--qp-c) 26%, var(--qp-bg-card));
+  color: var(--qp-text);
+}
+
+[data-module="plan"] .qp-ev[data-color='slate'] { --qp-c: var(--qp-cal-slate); }
+[data-module="plan"] .qp-ev[data-color='blue'] { --qp-c: var(--qp-cal-blue); }
+[data-module="plan"] .qp-ev[data-color='green'] { --qp-c: var(--qp-cal-green); }
+[data-module="plan"] .qp-ev[data-color='amber'] { --qp-c: var(--qp-cal-amber); }
+[data-module="plan"] .qp-ev[data-color='red'] { --qp-c: var(--qp-cal-red); }
+[data-module="plan"] .qp-ev[data-color='purple'] { --qp-c: var(--qp-cal-purple); }
+[data-module="plan"] .qp-ev[data-color='pink'] { --qp-c: var(--qp-cal-pink); }
+[data-module="plan"] .qp-ev[data-color='teal'] { --qp-c: var(--qp-cal-teal); }
+[data-module="plan"] .qp-ev[data-color='orange'] { --qp-c: var(--qp-cal-orange); }
+[data-module="plan"] .qp-ev[data-color='lime'] { --qp-c: var(--qp-cal-lime); }
+[data-module="plan"] .qp-ev[data-color='mint'] { --qp-c: var(--qp-cal-mint); }
+[data-module="plan"] .qp-ev[data-color='cyan'] { --qp-c: var(--qp-cal-cyan); }
+[data-module="plan"] .qp-ev[data-color='indigo'] { --qp-c: var(--qp-cal-indigo); }
+[data-module="plan"] .qp-ev[data-color='brown'] { --qp-c: var(--qp-cal-brown); }
+
+/* The dot in the calendar list and in the colour picker. */
+[data-module="plan"] .qp-dot {
+  --qp-c: var(--qp-cal-slate);
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--qp-c);
+}
+
+[data-module="plan"] .qp-dot[data-color='slate'] { --qp-c: var(--qp-cal-slate); }
+[data-module="plan"] .qp-dot[data-color='blue'] { --qp-c: var(--qp-cal-blue); }
+[data-module="plan"] .qp-dot[data-color='green'] { --qp-c: var(--qp-cal-green); }
+[data-module="plan"] .qp-dot[data-color='amber'] { --qp-c: var(--qp-cal-amber); }
+[data-module="plan"] .qp-dot[data-color='red'] { --qp-c: var(--qp-cal-red); }
+[data-module="plan"] .qp-dot[data-color='purple'] { --qp-c: var(--qp-cal-purple); }
+[data-module="plan"] .qp-dot[data-color='pink'] { --qp-c: var(--qp-cal-pink); }
+[data-module="plan"] .qp-dot[data-color='teal'] { --qp-c: var(--qp-cal-teal); }
+[data-module="plan"] .qp-dot[data-color='orange'] { --qp-c: var(--qp-cal-orange); }
+[data-module="plan"] .qp-dot[data-color='lime'] { --qp-c: var(--qp-cal-lime); }
+[data-module="plan"] .qp-dot[data-color='mint'] { --qp-c: var(--qp-cal-mint); }
+[data-module="plan"] .qp-dot[data-color='cyan'] { --qp-c: var(--qp-cal-cyan); }
+[data-module="plan"] .qp-dot[data-color='indigo'] { --qp-c: var(--qp-cal-indigo); }
+[data-module="plan"] .qp-dot[data-color='brown'] { --qp-c: var(--qp-cal-brown); }
+
+[data-module="plan"] .qp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--qp-border);
+  border-radius: var(--qp-radius);
+  background: var(--qp-bg-card);
+  color: var(--qp-text-secondary);
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+[data-module="plan"] .qp-btn:hover {
+  border-color: var(--qp-accent);
+  color: var(--qp-text);
+}
+
+[data-module="plan"] .qp-input,
+[data-module="plan"] .qp-select {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--qp-border);
+  border-radius: var(--qp-radius);
+  background: var(--qp-bg-input);
+  color: var(--qp-text);
+  outline: none;
+}
+
+[data-module="plan"] .qp-input:focus,
+[data-module="plan"] .qp-select:focus {
+  border-color: var(--qp-accent);
+}

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-bot"
+description = "Enables the delete_bot command without any pre-configured scope."
+commands.allow = ["delete_bot"]
+
+[[permission]]
+identifier = "deny-delete-bot"
+description = "Denies the delete_bot command without any pre-configured scope."
+commands.deny = ["delete_bot"]

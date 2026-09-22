@@ -1,0 +1,459 @@
+
+
+/* ── Theme Tokens ── */
+
+:root {
+  --qa-color-scheme:   dark;
+  --qa-bg:             #18181e;
+  --qa-bg-sidebar:     #1f1f25;
+  --qa-bg-card:        #292930;
+  --qa-bg-hover:       #313139;
+  --qa-bg-input:       #18181e;
+  --qa-border:         #47474f;
+  --qa-border-subtle:  #4a4a55;
+  --qa-text:           #d4d4d8;
+  --qa-text-secondary: #9a9aa5;
+  --qa-text-muted:     #6e6e7a;
+  --qa-accent:         #a0a0a8;
+  --qa-accent-hover:   #b8b8c0;
+  --qa-success:        #2ed573;
+  --qa-error:          #ff4757;
+  --qa-warning:        #ffa502;
+  --qa-scrollbar-track: #18181e;
+  --qa-scrollbar-thumb: #47474f;
+  --qa-scrollbar-thumb-hover: #5a5a64;
+  --qa-radius:         8px;
+  --qa-radius-lg:      12px;
+  --qa-transition:     150ms ease;
+}
+
+
+
+[data-theme="light"] {
+  --qa-color-scheme:   light;
+  --qa-bg:             #d8d8de;
+  --qa-bg-sidebar:     #e0e0e5;
+  --qa-bg-card:        #e6e6ec;
+  --qa-bg-hover:       #c8c8d0;
+  --qa-bg-input:       #d8d8de;
+  --qa-border:         #a5a5af;
+  --qa-text:           #24242c;
+  --qa-text-secondary: #484856;
+  --qa-text-muted:     #6a6a78;
+  --qa-accent:         #4a4a52;
+  --qa-accent-hover:   #3a3a42;
+}
+
+
+
+/* ── Base ── */
+
+[data-module="algo"] *,
+[data-module="algo"] *::before,
+[data-module="algo"] *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+
+
+[data-module="algo"] {
+  height: 100%;
+  overflow: hidden;
+}
+
+
+
+[data-module="algo"] {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--qa-bg);
+  color: var(--qa-text);
+}
+
+
+
+[data-module="algo"] code,
+[data-module="algo"] pre,
+[data-module="algo"] .mono {
+  font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+
+
+/* ── Scrollbars ── */
+
+[data-module="algo"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+
+
+[data-module="algo"] ::-webkit-scrollbar-track {
+  background: var(--qa-scrollbar-track);
+}
+
+
+
+[data-module="algo"] ::-webkit-scrollbar-thumb {
+  background: var(--qa-scrollbar-thumb);
+  border-radius: 3px;
+}
+
+
+
+[data-module="algo"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--qa-scrollbar-thumb-hover);
+}
+
+
+
+/* ── Utility classes ── */
+
+[data-module="algo"] .text-success { color: var(--qa-success); }
+
+
+[data-module="algo"] .text-error { color: var(--qa-error); }
+
+
+[data-module="algo"] .text-warning { color: var(--qa-warning); }
+
+
+[data-module="algo"] .text-muted { color: var(--qa-text-muted); }
+
+
+[data-module="algo"] .text-secondary { color: var(--qa-text-secondary); }
+
+
+[data-module="algo"] .text-accent { color: var(--qa-accent); }
+
+
+
+[data-module="algo"] .bg-app { background: var(--qa-bg); }
+
+
+[data-module="algo"] .bg-sidebar { background: var(--qa-bg-sidebar); }
+
+
+[data-module="algo"] .bg-card { background: var(--qa-bg-card); }
+
+
+[data-module="algo"] .bg-hover { background: var(--qa-bg-hover); }
+
+
+
+[data-module="algo"] .border-default { border-color: var(--qa-border); }
+
+
+[data-module="algo"] .border-subtle { border-color: var(--qa-border-subtle); }
+
+
+
+/* ── Card ── */
+
+[data-module="algo"] .card {
+  background: var(--qa-bg-card);
+  border: 1px solid var(--qa-border);
+  border-radius: var(--qa-radius-lg);
+  padding: 16px;
+}
+
+
+
+/* ── Pill / Chip ── */
+
+[data-module="algo"] .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--qa-border);
+  border-radius: 9999px;
+  color: var(--qa-text-secondary);
+  background: transparent;
+}
+
+
+
+/* ── Buttons ── */
+
+[data-module="algo"] .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--qa-border);
+  border-radius: var(--qa-radius);
+  background: var(--qa-bg-card);
+  color: var(--qa-text);
+  cursor: pointer;
+  transition: all var(--qa-transition);
+  white-space: nowrap;
+  user-select: none;
+}
+
+
+
+[data-module="algo"] .btn:hover {
+  background: var(--qa-bg-hover);
+  border-color: var(--qa-accent);
+}
+
+
+
+[data-module="algo"] .btn:active {
+  transform: scale(0.97);
+}
+
+
+
+[data-module="algo"] .btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+
+
+[data-module="algo"] .btn-primary {
+  background: var(--qa-accent);
+  color: var(--qa-bg);
+  border-color: var(--qa-accent);
+}
+
+
+
+[data-module="algo"] .btn-primary:hover {
+  background: var(--qa-accent-hover);
+  border-color: var(--qa-accent-hover);
+}
+
+
+
+[data-module="algo"] .btn-success {
+  background: var(--qa-accent);
+  color: var(--qa-bg);
+  border-color: var(--qa-accent);
+}
+
+
+
+[data-module="algo"] .btn-success:hover {
+  background: var(--qa-accent-hover);
+  border-color: var(--qa-accent-hover);
+}
+
+
+
+[data-module="algo"] .btn-danger {
+  background: var(--qa-error);
+  color: #fff;
+  border-color: var(--qa-error);
+}
+
+
+
+/* ── Form Inputs ── */
+
+[data-module="algo"] .input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid var(--qa-border);
+  border-radius: var(--qa-radius);
+  background: var(--qa-bg-input);
+  color: var(--qa-text);
+  transition: border-color var(--qa-transition);
+  outline: none;
+}
+
+
+
+[data-module="algo"] .input:focus {
+  border-color: var(--qa-accent);
+}
+
+
+
+[data-module="algo"] .input::placeholder {
+  color: var(--qa-text-muted);
+}
+
+
+
+[data-module="algo"] select.input {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px;
+  /* The native popup follows the element's color-scheme, not our tokens. */
+  color-scheme: var(--qa-color-scheme);
+}
+
+[data-module="algo"] select.input option {
+  background: var(--qa-bg-sidebar);
+  color: var(--qa-text);
+}
+
+
+
+[data-module="algo"] .label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--qa-text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+
+
+/* ── Table ── */
+
+[data-module="algo"] .table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+
+
+[data-module="algo"] .table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--qa-text-muted);
+  border-bottom: 1px solid var(--qa-border);
+}
+
+
+
+[data-module="algo"] .table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--qa-border-subtle);
+  color: var(--qa-text);
+}
+
+
+
+[data-module="algo"] .table tbody tr:hover {
+  background: var(--qa-bg-hover);
+}
+
+
+
+/* ── xterm overrides ── */
+
+[data-module="algo"] .xterm {
+  padding: 8px;
+}
+
+
+
+[data-module="algo"] .xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+
+
+
+[data-module="algo"] .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--qa-scrollbar-thumb);
+  border-radius: 3px;
+}
+
+
+
+/* ── Monaco overrides ── */
+
+[data-module="algo"] .monaco-editor,
+[data-module="algo"] .monaco-editor .overflow-guard {
+  border-radius: var(--qa-radius);
+}
+
+
+
+/* ── Animations ── */
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+
+
+[data-module="algo"] .animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+
+
+[data-module="algo"] .animate-fade-in {
+  animation: fade-in 200ms ease-out;
+}
+
+
+
+/* ── Drag regions (Tauri titlebar) ── */
+
+[data-module="algo"] .no-drag {
+  -webkit-app-region: no-drag;
+}
+
+
+
+[data-module="algo"] .drag-region {
+  -webkit-app-region: drag;
+}
+
+
+
+/* ── Selection ── */
+
+[data-module="algo"] ::selection {
+  background: color-mix(in srgb, var(--qa-accent) 30%, transparent);
+  color: var(--qa-text);
+}
+
+
+
+/* ── Transition helpers ── */
+
+[data-module="algo"] .transition-colors {
+  transition: color var(--qa-transition), background-color var(--qa-transition), border-color var(--qa-transition);
+}
+
+
+
+[data-module="algo"] .transition-opacity {
+  transition: opacity var(--qa-transition);
+}
+
+
+
+[data-module="algo"] .transition-all {
+  transition: all var(--qa-transition);
+}

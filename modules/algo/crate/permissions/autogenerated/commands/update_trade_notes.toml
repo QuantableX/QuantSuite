@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-update-trade-notes"
+description = "Enables the update_trade_notes command without any pre-configured scope."
+commands.allow = ["update_trade_notes"]
+
+[[permission]]
+identifier = "deny-update-trade-notes"
+description = "Denies the update_trade_notes command without any pre-configured scope."
+commands.deny = ["update_trade_notes"]

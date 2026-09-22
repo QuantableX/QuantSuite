@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-read-screenshot-file"
+description = "Enables the read_screenshot_file command without any pre-configured scope."
+commands.allow = ["read_screenshot_file"]
+
+[[permission]]
+identifier = "deny-read-screenshot-file"
+description = "Denies the read_screenshot_file command without any pre-configured scope."
+commands.deny = ["read_screenshot_file"]

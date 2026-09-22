@@ -1,0 +1,32 @@
+[package]
+name = "tauri-plugin-script"
+links = "tauri-plugin-script"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantScript — the Indicator Smithery's scripts, viewed, edited and versioned inside the suite, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_script"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+rusqlite = { workspace = true }
+# Every version and every file is addressed by its content hash.
+sha2 = "0.10"
+# Explorer needs ordinary absolute Windows paths, not verbatim (\\?\) paths.
+dunce = "1"
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+
+# New code: held to the full lint gate (see workspace root).
+[lints]
+workspace = true

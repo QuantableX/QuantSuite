@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-script-python"
+description = "Enables the script_python command without any pre-configured scope."
+commands.allow = ["script_python"]
+
+[[permission]]
+identifier = "deny-script-python"
+description = "Denies the script_python command without any pre-configured scope."
+commands.deny = ["script_python"]

@@ -1,0 +1,105 @@
+﻿[workspace]
+resolver = "2"
+members = [
+    "apps/src-tauri",
+    "crates/qs-core",
+    "crates/qs-single-instance",
+    "crates/qs-mcp-bridge",
+    "crates/qs-pty",
+    # Module crates, one per landed migration phase.
+    "modules/systems/crate",
+    "modules/notes/crate",
+    "modules/plan/crate",
+    "modules/habit/crate",
+    "modules/finance/crate",
+    "modules/algo/crate",
+    "modules/mcp/crate",
+    "modules/pilot/crate",
+    "modules/canvas/crate",
+    "modules/terminal/crate",
+    "modules/console/crate",
+    "modules/hud/crate",
+    "modules/memory/crate",
+    "modules/script/crate",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.77"
+
+# Lint policy, per ARCHITECTURE.md Â§1 "Layer gotchas".
+#
+# **Every crate in the workspace is denied warnings.** The migrated module crates
+# used to be exempt â€” they arrived carrying style lints from apps that had never
+# run clippy under `-D warnings`, and the debt was left visible. It has since
+# been paid off: 63 warnings down to zero.
+#
+# Three crates keep a narrow, documented exception in their own `[lints]` table
+# rather than inheriting this one, because their table has to add an `allow`:
+#
+#   hud   `upper_case_acronyms`  â€” Win32 FFI names mirror the Windows API
+#   hud   `too_many_arguments`   â€” Win32 wrappers take what the API takes
+#   mcp   `too_many_arguments`   â€” splitting migrated signatures is a refactor
+#   algo  `too_many_arguments`   â€” same
+#
+# A crate cannot merge `workspace = true` with its own entries, so those three
+# spell the policy out instead. Everything else opts in.
+#
+# This lives here rather than as a `-D warnings` CLI flag because that flag also
+# reaches workspace path dependencies, which would deny third-party code too.
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[workspace.dependencies]
+# "unstable" is required by the `canvas` module: its embedded browser attaches a
+# child Webview to the main window via the multi-webview API.
+tauri = { version = "2", features = ["tray-icon", "image-png", "unstable"] }
+tauri-build = { version = "2", features = [] }
+tauri-plugin = { version = "2", features = ["build"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+uuid = { version = "1", features = ["v4", "serde"] }
+dirs = "5"
+chrono = { version = "0.4", features = ["serde"] }
+# QuantPlan expands recurrences in the event's own IANA zone — see
+# modules/plan/crate/src/recur.rs on why UTC is the wrong place to do it.
+chrono-tz = "0.10"
+thiserror = "1"
+# `std` is opt-in on the `log` crate and is what provides `set_boxed_logger`,
+# which qs-core's file logger installs (crates/qs-core/src/diagnostics.rs).
+log = { version = "0.4", features = ["std"] }
+
+# Two Windows main-thread deadlocks in tao 0.35 froze the built suite for
+# hours ("nothing in flight — the main thread is blocked outside a command" in
+# ~/.quantsuite/logs/quantsuite.log). Both are fixed upstream in tao 0.36.0,
+# but tauri-runtime-wry 2.11.x pins `tao ^0.35`, so 0.36 is unreachable until
+# a tauri release bumps it. vendor/tao is 0.35.3 with exactly two backports:
+#   tao#1264 — TaskbarCreated handler held the window-state lock across a
+#              reentrant taskbar update (trigger: Explorer restart, resume
+#              from sleep — the tray-idle morning hangs)
+#   tao#1215 — PeekMessageW called with input-state locks held re-enters the
+#              window proc (trigger: keyboard/IME input — foreground hangs)
+# Drop this patch (and vendor/tao) when tauri-runtime-wry moves to tao >= 0.36.
+[patch.crates-io]
+tao = { path = "vendor/tao" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

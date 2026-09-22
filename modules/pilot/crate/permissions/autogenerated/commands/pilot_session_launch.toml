@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-session-launch"
+description = "Enables the pilot_session_launch command without any pre-configured scope."
+commands.allow = ["pilot_session_launch"]
+
+[[permission]]
+identifier = "deny-pilot-session-launch"
+description = "Denies the pilot_session_launch command without any pre-configured scope."
+commands.deny = ["pilot_session_launch"]

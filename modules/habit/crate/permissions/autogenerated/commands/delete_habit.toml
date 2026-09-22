@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-habit"
+description = "Enables the delete_habit command without any pre-configured scope."
+commands.allow = ["delete_habit"]
+
+[[permission]]
+identifier = "deny-delete-habit"
+description = "Denies the delete_habit command without any pre-configured scope."
+commands.deny = ["delete_habit"]

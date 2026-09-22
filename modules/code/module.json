@@ -1,0 +1,23 @@
+{
+  "id": "code",
+  "title": "QuantCode",
+  "description": "Code editor — files, splits, diagnostics, terminal",
+  "status": "migrated",
+  "phase": 7,
+  "app": "quantspace",
+  "appOrder": 1,
+  "routes": {
+    "root": "/code",
+    "home": "/code"
+  },
+  "publishes": [
+    "code.file.saved"
+  ],
+  "subscribes": [
+    "core.workspace.opened",
+    "core.file.open"
+  ],
+  "entities": [],
+  "sidecars": [],
+  "capabilities": []
+}

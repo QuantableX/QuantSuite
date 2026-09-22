@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-connect-clients"
+description = "Enables the connect_clients command without any pre-configured scope."
+commands.allow = ["connect_clients"]
+
+[[permission]]
+identifier = "deny-connect-clients"
+description = "Denies the connect_clients command without any pre-configured scope."
+commands.deny = ["connect_clients"]

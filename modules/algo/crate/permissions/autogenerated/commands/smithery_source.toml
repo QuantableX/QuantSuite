@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-smithery-source"
+description = "Enables the smithery_source command without any pre-configured scope."
+commands.allow = ["smithery_source"]
+
+[[permission]]
+identifier = "deny-smithery-source"
+description = "Denies the smithery_source command without any pre-configured scope."
+commands.deny = ["smithery_source"]

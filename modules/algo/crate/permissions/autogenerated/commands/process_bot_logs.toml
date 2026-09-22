@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-process-bot-logs"
+description = "Enables the process_bot_logs command without any pre-configured scope."
+commands.allow = ["process_bot_logs"]
+
+[[permission]]
+identifier = "deny-process-bot-logs"
+description = "Denies the process_bot_logs command without any pre-configured scope."
+commands.deny = ["process_bot_logs"]

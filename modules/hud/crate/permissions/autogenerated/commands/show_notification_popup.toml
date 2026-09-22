@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-show-notification-popup"
+description = "Enables the show_notification_popup command without any pre-configured scope."
+commands.allow = ["show_notification_popup"]
+
+[[permission]]
+identifier = "deny-show-notification-popup"
+description = "Denies the show_notification_popup command without any pre-configured scope."
+commands.deny = ["show_notification_popup"]

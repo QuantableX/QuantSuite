@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-timeline-snapshot"
+description = "Enables the timeline_snapshot command without any pre-configured scope."
+commands.allow = ["timeline_snapshot"]
+
+[[permission]]
+identifier = "deny-timeline-snapshot"
+description = "Denies the timeline_snapshot command without any pre-configured scope."
+commands.deny = ["timeline_snapshot"]

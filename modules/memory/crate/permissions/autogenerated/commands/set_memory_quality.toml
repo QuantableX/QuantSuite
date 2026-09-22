@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-memory-quality"
+description = "Enables the set_memory_quality command without any pre-configured scope."
+commands.allow = ["set_memory_quality"]
+
+[[permission]]
+identifier = "deny-set-memory-quality"
+description = "Denies the set_memory_quality command without any pre-configured scope."
+commands.deny = ["set_memory_quality"]

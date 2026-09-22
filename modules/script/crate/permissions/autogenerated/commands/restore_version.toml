@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-restore-version"
+description = "Enables the restore_version command without any pre-configured scope."
+commands.allow = ["restore_version"]
+
+[[permission]]
+identifier = "deny-restore-version"
+description = "Denies the restore_version command without any pre-configured scope."
+commands.deny = ["restore_version"]

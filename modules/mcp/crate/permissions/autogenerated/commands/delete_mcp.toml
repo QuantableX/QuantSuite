@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-mcp"
+description = "Enables the delete_mcp command without any pre-configured scope."
+commands.allow = ["delete_mcp"]
+
+[[permission]]
+identifier = "deny-delete-mcp"
+description = "Denies the delete_mcp command without any pre-configured scope."
+commands.deny = ["delete_mcp"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-list-trade-facets"
+description = "Enables the list_trade_facets command without any pre-configured scope."
+commands.allow = ["list_trade_facets"]
+
+[[permission]]
+identifier = "deny-list-trade-facets"
+description = "Denies the list_trade_facets command without any pre-configured scope."
+commands.deny = ["list_trade_facets"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-browser-url"
+description = "Enables the get_browser_url command without any pre-configured scope."
+commands.allow = ["get_browser_url"]
+
+[[permission]]
+identifier = "deny-get-browser-url"
+description = "Denies the get_browser_url command without any pre-configured scope."
+commands.deny = ["get_browser_url"]

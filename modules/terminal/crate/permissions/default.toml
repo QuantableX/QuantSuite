@@ -1,0 +1,15 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the terminal module."
+permissions = [
+  "allow-get-ohlcv",
+  "allow-get-tickers",
+  "allow-get-order-book",
+  "allow-get-screener",
+  "allow-get-correlation",
+  "allow-get-marketcap",
+  "allow-get-daily-change",
+  "allow-get-sentiment",
+  "allow-get-metric-history",
+]

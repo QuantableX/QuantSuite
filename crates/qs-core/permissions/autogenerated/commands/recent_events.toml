@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-recent-events"
+description = "Enables the recent_events command without any pre-configured scope."
+commands.allow = ["recent_events"]
+
+[[permission]]
+identifier = "deny-recent-events"
+description = "Denies the recent_events command without any pre-configured scope."
+commands.deny = ["recent_events"]

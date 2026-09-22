@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-vault-path"
+description = "Enables the set_vault_path command without any pre-configured scope."
+commands.allow = ["set_vault_path"]
+
+[[permission]]
+identifier = "deny-set-vault-path"
+description = "Denies the set_vault_path command without any pre-configured scope."
+commands.deny = ["set_vault_path"]

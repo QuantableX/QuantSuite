@@ -1,0 +1,37 @@
+[package]
+name = "tauri-plugin-pilot"
+links = "tauri-plugin-pilot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantPilot — the suite's agent harness: the local agent TUIs in a terminal, with sessions, the suite as context, and a face that knows what they are doing"
+
+[lib]
+name = "qs_mod_pilot"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+dirs = { workspace = true }
+# The relay the CLIs report to (Claude Code hooks, statusLine); same stack
+# as the mcp module's server.
+axum = "0.8"
+tokio = { workspace = true }
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+# The PTYs: one registry with the console, one output channel, one owner rule.
+tauri-plugin-console = { path = "../../console/crate" }
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }

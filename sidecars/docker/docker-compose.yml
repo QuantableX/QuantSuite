@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  openclaw-gateway:
+    image: openclaw/gateway:latest
+    container_name: quantcontrol-gateway
+    restart: unless-stopped
+    ports:
+      - "3747:3747"
+    volumes:
+      - ./openclaw.json:/app/openclaw.json:ro
+      - ./agents:/home/openclaw/workspaces:rw
+      - openclaw-data:/app/data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    networks:
+      - quantcontrol
+
+networks:
+  quantcontrol:
+    driver: bridge
+
+volumes:
+  openclaw-data:

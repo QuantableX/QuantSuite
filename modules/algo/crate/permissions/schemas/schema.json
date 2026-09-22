@@ -1,0 +1,978 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PermissionFile",
+  "description": "Permission file that can define a default permission, a set of permissions or a list of inlined permissions.",
+  "type": "object",
+  "properties": {
+    "default": {
+      "description": "The default permission set for the plugin",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DefaultPermission"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "set": {
+      "description": "A list of permissions sets defined",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PermissionSet"
+      }
+    },
+    "permission": {
+      "description": "A list of inlined permissions",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Permission"
+      }
+    }
+  },
+  "definitions": {
+    "DefaultPermission": {
+      "description": "The default permission set of the plugin.\n\nWorks similarly to a permission with the \"default\" identifier.",
+      "type": "object",
+      "required": [
+        "permissions"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PermissionSet": {
+      "description": "A set of direct permissions grouped together under a new name.",
+      "type": "object",
+      "required": [
+        "description",
+        "identifier",
+        "permissions"
+      ],
+      "properties": {
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does.",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PermissionKind"
+          }
+        }
+      }
+    },
+    "Permission": {
+      "description": "Descriptions of explicit privileges of commands.\n\nIt can enable commands to be accessible in the frontend of the application.\n\nIf the scope is defined it can be used to fine grain control the access of individual or multiple commands.",
+      "type": "object",
+      "required": [
+        "identifier"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri internal convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commands": {
+          "description": "Allowed or denied commands when using this permission.",
+          "default": {
+            "allow": [],
+            "deny": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Commands"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Allowed or denied scoped when using this permission.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Scopes"
+            }
+          ]
+        },
+        "platforms": {
+          "description": "Target platforms this permission applies. By default all platforms are affected by this permission.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Target"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "description": "Allowed and denied commands inside a permission.\n\nIf two commands clash inside of `allow` and `deny`, it should be denied by default.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Allowed command.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "description": "Denied command, which takes priority.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Scopes": {
+      "description": "An argument for fine grained behavior control of Tauri commands.\n\nIt can be of any serde serializable type and is used to allow or prevent certain actions inside a Tauri command. The configured scope is passed to the command and will be enforced by the command implementation.\n\n## Example\n\n```json { \"allow\": [{ \"path\": \"$HOME/**\" }], \"deny\": [{ \"path\": \"$HOME/secret.txt\" }] } ```",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Data that defines what is allowed by the scope.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        "deny": {
+          "description": "Data that defines what is denied by the scope. This should be prioritized by validation logic.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      }
+    },
+    "Value": {
+      "description": "All supported ACL values.",
+      "anyOf": [
+        {
+          "description": "Represents a null JSON value.",
+          "type": "null"
+        },
+        {
+          "description": "Represents a [`bool`].",
+          "type": "boolean"
+        },
+        {
+          "description": "Represents a valid ACL [`Number`].",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Number"
+            }
+          ]
+        },
+        {
+          "description": "Represents a [`String`].",
+          "type": "string"
+        },
+        {
+          "description": "Represents a list of other [`Value`]s.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        {
+          "description": "Represents a map of [`String`] keys to [`Value`]s.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      ]
+    },
+    "Number": {
+      "description": "A valid ACL number.",
+      "anyOf": [
+        {
+          "description": "Represents an [`i64`].",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "Represents a [`f64`].",
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "Target": {
+      "description": "Platform target.",
+      "oneOf": [
+        {
+          "description": "MacOS.",
+          "type": "string",
+          "enum": [
+            "macOS"
+          ]
+        },
+        {
+          "description": "Windows.",
+          "type": "string",
+          "enum": [
+            "windows"
+          ]
+        },
+        {
+          "description": "Linux.",
+          "type": "string",
+          "enum": [
+            "linux"
+          ]
+        },
+        {
+          "description": "Android.",
+          "type": "string",
+          "enum": [
+            "android"
+          ]
+        },
+        {
+          "description": "iOS.",
+          "type": "string",
+          "enum": [
+            "iOS"
+          ]
+        }
+      ]
+    },
+    "PermissionKind": {
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "Enables the add_exchange command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-exchange",
+          "markdownDescription": "Enables the add_exchange command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the add_exchange command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-exchange",
+          "markdownDescription": "Denies the add_exchange command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the close_bot_positions command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-bot-positions",
+          "markdownDescription": "Enables the close_bot_positions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the close_bot_positions command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-bot-positions",
+          "markdownDescription": "Denies the close_bot_positions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-bot",
+          "markdownDescription": "Enables the create_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-bot",
+          "markdownDescription": "Denies the create_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-strategy",
+          "markdownDescription": "Enables the create_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-strategy",
+          "markdownDescription": "Denies the create_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_strategy_from_indicator command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-strategy-from-indicator",
+          "markdownDescription": "Enables the create_strategy_from_indicator command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_strategy_from_indicator command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-strategy-from-indicator",
+          "markdownDescription": "Denies the create_strategy_from_indicator command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_backtest command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-backtest",
+          "markdownDescription": "Enables the delete_backtest command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_backtest command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-backtest",
+          "markdownDescription": "Denies the delete_backtest command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-bot",
+          "markdownDescription": "Enables the delete_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-bot",
+          "markdownDescription": "Denies the delete_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_exchange command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-exchange",
+          "markdownDescription": "Enables the delete_exchange command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_exchange command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-exchange",
+          "markdownDescription": "Denies the delete_exchange command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-strategy",
+          "markdownDescription": "Enables the delete_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-strategy",
+          "markdownDescription": "Denies the delete_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the detect_python command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-detect-python",
+          "markdownDescription": "Enables the detect_python command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the detect_python command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-detect-python",
+          "markdownDescription": "Denies the detect_python command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the export_all_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-export-all-data",
+          "markdownDescription": "Enables the export_all_data command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the export_all_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-export-all-data",
+          "markdownDescription": "Denies the export_all_data command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_backtest command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-backtest",
+          "markdownDescription": "Enables the get_backtest command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_backtest command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-backtest",
+          "markdownDescription": "Denies the get_backtest command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_balances command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-balances",
+          "markdownDescription": "Enables the get_balances command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_balances command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-balances",
+          "markdownDescription": "Denies the get_balances command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-bot",
+          "markdownDescription": "Enables the get_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-bot",
+          "markdownDescription": "Denies the get_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_bot_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-bot-logs",
+          "markdownDescription": "Enables the get_bot_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_bot_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-bot-logs",
+          "markdownDescription": "Denies the get_bot_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_bot_positions command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-bot-positions",
+          "markdownDescription": "Enables the get_bot_positions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_bot_positions command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-bot-positions",
+          "markdownDescription": "Denies the get_bot_positions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_bot_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-bot-status",
+          "markdownDescription": "Enables the get_bot_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_bot_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-bot-status",
+          "markdownDescription": "Denies the get_bot_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_daily_pnl command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-daily-pnl",
+          "markdownDescription": "Enables the get_daily_pnl command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_daily_pnl command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-daily-pnl",
+          "markdownDescription": "Denies the get_daily_pnl command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_equity_curve command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-equity-curve",
+          "markdownDescription": "Enables the get_equity_curve command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_equity_curve command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-equity-curve",
+          "markdownDescription": "Denies the get_equity_curve command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_exchange_pairs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-exchange-pairs",
+          "markdownDescription": "Enables the get_exchange_pairs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_exchange_pairs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-exchange-pairs",
+          "markdownDescription": "Denies the get_exchange_pairs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-settings",
+          "markdownDescription": "Enables the get_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-settings",
+          "markdownDescription": "Denies the get_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-strategy",
+          "markdownDescription": "Enables the get_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-strategy",
+          "markdownDescription": "Denies the get_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_trade_stats command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-trade-stats",
+          "markdownDescription": "Enables the get_trade_stats command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_trade_stats command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-trade-stats",
+          "markdownDescription": "Denies the get_trade_stats command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_trade_stats_breakdown command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-trade-stats-breakdown",
+          "markdownDescription": "Enables the get_trade_stats_breakdown command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_trade_stats_breakdown command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-trade-stats-breakdown",
+          "markdownDescription": "Denies the get_trade_stats_breakdown command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the import_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-import-data",
+          "markdownDescription": "Enables the import_data command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the import_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-import-data",
+          "markdownDescription": "Denies the import_data command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_backtests command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-backtests",
+          "markdownDescription": "Enables the list_backtests command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_backtests command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-backtests",
+          "markdownDescription": "Denies the list_backtests command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_bots command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-bots",
+          "markdownDescription": "Enables the list_bots command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_bots command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-bots",
+          "markdownDescription": "Denies the list_bots command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_exchanges command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-exchanges",
+          "markdownDescription": "Enables the list_exchanges command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_exchanges command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-exchanges",
+          "markdownDescription": "Denies the list_exchanges command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_indicators command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-indicators",
+          "markdownDescription": "Enables the list_indicators command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_indicators command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-indicators",
+          "markdownDescription": "Denies the list_indicators command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_strategies command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-strategies",
+          "markdownDescription": "Enables the list_strategies command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_strategies command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-strategies",
+          "markdownDescription": "Denies the list_strategies command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_trade_facets command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-trade-facets",
+          "markdownDescription": "Enables the list_trade_facets command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_trade_facets command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-trade-facets",
+          "markdownDescription": "Denies the list_trade_facets command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_trades command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-trades",
+          "markdownDescription": "Enables the list_trades command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_trades command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-trades",
+          "markdownDescription": "Denies the list_trades command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the process_bot_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-process-bot-logs",
+          "markdownDescription": "Enables the process_bot_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the process_bot_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-process-bot-logs",
+          "markdownDescription": "Denies the process_bot_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_strategy_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-strategy-file",
+          "markdownDescription": "Enables the read_strategy_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_strategy_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-strategy-file",
+          "markdownDescription": "Denies the read_strategy_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_backtest command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-backtest",
+          "markdownDescription": "Enables the run_backtest command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_backtest command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-backtest",
+          "markdownDescription": "Denies the run_backtest command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_backtest command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-backtest",
+          "markdownDescription": "Enables the save_backtest command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_backtest command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-backtest",
+          "markdownDescription": "Denies the save_backtest command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-strategy",
+          "markdownDescription": "Enables the save_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-strategy",
+          "markdownDescription": "Denies the save_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the smithery_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-smithery-cancel",
+          "markdownDescription": "Enables the smithery_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the smithery_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-smithery-cancel",
+          "markdownDescription": "Denies the smithery_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the smithery_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-smithery-info",
+          "markdownDescription": "Enables the smithery_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the smithery_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-smithery-info",
+          "markdownDescription": "Denies the smithery_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the smithery_jobs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-smithery-jobs",
+          "markdownDescription": "Enables the smithery_jobs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the smithery_jobs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-smithery-jobs",
+          "markdownDescription": "Denies the smithery_jobs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the smithery_process_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-smithery-process-logs",
+          "markdownDescription": "Enables the smithery_process_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the smithery_process_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-smithery-process-logs",
+          "markdownDescription": "Denies the smithery_process_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the smithery_report command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-smithery-report",
+          "markdownDescription": "Enables the smithery_report command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the smithery_report command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-smithery-report",
+          "markdownDescription": "Denies the smithery_report command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the smithery_run command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-smithery-run",
+          "markdownDescription": "Enables the smithery_run command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the smithery_run command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-smithery-run",
+          "markdownDescription": "Denies the smithery_run command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the smithery_source command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-smithery-source",
+          "markdownDescription": "Enables the smithery_source command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the smithery_source command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-smithery-source",
+          "markdownDescription": "Denies the smithery_source command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-bot",
+          "markdownDescription": "Enables the start_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-bot",
+          "markdownDescription": "Denies the start_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_all_bots command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-all-bots",
+          "markdownDescription": "Enables the stop_all_bots command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_all_bots command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-all-bots",
+          "markdownDescription": "Denies the stop_all_bots command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-bot",
+          "markdownDescription": "Enables the stop_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-bot",
+          "markdownDescription": "Denies the stop_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the test_exchange_connection command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-test-exchange-connection",
+          "markdownDescription": "Enables the test_exchange_connection command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the test_exchange_connection command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-test-exchange-connection",
+          "markdownDescription": "Denies the test_exchange_connection command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the test_exchange_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-test-exchange-credentials",
+          "markdownDescription": "Enables the test_exchange_credentials command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the test_exchange_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-test-exchange-credentials",
+          "markdownDescription": "Denies the test_exchange_credentials command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-bot",
+          "markdownDescription": "Enables the update_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_bot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-bot",
+          "markdownDescription": "Denies the update_bot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_exchange command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-exchange",
+          "markdownDescription": "Enables the update_exchange command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_exchange command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-exchange",
+          "markdownDescription": "Denies the update_exchange command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-settings",
+          "markdownDescription": "Enables the update_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-settings",
+          "markdownDescription": "Denies the update_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_strategy_meta command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-strategy-meta",
+          "markdownDescription": "Enables the update_strategy_meta command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_strategy_meta command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-strategy-meta",
+          "markdownDescription": "Denies the update_strategy_meta command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_trade_notes command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-trade-notes",
+          "markdownDescription": "Enables the update_trade_notes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_trade_notes command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-trade-notes",
+          "markdownDescription": "Denies the update_trade_notes command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the validate_bot_deploy command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-validate-bot-deploy",
+          "markdownDescription": "Enables the validate_bot_deploy command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the validate_bot_deploy command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-validate-bot-deploy",
+          "markdownDescription": "Denies the validate_bot_deploy command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the validate_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-validate-strategy",
+          "markdownDescription": "Enables the validate_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the validate_strategy command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-validate-strategy",
+          "markdownDescription": "Denies the validate_strategy command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the algo module.\n#### This default permission set includes:\n\n- `allow-list-strategies`\n- `allow-get-strategy`\n- `allow-create-strategy`\n- `allow-save-strategy`\n- `allow-update-strategy-meta`\n- `allow-delete-strategy`\n- `allow-read-strategy-file`\n- `allow-list-indicators`\n- `allow-create-strategy-from-indicator`\n- `allow-smithery-info`\n- `allow-smithery-report`\n- `allow-smithery-source`\n- `allow-smithery-run`\n- `allow-smithery-cancel`\n- `allow-smithery-jobs`\n- `allow-smithery-process-logs`\n- `allow-run-backtest`\n- `allow-list-backtests`\n- `allow-get-backtest`\n- `allow-save-backtest`\n- `allow-delete-backtest`\n- `allow-validate-strategy`\n- `allow-validate-bot-deploy`\n- `allow-start-bot`\n- `allow-stop-bot`\n- `allow-stop-all-bots`\n- `allow-close-bot-positions`\n- `allow-get-bot-status`\n- `allow-get-bot-logs`\n- `allow-process-bot-logs`\n- `allow-create-bot`\n- `allow-update-bot`\n- `allow-delete-bot`\n- `allow-list-bots`\n- `allow-get-bot`\n- `allow-get-bot-positions`\n- `allow-list-exchanges`\n- `allow-add-exchange`\n- `allow-update-exchange`\n- `allow-delete-exchange`\n- `allow-test-exchange-connection`\n- `allow-test-exchange-credentials`\n- `allow-get-balances`\n- `allow-get-exchange-pairs`\n- `allow-list-trades`\n- `allow-list-trade-facets`\n- `allow-get-trade-stats`\n- `allow-get-trade-stats-breakdown`\n- `allow-get-daily-pnl`\n- `allow-update-trade-notes`\n- `allow-get-equity-curve`\n- `allow-export-all-data`\n- `allow-import-data`\n- `allow-get-settings`\n- `allow-update-settings`\n- `allow-detect-python`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permissions for the algo module.\n#### This default permission set includes:\n\n- `allow-list-strategies`\n- `allow-get-strategy`\n- `allow-create-strategy`\n- `allow-save-strategy`\n- `allow-update-strategy-meta`\n- `allow-delete-strategy`\n- `allow-read-strategy-file`\n- `allow-list-indicators`\n- `allow-create-strategy-from-indicator`\n- `allow-smithery-info`\n- `allow-smithery-report`\n- `allow-smithery-source`\n- `allow-smithery-run`\n- `allow-smithery-cancel`\n- `allow-smithery-jobs`\n- `allow-smithery-process-logs`\n- `allow-run-backtest`\n- `allow-list-backtests`\n- `allow-get-backtest`\n- `allow-save-backtest`\n- `allow-delete-backtest`\n- `allow-validate-strategy`\n- `allow-validate-bot-deploy`\n- `allow-start-bot`\n- `allow-stop-bot`\n- `allow-stop-all-bots`\n- `allow-close-bot-positions`\n- `allow-get-bot-status`\n- `allow-get-bot-logs`\n- `allow-process-bot-logs`\n- `allow-create-bot`\n- `allow-update-bot`\n- `allow-delete-bot`\n- `allow-list-bots`\n- `allow-get-bot`\n- `allow-get-bot-positions`\n- `allow-list-exchanges`\n- `allow-add-exchange`\n- `allow-update-exchange`\n- `allow-delete-exchange`\n- `allow-test-exchange-connection`\n- `allow-test-exchange-credentials`\n- `allow-get-balances`\n- `allow-get-exchange-pairs`\n- `allow-list-trades`\n- `allow-list-trade-facets`\n- `allow-get-trade-stats`\n- `allow-get-trade-stats-breakdown`\n- `allow-get-daily-pnl`\n- `allow-update-trade-notes`\n- `allow-get-equity-curve`\n- `allow-export-all-data`\n- `allow-import-data`\n- `allow-get-settings`\n- `allow-update-settings`\n- `allow-detect-python`"
+        }
+      ]
+    }
+  }
+}

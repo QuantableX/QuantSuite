@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-calendar"
+description = "Enables the delete_calendar command without any pre-configured scope."
+commands.allow = ["delete_calendar"]
+
+[[permission]]
+identifier = "deny-delete-calendar"
+description = "Denies the delete_calendar command without any pre-configured scope."
+commands.deny = ["delete_calendar"]

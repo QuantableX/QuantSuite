@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-open-scripts-folder"
+description = "Enables the open_scripts_folder command without any pre-configured scope."
+commands.allow = ["open_scripts_folder"]
+
+[[permission]]
+identifier = "deny-open-scripts-folder"
+description = "Denies the open_scripts_folder command without any pre-configured scope."
+commands.deny = ["open_scripts_folder"]

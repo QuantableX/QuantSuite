@@ -1,0 +1,16 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Default permissions for the console module."
+permissions = [
+  "allow-open-session",
+  "allow-write-session",
+  "allow-resize-session",
+  "allow-close-session",
+  "allow-detach-session",
+  "allow-attach-session",
+  "allow-session-alive",
+  "allow-list-sessions",
+  "allow-list-shells",
+  "allow-save-pasted-image",
+]

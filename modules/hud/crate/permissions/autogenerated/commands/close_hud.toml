@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-close-hud"
+description = "Enables the close_hud command without any pre-configured scope."
+commands.allow = ["close_hud"]
+
+[[permission]]
+identifier = "deny-close-hud"
+description = "Denies the close_hud command without any pre-configured scope."
+commands.deny = ["close_hud"]

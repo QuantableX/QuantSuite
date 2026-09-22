@@ -1,0 +1,35 @@
+const COMMANDS: &[&str] = &[
+    "read_dir_tree",
+    "read_file",
+    "write_file",
+    "create_file",
+    "delete_file",
+    "rename_file",
+    "search_files",
+    "read_file_binary",
+    "git_status",
+    "git_diff",
+    "git_stage",
+    "git_branch_list",
+    "git_log",
+    "git_commit_files",
+    "timeline_snapshot",
+    "timeline_list",
+    "timeline_read",
+    "workspace_storage_dir",
+    "load_canvas_state",
+    "save_canvas_state",
+    "navigate_browser",
+    "eval_browser",
+    "get_browser_url",
+    "set_browser_clip_region",
+    "find_in_browser",
+    "browser_request_new_tab",
+    "browser_disable_fullscreen",
+    "load_browser_data",
+    "save_browser_data",
+];
+
+fn main() {
+    tauri_plugin::Builder::new(COMMANDS).build();
+}

@@ -1,0 +1,546 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PermissionFile",
+  "description": "Permission file that can define a default permission, a set of permissions or a list of inlined permissions.",
+  "type": "object",
+  "properties": {
+    "default": {
+      "description": "The default permission set for the plugin",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DefaultPermission"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "set": {
+      "description": "A list of permissions sets defined",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PermissionSet"
+      }
+    },
+    "permission": {
+      "description": "A list of inlined permissions",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Permission"
+      }
+    }
+  },
+  "definitions": {
+    "DefaultPermission": {
+      "description": "The default permission set of the plugin.\n\nWorks similarly to a permission with the \"default\" identifier.",
+      "type": "object",
+      "required": [
+        "permissions"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PermissionSet": {
+      "description": "A set of direct permissions grouped together under a new name.",
+      "type": "object",
+      "required": [
+        "description",
+        "identifier",
+        "permissions"
+      ],
+      "properties": {
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does.",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PermissionKind"
+          }
+        }
+      }
+    },
+    "Permission": {
+      "description": "Descriptions of explicit privileges of commands.\n\nIt can enable commands to be accessible in the frontend of the application.\n\nIf the scope is defined it can be used to fine grain control the access of individual or multiple commands.",
+      "type": "object",
+      "required": [
+        "identifier"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri internal convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commands": {
+          "description": "Allowed or denied commands when using this permission.",
+          "default": {
+            "allow": [],
+            "deny": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Commands"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Allowed or denied scoped when using this permission.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Scopes"
+            }
+          ]
+        },
+        "platforms": {
+          "description": "Target platforms this permission applies. By default all platforms are affected by this permission.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Target"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "description": "Allowed and denied commands inside a permission.\n\nIf two commands clash inside of `allow` and `deny`, it should be denied by default.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Allowed command.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "description": "Denied command, which takes priority.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Scopes": {
+      "description": "An argument for fine grained behavior control of Tauri commands.\n\nIt can be of any serde serializable type and is used to allow or prevent certain actions inside a Tauri command. The configured scope is passed to the command and will be enforced by the command implementation.\n\n## Example\n\n```json { \"allow\": [{ \"path\": \"$HOME/**\" }], \"deny\": [{ \"path\": \"$HOME/secret.txt\" }] } ```",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Data that defines what is allowed by the scope.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        "deny": {
+          "description": "Data that defines what is denied by the scope. This should be prioritized by validation logic.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      }
+    },
+    "Value": {
+      "description": "All supported ACL values.",
+      "anyOf": [
+        {
+          "description": "Represents a null JSON value.",
+          "type": "null"
+        },
+        {
+          "description": "Represents a [`bool`].",
+          "type": "boolean"
+        },
+        {
+          "description": "Represents a valid ACL [`Number`].",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Number"
+            }
+          ]
+        },
+        {
+          "description": "Represents a [`String`].",
+          "type": "string"
+        },
+        {
+          "description": "Represents a list of other [`Value`]s.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        {
+          "description": "Represents a map of [`String`] keys to [`Value`]s.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      ]
+    },
+    "Number": {
+      "description": "A valid ACL number.",
+      "anyOf": [
+        {
+          "description": "Represents an [`i64`].",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "Represents a [`f64`].",
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "Target": {
+      "description": "Platform target.",
+      "oneOf": [
+        {
+          "description": "MacOS.",
+          "type": "string",
+          "enum": [
+            "macOS"
+          ]
+        },
+        {
+          "description": "Windows.",
+          "type": "string",
+          "enum": [
+            "windows"
+          ]
+        },
+        {
+          "description": "Linux.",
+          "type": "string",
+          "enum": [
+            "linux"
+          ]
+        },
+        {
+          "description": "Android.",
+          "type": "string",
+          "enum": [
+            "android"
+          ]
+        },
+        {
+          "description": "iOS.",
+          "type": "string",
+          "enum": [
+            "iOS"
+          ]
+        }
+      ]
+    },
+    "PermissionKind": {
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "Enables the backup_database command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-backup-database",
+          "markdownDescription": "Enables the backup_database command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the backup_database command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-backup-database",
+          "markdownDescription": "Denies the backup_database command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_calendar command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-calendar",
+          "markdownDescription": "Enables the create_calendar command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_calendar command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-calendar",
+          "markdownDescription": "Denies the create_calendar command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-event",
+          "markdownDescription": "Enables the create_event command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-event",
+          "markdownDescription": "Denies the create_event command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_calendar command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-calendar",
+          "markdownDescription": "Enables the delete_calendar command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_calendar command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-calendar",
+          "markdownDescription": "Denies the delete_calendar command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-event",
+          "markdownDescription": "Enables the delete_event command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-event",
+          "markdownDescription": "Denies the delete_event command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the find_free_slots command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-find-free-slots",
+          "markdownDescription": "Enables the find_free_slots command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the find_free_slots command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-find-free-slots",
+          "markdownDescription": "Denies the find_free_slots command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_app_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-app-settings",
+          "markdownDescription": "Enables the get_app_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_app_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-app-settings",
+          "markdownDescription": "Denies the get_app_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-event",
+          "markdownDescription": "Enables the get_event command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-event",
+          "markdownDescription": "Denies the get_event command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_setting command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-setting",
+          "markdownDescription": "Enables the get_setting command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_setting command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-setting",
+          "markdownDescription": "Denies the get_setting command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_calendars command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-calendars",
+          "markdownDescription": "Enables the list_calendars command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_calendars command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-calendars",
+          "markdownDescription": "Denies the list_calendars command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_occurrences command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-occurrences",
+          "markdownDescription": "Enables the list_occurrences command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_occurrences command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-occurrences",
+          "markdownDescription": "Denies the list_occurrences command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_reminders command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-reminders",
+          "markdownDescription": "Enables the list_reminders command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_reminders command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-reminders",
+          "markdownDescription": "Denies the list_reminders command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the override_occurrence command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-override-occurrence",
+          "markdownDescription": "Enables the override_occurrence command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the override_occurrence command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-override-occurrence",
+          "markdownDescription": "Denies the override_occurrence command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the search command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-search",
+          "markdownDescription": "Enables the search command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the search command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-search",
+          "markdownDescription": "Denies the search command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_reminders command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-reminders",
+          "markdownDescription": "Enables the set_reminders command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_reminders command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-reminders",
+          "markdownDescription": "Denies the set_reminders command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_setting command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-setting",
+          "markdownDescription": "Enables the set_setting command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_setting command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-setting",
+          "markdownDescription": "Denies the set_setting command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the truncate_series command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-truncate-series",
+          "markdownDescription": "Enables the truncate_series command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the truncate_series command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-truncate-series",
+          "markdownDescription": "Denies the truncate_series command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_app_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-app-settings",
+          "markdownDescription": "Enables the update_app_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_app_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-app-settings",
+          "markdownDescription": "Denies the update_app_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_calendar command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-calendar",
+          "markdownDescription": "Enables the update_calendar command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_calendar command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-calendar",
+          "markdownDescription": "Denies the update_calendar command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-event",
+          "markdownDescription": "Enables the update_event command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_event command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-event",
+          "markdownDescription": "Denies the update_event command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the QuantPlan module: calendars, events, occurrences, reminders, search and settings.\n#### This default permission set includes:\n\n- `allow-list-calendars`\n- `allow-create-calendar`\n- `allow-update-calendar`\n- `allow-delete-calendar`\n- `allow-get-event`\n- `allow-create-event`\n- `allow-update-event`\n- `allow-delete-event`\n- `allow-list-occurrences`\n- `allow-override-occurrence`\n- `allow-truncate-series`\n- `allow-find-free-slots`\n- `allow-list-reminders`\n- `allow-set-reminders`\n- `allow-search`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-backup-database`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permissions for the QuantPlan module: calendars, events, occurrences, reminders, search and settings.\n#### This default permission set includes:\n\n- `allow-list-calendars`\n- `allow-create-calendar`\n- `allow-update-calendar`\n- `allow-delete-calendar`\n- `allow-get-event`\n- `allow-create-event`\n- `allow-update-event`\n- `allow-delete-event`\n- `allow-list-occurrences`\n- `allow-override-occurrence`\n- `allow-truncate-series`\n- `allow-find-free-slots`\n- `allow-list-reminders`\n- `allow-set-reminders`\n- `allow-search`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-backup-database`"
+        }
+      ]
+    }
+  }
+}

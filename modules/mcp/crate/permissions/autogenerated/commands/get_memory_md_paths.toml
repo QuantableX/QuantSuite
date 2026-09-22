@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-memory-md-paths"
+description = "Enables the get_memory_md_paths command without any pre-configured scope."
+commands.allow = ["get_memory_md_paths"]
+
+[[permission]]
+identifier = "deny-get-memory-md-paths"
+description = "Denies the get_memory_md_paths command without any pre-configured scope."
+commands.deny = ["get_memory_md_paths"]

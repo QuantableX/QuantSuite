@@ -1,0 +1,145 @@
+/* V3: no remote webfonts. The suite's system font stack (--qss-font-sans /
+   --qss-font-mono, shell.css) is the ONE typography for every module. */
+
+/* This was `@tailwind base; @tailwind components; @tailwind utilities;` — the
+   v3 directives. The standalone app ran `@nuxtjs/tailwindcss` (v3); the suite is
+   on v4, where those are replaced by a single `@import 'tailwindcss'` that the
+   shell already issues (ARCHITECTURE.md §9).
+   `@reference` gives the `@apply` rules below access to the theme without
+   emitting the framework a second time. */
+@reference "tailwindcss";
+
+
+
+/* ---- Light theme (default) ---- */
+:root {
+  --surface-0: #d8d8de;
+  --surface-1: #e0e0e5;
+  --surface-2: #e6e6ec;
+  --surface-3: #c8c8d0;
+  --border: #a5a5af;
+  --text-primary: #24242c;
+  --text-secondary: #484856;
+  --accent: #2962ff;
+  --accent-hover: #1e53e5;
+  --positive: #089981;
+  --negative: #f23645;
+  --warning: #f59e0b;
+  --muted: #6a6a78;
+  --scrollbar-track: #d8d8de;
+  --scrollbar-thumb: #a0a0aa;
+  --scrollbar-thumb-hover: #8a8a95;
+  color-scheme: light;
+}
+
+
+
+/* ---- Dark theme ---- */
+.dark {
+  --surface-0: #18181e;
+  --surface-1: #1f1f25;
+  --surface-2: #292930;
+  --surface-3: #313139;
+  --border: #47474f;
+  --text-primary: #d4d4d8;
+  --text-secondary: #9a9aa5;
+  --accent: #2962ff;
+  --accent-hover: #1e53e5;
+  --positive: #089981;
+  --negative: #f23645;
+  --warning: #f59e0b;
+  --muted: #6e6e7a;
+  --scrollbar-track: #18181e;
+  --scrollbar-thumb: #47474f;
+  --scrollbar-thumb-hover: #5a5a64;
+  color-scheme: dark;
+}
+
+
+
+[data-module="terminal"] * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+
+
+[data-module="terminal"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+
+
+[data-module="terminal"] ::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+
+
+[data-module="terminal"] ::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+
+
+[data-module="terminal"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+
+
+[data-module="terminal"] ::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
+}
+
+
+
+[data-module="terminal"] {
+  font-family: var(--qss-font-sans);
+  background-color: var(--surface-0);
+  color: var(--text-primary);
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 rounded-md font-medium text-sm transition-colors;
+    background-color: var(--accent);
+    color: #ffffff;
+  }
+  .btn-primary:hover {
+    background-color: var(--accent-hover);
+  }
+
+  .btn-ghost {
+    @apply px-3 py-1.5 rounded-md font-medium text-sm transition-colors;
+    color: var(--text-secondary);
+  }
+  .btn-ghost:hover {
+    background-color: var(--surface-2);
+    color: var(--text-primary);
+  }
+
+  .card {
+    background-color: var(--surface-1);
+    border: 1px solid var(--border);
+    @apply rounded-lg;
+  }
+
+  .input {
+    @apply px-3 py-2 rounded-md text-sm outline-none transition-colors;
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+  .input:focus {
+    border-color: var(--accent);
+  }
+}

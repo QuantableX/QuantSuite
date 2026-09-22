@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-process-stop-servers"
+description = "Enables the process_stop_servers command without any pre-configured scope."
+commands.allow = ["process_stop_servers"]
+
+[[permission]]
+identifier = "deny-process-stop-servers"
+description = "Denies the process_stop_servers command without any pre-configured scope."
+commands.deny = ["process_stop_servers"]

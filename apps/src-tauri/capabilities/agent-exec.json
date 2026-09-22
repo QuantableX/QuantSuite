@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "agent-exec",
+  "description": "The one command that can run arbitrary shell input: plugin:console|run_command, the agent-callable one-shot from docs/PLAN-CONSOLE.md §7. It is deliberately NOT in console's default permission set, so it lives here where it can be seen and removed. Deleting this file disables agent execution outright, whatever the settings say — Tauri denies a command no capability grants, and the agent broker dispatches through the webview, so this grant is what makes the call reachable at all. Two runtime locks remain on top of it: the setting `console / agent.exec.enabled` (ships off) and QuantMCP's approval mode, which gates every individual call.",
+  "windows": ["main"],
+  "permissions": ["console:allow-run-command"]
+}

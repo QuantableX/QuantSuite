@@ -1,0 +1,26 @@
+{
+  "id": "canvas",
+  "title": "QuantCanvas",
+  "description": "Spec-driven agentic development environment",
+  "status": "migrated",
+  "phase": 4,
+  "app": "quantspace",
+  "appOrder": 2,
+  "source": "C:/Projects/QuantCode",
+  "routes": {
+    "root": "/canvas",
+    "home": "/canvas"
+  },
+  "plugin": "canvas",
+  "publishes": [],
+  "subscribes": [
+    "core.workspace.opened",
+    "core.file.open"
+  ],
+  "entities": [
+    "spec"
+  ],
+  "sidecars": [],
+  "capabilities": [],
+  "migrateFrom": "~/.quantcode"
+}

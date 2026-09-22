@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-read-strategy-file"
+description = "Enables the read_strategy_file command without any pre-configured scope."
+commands.allow = ["read_strategy_file"]
+
+[[permission]]
+identifier = "deny-read-strategy-file"
+description = "Denies the read_strategy_file command without any pre-configured scope."
+commands.deny = ["read_strategy_file"]

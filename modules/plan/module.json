@@ -1,0 +1,92 @@
+{
+  "id": "plan",
+  "title": "QuantPlan",
+  "description": "Calendar — day, week, month and agenda over one local store",
+  "status": "migrated",
+  "mergedInto": "flow",
+  "phase": null,
+  "app": "quantzen",
+  "appOrder": 2,
+  "routes": {
+    "root": "/plan",
+    "home": "/plan"
+  },
+  "plugin": "plan",
+  "publishes": [
+    "plan.event.created",
+    "plan.event.updated"
+  ],
+  "subscribes": [
+    "core.theme.changed"
+  ],
+  "entities": [
+    "calendar",
+    "event"
+  ],
+  "sidecars": [],
+  "capabilities": [
+    {
+      "name": "list_occurrences",
+      "command": "plugin:plan|list_occurrences",
+      "description": "List concrete event occurrences in a time range, recurrence expanded.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "Range start, RFC 3339 timestamp, e.g. 2026-09-01T00:00:00Z." },
+          "to": { "type": "string", "description": "Range end, RFC 3339 timestamp." },
+          "includeHidden": { "type": "boolean", "description": "true to also include events from hidden calendars." }
+        },
+        "required": ["from", "to"]
+      }
+    },
+    {
+      "name": "find_free_slots",
+      "command": "plugin:plan|find_free_slots",
+      "description": "Find gaps of a given length between events, inside working hours.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "Range start, RFC 3339 timestamp, e.g. 2026-09-01T00:00:00Z." },
+          "to": { "type": "string", "description": "Range end, RFC 3339 timestamp." },
+          "durationMinutes": { "type": "integer", "description": "Minimum slot length in minutes." },
+          "dayStartHour": { "type": "integer", "description": "Working day start hour (0-23); defaults to the app setting." },
+          "dayEndHour": { "type": "integer", "description": "Working day end hour (0-23); defaults to the app setting." }
+        },
+        "required": ["from", "to", "durationMinutes"]
+      }
+    },
+    {
+      "name": "create_event",
+      "command": "plugin:plan|create_event",
+      "description": "Create a calendar event.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "object",
+            "description": "The event to create. Timed events need startsAt; all-day events need startsOn.",
+            "properties": {
+              "calendarId": { "type": "string", "description": "Id of the calendar the event belongs to." },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "location": { "type": "string" },
+              "startsAt": { "type": "string", "description": "Start, RFC 3339 timestamp — required for timed events." },
+              "endsAt": { "type": "string", "description": "End, RFC 3339 timestamp." },
+              "startsOn": { "type": "string", "description": "Start date YYYY-MM-DD — required for all-day events." },
+              "endsOn": { "type": "string", "description": "End date YYYY-MM-DD." },
+              "isAllDay": { "type": "boolean" },
+              "tz": { "type": "string", "description": "IANA timezone name, e.g. Europe/Zurich." },
+              "rrule": { "type": "string", "description": "RFC 5545 recurrence rule, e.g. FREQ=WEEKLY;BYDAY=MO." },
+              "color": { "type": "string" }
+            },
+            "required": ["calendarId", "title", "isAllDay"]
+          }
+        },
+        "required": ["event"]
+      }
+    }
+  ]
+}

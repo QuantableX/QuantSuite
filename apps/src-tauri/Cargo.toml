@@ -1,0 +1,56 @@
+﻿[package]
+name = "quantsuite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantSuite â€” one desktop application unifying the Quant modules"
+default-run = "quantsuite"
+
+[lib]
+name = "quantsuite_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+tauri-plugin-updater = "2"
+
+# Library name is `qs_core`; see the note in that crate's Cargo.toml.
+tauri-plugin-qs = { path = "../../crates/qs-core" }
+# Upstream `tauri-plugin-single-instance` with a non-blocking handshake;
+# see that crate's module docs for the hang it exists to prevent.
+qs-single-instance = { path = "../../crates/qs-single-instance" }
+
+# Module crates, one per landed migration phase. Library name is `qs_mod_<id>`.
+tauri-plugin-systems = { path = "../../modules/systems/crate" }
+tauri-plugin-notes = { path = "../../modules/notes/crate" }
+tauri-plugin-plan = { path = "../../modules/plan/crate" }
+tauri-plugin-habit = { path = "../../modules/habit/crate" }
+tauri-plugin-finance = { path = "../../modules/finance/crate" }
+tauri-plugin-algo = { path = "../../modules/algo/crate" }
+tauri-plugin-mcp = { path = "../../modules/mcp/crate" }
+tauri-plugin-pilot = { path = "../../modules/pilot/crate" }
+tauri-plugin-canvas = { path = "../../modules/canvas/crate" }
+tauri-plugin-terminal = { path = "../../modules/terminal/crate" }
+tauri-plugin-console = { path = "../../modules/console/crate" }
+tauri-plugin-hud = { path = "../../modules/hud/crate" }
+tauri-plugin-memory = { path = "../../modules/memory/crate" }
+tauri-plugin-script = { path = "../../modules/script/crate" }
+
+# The module plugins need these; registered once here rather than per module.
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-fs = { workspace = true }
+tauri-plugin-shell = { workspace = true }
+tauri-plugin-clipboard-manager = { workspace = true }
+tauri-plugin-global-shortcut = { workspace = true }
+tauri-plugin-autostart = { workspace = true }
+
+# New code: held to the full lint gate (see workspace root).
+[lints]
+workspace = true

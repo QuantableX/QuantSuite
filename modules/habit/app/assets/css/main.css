@@ -1,0 +1,83 @@
+/* QuantHabit — scoped per ARCHITECTURE.md §9: only :root escapes the module
+   root, and it defines nothing but --qh-* custom properties. */
+:root {
+  --qh-bg: var(--qss-bg, #18181e);
+  --qh-bg-raised: var(--qss-bg-raised, #1f1f25);
+  --qh-bg-card: var(--qss-bg-card, #292930);
+  --qh-bg-hover: var(--qss-bg-hover, #313139);
+  --qh-bg-input: var(--qss-bg-card, #18181e);
+  --qh-border: var(--qss-border, #47474f);
+  --qh-border-subtle: var(--qss-border-subtle, #35353d);
+  --qh-text: var(--qss-text, #d4d4d8);
+  --qh-text-secondary: var(--qss-text-secondary, #9a9aa5);
+  --qh-text-muted: var(--qss-text-muted, #6e6e7a);
+  --qh-accent: var(--qss-accent, #a0a0a8);
+
+  /* A tick is DONE — the one meaning that earns a colour in this module.
+     Same green as the suite's other "good" figures (finance's income). */
+  --qh-check: #3f8f5f;
+  /* Paused reads as "off", not as "failed" — muted, never red. */
+  --qh-paused: #6e6e7a;
+  --qh-danger: #b04a4a;
+
+  --qh-radius: 6px;
+  --qh-radius-lg: 10px;
+}
+
+[data-module="habit"] {
+  background: var(--qh-bg);
+  color: var(--qh-text);
+  font-family: var(--qss-font-sans, system-ui, sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-module="habit"] button,
+[data-module="habit"] input,
+[data-module="habit"] select,
+[data-module="habit"] textarea {
+  font: inherit;
+}
+
+/* Day numbers and counters line up only with tabular figures. */
+[data-module="habit"] .qh-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+[data-module="habit"] ::-webkit-scrollbar { width: 6px; height: 6px; }
+[data-module="habit"] ::-webkit-scrollbar-thumb { background: var(--qh-border); border-radius: 3px; }
+
+[data-module="habit"] .qh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--qh-border);
+  border-radius: var(--qh-radius);
+  background: var(--qh-bg-card);
+  color: var(--qh-text-secondary);
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+[data-module="habit"] .qh-btn:hover {
+  border-color: var(--qh-accent);
+  color: var(--qh-text);
+}
+
+[data-module="habit"] .qh-input,
+[data-module="habit"] .qh-select {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--qh-border);
+  border-radius: var(--qh-radius);
+  background: var(--qh-bg-input);
+  color: var(--qh-text);
+  outline: none;
+}
+
+[data-module="habit"] .qh-input:focus,
+[data-module="habit"] .qh-select:focus {
+  border-color: var(--qh-accent);
+}

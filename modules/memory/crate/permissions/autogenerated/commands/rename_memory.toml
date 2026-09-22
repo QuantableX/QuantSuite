@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-rename-memory"
+description = "Enables the rename_memory command without any pre-configured scope."
+commands.allow = ["rename_memory"]
+
+[[permission]]
+identifier = "deny-rename-memory"
+description = "Denies the rename_memory command without any pre-configured scope."
+commands.deny = ["rename_memory"]

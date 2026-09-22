@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-daily-pnl"
+description = "Enables the get_daily_pnl command without any pre-configured scope."
+commands.allow = ["get_daily_pnl"]
+
+[[permission]]
+identifier = "deny-get-daily-pnl"
+description = "Denies the get_daily_pnl command without any pre-configured scope."
+commands.deny = ["get_daily_pnl"]

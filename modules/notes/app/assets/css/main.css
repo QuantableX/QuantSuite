@@ -1,0 +1,403 @@
+
+/* Select-option colours. `data-color` on .qn-tag keys into these; the names
+   are the OptionColor union in app/types/index.ts. */
+:root {
+  --qn-tag-slate: #6b7280;
+  --qn-tag-red: #b04a4a;
+  --qn-tag-amber: #a3762f;
+  --qn-tag-green: #3f8f5f;
+  --qn-tag-blue: #4a6fa5;
+  --qn-tag-purple: #7a5aa8;
+  --qn-tag-pink: #a8547f;
+}
+
+
+:root {
+  --qn-bg: #18181e;
+  --qn-bg-sidebar: #1f1f25;
+  --qn-bg-card: #292930;
+  --qn-bg-hover: #313139;
+  --qn-bg-input: #18181e;
+  --qn-border: #47474f;
+  --qn-border-subtle: #4a4a55;
+  --qn-text: #d4d4d8;
+  --qn-text-secondary: #9a9aa5;
+  --qn-text-muted: #6e6e7a;
+  --qn-accent: #a0a0a8;
+  --qn-accent-hover: #b8b8c0;
+  --qn-selection: rgba(160, 160, 168, 0.25);
+  --qn-success: #2ed573;
+  --qn-error: #ff4757;
+  --qn-warning: #ffa502;
+  --qn-scrollbar-track: #18181e;
+  --qn-scrollbar-thumb: #47474f;
+  --qn-scrollbar-thumb-hover: #5a5a64;
+  --qn-radius: 8px;
+  --qn-radius-lg: 12px;
+  --qn-transition: 150ms ease;
+}
+
+
+
+[data-theme="light"] {
+  --qn-bg: #d8d8de;
+  --qn-bg-sidebar: #e0e0e5;
+  --qn-bg-card: #e6e6ec;
+  --qn-bg-hover: #c8c8d0;
+  --qn-bg-input: #d8d8de;
+  --qn-border: #a5a5af;
+  --qn-text: #24242c;
+  --qn-text-secondary: #484856;
+  --qn-text-muted: #6a6a78;
+  --qn-accent: #4a4a52;
+  --qn-accent-hover: #3a3a42;
+  --qn-selection: rgba(74, 74, 82, 0.18);
+}
+
+
+
+[data-module="notes"] *,
+[data-module="notes"] *::before,
+[data-module="notes"] *::after {
+  box-sizing: border-box;
+}
+
+
+
+[data-module="notes"] {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+
+
+[data-module="notes"] {
+  background: var(--qn-bg);
+  color: var(--qn-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+
+
+[data-module="notes"] code,
+[data-module="notes"] pre,
+[data-module="notes"] .mono {
+  font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+
+
+[data-module="notes"] a {
+  color: inherit;
+  text-decoration: none;
+}
+
+
+
+[data-module="notes"] button,
+[data-module="notes"] input,
+[data-module="notes"] textarea,
+[data-module="notes"] select {
+  font: inherit;
+}
+
+
+
+[data-module="notes"] ::selection {
+  background: var(--qn-selection);
+  color: var(--qn-text);
+}
+
+
+
+[data-module="notes"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+
+
+[data-module="notes"] ::-webkit-scrollbar-track {
+  background: var(--qn-scrollbar-track);
+}
+
+
+
+[data-module="notes"] ::-webkit-scrollbar-thumb {
+  background: var(--qn-scrollbar-thumb);
+  border-radius: 3px;
+}
+
+
+
+[data-module="notes"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--qn-scrollbar-thumb-hover);
+}
+
+
+
+[data-module="notes"] .card {
+  background: var(--qn-bg-card);
+  border: 1px solid var(--qn-border);
+  border-radius: var(--qn-radius-lg);
+}
+
+
+
+[data-module="notes"] .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--qn-border);
+  border-radius: var(--qn-radius);
+  background: var(--qn-bg-card);
+  color: var(--qn-text);
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: all var(--qn-transition);
+}
+
+
+
+[data-module="notes"] .btn:hover {
+  background: var(--qn-bg-hover);
+  border-color: var(--qn-accent);
+}
+
+
+
+[data-module="notes"] .btn-primary {
+  background: var(--qn-accent);
+  color: var(--qn-bg);
+  border-color: var(--qn-accent);
+}
+
+
+
+[data-module="notes"] .btn-primary:hover {
+  background: var(--qn-accent-hover);
+  border-color: var(--qn-accent-hover);
+}
+
+
+
+[data-module="notes"] .btn-ghost {
+  background: transparent;
+}
+
+
+
+[data-module="notes"] .input,
+[data-module="notes"] .textarea,
+[data-module="notes"] .select {
+  width: 100%;
+  border: 1px solid var(--qn-border);
+  border-radius: var(--qn-radius);
+  background: var(--qn-bg-input);
+  color: var(--qn-text);
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color var(--qn-transition), background var(--qn-transition);
+}
+
+
+
+[data-module="notes"] .input:focus,
+[data-module="notes"] .textarea:focus,
+[data-module="notes"] .select:focus {
+  border-color: var(--qn-accent);
+}
+
+
+
+[data-module="notes"] .input::placeholder,
+[data-module="notes"] .textarea::placeholder {
+  color: var(--qn-text-muted);
+}
+
+
+
+[data-module="notes"] .label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--qn-text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+
+
+[data-module="notes"] .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--qn-border);
+  padding: 3px 10px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--qn-text-secondary);
+}
+
+
+
+[data-module="notes"] .drag-region {
+  -webkit-app-region: drag;
+}
+
+
+
+[data-module="notes"] .no-drag {
+  -webkit-app-region: no-drag;
+}
+
+
+
+
+
+
+
+[data-module="notes"] .tiptap {
+  min-height: 100%;
+  outline: none;
+}
+
+
+
+[data-module="notes"] .tiptap > * + * {
+  margin-top: 0.75rem;
+}
+
+
+
+[data-module="notes"] .tiptap h1,
+[data-module="notes"] .tiptap h2,
+[data-module="notes"] .tiptap h3 {
+  line-height: 1.2;
+}
+
+
+
+[data-module="notes"] .tiptap pre {
+  background: color-mix(in srgb, var(--qn-bg-card) 90%, black);
+  border: 1px solid var(--qn-border);
+  border-radius: var(--qn-radius);
+  padding: 12px;
+  overflow: auto;
+}
+
+
+
+[data-module="notes"] .tiptap blockquote {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--qn-border);
+  color: var(--qn-text-secondary);
+}
+
+
+
+
+
+
+
+[data-module="notes"] .fade-enter-active,
+[data-module="notes"] .fade-leave-active {
+  transition: opacity var(--qn-transition);
+}
+
+
+
+[data-module="notes"] .fade-enter-from,
+[data-module="notes"] .fade-leave-to {
+  opacity: 0;
+}
+
+
+
+[data-module="notes"] .qn-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 1100;
+}
+
+
+
+[data-module="notes"] .qn-modal-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  background: var(--qn-bg-card);
+  border: 1px solid var(--qn-border);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+
+
+[data-module="notes"] .qn-modal-panel:not(.qn-modal-panel--flush) {
+  padding: 18px;
+}
+
+
+
+[data-module="notes"] .qn-modal-panel--sm {
+  max-width: 440px;
+}
+
+
+
+[data-module="notes"] .qn-modal-panel--md {
+  max-width: 640px;
+}
+
+
+
+[data-module="notes"] .qn-modal-panel--lg {
+  max-width: 960px;
+}
+
+/* One chip, every view: table cells, board cards, gallery and the note's own
+   property block all render a select value through this. */
+[data-module="notes"] .qn-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--qn-tag, var(--qn-tag-slate)) 55%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--qn-tag, var(--qn-tag-slate)) 22%, transparent);
+  color: color-mix(in srgb, var(--qn-tag, var(--qn-tag-slate)) 45%, var(--qn-text));
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-module="notes"] .qn-tag[data-color="slate"] { --qn-tag: var(--qn-tag-slate); }
+[data-module="notes"] .qn-tag[data-color="red"] { --qn-tag: var(--qn-tag-red); }
+[data-module="notes"] .qn-tag[data-color="amber"] { --qn-tag: var(--qn-tag-amber); }
+[data-module="notes"] .qn-tag[data-color="green"] { --qn-tag: var(--qn-tag-green); }
+[data-module="notes"] .qn-tag[data-color="blue"] { --qn-tag: var(--qn-tag-blue); }
+[data-module="notes"] .qn-tag[data-color="purple"] { --qn-tag: var(--qn-tag-purple); }
+[data-module="notes"] .qn-tag[data-color="pink"] { --qn-tag: var(--qn-tag-pink); }

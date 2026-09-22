@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-suite-paths"
+description = "Enables the suite_paths command without any pre-configured scope."
+commands.allow = ["suite_paths"]
+
+[[permission]]
+identifier = "deny-suite-paths"
+description = "Denies the suite_paths command without any pre-configured scope."
+commands.deny = ["suite_paths"]

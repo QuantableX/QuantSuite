@@ -1,0 +1,23 @@
+[package]
+name = "qs-pty"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantSuite — the shared PTY layer: spawn, coalesced output, detach/reattach"
+
+[lib]
+name = "qs_pty"
+path = "src/lib.rs"
+
+[dependencies]
+# Deliberately NOT tauri: this crate must stay framework-free so its threads can
+# be tested without an app handle. Callers pass a sink closure and decide how
+# output reaches a webview (see `PtySink`).
+portable-pty = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+libloading = "0.8"
+
+# New code: held to the full lint gate (see workspace root).
+[lints]
+workspace = true

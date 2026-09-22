@@ -1,0 +1,72 @@
+[package]
+name = "tauri-plugin-hud"
+links = "tauri-plugin-hud"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantHUD — always-on-top overlay, screen capture and quick actions, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_hud"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+
+screenshots = "0.8"
+image = "0.25"
+base64 = "0.22"
+rfd = "0.15"
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+# QuantVoice (speech.rs): the push-to-talk hotkey and the clipboard half of
+# "paste where the cursor is". Both plugins are registered once by the suite
+# binary; these are the Rust-side extension traits.
+tauri-plugin-global-shortcut = { workspace = true }
+tauri-plugin-clipboard-manager = { workspace = true }
+
+[features]
+# Opt-in real WebView2 tests; ordinary unit tests need no window/event loop.
+native-tests = ["tauri/test"]
+
+[target.'cfg(windows)'.dependencies]
+# Win32 only. The WinRT speech features (Media_SpeechRecognition) went with
+# the Windows dictation engine: Whisper runs in the quantvoice sidecar now.
+# KeyboardAndMouse is SendInput/GetAsyncKeyState for the paste-at-cursor.
+# The `ProcessFailed` hook in `watch_renderer` — Tauri exposes the WebView2
+# controller but not its events. Same version tauri itself pins.
+# UI_Shell also carries SetWindowSubclass, and System_RemoteDesktop the
+# session-change notifications, both for resilience.rs.
+webview2-com = "0.38"
+windows = { version = "0.61", features = [
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_RemoteDesktop",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+] }
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+# Win32 FFI declarations mirror the Windows API names exactly — `HWND`, `RECT`,
+# `PAINTSTRUCT`, `WNDCLASSW`. Renaming them to satisfy the lint would break the
+# correspondence with MSDN and make the bindings harder to check.
+upper_case_acronyms = "allow"
+
+# Two Win32 wrappers pass the argument list the API itself takes.
+too_many_arguments = "allow"

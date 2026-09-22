@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-list-indicators"
+description = "Enables the list_indicators command without any pre-configured scope."
+commands.allow = ["list_indicators"]
+
+[[permission]]
+identifier = "deny-list-indicators"
+description = "Denies the list_indicators command without any pre-configured scope."
+commands.deny = ["list_indicators"]

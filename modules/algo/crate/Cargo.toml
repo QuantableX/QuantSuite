@@ -1,0 +1,44 @@
+[package]
+name = "tauri-plugin-algo"
+links = "tauri-plugin-algo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantAlgo — crypto trading bot terminal, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_algo"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+portable-pty = "0.8"
+aes-gcm = "0.10"
+ring = "0.17"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+# Two migrated bot functions take 8 arguments. Same reasoning as `mcp`.
+too_many_arguments = "allow"

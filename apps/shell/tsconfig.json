@@ -1,0 +1,22 @@
+{
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": {
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+
+    // Nuxt 4 enables noUncheckedIndexedAccess. None of the migrated modules was
+    // written under it, and it accounts for essentially every type error they
+    // produce: `arr[0]` becomes `T | undefined` even directly after a
+    // `length > 0` guard.
+    //
+    // The alternative was scattering non-null assertions through module code the
+    // migration is not supposed to redesign — assertions that would each need
+    // verifying, and that silence real nulls if added carelessly. Same reasoning
+    // as the clippy split in the workspace Cargo.toml: the suite does not hold
+    // migrated code to stricter static analysis than it was written under.
+    //
+    // Everything else stays strict. Turn this back on if the modules are ever
+    // swept for it.
+    "noUncheckedIndexedAccess": false
+  }
+}

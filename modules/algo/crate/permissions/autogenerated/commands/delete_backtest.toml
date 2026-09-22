@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-backtest"
+description = "Enables the delete_backtest command without any pre-configured scope."
+commands.allow = ["delete_backtest"]
+
+[[permission]]
+identifier = "deny-delete-backtest"
+description = "Denies the delete_backtest command without any pre-configured scope."
+commands.deny = ["delete_backtest"]

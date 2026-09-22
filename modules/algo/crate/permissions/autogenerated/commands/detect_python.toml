@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-detect-python"
+description = "Enables the detect_python command without any pre-configured scope."
+commands.allow = ["detect_python"]
+
+[[permission]]
+identifier = "deny-detect-python"
+description = "Denies the detect_python command without any pre-configured scope."
+commands.deny = ["detect_python"]

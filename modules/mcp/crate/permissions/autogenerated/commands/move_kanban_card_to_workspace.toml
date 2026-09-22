@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-move-kanban-card-to-workspace"
+description = "Enables the move_kanban_card_to_workspace command without any pre-configured scope."
+commands.allow = ["move_kanban_card_to_workspace"]
+
+[[permission]]
+identifier = "deny-move-kanban-card-to-workspace"
+description = "Denies the move_kanban_card_to_workspace command without any pre-configured scope."
+commands.deny = ["move_kanban_card_to_workspace"]

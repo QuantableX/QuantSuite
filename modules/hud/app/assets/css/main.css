@@ -1,0 +1,249 @@
+/* Dark Theme (base).
+   V3.1 fix: this was `[data-module="hud"] :root` — a selector that can never
+   match (`:root` is <html>, never a descendant), so NONE of these variables
+   applied and HUD surfaces silently inherited other modules' unprefixed
+   leaks (`--input-bg` resolved to nothing — note textareas lost their darker
+   fill). Scoped to the module root itself, like every other module. */
+[data-module="hud"] {
+  --bg-primary: var(--qss-bg-chrome, #171717);
+  --bg-secondary: var(--qss-bg, #212121);
+  --bg-card: var(--qss-bg-raised, #272727);
+  --text-primary: var(--qss-text, #e3e3e6);
+  --text-secondary: var(--qss-text-secondary, #9a9aa3);
+  --accent-green: #ffffff;
+  --accent-green-dim: #888888;
+  --accent-red: #cccccc;
+  --accent-red-dim: #666666;
+  --accent-blue: #aaaaaa;
+  --border-color: var(--qss-border, #333333);
+  --input-bg: #1a1a1a;
+  --btn-primary: var(--qss-accent, #c9c9d1);
+  --btn-primary-hover: var(--qss-accent-hover, #dedee3);
+}
+
+/* The unscoped `[data-theme="light"]` block is gone (V3.1): it leaked into
+   every module whenever anything set data-theme=light on <html>, and the
+   suite is dark-monochrome by decision (2026-08-14). */
+
+
+
+[data-module="hud"] * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Preflight compensation — the one thing the suite does that QuantHUD was not
+   written for.
+
+   The suite runs a single Tailwind pass over the whole app (ARCHITECTURE.md
+   §9) and Tailwind's preflight sets `svg { display: block }`. QuantHUD predates
+   that: all 87 of its icons are inline glyphs sitting in the text flow of
+   headers, tabs and buttons, each carrying `vertical-align: middle` inline.
+   Blockified, every one of them dropped onto its own line — the Clipboard,
+   Screenshots and Shortcuts headers, the Clock tabs and the Calculator tabs all
+   grew a stray icon row above their label. Restoring the inline default is what
+   the standalone app had, and puts the icons back beside their text.
+
+   Icons whose parent is a flex or grid container are blockified by the layout
+   regardless, in the standalone app too, so this only reaches the text-flow
+   ones. `vertical-align` keeps preflight's `middle`: every HUD icon that states
+   an alignment states exactly that, and the rest are the same icon-in-text
+   pattern. Every SVG here is a fixed-size icon — there is no full-bleed
+   illustration that would want the block box. */
+[data-module="hud"] svg {
+  display: inline;
+  vertical-align: middle;
+}
+
+
+
+[data-module="hud"] {
+  height: 100%;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: transparent;
+  color: var(--text-primary);
+  overflow: hidden;
+  user-select: none;
+}
+
+
+
+[data-module="hud"] {
+  height: 100%;
+}
+
+
+
+/* Scrollbar styling */
+[data-module="hud"] ::-webkit-scrollbar {
+  width: 8px;
+}
+
+
+
+[data-module="hud"] ::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+
+
+[data-module="hud"] ::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+
+
+[data-module="hud"] ::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+
+
+/* Button styles */
+[data-module="hud"] .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+
+
+[data-module="hud"] .btn-primary {
+  background: var(--btn-primary);
+  color: var(--qss-accent-ink, #131315);
+}
+
+
+
+[data-module="hud"] .btn-primary:hover {
+  background: var(--btn-primary-hover);
+}
+
+[data-module="hud"] button:focus-visible,
+[data-module="hud"] input:focus-visible,
+[data-module="hud"] select:focus-visible,
+[data-module="hud"] textarea:focus-visible {
+  outline: 2px solid var(--qss-accent, #c9c9d1);
+  outline-offset: 2px;
+}
+
+
+
+[data-module="hud"] .btn-green {
+  background: var(--accent-green-dim);
+  color: white;
+}
+
+
+
+[data-module="hud"] .btn-green:hover {
+  background: var(--accent-green);
+  color: #000;
+}
+
+
+
+[data-module="hud"] .btn-red {
+  background: var(--accent-red-dim);
+  color: white;
+}
+
+
+
+[data-module="hud"] .btn-red:hover {
+  background: var(--accent-red);
+}
+
+
+
+[data-module="hud"] .btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+
+
+[data-module="hud"] .btn-ghost:hover {
+  background: #333;
+  color: var(--text-primary);
+}
+
+
+
+[data-module="hud"] .btn-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 16px;
+  background: var(--btn-primary);
+  color: white;
+}
+
+
+
+[data-module="hud"] .btn-icon:hover {
+  background: var(--btn-primary-hover);
+}
+
+
+
+/* Input styles */
+[data-module="hud"] .input {
+  padding: 8px 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  text-align: right;
+  transition: border-color 0.15s ease;
+}
+
+
+
+[data-module="hud"] .input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+
+
+/* Card styles */
+[data-module="hud"] .card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}

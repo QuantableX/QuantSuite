@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-list-bridge-tools"
+description = "Enables the list_bridge_tools command without any pre-configured scope."
+commands.allow = ["list_bridge_tools"]
+
+[[permission]]
+identifier = "deny-list-bridge-tools"
+description = "Denies the list_bridge_tools command without any pre-configured scope."
+commands.deny = ["list_bridge_tools"]

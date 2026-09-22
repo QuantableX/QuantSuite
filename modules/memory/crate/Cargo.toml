@@ -1,0 +1,41 @@
+[package]
+name = "tauri-plugin-memory"
+links = "tauri-plugin-memory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "QuantMemory — the agents' shared second brain: a markdown vault with wikilinks, backlinks, full-text search and a graph, as a QuantSuite module"
+
+[lib]
+name = "qs_mod_memory"
+path = "src/lib.rs"
+
+[build-dependencies]
+tauri-plugin = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { version = "0.31", features = ["bundled"] }
+# The vault is watched for edits made outside the suite (Obsidian, editors).
+notify = "8"
+# Frontmatter is standard YAML so an Obsidian-edited file parses too.
+# serde_yaml is archived; this is the maintained fork.
+serde_yaml_ng = "0.10"
+
+qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
