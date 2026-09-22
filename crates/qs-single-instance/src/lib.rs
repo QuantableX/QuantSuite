@@ -26,6 +26,7 @@
 
 use tauri::{plugin::TauriPlugin, AppHandle, Manager, Runtime};
 
+#[cfg(windows)]
 pub(crate) type SingleInstanceCallback<R> =
     dyn FnMut(&AppHandle<R>, Vec<String>, String) + Send + Sync + 'static;
 

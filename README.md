@@ -13,7 +13,7 @@ Get **QuantSuite 1.0.0** from [GitHub Releases](https://github.com/QuantableX/Qu
 | --- | --- |
 | Windows x64 | `.exe` installer or `.msi` |
 | macOS Intel and Apple Silicon | Universal `.dmg` |
-| Linux x64 | `.AppImage`, `.deb` or `.rpm` |
+| Linux x64 (Ubuntu 24.04+ or equivalent) | `.AppImage`, `.deb` or `.rpm` |
 
 Open the **QuantSuite main menu** using the logo at the top left. Its QuantSuite
 card shows the installed version and **Check for updates**. Save your work before

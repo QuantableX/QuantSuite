@@ -9,6 +9,9 @@ the repository. Publish only the `main` branch and explicit release tags.
 The GitHub Actions workflow builds Windows x64 (NSIS and MSI), macOS universal
 (Intel and Apple Silicon), and Linux x64 (AppImage, Debian and RPM). Pull requests
 and main-branch pushes build without release secrets. Only a `v*` tag publishes.
+Linux builds use Ubuntu 24.04: the screen-capture dependency requires newer
+PipeWire/SPA headers than Ubuntu 22.04 provides. Packages target Ubuntu 24.04+
+or distributions with equivalent or newer system libraries.
 
 1. Set the same version in the root and workspace `package.json` files, the npm
    lockfile, `Cargo.toml`, and `apps/src-tauri/tauri.conf.json`. Refresh the Cargo

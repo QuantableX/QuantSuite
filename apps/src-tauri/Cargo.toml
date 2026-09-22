@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "quantsuite"
 version.workspace = true
 edition.workspace = true
