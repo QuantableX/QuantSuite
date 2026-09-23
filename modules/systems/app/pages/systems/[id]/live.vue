@@ -28,21 +28,26 @@ function run() {
     <header class="qs-live__head">
       <h1 class="qs-live__title">Live Evaluation</h1>
 
-      <div class="qs-live__status">
-        <div v-if="state.loading" class="qs-live__progress">
-          <div class="qs-bar"><div class="qs-bar__fill" :style="{ width: `${Math.round(state.progressValue * 100)}%` }" /></div>
-          <span class="qs-live__progress-lbl" :title="state.progressLabel || 'Working…'" role="status">{{ state.progressLabel || 'Working…' }}</span>
-        </div>
-        <div v-else-if="state.result" class="qs-live__meta mono"
-          :title="`${state.result.asOf} · ${state.result.provider} · ${state.result.universe.length} assets`">
-          {{ state.result.asOf }} · {{ state.result.provider }} · {{ state.result.universe.length }} assets
-        </div>
-      </div>
-
       <button class="btn btn-primary qs-live__run" :disabled="state.loading" @click="run">
         {{ state.loading ? (live.runningSystemId === systemId ? 'Evaluating…' : 'Queued…') : 'Run Live Eval' }}
       </button>
     </header>
+
+    <!-- Same track as the backtest: reserved even when idle, so progress never
+         moves the header or the panels. -->
+    <div class="qs-live__status">
+      <div v-if="state.loading" class="qs-live__progress">
+        <div class="qs-bar" role="progressbar" aria-label="Live evaluation progress"
+          :aria-valuenow="Math.round(state.progressValue * 100)" :aria-valuemin="0" :aria-valuemax="100">
+          <div class="qs-bar__fill" :style="{ width: `${Math.round(state.progressValue * 100)}%` }" />
+        </div>
+        <span class="qs-live__progress-lbl" :title="state.progressLabel || 'Working…'" role="status">{{ state.progressLabel || 'Working…' }}</span>
+      </div>
+      <div v-else-if="state.result" class="qs-live__meta mono"
+        :title="`${state.result.asOf} · ${state.result.provider} · ${state.result.universe.length} assets`">
+        {{ state.result.asOf }} · {{ state.result.provider }} · {{ state.result.universe.length }} assets
+      </div>
+    </div>
 
     <div v-if="state.error" class="qs-live__error">{{ state.error }}</div>
 
@@ -92,10 +97,9 @@ function run() {
 }
 
 .qs-live__status {
-  flex: 1 1 140px;
+  flex: 0 0 26px;
   min-width: 0;
-  max-width: 400px;
-  height: 32px;
+  height: 26px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -118,8 +122,8 @@ function run() {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--qs-text-secondary);
 }
 

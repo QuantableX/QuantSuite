@@ -46,7 +46,7 @@
 /* QuantView: generous page framing; data tables keep their working density. */
 [data-module='algo'] .main-content.main-content,
 [data-module='mcp'] .main-content.main-content { padding: var(--qss-surface-padding); }
-[data-module='algo'] .dashboard.dashboard { max-width: 1440px; margin: 0 auto; padding: 0; height: auto; min-height: 100%; overflow: visible; gap: 20px; container: algo-overview / inline-size; }
+[data-module='algo'] .dashboard.dashboard { max-width: 1440px; margin: 0 auto; padding: 0; height: 100%; overflow: visible; gap: 20px; container: algo-overview / inline-size; }
 [data-module='algo'] .dashboard__top.dashboard__top { gap: 20px; }
 [data-module='algo'] .stat.stat { flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 12px; background: var(--qss-bg); }
 [data-module='algo'] .card__head.card__head { flex-wrap: wrap; }
@@ -108,7 +108,7 @@
 [data-module='terminal'] .terminal-workspace .btn-primary { color: var(--qss-accent-ink); }
 [data-module='systems'] :is(.qs-live__title.qs-live__title, .qs-backtest__title.qs-backtest__title, .qs-settings__title.qs-settings__title) { font-size: 27px; font-weight: 500; letter-spacing: -.035em; }
 [data-module='systems'] :is(.qs-live.qs-live, .qs-backtest.qs-backtest, .qs-settings.qs-settings) { padding: var(--qss-surface-padding); }
-[data-module='systems'] .qs-live__head.qs-live__head { flex-wrap: wrap; gap: 16px; margin-bottom: 26px; }
+[data-module='systems'] .qs-live__head.qs-live__head { flex-wrap: wrap; gap: 16px; }
 @media (max-width: 1700px) {
   [data-module='systems'] :is(.qs-backtest.qs-backtest, .qs-settings.qs-settings) { padding: 12px; }
 }

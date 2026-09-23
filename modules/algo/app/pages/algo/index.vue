@@ -50,6 +50,33 @@ function navigateTo(path: string) {
   router.push(path)
 }
 
+// The bot table always has room for three bots, however many there are; a
+// fourth scrolls inside it and the activity log keeps the rest of the page.
+// Measured, because the row height comes from the shell's table density.
+const botsTable = ref<HTMLTableElement | null>(null)
+const botsTableHeight = ref<string>()
+let botsTableObserver: ResizeObserver | null = null
+
+function measureBotsTable() {
+  const table = botsTable.value
+  const rows = table?.tBodies[0]?.rows
+  // Zero while detached by the warm cache — keep the last real height.
+  if (!table?.tHead || !rows?.length || !rows[0]!.offsetHeight) return
+  const unit = rows[0]!.offsetHeight
+  const three = [0, 1, 2].reduce((sum, i) => sum + (rows[i]?.offsetHeight ?? unit), 0)
+  botsTableHeight.value = `${table.tHead.offsetHeight + three}px`
+}
+
+watch(botsTable, (table) => {
+  botsTableObserver?.disconnect()
+  botsTableObserver = null
+  if (!table) return
+  botsTableObserver = new ResizeObserver(measureBotsTable)
+  botsTableObserver.observe(table)
+})
+
+onUnmounted(() => botsTableObserver?.disconnect())
+
 onActivated(() => {
   void botsStore.load()
 })
@@ -144,8 +171,8 @@ onActivated(() => {
         </h3>
         <button class="btn btn-sm" @click="navigateTo('/algo/bots')">Manage</button>
       </div>
-      <div v-if="botsStore.list.length" class="bots-table-wrap">
-        <table class="table">
+      <div v-if="botsStore.list.length" class="bots-table-wrap" :style="{ height: botsTableHeight }">
+        <table ref="botsTable" class="table">
           <thead>
             <tr>
               <th>Bot</th>
@@ -210,8 +237,8 @@ onActivated(() => {
 </template>
 
 <style scoped>
-/* One screen, no page scroll: the top cards take what they need, the bot
-   table gets the rest, the activity strip keeps a bounded share. */
+/* One screen, no page scroll: the top cards and the three-bot table take what
+   they need, the activity log gets the rest and scrolls inside its card. */
 .dashboard {
   height: 100%;
   overflow: hidden;
@@ -236,12 +263,14 @@ onActivated(() => {
 }
 
 .card--table {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
 }
 
-.card--activity {
-  flex: 0 1 auto;
-  max-height: 26%;
+/* Beats `.dashboard .card` above: a short window keeps a few log lines and
+   lets the main area scroll instead of squeezing the log to nothing. */
+.dashboard .card--activity {
+  flex: 1 1 0;
+  min-height: 120px;
 }
 
 .card__head {
@@ -364,8 +393,7 @@ onActivated(() => {
 
 /* Bot table */
 .bots-table-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;
   overflow: auto;
 }
 
@@ -476,10 +504,6 @@ onActivated(() => {
 
   .dashboard__top {
     grid-template-columns: 1fr;
-  }
-
-  .card--activity {
-    max-height: none;
   }
 }
 </style>
