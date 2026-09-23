@@ -1455,6 +1455,9 @@ onBeforeUnmount(() => {
   padding: 10px;
   margin: 2px 0;
   min-height: 56px;
+  /* Natural height: a full column scrolls (.col-cards) instead of squeezing
+   * the cards — overflow: hidden drops a flex item's automatic min-height. */
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
