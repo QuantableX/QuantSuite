@@ -148,7 +148,7 @@ test('vertical wheel moves the rail in both directions, clamps and respects delt
   assert.equal(routeWheel(event, rail), false)
   assert.equal(event.defaultPrevented, false)
 })
-test('horizontal gestures, zoom and editable controls keep their own wheel behavior', () => {
+test('horizontal gestures, zoom and a focused number field keep their own wheel behavior', () => {
   for (const update of [{deltaX: 150}, {ctrlKey: true}, {metaKey: true}, {shiftKey: true}]) {
     const {rail, event} = wheelHarness()
     Object.assign(event, update)
@@ -157,8 +157,24 @@ test('horizontal gestures, zoom and editable controls keep their own wheel behav
   }
   const {rail, target, event} = wheelHarness()
   target.editable = true
+  target.ownerDocument = { activeElement: target }
   assert.equal(routeWheel(event, rail), false)
   assert.equal(event.defaultPrevented, false)
+})
+test('a text field that fits its content, or an unfocused control, moves the rail', () => {
+  const {rail, target, event} = wheelHarness()
+  target.editable = true
+  target.ownerDocument = { activeElement: null }
+  assert.equal(routeWheel(event, rail), true)
+  assert.equal(rail.scrollLeft, 120)
+})
+test('a long note keeps the wheel until its text reaches the end', () => {
+  const {rail, target, event} = wheelHarness()
+  Object.assign(target, { style: {overflowY: 'auto'}, scrollHeight: 400 })
+  assert.equal(routeWheel(event, rail), false)
+  target.scrollTop = 300
+  assert.equal(routeWheel(event, rail), true)
+  assert.equal(rail.scrollLeft, 120)
 })
 test('a nested list consumes its own scroll until its boundary is reached', () => {
   const {rail, target, event} = wheelHarness()
