@@ -1,9 +1,13 @@
-/** Route a vertical wheel to the HUD rail without stealing editor/list scroll. */
+/** Route a vertical wheel to the HUD rail. Anything under the pointer that can
+ *  still scroll vertically itself (a list, a long note) keeps the wheel until
+ *  it reaches its end; text fields that fit their content never block it. */
 export function horizontalWheel(event: WheelEvent, viewport: HTMLElement): boolean {
   if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey) return false;
   if (!event.deltaY || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return false;
   const target = event.target instanceof Element ? event.target : null;
-  if (target?.closest('input, textarea, select, [contenteditable="true"], [role="slider"]')) return false;
+  // The wheel steps a focused number field or slider; leave that alone.
+  const control = target?.closest('input[type="number"], input[type="range"], [role="slider"]');
+  if (control && control.ownerDocument?.activeElement === control) return false;
 
   for (let node = target; node && node !== viewport; node = node.parentElement) {
     const style = getComputedStyle(node);

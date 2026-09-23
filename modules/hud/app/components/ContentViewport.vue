@@ -79,7 +79,9 @@ onUnmounted(() => {
 .content-viewport { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .scroll-content { overflow-y: auto; min-height: 0; flex: 1; padding: 2px 12px 8px; }
 .viewport-content { display: flex; flex-direction: column; min-height: 100%; }
-.horizontal .scroll-content { overflow-x: auto; overflow-y: hidden; padding: 12px 20px 12px; scroll-snap-type: x proximity; scroll-padding-inline: 20px; overscroll-behavior-x: contain; }
+/* No scroll snapping: it pulled every wheel step (~100px) back to the card it
+   started from, so the wheel could not move past a wide card. */
+.horizontal .scroll-content { overflow-x: auto; overflow-y: hidden; padding: 12px 20px 12px; scroll-padding-inline: 20px; overscroll-behavior-x: contain; }
 .horizontal .scroll-content::-webkit-scrollbar { height: 3px; }
 .horizontal .scroll-content::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
 .horizontal .viewport-content { flex-direction: row; height: 100%; min-height: 0; width: max-content; min-width: 100%; gap: 16px; }
