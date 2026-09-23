@@ -227,9 +227,9 @@ class IntegrationTests(unittest.TestCase):
     def test_latest_matching_failed_run_replaces_pass_but_foreign_code_does_not(self):
         from smithery import registry, evidence, data
         with tempfile.TemporaryDirectory() as directory, patch.object(data, "OUTPUT_DIR", Path(directory)), \
-                patch.object(evidence, "code_fingerprint", return_value="test-code"):
+                patch.object(evidence, "indicator_fingerprint", return_value="test-code"):
             base = {"kind": "gauntlet", "version": evidence.EVALUATION_VERSION,
-                    "code_sha256": "test-code", "params": REGISTRY["robust"]().params,
+                    "indicator_sha256": "test-code", "params": REGISTRY["robust"]().params,
                     "name": REGISTRY["robust"].name, "timeframe": "1d", "fast": False,
                     "score": 88, "grade": "S", "perm_p": .01, "certified": True}
             write_json(Path(directory) / "2026-09-08 first.json", base)
@@ -238,7 +238,7 @@ class IntegrationTests(unittest.TestCase):
             write_json(Path(directory) / "2026-09-08 second.json", {**base, "certified": False, "reasons": ["coverage"]})
             registry._current_runs.cache_clear()
             self.assertFalse(registry.verdict_for("robust")["certified"])
-            write_json(Path(directory) / "2026-09-08 third.json", {**base, "code_sha256": "old-code"})
+            write_json(Path(directory) / "2026-09-08 third.json", {**base, "indicator_sha256": "old-code"})
             registry._current_runs.cache_clear()
             self.assertFalse(registry.verdict_for("robust")["certified"])
         registry._current_runs.cache_clear()

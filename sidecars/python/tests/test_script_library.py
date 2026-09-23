@@ -59,7 +59,12 @@ class LibraryTests(unittest.TestCase):
         # Importing the serialized module directly simulates an idle spawn worker.
         self.assertTrue(self.run_python(f"import json; import smithery.variants as v; print(json.dumps(hasattr(v, 'Forge_{key}')))"))
         path=self.folder/"ensemble.py"
-        path.write_text(path.read_text(encoding="utf-8")+"\n# changed base\n",encoding="utf-8")
+        # A comment is not a code change (per-indicator signature, 2026-09-23) …
+        path.write_text(path.read_text(encoding="utf-8")+"\n# changed comment\n",encoding="utf-8")
+        result=self.run_python("import json; from smithery.indicators import REGISTRY,DISCOVERY_ERRORS; print(json.dumps(dict(keys=list(REGISTRY),errors=DISCOVERY_ERRORS)))")
+        self.assertIn(key,result["keys"])
+        # … code is.
+        path.write_text(path.read_text(encoding="utf-8")+"\nCHANGED_BASE = 1\n",encoding="utf-8")
         result=self.run_python("import json; from smithery.indicators import REGISTRY,DISCOVERY_ERRORS; print(json.dumps(dict(keys=list(REGISTRY),errors=DISCOVERY_ERRORS)))")
         self.assertNotIn(key,result["keys"])
         self.assertIn("Base scripts changed",str(result["errors"]))

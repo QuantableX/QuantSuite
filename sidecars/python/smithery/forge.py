@@ -324,7 +324,7 @@ def run_walkforward(args) -> int:
         t0 = time.time()
         try:
             from .variants import create_variant, source_signature
-            source_before = source_signature()
+            source_before = source_signature(key)
             res = walk_forward(ind, df, cost, n_folds=args.folds)
             from .evidence import frame_fingerprint
             variant = create_variant(key, res["final_choice"], {

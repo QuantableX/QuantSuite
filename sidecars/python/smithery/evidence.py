@@ -38,6 +38,38 @@ def code_fingerprint() -> str:
     return digest.hexdigest()
 
 
+_EVALUATOR: dict[tuple, str] = {}
+
+
+def evaluator_fingerprint() -> str:
+    """The forge's own code (the smithery package, without the library):
+    a change to the evaluator invalidates every indicator's current runs."""
+    root = Path(__file__).resolve().parent
+    files = sorted(p for p in root.rglob("*.py") if "tests" not in p.parts and "__pycache__" not in p.parts)
+    state = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in files)
+    if state not in _EVALUATOR:
+        digest = hashlib.sha256()
+        for path in files:
+            digest.update(path.relative_to(root).as_posix().encode())
+            digest.update(path.read_bytes())
+        _EVALUATOR.clear()
+        _EVALUATOR[state] = digest.hexdigest()
+    return _EVALUATOR[state]
+
+
+def indicator_fingerprint(cls) -> str | None:
+    """What a gauntlet run of one indicator depends on: the evaluator and the
+    signature of the indicator's own script (with its REQUIRES closure) —
+    editing or installing another script leaves it untouched. None when the
+    class does not come from the library."""
+    from .variants import script_signature, stem_of
+    stem = stem_of(cls)
+    signature = script_signature(stem) if stem else None
+    if signature is None:
+        return None
+    return hashlib.sha256(f"{evaluator_fingerprint()}:{signature}".encode()).hexdigest()
+
+
 def frame_fingerprint(df) -> str:
     import pandas as pd
     return hashlib.sha256(pd.util.hash_pandas_object(df, index=True).values.tobytes()).hexdigest()

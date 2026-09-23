@@ -5,11 +5,13 @@ A script declares
 
     REGISTER = {"mykey": MyIndicator}   # registry key -> TrendIndicator class
     WARMUP = {"mykey": 400}             # optional: bars of warm-up per key
+    REQUIRES = ("mk",)                  # optional: the scripts it imports or evaluates
 
 and is picked up here; nobody edits ``__init__`` for it. A script that fails
-to import, or registers a key the registry already has, lands in
-``DISCOVERY_ERRORS`` instead of breaking the registry for every bot and every
-backtest — QuantScript shows the message next to the file.
+to import, registers a key the registry already has, or requires a script
+the library does not have lands in ``DISCOVERY_ERRORS`` instead of breaking
+the registry for every bot and every backtest — QuantScript shows the
+message next to the file.
 """
 from __future__ import annotations
 
@@ -48,6 +50,14 @@ def discover(package_dir: str | Path, package: str, known: set[str], contract: t
             module = modules[name] if name in modules else importlib.import_module(name)
         except Exception as e:  # noqa: BLE001 — one broken script must not sink the registry
             errors[stem] = f"{type(e).__name__}: {e}"
+            continue
+        requires = getattr(module, "REQUIRES", ())
+        if not isinstance(requires, (tuple, list)) or not all(isinstance(r, str) for r in requires):
+            errors[stem] = "REQUIRES must be a tuple of script names, e.g. (\"mk\",)"
+            continue
+        missing = [r for r in requires if not (Path(package_dir) / f"{r}.py").is_file()]
+        if missing:
+            errors[stem] = f"requires {', '.join(missing)} — not in this library"
             continue
         register = getattr(module, "REGISTER", None)
         if register is None:

@@ -148,7 +148,8 @@ def listing() -> dict:
                 row = {**cls, "key": key}
                 try:
                     d = describe(key)
-                    row.update({k: d[k] for k in ("name", "hypothesis", "params", "param_space",
+                    row.update({k: d[k] for k in ("name", "hypothesis", "params", "param_space", "schema",
+                                                  "role", "versions", "requires",
                                                   "warmup_bars", "certification", "timeframes")})
                 except Exception as e:  # noqa: BLE001 — one odd class must not hide the file
                     row["error"] = f"{type(e).__name__}: {e}"
@@ -183,9 +184,12 @@ def listing() -> dict:
                       "registration": "none"})
         reference.append(entry)
 
+    from .contract import CONTRACT_VERSION
+
     return {
         "generated_at": utc_now(),
         "version": __version__,
+        "contract_version": CONTRACT_VERSION,
         "python": sys.version.split()[0],
         "executable": sys.executable,
         "package_dir": str(PACKAGE_DIR),
@@ -213,7 +217,7 @@ def _last_json(text: str) -> dict | None:
 
 
 def check(file: str, candidate: Path, depth: str = "quick", frame_bars: int | None = None,
-          timeout: float = CHECK_TIMEOUT_S) -> dict:
+          timeout: float = CHECK_TIMEOUT_S, isolated: bool = False) -> dict:
     """Verify a candidate version of a script without touching the package.
 
     Syntax first (a precise line and column, no process needed); then the
@@ -223,6 +227,11 @@ def check(file: str, candidate: Path, depth: str = "quick", frame_bars: int | No
     is what must not be saved — a syntax error, an import that fails (the
     registry would die for every consumer), a script that cannot register.
     Failed contract laws are reported and left to the author.
+
+    ``isolated`` puts ONLY the candidate and the scripts its ``REQUIRES``
+    closure names into the sandbox library: a pass proves the script is
+    self-contained given its declared requirements (what a store package
+    ships).
     """
     t0 = time.time()
     name = script_name(file)
@@ -232,6 +241,7 @@ def check(file: str, candidate: Path, depth: str = "quick", frame_bars: int | No
     result: dict = {
         "file": name,
         "depth": depth,
+        "isolated": bool(isolated),
         "syntax": {"ok": True},
         "import": {"ok": True},
         "discovery_errors": {},
@@ -255,7 +265,17 @@ def check(file: str, candidate: Path, depth: str = "quick", frame_bars: int | No
         shutil.copytree(PACKAGE_DIR, sandbox, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "tests"))
         # Verify the user\'s actual scripts, including dependencies and deletions.
         shutil.rmtree(sandbox / "indicators")
-        shutil.copytree(INDICATORS_DIR, sandbox / "indicators", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        if isolated:
+            from .variants import declared_requirements, requirement_closure, requirements_of_source
+            (sandbox / "indicators").mkdir()
+            requirements = dict(declared_requirements(INDICATORS_DIR))
+            requirements[name[:-3]] = requirements_of_source(text) or ()
+            for stem in requirement_closure(name[:-3], requirements):
+                source = INDICATORS_DIR / f"{stem}.py"
+                if stem != name[:-3] and source.is_file():
+                    shutil.copy2(source, sandbox / "indicators" / source.name)
+        else:
+            shutil.copytree(INDICATORS_DIR, sandbox / "indicators", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         for internal in ("__init__.py", "_discover.py"):
             shutil.copy2(PACKAGE_DIR / "indicators" / internal, sandbox / "indicators" / internal)
         (sandbox / "indicators" / name).write_text(text, encoding="utf-8")
@@ -436,6 +456,80 @@ def _contract_hints(tree: ast.Module) -> list[dict]:
     return hints
 
 
+# Names a script may import from its own package that are not scripts.
+PACKAGE_NAMES = {"REGISTRY", "WARMUP_BARS", "DISCOVERY_ERRORS", "DISCOVERED", "VARIANTS"}
+
+
+def _requires_hints(tree: ast.Module) -> list[dict]:
+    """Scripts the source uses — sibling imports, REGISTRY["key"] lookups,
+    member tuples of keys — that its REQUIRES does not declare: the version
+    signature and a store package would miss them."""
+    declared: set[str] | None = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "REQUIRES" for t in node.targets):
+            if isinstance(node.value, (ast.Tuple, ast.List)) and all(
+                    isinstance(e, ast.Constant) and isinstance(e.value, str) for e in node.value.elts):
+                declared = {e.value for e in node.value.elts}
+            else:
+                return [_marker("warning", node.lineno, node.col_offset + 1,
+                                'REQUIRES must be a tuple of script names, e.g. ("mk",)')]
+    used: list[tuple[str, ast.AST]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.level == 1 and node.module:
+                used.append((node.module.split(".")[0], node))
+            elif node.level == 1:
+                used.extend((alias.name, node) for alias in node.names if alias.name not in PACKAGE_NAMES)
+            elif node.level == 0 and (node.module or "").startswith("smithery.indicators."):
+                used.append((node.module.split(".")[2], node))
+        elif (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == "REGISTRY"
+              and isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str)):
+            used.append((node.slice.value, node))
+        elif isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in ("MEMBERS", "members")
+                                                 for t in node.targets):
+            if isinstance(node.value, (ast.Tuple, ast.List)):
+                used.extend((e.value, e) for e in node.value.elts
+                            if isinstance(e, ast.Constant) and isinstance(e.value, str))
+    hints, seen = [], set()
+    for name, node in used:
+        if name in declared or name in seen or not KEY_PATTERN.match(name):
+            continue
+        seen.add(name)
+        hints.append(_marker("warning", getattr(node, "lineno", 1), getattr(node, "col_offset", 0) + 1,
+                             f"'{name}' is used but not declared in REQUIRES — add it so the version "
+                             "signature and a store package include it"))
+    return hints
+
+
+def _schema_hints(tree: ast.Module) -> list[dict]:
+    """One hint per indicator class whose defaults carry parameters without a
+    labelled param_schema entry — editors would fall back to the raw name."""
+    hints: list[dict] = []
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        defaults: list[str] = []
+        labelled: set[str] = set()
+        for item in node.body:
+            if isinstance(item, ast.FunctionDef) and item.name == "default_params":
+                for ret in (n for n in ast.walk(item) if isinstance(n, ast.Return)):
+                    if isinstance(ret.value, ast.Dict):
+                        defaults = [k.value for k in ret.value.keys
+                                    if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+            elif (isinstance(item, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "param_schema" for t in item.targets)
+                  and isinstance(item.value, ast.Dict)):
+                for k, v in zip(item.value.keys, item.value.values):
+                    if (isinstance(k, ast.Constant) and isinstance(v, ast.Dict)
+                            and any(isinstance(f, ast.Constant) and f.value == "label" for f in v.keys)):
+                        labelled.add(k.value)
+        missing = [name for name in defaults if name not in labelled]
+        if missing:
+            hints.append(_marker("warning", node.lineno, node.col_offset + 1,
+                                 f"{node.name}: no param_schema label for {', '.join(missing)} — "
+                                 "editors show the raw name"))
+    return hints
+
+
 def lint(candidate: Path) -> dict:
     """Diagnostics for the editor: syntax errors with their span, the
     parser's warnings (an invalid escape, a deprecated construct), and the
@@ -461,6 +555,8 @@ def lint(candidate: Path) -> dict:
             markers.append(_marker("warning", getattr(w, "lineno", 1), 1, str(w.message)))
     if isinstance(tree, ast.Module) and not any(m["severity"] == "error" for m in markers):
         markers.extend(_contract_hints(tree))
+        markers.extend(_requires_hints(tree))
+        markers.extend(_schema_hints(tree))
     markers.sort(key=lambda m: (m["line"], m["column"]))
     return {"ok": not any(m["severity"] == "error" for m in markers), "markers": markers}
 
@@ -494,6 +590,17 @@ class {class_name}(TrendIndicator):
     name = "{name}"
     # The region the gauntlet perturbs — one range per dimensionless parameter.
     param_space = {{"fast": (5, 60), "slow": (20, 300), "band": (0.05, 1.5)}}
+    # How editors present every parameter — min / max are hard bounds.
+    param_schema = {{
+        "fast": {{"type": "int", "min": 2, "max": 500, "step": 1, "label": "Fast average",
+                  "help": "Span of the fast exponential average, in bars"}},
+        "slow": {{"type": "int", "min": 5, "max": 2000, "step": 1, "label": "Slow average",
+                  "help": "Span of the slow exponential average, in bars"}},
+        "band": {{"type": "float", "min": 0.0, "max": 5.0, "step": 0.05, "label": "Band",
+                  "help": "Volatility-scaled distance needed to flip the verdict"}},
+        "vol_halflife": {{"type": "int", "min": 2, "max": 500, "step": 1, "label": "Volatility half-life",
+                          "help": "Half-life of the volatility estimate, in bars"}},
+    }}
 
     @classmethod
     def default_params(cls):
@@ -514,10 +621,12 @@ class {class_name}(TrendIndicator):
         return hysteresis_flip(score, float(self.params["band"]))
 
 
-# QuantScript registers this script through these two names — nobody edits
-# indicators/__init__.py for it (see indicators/_discover.py).
+# QuantScript registers this script through these names — nobody edits
+# indicators/__init__.py for it (see indicators/_discover.py). REQUIRES lists
+# the other scripts it imports or evaluates; this one needs none.
 REGISTER = {{"{key}": {class_name}}}
 WARMUP = {{"{key}": 400}}
+REQUIRES = ()
 '''
 
 
@@ -546,6 +655,8 @@ def _main(argv: list[str]) -> int:
     p.add_argument("--depth", default="quick", choices=DEPTHS)
     p.add_argument("--frame-bars", type=int, default=None)
     p.add_argument("--timeout", type=float, default=CHECK_TIMEOUT_S)
+    p.add_argument("--isolated", action="store_true",
+                   help="only the script and its REQUIRES closure in the sandbox library")
 
     p = sub.add_parser("verify", help="(internal) the check itself, run where smithery resolves")
     p.add_argument("--file", required=True)
@@ -567,7 +678,7 @@ def _main(argv: list[str]) -> int:
             return 0
         if args.command == "check":
             doc = check(args.file, Path(args.candidate), depth=args.depth, frame_bars=args.frame_bars,
-                        timeout=args.timeout)
+                        timeout=args.timeout, isolated=args.isolated)
             print(json.dumps(doc, default=str))
             return 0
         if args.command == "verify":

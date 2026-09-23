@@ -277,7 +277,7 @@ fn compact_listing(doc: &mut Value) {
             if let Some(classes) = entry.get_mut("classes").and_then(Value::as_array_mut) {
                 for class in classes {
                     let Some(obj) = class.as_object_mut() else { continue };
-                    for key in ["hypothesis", "params", "param_space", "timeframes", "bases"] {
+                    for key in ["hypothesis", "params", "param_space", "schema", "timeframes", "bases"] {
                         obj.remove(key);
                     }
                     if let Some(cert) = obj.get_mut("certification").and_then(Value::as_object_mut) {
@@ -1064,6 +1064,8 @@ mod tests {
                 "classes": [{
                     "class_name": "X", "line": 3, "key": "x", "name": "X", "bases": ["TrendIndicator"],
                     "hypothesis": "long", "params": {"a": 1}, "param_space": {"a": [0, 1]},
+                    "schema": {"a": {"type": "int", "label": "A"}}, "role": "standard",
+                    "versions": {"standard": "x", "optimized": "x_opt"},
                     "warmup_bars": 400,
                     "certification": {"score": 71, "grade": "A", "certified": false, "perm_p": 0.05, "date": "2026-09-07", "report": "r", "tracks_run": 3},
                     "timeframes": {"1d": {"score": 71}}
@@ -1077,7 +1079,11 @@ mod tests {
         assert_eq!(class["warmup_bars"], 400);
         assert!(class.get("hypothesis").is_none());
         assert!(class.get("params").is_none());
+        assert!(class.get("schema").is_none());
         assert!(class.get("timeframes").is_none());
+        // The version slots are small and what an agent picks a key from.
+        assert_eq!(class["role"], "standard");
+        assert_eq!(class["versions"]["optimized"], "x_opt");
         assert_eq!(class["certification"]["score"], 71);
         assert!(class["certification"].get("report").is_none());
         assert_eq!(doc["scripts"][0]["summary"].as_str().unwrap().chars().count(), 158);
