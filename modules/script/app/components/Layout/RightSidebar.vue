@@ -11,7 +11,8 @@ import { useForgeStore } from '#script/stores/forge'
 import { useWorkbenchStore } from '#script/stores/workbench'
 import { ChevronRight, X } from 'lucide-vue-next'
 import { AUTHOR_LABELS, formatBytes, gradeClass, shortSha, timeAgo } from '#script/utils/format'
-import { KIND_LABELS, formatElapsed } from '#script/utils/forge'
+import { KIND_LABELS, formatElapsed, versionParamDiff, versionSlots, versionWhy, type VersionSlot } from '#script/utils/forge'
+import { formatParams } from '#script/utils/format'
 import type { ScriptClass, VersionMeta } from '#script/types'
 
 const wb = useWorkbenchStore()
@@ -72,6 +73,36 @@ function tracks(c: ScriptClass): string {
   return Object.entries(t)
     .map(([tf, v]) => `${tf} ${v ? `${v.score}/${v.grade}` : '—'}`)
     .join(' · ')
+}
+
+// The versions come from the forge's registry (the listing knows only the
+// slots): read it once the details of an indicator script are on screen.
+watch(
+  () => editing.value && wb.inspectorTab === 'details' && registered.value.length > 0,
+  (show) => {
+    if (show && !forge.registry && !forge.registryLoading) void forge.loadRegistry()
+  },
+  { immediate: true },
+)
+
+const byKey = computed(() => new Map(forge.indicators.map((ind) => [ind.key, ind])))
+
+/** The class's five versions; empty for a class the registry does not list as a base. */
+function versionsOf(c: ScriptClass): VersionSlot[] {
+  const base = c.key ? byKey.value.get(c.key) : undefined
+  if (!base || base.variant) return []
+  return versionSlots({ key: base.key, versions: base.versions ?? c.versions }, byKey.value)
+}
+
+/** Standard and general: the overall verdict; a timeframe version: its own track. */
+function versionScore(v: VersionSlot): string {
+  const verdict = v.track ? v.info?.timeframes?.[v.track] : v.info?.certification
+  return verdict ? `${+verdict.score.toFixed(1)} ${verdict.grade}` : '—'
+}
+
+function versionParams(v: VersionSlot, c: ScriptClass): string {
+  if (v.role === 'standard') return formatParams(c.params) || 'parameter-free'
+  return formatParams(versionParamDiff(v, c.params ?? {})) || 'same as Standard'
 }
 
 function reveal(c: ScriptClass) {
@@ -245,7 +276,16 @@ async function deleteScript() {
           </div>
           <p v-if="c.hypothesis" class="qsc-ind-hyp" :title="c.hypothesis">{{ c.hypothesis }}</p>
           <p v-if="c.warmup_bars != null" class="qsc-help">Warm-up <span class="mono">{{ c.warmup_bars }}</span> bars</p>
-          <details v-if="c.params && Object.keys(c.params).length" class="qsc-params-detail"><summary>Default parameters</summary><dl><template v-for="(value, key) in c.params" :key="key"><dt class="mono">{{ key }}</dt><dd class="mono">{{ value }}</dd></template></dl></details>
+          <div v-if="versionsOf(c).length" class="qsc-ind-versions">
+            <span class="qsc-ind-versions-title">Versions</span>
+            <div v-for="v in versionsOf(c)" :key="v.role" class="qsc-ind-version" :class="{ 'is-empty': !v.info }" :title="v.info ? `${v.key}${versionWhy(v) ? ' · ' + versionWhy(v) : ''}` : 'Not forged yet: Optimize timeframes in the forge creates it'">
+              <span class="qsc-ind-version-label">{{ v.label }}</span>
+              <span class="qsc-ind-version-score mono" :title="v.track ? `${v.track} track` : 'the weakest track'">{{ v.info ? versionScore(v) : 'not forged' }}</span>
+              <span v-if="v.info" class="qsc-ind-version-params mono">{{ versionParams(v, c) }}</span>
+            </div>
+          </div>
+          <p v-else-if="forge.registryLoading" class="qsc-help qsc-pulse">Reading the versions…</p>
+          <details v-if="c.params && Object.keys(c.params).length" class="qsc-params-detail"><summary>Standard parameters</summary><dl><template v-for="(value, key) in c.params" :key="key"><dt class="mono">{{ key }}</dt><dd class="mono">{{ value }}</dd></template></dl></details>
           <p v-if="c.error" class="qsc-note is-error">{{ c.error }}</p>
         </div>
         <p v-if="!registered.length" class="qsc-panel-empty">
@@ -431,6 +471,41 @@ async function deleteScript() {
 }
 .qsc-helpers {
   font-size: 11px;
+}
+.qsc-ind-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--qss-border-subtle);
+}
+.qsc-ind-versions-title {
+  font-size: 11px;
+  color: var(--qss-text-muted);
+}
+.qsc-ind-version {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 6px;
+  row-gap: 1px;
+}
+.qsc-ind-version.is-empty {
+  opacity: 0.55;
+}
+.qsc-ind-version-label {
+  font-size: 11.5px;
+  color: var(--qss-text-secondary);
+}
+.qsc-ind-version-score {
+  font-size: 11px;
+  color: var(--qss-text);
+}
+.qsc-ind-version-params {
+  grid-column: 1 / -1;
+  font-size: 10.5px;
+  color: var(--qss-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .qsc-ver {

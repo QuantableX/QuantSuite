@@ -10,7 +10,7 @@
  */
 import { useForgeStore } from '#script/stores/forge'
 import { useWorkbenchStore } from '#script/stores/workbench'
-import { formatP } from '#script/utils/forge'
+import { formatP, versionParamDiff, versionSlots, versionWhy, type VersionSlot } from '#script/utils/forge'
 import { formatParams, gradeClass } from '#script/utils/format'
 import type { IndicatorInfo, SmitheryTimeframe } from '#script/types'
 
@@ -48,6 +48,38 @@ const rows = computed(() => {
 
 function children(key: string): IndicatorInfo[] {
   return forge.indicators.filter(ind => ind.variant && ind.base_key === key)
+}
+
+/** Research subversions and legacy keys — the children without a version role. */
+function research(key: string): IndicatorInfo[] {
+  return children(key).filter(ind => !ind.role && !ind.variant?.role)
+}
+
+const byKey = computed(() => new Map(forge.indicators.map(ind => [ind.key, ind])))
+
+function versionsOf(ind: IndicatorInfo): VersionSlot[] {
+  return versionSlots(ind, byKey.value)
+}
+
+/** A version's verdict on the selected track; on "all tracks" a timeframe
+ *  version shows its own track, the one it was optimized for. */
+function slotVerdict(v: VersionSlot) {
+  if (!v.info) return null
+  const track = scoreTrack.value === 'all' ? v.track : scoreTrack.value
+  return (track ? v.info.timeframes?.[track] : v.info.certification) ?? null
+}
+
+function slotTitle(v: VersionSlot): string {
+  if (!v.info) return `${v.label}: not forged yet (Optimize timeframes creates it)`
+  const why = versionWhy(v)
+  return `${v.label} · ${v.key}${why ? ` · ${why}` : ''}`
+}
+
+/** The Standard's parameters in full, the other versions' as the difference to it. */
+function paramText(v: VersionSlot, ind: IndicatorInfo): string {
+  if (!v.info) return ''
+  if (v.role === 'standard') return formatParams(ind.params) || 'parameter-free'
+  return formatParams(versionParamDiff(v, ind.params)) || 'same as Standard'
 }
 
 /** The tracks behind the one score, for the score's tooltip. */
@@ -155,8 +187,17 @@ function scriptOf(ind: IndicatorInfo): string | null {
             <template v-for="ind in rows" :key="ind.key">
               <tr class="is-clickable qsf-row" :class="{ 'is-open': expanded === ind.key }" @click="toggle(ind.key)">
                 <td class="qsf-cell-name">
-                  <div class="qsf-name">{{ ind.name }} <span v-if="children(ind.key).length" class="muted">· {{ children(ind.key).length }} subversions</span></div>
+                  <div class="qsf-name">{{ ind.name }} <span v-if="research(ind.key).length" class="muted">· {{ research(ind.key).length }} subversions</span></div>
                   <div class="qsf-key mono">{{ ind.key }}<span v-if="scriptOf(ind)" class="muted"> · {{ scriptOf(ind) }}</span></div>
+                  <div class="qsf-chips">
+                    <span
+                      v-for="v in versionsOf(ind)"
+                      :key="v.role"
+                      class="qsf-chip"
+                      :class="{ 'is-empty': !v.info, 'is-ok': slotVerdict(v)?.certified }"
+                      :title="slotTitle(v)"
+                    >{{ v.short }} <b class="mono">{{ slotVerdict(v) ? slotVerdict(v)!.score.toFixed(0) : '–' }}</b></span>
+                  </div>
                 </td>
                 <td class="num mono strong" :title="tracksText(ind)">{{ ind.certification ? +ind.certification.score.toFixed(1) : '—' }}</td>
                 <td>
@@ -206,7 +247,7 @@ function scriptOf(ind: IndicatorInfo): string | null {
                         <span class="mono qsf-value">{{ ind.warmup_bars }} bars</span>
                       </div>
                       <div>
-                        <span class="qsc-label qsf-inline-label">Defaults</span>
+                        <span class="qsc-label qsf-inline-label">Standard</span>
                         <span class="mono qsf-value">{{ formatParams(ind.params) || 'parameter-free' }}</span>
                       </div>
                       <div>
@@ -220,9 +261,56 @@ function scriptOf(ind: IndicatorInfo): string | null {
                       </div>
                     </div>
 
-                    <div v-if="children(ind.key).length" class="qsc-card">
-                      <span class="qsc-label">Subversions of {{ ind.name }}</span>
-                      <div v-for="child in children(ind.key)" :key="child.key" class="qsf-detail-actions">
+                    <div class="qsf-versions">
+                      <span class="qsc-label">Versions — the Standard, the general optimization and one per bot timeframe</span>
+                      <table class="qsc-table qsf-version-table">
+                        <colgroup>
+                          <col class="col-version" />
+                          <col />
+                          <col v-for="tf in TRACKS" :key="tf" class="col-track" />
+                          <col class="col-why" />
+                          <col class="col-actions" />
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            <th>Version</th>
+                            <th>Parameters</th>
+                            <th v-for="tf in TRACKS" :key="tf" class="num">{{ tf }}</th>
+                            <th>Why</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="v in versionsOf(ind)" :key="v.role" :class="{ 'qsf-version-empty': !v.info }">
+                            <td>
+                              <div class="qsf-name">{{ v.label }}</div>
+                              <div class="qsf-key mono">{{ v.info ? v.key : 'not forged yet' }}</div>
+                            </td>
+                            <td class="mono qsf-version-params">{{ paramText(v, ind) }}</td>
+                            <td v-for="tf in TRACKS" :key="tf" class="num mono" :class="{ 'qsf-own-track': v.track === tf }">
+                              <template v-if="v.info?.timeframes?.[tf]">
+                                <span :class="v.info.timeframes[tf]!.certified ? 'qsc-ok' : ''">{{ +v.info.timeframes[tf]!.score.toFixed(1) }}</span>
+                                <button v-if="v.info.timeframes[tf]!.report" class="qsc-link mono" title="Open the report" @click="forge.openReport(v.info.timeframes[tf]!.report!)">↗</button>
+                              </template>
+                              <span v-else class="muted">—</span>
+                            </td>
+                            <td class="muted qsf-why">{{ versionWhy(v) }}</td>
+                            <td>
+                              <div v-if="v.info" class="qsf-actions">
+                                <button class="qsc-btn is-sm" :disabled="forge.isRunning" :title="`Full gauntlet of ${v.key}: ${scoreTrack}`" @click="gauntlet(v.info, false)">Validate</button>
+                                <button class="qsc-btn is-sm" :disabled="forge.creating !== null" :title="`A RegimeTrend strategy on ${v.key}, in QuantAlgo — pick the version of the bot's timeframe`" @click="forge.createStrategy(v.key!)">
+                                  {{ forge.creating === v.key ? 'Creating…' : 'New strategy' }}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div v-if="research(ind.key).length" class="qsc-card">
+                      <span class="qsc-label">Research subversions and legacy keys of {{ ind.name }}</span>
+                      <div v-for="child in research(ind.key)" :key="child.key" class="qsf-detail-actions">
                         <span>{{ child.variant?.label }}</span>
                         <span class="mono">{{ formatParams(child.params) }}</span>
                         <span class="muted">{{ child.variant?.status }} · {{ statusText(child) }}</span>
@@ -245,7 +333,7 @@ function scriptOf(ind: IndicatorInfo): string | null {
       </div>
 
       <p class="qsf-footer muted">
-        {{ scoreTrack === 'all' ? 'Overall shows the weakest measured track; all four must pass for certification.' : `Showing the ${scoreTrack} track.` }}
+        {{ scoreTrack === 'all' ? 'Overall shows the weakest measured track; all three must pass for certification. Version chips: S Standard · G general · 1H / 4H / 1D on their own track.' : `Showing the ${scoreTrack} track for every version.` }}
         Certification requires score ≥ 70, permutation p ≤ 0.10 and complete full-run evidence.
         Historical scores remain labeled references. Registry read {{ new Date(forge.registry.generated_at).toLocaleString() }}.
       </p>
@@ -392,5 +480,61 @@ function scriptOf(ind: IndicatorInfo): string | null {
 }
 .qsf-footer {
   font-size: 11px;
+}
+.qsf-chips {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+  overflow: hidden;
+}
+.qsf-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 0 5px;
+  border: 1px solid var(--qss-border);
+  border-radius: 4px;
+  font-size: 10.5px;
+  line-height: 16px;
+  color: var(--qss-text-muted);
+}
+.qsf-chip b {
+  font-weight: 600;
+  color: var(--qss-text);
+}
+.qsf-chip.is-ok {
+  border-color: color-mix(in srgb, var(--qss-success) 35%, transparent);
+}
+.qsf-chip.is-ok b {
+  color: var(--qss-success);
+}
+.qsf-chip.is-empty {
+  opacity: 0.45;
+}
+.qsf-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.qsf-version-table {
+  table-layout: fixed;
+  font-size: 12px;
+}
+.col-version { width: 190px; }
+.col-track { width: 64px; }
+.col-why { width: 190px; }
+.qsf-version-params {
+  font-size: 11.5px;
+  white-space: normal;
+  word-break: break-word;
+}
+.qsf-own-track {
+  font-weight: 600;
+}
+.qsf-why {
+  white-space: normal;
+}
+.qsf-version-empty td {
+  opacity: 0.55;
 }
 </style>

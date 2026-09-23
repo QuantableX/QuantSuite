@@ -4,7 +4,7 @@
  * Pure functions — the store keeps the jobs, the components call these on
  * render. Moved from QuantAlgo with the forge (docs/PLAN-QUANTSCRIPT.md §2).
  */
-import type { ForgeEvent, ForgeJob } from '#script/types'
+import type { ForgeEvent, ForgeJob, IndicatorInfo, VersionRole } from '#script/types'
 
 export const AXES = ['asset', 'exchange', 'parameter', 'temporal', 'monte_carlo'] as const
 export type AxisKey = (typeof AXES)[number]
@@ -309,9 +309,59 @@ export function decisionLabel(decision: string | null): string {
       return 'general version kept'
     case 'standard_retained':
       return 'Standard kept'
+    case 'current':
+      return "today's parameters, frozen"
     default:
       return ''
   }
+}
+
+/** The fixed version slots of every indicator (smithery/variants.py): the
+ *  Standard, the general optimization and one per bot timeframe. */
+export const VERSION_SLOTS: { role: VersionRole; short: string; label: string; track: string | null }[] = [
+  { role: 'standard', short: 'S', label: 'Standard', track: null },
+  { role: 'optimized', short: 'G', label: 'Optimized (general)', track: null },
+  { role: 'optimized_1h', short: '1H', label: 'Optimized 1H', track: '1h' },
+  { role: 'optimized_4h', short: '4H', label: 'Optimized 4H', track: '4h' },
+  { role: 'optimized_1d', short: '1D', label: 'Optimized 1D', track: '1d' },
+]
+
+export interface VersionSlot {
+  role: VersionRole
+  short: string
+  label: string
+  /** The track a timeframe version was optimized for; null for Standard and general. */
+  track: string | null
+  /** Registry key; null while the slot is empty. */
+  key: string | null
+  info: IndicatorInfo | null
+}
+
+/** A base indicator's five version slots, resolved against the registry. */
+export function versionSlots(
+  base: Pick<IndicatorInfo, 'key' | 'versions'>,
+  byKey: ReadonlyMap<string, IndicatorInfo>,
+): VersionSlot[] {
+  return VERSION_SLOTS.map((slot) => {
+    const key = base.versions?.[slot.role] ?? (slot.role === 'standard' ? base.key : null)
+    const info = key ? (byKey.get(key) ?? null) : null
+    return { ...slot, key: info ? key : null, info }
+  })
+}
+
+/** Why a version holds its parameters, in one phrase. */
+export function versionWhy(slot: VersionSlot): string {
+  if (slot.role === 'standard') return 'the normal parameters'
+  const decision = (slot.info?.variant?.evidence as { decision?: unknown } | undefined)?.decision
+  return decisionLabel(typeof decision === 'string' ? decision : null)
+}
+
+/** A version's parameters that differ from the Standard's (`{}` = the same). */
+export function versionParamDiff(slot: VersionSlot, standard: Record<string, unknown>): Record<string, unknown> {
+  if (!slot.info || slot.role === 'standard') return {}
+  return Object.fromEntries(
+    Object.entries(slot.info.params).filter(([name, value]) => JSON.stringify(value) !== JSON.stringify(standard[name])),
+  )
 }
 
 /** The series a shelf refresh reported, in the order they came back. */

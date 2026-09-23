@@ -93,6 +93,24 @@ export interface IndicatorOption {
   grade: string | null
   /** Provenance of the score ("1d certified", "1d reference", "research"). */
   tag?: string
+  /** A base indicator's versions; the row's `value` is the one a click on
+   *  the row picks (the cadence's own version, else General, else Standard). */
+  versions?: IndicatorVersionOption[]
+}
+
+/** One version of a base indicator in the pickers (Standard, General,
+ *  Optimized 1H / 4H / 1D), scored on the cadence's track. */
+export interface IndicatorVersionOption {
+  value: TrendKind
+  role: string
+  /** Chip text: S, G, 1H, 4H, 1D. */
+  short: string
+  label: string
+  score: number | null
+  grade: string | null
+  tag?: string
+  /** The version optimized for the cadence's track. */
+  matches: boolean
 }
 
 export interface RunConfig {

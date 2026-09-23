@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
-import type { MarketIndicatorConfig, RunConfig, TotalBreakoutConfig, TrendKind } from '#systems/types'
+import { findIndicatorOption } from '#systems/utils/indicatorOptions'
+import type { IndicatorOption, MarketIndicatorConfig, RunConfig, TotalBreakoutConfig, TrendKind } from '#systems/types'
 
 const props = defineProps<{ config: RunConfig; compact?: boolean; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: MarketIndicatorConfig | null] }>()
@@ -11,6 +12,14 @@ const { options } = useIndicatorOptions(() => ({
   ...props.config, indicator: standard.value ?? props.config.indicator,
 }))
 const selectedTrend = computed(() => selection.value?.trend ?? 'same')
+// One entry per base indicator; its versions in a second select.
+const selectedRow = computed(() => findIndicatorOption(options.value, selectedTrend.value))
+const selectedVersions = computed(() => selectedRow.value?.versions ?? null)
+
+/** The row that holds the selection answers with the selected version. */
+function rowValue(option: IndicatorOption): string {
+  return option === selectedRow.value ? selectedTrend.value : option.value
+}
 
 function setTrend(value: string) {
   if (value === 'same') {
@@ -54,7 +63,13 @@ function setBreakout(key: keyof Omit<TotalBreakoutConfig, 'trend'>, event: Event
       <option value="same">TOTAL · Same as ranking</option>
       <option value="total_breakout">TOTAL · Breakout (research)</option>
       <option value="aggregate">TOTAL · Aggregate</option>
-      <option v-for="option in options" :key="option.value" :value="option.value">TOTAL · {{ option.name }}</option>
+      <option v-for="option in options" :key="option.value" :value="rowValue(option)">TOTAL · {{ option.name }}</option>
+    </select>
+    <select v-if="selectedVersions" class="select qs-market-select__version" aria-label="TOTAL indicator version"
+      :value="selectedTrend" :disabled="disabled" @change="setTrend(($event.target as HTMLSelectElement).value)">
+      <option v-for="v in selectedVersions" :key="v.value" :value="v.value" :title="v.value">
+        {{ compact ? v.short : v.label }}{{ v.matches ? ' ●' : '' }}{{ v.score != null ? ` · ${v.score}` : '' }}
+      </option>
     </select>
     <SystemsBacktestCompareSelect v-if="compact || selectedTrend === 'aggregate'"
       class="qs-market-select__members"
@@ -111,6 +126,7 @@ function setBreakout(key: keyof Omit<TotalBreakoutConfig, 'trend'>, event: Event
   font-size: 12px;
 }
 .qs-market-select--compact .qs-market-select__members { flex: 0 0 32px; width: 32px; }
+.qs-market-select--compact > .qs-market-select__version { flex: 0 0 auto; width: auto; }
 .qs-market-select__lengths { display: flex; gap: 10px; min-width: 0; max-width: 100%; }
 .qs-market-select__lengths label { display: grid; gap: 4px; min-width: 0; font-size: 12px; color: var(--qs-text-secondary); }
 .qs-market-select__lengths input { width: 90px; max-width: 100%; min-width: 0; }

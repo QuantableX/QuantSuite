@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { IndicatorOption, TrendKind } from '#systems/types'
+import type { IndicatorOption, IndicatorVersionOption, TrendKind } from '#systems/types'
 
 const props = withDefaults(defineProps<{
   modelValue: TrendKind[]
@@ -29,17 +29,68 @@ const emit = defineEmits<{ 'update:modelValue': [value: TrendKind[]] }>()
 const open = ref(false)
 const root = ref<HTMLElement | null>(null)
 
-const rows = computed(() => props.options.filter(o => o.value !== props.exclude))
+// A base row stays when the excluded run indicator is one of its versions;
+// only that version's chip is disabled.
+const rows = computed(() => props.options.filter(o => o.versions || o.value !== props.exclude))
 const picked = computed(() => new Set(props.modelValue))
 
-function toggleRow(option: IndicatorOption) {
-  const next = props.modelValue.filter(v => v !== option.value)
-  if (next.length === props.modelValue.length)
-    next.push(option.value)
-  // Keep catalog order (best first) so the chart and table read top-down.
-  const order = new Map(props.options.map((o, i) => [o.value, i]))
-  next.sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99))
+// Catalog order (best first), versions in slot order, so the chart and the
+// table read top-down.
+const order = computed(() => {
+  const at = new Map<string, number>()
+  for (const o of props.options) {
+    for (const value of o.versions ? o.versions.map(v => v.value) : [o.value])
+      at.set(value, at.size)
+  }
+  return at
+})
+
+function emitSorted(next: TrendKind[]) {
+  next.sort((a, b) => (order.value.get(a) ?? 999) - (order.value.get(b) ?? 999))
   emit('update:modelValue', next)
+}
+
+function isPicked(option: IndicatorOption): boolean {
+  return option.versions ? option.versions.some(v => picked.value.has(v.value)) : picked.value.has(option.value)
+}
+
+/** The version a base row's score stands for: the first picked one, else
+ *  the one a click on the row adds. */
+function shown(option: IndicatorOption): IndicatorVersionOption | null {
+  if (!option.versions)
+    return null
+  return option.versions.find(v => picked.value.has(v.value))
+    ?? option.versions.find(v => v.value === option.value) ?? null
+}
+
+/** A row: off → its default version on; on → every picked version off. */
+function toggleRow(option: IndicatorOption) {
+  if (option.versions) {
+    const group = new Set(option.versions.map(v => v.value))
+    if (isPicked(option)) {
+      emitSorted(props.modelValue.filter(v => !group.has(v)))
+      return
+    }
+    const add = option.value !== props.exclude ? option.value : option.versions.find(v => v.value !== props.exclude)?.value
+    if (add)
+      emitSorted([...props.modelValue, add])
+    return
+  }
+  toggleValue(option.value)
+}
+
+function toggleValue(value: TrendKind) {
+  const next = props.modelValue.filter(v => v !== value)
+  if (next.length === props.modelValue.length)
+    next.push(value)
+  emitSorted(next)
+}
+
+function versionTitle(v: IndicatorVersionOption): string {
+  if (v.value === props.exclude)
+    return `${v.label}: the run's own indicator`
+  const score = v.score != null ? ` · ${v.score}${v.grade ? ` ${v.grade}` : ''}` : ' · no verdict on this track'
+  return `${v.label} (${v.value})${score}${v.matches ? ' · optimized for this cadence' : ''}`
 }
 
 function clear() {
@@ -113,34 +164,48 @@ function gradeClass(grade: string | null): string {
           <span class="qs-cmp__col-grade">Grade</span>
         </div>
         <div class="qs-cmp__list">
-          <button
+          <div
             v-for="option in rows"
             :key="option.value"
-            type="button"
             role="option"
             class="qs-cmp__row"
-            :class="{ 'qs-cmp__row--on': picked.has(option.value) }"
-            :aria-selected="picked.has(option.value)"
-            :title="option.tag"
+            :class="{ 'qs-cmp__row--on': isPicked(option) }"
+            :aria-selected="isPicked(option)"
+            :title="(shown(option) ?? option).tag"
             @click="toggleRow(option)"
           >
-            <span class="qs-cmp__check" :class="{ 'qs-cmp__check--on': picked.has(option.value) }">
-              <svg v-if="picked.has(option.value)" width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+            <span class="qs-cmp__check" :class="{ 'qs-cmp__check--on': isPicked(option) }">
+              <svg v-if="isPicked(option)" width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
                 <path d="M2 5.2L4.2 7.4L8 3" stroke="currentColor" stroke-width="1.6"
                   stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </span>
-            <span class="qs-cmp__name">{{ option.name }}</span>
-            <span class="qs-cmp__col-score mono">{{ option.score ?? '—' }}</span>
+            <span class="qs-cmp__name-cell">
+              <span class="qs-cmp__name">{{ option.name }}</span>
+              <span v-if="option.versions" class="qs-cmp__versions" role="group" :aria-label="`${option.name} versions`">
+                <button
+                  v-for="v in option.versions"
+                  :key="v.value"
+                  type="button"
+                  class="qs-cmp__ver"
+                  :class="{ 'qs-cmp__ver--on': picked.has(v.value), 'qs-cmp__ver--match': v.matches }"
+                  :aria-pressed="picked.has(v.value)"
+                  :disabled="v.value === exclude"
+                  :title="versionTitle(v)"
+                  @click.stop="toggleValue(v.value)"
+                >{{ v.short }}</button>
+              </span>
+            </span>
+            <span class="qs-cmp__col-score mono">{{ (shown(option) ?? option).score ?? '—' }}</span>
             <span class="qs-cmp__col-grade">
-              <span v-if="option.grade" class="qs-cmp__grade" :class="gradeClass(option.grade)">{{ option.grade }}</span>
+              <span v-if="(shown(option) ?? option).grade" class="qs-cmp__grade" :class="gradeClass((shown(option) ?? option).grade)">{{ (shown(option) ?? option).grade }}</span>
               <span v-else class="qs-cmp__grade qs-cmp__grade--none">—</span>
             </span>
-          </button>
+          </div>
         </div>
         <div class="qs-cmp__foot">
           <span class="qs-cmp__hint">
-            {{ modelValue.length ? `${modelValue.length} ${modelValue.length === 1 ? unit : unitPlural}` : emptyHint }}
+            {{ modelValue.length ? `${modelValue.length} ${modelValue.length === 1 ? unit : unitPlural}` : emptyHint }}<template v-if="rows.some(o => o.versions)"> · a dot marks the cadence's version</template>
           </span>
           <button v-if="modelValue.length" type="button" class="qs-cmp__clear" @click="clear">Clear</button>
         </div>
@@ -303,11 +368,68 @@ function gradeClass(grade: string | null): string {
   background: var(--qs-accent);
 }
 
+.qs-cmp__name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .qs-cmp__name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.qs-cmp__versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.qs-cmp__ver {
+  position: relative;
+  min-width: 26px;
+  border: 1px solid var(--qs-border-subtle);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--qs-text-secondary);
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.qs-cmp__ver:hover:not(:disabled) {
+  border-color: var(--qs-accent);
+  color: var(--qs-text);
+}
+
+.qs-cmp__ver:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.qs-cmp__ver--on {
+  border-color: var(--qs-accent);
+  background: var(--qs-accent);
+  color: var(--qs-bg);
+}
+
+.qs-cmp__ver--on:hover:not(:disabled) {
+  color: var(--qs-bg);
+}
+
+.qs-cmp__ver--match::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--qs-success);
 }
 
 .qs-cmp__col-score {
