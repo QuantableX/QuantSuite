@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 
 class Cadence(str, Enum):
@@ -153,11 +153,18 @@ class IndicatorConfig:
     ±1 signals (members still warming up do not vote): the pair is bullish
     while the average is above 0, bearish below 0, and holds its verdict at
     exactly 0. ``ema_cross`` may be a member and uses ``ema_cross``.
+
+    ``params`` overrides Smithery parameters per indicator key —
+    ``{key: {param: value}}`` — wherever that key runs in this config: the
+    trend itself, aggregate members and compared runs. Keys without an
+    entry run their registry version's parameters (the defaults of
+    ``dcl_opt`` are the general version's).
     """
 
     trend: TrendKind = "ema_cross"
     ema_cross: EmaCrossConfig = field(default_factory=EmaCrossConfig)
     aggregate: tuple[TrendKind, ...] = ()
+    params: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

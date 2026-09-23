@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { paramDiff, paramProblems, type ParamValues } from '@quantsuite/ui'
+import type { SmitheryCatalogEntry } from '@quantsuite/core'
 import { useConfigStore } from '#systems/stores/config'
 import { useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
 import SystemsSettingsMarketFilterSelect from '#systems/components/Settings/MarketFilterSelect.vue'
@@ -36,6 +38,35 @@ function setEma<K extends keyof RunConfig['indicator']['emaCross']>(
       emaCross: { ...current.indicator.emaCross, [key]: value },
     },
   })
+}
+
+/** The Smithery indicators this config runs — the trend, or the aggregate's
+ *  members — each with its catalog entry (schema + the version's params). */
+const tunable = computed(() => {
+  const keys = trend.value === 'aggregate' ? members.value : [trend.value]
+  return keys
+    .filter(key => key !== 'ema_cross' && key !== 'aggregate')
+    .map(key => ({ key, entry: catalog.indicators.find(ind => ind.key === key) ?? null }))
+})
+
+function paramValues(key: string, entry: SmitheryCatalogEntry): ParamValues {
+  return { ...(entry.params ?? {}), ...(cfg.value.indicator.params?.[key] ?? {}) }
+}
+
+function paramIssues(key: string, entry: SmitheryCatalogEntry): number {
+  return Object.keys(paramProblems(entry.schema ?? {}, paramValues(key, entry))).length
+}
+
+/** Store only what differs from the version; nothing left = no override
+ *  (and no `params` at all), so an untouched config saves unchanged. */
+function setParams(key: string, values: ParamValues, entry: SmitheryCatalogEntry) {
+  const current = config.get(props.systemId)
+  const params = { ...(current.indicator.params ?? {}) }
+  const diff = paramDiff(values, entry.params ?? {})
+  if (Object.keys(diff).length) params[key] = diff
+  else delete params[key]
+  const { params: _previous, ...indicator } = current.indicator
+  config.update(props.systemId, { indicator: Object.keys(params).length ? { ...indicator, params } : indicator })
 }
 
 function setTrend(value: TrendKind) {
@@ -150,9 +181,28 @@ const slipPct = computed({
         Ties keep the previous verdict; warming-up members do not vote.
       </p>
       <p v-else-if="trend !== 'ema_cross'" class="qs-form__hint">
-        Uses the Smithery defaults. Scores refer to {{ scoreTrack }} candles; historical references are not fresh certification.
+        Runs the chosen version's parameters; change them under Parameters. Scores refer to {{ scoreTrack }} candles; historical references are not fresh certification.
         Validate the indicator on the system’s asset ratios and portfolio, including trading costs.
       </p>
+      <div v-if="tunable.length" class="qs-form__params">
+        <details v-for="t in tunable" :key="t.key" class="qs-form__param-group">
+          <summary>
+            <span class="qs-form__param-title">Parameters · {{ t.entry?.name ?? t.key }}</span>
+            <span v-if="t.entry && paramIssues(t.key, t.entry)" class="qs-form__param-tag qs-form__param-tag--bad">{{ paramIssues(t.key, t.entry) }} invalid</span>
+            <span v-else-if="cfg.indicator.params?.[t.key]" class="qs-form__param-tag">custom</span>
+          </summary>
+          <QParamForm
+            v-if="t.entry?.schema"
+            :schema="t.entry.schema"
+            :model-value="paramValues(t.key, t.entry)"
+            :base="t.entry.params ?? {}"
+            @update:model-value="setParams(t.key, $event, t.entry)"
+          />
+          <p v-else class="qs-form__hint">
+            {{ catalog.loading ? 'Loading the parameters…' : 'The engine does not describe this indicator’s parameters — update or restart it.' }}
+          </p>
+        </details>
+      </div>
       <p v-if="catalog.loading" class="qs-form__hint">Loading Smithery indicators…</p>
       <p v-if="catalog.error" class="qs-form__hint" role="alert">
         Smithery could not be loaded: {{ catalog.error }}
@@ -308,5 +358,52 @@ const slipPct = computed({
   .qs-form__grid {
     grid-template-columns: 1fr;
   }
+}
+
+.qs-form__params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.qs-form__param-group {
+  border: 1px solid var(--qs-border-subtle);
+  border-radius: var(--qs-radius);
+  padding: 0 10px;
+}
+
+.qs-form__param-group[open] {
+  padding-bottom: 10px;
+}
+
+.qs-form__param-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  font-size: 12px;
+  color: var(--qs-text-secondary);
+  cursor: pointer;
+}
+
+.qs-form__param-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qs-form__param-tag {
+  flex-shrink: 0;
+  border: 1px solid var(--qs-border);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--qs-text);
+}
+
+.qs-form__param-tag--bad {
+  border-color: color-mix(in srgb, var(--qs-error) 45%, transparent);
+  color: var(--qs-error);
 }
 </style>

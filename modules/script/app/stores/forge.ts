@@ -177,14 +177,22 @@ export const useForgeStore = defineStore('script/forge', () => {
   }
 
   /**
-   * A RegimeTrend strategy in QuantAlgo for one indicator — QuantAlgo makes
-   * it; the strategies page opens it via `?select=`.
+   * A RegimeTrend strategy in QuantAlgo for one indicator version — QuantAlgo
+   * makes it (checking `params` against the registry's schema); the
+   * strategies page opens it via `?select=`.
    */
-  async function createStrategy(key: string): Promise<AlgoStrategy | null> {
+  async function createStrategy(
+    key: string,
+    opts: { name?: string | null; params?: Record<string, unknown> | null } = {},
+  ): Promise<AlgoStrategy | null> {
     creating.value = key
     createError.value = null
     try {
-      const strategy = await invoke<AlgoStrategy>('plugin:algo|create_strategy_from_indicator', { indicator: key, name: null })
+      const strategy = await invoke<AlgoStrategy>('plugin:algo|create_strategy_from_indicator', {
+        indicator: key,
+        name: opts.name ?? null,
+        params: opts.params ?? null,
+      })
       window.dispatchEvent(new CustomEvent('qss:navigate', { detail: { route: `/algo/strategies?select=${encodeURIComponent(strategy.id)}` } }))
       return strategy
     } catch (err) {

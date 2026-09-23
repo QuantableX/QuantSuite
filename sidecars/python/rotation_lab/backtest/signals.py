@@ -65,7 +65,46 @@ def _ema_cross(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:
     return (fast >= slow).fillna(False).astype(int)
 
 
-def _smithery(df: pd.DataFrame, kind: TrendKind) -> pd.Series:
+def indicator_overrides(kind: str, values: dict | None) -> dict:
+    """The parameter overrides ``values`` of indicator ``kind``, checked
+    against its schema and typed like its defaults (a list becomes the
+    default's tuple, a whole float an int). Entries equal to the version's
+    own parameters drop out, so an override that repeats them is no
+    override. Raises ``ValueError`` naming the indicator and parameter."""
+
+    if not values:
+        return {}
+    from .smithery import REGISTRY
+    cls = REGISTRY.get(kind)
+    if cls is None:
+        raise ValueError(f"parameters for unknown indicator '{kind}' — restart the engine if it is new")
+    problems = cls.check_params(values)
+    if problems:
+        raise ValueError(f"{kind}: " + "; ".join(problems))
+    defaults = cls.default_params()
+    out = {}
+    for name, value in values.items():
+        default = defaults[name]
+        if isinstance(default, tuple):
+            value = tuple(type(d)(v) if isinstance(d, (int, float)) and not isinstance(d, bool) else v
+                          for d, v in zip(default, value))
+        elif isinstance(default, int) and not isinstance(default, bool) and isinstance(value, float):
+            value = int(value)
+        elif isinstance(default, float) and isinstance(value, int) and not isinstance(value, bool):
+            value = float(value)
+        if value != default:
+            out[name] = value
+    return out
+
+
+def is_custom(cfg: IndicatorConfig, kind: str) -> bool:
+    """Whether ``kind`` runs with parameters of its own in ``cfg``."""
+
+    from .smithery import REGISTRY
+    return kind in REGISTRY and bool(indicator_overrides(kind, cfg.params.get(kind)))
+
+
+def _smithery(df: pd.DataFrame, kind: TrendKind, cfg: IndicatorConfig | None = None) -> pd.Series:
     from .smithery import REGISTRY
     cls = REGISTRY.get(kind)
     if cls is None:
@@ -73,8 +112,9 @@ def _smithery(df: pd.DataFrame, kind: TrendKind) -> pd.Series:
             f"unknown trend signal '{kind}' (engine knows: "
             f"{sorted(REGISTRY)}) — if this indicator was added recently, "
             "restart the engine process to load it")
+    overrides = indicator_overrides(kind, cfg.params.get(kind)) if cfg is not None else {}
     try:
-        return cls().signal(df)
+        return cls(**overrides).signal(df)
     except KeyError as exc:
         if exc.args != ("volume",):
             raise
@@ -100,7 +140,7 @@ def aggregate_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:
         if kind == "ema_cross":
             votes.append(np.where(_ema_cross(df, cfg).to_numpy() == 1, 1.0, -1.0))
         else:
-            votes.append(_smithery(df, kind).to_numpy(dtype=float))
+            votes.append(_smithery(df, kind, cfg).to_numpy(dtype=float))
     sigs = np.stack(votes)
     committed = (sigs != 0).sum(axis=0)
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -140,8 +180,8 @@ def trend_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:
         sig = ema_fast >= ema_slow ? 1 : 0
 
     ``aggregate`` averages the members' signals (:func:`aggregate_signal`).
-    Any other kind runs the corresponding Smithery indicator at its
-    defaults on the same ratio frame. A +1/-1 output maps to
+    Any other kind runs the corresponding Smithery indicator on the same
+    ratio frame — at its version's parameters or ``cfg.params[kind]``. A +1/-1 output maps to
     1/0 ("A beats B" / not); the pre-commitment warm-up 0 maps to 0, like
     an EMA cross that has not yet crossed up.
     """
@@ -152,7 +192,7 @@ def trend_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:
     if cfg.trend == "aggregate":
         return (aggregate_signal(df, cfg) > 0).astype(int)
     if cfg.trend != "ema_cross":
-        return (_smithery(df, cfg.trend) > 0).astype(int)
+        return (_smithery(df, cfg.trend, cfg) > 0).astype(int)
     return _ema_cross(df, cfg)
 
 

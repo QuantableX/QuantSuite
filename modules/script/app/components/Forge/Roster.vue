@@ -21,6 +21,8 @@ const wb = useWorkbenchStore()
 const TRACKS = ['1d', '4h', '1h'] as const
 
 const expanded = ref<string | null>(null)
+/** The version the "New strategy" dialog is open for. */
+const strategyFor = ref<IndicatorInfo | null>(null)
 const scoreTrack = ref<SmitheryTimeframe>('all')
 const onlyCertified = ref(false)
 const filter = ref('')
@@ -154,7 +156,8 @@ function scriptOf(ind: IndicatorInfo): string | null {
         <input v-model="filter" class="qsc-input qsf-filter-input" type="search" placeholder="Filter…" spellcheck="false" aria-label="Filter indicators" />
         <span class="muted qsf-count">{{ rows.length }} indicators · individual scores never imply all-track certification</span>
       </div>
-      <div v-if="forge.createError" class="qsc-note is-error">{{ forge.createError }}</div>
+      <div v-if="forge.createError && !strategyFor" class="qsc-note is-error">{{ forge.createError }}</div>
+      <ScriptForgeNewStrategyModal v-if="strategyFor" :indicator="strategyFor" @close="strategyFor = null" />
       <div v-if="forge.registry.unavailable_variants?.length" class="qsc-note is-warn">
         <p>Some saved subversions need attention. Their files are retained in your script folder.</p>
         <p v-for="child in forge.registry.unavailable_variants" :key="child.key" :title="child.path">{{ child.base_key }} › {{ child.label }}: {{ child.error }}</p>
@@ -212,7 +215,7 @@ function scriptOf(ind: IndicatorInfo): string | null {
                 <td class="qsf-cell-action" @click.stop>
                   <div class="qsf-actions">
                     <button class="qsc-btn is-sm" :disabled="forge.isRunning" :title="`Full gauntlet: ${scoreTrack}`" @click="gauntlet(ind, false)">Gauntlet</button>
-                    <button class="qsc-btn is-sm" :disabled="forge.creating !== null" title="A RegimeTrend strategy on this indicator, in QuantAlgo" @click="forge.createStrategy(ind.key)">
+                    <button class="qsc-btn is-sm" :disabled="forge.creating !== null" title="A RegimeTrend strategy on this indicator, in QuantAlgo" @click="strategyFor = forge.indicators.find(i => i.key === ind.key) ?? null">
                       {{ forge.creating === ind.key ? 'Creating…' : 'New strategy' }}
                     </button>
                   </div>
@@ -298,7 +301,7 @@ function scriptOf(ind: IndicatorInfo): string | null {
                             <td>
                               <div v-if="v.info" class="qsf-actions">
                                 <button class="qsc-btn is-sm" :disabled="forge.isRunning" :title="`Full gauntlet of ${v.key}: ${scoreTrack}`" @click="gauntlet(v.info, false)">Validate</button>
-                                <button class="qsc-btn is-sm" :disabled="forge.creating !== null" :title="`A RegimeTrend strategy on ${v.key}, in QuantAlgo — pick the version of the bot's timeframe`" @click="forge.createStrategy(v.key!)">
+                                <button class="qsc-btn is-sm" :disabled="forge.creating !== null" :title="`A RegimeTrend strategy on ${v.key}, in QuantAlgo — pick the version of the bot's timeframe`" @click="strategyFor = v.info">
                                   {{ forge.creating === v.key ? 'Creating…' : 'New strategy' }}
                                 </button>
                               </div>
@@ -315,7 +318,7 @@ function scriptOf(ind: IndicatorInfo): string | null {
                         <span class="mono">{{ formatParams(child.params) }}</span>
                         <span class="muted">{{ child.variant?.status }} · {{ statusText(child) }}</span>
                         <button class="qsc-btn is-sm" :disabled="forge.isRunning" @click="gauntlet(child, false)">Validate subversion</button>
-                        <button class="qsc-btn is-sm" :disabled="forge.creating !== null" @click="forge.createStrategy(child.key)">Use subversion</button>
+                        <button class="qsc-btn is-sm" :disabled="forge.creating !== null" @click="strategyFor = child">Use subversion</button>
                       </div>
                     </div>
                     <div class="qsf-detail-actions">

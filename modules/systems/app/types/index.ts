@@ -71,6 +71,10 @@ export interface IndicatorConfig {
   /** Members of the `aggregate` trend: their ±1 signals are averaged, the
    *  pair is bullish above 0, bearish below 0, unchanged at exactly 0. */
   aggregate: TrendKind[]
+  /** Parameter overrides per indicator key, applied wherever that key runs
+   *  in this config (trend, members, compared runs, the TOTAL signal).
+   *  Only values that differ from the version's own; absent = the version. */
+  params?: Record<string, Record<string, unknown>>
 }
 
 /** A market-only regime; never participates in the coin ranking. */

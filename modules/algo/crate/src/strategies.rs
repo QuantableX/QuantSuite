@@ -295,12 +295,92 @@ pub(crate) async fn list_indicators(
     .map_err(|e| format!("Registry task failed: {e}"))?
 }
 
-/// A RegimeTrend strategy for one forge indicator — the Indicators page's
-/// "New strategy from this indicator".
+/// Problems with a parameter override, judged by the registry entry's
+/// `schema` — the rules of the forge's `TrendIndicator.check_params`
+/// (sidecars/python/smithery/contract.py). Empty when the values can be used.
+fn indicator_param_problems(schema: &Value, values: &serde_json::Map<String, Value>) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (name, value) in values {
+        let Some(entry) = schema.get(name) else {
+            problems.push(format!("{name}: unknown parameter"));
+            continue;
+        };
+        let kind = entry.get("type").and_then(Value::as_str).unwrap_or("float");
+        let problem = match kind {
+            "bool" => (!value.is_boolean()).then(|| "expected true or false".to_string()),
+            "choice" => {
+                let choices = entry.get("choices").and_then(Value::as_array).cloned().unwrap_or_default();
+                (!choices.contains(value)).then(|| format!("expected one of {}", Value::Array(choices)))
+            }
+            "list" => {
+                let n = entry.get("default").and_then(Value::as_array).map_or(0, Vec::len);
+                let ok = value.as_array().is_some_and(|items| items.len() == n && items.iter().all(Value::is_number));
+                (!ok).then(|| format!("expected {n} numbers"))
+            }
+            _ => match value.as_f64() {
+                None => Some("expected a finite number".to_string()),
+                Some(v) if kind == "int" && v.fract() != 0.0 => Some("expected a whole number".to_string()),
+                Some(v) => {
+                    let lo = entry.get("min").and_then(Value::as_f64);
+                    let hi = entry.get("max").and_then(Value::as_f64);
+                    match (lo, hi) {
+                        (Some(lo), _) if v < lo => Some(format!("at least {}", entry["min"])),
+                        (_, Some(hi)) if v > hi => Some(format!("at most {}", entry["max"])),
+                        _ => None,
+                    }
+                }
+            },
+        };
+        if let Some(problem) = problem {
+            problems.push(format!("{name}: {problem}"));
+        }
+    }
+    problems
+}
+
+/// The parameters a new strategy freezes: the version's own (`entry.params`)
+/// with `overrides` on top, checked against `entry.schema`; whole numbers
+/// of an int parameter stay ints.
+fn strategy_indicator_params(entry: &Value, overrides: Option<&Value>) -> Result<Value, String> {
+    let mut params = entry.get("params").and_then(Value::as_object).cloned().unwrap_or_default();
+    let Some(overrides) = overrides.filter(|v| !v.is_null()) else {
+        return Ok(Value::Object(params));
+    };
+    let key = entry.get("key").and_then(Value::as_str).unwrap_or("?");
+    let values = overrides
+        .as_object()
+        .ok_or_else(|| format!("Parameters of '{key}' must be an object of name → value."))?;
+    if values.is_empty() {
+        return Ok(Value::Object(params));
+    }
+    let schema = entry
+        .get("schema")
+        .filter(|s| s.is_object())
+        .ok_or_else(|| format!("The registry has no parameter schema for '{key}' — restart QuantSuite after updating the engine."))?;
+    let problems = indicator_param_problems(schema, values);
+    if !problems.is_empty() {
+        return Err(format!("Parameters of '{key}': {}", problems.join("; ")));
+    }
+    for (name, value) in values {
+        let int = schema[name].get("type").and_then(Value::as_str) == Some("int");
+        let typed = match value.as_f64() {
+            Some(v) if int => Value::from(v as i64),
+            _ => value.clone(),
+        };
+        params.insert(name.clone(), typed);
+    }
+    Ok(Value::Object(params))
+}
+
+/// A RegimeTrend strategy for one forge indicator — the Roster's "New
+/// strategy": a version key, an optional name and optional parameter
+/// overrides (checked against the registry's schema, frozen into the
+/// strategy's `indicator_params`).
 #[tauri::command]
 pub(crate) async fn create_strategy_from_indicator(
     indicator: String,
     name: Option<String>,
+    params: Option<Value>,
     app_handle: AppHandle,
 ) -> Result<Strategy, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -324,10 +404,12 @@ pub(crate) async fn create_strategy_from_indicator(
             .get("hypothesis")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
+        let indicator_params = strategy_indicator_params(entry, params.as_ref())?;
+        let custom = indicator_params != entry.get("params").cloned().unwrap_or_else(|| serde_json::json!({}));
         let display_name = name
             .map(|n| n.trim().to_string())
             .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| format!("Regime {indicator_name}"));
+            .unwrap_or_else(|| format!("Regime {indicator_name}{}", if custom { " (custom)" } else { "" }));
         let class_name = class_name_for(&display_name);
         let description = {
             let mut text = format!("RegimeTrend on {indicator_name}: {hypothesis}");
@@ -336,7 +418,6 @@ pub(crate) async fn create_strategy_from_indicator(
             }
             text
         };
-        let indicator_params = entry.get("params").cloned().unwrap_or_else(|| serde_json::json!({}));
         // JSON is parsed in Python so future boolean/null parameters stay valid.
         let params_literal = serde_json::to_string(&indicator_params.to_string())
             .map_err(|e| format!("Indicator params: {e}"))?;
@@ -494,4 +575,71 @@ pub(crate) async fn read_strategy_file(id: String, state: State<'_, AppState>) -
         )
         .map_err(|e| format!("Not found: {e}"))?;
     std::fs::read_to_string(&file_path).map_err(|e| format!("Read: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn entry() -> Value {
+        json!({
+            "key": "alpha_opt",
+            "params": { "length": 20, "mult": 2.0, "mode": "fast", "gate": true, "lags": [1, 2, 4] },
+            "schema": {
+                "length": { "type": "int", "min": 2, "max": 400 },
+                "mult": { "type": "float", "min": 0.5 },
+                "mode": { "type": "choice", "choices": ["fast", "slow"] },
+                "gate": { "type": "bool" },
+                "lags": { "type": "list", "default": [1, 2, 4] }
+            }
+        })
+    }
+
+    #[test]
+    fn no_overrides_freeze_the_version_params() {
+        assert_eq!(strategy_indicator_params(&entry(), None).unwrap(), entry()["params"]);
+        assert_eq!(strategy_indicator_params(&entry(), Some(&json!({}))).unwrap(), entry()["params"]);
+        assert_eq!(strategy_indicator_params(&entry(), Some(&Value::Null)).unwrap(), entry()["params"]);
+    }
+
+    #[test]
+    fn overrides_merge_over_the_version_and_keep_ints() {
+        let got = strategy_indicator_params(&entry(), Some(&json!({ "length": 34.0, "mode": "slow", "lags": [2, 3, 5] }))).unwrap();
+        assert_eq!(got["length"], json!(34));
+        assert!(got["length"].is_i64());
+        assert_eq!(got["mode"], json!("slow"));
+        assert_eq!(got["lags"], json!([2, 3, 5]));
+        assert_eq!(got["mult"], json!(2.0));
+    }
+
+    #[test]
+    fn invalid_overrides_name_the_parameter() {
+        let err = strategy_indicator_params(
+            &entry(),
+            Some(&json!({ "length": 1, "mult": "x", "mode": "medium", "gate": 1, "lags": [1, 2], "nope": 3 })),
+        )
+        .unwrap_err();
+        for part in [
+            "Parameters of 'alpha_opt'",
+            "length: at least 2",
+            "mult: expected a finite number",
+            "mode: expected one of",
+            "gate: expected true or false",
+            "lags: expected 3 numbers",
+            "nope: unknown parameter",
+        ] {
+            assert!(err.contains(part), "{part} missing in {err}");
+        }
+        assert!(strategy_indicator_params(&entry(), Some(&json!({ "length": 2.5 }))).unwrap_err().contains("whole number"));
+        assert!(strategy_indicator_params(&entry(), Some(&json!({ "length": 401 }))).unwrap_err().contains("at most 400"));
+        assert!(strategy_indicator_params(&entry(), Some(&json!([1]))).unwrap_err().contains("must be an object"));
+    }
+
+    #[test]
+    fn overrides_need_a_schema() {
+        let bare = json!({ "key": "old", "params": { "length": 20 } });
+        assert!(strategy_indicator_params(&bare, Some(&json!({ "length": 30 }))).unwrap_err().contains("no parameter schema"));
+        assert_eq!(strategy_indicator_params(&bare, None).unwrap(), json!({ "length": 20 }));
+    }
 }
