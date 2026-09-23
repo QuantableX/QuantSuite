@@ -14,8 +14,34 @@ export interface IndicatorCertification {
   tracks?: number
   worst_track?: string
   timeframe?: string
-  source?: 'historical' | 'current_run'
+  /** `release` = the evidence a version file carries (smithery/variants.py). */
+  source?: 'historical' | 'current_run' | 'release'
   reasons?: string[]
+}
+
+/**
+ * An indicator's fixed version slots (smithery/variants.py): `standard` is the
+ * base itself, `optimized` the general optimization (`<base>_opt`), the
+ * timeframe roles `<base>_opt_1h` / `_opt_4h` / `_opt_1d`.
+ */
+export type VersionRole = 'standard' | 'optimized' | 'optimized_1h' | 'optimized_4h' | 'optimized_1d'
+
+/** role → registry key, null while the slot is empty. */
+export type IndicatorVersions = Record<VersionRole, string | null>
+
+/** How an editor presents one parameter (contract.TrendIndicator.schema()). */
+export interface ParamSchemaEntry {
+  type: 'int' | 'float' | 'bool' | 'choice' | 'list'
+  default: unknown
+  label: string
+  help: string
+  /** Hard bounds the script declares. */
+  min?: number
+  max?: number
+  step?: number
+  choices?: unknown[]
+  /** The range the gauntlet perturbs — evidence exists inside it. */
+  tested?: [number, number]
 }
 
 /** One top-level class of a script — a registered indicator when `key` is set. */
@@ -29,6 +55,13 @@ export interface ScriptClass {
   hypothesis?: string
   params?: Record<string, unknown>
   param_space?: Record<string, [number, number]>
+  schema?: Record<string, ParamSchemaEntry>
+  /** `standard` for a base; the role of a version child; null for legacy keys and research subversions. */
+  role?: VersionRole | null
+  /** A base's version slots; null on a child. */
+  versions?: IndicatorVersions | null
+  /** Scripts the class's script declares in REQUIRES. */
+  requires?: string[]
   warmup_bars?: number
   certification?: IndicatorCertification | null
   timeframes?: Record<string, (IndicatorCertification & { timeframe: string }) | null>
@@ -94,6 +127,8 @@ export interface PythonInfo {
 export interface ScriptListing {
   generated_at: string
   version?: string
+  /** The contract generation of the engine (contract.CONTRACT_VERSION). */
+  contract_version?: number
   python: PythonInfo
   package_dir: string
   indicators_dir: string
@@ -221,20 +256,31 @@ export interface IndicatorVariant {
   base_key: string
   label: string
   status: string
+  /** Format 2 role versions only. */
+  role?: VersionRole
+  format?: number
   path?: string
   source_sha256?: string
   params?: Record<string, unknown>
+  evidence?: Record<string, unknown>
 }
 
 export interface IndicatorInfo {
   base_key?: string
   variant?: IndicatorVariant | null
+  /** `standard` for a base; the role of a version child; null for legacy keys and research subversions. */
+  role?: VersionRole | null
+  /** A base's version slots; null on a child. */
+  versions?: IndicatorVersions | null
   /** Registry key — what a strategy passes to `self.regime(key)`. */
   key: string
   name: string
   hypothesis: string
   params: Record<string, unknown>
   param_space: Record<string, [number, number]>
+  schema?: Record<string, ParamSchemaEntry>
+  script?: string | null
+  requires?: string[]
   warmup_bars: number
   /** THE verdict: the worst track's score, certified only on every track. */
   certification: IndicatorCertification | null
@@ -242,8 +288,10 @@ export interface IndicatorInfo {
 }
 
 export interface IndicatorRegistry {
-  unavailable_variants?: { key: string; base_key: string; label: string; error: string; path: string }[]
+  unavailable_variants?: { key: string; base_key: string; label: string; role?: VersionRole | null; error: string; path: string }[]
   generated_at: string
+  /** The contract generation of the engine (contract.CONTRACT_VERSION). */
+  contract_version?: number
   package_dir: string
   timeframes?: string[]
   indicators: IndicatorInfo[]

@@ -23,7 +23,7 @@ from . import parallel as par
 from .contract import TrendIndicator, validate_causality, validate_scale_invariance
 from .data import DOCS_DIR, OUTPUT_DIR, asset_class, available, load
 from .evidence import (EVALUATION_VERSION, artifact_id, certification_gates,
-                       code_fingerprint, frame_fingerprint, write_json)
+                       code_fingerprint, frame_fingerprint, indicator_fingerprint, write_json)
 
 WEIGHTS = {"asset": 0.20, "exchange": 0.20,
            "parameter": 0.20, "temporal": 0.20, "monte_carlo": 0.20}
@@ -446,7 +446,8 @@ class Gauntlet:
         write_json(path.with_suffix(".json"), {
             "version": EVALUATION_VERSION, "run_id": run_id, "kind": "gauntlet",
             "name": self.ind.name, "params": self.ind.params, "timeframe": self.timeframe,
-            "code_sha256": code_fingerprint(), "primary": primary,
+            "code_sha256": code_fingerprint(), "indicator_sha256": indicator_fingerprint(type(self.ind)),
+            "primary": primary,
             "primary_sha256": frame_fingerprint(df), "seed": self.seed, "counts": counts,
             "score": total, "grade": g, "scores": self.scores, "perm_p": self.perm_p,
             "certified": certified, "reasons": reasons, "fast": self.fast,

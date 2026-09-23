@@ -45,19 +45,30 @@ def _current_runs(historical: bool = False) -> dict[str, dict[str, dict]]:
     Registry queries run in a fresh sidecar process, so the cache is per query.
     """
     from .data import OUTPUT_DIR
-    from .evidence import code_fingerprint, EVALUATION_VERSION
-    fingerprint = code_fingerprint()
+    from .evidence import EVALUATION_VERSION, indicator_fingerprint
     found = {}
     if not OUTPUT_DIR.is_dir():
         return found
     names = {cls.name: key for key, cls in REGISTRY.items()}
+    # A run is current when the evaluator and THIS indicator's script (with
+    # its REQUIRES) are unchanged — edits elsewhere in the library do not
+    # demote it (2026-09-23; before, one global code hash did).
+    fingerprints: dict[str, str | None] = {}
+
+    def fingerprint(key: str) -> str | None:
+        if key not in fingerprints:
+            fingerprints[key] = indicator_fingerprint(REGISTRY[key])
+        return fingerprints[key]
+
     for path in sorted(OUTPUT_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime_ns):
         try:
             run = json.loads(path.read_text(encoding="utf-8"))
             key = names.get(run.get("name"))
             tf = run.get("timeframe")
             if (run.get("kind") != "gauntlet" or run.get("fast") or not key or tf not in TIMEFRAMES
-                    or (not historical and (run.get("version") != EVALUATION_VERSION or run.get("code_sha256") != fingerprint))
+                    or (not historical and (run.get("version") != EVALUATION_VERSION
+                                            or not run.get("indicator_sha256")
+                                            or run.get("indicator_sha256") != fingerprint(key)))
                     or json.dumps(run.get("params"), sort_keys=True) != json.dumps(REGISTRY[key]().params, sort_keys=True)):
                 continue
             found.setdefault(tf, {})[key] = {
@@ -82,9 +93,13 @@ def is_certified(verdict: dict | None) -> bool:
 def certification_table(timeframe: str = "1d") -> dict[str, dict]:
     if timeframe not in TIMEFRAMES:
         raise KeyError(f"unknown certification track '{timeframe}' — one of {TIMEFRAMES}")
+    from .variants import version_evidence
     historical = CERTIFICATION if timeframe == "1d" else CERTIFICATION_TF.get(timeframe, {})
+    # Precedence, weakest first: the library's reference ledger, runs of
+    # older code, the released evidence of a version file, current runs.
     return {**{k: {**v, "source": "historical"} for k, v in historical.items()},
             **_current_runs(historical=True).get(timeframe, {}),
+            **version_evidence(timeframe),
             **_current_runs().get(timeframe, {})}
 
 
@@ -159,18 +174,32 @@ def hypothesis_of(cls) -> str:
 
 def describe(key: str) -> dict:
     from .indicators import VARIANTS
+    from .variants import ROLES, VERSIONS, declared_requirements, stem_of
     cls = REGISTRY[key]
     params = cls().params
     lineage = VARIANTS.get(key)
     base_key = lineage["base_key"] if lineage else key
+    # A base is its own Standard; a role child names its role; legacy keys
+    # and research subversions have none.
+    role = lineage.get("role") if lineage else "standard"
+    versions = None
+    if not lineage:
+        slots = VERSIONS.get(key, {})
+        versions = {r: (key if r == "standard" else slots.get(r)) for r in ROLES}
+    stem = stem_of(cls)
     return {
         "key": key,
         "base_key": base_key,
         "variant": lineage,
+        "role": role,
+        "versions": versions,
         "name": cls.name,
         "hypothesis": hypothesis_of(REGISTRY[base_key]),
         "params": {k: (list(v) if isinstance(v, tuple) else v) for k, v in params.items()},
         "param_space": {k: [float(lo), float(hi)] for k, (lo, hi) in cls.param_space.items()},
+        "schema": cls.schema(),
+        "script": f"{stem}.py" if stem else None,
+        "requires": list(declared_requirements().get(stem, ())) if stem else [],
         "warmup_bars": int(WARMUP_BARS.get(key, 400)),
         # THE score: the worst track, certified only on every track …
         "certification": overall_verdict(key),
@@ -181,12 +210,14 @@ def describe(key: str) -> dict:
 
 def describe_all() -> dict:
     from . import __version__
+    from .contract import CONTRACT_VERSION
     from .variants import UNAVAILABLE
 
     return {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "package_dir": str(Path(__file__).resolve().parent),
         "version": __version__,
+        "contract_version": CONTRACT_VERSION,
         "timeframes": list(TIMEFRAMES),
         "indicators": [describe(k) for k in REGISTRY],
         "unavailable_variants": list(UNAVAILABLE),
