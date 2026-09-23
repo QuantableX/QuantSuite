@@ -11,9 +11,19 @@
 [data-module="hud"] .position-top ::-webkit-scrollbar-track { background: transparent; }
 [data-module="hud"] .position-top ::-webkit-scrollbar-thumb { background: var(--border-color); }
 [data-module="hud"] .position-top .main-container {
+  position: relative;
   width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column;
   border-radius: 0 0 14px 14px; overflow: hidden; pointer-events: auto;
-  border: 1px solid var(--border-color); border-top: 0; box-sizing: border-box;
+  border: 0; padding: 0 2px 2px; box-sizing: border-box;
+}
+/* trigger_region.rs keeps the native window one physical pixel inside the
+   rounded panel edge (against WebView2 edge flecks), which cut away a border
+   drawn on the outermost pixel everywhere but above the tab. The line sits
+   one pixel further in, painted over the opaque panel, so it stays inside
+   the region at every DPI, corners included. */
+[data-module="hud"] .position-top .main-container::after {
+  content: ""; position: absolute; inset: 0 1px 1px; z-index: 5; pointer-events: none;
+  border: 1px solid #3d3d42; border-top: 0; border-radius: 0 0 13px 13px;
 }
 [data-module="hud"] .position-top.tucked .main-container { display: none; }
 [data-module="hud"] .position-top .trigger-top { flex: 0 0 20px; width: 100%; height: 20px; }
@@ -31,7 +41,6 @@
   font-size: 13px;
   line-height: 1.5;
 }
-[data-module="hud"] .position-top .main-container { border-color: #3d3d42; }
 [data-module="hud"] .top-header {
   flex: 0 0 46px; min-width: 0; padding: 0 20px; display: flex; align-items: center;
   gap: 24px; border-bottom: 1px solid var(--border-color); background: #1d1d20;

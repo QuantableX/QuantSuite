@@ -1468,12 +1468,19 @@ function applyTheme() {
   display: none;
 }
 
+/* The edge facing other windows carries a border line, so the panel never
+   melts into the application beside it. Top mode draws its own. */
 .main-container {
   width: 320px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
+  border-right: 1px solid var(--border-color);
+}
+.app-wrapper.position-right .main-container {
+  border-right: 0;
+  border-left: 1px solid var(--border-color);
 }
 
 /* Trigger zone: no layout space, just a positioning anchor */
