@@ -137,8 +137,12 @@ class ContractAndRecoveryTests(unittest.TestCase):
         self.assertEqual(REGISTRY["ensemble_original"]().params["band"], .5)
         self.assertEqual(REGISTRY["council2_original"]().params["halflife"], 63)
         self.assertEqual(len(REGISTRY["council2_original"]()._members()), 4)
-        self.assertEqual(REGISTRY["scale_original"]().params, {"band": .4, "detector_band": .3684})
-        self.assertEqual(REGISTRY["ensemble"]().params["max_halflife"], 60)
+        self.assertEqual(REGISTRY["scale_original"]().params, {"band": .4, "detector_band": .3684, "min_scales": 2})
+        # Since 2026-09-23 the Standard is the forged hypothesis; the walk-forward
+        # re-selection of 2026-09-08 is the general version ensemble_opt.
+        self.assertEqual(REGISTRY["ensemble"]().params["max_halflife"], 250)
+        if "ensemble_opt" in REGISTRY:
+            self.assertEqual(REGISTRY["ensemble_opt"]().params["max_halflife"], 60)
 
     def test_short_prefixes_cannot_repaint(self):
         df = frame()
