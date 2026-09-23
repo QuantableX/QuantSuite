@@ -34,7 +34,6 @@ log = logging.getLogger(__name__)
 
 # Intraday timeframe → milliseconds per bar (used to advance the CCXT cursor).
 _TF_MS: dict[str, int] = {
-    "1m": 60 * 1000,
     "1h": 60 * 60 * 1000,
     "4h": 4 * 60 * 60 * 1000,
     "12h": 12 * 60 * 60 * 1000,
@@ -364,7 +363,7 @@ class OhlcvFetcher:
         end: dt.date,
         tf: str,
     ) -> OhlcvSeries:
-        """Resolve intraday (1m/1h/4h/12h) candles via the CCXT chain only.
+        """Resolve intraday (1h/4h/12h) candles via the CCXT chain only.
 
         CoinGecko's free tier can't serve reliable intraday OHLC, so coins
         that no exchange in the chain lists simply return an empty frame at
@@ -463,9 +462,9 @@ class OhlcvFetcher:
         coin_key = coin_key_for(ref)
         out: list[OhlcvBar] = []
         cursor = since_ms
-        # Three years of minutes need ~1,600 pages of 1,000, or ~5,300
-        # on venues that cap responses at 300. Never silently truncate.
-        page_limit = 10_000 if tf == "1m" else 5000
+        # Years of hourly bars fit in a few hundred pages even on venues
+        # that cap responses at 300. Never silently truncate.
+        page_limit = 5000
         for _ in range(page_limit):
             try:
                 batch = ex.fetch_ohlcv(pair, timeframe=tf, since=cursor, limit=1000)

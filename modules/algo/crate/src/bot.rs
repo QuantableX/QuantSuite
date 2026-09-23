@@ -1394,11 +1394,9 @@ fn start_bot_inner(app_handle: &AppHandle, state: &AppState, bot: Bot) -> Result
             // A snapshot per candle, and at least one a minute: an hourly
             // bot's equity curve follows the mark price, not just its candles.
             let mut last_snapshot = Instant::now();
-            let poll_seconds = match timeframe.as_str() {
-                "1m" => 10,
-                "5m" | "15m" => 15,
-                _ => 30,
-            };
+            // Bots run on 1h, 4h or 1d (bots::BOT_TIMEFRAMES): one poll per
+            // half minute is plenty for any of them.
+            let poll_seconds = 30;
             while !stop.load(Ordering::Relaxed) {
                 match fetch_latest_market_candle(&provider, &pair, &timeframe) {
                     Ok(candle) => {

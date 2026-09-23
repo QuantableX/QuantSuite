@@ -36,8 +36,8 @@ DOCS_DIR = ROOT / "Docs"
 
 # (exchange, symbol, timeframe, since_iso) — one row per cell of the robustness grid.
 # Asset shelf = top-5 crypto by market cap, stablecoins & staked versions excluded:
-# BTC, ETH, XRP, BNB, SOL. Four certification tracks: the
-# daily reference track, and the 4h / 1h / 1m intraday tracks (the top-5 on
+# BTC, ETH, XRP, BNB, SOL. Three certification tracks: the
+# daily reference track, and the 4h / 1h intraday tracks (the top-5 on
 # Binance for the asset axis, BTC on Bybit / OKX / KuCoin for the exchange
 # axis — Bitstamp and Coinbase serve the daily exchange axis only).
 SHELF_CRYPTO = [
@@ -66,11 +66,6 @@ SHELF_CRYPTO = [
     ("bybit",    "BTC/USDT", "1h", "2018-11-01"),
     ("okx",      "BTC/USDT", "1h", "2018-01-01"),
     ("kucoin",   "BTC/USDT", "1h", "2018-01-01"),
-    # Real minute candles, kept separate from hourly data. Multi-year
-    # history is required by the existing chronological robustness checks.
-    *[("binance", symbol, "1m", "2023-01-01") for symbol in
-      ("BTC/USDT", "ETH/USDT", "XRP/USDT", "BNB/USDT", "SOL/USDT")],
-    *[(venue, "BTC/USDT", "1m", "2023-01-01") for venue in ("bybit", "okx", "kucoin")],
 ]
 
 # geo-block / outage fallbacks for the primary crypto venue
@@ -111,7 +106,7 @@ def _save(key: str, df: pd.DataFrame) -> None:
 def fetch_ccxt(exchange_id: str, symbol: str, tf: str, since_iso: str,
                max_pages: int | None = None, progress=None) -> pd.DataFrame:
     import ccxt
-    max_pages = (10_000 if tf == "1m" else 400) if max_pages is None else max_pages
+    max_pages = 400 if max_pages is None else max_pages
     if max_pages < 1:
         raise ValueError("max_pages must be positive")
     ex = getattr(ccxt, exchange_id)({"enableRateLimit": True, "timeout": 20000})

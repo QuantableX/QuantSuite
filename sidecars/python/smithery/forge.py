@@ -6,9 +6,9 @@ ledger still land in the vault (``smithery.data.ROOT``).
 
     python -m smithery.forge info                          # vault, shelf, reports, roster
     python -m smithery.forge source --indicator hilbert    # an indicator's module
-    python -m smithery.forge gauntlet --indicator dc page [--timeframe all|1d|4h|1h|1m] [--fast] [--perm N --boot N --garch N --seed N]
-    python -m smithery.forge walkforward --indicator mk [--timeframe 1d|4h|1h|1m] [--folds N]
-    python -m smithery.forge refresh [--timeframe all|1d|4h|1h|1m]  # the shelf, from the exchanges
+    python -m smithery.forge gauntlet --indicator dc page [--timeframe all|1d|4h|1h] [--fast] [--perm N --boot N --garch N --seed N]
+    python -m smithery.forge walkforward --indicator mk [--timeframe 1d|4h|1h] [--folds N]
+    python -m smithery.forge refresh [--timeframe all|1d|4h|1h]  # the shelf, from the exchanges
 
 Job events:  job · begin · contract · axis · verdict · fold · walkforward ·
 series · log · error · done.

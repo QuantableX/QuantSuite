@@ -55,12 +55,13 @@ pub struct ForgeRequest {
     #[serde(default)]
     pub folds: Option<u32>,
     /// Certification track: `all` (every track in turn — the score is earned
-    /// on every track) | `1d` | `4h` | `1h` | `1m`. The forge's own default is `all`.
+    /// on every track) | `1d` | `4h` | `1h`. The forge's own default is `all`.
     #[serde(default)]
     pub timeframe: Option<String>,
 }
 
-const TRACKS: [&str; 5] = ["all", "1d", "4h", "1h", "1m"];
+/// No minute track (user, 2026-09-23): the forge certifies 1d, 4h and 1h.
+const TRACKS: [&str; 4] = ["all", "1d", "4h", "1h"];
 
 /// One forge run, as the page sees it. `events` are the child's JSON lines
 /// in order; `summary` keeps the ones worth showing after the job is gone
@@ -221,7 +222,7 @@ fn job_args(request: &ForgeRequest) -> Result<Vec<String>, String> {
             args.extend(request.indicators.iter().cloned());
             if let Some(tf) = request.timeframe.as_deref().filter(|tf| !tf.is_empty()) {
                 if !TRACKS.contains(&tf) || (tf == "all" && request.kind == "walkforward") {
-                    return Err(format!("'{tf}' is not a certification track (all, 1d, 4h, 1h, 1m)."));
+                    return Err(format!("'{tf}' is not a certification track (all, 1d, 4h, 1h)."));
                 }
                 args.push("--timeframe".into());
                 args.push(tf.to_string());
@@ -716,13 +717,19 @@ mod tests {
     }
 
     #[test]
-    fn minute_track_routes_all_jobs_and_refresh_rejects_invalid_tracks() {
+    fn tracks_route_all_jobs_and_the_minute_track_is_rejected() {
         for kind in ["gauntlet", "walkforward", "compare", "refresh"] {
-            let args = job_args(&ForgeRequest {
+            for track in ["1d", "4h", "1h"] {
+                let args = job_args(&ForgeRequest {
+                    kind: kind.into(), indicators: vec!["robust".into(), "extremes".into()],
+                    timeframe: Some(track.into()), ..Default::default()
+                }).unwrap();
+                assert!(args.windows(2).any(|pair| pair == ["--timeframe", track]));
+            }
+            assert!(job_args(&ForgeRequest {
                 kind: kind.into(), indicators: vec!["robust".into(), "extremes".into()],
                 timeframe: Some("1m".into()), ..Default::default()
-            }).unwrap();
-            assert!(args.windows(2).any(|pair| pair == ["--timeframe", "1m"]));
+            }).is_err());
         }
         assert!(job_args(&ForgeRequest {
             kind: "refresh".into(), timeframe: Some("1M".into()), ..Default::default()

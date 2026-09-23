@@ -76,7 +76,7 @@ def pmap(fn, tasks: list, min_parallel: int = 4, *, max_workers: int | None = No
         return [fn(t) for t in tasks]
     frame_rows = max((sum(len(value) for value in task if isinstance(value, pd.DataFrame))
                       for task in tasks), default=0)
-    # Multi-million-bar minute histories cannot be copied to 30 workers.
+    # Very long histories cannot be copied to 30 workers at once.
     capacity = max(1, 500_000 // max(frame_rows, 1))
     if capacity == 1:
         return [fn(t) for t in tasks]
@@ -91,9 +91,9 @@ def pmap(fn, tasks: list, min_parallel: int = 4, *, max_workers: int | None = No
 def simulated_results(ind, frames, cost: float, bars: int) -> list[tuple[float, float]]:
     """Generate and evaluate bounded batches; keep only scalar MC results.
 
-    Generators consume the parent's RNG in the original order. Full minute
+    Generators consume the parent's RNG in the original order. Long
     histories keep the same calendar horizon without retaining hundreds
-    of multi-million-row charts simultaneously.
+    of large charts simultaneously.
     """
     iterator = iter(frames)
     capacity = max(1, min(WORKERS, 500_000 // max(bars, 1)))

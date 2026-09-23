@@ -18,7 +18,7 @@ const router = useRouter()
 const forge = useForgeStore()
 const wb = useWorkbenchStore()
 
-const TRACKS = ['1d', '4h', '1h', '1m'] as const
+const TRACKS = ['1d', '4h', '1h'] as const
 
 const expanded = ref<string | null>(null)
 const scoreTrack = ref<SmitheryTimeframe>('all')
@@ -111,7 +111,6 @@ function scriptOf(ind: IndicatorInfo): string | null {
             <option value="1d">1d — daily / LCES reference</option>
             <option value="4h">4h</option>
             <option value="1h">1h</option>
-            <option value="1m">1m — minute</option>
           </select>
         </label>
         <label class="qsc-check"><input v-model="onlyCertified" type="checkbox" /> Certified only</label>

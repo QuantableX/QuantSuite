@@ -65,7 +65,7 @@ def compare(keys: list[str], *, timeframes: list[str] | None = None,
         raise ValueError("Comparison requires positive finite round-trip costs below 5000 bps")
     timeframes = list(TIMEFRAMES) if timeframes is None else list(dict.fromkeys(timeframes))
     if not timeframes or any(tf not in TIMEFRAMES for tf in timeframes):
-        raise ValueError("Use the 1d, 4h, 1h and/or 1m tracks")
+        raise ValueError("Use the 1d, 4h and/or 1h tracks")
     frames = _frames(timeframes)
     common_start = max(df.index[0] for df in frames.values())
     end = min(df.index[-1] for df in frames.values())

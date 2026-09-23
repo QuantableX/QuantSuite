@@ -104,10 +104,10 @@ def grade_letter(score: float, perm_p: float | None) -> str:
 def overall_verdict(key: str) -> dict | None:
     """THE score of an indicator — one number, earned on every track (user,
     2026-09-08: "robust enough for every timeframe"). It is the worst track:
-    the score is the minimum over the 1d / 4h / 1h / 1m verdicts, the permutation
+    the score is the minimum over the 1d / 4h / 1h verdicts, the permutation
     p the worst of them, the grade follows from those, and the indicator is
     certified only when all configured tracks certified it. A track not yet run
-    counts as not certified — an edge that has not been measured on minute
+    counts as not certified — an edge that has not been measured on hourly
     bars has not been shown to hold there."""
     per = {tf: certification_table(tf).get(key) for tf in TIMEFRAMES}
     have = {tf: v for tf, v in per.items() if v}

@@ -250,7 +250,7 @@ export interface IndicatorRegistry {
 }
 
 /** A certification track, or `all` — every track in turn (gauntlet only). */
-export type SmitheryTimeframe = 'all' | '1d' | '4h' | '1h' | '1m'
+export type SmitheryTimeframe = 'all' | '1d' | '4h' | '1h'
 
 /** One cached series of the price shelf (`<EXCHANGE>_<SYMBOL>_<TF>.csv`). */
 export interface SmitheryShelfSeries {

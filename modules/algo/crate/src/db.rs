@@ -305,6 +305,21 @@ pub(crate) fn run_migrations(conn: &Connection, strategy_dir: &std::path::Path) 
         );
     }
 
+    // Migration 8 (user, 2026-09-23): bots run on 1h, 4h or 1d only. A bot
+    // on any other timeframe (the old 1m default) moves to 1d; its trades
+    // and equity stay as history. Bots are all stopped at this point — a
+    // session never resumes them (lib.rs reconciles 'running' to 'stopped').
+    if !applied.contains(&8) {
+        let _ = conn.execute(
+            "UPDATE bots SET timeframe = '1d', updated_at = ?1 WHERE timeframe NOT IN ('1h', '4h', '1d')",
+            rusqlite::params![now],
+        );
+        let _ = conn.execute(
+            "INSERT INTO migrations (id, name, applied_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![8, "bot_timeframes_1h_4h_1d", now],
+        );
+    }
+
     Ok(())
 }
 
@@ -523,6 +538,37 @@ mod tests {
         let snapshots: i64 = conn.query_row("SELECT COUNT(*) FROM equity_snapshots", [], |r| r.get(0)).unwrap();
         assert_eq!(snapshots, 1, "only the bot's snapshot remains");
         let applied: i64 = conn.query_row("SELECT COUNT(*) FROM migrations WHERE id = 7", [], |r| r.get(0)).unwrap();
+        assert_eq!(applied, 1);
+    }
+
+    #[test]
+    fn migration_8_moves_bots_off_unsupported_timeframes_to_daily() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO migrations (id, name, applied_at) VALUES (1,'a','t'),(2,'b','t'),(3,'c','t'),(4,'d','t'),(5,'e','t'),(7,'g','t');
+             INSERT INTO bots (id, name, strategy_id, exchange_id, pair, timeframe, created_at, updated_at) VALUES
+               ('m1', 'Minute', 's', 'e', 'BTC/USDT', '1m', 't', 't'),
+               ('m15', 'Quarter', 's', 'e', 'BTC/USDT', '15m', 't', 't'),
+               ('w', 'Week', 's', 'e', 'BTC/USDT', '1w', 't', 't'),
+               ('h1', 'Hour', 's', 'e', 'BTC/USDT', '1h', 't', 't'),
+               ('h4', 'Four', 's', 'e', 'BTC/USDT', '4h', 't', 't'),
+               ('d1', 'Day', 's', 'e', 'BTC/USDT', '1d', 't', 't');",
+        )
+        .unwrap();
+
+        run_migrations(&conn, std::path::Path::new(".")).unwrap();
+
+        let rows: Vec<(String, String)> = conn
+            .prepare("SELECT id, timeframe FROM bots ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        let expected = [("d1", "1d"), ("h1", "1h"), ("h4", "4h"), ("m1", "1d"), ("m15", "1d"), ("w", "1d")];
+        assert_eq!(rows, expected.map(|(a, b)| (a.to_string(), b.to_string())).to_vec());
+        let applied: i64 = conn.query_row("SELECT COUNT(*) FROM migrations WHERE id = 8", [], |r| r.get(0)).unwrap();
         assert_eq!(applied, 1);
     }
 }

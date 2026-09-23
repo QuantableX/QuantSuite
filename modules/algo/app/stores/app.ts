@@ -3,7 +3,10 @@ import { invoke } from '@tauri-apps/api/core'
 import { ref, computed } from 'vue'
 import type { AppSettings, BotDefaults } from '#algo/types'
 
-const BOT_TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d']
+/** Bots and backtests run on 1h, 4h or 1d only (user, 2026-09-23) — the
+ *  indicators are optimized for exactly these; 1d is the default. */
+export const BOT_TIMEFRAMES: readonly string[] = ['1h', '4h', '1d']
+export const DEFAULT_BOT_TIMEFRAME = '1d'
 
 export const useAppStore = defineStore('algo/app', () => {
   // ── State ──
@@ -13,7 +16,7 @@ export const useAppStore = defineStore('algo/app', () => {
     font_size: 14,
     default_exchange_id: null,
     default_pair: 'BTC/USDT',
-    default_timeframe: '1m',
+    default_timeframe: DEFAULT_BOT_TIMEFRAME,
     python_path: '',
     strategy_dir: '',
     backtest_dir: '',
@@ -23,7 +26,7 @@ export const useAppStore = defineStore('algo/app', () => {
     paper_fee_pct: 0.1,
     default_budget: 10000,
     default_warmup_candles: 200,
-    defaults_version: 2,
+    defaults_version: 3,
     notify_on_trade: true,
     notify_on_error: true,
     notify_on_daily_summary: false,
@@ -41,7 +44,7 @@ export const useAppStore = defineStore('algo/app', () => {
     return {
       exchange_id: s.default_exchange_id,
       pair: s.default_pair || 'BTC/USDT',
-      timeframe: BOT_TIMEFRAMES.includes(s.default_timeframe) ? s.default_timeframe : '1m',
+      timeframe: BOT_TIMEFRAMES.includes(s.default_timeframe) ? s.default_timeframe : DEFAULT_BOT_TIMEFRAME,
       budget: Number.isFinite(s.default_budget) && s.default_budget >= 100 ? s.default_budget : 10000,
       risk_per_trade: s.risk_per_trade,
       max_positions: s.max_concurrent_positions,
