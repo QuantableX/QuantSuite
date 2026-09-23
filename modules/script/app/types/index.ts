@@ -354,7 +354,7 @@ export interface SmitheryInfo {
   reports: SmitheryReportMeta[]
 }
 
-export type ForgeKind = 'gauntlet' | 'walkforward' | 'compare' | 'refresh'
+export type ForgeKind = 'gauntlet' | 'walkforward' | 'optimize' | 'compare' | 'refresh'
 
 export interface ForgeRequest {
   kind: ForgeKind
@@ -369,6 +369,8 @@ export interface ForgeRequest {
   folds?: number | null
   /** Certification track; the daily reference track when absent. */
   timeframe?: SmitheryTimeframe | null
+  /** `optimize` only: skip indicators whose timeframe versions are current. */
+  resume?: boolean
 }
 
 /** One JSON line of a forge job: `job` · `begin` · `contract` · `axis` · `verdict` · `fold` · `walkforward` · `series` · `log` · `error` · `done`. */

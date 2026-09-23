@@ -227,6 +227,93 @@ export function progressFor(job: ForgeJob): IndicatorProgress[] {
   return [...rows.values()]
 }
 
+/** One indicator × track of an `optimize` job: what competed for the
+ *  timeframe version and what was decided. */
+export interface OptimizeRow {
+  key: string
+  indicator: string
+  track: string
+  name: string | null
+  started: boolean
+  /** Scores on the track: the Standard, the general version, the walk-forward winner. */
+  standard: number | null
+  general: number | null
+  winner: number | null
+  wfe: number | null
+  decision: string | null
+  versionKey: string | null
+  score: number | null
+  grade: string | null
+  written: boolean
+  error: string | null
+}
+
+export function optimizeRowsFor(job: ForgeJob): OptimizeRow[] {
+  const rows = new Map<string, OptimizeRow>()
+  const jobEvent = job.events.find((e) => e.event === 'job') ?? job.summary.find((e) => e.event === 'job')
+  const tracks = Array.isArray(jobEvent?.tracks) ? (jobEvent.tracks as string[]) : ['1h', '4h', '1d']
+  const row = (indicator: string, track: string): OptimizeRow => {
+    const key = `${indicator}@${track}`
+    let r = rows.get(key)
+    if (!r) {
+      r = { key, indicator, track, name: null, started: false, standard: null, general: null, winner: null,
+        wfe: null, decision: null, versionKey: null, score: null, grade: null, written: false, error: null }
+      rows.set(key, r)
+    }
+    return r
+  }
+  const listed = Array.isArray(jobEvent?.indicators) ? (jobEvent.indicators as string[]) : job.indicators
+  for (const key of listed) if (key !== 'all' && key !== 'certified') for (const t of tracks) row(key, t)
+  const events: ForgeEvent[] = job.events.length ? job.events : job.summary
+  for (const e of events) {
+    const indicator = str(e.indicator)
+    if (!indicator) continue
+    const tf = str(e.timeframe)
+    if (e.event === 'begin') {
+      for (const t of tracks) {
+        const r = row(indicator, t)
+        r.started = true
+        r.name = str(e.name)
+      }
+      continue
+    }
+    if (!tf) continue
+    const r = row(indicator, tf)
+    if (e.event === 'walkforward') r.wfe = num(e.wfe)
+    else if (e.event === 'error') r.error = str(e.message) ?? 'failed'
+    else if (e.event === 'decision') {
+      r.decision = str(e.decision)
+      r.versionKey = str(e.key)
+      r.score = num(e.score)
+      r.grade = str(e.grade)
+      r.written = e.written === true
+      for (const c of Array.isArray(e.candidates) ? (e.candidates as Record<string, unknown>[]) : []) {
+        const score = num(c.score)
+        if (c.source === 'standard') r.standard = score
+        else if (c.source === 'general') r.general = score
+        else if (c.source === 'walkforward') r.winner = score
+      }
+      // The general version equals the Standard when it is not a candidate.
+      if (r.general == null) r.general = r.standard
+    }
+  }
+  return [...rows.values()]
+}
+
+/** What an `optimize` decision means, in one phrase. */
+export function decisionLabel(decision: string | null): string {
+  switch (decision) {
+    case 'promoted':
+      return 'walk-forward winner'
+    case 'general_retained':
+      return 'general version kept'
+    case 'standard_retained':
+      return 'Standard kept'
+    default:
+      return ''
+  }
+}
+
 /** The series a shelf refresh reported, in the order they came back. */
 export function seriesFor(job: ForgeJob): SeriesProgress[] {
   const events: ForgeEvent[] = job.events.length ? job.events : job.summary
@@ -262,6 +349,7 @@ export function formatElapsed(startedAt: string, finishedAt: string | null): str
 export const KIND_LABELS: Record<string, string> = {
   gauntlet: 'Gauntlet',
   walkforward: 'Walk-forward',
+  optimize: 'Optimize timeframes',
   compare: 'Comparison',
   refresh: 'Shelf refresh',
 }

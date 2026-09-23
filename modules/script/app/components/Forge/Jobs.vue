@@ -11,10 +11,12 @@ import {
   AXES,
   AXIS_LABELS,
   KIND_LABELS,
+  decisionLabel,
   formatElapsed,
   formatP,
   jobError,
   logLinesFor,
+  optimizeRowsFor,
   progressFor,
   seriesFor,
 } from '#script/utils/forge'
@@ -27,6 +29,7 @@ const forge = useForgeStore()
 const kind = ref<ForgeKind>('gauntlet')
 const selected = ref<string[]>([])
 const fast = ref(false)
+const resume = ref(true)
 const perm = ref(120)
 const boot = ref(200)
 const garch = ref(100)
@@ -60,12 +63,13 @@ const trackHints: Record<SmitheryTimeframe, string> = {
 watch(kind, (k) => {
   if (k === 'compare') folds.value = 3
   if (k === 'walkforward' && timeframe.value === 'all') timeframe.value = '1d'
-  if ((k === 'gauntlet' || k === 'compare') && timeframes.value.includes('all')) timeframe.value = 'all'
+  if ((k === 'gauntlet' || k === 'compare' || k === 'optimize') && timeframes.value.includes('all')) timeframe.value = 'all'
 })
 
 const kinds: { id: ForgeKind; label: string; hint: string }[] = [
   { id: 'gauntlet', label: 'Gauntlet', hint: 'contract validators, then asset · exchange · parameter · temporal · Monte Carlo' },
   { id: 'walkforward', label: 'Walk-forward', hint: 'optimize growth, drawdown and risk ratios; save a research subversion under the base script' },
+  { id: 'optimize', label: 'Optimize timeframes', hint: 'per track: Standard, general version and the walk-forward winner through the gauntlet — the best becomes <key>_opt_1h / _4h / _1d' },
   { id: 'compare', label: 'Comparison', hint: 'old vs new · costs · held-out dates · LCES ratio transfer; no automatic promotion' },
   { id: 'refresh', label: 'Refresh shelf', hint: 'fetch real candles for the selected timeframe from the exchanges' },
 ]
@@ -140,7 +144,8 @@ async function run() {
     request.garch = garch.value
     request.seed = seed.value
   }
-  if (kind.value === 'walkforward' || kind.value === 'compare') request.folds = folds.value
+  if (kind.value === 'walkforward' || kind.value === 'compare' || kind.value === 'optimize') request.folds = folds.value
+  if (kind.value === 'optimize') request.resume = resume.value
   request.timeframe = timeframe.value
   await forge.run(request)
 }
@@ -153,7 +158,8 @@ function jobTrack(j: ForgeJob): string | null {
 // ── The job on display ──
 const job = computed<ForgeJob | null>(() => forge.detailJob)
 const multiTrack = computed(() => job.value?.kind === 'gauntlet' && (job.value.request.timeframe ?? 'all') === 'all')
-const rows = computed(() => (job.value && job.value.kind !== 'refresh' ? progressFor(job.value) : []))
+const rows = computed(() => (job.value && job.value.kind !== 'refresh' && job.value.kind !== 'optimize' ? progressFor(job.value) : []))
+const optimizeRows = computed(() => (job.value?.kind === 'optimize' ? optimizeRowsFor(job.value) : []))
 const series = computed(() => (job.value?.kind === 'refresh' ? seriesFor(job.value) : []))
 const logLines = computed(() => (job.value ? logLinesFor(job.value).slice(-300) : []))
 const jobFailure = computed(() => (job.value ? jobError(job.value) : null))
@@ -192,6 +198,11 @@ function jobIndicators(j: ForgeJob): string {
 function verdictFor(j: ForgeJob): string {
   const comparison = j.summary.find((e) => e.event === 'comparison_done')
   if (comparison) return `${comparison.winner}: ${comparison.passed ? 'comparison passed' : 'not promoted'}`
+  const decisions = j.summary.filter((e) => e.event === 'decision')
+  if (decisions.length) {
+    const promoted = decisions.filter((e) => e.decision === 'promoted').length
+    return `${decisions.length} timeframe version${decisions.length === 1 ? '' : 's'} · ${promoted} walk-forward winner${promoted === 1 ? '' : 's'}`
+  }
   const verdicts = j.summary.filter((e) => e.event === 'verdict')
   if (verdicts.length) {
     const certified = verdicts.filter((e) => e.certified === true).length
@@ -284,9 +295,14 @@ function verdictFor(j: ForgeJob): string {
           <label><span class="qsc-label">Seed</span><input v-model.number="seed" class="qsc-input qsf-num" type="number" min="0" /></label>
         </div></details>
       </div>
-      <div v-else-if="kind === 'walkforward' || kind === 'compare'" class="qsf-counts">
+      <div v-else-if="kind === 'walkforward' || kind === 'compare' || kind === 'optimize'" class="qsf-counts">
         <label><span class="qsc-label">{{ kind === 'compare' ? 'Development eras' : 'Folds' }}</span><input v-model.number="folds" class="qsc-input qsf-num" type="number" min="2" max="12" /></label>
+        <label v-if="kind === 'optimize'" class="qsc-check"><input v-model="resume" type="checkbox" /> Skip indicators whose timeframe versions are current</label>
       </div>
+      <p v-if="kind === 'optimize'" class="muted qsf-note">
+        Full Monte Carlo counts on every track. The general version keeps its parameters; only its evidence is refreshed.
+        A walk-forward winner competes only with WFE ≥ 0.5; ties keep the general version, then the Standard.
+      </p>
       <p v-if="kind === 'compare'" class="muted qsf-note">
         At least two frozen candidates. Selection uses earlier dates; the winner is locked before the final 25% is tested.
         Long-only costs: 20 / 40 bps round trip. Includes separate short and LCES ratio diagnostics.
@@ -294,7 +310,6 @@ function verdictFor(j: ForgeJob): string {
       </p>
       <p v-if="kind === 'refresh'" class="muted qsf-note">
         Incremental from the last cached candle. Binance falls back to OKX, Bybit and KuCoin.
-        The first 1m import starts in January 2023 and can take much longer than an hourly refresh.
       </p>
 
       <div class="qsf-run">
@@ -369,6 +384,46 @@ function verdictFor(j: ForgeJob): string {
                   <button class="qsc-link mono qsf-report-link" @click="forge.openReport(r.verdict!.report_name)">{{ r.verdict.report_name }}</button>
                 </template>
                 <span v-else-if="r.error" class="qsc-err" :title="r.error">{{ r.error }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- optimize: one row per indicator and track -->
+      <div v-else-if="job.kind === 'optimize'" class="qsf-table-scroll">
+        <table class="qsc-table">
+          <thead>
+            <tr>
+              <th>Indicator</th>
+              <th>Track</th>
+              <th class="num">Standard</th>
+              <th class="num">General</th>
+              <th class="num">WFE</th>
+              <th class="num">Winner</th>
+              <th>Timeframe version</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in optimizeRows" :key="r.key">
+              <td>
+                <span class="qsf-ind">{{ r.name ?? r.indicator }}</span>
+                <span class="mono muted qsf-ind-key">{{ r.indicator }}</span>
+              </td>
+              <td class="mono">{{ r.track }}</td>
+              <td class="num mono">{{ r.standard == null ? '' : r.standard.toFixed(0) }}</td>
+              <td class="num mono">{{ r.general == null ? '' : r.general.toFixed(0) }}</td>
+              <td class="num mono" :class="(r.wfe ?? 0) >= 0.5 ? 'qsc-ok' : ''">{{ r.wfe == null ? '' : r.wfe.toFixed(2) }}</td>
+              <td class="num mono">{{ r.winner == null ? '' : r.winner.toFixed(0) }}</td>
+              <td>
+                <span v-if="r.error" class="qsc-err" :title="r.error">{{ r.error }}</span>
+                <template v-else-if="r.decision">
+                  <span class="mono">{{ r.versionKey }}</span>
+                  <span class="mono">{{ r.score?.toFixed(0) }}</span>
+                  <span v-if="r.grade" class="qsc-grade" :class="gradeClass(r.grade)" :title="r.grade">{{ r.grade.charAt(0) }}</span>
+                  <span class="muted">{{ decisionLabel(r.decision) }}{{ r.written ? '' : ' · not written (fast)' }}</span>
+                </template>
+                <span v-else class="muted">{{ r.started ? '…' : 'queued' }}</span>
               </td>
             </tr>
           </tbody>

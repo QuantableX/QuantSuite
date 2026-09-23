@@ -81,6 +81,11 @@ function walkforward(ind: IndicatorInfo) {
   forge.openForge({ kind: 'walkforward', indicators: [ind.key], fast: false, timeframe: scoreTrack.value === 'all' ? '1d' : scoreTrack.value })
 }
 
+/** The timeframe versions <key>_opt_1h / _4h / _1d of a base indicator. */
+function optimize(ind: IndicatorInfo) {
+  forge.openForge({ kind: 'optimize', indicators: [ind.key], fast: false, timeframe: 'all' })
+}
+
 /** The indicator's script, in the editor — this module's whole point. */
 async function openScript(ind: IndicatorInfo) {
   if (!wb.listing) await wb.loadListing()
@@ -192,7 +197,7 @@ function scriptOf(ind: IndicatorInfo): string | null {
                         </template>
                         <span v-else class="muted">not run</span>
                       </span>
-                      <span class="muted qsf-rule">overall certification needs all four tracks, including 1m</span>
+                      <span class="muted qsf-rule">overall certification needs all three tracks</span>
                     </div>
 
                     <div class="qsf-grid">
@@ -228,6 +233,7 @@ function scriptOf(ind: IndicatorInfo): string | null {
                     <div class="qsf-detail-actions">
                       <button class="qsc-btn is-sm" :disabled="forge.isRunning" title="Reduced Monte Carlo counts on every track — a smoke test, never a certification" @click="gauntlet(ind, true)">Fast run</button>
                       <button class="qsc-btn is-sm" :disabled="forge.isRunning" :title="`Walk-forward on ${scoreTrack === 'all' ? '1d' : scoreTrack}`" @click="walkforward(ind)">Walk-forward</button>
+                      <button class="qsc-btn is-sm" :disabled="forge.isRunning" title="Optimize the 1h, 4h and 1d versions" @click="optimize(ind)">Optimize timeframes</button>
                       <button class="qsc-btn is-sm is-primary" title="The script that defines this indicator, in the editor" @click="openScript(ind)">Open script</button>
                     </div>
                   </div>

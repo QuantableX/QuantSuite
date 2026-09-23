@@ -8,10 +8,11 @@ ledger still land in the vault (``smithery.data.ROOT``).
     python -m smithery.forge source --indicator hilbert    # an indicator's module
     python -m smithery.forge gauntlet --indicator dc page [--timeframe all|1d|4h|1h] [--fast] [--perm N --boot N --garch N --seed N]
     python -m smithery.forge walkforward --indicator mk [--timeframe 1d|4h|1h] [--folds N]
+    python -m smithery.forge optimize --indicator dmi|all [--timeframes 1h 4h 1d] [--folds N] [--resume] [--fast]
     python -m smithery.forge refresh [--timeframe all|1d|4h|1h]  # the shelf, from the exchanges
 
 Job events:  job · begin · contract · axis · verdict · fold · walkforward ·
-series · log · error · done.
+decision · series · log · error · done.
 """
 from __future__ import annotations
 
@@ -350,6 +351,145 @@ def run_walkforward(args) -> int:
     return 0 if failures == 0 else 1
 
 
+def _norm_params(params: dict) -> str:
+    return json.dumps(params, sort_keys=True, default=list)
+
+
+def _timeframe_versions_current(key: str, tracks: list[str]) -> bool:
+    """All requested timeframe versions exist, are valid for the script as it
+    is now and were judged by the current evaluator — nothing to redo."""
+    from .evidence import EVALUATION_VERSION
+    from .variants import VERSION_DOCS, version_key
+    for tf in tracks:
+        doc = VERSION_DOCS.get(version_key(key, f"optimized_{tf}"))
+        if not doc or (doc.get("evidence") or {}).get("evaluation_version") != EVALUATION_VERSION:
+            return False
+    return True
+
+
+def run_optimize(args) -> int:
+    """The timeframe versions of an indicator (user, 2026-09-23: 1h, 4h and
+    daily bots each use the version optimized for their timeframe).
+
+    Per indicator and track: the Standard's and the general version's
+    verdicts (current runs are reused; their evidence is refreshed, params
+    never change), a walk-forward on the track's primary series, and a full
+    gauntlet for its winner when WFE >= 0.5. `<key>_opt_<tf>` = the best
+    score on the track; ties keep the general version, then the Standard.
+    The general version itself (`<key>_opt`) is never re-parameterized."""
+    from .backtest import DEFAULT_COST_BPS
+    from .data import ROOT, asset_class, load
+    from .evidence import EVALUATION_VERSION, frame_fingerprint
+    from .indicators import REGISTRY, VARIANTS
+    from .optimize import walk_forward
+    from .registry import certification_table
+    from .robustness import Gauntlet, find_primary
+    from .variants import source_signature, update_evidence, version_key, write_version
+
+    requested = _keys(args.indicator)
+    keys = [k for k in requested if k not in VARIANTS]
+    tracks = list(dict.fromkeys(args.timeframes or TIMEFRAMES))
+    counts = {"perm": 25, "boot": 40, "garch": 20} if args.fast else \
+             {"perm": args.perm, "boot": args.boot, "garch": args.garch}
+    emit("job", kind="optimize", indicators=keys, tracks=tracks, timeframe="all" if len(tracks) > 1 else tracks[0],
+         fast=bool(args.fast), seed=args.seed, folds=args.folds, resume=bool(args.resume), vault=str(ROOT), **counts)
+    for key in args.indicator:
+        if key in VARIANTS:
+            emit("log", message=f"{key}: a version or a legacy key, not a base — skipped")
+    today = dt.date.today().isoformat()
+
+    def verdict(ind, tf: str, key: str, reuse: str | None = None) -> dict:
+        if reuse and not args.fast:
+            known = certification_table(tf).get(reuse)
+            if known and known.get("source") == "current_run":
+                return {k: known.get(k) for k in ("score", "grade", "perm_p", "report", "date")} | {
+                    "certified": bool(known.get("certified")), "evaluation_version": EVALUATION_VERSION, "reused": True}
+
+        def progress(payload: dict) -> None:
+            emit(payload.pop("stage", "progress"), indicator=key, timeframe=tf, **payload)
+
+        res = Gauntlet(ind, seed=args.seed, perm_n=counts["perm"], boot_n=counts["boot"], garch_n=counts["garch"],
+                       fast=args.fast, progress=progress, timeframe=tf).run()
+        out = {"score": round(float(res["score"]), 1), "grade": res["grade"], "perm_p": res["perm_p"],
+               "certified": bool(res["certified"]), "report": Path(res["report"]).stem, "date": today,
+               "evaluation_version": EVALUATION_VERSION}
+        emit("verdict", indicator=key, name=ind.name, timeframe=tf, score=out["score"], grade=out["grade"],
+             perm_p=out["perm_p"], certified=out["certified"], fast=bool(args.fast), report=res["report"],
+             report_name=out["report"], reasons=res["reasons"], params=ind.params)
+        return out
+
+    failures = 0
+    t_job = time.time()
+    for key in keys:
+        if args.resume and _timeframe_versions_current(key, tracks):
+            emit("log", message=f"{key}: every timeframe version is current — skipped")
+            continue
+        t0 = time.time()
+        standard_ind = REGISTRY[key]()
+        general_key = version_key(key, "optimized")
+        general_ind = REGISTRY[general_key]() if general_key in REGISTRY else None
+        same = general_ind is None or _norm_params(general_ind.params) == _norm_params(standard_ind.params)
+        emit("begin", indicator=key, name=standard_ind.name, params=standard_ind.params, tracks=tracks,
+             general=None if general_ind is None else general_ind.params)
+        try:
+            signature = source_signature(key)
+            for tf in tracks:
+                primary = find_primary(tf)
+                df = load(primary)
+                cost = DEFAULT_COST_BPS[asset_class(primary)]
+                v_standard = verdict(standard_ind, tf, key, reuse=key)
+                candidates = [("standard", standard_ind.params, v_standard)]
+                if general_ind is not None:
+                    v_general = v_standard if same else verdict(general_ind, tf, general_key, reuse=general_key)
+                    if not same:
+                        candidates.insert(0, ("general", general_ind.params, v_general))
+                    if not args.fast:
+                        update_evidence(general_key, {"timeframes": {tf: v_general}})
+                if not args.fast:
+                    update_evidence(key, {"timeframes": {tf: v_standard}})
+                wf_summary = None
+                try:
+                    wf = walk_forward(REGISTRY[key](), df, cost, n_folds=args.folds)
+                    wfe = None if wf["wfe"] != wf["wfe"] else round(float(wf["wfe"]), 3)
+                    wf_summary = {"timeframe": tf, "series": primary, "folds": args.folds, "wfe": wfe,
+                                  "oos_sharpe": round(float(wf["oos_sharpe"]), 3),
+                                  "is_sharpe_mean": round(float(wf["is_sharpe_mean"]), 3),
+                                  "final_choice": wf["final_choice"], "objective": wf.get("objective")}
+                    emit("walkforward", indicator=key, name=standard_ind.name, series=primary, timeframe=tf,
+                         wfe=wfe, oos_sharpe=wf_summary["oos_sharpe"], is_sharpe_mean=wf_summary["is_sharpe_mean"],
+                         final_choice=wf["final_choice"], defaults=standard_ind.params)
+                    winner = standard_ind.with_params(**wf["final_choice"])
+                    known = {_norm_params(p) for _, p, _ in candidates}
+                    if wfe is not None and wfe >= 0.5 and _norm_params(winner.params) not in known:
+                        candidates.append(("walkforward", winner.params, verdict(winner, tf, key)))
+                except Exception as e:  # noqa: BLE001 — no walk-forward winner; the version still gets decided
+                    emit("error", indicator=key, timeframe=tf, message=f"walk-forward: {type(e).__name__}: {e}",
+                         traceback=traceback.format_exc())
+                rank = {"general": 0, "standard": 1, "walkforward": 2}
+                best = max(candidates, key=lambda c: (float(c[2]["score"]), -rank[c[0]]))
+                decision = {"general": "general_retained", "standard": "standard_retained",
+                            "walkforward": "promoted"}[best[0]]
+                role = f"optimized_{tf}"
+                evidence = {"timeframes": {tf: best[2]}, "walkforward": wf_summary, "decision": decision,
+                            "baseline": {name: {"score": v["score"], "grade": v["grade"]} for name, _, v in candidates
+                                         if name != "walkforward"},
+                            "candidates": [{"source": name, "params": params, "score": v["score"]}
+                                           for name, params, v in candidates],
+                            "primary": primary, "data_sha256": frame_fingerprint(df), "seed": args.seed,
+                            "evaluation_version": EVALUATION_VERSION}
+                if not args.fast:
+                    write_version(key, role, best[1], evidence, expected_source=signature)
+                emit("decision", indicator=key, name=standard_ind.name, timeframe=tf, role=role,
+                     key=version_key(key, role), decision=decision, params=best[1], score=best[2]["score"],
+                     grade=best[2]["grade"], candidates=evidence["candidates"], written=not args.fast)
+            emit("log", message=f"{key}: done in {time.time() - t0:.0f}s")
+        except Exception as e:  # noqa: BLE001 — the next indicator still runs
+            failures += 1
+            emit("error", indicator=key, message=f"{type(e).__name__}: {e}", traceback=traceback.format_exc())
+    emit("done", ok=failures == 0, failures=failures, elapsed_s=round(time.time() - t_job, 1))
+    return 0 if failures == 0 else 1
+
+
 def run_refresh(args) -> int:
     from .data import ROOT, SHELF_CRYPTO, refresh
 
@@ -410,6 +550,19 @@ def _main(argv: list[str]) -> int:
     p.add_argument("--series", default=None, help="shelf key (default: the track's primary BTC series)")
     p.add_argument("--folds", type=int, default=4)
 
+    p = sub.add_parser("optimize", help="the timeframe versions <key>_opt_<tf> (JSON lines)")
+    p.add_argument("--indicator", nargs="+", required=True, help="base keys, or 'all' / 'certified'")
+    p.add_argument("--timeframes", nargs="+", default=None, choices=TIMEFRAMES,
+                   help="tracks to optimize for (default: every track)")
+    p.add_argument("--folds", type=int, default=4)
+    p.add_argument("--resume", action="store_true",
+                   help="skip indicators whose timeframe versions are current")
+    p.add_argument("--fast", action="store_true", help="reduced MC counts; writes nothing (smoke test)")
+    p.add_argument("--perm", type=int, default=120)
+    p.add_argument("--boot", type=int, default=200)
+    p.add_argument("--garch", type=int, default=100)
+    p.add_argument("--seed", type=int, default=42)
+
     p = sub.add_parser("compare", help="frozen candidates, cost stress, final holdout and LCES ratio transfer")
     p.add_argument("--indicator", nargs="+", required=True)
     p.add_argument("--timeframe", default="all", choices=("all", *TIMEFRAMES))
@@ -430,6 +583,8 @@ def _main(argv: list[str]) -> int:
             return run_gauntlet(args)
         if args.command == "walkforward":
             return run_walkforward(args)
+        if args.command == "optimize":
+            return run_optimize(args)
         if args.command == "compare":
             return run_comparison(args)
         if args.command == "refresh":
