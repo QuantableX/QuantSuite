@@ -45,7 +45,8 @@ from ..data.ohlcv import CoinRef, OhlcvFetcher
 from ..data.ranking.registry import RankingRegistry
 from .market import market_gate, market_index
 from .metrics import PerformanceMetrics, compute_metrics
-from .signals import IndicatorDataUnavailable, aggregate_members, pair_signal, trend_signal, warmup_bars
+from .signals import (IndicatorDataUnavailable, aggregate_members, is_custom, pair_signal, trend_signal,
+                      warmup_bars)
 
 
 def _fetch_start(config: RunConfig, trend: TrendKind | None = None) -> dt.date:
@@ -89,13 +90,18 @@ def _variant_config(config: RunConfig, trend: TrendKind) -> RunConfig:
 
 
 def _trend_label(indicator: IndicatorConfig) -> str:
+    """The run's name; "(custom)" when it runs parameters of its own."""
+
     if indicator.trend == "ema_cross":
         return f"EMA {indicator.ema_cross.fast_length}/{indicator.ema_cross.slow_length}"
     if indicator.trend == "aggregate":
-        return f"Aggregate ({len(aggregate_members(indicator))})"
+        members = aggregate_members(indicator)
+        custom = any(is_custom(indicator, kind) for kind in members if kind != "ema_cross")
+        return f"Aggregate ({len(members)}){' (custom)' if custom else ''}"
     from .smithery import REGISTRY
     cls = REGISTRY.get(indicator.trend)
-    return cls.name if cls is not None else indicator.trend
+    name = cls.name if cls is not None else indicator.trend
+    return f"{name} (custom)" if cls is not None and is_custom(indicator, indicator.trend) else name
 
 
 def _frames_from(frames: dict[str, pd.DataFrame], start: dt.date) -> dict[str, pd.DataFrame]:

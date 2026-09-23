@@ -107,7 +107,27 @@ def _parse_date(value: Any, fallback: dt.date) -> dt.date:
     return dt.date.fromisoformat(str(value)[:10])
 
 
-def _build_indicator(ind_raw: dict[str, Any]) -> IndicatorConfig:
+def _indicator_params(raw: Any, inherited: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
+    """``indicator.params`` of the wire — ``{key: {param: value}}`` over
+    ``inherited`` — typed and validated per key (the error names indicator
+    and parameter). Keys the engine does not know are kept unchecked: a
+    config may remember the parameters of an indicator it no longer uses."""
+
+    from .backtest.signals import indicator_overrides
+    from .backtest.smithery import REGISTRY
+
+    if raw is not None and not isinstance(raw, dict):
+        raise ValueError("indicator.params must be an object of indicator key → parameters")
+    out = {key: dict(values) for key, values in (inherited or {}).items()}
+    for key, values in (raw or {}).items():
+        if not isinstance(values, dict):
+            raise ValueError(f"indicator.params.{key} must be an object of parameter → value")
+        out[str(key)] = {**out.get(str(key), {}), **values}
+    return {key: (indicator_overrides(key, values) if key in REGISTRY else values)
+            for key, values in out.items() if values}
+
+
+def _build_indicator(ind_raw: dict[str, Any], inherited: dict[str, dict[str, Any]] | None = None) -> IndicatorConfig:
     ema_raw = ind_raw.get("emaCross") or ind_raw.get("ema_cross") or {}
     return IndicatorConfig(
         trend=ind_raw.get("trend", "ema_cross"),
@@ -117,6 +137,7 @@ def _build_indicator(ind_raw: dict[str, Any]) -> IndicatorConfig:
             slow_length=int(ema_raw.get("slowLength", ema_raw.get("slow_length", 21))),
         ),
         aggregate=tuple(str(kind) for kind in (ind_raw.get("aggregate") or []) if kind),
+        params=_indicator_params(ind_raw.get("params"), inherited),
     )
 
 
@@ -134,7 +155,8 @@ def _build_config(raw: dict[str, Any]) -> RunConfig:
             exit_length=int(market_raw.get('exitLength', market_raw.get('exit_length', breakout_defaults.exit_length))),
         )
     else:
-        market_indicator = _build_indicator(market_raw) if market_raw is not None else None
+        # The TOTAL signal runs the config's parameter overrides too; its own win.
+        market_indicator = _build_indicator(market_raw, indicator.params) if market_raw is not None else None
     compare_raw = raw.get("compareTrends", raw.get("compare_trends")) or []
     compare = tuple(str(kind) for kind in compare_raw if kind)
     return RunConfig(

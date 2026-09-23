@@ -1,3 +1,5 @@
 export { logoFor } from './logos'
 export type { EditorMarker, EditorPosition } from './editor-types'
 export { installMonacoEnvironment } from './monaco-env'
+export { paramDiff, paramProblems } from './paramForm'
+export type { ParamValues } from './paramForm'

@@ -86,7 +86,10 @@ class CheckTests(unittest.TestCase):
         # Version files of the edited script (and of the scripts that require
         # it) do not follow its new code into the sandbox; every other key does.
         stale = [k for k in doc["discovery_errors"] if k.startswith("versions/")]
-        self.assertEqual(doc["registry_keys"], len(REGISTRY) - len(stale))
+        # A Standard's evidence file (versions/<key>/<key>.json) goes stale
+        # too, but its key is the script's own and stays registered.
+        stale_keys = [k for k in stale if Path(k).stem != Path(k).parent.name]
+        self.assertEqual(doc["registry_keys"], len(REGISTRY) - len(stale_keys))
         self.assertTrue(all("re-forge" in doc["discovery_errors"][k] for k in stale))
         rows = {r["key"]: r for r in doc["indicators"]}
         self.assertEqual(list(rows), ["extremes"])
