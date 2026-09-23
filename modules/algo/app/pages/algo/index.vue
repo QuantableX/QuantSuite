@@ -178,6 +178,7 @@ onActivated(() => {
               <th>Bot</th>
               <th>Strategy</th>
               <th>Pair</th>
+              <th>Timeframe</th>
               <th>Mode</th>
               <th>Status</th>
               <th class="num">Equity</th>
@@ -191,7 +192,8 @@ onActivated(() => {
             <tr v-for="bot in botsStore.list" :key="bot.id" class="bot-row" @click="navigateTo('/algo/bots')">
               <td class="bot-name">{{ bot.name }}</td>
               <td>{{ strategyName(bot.strategy_id) }}</td>
-              <td class="mono">{{ bot.pair }} · {{ bot.timeframe }}</td>
+              <td class="mono">{{ bot.pair }}</td>
+              <td class="mono">{{ bot.timeframe }}</td>
               <td><span class="mode-tag" :class="`mode-tag--${bot.trading_mode}`">{{ bot.trading_mode }}</span></td>
               <td>
                 <span class="dot" :class="`dot--${bot.status}`" />
