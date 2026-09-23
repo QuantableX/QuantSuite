@@ -17,6 +17,7 @@ registerHooks({
 Object.assign(globalThis, { ref, reactive, computed, window: {} })
 const { useBacktestStore } = await import('../modules/systems/app/stores/backtest.ts')
 const { useLiveStore } = await import('../modules/systems/app/stores/live.ts')
+const { findIndicatorOption, indicatorOptionRows } = await import('../modules/systems/app/utils/indicatorOptions.ts')
 
 function deferred() {
   let resolve, reject
@@ -99,4 +100,39 @@ test('duplicate live starts cannot enqueue the same system twice', async t => {
   job.resolve({})
   await Promise.all([first, duplicate])
   assert.equal(calls, 1)
+})
+
+test('the pickers show one row per base indicator with its versions; the values stay version keys', () => {
+  const verdict = score => ({ score, grade: score >= 80 ? 'A' : 'B', certified: score >= 70, source: 'release' })
+  const catalog = [
+    {
+      key: 'dcl', name: 'DonchianLevels', role: 'standard', certification: null,
+      versions: { standard: 'dcl', optimized: 'dcl_opt', optimized_1h: 'dcl_opt_1h', optimized_4h: null, optimized_1d: 'dcl_opt_1d' },
+      timeframes: { '1d': verdict(71), '1h': verdict(60) },
+    },
+    { key: 'dcl_opt', name: 'DonchianLevels · Optimized', base_key: 'dcl', role: 'optimized', variant: { base_key: 'dcl', label: 'Optimized', status: 'release', role: 'optimized' }, certification: null, timeframes: { '1d': verdict(78) } },
+    { key: 'dcl_opt_1h', name: 'DonchianLevels · Optimized 1H', base_key: 'dcl', role: 'optimized_1h', variant: { base_key: 'dcl', label: 'Optimized 1H', status: 'release', role: 'optimized_1h' }, certification: null, timeframes: { '1h': verdict(66) } },
+    { key: 'dcl_opt_1d', name: 'DonchianLevels · Optimized 1D', base_key: 'dcl', role: 'optimized_1d', variant: { base_key: 'dcl', label: 'Optimized 1D', status: 'release', role: 'optimized_1d' }, certification: null, timeframes: { '1d': verdict(84) } },
+    { key: 'dcl_fast', name: 'DonchianLevels · fast', base_key: 'dcl', role: null, variant: { base_key: 'dcl', label: 'fast', status: 'research' }, certification: null, timeframes: { '1d': verdict(50) } },
+    { key: 'dmi', name: 'DMI', certification: null, timeframes: { '1d': verdict(74) } },
+  ]
+
+  const daily = indicatorOptionRows(catalog, '1d')
+  assert.deepEqual(daily.map(o => o.name), ['DonchianLevels', 'DMI', 'DonchianLevels › fast'], 'versions fold into their base; research keys keep a row')
+  const dcl = daily[0]
+  assert.equal(dcl.value, 'dcl_opt_1d', 'a click on the row picks the version of the cadence track')
+  assert.equal(dcl.score, 84)
+  assert.deepEqual(dcl.versions.map(v => [v.value, v.short, v.matches]), [
+    ['dcl', 'S', false], ['dcl_opt', 'G', false], ['dcl_opt_1h', '1H', false], ['dcl_opt_1d', '1D', true],
+  ])
+  assert.equal(daily[1].versions, undefined, 'an indicator without versions stays a plain row')
+  assert.equal(dcl.versions[2].tag, 'no 1d verdict', 'a timeframe version is only measured on its own track')
+  assert.equal(findIndicatorOption(daily, 'dcl_opt'), dcl, "LCES's stored key finds its base row")
+  assert.equal(findIndicatorOption(daily, 'dcl_fast').name, 'DonchianLevels › fast')
+  assert.equal(findIndicatorOption(daily, 'nope'), undefined)
+
+  const fourHour = indicatorOptionRows(catalog, '4h')
+  assert.equal(fourHour.find(o => o.name === 'DonchianLevels').value, 'dcl_opt', 'no 4h version: the general one')
+  const twelveHour = indicatorOptionRows(catalog, '12h')
+  assert.ok(twelveHour.find(o => o.name === 'DonchianLevels').versions.every(v => !v.matches), '12h has no track, so nothing is marked')
 })

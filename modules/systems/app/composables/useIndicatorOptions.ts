@@ -1,4 +1,5 @@
 import { useSystemsIndicatorsStore } from '#systems/stores/indicators'
+import { findIndicatorOption, indicatorOptionRows } from '#systems/utils/indicatorOptions'
 import type { Cadence, IndicatorOption, RunConfig } from '#systems/types'
 
 export const EMA_CROSS_OPTION: IndicatorOption = {
@@ -21,8 +22,8 @@ export function aggregateName(members: number): string {
  * The rows of every indicator picker for one run configuration.
  *
  * `options`: the EMA cross first, then the Smithery catalog scored on the
- * cadence's track, best first — the members an aggregate or a comparison
- * can be built from. The configured indicator is always present, as a
+ * cadence's track, best first, one row per base indicator with its versions
+ * — the members an aggregate or a comparison can be built from. The configured indicator is always present, as a
  * "not loaded" row when the catalog does not know it (an engine restart
  * away). `trendOptions` adds the Aggregate row on top for the run's own
  * indicator; `compareOptions` adds it only once it has members to average.
@@ -34,19 +35,9 @@ export function useIndicatorOptions(cfg: () => RunConfig) {
   const scoreTrack = computed(() => scoreTrackFor(cfg().cadence))
 
   const options = computed<IndicatorOption[]>(() => {
-    const track = scoreTrack.value
-    const rows: IndicatorOption[] = catalog.indicators.map((ind) => {
-      const verdict = ind.timeframes?.[track]
-      return {
-        value: ind.key as IndicatorOption['value'],
-        name: ind.variant ? `${catalog.indicators.find(base => base.key === ind.base_key)?.name ?? ind.base_key} › ${ind.variant.label}` : ind.name,
-        score: verdict ? +verdict.score.toFixed(1) : null,
-        grade: verdict?.grade ?? null,
-        tag: verdict?.certified ? `${track} ${verdict.source === 'historical' ? 'reference' : 'certified'}` : 'research',
-      }
-    }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+    const rows = indicatorOptionRows(catalog.indicators, scoreTrack.value)
     const trend = cfg().indicator.trend ?? 'ema_cross'
-    if (trend !== 'ema_cross' && trend !== 'aggregate' && !rows.some(o => o.value === trend)) {
+    if (trend !== 'ema_cross' && trend !== 'aggregate' && !findIndicatorOption(rows, trend)) {
       rows.unshift({ value: trend, name: trend, score: null, grade: null, tag: 'not loaded' })
     }
     return [EMA_CROSS_OPTION, ...rows]

@@ -7,7 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { useWorkbenchStore } from '../modules/script/app/stores/workbench.ts'
-import { decisionLabel, optimizeRowsFor } from '../modules/script/app/utils/forge.ts'
+import { decisionLabel, optimizeRowsFor, versionParamDiff, versionSlots, versionWhy } from '../modules/script/app/utils/forge.ts'
 
 function deferred() {
   let resolve, reject
@@ -362,4 +362,28 @@ test('an optimize job folds into one row per indicator and track', () => {
   assert.equal(decisionLabel(h1.decision), 'walk-forward winner')
   assert.equal(h4.error, 'walk-forward: boom')
   assert.equal(h4.decision, null)
+})
+
+test('the version slots resolve roles against the registry and explain themselves', () => {
+  const entry = (key, params, extra = {}) => ({ key, name: key, hypothesis: '', params, param_space: {}, warmup_bars: 10, certification: null, ...extra })
+  const base = entry('alpha', { length: 20, mult: 2 }, {
+    role: 'standard',
+    versions: { standard: 'alpha', optimized: 'alpha_opt', optimized_1h: null, optimized_4h: 'alpha_opt_4h', optimized_1d: 'alpha_opt_1d' },
+  })
+  const general = entry('alpha_opt', { length: 34, mult: 2 }, { base_key: 'alpha', role: 'optimized', variant: { base_key: 'alpha', label: 'Optimized', status: 'release', role: 'optimized', evidence: { decision: 'current' } } })
+  const h4 = entry('alpha_opt_4h', { length: 20, mult: 2 }, { base_key: 'alpha', role: 'optimized_4h', variant: { base_key: 'alpha', label: 'Optimized 4H', status: 'release', role: 'optimized_4h', evidence: { decision: 'standard_retained' } } })
+  const byKey = new Map([base, general, h4].map((e) => [e.key, e]))
+  const slots = versionSlots(base, byKey)
+  assert.deepEqual(slots.map((s) => s.role), ['standard', 'optimized', 'optimized_1h', 'optimized_4h', 'optimized_1d'])
+  assert.deepEqual(slots.map((s) => s.key), ['alpha', 'alpha_opt', null, 'alpha_opt_4h', null], 'a slot whose key the registry lacks stays empty')
+  assert.equal(slots[3].track, '4h')
+  assert.equal(slots[0].track, null)
+  assert.equal(versionWhy(slots[0]), 'the normal parameters')
+  assert.equal(versionWhy(slots[1]), "today's parameters, frozen")
+  assert.equal(versionWhy(slots[3]), 'Standard kept')
+  assert.deepEqual(versionParamDiff(slots[1], base.params), { length: 34 })
+  assert.deepEqual(versionParamDiff(slots[3], base.params), {})
+  assert.deepEqual(versionParamDiff(slots[2], base.params), {})
+  // A registry without version slots (an older engine): the Standard alone.
+  assert.deepEqual(versionSlots({ key: 'beta', versions: null }, new Map([['beta', entry('beta', {})]])).map((s) => s.key), ['beta', null, null, null, null])
 })

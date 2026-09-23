@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { IndicatorOption } from '#systems/types'
+import { findIndicatorOption } from '#systems/utils/indicatorOptions'
+import type { IndicatorOption, IndicatorVersionOption } from '#systems/types'
 
 const props = defineProps<{
   modelValue: string
@@ -16,13 +17,34 @@ const highlighted = ref(-1)
 const root = ref<HTMLElement | null>(null)
 
 const selected = computed(
-  () => props.options.find(o => o.value === props.modelValue) ?? props.options[0],
+  () => findIndicatorOption(props.options, props.modelValue) ?? props.options[0],
 )
+
+/** The version a base row stands for: the selected one, else the one a
+ *  click on the row picks. Null for a row without versions. */
+function shown(option: IndicatorOption): IndicatorVersionOption | null {
+  if (!option.versions)
+    return null
+  return option.versions.find(v => v.value === props.modelValue)
+    ?? option.versions.find(v => v.value === option.value) ?? null
+}
+
+const selectedVersion = computed(() => (selected.value ? shown(selected.value) : null))
+const hasVersions = computed(() => props.options.some(o => o.versions))
+
+function isSelected(option: IndicatorOption): boolean {
+  return option === selected.value
+}
+
+function versionTitle(v: IndicatorVersionOption): string {
+  const score = v.score != null ? ` · ${v.score}${v.grade ? ` ${v.grade}` : ''}` : ' · no verdict on this track'
+  return `${v.label} (${v.value})${score}${v.matches ? ' · optimized for this cadence' : ''}`
+}
 
 function toggle() {
   open.value = !open.value
   if (open.value)
-    highlighted.value = props.options.findIndex(o => o.value === props.modelValue)
+    highlighted.value = selected.value ? props.options.indexOf(selected.value) : -1
 }
 
 function close() {
@@ -31,7 +53,12 @@ function close() {
 }
 
 function pick(option: IndicatorOption) {
-  emit('update:modelValue', option.value)
+  emit('update:modelValue', shown(option)?.value ?? option.value)
+  close()
+}
+
+function pickVersion(v: IndicatorVersionOption) {
+  emit('update:modelValue', v.value)
   close()
 }
 
@@ -87,19 +114,19 @@ function gradeClass(grade: string | null): string {
     <button
       type="button"
       class="qs-isel__trigger"
-      :title="selected?.name"
+      :title="selectedVersion ? `${selected?.name} · ${selectedVersion.label} (${selectedVersion.value})` : selected?.name"
       :aria-expanded="open"
       aria-haspopup="listbox"
       :disabled="disabled"
       @click="toggle"
       @keydown="onKeydown"
     >
-      <span class="qs-isel__trigger-name">{{ selected?.name }}</span>
-      <span v-if="selected?.score != null" class="qs-isel__trigger-meta mono">
-        {{ selected.score }}
-        <span class="qs-isel__grade" :class="gradeClass(selected.grade)">{{ selected.grade }}</span>
+      <span class="qs-isel__trigger-name">{{ selected?.name }}<span v-if="selectedVersion" class="qs-isel__trigger-version"> · {{ selectedVersion.label }}</span></span>
+      <span v-if="(selectedVersion ?? selected)?.score != null" class="qs-isel__trigger-meta mono">
+        {{ (selectedVersion ?? selected)!.score }}
+        <span class="qs-isel__grade" :class="gradeClass((selectedVersion ?? selected)!.grade)">{{ (selectedVersion ?? selected)!.grade }}</span>
       </span>
-      <span v-else-if="selected?.tag" class="qs-isel__trigger-meta">{{ selected.tag }}</span>
+      <span v-else-if="(selectedVersion ?? selected)?.tag" class="qs-isel__trigger-meta">{{ (selectedVersion ?? selected)!.tag }}</span>
       <svg class="qs-isel__chevron" :class="{ 'qs-isel__chevron--open': open }"
         width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" stroke-width="1.5"
@@ -114,30 +141,46 @@ function gradeClass(grade: string | null): string {
           <span class="qs-isel__col-score">Score</span>
           <span class="qs-isel__col-grade">Grade</span>
         </div>
-        <button
+        <div
           v-for="(option, i) in options"
           :key="option.value"
-          type="button"
           role="option"
           class="qs-isel__row"
           :class="{
-            'qs-isel__row--selected': option.value === modelValue,
+            'qs-isel__row--selected': isSelected(option),
             'qs-isel__row--highlighted': i === highlighted,
           }"
-          :aria-selected="option.value === modelValue"
-          :title="option.tag ? `${option.name} — ${option.tag}` : option.name"
+          :aria-selected="isSelected(option)"
+          :title="(shown(option) ?? option).tag ? `${option.name} — ${(shown(option) ?? option).tag}` : option.name"
           @pointerenter="highlighted = i"
           @click="pick(option)"
         >
-          <span class="qs-isel__name">{{ option.name }}</span>
-          <span class="qs-isel__col-score mono">{{ option.score ?? '—' }}</span>
+          <span class="qs-isel__name-cell">
+            <span class="qs-isel__name">{{ option.name }}</span>
+            <span v-if="option.versions" class="qs-isel__versions" role="group" :aria-label="`${option.name} versions`">
+              <button
+                v-for="v in option.versions"
+                :key="v.value"
+                type="button"
+                class="qs-isel__ver"
+                :class="{ 'qs-isel__ver--on': v.value === modelValue, 'qs-isel__ver--match': v.matches }"
+                :aria-pressed="v.value === modelValue"
+                :title="versionTitle(v)"
+                @click.stop="pickVersion(v)"
+              >{{ v.short }}</button>
+            </span>
+          </span>
+          <span class="qs-isel__col-score mono">{{ (shown(option) ?? option).score ?? '—' }}</span>
           <span class="qs-isel__col-grade">
-            <span v-if="option.grade" class="qs-isel__grade" :class="gradeClass(option.grade)">
-              {{ option.grade }}
+            <span v-if="(shown(option) ?? option).grade" class="qs-isel__grade" :class="gradeClass((shown(option) ?? option).grade)">
+              {{ (shown(option) ?? option).grade }}
             </span>
             <span v-else class="qs-isel__grade qs-isel__grade--none">—</span>
           </span>
-        </button>
+        </div>
+        <p v-if="hasVersions" class="qs-isel__foot">
+          S Standard · G General · 1H / 4H / 1D the timeframe versions. A dot marks the version optimized for this cadence; a click on the name picks it.
+        </p>
       </div>
     </Transition>
   </div>
@@ -276,11 +319,76 @@ function gradeClass(grade: string | null): string {
   color: var(--qs-accent-hover);
 }
 
+.qs-isel__name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .qs-isel__name {
   display: block;
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.qs-isel__trigger-version {
+  color: var(--qs-text-secondary);
+}
+
+.qs-isel__versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.qs-isel__ver {
+  position: relative;
+  min-width: 26px;
+  border: 1px solid var(--qs-border-subtle);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--qs-text-secondary);
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.qs-isel__ver:hover {
+  border-color: var(--qs-accent);
+  color: var(--qs-text);
+}
+
+.qs-isel__ver--on {
+  border-color: var(--qs-accent);
+  background: var(--qs-accent);
+  color: var(--qs-bg);
+}
+
+.qs-isel__ver--on:hover {
+  color: var(--qs-bg);
+}
+
+.qs-isel__ver--match::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--qs-success);
+}
+
+.qs-isel__foot {
+  margin: 4px 0 0;
+  padding: 6px 10px 4px;
+  border-top: 1px solid var(--qs-border-subtle);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--qs-text-muted);
 }
 
 .qs-isel__col-score {
