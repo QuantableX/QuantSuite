@@ -963,9 +963,6 @@ onBeforeUnmount(() => {
                       >{{ card.agent_id }}</span
                     >
                   </div>
-                  <div v-if="card.description" class="card-desc">
-                    {{ card.description }}
-                  </div>
                 </div>
                 <div
                   v-if="cardsByColumn[col.id].length === 0"
@@ -1586,17 +1583,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.card-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 16px;
-  max-height: 32px;
-  overflow: hidden;
-  display: block;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .card-actions {
