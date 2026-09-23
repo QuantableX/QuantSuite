@@ -474,21 +474,22 @@ onUnmounted(() => {
 }
 
 /* Grows into whatever height the page hands the card; the ResizeObserver in
-   render() keeps the chart canvas in sync. Falls back to a usable height when
-   the card is laid out by content instead of by the page grid. */
+   render() keeps the chart canvas in sync. The floor stays below the page's
+   own minimum for the card, so a short window never pushes the plot out of
+   its card and over the tiles below. */
 .qs-chart__plot {
   position: relative;
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 240px;
+  min-height: 180px;
 }
 
 .qs-chart__canvas {
   width: 100%;
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 240px;
+  min-height: 180px;
   /* The chart canvas is sized imperatively; clip it so a frame rendered at the
      old width can never push the page into a horizontal scroll. */
   overflow: hidden;

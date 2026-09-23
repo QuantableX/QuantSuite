@@ -40,7 +40,7 @@ const held = computed(() => {
         >
           <option v-for="run in runs" :key="run.key" :value="run.key">{{ run.label }}</option>
         </select>
-        <span class="pill">{{ held.length }} leg{{ held.length === 1 ? '' : 's' }}</span>
+        <span class="pill">{{ held.length }} trade{{ held.length === 1 ? '' : 's' }}</span>
       </div>
 
       <div class="qs-forced__table">

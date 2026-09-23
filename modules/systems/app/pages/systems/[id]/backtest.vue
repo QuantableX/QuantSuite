@@ -176,14 +176,16 @@ function run() {
 </template>
 
 <style scoped>
-/* The page claims the full main area so the equity chart absorbs the spare
-   height instead of leaving a gap under a fixed-height canvas. */
+/* The page is exactly the main area, never taller: the equity chart takes
+   whatever height the metrics and holdings tiles leave, so 16:9 and 16:10
+   both fit without scrolling. Sized by content (min-height) the chart canvas
+   kept its last pixel height and could only ever grow. */
 .qs-backtest {
   container: manual-backtest / inline-size;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 100%;
+  height: 100%;
 }
 
 .qs-backtest__head {
@@ -271,7 +273,7 @@ function run() {
 }
 
 .qs-backtest__chart {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 260px;
 }
 
