@@ -1,7 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'algo' })
 
-import { useAppStore } from '#algo/stores/app'
+import { BOT_TIMEFRAMES, useAppStore } from '#algo/stores/app'
 import { useExchangeStore } from '#algo/stores/exchange'
 import { invoke } from '@tauri-apps/api/core'
 import type { AppSettings } from '#algo/types'
@@ -22,7 +22,7 @@ const pythonDetectError = ref<string | null>(null)
 const isSaving = ref(false)
 const saveMessage = ref<string | null>(null)
 
-const timeframeOptions = ['1m', '5m', '15m', '1h', '4h', '1d']
+const timeframeOptions = BOT_TIMEFRAMES
 
 // The default exchange falls back to the first connected one until a choice
 // is made, so the pair dropdown is never stuck on "select an exchange first".

@@ -5,10 +5,10 @@ Each axis returns (sub_score 0-100, markdown table rows). Aggregate is the
 doc-specified weighted mean; permutation p > 0.10 hard-caps the grade at B.
 
 Certification tracks: the gauntlet runs per TIMEFRAME — `1d`
-is the reference track, `4h`, `1h` and `1m` are the intraday tracks — on that
+is the reference track, `4h` and `1h` are the intraday tracks — on that
 timeframe's shelf series (`<EXCHANGE>_<SYMBOL>_<tf>`). A verdict belongs to
-its track; an indicator certified on daily bars says nothing about 1m until
-the 1m gauntlet has said it.
+its track; an indicator certified on daily bars says nothing about 1h until
+the 1h gauntlet has said it. There is no minute track (user, 2026-09-23).
 """
 from __future__ import annotations
 
@@ -37,10 +37,10 @@ ASSET_SYMBOLS = ["ETHUSDT", "XRPUSDT", "BNBUSDT", "SOLUSDT"]
 # episodes, which last months whatever the bar size, and a window with too
 # few of them cannot tell timing skill from drift (the first 4h pass with a
 # 4500-bar window failed every luck gate for exactly that reason).
-TIMEFRAMES = ("1d", "4h", "1h", "1m")
-MC_MAX_BARS = {"1d": 2500, "4h": 15_000, "1h": 60_000, "1m": 3_600_000}
+TIMEFRAMES = ("1d", "4h", "1h")
+MC_MAX_BARS = {"1d": 2500, "4h": 15_000, "1h": 60_000}
 # The GARCH charts are synthesised bar by bar; ~5.5 years on every track.
-GARCH_BARS = {"1d": 2000, "4h": 12_000, "1h": 48_000, "1m": 2_880_000}
+GARCH_BARS = {"1d": 2000, "4h": 12_000, "1h": 48_000}
 
 
 def s_map(sharpe: float, lo: float = -0.5, hi: float = 1.5) -> float:
@@ -289,8 +289,6 @@ class Gauntlet:
     def axis_monte_carlo(self, primary: str) -> float:
         df = load(primary)
         cap = MC_MAX_BARS.get(self.timeframe, 2500)
-        if self.fast and self.timeframe == "1m":
-            cap = min(cap, 60_000)  # bounded smoke test, never certification
         if len(df) > cap:
             df = df.iloc[-cap:]
         cost = cost_for(primary)

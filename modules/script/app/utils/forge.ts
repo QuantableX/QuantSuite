@@ -108,7 +108,7 @@ export function progressFor(job: ForgeJob): IndicatorProgress[] {
   const rows = new Map<string, IndicatorProgress>()
   const jobEvent = job.events.find((e) => e.event === 'job') ?? job.summary.find((e) => e.event === 'job')
   const multiTrack = (job.request.timeframe ?? str(jobEvent?.timeframe) ?? '1d') === 'all'
-  const tracks = Array.isArray(jobEvent?.tracks) ? (jobEvent.tracks as string[]) : ['1d', '4h', '1h', '1m']
+  const tracks = Array.isArray(jobEvent?.tracks) ? (jobEvent.tracks as string[]) : ['1d', '4h', '1h']
   const row = (indicator: string, track: string | null): IndicatorProgress => {
     const key = multiTrack && track ? `${indicator}@${track}` : indicator
     let r = rows.get(key)

@@ -9,7 +9,7 @@ export const EMA_CROSS_OPTION: IndicatorOption = {
  *  candles for daily/weekly/monthly rotation, so a daily signal must not
  *  inherit its hourly score; 12h has no certification track yet. */
 export function scoreTrackFor(cadence: Cadence): string {
-  return ['1m', '1h', '4h', '12h'].includes(cadence) ? cadence : '1d'
+  return ['1h', '4h', '12h'].includes(cadence) ? cadence : '1d'
 }
 
 /** The display name of the aggregate for a member count. */

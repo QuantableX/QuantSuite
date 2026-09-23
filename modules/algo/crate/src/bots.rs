@@ -144,11 +144,15 @@ pub(crate) fn load_bots(conn: &Connection) -> Result<Vec<Bot>, String> {
         .map_err(|e| format!("Row: {e}"))
 }
 
+/// The timeframes a bot or a backtest runs on (user, 2026-09-23: 1h, 4h or
+/// daily bots only — the indicators are optimized for exactly these).
+pub(crate) const BOT_TIMEFRAMES: [&str; 3] = ["1h", "4h", "1d"];
+
 pub(crate) fn validate_timeframe(timeframe: &str) -> Result<(), String> {
-    if matches!(timeframe, "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "1w") {
+    if BOT_TIMEFRAMES.contains(&timeframe) {
         Ok(())
     } else {
-        Err(format!("Unsupported timeframe '{timeframe}'."))
+        Err(format!("Unsupported timeframe '{timeframe}' — bots run on 1h, 4h or 1d."))
     }
 }
 

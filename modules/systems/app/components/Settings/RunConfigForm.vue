@@ -45,7 +45,7 @@ function setTrend(value: TrendKind) {
   })
 }
 
-const cadences: Cadence[] = ['1m', '1h', '4h', '12h', 'daily', 'weekly', 'monthly']
+const cadences: Cadence[] = ['1h', '4h', '12h', 'daily', 'weekly', 'monthly']
 const sources: RankingSource[] = ['auto', 'cmc', 'local']
 const priceSources: PriceSource[] = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4']
 

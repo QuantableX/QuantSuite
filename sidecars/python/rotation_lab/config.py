@@ -17,13 +17,13 @@ from typing import Literal
 class Cadence(str, Enum):
     """Bar resolution / rotation cadence.
 
-    The intraday members (``1m`` / ``1h`` / ``4h`` / ``12h``) drive both the candle
+    The intraday members (``1h`` / ``4h`` / ``12h``) drive both the candle
     resolution *and* the rotation step. The daily / weekly / monthly members
     keep the original behaviour: bars are daily candles and only the
-    universe-refresh frequency changes.
+    universe-refresh frequency changes. There is no minute cadence
+    (user, 2026-09-23).
     """
 
-    MINUTE_1 = "1m"
     HOUR_1 = "1h"
     HOUR_4 = "4h"
     HOUR_12 = "12h"
@@ -31,14 +31,18 @@ class Cadence(str, Enum):
     WEEKLY = "weekly"
     MONTHLY = "monthly"
 
+    @classmethod
+    def _missing_(cls, value):
+        raise ValueError(
+            f"unsupported cadence {value!r} — use 1h, 4h, 12h, daily, weekly or monthly")
+
     @property
     def is_intraday(self) -> bool:
-        return self in (Cadence.MINUTE_1, Cadence.HOUR_1, Cadence.HOUR_4, Cadence.HOUR_12)
+        return self in (Cadence.HOUR_1, Cadence.HOUR_4, Cadence.HOUR_12)
 
     @property
     def pandas_freq(self) -> str:
         return {
-            "1m": "1min",
             "1h": "1h",
             "4h": "4h",
             "12h": "12h",
@@ -56,7 +60,7 @@ class Cadence(str, Enum):
         universe-refresh frequency differs), so they all map to ``1d``.
         """
 
-        return {"1m": "1m", "1h": "1h", "4h": "4h", "12h": "12h"}.get(self.value, "1d")
+        return {"1h": "1h", "4h": "4h", "12h": "12h"}.get(self.value, "1d")
 
     @property
     def bars_per_year(self) -> float:
@@ -67,7 +71,6 @@ class Cadence(str, Enum):
         """
 
         return {
-            "1m": 365.0 * 24.0 * 60.0,
             "1h": 365.0 * 24.0,
             "4h": 365.0 * 6.0,
             "12h": 365.0 * 2.0,

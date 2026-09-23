@@ -18,8 +18,8 @@ const rows = computed(() =>
 const daily = computed(() => rows.value.filter((r) => r.timeframe === '1d'))
 const newest = computed(() => daily.value.reduce<string | null>((acc, r) => (r.last && (!acc || r.last > acc) ? r.last : acc), null))
 
-function refresh(timeframe: 'all' | '1m' = 'all') {
-  forge.openForge({ kind: 'refresh', indicators: [], fast: false, timeframe })
+function refresh() {
+  forge.openForge({ kind: 'refresh', indicators: [], fast: false, timeframe: 'all' })
 }
 </script>
 
@@ -34,8 +34,7 @@ function refresh(timeframe: 'all' | '1m' = 'all') {
         <template v-else>{{ forge.infoLoading ? 'Reading the vault…' : 'The shelf has not been read.' }}</template>
       </p>
       <div class="qsf-head-actions">
-        <button class="qsc-btn is-sm" :disabled="forge.isRunning || forge.starting" @click="refresh('1m')">Refresh 1m</button>
-        <button class="qsc-btn is-sm is-primary" :disabled="forge.isRunning || forge.starting" @click="refresh('all')">Refresh shelf</button>
+        <button class="qsc-btn is-sm is-primary" :disabled="forge.isRunning || forge.starting" @click="refresh()">Refresh shelf</button>
       </div>
     </div>
 
@@ -74,8 +73,8 @@ function refresh(timeframe: 'all' | '1m' = 'all') {
     </div>
 
     <p class="muted qsf-foot">
-      Each of the 1d, 4h, 1h and 1m tracks uses its own candles. Refresh 1m loads the minute shelf;
-      further refreshes continue from the last cached candle. Scores stay untested until that track has evidence.
+      Each of the 1d, 4h and 1h tracks uses its own candles. Refreshes continue from the last cached candle.
+      Scores stay untested until that track has evidence.
     </p>
   </div>
 </template>

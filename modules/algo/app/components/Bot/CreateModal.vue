@@ -7,7 +7,7 @@
  */
 import { useStrategiesStore } from '#algo/stores/strategies'
 import { useExchangeStore } from '#algo/stores/exchange'
-import { useAppStore } from '#algo/stores/app'
+import { BOT_TIMEFRAMES, useAppStore } from '#algo/stores/app'
 import { useBotsStore } from '#algo/stores/bots'
 import type { TradingMode, PreflightResult, PreflightCheck, BotDraft, Bot, BotDefaults } from '#algo/types'
 
@@ -55,7 +55,7 @@ let preflightRequestId = 0
 const isSubmitting = ref(false)
 const submitError = ref<string | null>(null)
 
-const timeframeOptions = ['1m', '5m', '15m', '1h', '4h', '1d']
+const timeframeOptions = BOT_TIMEFRAMES
 
 
 const settings = computed(() => appStore.settings)

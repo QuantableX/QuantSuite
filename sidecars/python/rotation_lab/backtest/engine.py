@@ -62,7 +62,7 @@ def _fetch_start(config: RunConfig, trend: TrendKind | None = None) -> dt.date:
     if bars == 0:
         return config.start_date
     if config.cadence.is_intraday:
-        per_day = {"1m": 1440, "1h": 24, "4h": 6, "12h": 2}[config.cadence.value]
+        per_day = {"1h": 24, "4h": 6, "12h": 2}[config.cadence.value]
         days = bars // per_day + 2
     else:
         days = bars

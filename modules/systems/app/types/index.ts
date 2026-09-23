@@ -18,7 +18,7 @@ export interface AppSettings {
   activeSystemId: SystemId
 }
 
-export type Cadence = '1m' | '1h' | '4h' | '12h' | 'daily' | 'weekly' | 'monthly'
+export type Cadence = '1h' | '4h' | '12h' | 'daily' | 'weekly' | 'monthly'
 export type RankingSource = 'cmc' | 'local' | 'auto'
 export type PriceSource = 'open' | 'high' | 'low' | 'close' | 'hl2' | 'hlc3' | 'ohlc4'
 

@@ -36,24 +36,32 @@ pub(crate) fn default_warmup_candles() -> u32 {
     DEFAULT_WARMUP_CANDLES
 }
 
-/// The bot defaults the user set on 2026-09-07. A config below this version
-/// gets them written once at load: the old app's 1h had survived there, and
+/// The bot defaults the user set on 2026-09-07 (version 2): a config below it
+/// gets them written once at load — the old app's 1h had survived there, and
 /// the Settings page of an earlier build had auto-saved the first listed
-/// pair (BTC/AED) when none was stored.
-pub(crate) const BOT_DEFAULTS_VERSION: u32 = 2;
+/// pair (BTC/AED) when none was stored. Version 3 (user, 2026-09-23): bots
+/// run on 1h, 4h or 1d only and the default timeframe is 1d; a stored
+/// default outside those becomes 1d once, every other choice stays.
+pub(crate) const BOT_DEFAULTS_VERSION: u32 = 3;
+pub(crate) const DEFAULT_TIMEFRAME: &str = "1d";
 
 pub(crate) fn apply_bot_defaults(settings: &mut AppSettings) -> bool {
     if settings.defaults_version >= BOT_DEFAULTS_VERSION {
         return false;
     }
-    settings.default_pair = "BTC/USDT".into();
-    settings.default_timeframe = "1m".into();
-    settings.default_budget = DEFAULT_BUDGET;
-    settings.risk_per_trade = DEFAULT_RISK_PER_TRADE_PCT;
-    settings.max_concurrent_positions = DEFAULT_MAX_CONCURRENT_POSITIONS;
-    settings.slippage_tolerance = DEFAULT_SLIPPAGE_TOLERANCE_PCT;
-    settings.paper_fee_pct = DEFAULT_PAPER_FEE_PCT;
-    settings.default_warmup_candles = DEFAULT_WARMUP_CANDLES;
+    if settings.defaults_version < 2 {
+        settings.default_pair = "BTC/USDT".into();
+        settings.default_timeframe = DEFAULT_TIMEFRAME.into();
+        settings.default_budget = DEFAULT_BUDGET;
+        settings.risk_per_trade = DEFAULT_RISK_PER_TRADE_PCT;
+        settings.max_concurrent_positions = DEFAULT_MAX_CONCURRENT_POSITIONS;
+        settings.slippage_tolerance = DEFAULT_SLIPPAGE_TOLERANCE_PCT;
+        settings.paper_fee_pct = DEFAULT_PAPER_FEE_PCT;
+        settings.default_warmup_candles = DEFAULT_WARMUP_CANDLES;
+    }
+    if crate::bots::validate_timeframe(&settings.default_timeframe).is_err() {
+        settings.default_timeframe = DEFAULT_TIMEFRAME.into();
+    }
     settings.defaults_version = BOT_DEFAULTS_VERSION;
     true
 }
@@ -110,7 +118,7 @@ pub fn get_default_settings() -> AppSettings {
         font_size: 14,
         default_exchange_id: None,
         default_pair: "BTC/USDT".into(),
-        default_timeframe: "1m".into(),
+        default_timeframe: DEFAULT_TIMEFRAME.into(),
         python_path: if cfg!(windows) {
             "py".into()
         } else {
@@ -163,7 +171,7 @@ mod tests {
 
         assert!(apply_bot_defaults(&mut settings));
         assert_eq!(settings.default_pair, "BTC/USDT");
-        assert_eq!(settings.default_timeframe, "1m");
+        assert_eq!(settings.default_timeframe, "1d");
         assert_eq!(settings.default_budget, 10_000.0);
         assert_eq!(settings.risk_per_trade, 1.0);
         assert_eq!(settings.max_concurrent_positions, 2);
@@ -185,7 +193,37 @@ mod tests {
         assert_eq!(settings.defaults_version, 0);
         assert!(apply_bot_defaults(&mut settings));
         assert_eq!(settings.default_pair, "BTC/USDT");
-        assert_eq!(settings.default_timeframe, "1m");
+        assert_eq!(settings.default_timeframe, "1d");
+    }
+
+    #[test]
+    fn a_version_2_config_on_one_minute_moves_to_daily_and_keeps_the_rest() {
+        let mut settings = get_default_settings();
+        settings.defaults_version = 2;
+        settings.default_timeframe = "1m".into();
+        settings.default_pair = "ETH/USDT".into();
+        settings.risk_per_trade = 2.5;
+
+        assert!(apply_bot_defaults(&mut settings));
+        assert_eq!(settings.default_timeframe, "1d");
+        assert_eq!(settings.default_pair, "ETH/USDT");
+        assert_eq!(settings.risk_per_trade, 2.5);
+        assert_eq!(settings.defaults_version, 3);
+        assert!(!apply_bot_defaults(&mut settings));
+    }
+
+    #[test]
+    fn a_version_2_config_on_a_supported_timeframe_keeps_it() {
+        let mut settings = get_default_settings();
+        settings.defaults_version = 2;
+        settings.default_timeframe = "4h".into();
+        assert!(apply_bot_defaults(&mut settings));
+        assert_eq!(settings.default_timeframe, "4h");
+    }
+
+    #[test]
+    fn a_fresh_install_defaults_to_daily() {
+        assert_eq!(get_default_settings().default_timeframe, "1d");
     }
 }
 

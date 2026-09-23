@@ -291,7 +291,7 @@ def _method_live(params: dict[str, Any]) -> dict[str, Any]:
                        if isinstance(indicator, TotalBreakoutConfig)
                        else warmup_bars(indicator) or indicator.ema_cross.slow_length * 8)
         if cfg.cadence.is_intraday:
-            bars_per_day = {"1m": 1440, "1h": 24, "4h": 6, "12h": 2}[cfg.cadence.value]
+            bars_per_day = {"1h": 24, "4h": 6, "12h": 2}[cfg.cadence.value]
             lookback_days = max(bars_needed // bars_per_day + 2, 3)
         else:
             lookback_days = max(bars_needed, 180)

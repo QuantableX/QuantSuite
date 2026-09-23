@@ -43,18 +43,17 @@ const visibleRoster = computed(() => roster.value.filter((ind) =>
 
 /** The tracks the shelf can run, `all` first — the score is earned on every track. */
 const timeframes = computed<SmitheryTimeframe[]>(() => {
-  const known = (forge.info?.supported_timeframes ?? ['1d', '4h', '1h', '1m']).filter(
-    (t): t is SmitheryTimeframe => t === '1d' || t === '4h' || t === '1h' || t === '1m',
+  const known = (forge.info?.supported_timeframes ?? ['1d', '4h', '1h']).filter(
+    (t): t is SmitheryTimeframe => t === '1d' || t === '4h' || t === '1h',
   )
   const tracks: SmitheryTimeframe[] = known.length ? known : ['1d']
   return kind.value !== 'walkforward' && tracks.length > 1 ? ['all', ...tracks] : tracks
 })
 const trackHints: Record<SmitheryTimeframe, string> = {
-  all: 'every track in turn — 1d, 4h, 1h and 1m; each requires its own data and evidence',
+  all: 'every track in turn — 1d, 4h and 1h; each requires its own data and evidence',
   '1d': 'the daily reference track only',
   '4h': 'the 4h track only — the top-5 on Binance, BTC on Bybit / OKX / KuCoin',
   '1h': 'the 1h track only — seven years of hourly bars in the Monte Carlo ordeals',
-  '1m': 'real one-minute candles; full runs retain the calendar horizons and can take much longer',
 }
 
 // A walk-forward re-selects on one series: `all` is a gauntlet thing.
