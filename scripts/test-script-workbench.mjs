@@ -7,6 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { useWorkbenchStore } from '../modules/script/app/stores/workbench.ts'
+import { decisionLabel, optimizeRowsFor } from '../modules/script/app/utils/forge.ts'
 
 function deferred() {
   let resolve, reject
@@ -334,4 +335,31 @@ test('switching tabs resets the cursor and panel without losing dirty content', 
   assert.equal(wb.closeScript('a.py'), false)
   wb.activate('a.py')
   assert.equal(wb.active.content, 'unfinished')
+})
+
+test('an optimize job folds into one row per indicator and track', () => {
+  const job = {
+    id: 'j', kind: 'optimize', indicators: ['dmi'], status: 'done', started_at: '', finished_at: null,
+    exit_code: 0, error: null, request: { kind: 'optimize', indicators: ['dmi'], fast: false, timeframe: 'all' },
+    summary: [],
+    events: [
+      { event: 'job', kind: 'optimize', indicators: ['dmi'], tracks: ['1h', '4h'] },
+      { event: 'begin', indicator: 'dmi', name: 'DMITrend' },
+      { event: 'walkforward', indicator: 'dmi', timeframe: '1h', wfe: 0.62 },
+      { event: 'decision', indicator: 'dmi', timeframe: '1h', key: 'dmi_opt_1h', decision: 'promoted', score: 77,
+        grade: 'A', written: true, candidates: [{ source: 'general', score: 71 }, { source: 'standard', score: 52 },
+        { source: 'walkforward', score: 77 }] },
+      { event: 'error', indicator: 'dmi', timeframe: '4h', message: 'walk-forward: boom' },
+    ],
+  }
+  const rows = optimizeRowsFor(job)
+  assert.deepEqual(rows.map((r) => r.key), ['dmi@1h', 'dmi@4h'])
+  const [h1, h4] = rows
+  assert.equal(h1.name, 'DMITrend')
+  assert.equal(h1.wfe, 0.62)
+  assert.deepEqual([h1.standard, h1.general, h1.winner, h1.score], [52, 71, 77, 77])
+  assert.equal(h1.versionKey, 'dmi_opt_1h')
+  assert.equal(decisionLabel(h1.decision), 'walk-forward winner')
+  assert.equal(h4.error, 'walk-forward: boom')
+  assert.equal(h4.decision, null)
 })

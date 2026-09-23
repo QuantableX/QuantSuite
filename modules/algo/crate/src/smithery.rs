@@ -36,7 +36,7 @@ const MAX_INDICATORS_PER_JOB: usize = 64;
 /// What the Smithery page asks the forge to run.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ForgeRequest {
-    /// `gauntlet` | `walkforward` | `compare` | `refresh`.
+    /// `gauntlet` | `walkforward` | `optimize` | `compare` | `refresh`.
     pub kind: String,
     /// Registry keys, or `all` / `certified` (gauntlet and walk-forward).
     #[serde(default)]
@@ -58,6 +58,9 @@ pub struct ForgeRequest {
     /// on every track) | `1d` | `4h` | `1h`. The forge's own default is `all`.
     #[serde(default)]
     pub timeframe: Option<String>,
+    /// `optimize` only: skip indicators whose timeframe versions are current.
+    #[serde(default)]
+    pub resume: bool,
 }
 
 /// No minute track (user, 2026-09-23): the forge certifies 1d, 4h and 1h.
@@ -250,6 +253,49 @@ fn job_args(request: &ForgeRequest) -> Result<Vec<String>, String> {
                 args.push(folds.clamp(2, 12).to_string());
             }
         }
+        // The timeframe versions <key>_opt_1h / _4h / _1d of base indicators.
+        "optimize" => {
+            if request.indicators.is_empty() {
+                return Err("Pick at least one indicator.".into());
+            }
+            if request.indicators.len() > MAX_INDICATORS_PER_JOB {
+                return Err(format!("At most {MAX_INDICATORS_PER_JOB} indicators per job."));
+            }
+            if let Some(bad) = request.indicators.iter().find(|k| !valid_key(k)) {
+                return Err(format!("'{bad}' is not an indicator key."));
+            }
+            args.push("optimize".into());
+            args.push("--indicator".into());
+            args.extend(request.indicators.iter().cloned());
+            match request.timeframe.as_deref().filter(|tf| !tf.is_empty()) {
+                None | Some("all") => {}
+                Some(tf) if TRACKS.contains(&tf) => {
+                    args.push("--timeframes".into());
+                    args.push(tf.to_string());
+                }
+                Some(tf) => return Err(format!("'{tf}' is not a certification track (all, 1d, 4h, 1h).")),
+            }
+            if let Some(folds) = request.folds {
+                args.push("--folds".into());
+                args.push(folds.clamp(2, 12).to_string());
+            }
+            if request.resume {
+                args.push("--resume".into());
+            }
+            if request.fast {
+                args.push("--fast".into());
+            }
+            for (flag, value) in [("--perm", request.perm), ("--boot", request.boot), ("--garch", request.garch)] {
+                if let Some(n) = value {
+                    args.push(flag.into());
+                    args.push(n.clamp(1, 5_000).to_string());
+                }
+            }
+            if let Some(seed) = request.seed {
+                args.push("--seed".into());
+                args.push(seed.to_string());
+            }
+        }
         "refresh" => {
             args.push("refresh".into());
             if let Some(tf) = request.timeframe.as_deref() {
@@ -272,7 +318,7 @@ fn with_job<T>(state: &AppState, id: &str, f: impl FnOnce(&mut ForgeJob) -> T) -
 fn is_summary_event(event: &Value) -> bool {
     matches!(
         event.get("event").and_then(Value::as_str),
-        Some("job" | "verdict" | "walkforward" | "comparison" | "comparison_done" | "series" | "error" | "done")
+        Some("job" | "verdict" | "walkforward" | "decision" | "comparison" | "comparison_done" | "series" | "error" | "done")
     )
 }
 
@@ -633,6 +679,7 @@ mod tests {
             seed: Some(7),
             folds: Some(3),
             timeframe: Some("4h".into()),
+            resume: false,
         })
         .unwrap();
         assert_eq!(
@@ -677,6 +724,26 @@ mod tests {
         })
         .unwrap();
         assert_eq!(args, vec!["gauntlet", "--indicator", "dc", "--timeframe", "all"]);
+    }
+
+    #[test]
+    fn optimize_routes_tracks_resume_and_counts() {
+        let args = job_args(&ForgeRequest {
+            kind: "optimize".into(), indicators: vec!["all".into()], timeframe: Some("all".into()),
+            resume: true, ..Default::default()
+        }).unwrap();
+        assert_eq!(args, vec!["optimize", "--indicator", "all", "--resume"]);
+        let args = job_args(&ForgeRequest {
+            kind: "optimize".into(), indicators: vec!["dmi".into()], timeframe: Some("4h".into()),
+            folds: Some(40), perm: Some(50), seed: Some(7), fast: true, ..Default::default()
+        }).unwrap();
+        assert_eq!(args, vec!["optimize", "--indicator", "dmi", "--timeframes", "4h", "--folds", "12",
+                              "--fast", "--perm", "50", "--seed", "7"]);
+        assert!(job_args(&ForgeRequest {
+            kind: "optimize".into(), indicators: vec!["dmi".into()], timeframe: Some("1m".into()), ..Default::default()
+        }).is_err());
+        assert!(job_args(&ForgeRequest { kind: "optimize".into(), ..Default::default() }).is_err());
+        assert!(is_summary_event(&serde_json::json!({"event": "decision"})));
     }
 
     #[test]
