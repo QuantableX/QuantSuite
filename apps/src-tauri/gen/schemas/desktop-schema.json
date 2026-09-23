@@ -2931,10 +2931,10 @@
           "markdownDescription": "Denies the is_enabled command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-navigate-browser`\n- `allow-eval-browser`\n- `allow-get-browser-url`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-browser-request-new-tab`\n- `allow-browser-disable-fullscreen`\n- `allow-load-browser-data`\n- `allow-save-browser-data`\n- `allow-check-for-update`\n- `allow-download-and-install-update`",
+          "description": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-navigate-browser`\n- `allow-eval-browser`\n- `allow-get-browser-url`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-browser-request-new-tab`\n- `allow-browser-disable-fullscreen`\n- `allow-load-browser-data`\n- `allow-save-browser-data`",
           "type": "string",
           "const": "canvas:default",
-          "markdownDescription": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-navigate-browser`\n- `allow-eval-browser`\n- `allow-get-browser-url`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-browser-request-new-tab`\n- `allow-browser-disable-fullscreen`\n- `allow-load-browser-data`\n- `allow-save-browser-data`\n- `allow-check-for-update`\n- `allow-download-and-install-update`"
+          "markdownDescription": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-navigate-browser`\n- `allow-eval-browser`\n- `allow-get-browser-url`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-browser-request-new-tab`\n- `allow-browser-disable-fullscreen`\n- `allow-load-browser-data`\n- `allow-save-browser-data`"
         },
         {
           "description": "Enables the browser_disable_fullscreen command without any pre-configured scope.",
@@ -2949,12 +2949,6 @@
           "markdownDescription": "Enables the browser_request_new_tab command without any pre-configured scope."
         },
         {
-          "description": "Enables the check_for_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "canvas:allow-check-for-update",
-          "markdownDescription": "Enables the check_for_update command without any pre-configured scope."
-        },
-        {
           "description": "Enables the create_file command without any pre-configured scope.",
           "type": "string",
           "const": "canvas:allow-create-file",
@@ -2965,12 +2959,6 @@
           "type": "string",
           "const": "canvas:allow-delete-file",
           "markdownDescription": "Enables the delete_file command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the download_and_install_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "canvas:allow-download-and-install-update",
-          "markdownDescription": "Enables the download_and_install_update command without any pre-configured scope."
         },
         {
           "description": "Enables the eval_browser command without any pre-configured scope.",
@@ -3111,6 +3099,12 @@
           "markdownDescription": "Enables the timeline_snapshot command without any pre-configured scope."
         },
         {
+          "description": "Enables the workspace_storage_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "canvas:allow-workspace-storage-dir",
+          "markdownDescription": "Enables the workspace_storage_dir command without any pre-configured scope."
+        },
+        {
           "description": "Enables the write_file command without any pre-configured scope.",
           "type": "string",
           "const": "canvas:allow-write-file",
@@ -3129,12 +3123,6 @@
           "markdownDescription": "Denies the browser_request_new_tab command without any pre-configured scope."
         },
         {
-          "description": "Denies the check_for_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "canvas:deny-check-for-update",
-          "markdownDescription": "Denies the check_for_update command without any pre-configured scope."
-        },
-        {
           "description": "Denies the create_file command without any pre-configured scope.",
           "type": "string",
           "const": "canvas:deny-create-file",
@@ -3145,12 +3133,6 @@
           "type": "string",
           "const": "canvas:deny-delete-file",
           "markdownDescription": "Denies the delete_file command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the download_and_install_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "canvas:deny-download-and-install-update",
-          "markdownDescription": "Denies the download_and_install_update command without any pre-configured scope."
         },
         {
           "description": "Denies the eval_browser command without any pre-configured scope.",
@@ -3289,6 +3271,12 @@
           "type": "string",
           "const": "canvas:deny-timeline-snapshot",
           "markdownDescription": "Denies the timeline_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the workspace_storage_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "canvas:deny-workspace-storage-dir",
+          "markdownDescription": "Denies the workspace_storage_dir command without any pre-configured scope."
         },
         {
           "description": "Denies the write_file command without any pre-configured scope.",
@@ -7797,10 +7785,10 @@
           "markdownDescription": "Denies the year_checks command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the hud module.\n#### This default permission set includes:\n\n- `allow-capture-screen`\n- `allow-get-cursor-position`\n- `allow-get-available-monitors`\n- `allow-load-config`\n- `allow-save-config`\n- `allow-tuck-window`\n- `allow-show-window`\n- `allow-is-window-tucked`\n- `allow-setup-window-size`\n- `allow-set-window-position`\n- `allow-open-region-selector`\n- `allow-set-selected-region`\n- `allow-get-selected-region`\n- `allow-pick-screen-color`\n- `allow-pick-folder`\n- `allow-pick-file`\n- `allow-launch-app`\n- `allow-get-app-icon`\n- `allow-get-default-screenshots-folder`\n- `allow-list-os-screenshots`\n- `allow-read-screenshot-file`\n- `allow-read-screenshot-thumbnail`\n- `allow-open-screenshots-folder`\n- `allow-copy-screenshot-to-clipboard`\n- `allow-open-color-picker-overlay`\n- `allow-set-picked-color`\n- `allow-get-picked-color`\n- `allow-open-screenshot-preview`\n- `allow-get-screenshot-preview-path`\n- `allow-close-screenshot-preview`\n- `allow-create-dual-window`\n- `allow-close-dual-window`\n- `allow-show-notification-popup`\n- `allow-speech-status`\n- `allow-speech-setup`\n- `allow-speech-start`\n- `allow-speech-stop`\n- `allow-speech-cancel`\n- `allow-speech-devices`\n- `allow-speech-apply-settings`\n- `allow-speech-engine-start`\n- `allow-speech-engine-stop`\n- `allow-speech-engine-logs`\n- `allow-check-for-update`\n- `allow-download-and-install-update`\n- `allow-analyze-chart`\n- `allow-save-temp-image`\n- `allow-open-hud`\n- `allow-close-hud`",
+          "description": "Default permissions for the hud module.\n#### This default permission set includes:\n\n- `allow-capture-screen`\n- `allow-get-cursor-position`\n- `allow-get-available-monitors`\n- `allow-load-config`\n- `allow-save-config`\n- `allow-tuck-window`\n- `allow-show-window`\n- `allow-is-window-tucked`\n- `allow-setup-window-size`\n- `allow-set-window-position`\n- `allow-open-region-selector`\n- `allow-set-selected-region`\n- `allow-get-selected-region`\n- `allow-pick-screen-color`\n- `allow-pick-folder`\n- `allow-pick-file`\n- `allow-launch-app`\n- `allow-get-app-icon`\n- `allow-get-default-screenshots-folder`\n- `allow-list-os-screenshots`\n- `allow-read-screenshot-file`\n- `allow-read-screenshot-thumbnail`\n- `allow-open-screenshots-folder`\n- `allow-copy-screenshot-to-clipboard`\n- `allow-open-color-picker-overlay`\n- `allow-set-picked-color`\n- `allow-get-picked-color`\n- `allow-open-screenshot-preview`\n- `allow-get-screenshot-preview-path`\n- `allow-close-screenshot-preview`\n- `allow-create-dual-window`\n- `allow-close-dual-window`\n- `allow-show-notification-popup`\n- `allow-speech-status`\n- `allow-speech-setup`\n- `allow-speech-start`\n- `allow-speech-stop`\n- `allow-speech-cancel`\n- `allow-speech-devices`\n- `allow-speech-apply-settings`\n- `allow-speech-engine-start`\n- `allow-speech-engine-stop`\n- `allow-speech-engine-logs`\n- `allow-analyze-chart`\n- `allow-save-temp-image`\n- `allow-open-hud`\n- `allow-close-hud`",
           "type": "string",
           "const": "hud:default",
-          "markdownDescription": "Default permissions for the hud module.\n#### This default permission set includes:\n\n- `allow-capture-screen`\n- `allow-get-cursor-position`\n- `allow-get-available-monitors`\n- `allow-load-config`\n- `allow-save-config`\n- `allow-tuck-window`\n- `allow-show-window`\n- `allow-is-window-tucked`\n- `allow-setup-window-size`\n- `allow-set-window-position`\n- `allow-open-region-selector`\n- `allow-set-selected-region`\n- `allow-get-selected-region`\n- `allow-pick-screen-color`\n- `allow-pick-folder`\n- `allow-pick-file`\n- `allow-launch-app`\n- `allow-get-app-icon`\n- `allow-get-default-screenshots-folder`\n- `allow-list-os-screenshots`\n- `allow-read-screenshot-file`\n- `allow-read-screenshot-thumbnail`\n- `allow-open-screenshots-folder`\n- `allow-copy-screenshot-to-clipboard`\n- `allow-open-color-picker-overlay`\n- `allow-set-picked-color`\n- `allow-get-picked-color`\n- `allow-open-screenshot-preview`\n- `allow-get-screenshot-preview-path`\n- `allow-close-screenshot-preview`\n- `allow-create-dual-window`\n- `allow-close-dual-window`\n- `allow-show-notification-popup`\n- `allow-speech-status`\n- `allow-speech-setup`\n- `allow-speech-start`\n- `allow-speech-stop`\n- `allow-speech-cancel`\n- `allow-speech-devices`\n- `allow-speech-apply-settings`\n- `allow-speech-engine-start`\n- `allow-speech-engine-stop`\n- `allow-speech-engine-logs`\n- `allow-check-for-update`\n- `allow-download-and-install-update`\n- `allow-analyze-chart`\n- `allow-save-temp-image`\n- `allow-open-hud`\n- `allow-close-hud`"
+          "markdownDescription": "Default permissions for the hud module.\n#### This default permission set includes:\n\n- `allow-capture-screen`\n- `allow-get-cursor-position`\n- `allow-get-available-monitors`\n- `allow-load-config`\n- `allow-save-config`\n- `allow-tuck-window`\n- `allow-show-window`\n- `allow-is-window-tucked`\n- `allow-setup-window-size`\n- `allow-set-window-position`\n- `allow-open-region-selector`\n- `allow-set-selected-region`\n- `allow-get-selected-region`\n- `allow-pick-screen-color`\n- `allow-pick-folder`\n- `allow-pick-file`\n- `allow-launch-app`\n- `allow-get-app-icon`\n- `allow-get-default-screenshots-folder`\n- `allow-list-os-screenshots`\n- `allow-read-screenshot-file`\n- `allow-read-screenshot-thumbnail`\n- `allow-open-screenshots-folder`\n- `allow-copy-screenshot-to-clipboard`\n- `allow-open-color-picker-overlay`\n- `allow-set-picked-color`\n- `allow-get-picked-color`\n- `allow-open-screenshot-preview`\n- `allow-get-screenshot-preview-path`\n- `allow-close-screenshot-preview`\n- `allow-create-dual-window`\n- `allow-close-dual-window`\n- `allow-show-notification-popup`\n- `allow-speech-status`\n- `allow-speech-setup`\n- `allow-speech-start`\n- `allow-speech-stop`\n- `allow-speech-cancel`\n- `allow-speech-devices`\n- `allow-speech-apply-settings`\n- `allow-speech-engine-start`\n- `allow-speech-engine-stop`\n- `allow-speech-engine-logs`\n- `allow-analyze-chart`\n- `allow-save-temp-image`\n- `allow-open-hud`\n- `allow-close-hud`"
         },
         {
           "description": "Enables the analyze_chart command without any pre-configured scope.",
@@ -7813,12 +7801,6 @@
           "type": "string",
           "const": "hud:allow-capture-screen",
           "markdownDescription": "Enables the capture_screen command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the check_for_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "hud:allow-check-for-update",
-          "markdownDescription": "Enables the check_for_update command without any pre-configured scope."
         },
         {
           "description": "Enables the close_dual_window command without any pre-configured scope.",
@@ -7849,12 +7831,6 @@
           "type": "string",
           "const": "hud:allow-create-dual-window",
           "markdownDescription": "Enables the create_dual_window command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the download_and_install_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "hud:allow-download-and-install-update",
-          "markdownDescription": "Enables the download_and_install_update command without any pre-configured scope."
         },
         {
           "description": "Enables the get_app_icon command without any pre-configured scope.",
@@ -8121,12 +8097,6 @@
           "markdownDescription": "Denies the capture_screen command without any pre-configured scope."
         },
         {
-          "description": "Denies the check_for_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "hud:deny-check-for-update",
-          "markdownDescription": "Denies the check_for_update command without any pre-configured scope."
-        },
-        {
           "description": "Denies the close_dual_window command without any pre-configured scope.",
           "type": "string",
           "const": "hud:deny-close-dual-window",
@@ -8155,12 +8125,6 @@
           "type": "string",
           "const": "hud:deny-create-dual-window",
           "markdownDescription": "Denies the create_dual_window command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the download_and_install_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "hud:deny-download-and-install-update",
-          "markdownDescription": "Denies the download_and_install_update command without any pre-configured scope."
         },
         {
           "description": "Denies the get_app_icon command without any pre-configured scope.",
@@ -8415,10 +8379,10 @@
           "markdownDescription": "Denies the tuck_window command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`\n- `allow-check-for-update`\n- `allow-download-and-install-update`",
+          "description": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-get-tool-preferences`\n- `allow-set-tool-preference`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-review-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`",
           "type": "string",
           "const": "mcp:default",
-          "markdownDescription": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`\n- `allow-check-for-update`\n- `allow-download-and-install-update`"
+          "markdownDescription": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-get-tool-preferences`\n- `allow-set-tool-preference`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-review-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`"
         },
         {
           "description": "Enables the add_kanban_card command without any pre-configured scope.",
@@ -8461,12 +8425,6 @@
           "type": "string",
           "const": "mcp:allow-archive-kanban-card",
           "markdownDescription": "Enables the archive_kanban_card command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the check_for_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "mcp:allow-check-for-update",
-          "markdownDescription": "Enables the check_for_update command without any pre-configured scope."
         },
         {
           "description": "Enables the clear_logs command without any pre-configured scope.",
@@ -8515,12 +8473,6 @@
           "type": "string",
           "const": "mcp:allow-delete-tool",
           "markdownDescription": "Enables the delete_tool command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the download_and_install_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "mcp:allow-download-and-install-update",
-          "markdownDescription": "Enables the download_and_install_update command without any pre-configured scope."
         },
         {
           "description": "Enables the forget_client command without any pre-configured scope.",
@@ -8599,6 +8551,12 @@
           "type": "string",
           "const": "mcp:allow-get-script-path",
           "markdownDescription": "Enables the get_script_path command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_tool_preferences command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:allow-get-tool-preferences",
+          "markdownDescription": "Enables the get_tool_preferences command without any pre-configured scope."
         },
         {
           "description": "Enables the get_workspace_index_settings command without any pre-configured scope.",
@@ -8757,6 +8715,12 @@
           "markdownDescription": "Enables the reset_agent_md command without any pre-configured scope."
         },
         {
+          "description": "Enables the review_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:allow-review-kanban-card",
+          "markdownDescription": "Enables the review_kanban_card command without any pre-configured scope."
+        },
+        {
           "description": "Enables the scan_clients command without any pre-configured scope.",
           "type": "string",
           "const": "mcp:allow-scan-clients",
@@ -8785,6 +8749,12 @@
           "type": "string",
           "const": "mcp:allow-set-quantmcp-enabled",
           "markdownDescription": "Enables the set_quantmcp_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_tool_preference command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:allow-set-tool-preference",
+          "markdownDescription": "Enables the set_tool_preference command without any pre-configured scope."
         },
         {
           "description": "Enables the set_workspace_index_settings command without any pre-configured scope.",
@@ -8919,12 +8889,6 @@
           "markdownDescription": "Denies the archive_kanban_card command without any pre-configured scope."
         },
         {
-          "description": "Denies the check_for_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "mcp:deny-check-for-update",
-          "markdownDescription": "Denies the check_for_update command without any pre-configured scope."
-        },
-        {
           "description": "Denies the clear_logs command without any pre-configured scope.",
           "type": "string",
           "const": "mcp:deny-clear-logs",
@@ -8971,12 +8935,6 @@
           "type": "string",
           "const": "mcp:deny-delete-tool",
           "markdownDescription": "Denies the delete_tool command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the download_and_install_update command without any pre-configured scope.",
-          "type": "string",
-          "const": "mcp:deny-download-and-install-update",
-          "markdownDescription": "Denies the download_and_install_update command without any pre-configured scope."
         },
         {
           "description": "Denies the forget_client command without any pre-configured scope.",
@@ -9055,6 +9013,12 @@
           "type": "string",
           "const": "mcp:deny-get-script-path",
           "markdownDescription": "Denies the get_script_path command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_tool_preferences command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:deny-get-tool-preferences",
+          "markdownDescription": "Denies the get_tool_preferences command without any pre-configured scope."
         },
         {
           "description": "Denies the get_workspace_index_settings command without any pre-configured scope.",
@@ -9213,6 +9177,12 @@
           "markdownDescription": "Denies the reset_agent_md command without any pre-configured scope."
         },
         {
+          "description": "Denies the review_kanban_card command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:deny-review-kanban-card",
+          "markdownDescription": "Denies the review_kanban_card command without any pre-configured scope."
+        },
+        {
           "description": "Denies the scan_clients command without any pre-configured scope.",
           "type": "string",
           "const": "mcp:deny-scan-clients",
@@ -9241,6 +9211,12 @@
           "type": "string",
           "const": "mcp:deny-set-quantmcp-enabled",
           "markdownDescription": "Denies the set_quantmcp_enabled command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_tool_preference command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:deny-set-tool-preference",
+          "markdownDescription": "Denies the set_tool_preference command without any pre-configured scope."
         },
         {
           "description": "Denies the set_workspace_index_settings command without any pre-configured scope.",
@@ -10887,10 +10863,10 @@
           "markdownDescription": "Denies the window_toggle command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the QuantScript module: the indicator scripts, their checks and their versions.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`",
+          "description": "Default permissions for the QuantScript module: the indicator scripts, their checks and their versions.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`",
           "type": "string",
           "const": "script:default",
-          "markdownDescription": "Default permissions for the QuantScript module: the indicator scripts, their checks and their versions.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`"
+          "markdownDescription": "Default permissions for the QuantScript module: the indicator scripts, their checks and their versions.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`"
         },
         {
           "description": "Enables the check_script command without any pre-configured scope.",
@@ -10927,6 +10903,12 @@
           "type": "string",
           "const": "script:allow-list-versions",
           "markdownDescription": "Enables the list_versions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_scripts_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "script:allow-open-scripts-folder",
+          "markdownDescription": "Enables the open_scripts_folder command without any pre-configured scope."
         },
         {
           "description": "Enables the read_script command without any pre-configured scope.",
@@ -10993,6 +10975,12 @@
           "type": "string",
           "const": "script:deny-list-versions",
           "markdownDescription": "Denies the list_versions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_scripts_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "script:deny-open-scripts-folder",
+          "markdownDescription": "Denies the open_scripts_folder command without any pre-configured scope."
         },
         {
           "description": "Denies the read_script command without any pre-configured scope.",
@@ -11377,6 +11365,60 @@
           "type": "string",
           "const": "terminal:deny-get-tickers",
           "markdownDescription": "Denies the get_tickers command without any pre-configured scope."
+        },
+        {
+          "description": "This permission set configures which kind of\nupdater functions are exposed to the frontend.\n\n#### Granted Permissions\n\nThe full workflow from checking for updates to installing them\nis enabled.\n\n\n#### This default permission set includes:\n\n- `allow-check`\n- `allow-download`\n- `allow-install`\n- `allow-download-and-install`",
+          "type": "string",
+          "const": "updater:default",
+          "markdownDescription": "This permission set configures which kind of\nupdater functions are exposed to the frontend.\n\n#### Granted Permissions\n\nThe full workflow from checking for updates to installing them\nis enabled.\n\n\n#### This default permission set includes:\n\n- `allow-check`\n- `allow-download`\n- `allow-install`\n- `allow-download-and-install`"
+        },
+        {
+          "description": "Enables the check command without any pre-configured scope.",
+          "type": "string",
+          "const": "updater:allow-check",
+          "markdownDescription": "Enables the check command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the download command without any pre-configured scope.",
+          "type": "string",
+          "const": "updater:allow-download",
+          "markdownDescription": "Enables the download command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the download_and_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "updater:allow-download-and-install",
+          "markdownDescription": "Enables the download_and_install command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the install command without any pre-configured scope.",
+          "type": "string",
+          "const": "updater:allow-install",
+          "markdownDescription": "Enables the install command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the check command without any pre-configured scope.",
+          "type": "string",
+          "const": "updater:deny-check",
+          "markdownDescription": "Denies the check command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the download command without any pre-configured scope.",
+          "type": "string",
+          "const": "updater:deny-download",
+          "markdownDescription": "Denies the download command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the download_and_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "updater:deny-download-and-install",
+          "markdownDescription": "Denies the download_and_install command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the install command without any pre-configured scope.",
+          "type": "string",
+          "const": "updater:deny-install",
+          "markdownDescription": "Denies the install command without any pre-configured scope."
         }
       ]
     },
