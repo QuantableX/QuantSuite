@@ -429,10 +429,15 @@ def _marker(severity: str, line, column, message: str, end_line=None, end_column
 def _contract_hints(tree: ast.Module) -> list[dict]:
     """What the parser cannot see but the contract will: an indicator class
     without ``_compute`` or ``name``, a REGISTER that is not a dict of
-    registry keys."""
+    registry keys. A helper script (no REGISTER) holds base classes, not
+    indicators — its classes are not held to the indicator shape."""
     hints: list[dict] = []
+    registers = any(isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "REGISTER" for t in node.targets)
+                    for node in tree.body)
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
+            if not registers:
+                continue
             bases = [ast.unparse(b) for b in node.bases]
             if not any(b.split(".")[-1] in CONTRACT_BASES for b in bases):
                 continue
@@ -503,25 +508,28 @@ def _requires_hints(tree: ast.Module) -> list[dict]:
 
 def _schema_hints(tree: ast.Module) -> list[dict]:
     """One hint per indicator class whose defaults carry parameters without a
-    labelled param_schema entry — editors would fall back to the raw name."""
+    labelled param_schema entry — editors would fall back to the raw name.
+    Labels count for the whole script, so a subclass (a legacy key) that
+    inherits its base's schema in the same file is not flagged."""
+    labelled: set[str] = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "param_schema" for t in node.targets)
+                and isinstance(node.value, ast.Dict)):
+            for k, v in zip(node.value.keys, node.value.values):
+                if (isinstance(k, ast.Constant) and isinstance(v, ast.Dict)
+                        and any(isinstance(f, ast.Constant) and f.value == "label" for f in v.keys)):
+                    labelled.add(k.value)
     hints: list[dict] = []
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue
         defaults: list[str] = []
-        labelled: set[str] = set()
         for item in node.body:
             if isinstance(item, ast.FunctionDef) and item.name == "default_params":
                 for ret in (n for n in ast.walk(item) if isinstance(n, ast.Return)):
                     if isinstance(ret.value, ast.Dict):
                         defaults = [k.value for k in ret.value.keys
                                     if isinstance(k, ast.Constant) and isinstance(k.value, str)]
-            elif (isinstance(item, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "param_schema" for t in item.targets)
-                  and isinstance(item.value, ast.Dict)):
-                for k, v in zip(item.value.keys, item.value.values):
-                    if (isinstance(k, ast.Constant) and isinstance(v, ast.Dict)
-                            and any(isinstance(f, ast.Constant) and f.value == "label" for f in v.keys)):
-                        labelled.add(k.value)
         missing = [name for name in defaults if name not in labelled]
         if missing:
             hints.append(_marker("warning", node.lineno, node.col_offset + 1,

@@ -44,10 +44,13 @@ class ListingTests(unittest.TestCase):
         self.assertIn("horizon", row["params"])
         self.assertIn("certification", row)
         self.assertEqual(extremes["registered"], 1)
-        # A multi-class pack lists one row per registered key.
-        pack = files["trend_pack.py"]
-        self.assertGreater(pack["registered"], 5)
-        self.assertIn("CheckedTrend", [c["class_name"] for c in pack["classes"] if c["key"] is None])
+        # A script with legacy keys lists one row per registered key.
+        multi = files["ensemble.py"]
+        self.assertEqual(multi["registered"], 3)
+        # A helper script lists its base class without a key and registers nothing.
+        helper = files["trend_common.py"]
+        self.assertEqual(helper["registered"], 0)
+        self.assertIn("CheckedTrend", [c["class_name"] for c in helper["classes"] if c["key"] is None])
         # The contract is shown read-only next to the scripts.
         self.assertEqual([r["file"] for r in doc["reference"]], ["contract.py"])
         self.assertFalse(doc["reference"][0]["editable"])
@@ -80,7 +83,11 @@ class CheckTests(unittest.TestCase):
         self.assertFalse(doc["blocking"])
         self.assertTrue(doc["ok"], doc)
         self.assertNotEqual(Path(doc["sandbox"]).resolve(), quantscript.PACKAGE_DIR.resolve())
-        self.assertEqual(doc["registry_keys"], len(REGISTRY))
+        # Version files of the edited script (and of the scripts that require
+        # it) do not follow its new code into the sandbox; every other key does.
+        stale = [k for k in doc["discovery_errors"] if k.startswith("versions/")]
+        self.assertEqual(doc["registry_keys"], len(REGISTRY) - len(stale))
+        self.assertTrue(all("re-forge" in doc["discovery_errors"][k] for k in stale))
         rows = {r["key"]: r for r in doc["indicators"]}
         self.assertEqual(list(rows), ["extremes"])
         self.assertEqual(rows["extremes"]["class_name"], "ExtremeFlow")
