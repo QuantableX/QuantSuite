@@ -9,6 +9,7 @@ import { useBacktestStore } from '#systems/stores/backtest'
 import { useLiveStore } from '#systems/stores/live'
 import { strategyIcon } from '#systems/utils/strategyIcons'
 import SystemsSettingsSymbolSelect from '#systems/components/Settings/SymbolSelect.vue'
+import type { SystemMode } from '#systems/types'
 
 const route = useRoute()
 const app = useAppStore()
@@ -21,6 +22,7 @@ const live = useLiveStore()
 
 const systemId = computed(() => route.params.id as string)
 const system = computed(() => systems.byId(systemId.value))
+const cfg = computed(() => config.get(systemId.value))
 const planned = computed(() => system.value?.status !== 'ready')
 
 const saving = ref(false)
@@ -125,6 +127,10 @@ async function toggleEngine() {
       <label class="qs-settings__name"><span class="label">Name</span><input v-model="name" class="input" :disabled="saving || deleting" required /></label>
       <label><span class="label">Short label (optional)</span><input v-model="short" class="input" :disabled="saving || deleting" /></label>
       <SystemsSettingsSymbolSelect v-model="icon" :disabled="saving || deleting" />
+      <label><span class="label">System mode</span><select class="select" :value="cfg.mode" :disabled="saving || deleting || evaluating"
+        @change="config.update(systemId, { mode: ($event.target as HTMLSelectElement).value as SystemMode })">
+        <option value="rotation">Evaluation Rotation System</option><option value="single_asset">Single Asset</option>
+      </select></label>
       <label class="qs-settings__description"><span class="label">Description</span><input v-model="description" class="input" :disabled="saving || deleting" /></label>
       <div class="qs-settings__manage">
         <button class="btn" :disabled="saving || deleting" @click="router.push({ path: '/algo/manual/new', query: { copy: systemId } })">Duplicate</button>
@@ -139,7 +145,7 @@ async function toggleEngine() {
     </section>
 
     <nav class="qs-settings__tabs" aria-label="Settings sections">
-      <button type="button" :aria-pressed="panel === 'configuration'" @click="panel = 'configuration'">Universe &amp; costs</button>
+      <button type="button" :aria-pressed="panel === 'configuration'" @click="panel = 'configuration'">{{ cfg.mode === 'single_asset' ? 'Market & costs' : 'Universe & costs' }}</button>
       <button type="button" :aria-pressed="panel === 'signals'" @click="panel = 'signals'">Signals</button>
       <button type="button" :aria-pressed="panel === 'data'" @click="panel = 'data'">Data &amp; cache</button>
     </nav>
@@ -147,7 +153,7 @@ async function toggleEngine() {
     <div class="qs-settings__grid">
       <SystemsSettingsRunConfigForm class="qs-settings__form" :system-id="systemId" />
       <div class="qs-settings__side">
-        <SystemsSettingsProviderStatus class="qs-settings__side-card" />
+        <SystemsSettingsProviderStatus v-if="cfg.mode !== 'single_asset'" class="qs-settings__side-card" />
         <SystemsSettingsCacheStatsPanel class="qs-settings__side-card" />
       </div>
     </div>
@@ -165,9 +171,9 @@ async function toggleEngine() {
 
 .qs-settings__tabs { display: none; }
 
-.qs-settings__identity { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 160px; gap: 12px; padding: 16px; }
+.qs-settings__identity { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 140px minmax(190px, 1fr); gap: 12px; padding: 16px; }
 .qs-settings__identity label { min-width: 0; }
-.qs-settings__description { grid-column: 1 / 3; }
+.qs-settings__description { grid-column: 1 / 4; }
 .qs-settings__manage { display: flex; gap: 8px; align-items: flex-end; justify-content: flex-end; }
 .qs-settings__confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--qs-error); font-size: 13px; }
 .qs-settings__confirm span { flex: 1; }
@@ -261,6 +267,8 @@ async function toggleEngine() {
 }
 
 @container manual-settings (max-width: 950px) {
+  .qs-settings__identity { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qs-settings__description { grid-column: 1; }
   .qs-settings__tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--qs-border-subtle); }
   .qs-settings__tabs button {
     padding: 6px 10px;

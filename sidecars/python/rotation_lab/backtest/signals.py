@@ -189,11 +189,18 @@ def trend_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:
     if df.empty or "close" not in df.columns:
         return pd.Series(dtype=int)
 
+    return (direction_signal(df, cfg) > 0).astype(int)
+
+
+def direction_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:
+    """Signed verdict for a single market; preserve neutral warm-up as cash."""
+    if df.empty:
+        return pd.Series(dtype=int)
     if cfg.trend == "aggregate":
-        return (aggregate_signal(df, cfg) > 0).astype(int)
+        return aggregate_signal(df, cfg)
     if cfg.trend != "ema_cross":
-        return (_smithery(df, cfg.trend, cfg) > 0).astype(int)
-    return _ema_cross(df, cfg)
+        return _smithery(df, cfg.trend, cfg)
+    return _ema_cross(df, cfg) * 2 - 1
 
 
 def pair_signal(

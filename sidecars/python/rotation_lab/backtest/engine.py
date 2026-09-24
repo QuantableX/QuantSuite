@@ -43,9 +43,10 @@ from ..config import IndicatorConfig, RunConfig, TotalBreakoutConfig, TrendKind
 from ..data.cache import get_default_cache
 from ..data.ohlcv import CoinRef, OhlcvFetcher, confirmed_frame, utc_now
 from ..data.ranking.registry import RankingRegistry
+from ..data.ranking.base import RankedCoin
 from .market import market_gate, market_index
 from .metrics import PerformanceMetrics, compute_metrics
-from .signals import (IndicatorDataUnavailable, aggregate_members, is_custom, pair_signal, trend_signal,
+from .signals import (IndicatorDataUnavailable, aggregate_members, direction_signal, is_custom, pair_signal, trend_signal,
                       warmup_bars)
 
 
@@ -228,6 +229,8 @@ class BacktestEngine:
         *,
         progress: Callable[[str, float], None] | None = None,
     ) -> BacktestResult:
+        if config.mode == "single_asset":
+            return self._run_single_asset(config, progress=progress)
         notes: list[str] = []
         # Freeze the valuation cutoff before fetching, and apply it before
         # computing signals, TOTAL, comparisons or buy-and-hold curves.
@@ -429,6 +432,75 @@ class BacktestEngine:
         )
 
     # ------------------------------------------------------------------ #
+
+    def _run_single_asset(self, config: RunConfig, *, progress=None) -> BacktestResult:
+        config = replace(config, cadence=config.bar_cadence)
+        market = config.single_asset
+        base, quote = market.pair.split("/")
+        as_of = utc_now()
+        kinds = _trend_kinds(config)
+        start = min(_fetch_start(config, kind) for kind in kinds)
+        if progress:
+            progress(f"Fetching {market.pair} on {market.exchange}", 0.10)
+        data = self.ohlcv.get_pair_series(market.exchange, market.pair, start, config.end_date, market.timeframe)
+        frame = confirmed_frame(data.frame, market.timeframe, as_of)
+        if frame.empty:
+            raise ValueError(f"No confirmed {market.timeframe} candles for {market.pair} on {market.exchange}")
+        if ((frame[["open", "close"]] <= 0) | ~np.isfinite(frame[["open", "close"]])).any().any():
+            raise ValueError("Single Asset candles contain invalid open/close prices")
+        index = frame.index[(frame.index >= pd.Timestamp(config.start_date)) &
+                            (frame.index < pd.Timestamp(config.end_date + dt.timedelta(days=1)))]
+        if index.empty:
+            raise ValueError("No confirmed candles in the selected backtest window")
+        coin = RankedCoin(1, None, base, market.pair, None, float(frame["close"].iloc[-1]))
+        universe = UniverseTimeline([UniverseSnapshot(config.start_date, market.exchange, [coin])])
+        notes = [f"Single Asset: {market.pair} on {market.exchange}; returns in {quote}.",
+                 "Only confirmed candle closes; signals execute at the next candle open."]
+        if market.direction == "long_short":
+            notes.append("Long/Short uses 1× bar exposure; funding and borrowing costs are not included.")
+        runs = []
+        skipped = []
+        returns = _bar_returns(frame, index)
+        for i, kind in enumerate(kinds):
+            variant = _variant_config(config, kind)
+            label = _trend_label(variant.indicator)
+            if progress:
+                progress(f"Evaluating {label}", 0.4 + 0.5 * i / len(kinds))
+            history = frame.loc[frame.index >= pd.Timestamp(_fetch_start(config, kind))]
+            try:
+                signal = direction_signal(history, variant.indicator)
+            except IndicatorDataUnavailable as exc:
+                skipped.append({"key": kind, "label": label, "reason": str(exc)})
+                continue
+            positions = signal.shift(1).reindex(index).fillna(0).clip(-1, 1).astype(int)
+            if market.direction == "long_cash":
+                positions = positions.clip(lower=0)
+            equity, previous = 1.0, 0
+            values, holdings = [], []
+            cost = (1 - config.fee_rate) * (1 - config.slippage_rate)
+            for position, bar_return in zip(positions, returns):
+                if equity <= 0:
+                    position = 0
+                equity *= cost ** abs(position - previous)
+                equity *= max(0.0, 1 + position * bar_return)
+                values.append(equity)
+                holdings.append(base if position == 1 else f"Short {base}" if position == -1 else quote)
+                previous = position
+            curve = pd.Series(values, index=index, name="equity")
+            runs.append(StrategyRun(kind, label, curve, pd.Series(holdings, index=index, name="held"),
+                                    compute_metrics(curve, config.cadence.bars_per_year)))
+        empty = StrategyRun(config.indicator.trend, _trend_label(config.indicator),
+                            pd.Series(dtype=float), pd.Series(dtype=object))
+        primary = next((run for run in runs if run.key == config.indicator.trend), empty)
+        close = frame.loc[index, "close"]
+        bah = close / close.iloc[0]
+        if progress:
+            progress("Done", 1.0)
+        return BacktestResult(config=config, universe=universe,
+            equity_strategy=primary.equity_strategy, held_asset=primary.held_asset,
+            metrics_strategy=primary.metrics_strategy, strategies=runs, skipped_strategies=skipped,
+            buy_and_hold={market.pair: bah},
+            metrics_buy_and_hold={market.pair: compute_metrics(bah, config.cadence.bars_per_year)}, notes=notes)
 
     def _btc_ema_benchmarks(
         self,

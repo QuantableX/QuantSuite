@@ -7,6 +7,7 @@ import { useBacktestStore } from '#systems/stores/backtest'
 import { useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
 import SystemsSettingsMarketFilterSelect from '#systems/components/Settings/MarketFilterSelect.vue'
 import type { MarketIndicatorConfig, TrendKind } from '#systems/types'
+import { matchesMarket } from '#systems/utils/systemMode'
 
 const route = useRoute()
 const systems = useSystemsStore()
@@ -18,6 +19,7 @@ const system = computed(() => systems.byId(systemId.value))
 const planned = computed(() => system.value?.status !== 'ready')
 const state = computed(() => backtest.stateFor(systemId.value))
 const cfg = computed(() => config.get(systemId.value))
+const result = computed(() => state.value.result && matchesMarket(state.value.result, cfg.value) ? state.value.result : null)
 const { options: memberOptions, trendOptions, compareOptions } = useIndicatorOptions(() => cfg.value)
 const trend = computed(() => cfg.value.indicator.trend ?? 'ema_cross')
 const optionsOpen = ref(false)
@@ -113,6 +115,7 @@ function run() {
               @update:model-value="setCompare"
             />
             <label
+              v-if="cfg.mode !== 'single_asset'"
               class="qs-check qs-backtest__filter"
               title="Positions only while the selected TOTAL market signal is bullish, otherwise USD."
             >
@@ -124,7 +127,7 @@ function run() {
               />
               <span>TOTAL filter</span>
             </label>
-            <SystemsSettingsMarketFilterSelect class="qs-backtest__market" compact
+            <SystemsSettingsMarketFilterSelect v-if="cfg.mode !== 'single_asset'" class="qs-backtest__market" compact
               :config="cfg" :disabled="state.isRunning || !cfg.marketFilter" @update:model-value="setMarketIndicator" />
           </div>
         </div>
@@ -149,22 +152,22 @@ function run() {
 
     <div v-if="state.error" class="qs-backtest__error">{{ state.error }}</div>
 
-    <template v-if="state.result">
-      <div v-if="!state.isRunning && state.result.skippedStrategies?.length" class="qs-backtest__notice" role="status">
-        <strong>{{ state.result.skippedStrategies.length }} variant(s) skipped — unavailable indicator data</strong>
+    <template v-if="result">
+      <div v-if="!state.isRunning && result.skippedStrategies?.length" class="qs-backtest__notice" role="status">
+        <strong>{{ result.skippedStrategies.length }} variant(s) skipped — unavailable indicator data</strong>
         <ul>
-          <li v-for="skipped in state.result.skippedStrategies" :key="skipped.key">
+          <li v-for="skipped in result.skippedStrategies" :key="skipped.key">
             <strong>{{ skipped.label }}</strong>: {{ skipped.reason }}
           </li>
         </ul>
       </div>
-      <p v-if="state.result.strategies?.length === 0" class="qs-backtest__notice">
+      <p v-if="result.strategies?.length === 0" class="qs-backtest__notice">
         No strategy could be evaluated. Choose an indicator compatible with the available data.
       </p>
-      <SystemsBacktestEquityChart v-else :result="state.result" class="qs-backtest__chart" />
-      <div v-if="state.result.strategies?.length !== 0" class="qs-backtest__grid">
-        <SystemsBacktestMetricsTable :result="state.result" />
-        <SystemsBacktestForcedRotations :result="state.result" />
+      <SystemsBacktestEquityChart v-else :result="result" class="qs-backtest__chart" />
+      <div v-if="result.strategies?.length !== 0" class="qs-backtest__grid">
+        <SystemsBacktestMetricsTable :result="result" />
+        <SystemsBacktestForcedRotations :result="result" />
       </div>
     </template>
 

@@ -15,6 +15,7 @@ Default permissions for the QuantSystems module: settings, system configs, the e
 - `allow-stop-engine`
 - `allow-engine-status`
 - `allow-live-eval`
+- `allow-pair-markets`
 - `allow-run-backtest`
 - `allow-browse-universe`
 - `allow-cache-stats`
@@ -286,6 +287,32 @@ Enables the live_eval command without any pre-configured scope.
 <td>
 
 Denies the live_eval command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:allow-pair-markets`
+
+</td>
+<td>
+
+Enables the pair_markets command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:deny-pair-markets`
+
+</td>
+<td>
+
+Denies the pair_markets command without any pre-configured scope.
 
 </td>
 </tr>

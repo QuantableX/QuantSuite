@@ -103,7 +103,13 @@ def cagr(equity: pd.Series, periods_per_year: float = _DEFAULT_PERIODS_PER_YEAR)
         years = (equity.size - 1) / max(periods_per_year, 1.0)
     if years <= 0 or start <= 0 or end <= 0:
         return float("nan")
-    return (end / start) ** (1.0 / years) - 1.0
+    # A short intraday window can annualise beyond floating-point range.
+    # Keep the backtest usable and mark only this metric unavailable.
+    try:
+        value = (end / start) ** (1.0 / years) - 1.0
+    except OverflowError:
+        return float("nan")
+    return value if math.isfinite(value) else float("nan")
 
 
 def compute_metrics(

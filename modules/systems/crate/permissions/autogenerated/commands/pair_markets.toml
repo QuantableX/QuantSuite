@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pair-markets"
+description = "Enables the pair_markets command without any pre-configured scope."
+commands.allow = ["pair_markets"]
+
+[[permission]]
+identifier = "deny-pair-markets"
+description = "Denies the pair_markets command without any pre-configured scope."
+commands.deny = ["pair_markets"]

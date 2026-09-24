@@ -32,6 +32,12 @@ class CagrTest(unittest.TestCase):
         self.assertTrue(math.isnan(cagr(pd.Series([1.0]))))
         self.assertTrue(math.isnan(cagr(pd.Series([1.0, 0.0]))))
 
+    def test_intraday_annualisation_overflow_does_not_break_other_metrics(self):
+        equity = pd.Series([1.0, 2.0], index=pd.date_range("2026-09-23", periods=2, freq="h"))
+        metrics = compute_metrics(equity, periods_per_year=365 * 24)
+        self.assertTrue(math.isnan(metrics.cagr_pct))
+        self.assertEqual(metrics.net_return_multiplier, 2.0)
+
 
 if __name__ == "__main__":
     unittest.main()

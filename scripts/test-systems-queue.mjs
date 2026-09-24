@@ -21,6 +21,7 @@ const { useSystemsStore } = await import('../modules/systems/app/stores/systems.
 const { useConfigStore } = await import('../modules/systems/app/stores/config.ts')
 const { findIndicatorOption, indicatorOptionRows, sortByOptions } = await import('../modules/systems/app/utils/indicatorOptions.ts')
 const { strategyIcon } = await import('../modules/systems/app/utils/strategyIcons.ts')
+const { matchesMarket, effectiveCadence } = await import('../modules/systems/app/utils/systemMode.ts')
 
 function deferred() {
   let resolve, reject
@@ -119,6 +120,80 @@ function setup(t, invoke) {
   t.after(clearMocks)
   return { live: useLiveStore(), backtest: useBacktestStore() }
 }
+
+test('legacy rotation defaults and single-asset copies survive load, save and switching modes', async t => {
+  const saved = { legacy: { topN: 17, cadence: 'weekly' } }
+  setup(t, (command, args) => {
+    if (command.endsWith('|get_system_config')) return structuredClone(saved[args.systemId])
+    if (command.endsWith('|save_system_config')) {
+      saved[args.systemId] = JSON.parse(JSON.stringify(args.config))
+      return JSON.parse(JSON.stringify(args.config))
+    }
+  })
+  const config = useConfigStore()
+  await config.load('legacy')
+  assert.equal(config.get('legacy').mode, 'rotation')
+  const market = { exchange: 'kraken', pair: 'ETH/BTC', timeframe: '4h', direction: 'long_short' }
+  config.update('legacy', { mode: 'single_asset', singleAsset: market })
+  assert.equal(effectiveCadence(config.get('legacy')), '4h')
+  assert.equal(await config.save('legacy'), true)
+  config.forget('legacy')
+  await config.load('legacy')
+  assert.deepEqual(config.get('legacy').singleAsset, market)
+  config.remember('copy', structuredClone(saved.legacy))
+  config.update('copy', { singleAsset: { ...market, direction: 'long_cash' } })
+  assert.equal(config.get('legacy').singleAsset.direction, 'long_short')
+  config.update('legacy', { mode: 'rotation' })
+  assert.equal(config.get('legacy').topN, 17)
+  assert.equal(effectiveCadence(config.get('legacy')), 'weekly')
+  assert.deepEqual(config.get('legacy').singleAsset, market)
+})
+
+test('results from another mode, venue, pair, timeframe or direction stay hidden', t => {
+  setup(t, () => ({}))
+  const config = useConfigStore()
+  const market = { exchange: 'coinbase', pair: 'BTC/USD', timeframe: '1d', direction: 'long_cash' }
+  assert.equal(matchesMarket({}, config.get('custom')), true)
+  config.update('custom', { mode: 'single_asset', singleAsset: market })
+  const cfg = config.get('custom')
+  assert.equal(matchesMarket({}, cfg), false)
+  assert.equal(matchesMarket({ mode: 'single_asset', singleAsset: market }, cfg), true)
+  for (const patch of [{ exchange: 'kraken' }, { pair: 'BTC/USDT' }, { timeframe: '4h' }, { direction: 'long_short' }]) {
+    assert.equal(matchesMarket({ mode: 'single_asset', singleAsset: { ...market, ...patch } }, cfg), false)
+  }
+})
+
+test('single-asset requests restart an outdated engine once and reject silent rotation results', async t => {
+  const calls = []
+  const { live, backtest } = setup(t, command => {
+    calls.push(command)
+    return command.endsWith('|engine_status') ? { status: 'running' } : result
+  })
+  useConfigStore().update('single', { mode: 'single_asset' })
+  await live.refresh('single')
+  await backtest.run('single')
+  assert.equal(calls.filter(c => c.endsWith('|live_eval')).length, 2)
+  assert.equal(calls.filter(c => c.endsWith('|run_backtest')).length, 2)
+  assert.equal(calls.filter(c => c.endsWith('|start_engine')).length, 2)
+  for (const state of [live.stateFor('single'), backtest.stateFor('single')]) {
+    assert.match(state.error, /does not support this system mode/)
+    assert.equal(state.result, null)
+  }
+})
+
+test('a restarted engine returns the requested single-asset market and direction', async t => {
+  let runs = 0
+  const market = { exchange: 'kraken', pair: 'BTC/USD', timeframe: '4h', direction: 'long_short' }
+  const { backtest } = setup(t, command => {
+    if (command.endsWith('|run_backtest')) return ++runs === 1 ? result : { ...result, mode: 'single_asset', singleAsset: market }
+    return { status: 'running' }
+  })
+  useConfigStore().update('single', { mode: 'single_asset', singleAsset: market })
+  await backtest.run('single')
+  assert.equal(runs, 2)
+  assert.equal(backtest.stateFor('single').error, null)
+  assert.deepEqual(backtest.stateFor('single').result.singleAsset, market)
+})
 
 test('a backtest waiting for live is queued and cannot claim live progress', async t => {
   const liveJob = deferred()

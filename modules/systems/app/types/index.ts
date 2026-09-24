@@ -22,6 +22,17 @@ export interface AppSettings {
 export type Cadence = '1h' | '4h' | '12h' | 'daily' | 'weekly' | 'monthly'
 export type RankingSource = 'cmc' | 'local' | 'auto'
 export type PriceSource = 'open' | 'high' | 'low' | 'close' | 'hl2' | 'hlc3' | 'ohlc4'
+export type SystemMode = 'rotation' | 'single_asset'
+export interface SingleAssetConfig {
+  exchange: string
+  pair: string
+  timeframe: '1h' | '4h' | '1d'
+  direction: 'long_cash' | 'long_short'
+}
+export interface MarketContext {
+  mode?: SystemMode
+  singleAsset?: SingleAssetConfig | null
+}
 
 export interface EmaCrossConfig {
   src: PriceSource
@@ -119,6 +130,8 @@ export interface IndicatorVersionOption {
 }
 
 export interface RunConfig {
+  mode: SystemMode
+  singleAsset: SingleAssetConfig
   topN: number
   excludeTopN: number
   cadence: Cadence
@@ -158,7 +171,8 @@ export interface RankedCoin {
   hasData?: boolean
 }
 
-export interface LiveResult {
+export interface LiveResult extends MarketContext {
+  singleAssetSignal?: { signal: 'bullish' | 'bearish' | 'neutral'; position: 'long' | 'short' | 'cash'; close: number; closedAt: string }
   asOf: string
   provider: string
   universe: RankedCoin[]
@@ -203,7 +217,7 @@ export interface StrategyRun {
   forcedRotations: string[]
 }
 
-export interface BacktestResult {
+export interface BacktestResult extends MarketContext {
   /** Successful runs in requested order. An empty array means all skipped.
    *  Absent only on legacy engines; scalar fields represent the configured
    *  primary and remain empty when it could not be evaluated. */

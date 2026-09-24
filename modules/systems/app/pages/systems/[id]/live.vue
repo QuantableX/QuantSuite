@@ -4,6 +4,8 @@ definePageMeta({ layout: 'systems', path: '/algo/manual/:id/live' })
 import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
 import { useLiveStore } from '#systems/stores/live'
+import { matchesMarket } from '#systems/utils/systemMode'
+import SystemsLiveSingleAsset from '#systems/components/Live/SingleAsset.vue'
 
 const route = useRoute()
 const systems = useSystemsStore()
@@ -14,6 +16,8 @@ const systemId = computed(() => route.params.id as string)
 const system = computed(() => systems.byId(systemId.value))
 const planned = computed(() => system.value?.status !== 'ready')
 const state = computed(() => live.stateFor(systemId.value))
+const cfg = computed(() => config.get(systemId.value))
+const result = computed(() => state.value.result && matchesMarket(state.value.result, cfg.value) ? state.value.result : null)
 
 onMounted(() => config.load(systemId.value))
 
@@ -43,22 +47,22 @@ function run() {
         </div>
         <span class="qs-live__progress-lbl" :title="state.progressLabel || 'Working…'" role="status">{{ state.progressLabel || 'Working…' }}</span>
       </div>
-      <div v-else-if="state.result" class="qs-live__meta mono"
-        :title="`${state.result.asOf} · ${state.result.provider} · ${state.result.universe.length} assets`">
-        {{ state.result.asOf }} · {{ state.result.provider }} · {{ state.result.universe.length }} assets
+      <div v-else-if="result" class="qs-live__meta mono">
+        {{ result.asOf }} · {{ result.provider }} · {{ result.mode === 'single_asset' ? result.singleAsset?.pair : `${result.universe.length} assets` }}
       </div>
     </div>
 
     <div v-if="state.error" class="qs-live__error">{{ state.error }}</div>
 
-    <div v-if="state.result" class="qs-live__grid">
-      <SystemsLiveRanking :result="state.result" />
-      <SystemsLiveScoreMatrix :result="state.result" />
+    <SystemsLiveSingleAsset v-if="result?.mode === 'single_asset'" :result="result" />
+    <div v-else-if="result" class="qs-live__grid">
+      <SystemsLiveRanking :result="result" />
+      <SystemsLiveScoreMatrix :result="result" />
     </div>
 
     <div v-else-if="!state.loading" class="qs-empty">
       <span class="qs-empty__mark">◈</span>
-      <p>No evaluation yet. Run an evaluation to score today's coins.</p>
+      <p>{{ cfg.mode === 'single_asset' ? 'Run an evaluation for the selected pair’s confirmed signal.' : 'No evaluation yet. Run an evaluation to score today’s coins.' }}</p>
     </div>
   </div>
 </template>

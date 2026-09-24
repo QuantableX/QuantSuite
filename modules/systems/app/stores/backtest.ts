@@ -3,6 +3,7 @@ import { useEngine, runExclusive } from '#systems/composables/useEngine'
 import { useAppStore } from '#systems/stores/app'
 import { useConfigStore } from '#systems/stores/config'
 import type { BacktestResult, RunConfig, StrategyRun } from '#systems/types'
+import { matchesMarket } from '#systems/utils/systemMode'
 
 /** The engine's own wording when a run names a trend kind its process has
  *  not loaded — it predates the indicator (the Python sidecar stays alive
@@ -65,13 +66,15 @@ export const useBacktestStore = defineStore('systems/backtest', () => {
   async function runBacktestFresh(systemId: string, cfg: RunConfig): Promise<BacktestResult> {
     try {
       const raw = await engine.runBacktest(systemId, cfg)
-      if (!cfg.compareTrends.length || raw.strategies) return raw
+      if (matchesMarket(raw, cfg) && (!cfg.compareTrends.length || raw.strategies)) return raw
     } catch (e) {
       if (!STALE_ENGINE.test(String(e))) throw e
     }
     await restartEngine()
     setProgress('Starting backtest', 0.03)
-    return engine.runBacktest(systemId, cfg)
+    const result = await engine.runBacktest(systemId, cfg)
+    if (!matchesMarket(result, cfg)) throw new Error('The engine does not support this system mode. Update QuantSuite and restart the engine.')
+    return result
   }
 
   // Per-system backtest state, so each system keeps its own result.

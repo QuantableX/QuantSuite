@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
+import re
 
 
 class Cadence(str, Enum):
@@ -184,6 +185,27 @@ class TotalBreakoutConfig:
 
 
 @dataclass(frozen=True)
+class SingleAssetConfig:
+    exchange: str = "coinbase"
+    pair: str = "BTC/USD"
+    timeframe: str = "1d"
+    direction: str = "long_cash"
+
+    def __post_init__(self):
+        if not re.fullmatch(r"[a-z0-9]+", self.exchange):
+            raise ValueError("Choose a supported exchange")
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9._-]*/[A-Z0-9][A-Z0-9._-]*", self.pair):
+            raise ValueError("Choose a spot pair such as BTC/USD")
+        base, quote = self.pair.split("/")
+        if base == quote:
+            raise ValueError("Pair base and quote must differ")
+        if self.timeframe not in ("1h", "4h", "1d"):
+            raise ValueError("Single Asset supports 1h, 4h or 1d candles")
+        if self.direction not in ("long_cash", "long_short"):
+            raise ValueError("Choose Long/Cash or Long/Short")
+
+
+@dataclass(frozen=True)
 class RunConfig:
     """Top-level configuration for a single backtest or live evaluation."""
 
@@ -221,6 +243,18 @@ class RunConfig:
     slippage_rate: float = 0.0
     # Polite request throttling (seconds between calls to a given host).
     min_request_interval: float = 1.2
+    mode: str = "rotation"
+    single_asset: SingleAssetConfig = field(default_factory=SingleAssetConfig)
+
+    def __post_init__(self):
+        if self.mode not in ("rotation", "single_asset"):
+            raise ValueError(f"Unknown manual system mode: {self.mode}")
+
+    @property
+    def bar_cadence(self) -> Cadence:
+        if self.mode == "single_asset":
+            return Cadence("daily" if self.single_asset.timeframe == "1d" else self.single_asset.timeframe)
+        return self.cadence
 
 
 def default_cache_path() -> Path:

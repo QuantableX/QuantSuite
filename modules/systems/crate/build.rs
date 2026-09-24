@@ -10,6 +10,7 @@ const COMMANDS: &[&str] = &[
     "stop_engine",
     "engine_status",
     "live_eval",
+    "pair_markets",
     "run_backtest",
     "browse_universe",
     "cache_stats",
