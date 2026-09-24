@@ -208,15 +208,6 @@ an isolated checkout on its own branch: a claimed repository card has one, and
 - A worktree is ready to build: the main checkout's `node_modules` / `.venv`
   are linked in. Do not run installs there.
 
-### Temporary AI artifacts
-
-Keep QA screenshots, scratch scripts, review exports and logs outside project
-folders. `get_instructions` and worktree replies give the internal workspace
-artifact directory; create a task subfolder there. Do not create a repository-root
-`.output/qa` or put these files into source control. Build outputs required by the
-project still use their configured locations. Preserve existing artifacts when
-relocating them; verify the copy before removing the source.
-
 ## 6. Memory — QuantMemory (`quantsuite.memory.*`)
 
 The vault is the durable, cross-session brain shared by every agent and the
@@ -351,3 +342,9 @@ rare case the user wants a command run inside the suite.
 | Remember and recall | `quantsuite.memory.create`, `.append`, `.search`, `.read` |
 | Understand the codebase | `quantsuite.memory.base_read`, `.base_describe`, `.base_list`, `.base_sync` |
 | Rules | `get_agent_instructions`, `update_agent_instructions` |
+
+## Workspace storage and temporary AI artifacts
+
+Keep workspace folders free of AI scratch output. Store QA screenshots, temporary scripts, review exports and logs in a task subfolder of the internal artifact directory returned by `get_instructions` or the worktree tools. The default release location is `~/.quantsuite/workspaces/<workspace-id-tail>/artifacts/`; debug builds use `~/.quantsuite-dev/`, and `QUANTSUITE_HOME` overrides the suite home. The workspace id tail is the part after `core:workspace:` in the registry. Do not create a repository-root `.output/qa` for these artifacts. Project-required build outputs retain their configured paths.
+
+QuantCode and QuantCanvas workspace metadata belongs in QuantSuite's private per-workspace storage. Preserve existing data when migrating: verify copies, retain conflicts and unknown files, and never overwrite newer internal data. Completed and merged worktrees should be cleaned up automatically; retain active or unmerged work and report any blocked cleanup.
