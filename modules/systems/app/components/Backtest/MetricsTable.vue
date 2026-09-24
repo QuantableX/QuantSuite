@@ -21,6 +21,7 @@ const rows: {
   { key: 'omega', label: 'Omega', fmt: 'ratio' },
   { key: 'meanAllPct', label: 'Mean Return', fmt: 'pct', tone: 'sign' },
   { key: 'stddevAllPct', label: 'Volatility', fmt: 'pct' },
+  { key: 'cagrPct', label: 'CAGR', fmt: 'pct', tone: 'sign' },
 ]
 
 interface Column {
