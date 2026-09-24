@@ -6,6 +6,8 @@ permissions = [
   "allow-get-app-settings",
   "allow-update-app-settings",
   "allow-list-systems",
+  "allow-create-system",
+  "allow-delete-system",
   "allow-get-system-config",
   "allow-save-system-config",
   "allow-start-engine",

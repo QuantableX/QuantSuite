@@ -2,6 +2,8 @@ const COMMANDS: &[&str] = &[
     "get_app_settings",
     "update_app_settings",
     "list_systems",
+    "create_system",
+    "delete_system",
     "get_system_config",
     "save_system_config",
     "start_engine",

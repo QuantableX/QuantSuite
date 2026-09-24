@@ -5,12 +5,17 @@ import { useAppStore } from '#systems/stores/app'
 import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
 import { useEngine } from '#systems/composables/useEngine'
+import { useBacktestStore } from '#systems/stores/backtest'
+import { useLiveStore } from '#systems/stores/live'
 
 const route = useRoute()
 const app = useAppStore()
 const systems = useSystemsStore()
 const config = useConfigStore()
 const engine = useEngine()
+const router = useRouter()
+const backtest = useBacktestStore()
+const live = useLiveStore()
 
 const systemId = computed(() => route.params.id as string)
 const system = computed(() => systems.byId(systemId.value))
@@ -20,6 +25,19 @@ const saving = ref(false)
 const savedAt = ref<string | null>(null)
 const engineRunning = computed(() => app.engineStatus.status === 'running')
 const panel = ref<'configuration' | 'signals' | 'data'>('configuration')
+const name = ref('')
+const short = ref('')
+const description = ref('')
+const confirmDelete = ref(false)
+const deleting = ref(false)
+const deleteError = ref<string | null>(null)
+const evaluating = computed(() => backtest.stateFor(systemId.value).isRunning || live.stateFor(systemId.value).loading)
+watch(system, s => {
+  name.value = s?.name ?? ''
+  short.value = s?.short ?? ''
+  description.value = s?.description ?? ''
+  confirmDelete.value = false
+}, { immediate: true })
 
 let savedTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -27,9 +45,13 @@ onMounted(() => config.load(systemId.value))
 onUnmounted(() => { if (savedTimer) clearTimeout(savedTimer) })
 
 async function save() {
+  if (!system.value || !name.value.trim()) return
   saving.value = true
-  await config.save(systemId.value)
+  const metadata = { ...system.value, name: name.value.trim(), short: short.value.trim(), description: description.value.trim() }
+  const ok = await config.save(systemId.value, metadata)
   saving.value = false
+  if (!ok) return
+  systems.replace(metadata)
   // Inline confirmation next to the button, gone again after a few seconds.
   savedAt.value = new Date().toLocaleTimeString()
   if (savedTimer) clearTimeout(savedTimer)
@@ -37,6 +59,23 @@ async function save() {
 }
 
 const engineBusy = ref(false)
+async function remove() {
+  if (evaluating.value || deleting.value) return
+  const id = systemId.value
+  deleting.value = true
+  deleteError.value = null
+  try {
+    await systems.remove(id)
+    config.forget(id)
+    app.setActiveSystem(systems.systems[0]?.id ?? '')
+    await router.replace('/algo/manual')
+  } catch (e) {
+    deleteError.value = String(e)
+  } finally {
+    deleting.value = false
+  }
+}
+
 const engineError = ref<string | null>(null)
 async function toggleEngine() {
   engineBusy.value = true
@@ -70,13 +109,29 @@ async function toggleEngine() {
         <button class="btn" :disabled="engineBusy" @click="toggleEngine">
           {{ engineRunning ? 'Stop Engine' : 'Start Engine' }}
         </button>
-        <button class="btn btn-primary" :disabled="saving" @click="save">
-          {{ saving ? 'Saving…' : 'Save Config' }}
+        <button class="btn btn-primary" :disabled="saving || deleting || !name.trim() || !config.configBySystem[systemId]" @click="save">
+          {{ saving ? 'Saving…' : 'Save strategy' }}
         </button>
       </div>
     </header>
 
     <div v-if="engineError" class="qs-settings__error">{{ engineError }}</div>
+
+    <section class="card qs-settings__identity" aria-label="Strategy details">
+      <label><span class="label">Name</span><input v-model="name" class="input" :disabled="saving || deleting" required /></label>
+      <label><span class="label">Short label (optional)</span><input v-model="short" class="input" :disabled="saving || deleting" /></label>
+      <label class="qs-settings__description"><span class="label">Description</span><input v-model="description" class="input" :disabled="saving || deleting" /></label>
+      <div class="qs-settings__manage">
+        <button class="btn" :disabled="saving || deleting" @click="router.push({ path: '/algo/manual/new', query: { copy: systemId } })">Duplicate</button>
+        <button class="btn" :disabled="saving || deleting || evaluating" @click="confirmDelete = !confirmDelete">Delete</button>
+      </div>
+      <div v-if="confirmDelete" class="qs-settings__confirm" role="alert">
+        <span>Delete “{{ system?.name }}” and its saved settings?</span>
+        <button class="btn" :disabled="deleting" @click="confirmDelete = false">Cancel</button>
+        <button class="btn" :disabled="deleting || evaluating" @click="remove">{{ deleting ? 'Deleting…' : 'Delete strategy' }}</button>
+      </div>
+      <p v-if="deleteError" class="qs-settings__error" role="alert">{{ deleteError }}</p>
+    </section>
 
     <nav class="qs-settings__tabs" aria-label="Settings sections">
       <button type="button" :aria-pressed="panel === 'configuration'" @click="panel = 'configuration'">Universe &amp; costs</button>
@@ -105,6 +160,13 @@ async function toggleEngine() {
 
 .qs-settings__tabs { display: none; }
 
+.qs-settings__identity { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; padding: 16px; }
+.qs-settings__identity label { min-width: 0; }
+.qs-settings__description { grid-column: 1; }
+.qs-settings__manage { display: flex; gap: 8px; align-items: flex-end; justify-content: flex-end; }
+.qs-settings__confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--qs-error); font-size: 13px; }
+.qs-settings__confirm span { flex: 1; }
+
 .qs-settings__head {
   display: flex;
   align-items: center;
@@ -113,6 +175,7 @@ async function toggleEngine() {
 }
 
 .qs-settings__title {
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: 17px;
   font-weight: 600;
