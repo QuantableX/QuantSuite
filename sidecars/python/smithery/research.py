@@ -73,7 +73,7 @@ def compare(keys: list[str], *, timeframes: list[str] | None = None,
         raise ValueError("Comparison requires at least three calendar years shared by every asset/track")
     cutoff = common_start + (end - common_start) * .75
     # Every candidate gets its declared warm-up on every asset. A fixed
-    # percentage alone was too short for ScaleConsensus on newer assets.
+    # percentage alone was too short for a multi-scale indicator on newer assets.
     warmup = max(WARMUP_BARS.get(key, 400) for key in keys)
     if any(len(df) <= warmup for df in frames.values()):
         raise ValueError(f"Every series needs more than {warmup} warm-up bars")

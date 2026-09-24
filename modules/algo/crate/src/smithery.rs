@@ -188,7 +188,7 @@ fn valid_key(key: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// A report is addressed by its note name (`2026-09-07 PageTrend Gauntlet`)
+/// A report is addressed by its note name (`2026-09-07 MyTrend Gauntlet`)
 /// inside the vault's Output folder — never by a path.
 fn valid_report_name(name: &str) -> bool {
     !name.is_empty()
@@ -777,7 +777,7 @@ mod tests {
 
     #[test]
     fn report_names_stay_inside_the_output_folder() {
-        assert!(valid_report_name("2026-09-07 PageTrend Gauntlet"));
+        assert!(valid_report_name("2026-09-07 MyTrend Gauntlet"));
         assert!(!valid_report_name("../Docs/04 Indicator Registry"));
         assert!(!valid_report_name("C:\\Windows\\win.ini"));
         assert!(!valid_report_name(""));

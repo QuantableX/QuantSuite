@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from smithery import execution, quality
 from smithery.contract import validate_causality, validate_scale_invariance
-from smithery.indicators.recovery import RecoveryTrend
+from smithery.indicators import REGISTRY
 from smithery.quantscript import synthetic_frame
 
 
@@ -39,7 +39,7 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(Path(result["file"]).parent,self.folder)
         self.assertEqual(result["errors"],{})
         path = self.folder/"extremes.py"
-        path.write_text(path.read_text(encoding="utf-8").replace('name = "ExtremeFlow"','name = "PersonalExtreme"'),encoding="utf-8")
+        path.write_text(path.read_text(encoding="utf-8").replace(f'name = "{REGISTRY["extremes"].name}"','name = "PersonalExtreme"'),encoding="utf-8")
         self.assertEqual(self.run_python("import json; from smithery.indicators import REGISTRY; print(json.dumps(REGISTRY['extremes'].name))"),"PersonalExtreme")
         path.unlink()
         keys = self.run_python("import json; from smithery.indicators import REGISTRY; print(json.dumps(list(REGISTRY)))")
@@ -134,8 +134,8 @@ class QualityTests(unittest.TestCase):
 
     def test_recovery_is_causal_and_scale_invariant(self):
         frame=synthetic_frame(500)
-        self.assertTrue(validate_causality(RecoveryTrend(),frame)[0])
-        self.assertTrue(validate_scale_invariance(RecoveryTrend(),frame)[0])
+        self.assertTrue(validate_causality(REGISTRY['recovery'](),frame)[0])
+        self.assertTrue(validate_scale_invariance(REGISTRY['recovery'](),frame)[0])
 
 
 if __name__ == "__main__":

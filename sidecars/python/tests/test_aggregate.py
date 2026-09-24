@@ -129,10 +129,10 @@ class AggregateRunTests(unittest.TestCase):
 
     def test_the_aggregate_can_be_compared_against_its_members(self):
         result = _run(IndicatorConfig(trend="aggregate", aggregate=("ema_cross", "extremes")), compare=("ema_cross", "extremes"))
-        self.assertEqual([r.label for r in result.strategies], ["Aggregate (2)", "EMA 12/21", "ExtremeFlow"])
+        self.assertEqual([r.label for r in result.strategies], ["Aggregate (2)", "EMA 12/21", REGISTRY["extremes"].name])
         # and a single indicator can compare against the aggregate
         other = _run(IndicatorConfig(trend="extremes", aggregate=("ema_cross", "extremes")), compare=("aggregate",))
-        self.assertEqual([r.label for r in other.strategies], ["ExtremeFlow", "Aggregate (2)"])
+        self.assertEqual([r.label for r in other.strategies], [REGISTRY["extremes"].name, "Aggregate (2)"])
         pd.testing.assert_series_equal(other.strategies[1].equity_strategy, result.strategies[0].equity_strategy)
 
     def test_no_members_fails_before_fetching(self):

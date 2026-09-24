@@ -15,6 +15,7 @@ from rotation_lab.backtest.engine import BacktestEngine
 from rotation_lab.backtest.universe import UniverseSnapshot, UniverseTimeline
 from rotation_lab.config import IndicatorConfig, RunConfig
 from rotation_lab.data.ranking.base import RankedCoin
+from smithery.indicators import REGISTRY
 
 SYMBOLS = ("AAA", "BBB", "CCC")
 
@@ -84,7 +85,7 @@ class CompareTests(unittest.TestCase):
         result = _run('bvc')
         self.assertEqual(result.strategies, [])
         self.assertTrue(result.equity_strategy.empty)
-        self.assertEqual(result.skipped_strategies[0]['label'], 'BulkVolumeFlow')
+        self.assertEqual(result.skipped_strategies[0]['label'], REGISTRY['bvc'].name)
         self.assertTrue(result.notes)
 
     def test_volume_dependent_aggregate_is_not_silently_reduced(self):
@@ -130,7 +131,7 @@ class CompareTests(unittest.TestCase):
         result = _run("ema_cross", ("extremes", "ema_cross"))
         self.assertEqual([r.key for r in result.strategies], ["ema_cross", "extremes"])
         self.assertEqual(result.strategies[0].label, "EMA 12/21")
-        self.assertEqual(result.strategies[1].label, "ExtremeFlow")
+        self.assertEqual(result.strategies[1].label, REGISTRY["extremes"].name)
         pd.testing.assert_series_equal(result.equity_strategy, result.strategies[0].equity_strategy)
         pd.testing.assert_series_equal(result.held_asset, result.strategies[0].held_asset)
         self.assertEqual(result.metrics_strategy, result.strategies[0].metrics_strategy)

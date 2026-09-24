@@ -36,12 +36,12 @@ class ListingTests(unittest.TestCase):
         extremes = files["extremes.py"]
         self.assertEqual(extremes["kind"], "script")
         self.assertTrue(extremes["editable"])
-        self.assertTrue(extremes["summary"].startswith("ExtremeFlow"))
-        row = next(c for c in extremes["classes"] if c["class_name"] == "ExtremeFlow")
+        self.assertTrue(extremes["summary"].startswith(REGISTRY["extremes"].name))
+        row = next(c for c in extremes["classes"] if c["class_name"] == REGISTRY["extremes"].__name__)
         self.assertEqual(row["key"], "extremes")
-        self.assertEqual(row["name"], "ExtremeFlow")
+        self.assertEqual(row["name"], REGISTRY["extremes"].name)
         self.assertGreater(row["line"], 1)
-        self.assertIn("horizon", row["params"])
+        self.assertEqual(set(row["params"]), set(REGISTRY["extremes"]().params))
         self.assertIn("certification", row)
         self.assertEqual(extremes["registered"], 1)
         # A script with legacy keys lists one row per registered key.
@@ -50,7 +50,7 @@ class ListingTests(unittest.TestCase):
         # A helper script lists its base class without a key and registers nothing.
         helper = files["trend_common.py"]
         self.assertEqual(helper["registered"], 0)
-        self.assertIn("CheckedTrend", [c["class_name"] for c in helper["classes"] if c["key"] is None])
+        self.assertTrue([c["class_name"] for c in helper["classes"] if c["key"] is None])
         # The contract is shown read-only next to the scripts.
         self.assertEqual([r["file"] for r in doc["reference"]], ["contract.py"])
         self.assertFalse(doc["reference"][0]["editable"])
@@ -93,7 +93,7 @@ class CheckTests(unittest.TestCase):
         self.assertTrue(all("re-forge" in doc["discovery_errors"][k] for k in stale))
         rows = {r["key"]: r for r in doc["indicators"]}
         self.assertEqual(list(rows), ["extremes"])
-        self.assertEqual(rows["extremes"]["class_name"], "ExtremeFlow")
+        self.assertEqual(rows["extremes"]["class_name"], REGISTRY["extremes"].__name__)
         self.assertEqual([c["law"] for c in rows["extremes"]["checks"]], ["contract"])
         self.assertIsNotNone(rows["extremes"]["committed_at"])
         # The real file was never written.

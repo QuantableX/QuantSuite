@@ -9,6 +9,13 @@ const configDir = resolve(root, 'apps/src-tauri')
 const pythonRoot = realpathSync(resolve(root, 'sidecars/python'))
 const readConfig = name => JSON.parse(readFileSync(resolve(configDir, name), 'utf8'))
 
+/** A Python source that registers indicators — a private script, never part
+ *  of the engine. The new-script template writes `REGISTER = {{…}}` (a format
+ *  string), which is not a declaration. */
+export function declaresIndicators(text) {
+  return /^REGISTER\s*(:[^=\n]*)?=\s*(\{(?!\{)|dict\()/m.test(text)
+}
+
 export function validateResources(resources) {
   assert(resources && !Array.isArray(resources), 'Resources must use explicit source/destination mappings')
   for (const [source, target] of Object.entries(resources)) {
@@ -19,7 +26,9 @@ export function validateResources(resources) {
     assert(source.startsWith('../../sidecars/python/'), `Unreviewed resource source: ${source}`)
     const name = source.slice('../../sidecars/python/'.length)
     assert.equal(target, `sidecars/python/${name}`, `Unexpected runtime destination: ${target}`)
-    assert(!/(^|\/)(tests|__pycache__|versions|QuantScript|\.venv)(\/|$)/i.test(name), `Private/generated resource: ${source}`)
+    assert(!/(^|\/)(tests|__pycache__|versions|QuantScript|\.venv|collection|store)(\/|$)/i.test(name), `Private/generated resource: ${source}`)
+    // The private library's files: its ledger, the Collection's state, a Store-era state file.
+    assert(!/(^|\/)(library|collection|store|catalog)\.json$/i.test(name), `Private library state must never ship: ${source}`)
     assert(!/(^|\/)(research_|verify_|trend_benchmark|benchmark)/.test(name), `Research-only resource: ${source}`)
     assert(/\.(py|txt)$/.test(name), `Unexpected runtime file type: ${source}`)
     if (name.startsWith('smithery/indicators/')) {
@@ -30,6 +39,9 @@ export function validateResources(resources) {
     const rel = relative(pythonRoot, path)
     assert(rel && !rel.startsWith('..') && !isAbsolute(rel), `Resource escapes runtime: ${source}`)
     assert(statSync(path).isFile(), `Recursive resource directories are forbidden: ${source}`)
+    if (name.endsWith('.py')) {
+      assert(!declaresIndicators(readFileSync(path, 'utf8')), `An indicator script (REGISTER) must never ship: ${source}`)
+    }
   }
 }
 

@@ -129,8 +129,10 @@ class HourlyDataTests(unittest.TestCase):
 
 class EvidenceTests(unittest.TestCase):
     def test_old_artifact_stays_visible_as_historical_on_its_own_track(self):
-        from smithery import evidence
-        with tempfile.TemporaryDirectory() as folder, patch.object(data, 'OUTPUT_DIR', Path(folder)):
+        from smithery import evidence, variants
+        # Only the artifact: no version-file evidence (it outranks history —
+        # every forged Standard carries some since the timeframe round).
+        with tempfile.TemporaryDirectory() as folder, patch.object(data, 'OUTPUT_DIR', Path(folder)),                 patch.object(variants, 'version_evidence', lambda timeframe: {}):
             evidence.write_json(Path(folder) / '2026-09-08 old.json', {
                 'kind': 'gauntlet', 'name': REGISTRY['robust'].name, 'timeframe': '1h',
                 'version': 'previous-evaluator', 'code_sha256': 'previous-code',
