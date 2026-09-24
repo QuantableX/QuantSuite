@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-store-source-save"
+description = "Enables the store_source_save command without any pre-configured scope."
+commands.allow = ["store_source_save"]
+
+[[permission]]
+identifier = "deny-store-source-save"
+description = "Denies the store_source_save command without any pre-configured scope."
+commands.deny = ["store_source_save"]

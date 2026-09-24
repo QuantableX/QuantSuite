@@ -1,7 +1,7 @@
 "$schema" = "schemas/schema.json"
 
 [default]
-description = "Default permissions for the QuantScript module: the indicator scripts, their checks and their versions."
+description = "Default permissions for the script module."
 permissions = [
   "allow-list-scripts",
   "allow-open-scripts-folder",
@@ -15,4 +15,14 @@ permissions = [
   "allow-delete-script",
   "allow-lint-script",
   "allow-script-python",
+  "allow-store-sources",
+  "allow-store-source-save",
+  "allow-store-source-delete",
+  "allow-store-token-set",
+  "allow-store-token-clear",
+  "allow-store-catalog",
+  "allow-store-item",
+  "allow-store-plan",
+  "allow-store-install",
+  "allow-store-remove",
 ]

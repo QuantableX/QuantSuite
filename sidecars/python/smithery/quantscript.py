@@ -314,6 +314,65 @@ def check(file: str, candidate: Path, depth: str = "quick", frame_bars: int | No
     return result
 
 
+def stage_check(library: Path, files: list[str], depth: str = "quick", timeout: float = CHECK_TIMEOUT_S) -> dict:
+    """Verify a staged library before a store install writes anything.
+
+    ``library`` is a complete indicator folder — the user's scripts with the
+    package's scripts and version files written in. In a sandbox copy of
+    the package whose ``indicators`` folder is that library, every named
+    file must import and register, pass the contract's signal pass, and no
+    version of the keys its script registers may be unavailable (a version
+    file whose signature does not match the installed scripts). Nothing of
+    the real package or library is touched."""
+    t0 = time.time()
+    names = [script_name(f) for f in files]
+    if depth not in DEPTHS:
+        raise ValueError(f"depth must be one of {DEPTHS}")
+    result: dict = {"library": str(library), "files": {}, "unavailable": [], "import": {"ok": True},
+                    "stderr": "", "ok": False, "blocking": True}
+    with tempfile.TemporaryDirectory(prefix="quantscript-stage-") as tmp:
+        sandbox = Path(tmp) / "smithery"
+        shutil.copytree(PACKAGE_DIR, sandbox, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "tests"))
+        shutil.rmtree(sandbox / "indicators")
+        shutil.copytree(library, sandbox / "indicators", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        for internal in ("__init__.py", "_discover.py"):
+            shutil.copy2(PACKAGE_DIR / "indicators" / internal, sandbox / "indicators" / internal)
+        env = {**os.environ,
+               "PYTHONPATH": tmp + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else ""),
+               "QUANTSCRIPT_INDICATORS_DIR": str(sandbox / "indicators"),
+               "PYTHONDONTWRITEBYTECODE": "1",
+               "PYTHONIOENCODING": "utf-8"}
+        cmd = [sys.executable, "-m", "smithery.quantscript", "verify-many", "--depth", depth]
+        for name in names:
+            cmd += ["--file", name]
+        try:
+            proc = subprocess.run(cmd, cwd=tmp, env=env, capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            result["import"] = {"ok": False, "message": f"the check did not finish within {timeout:.0f}s"}
+            result["elapsed_s"] = round(time.time() - t0, 2)
+            return result
+        doc = _last_json(proc.stdout)
+        result["stderr"] = proc.stderr[-4000:] if proc.stderr.strip() else ""
+        if doc is None:
+            result["import"] = {"ok": False, "message": "the sandbox printed no verdict (exit code %s)" % proc.returncode,
+                                "traceback": proc.stderr[-4000:]}
+            result["elapsed_s"] = round(time.time() - t0, 2)
+            return result
+        result["files"] = doc.get("files", {})
+        result["unavailable"] = doc.get("unavailable", [])
+    blocking = False
+    for name in names:
+        row = result["files"].get(name) or {"import": {"ok": False, "message": "not verified"}}
+        if not row.get("import", {}).get("ok") or row.get("discovery_errors", {}).get(name[:-3]) is not None:
+            blocking = True
+    blocking = blocking or bool(result["unavailable"])
+    result["blocking"] = blocking
+    result["ok"] = not blocking and all(i.get("ok") for row in result["files"].values() for i in row.get("indicators", []))
+    result["elapsed_s"] = round(time.time() - t0, 2)
+    return result
+
+
 # ---------------------------------------------------------------- verify (inside the sandbox)
 
 def synthetic_frame(bars: int, seed: int = 7):
@@ -404,6 +463,25 @@ def verify(file: str, depth: str = "quick", frame_bars: int | None = None) -> di
         row["ok"] = row["ok"] and all(c["ok"] for c in row["checks"])
         row["elapsed_s"] = round(time.time() - t0, 2)
         out["indicators"].append(row)
+    return out
+
+
+def verify_many(files: list[str], depth: str = "quick") -> dict:
+    """``verify`` for several files after one registry import, plus the
+    unavailable versions of the keys their scripts register."""
+    out = {"files": {}, "unavailable": []}
+    stems = set()
+    for file in files:
+        name = script_name(file)
+        stems.add(name[:-3])
+        out["files"][name] = verify(name, depth=depth)
+    try:
+        from .indicators import REGISTRY
+        from .variants import UNAVAILABLE, stem_of
+        bases = {key for key, cls in REGISTRY.items() if stem_of(cls) in stems} | stems
+        out["unavailable"] = [u for u in UNAVAILABLE if u.get("base_key") in bases]
+    except Exception as e:  # noqa: BLE001 — the per-file rows already carry the import failure
+        out["unavailable_error"] = f"{type(e).__name__}: {e}"
     return out
 
 
@@ -671,6 +749,16 @@ def _main(argv: list[str]) -> int:
     p.add_argument("--depth", default="quick", choices=DEPTHS)
     p.add_argument("--frame-bars", type=int, default=None)
 
+    p = sub.add_parser("stage-check", help="verify a staged library (a store install) in a sandbox copy")
+    p.add_argument("--library", required=True, help="the staged indicator folder")
+    p.add_argument("--file", action="append", required=True, help="a script file to verify (repeatable)")
+    p.add_argument("--depth", default="quick", choices=DEPTHS)
+    p.add_argument("--timeout", type=float, default=CHECK_TIMEOUT_S)
+
+    p = sub.add_parser("verify-many", help="(internal) verify several files, run where smithery resolves")
+    p.add_argument("--file", action="append", required=True)
+    p.add_argument("--depth", default="quick", choices=DEPTHS)
+
     p = sub.add_parser("lint", help="syntax and contract-shape diagnostics for the editor (no import)")
     p.add_argument("--candidate", required=True, help="path of the candidate content")
 
@@ -691,6 +779,13 @@ def _main(argv: list[str]) -> int:
             return 0
         if args.command == "verify":
             print(json.dumps(verify(args.file, depth=args.depth, frame_bars=args.frame_bars), default=str))
+            return 0
+        if args.command == "stage-check":
+            print(json.dumps(stage_check(Path(args.library), args.file, depth=args.depth, timeout=args.timeout),
+                             default=str))
+            return 0
+        if args.command == "verify-many":
+            print(json.dumps(verify_many(args.file, depth=args.depth), default=str))
             return 0
         if args.command == "lint":
             print(json.dumps(lint(Path(args.candidate))))
