@@ -1,6 +1,6 @@
 //! The QuantScript Collection: install single indicators — with their
 //! requirements and all their versions — from a catalog into the private
-//! library (the format: QuantScript-Collection' FORMAT.md).
+//! library (the format: FORMAT.md of QuantScript-Collection-Public / -Private).
 //!
 //! Every file is verified on the way in: the catalog names each manifest's
 //! sha256, each manifest names its files' sha256. An install is planned

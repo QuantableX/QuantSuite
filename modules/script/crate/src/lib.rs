@@ -1416,9 +1416,9 @@ mod tests {
     /// through the real engine check: consensus pulls its members, keltner_risk
     /// pulls trend_common. `cargo test -p tauri-plugin-script --lib -- --ignored`
     #[test]
-    #[ignore = "needs C:/Projects/QuantScript-Collection with packages and Python with numpy + pandas"]
+    #[ignore = "needs C:/Projects/QuantScript-Collection-Private with packages and Python with numpy + pandas"]
     fn the_published_catalog_installs_consensus_and_keltner_risk_with_their_requirements() {
-        let repo = PathBuf::from(r"C:\Projects\QuantScript-Collection");
+        let repo = PathBuf::from(r"C:\Projects\QuantScript-Collection-Private");
         let library = std::env::temp_dir().join(format!("qs-store-real-{}", std::process::id()));
         let _ = fs::remove_dir_all(&library);
         fs::create_dir_all(&library).unwrap();

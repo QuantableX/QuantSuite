@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * The Collection — indicators from a catalog (the private QuantScript-Collection
- * repo, or a local checkout), browsed, inspected with their five versions
- * and installed with their requirements into your library
- * (plugin:script|store_*). List on the left, the item on the right; both
+ * The Collection — indicators from a catalog (the public
+ * QuantScript-Collection-Public, a private repository, or a local checkout),
+ * browsed, inspected with their five versions and installed with their
+ * requirements into your library (plugin:script|collection_*). List on the left, the item on the right; both
  * scroll inside their card, the page never scrolls.
  */
 import { inActiveKeepAliveTree } from '@quantsuite/core'

@@ -140,11 +140,11 @@ function where(s: CollectionSource): string {
       <label class="qst-field"><span>Name</span><input v-model="editing.name" class="qsc-input" placeholder="My indicators" /></label>
       <template v-if="editing.kind === 'github'">
         <label class="qst-field"><span>Owner</span><input v-model="editing.owner" class="qsc-input mono" spellcheck="false" placeholder="QuantableX" /></label>
-        <label class="qst-field"><span>Repository</span><input v-model="editing.repo" class="qsc-input mono" spellcheck="false" placeholder="QuantScript-Collection" /></label>
+        <label class="qst-field"><span>Repository</span><input v-model="editing.repo" class="qsc-input mono" spellcheck="false" placeholder="QuantScript-Collection-Public" /></label>
         <label class="qst-field"><span>Branch</span><input v-model="editing.branch" class="qsc-input mono" spellcheck="false" placeholder="main" /></label>
         <label class="qst-field"><span>Folder</span><input v-model="editing.path" class="qsc-input mono" spellcheck="false" placeholder="(the repository root)" /></label>
       </template>
-      <label v-else class="qst-field"><span>Folder</span><input v-model="editing.path" class="qsc-input mono" spellcheck="false" placeholder="C:\Projects\QuantScript-Collection" /></label>
+      <label v-else class="qst-field"><span>Folder</span><input v-model="editing.path" class="qsc-input mono" spellcheck="false" placeholder="C:\Projects\QuantScript-Collection-Public" /></label>
       <label class="qsc-check"><input v-model="editing.enabled" type="checkbox" /> Enabled</label>
       <p v-if="formError" class="qsc-note is-error">{{ formError }}</p>
       <div class="qsc-set-row">
