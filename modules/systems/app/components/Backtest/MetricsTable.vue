@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BacktestResult, PerformanceMetrics } from '#systems/types'
+import type { BacktestResult, PerformanceMetrics, StrategyRun } from '#systems/types'
 
 const props = defineProps<{ result: BacktestResult }>()
 
@@ -28,17 +28,29 @@ interface Column {
   label: string
   metrics: PerformanceMetrics
   strong?: boolean
+  /** A trend key such as `dcl_opt`, set like the sidebar's chips. */
+  kind?: boolean
+  title?: string
+}
+
+/** Indicator runs go by their key, as the sidebar's Trend and Compare chips
+ *  name them; EMA and aggregates keep the engine label with their settings. */
+function isKeyed(run: StrategyRun): boolean {
+  return run.key !== 'ema_cross' && run.key !== 'aggregate'
 }
 
 const columns = computed<Column[]>(() => {
   // One column per trend signal, the configured indicator first and tinted;
   // a lone run keeps the plain "Strategy" heading.
   const runs = props.result.strategies ?? []
+  const named = runs.length > 1 || !!props.result.skippedStrategies?.length
   const cols: Column[] = runs.map((run, i) => ({
     key: `strategy:${run.key}`,
-    label: runs.length > 1 || props.result.skippedStrategies?.length ? run.label : 'Strategy',
+    label: !named ? 'Strategy' : isKeyed(run) ? run.key : run.label,
     metrics: run.metricsStrategy,
     strong: i === 0,
+    kind: named && isKeyed(run),
+    title: run.label,
   }))
   for (const [name, m] of Object.entries(props.result.metricsBenchmarks)) {
     cols.push({ key: `bench:${name}`, label: name, metrics: m })
@@ -90,7 +102,13 @@ function tone(value: number | null | undefined, kind?: Tone): string {
         <thead>
           <tr>
             <th class="qs-metrics__rowlabel" />
-            <th v-for="c in columns" :key="c.key" class="qs-metrics__col" :class="{ 'qs-metrics__col--strong': c.strong }">
+            <th
+              v-for="c in columns"
+              :key="c.key"
+              class="qs-metrics__col"
+              :class="{ 'qs-metrics__col--strong': c.strong, 'qs-metrics__col--kind mono': c.kind }"
+              :title="c.title"
+            >
               {{ c.label }}
             </th>
           </tr>
@@ -148,6 +166,12 @@ function tone(value: number | null | undefined, kind?: Tone): string {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-bottom: 1px solid var(--qs-border);
+}
+
+/* Trend keys read exactly as typed and as the chips show them. */
+.qs-metrics__col--kind {
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .qs-metrics__rowlabel {
