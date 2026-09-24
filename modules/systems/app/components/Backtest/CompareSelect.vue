@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { sortByOptions } from '#systems/utils/indicatorOptions'
 import type { IndicatorOption, IndicatorVersionOption, TrendKind } from '#systems/types'
 
 const props = withDefaults(defineProps<{
@@ -34,20 +35,8 @@ const root = ref<HTMLElement | null>(null)
 const rows = computed(() => props.options.filter(o => o.versions || o.value !== props.exclude))
 const picked = computed(() => new Set(props.modelValue))
 
-// Catalog order (best first), versions in slot order, so the chart and the
-// table read top-down.
-const order = computed(() => {
-  const at = new Map<string, number>()
-  for (const o of props.options) {
-    for (const value of o.versions ? o.versions.map(v => v.value) : [o.value])
-      at.set(value, at.size)
-  }
-  return at
-})
-
 function emitSorted(next: TrendKind[]) {
-  next.sort((a, b) => (order.value.get(a) ?? 999) - (order.value.get(b) ?? 999))
-  emit('update:modelValue', next)
+  emit('update:modelValue', sortByOptions(next, props.options))
 }
 
 function isPicked(option: IndicatorOption): boolean {

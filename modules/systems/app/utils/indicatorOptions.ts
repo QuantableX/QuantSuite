@@ -54,6 +54,21 @@ export function indicatorOptionRows(catalog: SmitheryCatalogEntry[], track: stri
   return rows.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
 }
 
+/**
+ * Picked values in the pickers' order: catalog order (best first), a base
+ * row's versions in slot order, so every list of indicators — the compared
+ * runs' chart and table, the side panel's chips — reads the same top-down.
+ * Values the rows do not know go last, in their own order.
+ */
+export function sortByOptions<T extends string>(values: T[], options: IndicatorOption[]): T[] {
+  const at = new Map<string, number>()
+  for (const o of options) {
+    for (const value of o.versions ? o.versions.map(v => v.value) : [o.value])
+      at.set(value, at.size)
+  }
+  return [...values].sort((a, b) => (at.get(a) ?? 999) - (at.get(b) ?? 999))
+}
+
 /** The row a value belongs to — its own row, or the base row of a version. */
 export function findIndicatorOption(options: IndicatorOption[], value: string): IndicatorOption | undefined {
   return options.find(o => o.value === value && !o.versions) ?? options.find(o => o.versions?.some(v => v.value === value))
