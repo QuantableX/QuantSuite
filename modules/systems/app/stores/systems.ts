@@ -24,8 +24,8 @@ export const useSystemsStore = defineStore('systems/systems', () => {
 
   const readySystems = computed(() => systems.value.filter(s => s.status === 'ready'))
 
-  async function create(name: string, short: string, description: string, config?: RunConfig) {
-    const system = await engine.createSystem(name, short, description, config)
+  async function create(name: string, short: string, description: string, config?: RunConfig, icon?: string) {
+    const system = await engine.createSystem(name, short, description, config, icon)
     systems.value.push(system)
     return system
   }

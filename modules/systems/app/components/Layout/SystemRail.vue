@@ -8,19 +8,13 @@ import { useAppStore } from '#systems/stores/app'
 import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
 import { useActiveView } from '#systems/composables/useActiveView'
+import { strategyIcon } from '#systems/utils/strategyIcons'
 
 const app = useAppStore()
 const systems = useSystemsStore()
 const config = useConfigStore()
 const router = useRouter()
 const { systemId } = useActiveView()
-
-/** Line icons per system id; fallback is a generic grid. */
-const ICONS: Record<string, string> = {
-  lces: 'M12 2l9 5-9 5-9-5 9-5z M3 12l9 5 9-5',
-  sces: 'M12 3l7 4v10l-7 4-7-4V7l7-4z',
-}
-const FALLBACK_ICON = 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z'
 
 function select(id: string, status: string) {
   if (status !== 'ready') return
@@ -48,7 +42,7 @@ function select(id: string, status: string) {
           @click="select(s.id, s.status)"
         >
           <svg class="qs-rail-btn__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path :d="ICONS[s.id] ?? FALLBACK_ICON" />
+            <path :d="strategyIcon(s).path" />
           </svg>
           <span class="qs-rail-btn__text">
             <span v-if="s.short" class="qs-rail-btn__short">{{ s.short }}</span>

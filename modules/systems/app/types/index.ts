@@ -10,6 +10,7 @@ export interface SystemMeta {
   short: string
   status: SystemStatus
   description: string
+  icon?: string
 }
 
 export interface AppSettings {

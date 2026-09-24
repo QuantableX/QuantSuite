@@ -4,6 +4,7 @@ definePageMeta({ layout: 'systems', path: '/algo/manual/new' })
 import { useAppStore } from '#systems/stores/app'
 import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
+import { strategyIcon } from '#systems/utils/strategyIcons'
 
 const app = useAppStore()
 const systems = useSystemsStore()
@@ -29,7 +30,7 @@ async function create() {
       if (config.errors[sourceId.value]) throw new Error(config.errors[sourceId.value]!)
     }
     const settings = sourceId.value ? JSON.parse(JSON.stringify(config.get(sourceId.value))) : undefined
-    const strategy = await systems.create(name.value.trim(), short.value.trim(), description.value.trim(), settings)
+    const strategy = await systems.create(name.value.trim(), short.value.trim(), description.value.trim(), settings, strategyIcon(source.value).id)
     if (settings) config.remember(strategy.id, settings)
     app.setActiveSystem(strategy.id)
     await router.push(`/algo/manual/${strategy.id}/settings`)
