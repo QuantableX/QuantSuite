@@ -11199,10 +11199,10 @@
           "markdownDescription": "Denies the stdin_write command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the QuantSystems module: settings, system configs, the evaluation engine and its cache.\n#### This default permission set includes:\n\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-list-systems`\n- `allow-create-system`\n- `allow-delete-system`\n- `allow-get-system-config`\n- `allow-save-system-config`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-engine-status`\n- `allow-live-eval`\n- `allow-run-backtest`\n- `allow-browse-universe`\n- `allow-cache-stats`\n- `allow-clear-cache`\n- `allow-screenshot-to-clipboard`",
+          "description": "Default permissions for the QuantSystems module: settings, system configs, the evaluation engine and its cache.\n#### This default permission set includes:\n\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-list-systems`\n- `allow-create-system`\n- `allow-delete-system`\n- `allow-get-system-config`\n- `allow-save-system-config`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-engine-status`\n- `allow-live-eval`\n- `allow-pair-markets`\n- `allow-run-backtest`\n- `allow-browse-universe`\n- `allow-cache-stats`\n- `allow-clear-cache`\n- `allow-screenshot-to-clipboard`",
           "type": "string",
           "const": "systems:default",
-          "markdownDescription": "Default permissions for the QuantSystems module: settings, system configs, the evaluation engine and its cache.\n#### This default permission set includes:\n\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-list-systems`\n- `allow-create-system`\n- `allow-delete-system`\n- `allow-get-system-config`\n- `allow-save-system-config`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-engine-status`\n- `allow-live-eval`\n- `allow-run-backtest`\n- `allow-browse-universe`\n- `allow-cache-stats`\n- `allow-clear-cache`\n- `allow-screenshot-to-clipboard`"
+          "markdownDescription": "Default permissions for the QuantSystems module: settings, system configs, the evaluation engine and its cache.\n#### This default permission set includes:\n\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-list-systems`\n- `allow-create-system`\n- `allow-delete-system`\n- `allow-get-system-config`\n- `allow-save-system-config`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-engine-status`\n- `allow-live-eval`\n- `allow-pair-markets`\n- `allow-run-backtest`\n- `allow-browse-universe`\n- `allow-cache-stats`\n- `allow-clear-cache`\n- `allow-screenshot-to-clipboard`"
         },
         {
           "description": "Enables the browse_universe command without any pre-configured scope.",
@@ -11263,6 +11263,12 @@
           "type": "string",
           "const": "systems:allow-live-eval",
           "markdownDescription": "Enables the live_eval command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pair_markets command without any pre-configured scope.",
+          "type": "string",
+          "const": "systems:allow-pair-markets",
+          "markdownDescription": "Enables the pair_markets command without any pre-configured scope."
         },
         {
           "description": "Enables the run_backtest command without any pre-configured scope.",
@@ -11359,6 +11365,12 @@
           "type": "string",
           "const": "systems:deny-live-eval",
           "markdownDescription": "Denies the live_eval command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pair_markets command without any pre-configured scope.",
+          "type": "string",
+          "const": "systems:deny-pair-markets",
+          "markdownDescription": "Denies the pair_markets command without any pre-configured scope."
         },
         {
           "description": "Denies the run_backtest command without any pre-configured scope.",
