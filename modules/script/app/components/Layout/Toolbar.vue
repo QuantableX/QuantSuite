@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { BookOpen, Code2, FlaskConical, PanelLeft, PanelRight, Scan, Shrink } from 'lucide-vue-next'
+import { BookOpen, Code2, FlaskConical, PanelLeft, PanelRight, Scan, Shrink, Store } from 'lucide-vue-next'
 import { useForgeStore } from '#script/stores/forge'
 import { useWorkbenchStore } from '#script/stores/workbench'
 const wb = useWorkbenchStore()
 const forge = useForgeStore()
 const route = useRoute()
 const onForge = computed(() => route.path.startsWith('/script/forge'))
-const editing = computed(() => !onForge.value && !!wb.active && !wb.libraryOpen)
+const onStore = computed(() => route.path.startsWith('/script/store'))
+const onScripts = computed(() => !onForge.value && !onStore.value)
+const editing = computed(() => onScripts.value && !!wb.active && !wb.libraryOpen)
 function togglePanel(side: 'left' | 'right') {
   wb.toggleSidebar(side)
 }
@@ -18,8 +20,8 @@ function togglePanel(side: 'left' | 'right') {
       <NuxtLink
         to="/script"
         class="qsc-place"
-        :class="{ 'is-active': !onForge }"
-        :aria-current="!onForge ? 'page' : undefined"
+        :class="{ 'is-active': onScripts }"
+        :aria-current="onScripts ? 'page' : undefined"
         ><Code2 :size="14" /> Scripts</NuxtLink
       >
       <NuxtLink
@@ -29,9 +31,16 @@ function togglePanel(side: 'left' | 'right') {
         :aria-current="onForge ? 'page' : undefined"
         ><FlaskConical :size="14" /> Forge<span v-if="forge.isRunning" class="qsc-dot is-ok qsc-pulse"
       /></NuxtLink>
+      <NuxtLink
+        to="/script/store"
+        class="qsc-place"
+        :class="{ 'is-active': onStore }"
+        :aria-current="onStore ? 'page' : undefined"
+        ><Store :size="14" /> Store</NuxtLink
+      >
     </nav>
     <span class="qsc-toolbar-context">{{
-      onForge ? 'Test & validate' : editing ? 'Indicator editor' : 'Indicator library'
+      onForge ? 'Test & validate' : onStore ? 'Install indicators' : editing ? 'Indicator editor' : 'Indicator library'
     }}</span>
     <div class="qsc-toolbar-actions">
       <span class="qsc-runtime" :title="wb.python?.error || wb.python?.command || 'Resolving Python…'"
@@ -41,7 +50,7 @@ function togglePanel(side: 'left' | 'right') {
       >
       <button
         class="qsc-icon-btn"
-        :aria-pressed="wb.sidebarLeftOpen && (!wb.focusMode || onForge)"
+        :aria-pressed="wb.sidebarLeftOpen && (!wb.focusMode || !onScripts)"
         aria-label="Toggle script sidebar"
         title="Script sidebar · Ctrl+B"
         @click="togglePanel('left')"
@@ -50,7 +59,7 @@ function togglePanel(side: 'left' | 'right') {
       </button>
       <button
         class="qsc-icon-btn"
-        :aria-pressed="wb.sidebarRightOpen && (!wb.focusMode || onForge)"
+        :aria-pressed="wb.sidebarRightOpen && (!wb.focusMode || !onScripts)"
         aria-label="Toggle inspector"
         title="Inspector · Ctrl+Shift+B"
         @click="togglePanel('right')"

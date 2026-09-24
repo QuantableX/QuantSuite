@@ -406,3 +406,152 @@ export interface AlgoStrategy {
   id: string
   name: string
 }
+
+// ─── The Store (plugin:script|store_*) ───────────────────────────────────────
+
+/** A catalog source; the token itself never leaves the credential store. */
+export interface StoreSource {
+  id: string
+  kind: 'github' | 'folder'
+  name: string
+  owner: string
+  repo: string
+  branch: string
+  /** github: a folder inside the repository; folder: the checkout. */
+  path: string
+  enabled: boolean
+  last_commit: string | null
+  last_checked: string | null
+  has_token: boolean
+}
+
+export interface StoreSourceInput {
+  id?: string
+  kind: 'github' | 'folder'
+  name: string
+  owner?: string
+  repo?: string
+  branch?: string
+  path?: string
+  enabled?: boolean
+}
+
+export interface StoreVerdict {
+  score: number
+  grade: string
+  certified: boolean
+  perm_p?: number | null
+  date?: string | null
+  evaluation_version?: string | null
+}
+
+/** The library's state of one catalog item. */
+export interface StoreLocal {
+  installed_version: string | null
+  installed_commit: string | null
+  update: boolean
+  /** Files the Store installed were changed in the library since. */
+  modified: boolean
+  /** A script of that name the Store did not install. */
+  present: boolean
+  conflict: boolean
+  /** The engine's contract is older than the package's. */
+  too_new: boolean
+}
+
+export interface StoreCatalogItem {
+  type: 'indicator' | 'library'
+  key: string
+  name: string
+  summary: string
+  tags: string[]
+  version: string
+  contract: number
+  requires: string[]
+  /** role → track → verdict */
+  scores: Record<string, Record<string, StoreVerdict>>
+  manifest: { path: string; sha256: string }
+  local: StoreLocal
+}
+
+export interface StoreCatalog {
+  source: StoreSource
+  commit: string
+  generated_at: string | null
+  engine_contract: number | null
+  items: StoreCatalogItem[]
+}
+
+export interface StoreManifestVersion {
+  key: string
+  label: string
+  params: Record<string, unknown>
+  decision: string | null
+  file: string | null
+  evidence: Record<string, StoreVerdict>
+}
+
+export interface StoreManifest {
+  format: number
+  type: 'indicator' | 'library'
+  key: string
+  name: string
+  summary: string
+  description: string
+  tags: string[]
+  version: string
+  released_at: string
+  author: string
+  license: string
+  contract: number
+  requires: string[]
+  registers?: string[]
+  warmup_bars?: number
+  legacy?: { key: string; label: string }[]
+  schema?: Record<string, ParamSchemaEntry>
+  versions?: Partial<Record<VersionRole, StoreManifestVersion>>
+  files: { path: string; sha256: string; role: string }[]
+  changelog: { version: string; date: string; change: string; note: string }[]
+}
+
+export interface StoreItemDetail {
+  commit: string
+  item: Omit<StoreCatalogItem, 'local'>
+  manifest: StoreManifest
+  readme: string | null
+  local: StoreLocal | null
+}
+
+export interface StorePlanItem {
+  key: string
+  name: string
+  type: 'indicator' | 'library'
+  version: string
+  installed_version: string | null
+  action: 'create' | 'replace' | 'skip' | 'conflict'
+  reason: string | null
+  /** Chosen by the user; false = pulled in as a requirement. */
+  requested: boolean
+  files: { path: string; action: 'create' | 'replace' | 'same' | 'remove' }[]
+}
+
+export interface StorePlan {
+  source: string
+  commit: string
+  items: StorePlanItem[]
+  conflicts: number
+}
+
+export interface StoreInstallOutcome {
+  plan: StorePlan
+  written: { key: string; file: string; created: boolean; version: number | null }[]
+  check: unknown
+}
+
+export interface StoreRemoved {
+  key: string
+  file: string
+  keys: string[]
+  version: number | null
+  files: string[]
+}

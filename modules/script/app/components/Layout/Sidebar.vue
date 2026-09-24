@@ -54,29 +54,35 @@ function scoreTitle(c: ScriptClass): string {
   return `${c.name ?? c.class_name}: ${cert.score}/100 ${cert.grade}${cert.certified ? ' · certified on every track' : ''}${tracks}${cert.source === 'historical' ? ' · historical run' : ''}`
 }
 
+/** The forge and the Store share this sidebar; the editor is /script. */
+function offEditor(): boolean {
+  const path = router.currentRoute.value.path
+  return path.startsWith('/script/forge') || path.startsWith('/script/store')
+}
+
 /** Opening a script from the tree always lands in the editor, wherever the
- *  module was (the forge page shares this sidebar). */
+ *  module was. */
 function openFile(entry: ScriptEntry) {
   void wb.openScript(entry.file)
-  if (!router.currentRoute.value.path.startsWith('/script/forge')) return
+  if (!offEditor()) return
   void router.push('/script')
 }
 
 function openClass(entry: ScriptEntry, c: ScriptClass) {
   void wb.openScript(entry.file, c.line)
-  if (router.currentRoute.value.path.startsWith('/script/forge')) void router.push('/script')
+  if (offEditor()) void router.push('/script')
 }
 
 async function restoreArchived(entry: ArchivedScript) {
   if (!confirm(`Bring ${entry.file} back? Its last recorded content becomes the file again (a new version, checked first).`)) return
   await wb.restoreArchived(entry)
-  if (router.currentRoute.value.path.startsWith('/script/forge')) void router.push('/script')
+  if (offEditor()) void router.push('/script')
 }
 </script>
 
 <template>
   <div class="qsc-tree">
-    <button class="qsc-library-nav" :class="{ 'is-active': wb.libraryOpen && !router.currentRoute.value.path.startsWith('/script/forge') }" @click="library"><Library :size="15" /><span>Indicator library</span><span class="muted">{{ wb.libraryScripts.length }}</span></button>
+    <button class="qsc-library-nav" :class="{ 'is-active': wb.libraryOpen && !offEditor() }" @click="library"><Library :size="15" /><span>Indicator library</span><span class="muted">{{ wb.libraryScripts.length }}</span></button>
     <div class="qsc-tree-filter">
       <ScriptLayoutWorkspaceFilter />
       <button v-if="wb.libraryFilter !== 'all' || wb.search" class="qsc-icon-btn" aria-label="Clear workspace filters" @click="wb.libraryFilter = 'all'; wb.search = ''"><X :size="12" /></button>
