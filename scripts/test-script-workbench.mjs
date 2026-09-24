@@ -8,6 +8,7 @@ import { nextTick } from 'vue'
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { useWorkbenchStore } from '../modules/script/app/stores/workbench.ts'
 import { decisionLabel, optimizeRowsFor, versionParamDiff, versionSlots, versionWhy } from '../modules/script/app/utils/forge.ts'
+import { DEFAULT_STORE_FILTERS, filterItems, itemState, planSummary, trackVerdict } from '../modules/script/app/utils/catalog.ts'
 
 function deferred() {
   let resolve, reject
@@ -386,4 +387,43 @@ test('the version slots resolve roles against the registry and explain themselve
   assert.deepEqual(versionParamDiff(slots[2], base.params), {})
   // A registry without version slots (an older engine): the Standard alone.
   assert.deepEqual(versionSlots({ key: 'beta', versions: null }, new Map([['beta', entry('beta', {})]])).map((s) => s.key), ['beta', null, null, null, null])
+})
+
+test('the Store lists, filters and badges catalog items and sums up a plan', () => {
+  const local = (over = {}) => ({ installed_version: null, installed_commit: null, update: false, modified: false, present: false, conflict: false, too_new: false, ...over })
+  const verdict = (score, certified = score >= 70) => ({ score, grade: score >= 70 ? 'A' : 'B', certified })
+  const items = [
+    { type: 'indicator', key: 'alpha', name: 'Alpha', summary: 'fast trend', tags: ['indicator'], version: '1.2.0', contract: 2, requires: ['helper'],
+      scores: { standard: { '1d': verdict(62) }, optimized: { '1d': verdict(74) }, optimized_4h: { '4h': verdict(81) } }, manifest: {}, local: local({ installed_version: '1.1.0', update: true }) },
+    { type: 'indicator', key: 'beta', name: 'Beta', summary: 'slow', tags: ['indicator', 'ensemble'], version: '1.0.0', contract: 2, requires: [],
+      scores: { standard: { '1d': verdict(55), '4h': verdict(58) } }, manifest: {}, local: local({ conflict: true, present: true }) },
+    { type: 'library', key: 'helper', name: 'helper', summary: 'helpers', tags: ['library'], version: '1.0.0', contract: 2, requires: [],
+      scores: {}, manifest: {}, local: local({ installed_version: '1.0.0' }) },
+  ]
+  const keys = (f) => filterItems(items, { ...DEFAULT_STORE_FILTERS, ...f }).map((i) => i.key)
+  assert.deepEqual(keys({}), ['alpha', 'beta', 'helper'])
+  assert.deepEqual(keys({ search: 'SLOW' }), ['beta'])
+  assert.deepEqual(keys({ tag: 'ensemble' }), ['beta'])
+  assert.deepEqual(keys({ state: 'installed' }), ['alpha', 'helper'])
+  assert.deepEqual(keys({ state: 'update' }), ['alpha'])
+  assert.deepEqual(keys({ state: 'available' }), ['beta'])
+  assert.deepEqual(keys({ track: '1d', minScore: 70 }), ['alpha'], 'the best version on the track counts; a library has no score')
+  assert.deepEqual(keys({ track: '4h', certifiedOnly: true }), ['alpha'])
+  assert.deepEqual(keys({ track: '1h', minScore: 1 }), [])
+  assert.deepEqual(trackVerdict(items[0], '4h'), { score: 81, grade: 'A', certified: true, role: 'optimized_4h' })
+
+  assert.equal(itemState(items[0].local, '1.2.0').label, 'Update 1.1.0 → 1.2.0')
+  assert.equal(itemState(items[1].local, '1.0.0').label, 'In your library')
+  assert.equal(itemState(items[2].local, '1.0.0').label, 'Installed 1.0.0')
+  assert.equal(itemState(local({ installed_version: '1.0.0', modified: true, update: true }), '1.1.0').label, 'Modified')
+  assert.equal(itemState(local({ too_new: true }), '1.0.0').tone, 'is-error')
+  assert.equal(itemState(null, '1.0.0').label, 'Available')
+
+  const plan = { source: 's', commit: 'c', conflicts: 1, items: [
+    { key: 'helper', action: 'skip', requested: false },
+    { key: 'gamma', action: 'create', requested: false },
+    { key: 'beta', action: 'conflict', requested: true },
+  ] }
+  assert.deepEqual(planSummary(plan), { create: 1, replace: 0, skip: 1, conflict: 1, dependencies: 1, empty: false })
+  assert.equal(planSummary({ ...plan, conflicts: 0, items: [plan.items[0]] }).empty, true)
 })

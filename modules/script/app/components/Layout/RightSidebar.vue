@@ -7,10 +7,12 @@
  * page: the vault, the tracks, the running job. Without either: the
  * workbench at a glance.
  */
+import { useCatalogStore } from '#script/stores/catalog'
 import { useForgeStore } from '#script/stores/forge'
 import { useWorkbenchStore } from '#script/stores/workbench'
 import { ChevronRight, X } from 'lucide-vue-next'
 import { AUTHOR_LABELS, formatBytes, gradeClass, shortSha, timeAgo } from '#script/utils/format'
+import { shortCommit } from '#script/utils/catalog'
 import { KIND_LABELS, formatElapsed, versionParamDiff, versionSlots, versionWhy, type VersionSlot } from '#script/utils/forge'
 import { formatParams } from '#script/utils/format'
 import type { ScriptClass, VersionMeta } from '#script/types'
@@ -19,8 +21,10 @@ const wb = useWorkbenchStore()
 const forge = useForgeStore()
 const route = useRoute()
 
+const catalog = useCatalogStore()
 const onForge = computed(() => route.path.startsWith('/script/forge'))
-const editing = computed(() => !!wb.active && !wb.libraryOpen)
+const onStore = computed(() => route.path.startsWith('/script/store'))
+const editing = computed(() => !!wb.active && !wb.libraryOpen && !onStore.value)
 const entry = computed(() => wb.activeEntry)
 const registered = computed<ScriptClass[]>(() => entry.value?.classes.filter((c) => c.key) ?? [])
 const helpers = computed<ScriptClass[]>(() => entry.value?.classes.filter((c) => !c.key) ?? [])
@@ -142,10 +146,10 @@ async function deleteScript() {
 <template>
   <div class="qsc-side">
     <header class="qsc-inspector-header">
-      <div class="qsc-inspector-heading"><strong>{{ onForge ? 'Forge monitor' : editing ? 'Script inspector' : 'Workspace' }}</strong><button class="qsc-icon-btn" aria-label="Close inspector" @click="wb.toggleSidebar('right')"><X :size="14" /></button></div>
+      <div class="qsc-inspector-heading"><strong>{{ onForge ? 'Forge monitor' : onStore ? 'Store' : editing ? 'Script inspector' : 'Workspace' }}</strong><button class="qsc-icon-btn" aria-label="Close inspector" @click="wb.toggleSidebar('right')"><X :size="14" /></button></div>
       <p v-if="editing && !onForge" class="qsc-inspector-file mono" :title="wb.active?.file">{{ wb.active?.file }}</p>
       <nav v-if="!onForge && editing" class="qsc-inspector-tabs" aria-label="Script inspector"><button v-for="t in inspectorTabs" :key="t.id" :aria-pressed="wb.inspectorTab === t.id" :class="{ 'is-active': wb.inspectorTab === t.id }" @click="wb.inspectorTab = t.id">{{ t.label }}</button></nav>
-      <nav v-else-if="!onForge" class="qsc-inspector-tabs" aria-label="Workspace inspector"><button :class="{ 'is-active': wb.inspectorTab !== 'guide' }" :aria-pressed="wb.inspectorTab !== 'guide'" @click="wb.inspectorTab = 'outline'">Overview</button><button :class="{ 'is-active': wb.inspectorTab === 'guide' }" :aria-pressed="wb.inspectorTab === 'guide'" @click="wb.inspectorTab = 'guide'">Guide</button></nav>
+      <nav v-else-if="!onForge && !onStore" class="qsc-inspector-tabs" aria-label="Workspace inspector"><button :class="{ 'is-active': wb.inspectorTab !== 'guide' }" :aria-pressed="wb.inspectorTab !== 'guide'" @click="wb.inspectorTab = 'outline'">Overview</button><button :class="{ 'is-active': wb.inspectorTab === 'guide' }" :aria-pressed="wb.inspectorTab === 'guide'" @click="wb.inspectorTab = 'guide'">Guide</button></nav>
     </header>
     <!-- ── The forge ─────────────────────────────────────────────────── -->
     <template v-if="onForge">
@@ -210,6 +214,38 @@ async function deleteScript() {
           Certified = score ≥ 70 and permutation p ≤ 0.10 on every track. The one score is the worst track.
           A fast run is a smoke test, never a certification. Any edit under <span class="mono">smithery/</span>
           turns existing runs historical — re-run the gauntlet after a change.
+        </p>
+      </section>
+    </template>
+
+    <!-- ── The Store ──────────────────────────────────────────────────── -->
+    <template v-else-if="onStore">
+      <section class="qsc-panel">
+        <h3 class="qsc-panel-title">Catalog</h3>
+        <div class="qsc-meta-row">
+          <span class="qsc-meta-label">source</span>
+          <span class="qsc-meta-value">{{ catalog.source?.name ?? '—' }}</span>
+        </div>
+        <div v-if="catalog.catalog" class="qsc-meta-row">
+          <span class="qsc-meta-label">commit</span>
+          <span class="qsc-meta-value mono" :title="catalog.catalog.commit">{{ shortCommit(catalog.catalog.commit) }}</span>
+        </div>
+        <div v-if="catalog.catalog" class="qsc-meta-row">
+          <span class="qsc-meta-label">packages</span>
+          <span class="qsc-meta-value"><span class="mono">{{ catalog.items.length }}</span> · <span class="mono">{{ catalog.installedCount }}</span> installed · <span class="mono">{{ catalog.updateCount }}</span> updates</span>
+        </div>
+        <div v-if="catalog.catalog?.engine_contract != null" class="qsc-meta-row">
+          <span class="qsc-meta-label">engine</span>
+          <span class="qsc-meta-value">contract <span class="mono">{{ catalog.catalog.engine_contract }}</span></span>
+        </div>
+      </section>
+      <section class="qsc-panel">
+        <h3 class="qsc-panel-title">How it installs</h3>
+        <p class="qsc-help">
+          Every file is checked against the catalog's hashes. The new scripts are tried with your library in a
+          sandbox first; only then are they written and recorded as versions. Files the Store did not install are
+          never replaced without your confirmation. A running QuantSystems engine needs a restart to see new
+          indicators.
         </p>
       </section>
     </template>
