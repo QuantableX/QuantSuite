@@ -31,7 +31,8 @@ use uuid::Uuid;
 
 /// One MCP session (PLAN-QUANTMCP-CONNECT §4.4): keyed by its session id,
 /// so two windows of the same client are two entries and the list can count
-/// them. Liveness: an open server→client stream, or recent traffic.
+/// them. Liveness: recent traffic, for every client and transport — an open
+/// stream alone does not keep a session connected.
 #[derive(Clone, Debug)]
 pub struct ActiveClientInfo {
     /// `clientInfo.name` as reported.
@@ -39,9 +40,10 @@ pub struct ActiveClientInfo {
     pub client_version: Option<String>,
     /// ms since the epoch
     pub connected_at: i64,
-    /// SSE / GET-stream clients: alive while the channel receiver exists.
+    /// SSE / GET-stream clients: the stream ends the session the moment it
+    /// closes, and keeps an idle session in the map while it stays open.
     tx: Option<mpsc::Sender<Value>>,
-    /// HTTP-only clients: alive while recent requests arrive.
+    /// The last request of this session.
     last_seen: std::time::Instant,
     /// Whether the last event the suite heard for this session was
     /// `connected` — flips with the liveness, so every transition is one event.
@@ -51,11 +53,13 @@ pub struct ActiveClientInfo {
 /// Session id → session.
 pub type ActiveClientMap = Arc<Mutex<HashMap<String, ActiveClientInfo>>>;
 
-/// How long an HTTP-only session (no stream) stays online without traffic.
-const HTTP_CLIENT_TTL: std::time::Duration = std::time::Duration::from_secs(90);
-/// How long an offline session is kept so a late request can still be
-/// attributed to it (a Codex turn after a long pause). Its identity lives in
-/// the client registry regardless.
+/// How long a session stays connected without a request — the one rule for
+/// every client and transport. An open stream does not count: Claude Desktop
+/// holds a Code-tab session's stream open for days after its last turn.
+const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+/// How long an offline session without an open stream is kept so a late
+/// request can still be attributed to it (a Codex turn after a long pause).
+/// Its identity lives in the client registry regardless.
 const SESSION_RETENTION: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
 
 impl ActiveClientInfo {
@@ -71,10 +75,16 @@ impl ActiveClientInfo {
     }
 
     fn online(&self, now: std::time::Instant) -> bool {
-        match &self.tx {
-            Some(tx) => !tx.is_closed(),
-            None => now.duration_since(self.last_seen) < HTTP_CLIENT_TTL,
-        }
+        let stream_closed = self.tx.as_ref().is_some_and(|tx| tx.is_closed());
+        !stream_closed && now.duration_since(self.last_seen) < IDLE_TIMEOUT
+    }
+
+    /// Kept in the map: while its stream is open the client can come back
+    /// without a new `initialize` and still hears `tools/list_changed`;
+    /// without one, a late request within the retention is still attributed.
+    fn retained(&self, now: std::time::Instant) -> bool {
+        self.tx.as_ref().is_some_and(|tx| !tx.is_closed())
+            || now.duration_since(self.last_seen) < SESSION_RETENTION
     }
 
     fn summary(&self) -> LiveSession {
@@ -94,12 +104,12 @@ pub struct LiveSession {
 }
 
 /// The sessions online right now, plus the ones that went offline since the
-/// last call (for `mcp.client.disconnected`). Sessions offline for longer
-/// than the retention are dropped.
+/// last call (for `mcp.client.disconnected`). Sessions no longer retained
+/// are dropped.
 pub async fn prune_and_list(clients: &ActiveClientMap) -> (Vec<LiveSession>, Vec<LiveSession>) {
     let now = std::time::Instant::now();
     let mut map = clients.lock().await;
-    map.retain(|_, info| info.online(now) || now.duration_since(info.last_seen) < SESSION_RETENTION);
+    map.retain(|_, info| info.retained(now));
     let mut live = Vec::new();
     let mut went_offline = Vec::new();
     for info in map.values_mut() {
@@ -162,6 +172,37 @@ pub fn announce_disconnected(app: &tauri::AppHandle, session: &LiveSession) {
         "mcp.client.disconnected",
         client_event_payload(&session.client_name, session.client_version.as_deref()),
     );
+}
+
+/// Every request after initialize refreshes its session, on either
+/// transport: traffic is what keeps a session connected, and a client whose
+/// stream died but keeps calling falls back to it. A session that had gone
+/// offline comes back online here — and the suite hears it again. A request
+/// we cannot attribute refreshes nothing.
+async fn touch_session(state: &McpServerState, session_id: &str) {
+    let reconnected = {
+        let mut clients = state.active_clients.lock().await;
+        match clients.get_mut(session_id) {
+            Some(info) => {
+                let now = std::time::Instant::now();
+                if info.tx.as_ref().is_some_and(|tx| tx.is_closed()) {
+                    info.tx = None;
+                }
+                let was_online = info.online(now);
+                info.last_seen = now;
+                if !was_online || !info.announced_online {
+                    info.announced_online = true;
+                    Some((info.client_name.clone(), info.client_version.clone()))
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    };
+    if let Some((name, version)) = reconnected {
+        announce_connected(state, &name, version.as_deref());
+    }
 }
 
 #[derive(Clone)]
@@ -1833,6 +1874,9 @@ async fn message_handler(
             None => return axum::http::StatusCode::NOT_FOUND.into_response(),
         }
     };
+    if request.method != "initialize" {
+        touch_session(&state, &session_id).await;
+    }
 
     // Log incoming request
     {
@@ -2370,36 +2414,9 @@ async fn mcp_post_handler(
 ) -> impl IntoResponse {
     let is_initialize = request.method == "initialize";
 
-    // Every request after initialize refreshes its session: traffic is the
-    // liveness signal for a client without a stream, and a client whose
-    // stream died but keeps calling falls back to that. A session that had
-    // gone offline comes back online here — and the suite hears it again.
-    // A request we cannot attribute refreshes nothing.
     if !is_initialize {
         if let Some(sid) = req_headers.get("mcp-session-id").and_then(|v| v.to_str().ok()) {
-            let reconnected = {
-                let mut clients = state.active_clients.lock().await;
-                match clients.get_mut(sid) {
-                    Some(info) => {
-                        let now = std::time::Instant::now();
-                        if info.tx.as_ref().is_some_and(|tx| tx.is_closed()) {
-                            info.tx = None;
-                        }
-                        let was_online = info.online(now);
-                        info.last_seen = now;
-                        if !was_online || !info.announced_online {
-                            info.announced_online = true;
-                            Some((info.client_name.clone(), info.client_version.clone()))
-                        } else {
-                            None
-                        }
-                    }
-                    None => None,
-                }
-            };
-            if let Some((name, version)) = reconnected {
-                announce_connected(&state, &name, version.as_deref());
-            }
+            touch_session(&state, sid).await;
         }
     }
 
@@ -2452,7 +2469,7 @@ async fn mcp_post_handler(
             // Sessions long offline are dead weight — most clients never send
             // DELETE /mcp, so a restarting client leaves one behind each time.
             let now = std::time::Instant::now();
-            clients.retain(|_, info| info.online(now) || now.duration_since(info.last_seen) < SESSION_RETENTION);
+            clients.retain(|_, info| info.retained(now));
             clients.insert(
                 session_id.clone(),
                 ActiveClientInfo::new(client_name.clone(), client_version.clone(), None),
@@ -2665,6 +2682,30 @@ mod tests {
             assert_eq!(message["method"], "notifications/tools/list_changed");
             assert!(message.get("id").is_none());
         }
+    }
+
+    /// One rule for every transport: a session is connected while it makes
+    /// requests. An open stream only keeps an idle session in the map, and a
+    /// closed one ends the session at once.
+    #[test]
+    fn idle_sessions_are_offline_whatever_their_transport() {
+        let minute = std::time::Duration::from_secs(60);
+        let (tx, rx) = mpsc::channel(1);
+        let stream = ActiveClientInfo::new("claude-code".into(), None, Some(tx));
+        let post_only = ActiveClientInfo::new("codex".into(), None, None);
+        for info in [&stream, &post_only] {
+            assert!(info.online(info.last_seen + 9 * minute), "{}", info.client_name);
+            assert!(!info.online(info.last_seen + IDLE_TIMEOUT), "{}", info.client_name);
+        }
+
+        let days_later = stream.last_seen + SESSION_RETENTION * 8;
+        assert!(!stream.online(days_later) && stream.retained(days_later));
+        assert!(post_only.retained(post_only.last_seen + IDLE_TIMEOUT));
+        assert!(!post_only.retained(post_only.last_seen + SESSION_RETENTION));
+
+        drop(rx);
+        assert!(!stream.online(stream.last_seen));
+        assert!(!stream.retained(stream.last_seen + SESSION_RETENTION));
     }
 
 
