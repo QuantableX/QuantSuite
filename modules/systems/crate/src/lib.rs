@@ -121,6 +121,8 @@ fn default_run_config(system_id: &str) -> Value {
     };
     json!({
         "topN": top_n,
+        "mode": "rotation",
+        "singleAsset": { "exchange": "coinbase", "pair": "BTC/USD", "timeframe": "1d", "direction": "long_cash" },
         "excludeTopN": exclude_top_n,
         "cadence": "daily",
         "startDate": format!("{:04}-{:02}-{:02}", start.year(), start.month(), start.day()),
@@ -209,6 +211,7 @@ impl PersistedStore {
         if !config.is_object() {
             return Err("Strategy settings must be an object".into());
         }
+        validate_run_config(&config)?;
         self.system_configs.insert(meta.id.clone(), config);
         self.systems.push(meta.clone());
         Ok(meta)
@@ -224,6 +227,7 @@ impl PersistedStore {
         if !config.is_object() {
             return Err("Strategy settings must be an object".into());
         }
+        validate_run_config(&config)?;
         if let Some(meta) = metadata {
             if meta.id != id {
                 return Err("Strategy ID cannot be changed".into());
@@ -247,6 +251,32 @@ impl PersistedStore {
             settings.active_system_id = fallback;
         }
         Ok(())
+    }
+}
+
+fn validate_run_config(config: &Value) -> Result<(), String> {
+    match config.get("mode").and_then(Value::as_str).unwrap_or("rotation") {
+        "rotation" => Ok(()),
+        "single_asset" => {
+            let market = config.get("singleAsset").ok_or("Choose a Single Asset market")?;
+            let exchange = market.get("exchange").and_then(Value::as_str).unwrap_or("");
+            if !["coinbase", "kraken", "binance", "bybit", "okx", "bitget", "kucoin", "gate", "mexc", "bitfinex", "htx"].contains(&exchange) {
+                return Err("Choose a supported exchange".into());
+            }
+            let pair = market.get("pair").and_then(Value::as_str).unwrap_or("");
+            let parts: Vec<_> = pair.split('/').collect();
+            if parts.len() != 2 || parts[0] == parts[1] || parts.iter().any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || "._-".contains(c))) {
+                return Err("Choose a spot pair such as BTC/USD".into());
+            }
+            if !["1h", "4h", "1d"].contains(&market.get("timeframe").and_then(Value::as_str).unwrap_or("")) {
+                return Err("Single Asset supports 1h, 4h or 1d candles".into());
+            }
+            if !["long_cash", "long_short"].contains(&market.get("direction").and_then(Value::as_str).unwrap_or("")) {
+                return Err("Choose Long/Cash or Long/Short".into());
+            }
+            Ok(())
+        }
+        _ => Err("Unknown manual system mode".into()),
     }
 }
 
@@ -884,6 +914,14 @@ async fn live_eval(
 }
 
 #[tauri::command]
+async fn pair_markets(exchange: String, engine: State<'_, EngineManager>) -> Result<Value, String> {
+    let mgr = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        mgr.request("pair_markets", json!({ "exchange": exchange }), QUICK_TIMEOUT)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn run_backtest(
     system_id: String,
     config: Value,
@@ -1249,6 +1287,7 @@ pub fn init() -> TauriPlugin<Wry> {
             stop_engine,
             engine_status,
             live_eval,
+            pair_markets,
             run_backtest,
             browse_universe,
             cache_stats,
@@ -1403,6 +1442,33 @@ mod tests {
         assert_eq!(restored.systems[0].name, "Any name / 日本語 System");
         assert_eq!(serde_json::to_value(&restored.system_configs).unwrap(), legacy["systemConfigs"]);
         assert_eq!(restored.settings.unwrap().active_system_id, "sces");
+    }
+
+    #[test]
+    fn single_asset_modes_roundtrip_duplicate_and_reject_invalid_markets() {
+        let dir = TestDir::new();
+        let store = Store { data_dir: dir.0.clone(), data: Mutex::new(PersistedStore::default()) };
+        let mut config = default_run_config("");
+        config["mode"] = json!("single_asset");
+        config["singleAsset"]["direction"] = json!("long_short");
+        let first = store.update(|data| data.create_system("BTC".into(), "".into(), "".into(), Some(config.clone()), None)).unwrap();
+        let loaded = load_store(&dir.0).unwrap();
+        assert_eq!(loaded.system_configs[&first.id], config);
+        let mut copy = config.clone();
+        copy["singleAsset"]["direction"] = json!("long_cash");
+        let second = store.update(|data| data.create_system("Copy".into(), "".into(), "".into(), Some(copy.clone()), None)).unwrap();
+        let loaded = load_store(&dir.0).unwrap();
+        assert_eq!(loaded.system_configs[&first.id]["singleAsset"]["direction"], "long_short");
+        assert_eq!(loaded.system_configs[&second.id], copy);
+        for (field, value) in [("pair", "BTC/"), ("direction", "both"), ("timeframe", "1m"), ("exchange", "unknown")] {
+            let mut invalid = config.clone();
+            invalid["singleAsset"][field] = json!(value);
+            assert!(store.update(|data| data.save_config(&first.id, invalid, None)).is_err());
+        }
+        assert_eq!(load_store(&dir.0).unwrap().system_configs[&first.id], config);
+        config["mode"] = json!("rotation");
+        store.update(|data| data.save_config(&first.id, config.clone(), None)).unwrap();
+        assert_eq!(load_store(&dir.0).unwrap().system_configs[&first.id]["singleAsset"]["direction"], "long_short");
     }
 
     #[test]

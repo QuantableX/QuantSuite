@@ -3,8 +3,11 @@ definePageMeta({ layout: 'systems', path: '/algo/manual/new' })
 
 import { useAppStore } from '#systems/stores/app'
 import { useSystemsStore } from '#systems/stores/systems'
-import { useConfigStore } from '#systems/stores/config'
+import { defaultRunConfig, useConfigStore } from '#systems/stores/config'
 import { strategyIcon } from '#systems/utils/strategyIcons'
+import SystemsSettingsSingleAssetForm from '#systems/components/Settings/SingleAssetForm.vue'
+import type { SystemMode } from '#systems/types'
+import { defaultSingleAsset } from '#systems/utils/systemMode'
 
 const app = useAppStore()
 const systems = useSystemsStore()
@@ -18,6 +21,8 @@ const short = ref(source.value?.short ?? '')
 const description = ref(source.value?.description ?? '')
 const busy = ref(false)
 const error = ref<string | null>(null)
+const mode = ref<SystemMode>('rotation')
+const singleAsset = ref(defaultSingleAsset())
 
 async function create() {
   if (busy.value || !name.value.trim()) return
@@ -29,7 +34,8 @@ async function create() {
       await config.load(sourceId.value)
       if (config.errors[sourceId.value]) throw new Error(config.errors[sourceId.value]!)
     }
-    const settings = sourceId.value ? JSON.parse(JSON.stringify(config.get(sourceId.value))) : undefined
+    const settings = sourceId.value ? JSON.parse(JSON.stringify(config.get(sourceId.value)))
+      : { ...defaultRunConfig(), mode: mode.value, singleAsset: { ...singleAsset.value } }
     const strategy = await systems.create(name.value.trim(), short.value.trim(), description.value.trim(), settings, strategyIcon(source.value).id)
     if (settings) config.remember(strategy.id, settings)
     app.setActiveSystem(strategy.id)
@@ -50,7 +56,7 @@ async function create() {
     </div>
     <label class="qs-new__field">
       <span class="label">Name</span>
-      <input v-model="name" class="input" required autofocus placeholder="My rotation strategy" :disabled="busy" />
+      <input v-model="name" class="input" required autofocus placeholder="My strategy" :disabled="busy" />
     </label>
     <label class="qs-new__field">
       <span class="label">Short label <span class="qs-new__optional">(optional)</span></span>
@@ -59,10 +65,17 @@ async function create() {
     <label class="qs-new__field">
       <span class="label">Starting settings</span>
       <select v-model="sourceId" class="select" :disabled="busy">
-        <option value="">Default rotation settings</option>
+        <option value="">Default settings</option>
         <option v-for="s in systems.systems" :key="s.id" :value="s.id">Copy {{ s.name }}</option>
       </select>
     </label>
+    <label v-if="!sourceId" class="qs-new__field">
+      <span class="label">System mode</span>
+      <select v-model="mode" class="select" :disabled="busy">
+        <option value="rotation">Evaluation Rotation System</option><option value="single_asset">Single Asset</option>
+      </select>
+    </label>
+    <SystemsSettingsSingleAssetForm v-if="!sourceId && mode === 'single_asset'" v-model="singleAsset" :disabled="busy" />
     <label class="qs-new__field">
       <span class="label">Description <span class="qs-new__optional">(optional)</span></span>
       <textarea v-model="description" class="input" rows="3" :disabled="busy" />

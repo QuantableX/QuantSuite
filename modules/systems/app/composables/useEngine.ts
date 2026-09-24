@@ -55,6 +55,8 @@ export function useEngine() {
     engineStatus: () => invoke<EngineStatus>('plugin:systems|engine_status'),
 
     // Evaluation
+    pairMarkets: (exchange: string) => runExclusive(() =>
+      invoke<{ exchange: string; exchanges: string[]; pairs: string[] }>('plugin:systems|pair_markets', { exchange })),
     liveEval: (systemId: string, config: RunConfig) =>
       invoke<LiveResult>('plugin:systems|live_eval', { systemId, config }),
     runBacktest: (systemId: string, config: RunConfig) =>

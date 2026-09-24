@@ -7,6 +7,7 @@ import { useBacktestStore } from '#systems/stores/backtest'
 import { useActiveView } from '#systems/composables/useActiveView'
 import { aggregateName, useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
 import { sortByOptions } from '#systems/utils/indicatorOptions'
+import { effectiveCadence, matchesMarket } from '#systems/utils/systemMode'
 
 const app = useAppStore()
 const systems = useSystemsStore()
@@ -49,6 +50,7 @@ const engineRunning = computed(() => app.engineStatus.status === 'running')
 
 const liveState = computed(() => live.stateFor(systemId.value))
 const btState = computed(() => backtest.stateFor(systemId.value))
+const liveResult = computed(() => liveState.value.result && matchesMarket(liveState.value.result, cfg.value) ? liveState.value.result : null)
 </script>
 
 <template>
@@ -60,6 +62,7 @@ const btState = computed(() => backtest.stateFor(systemId.value))
         <span class="qs-context__name" :title="system?.name">{{ system?.name }}</span>
       </div>
       <p class="qs-context__desc">{{ system?.description }}</p>
+      <span class="qs-context__desc">{{ cfg.mode === 'single_asset' ? 'Single Asset' : 'Evaluation Rotation System' }}</span>
     </section>
 
     <section class="qs-context__section">
@@ -68,10 +71,15 @@ const btState = computed(() => backtest.stateFor(systemId.value))
         <span>Status</span>
         <span :class="engineRunning ? 'qs-ok' : 'qs-muted'">{{ engineRunning ? 'running' : 'stopped' }}</span>
       </div>
-      <div class="qs-context__row">
+      <div v-if="cfg.mode !== 'single_asset'" class="qs-context__row">
         <span>Ranking</span>
         <span class="mono">{{ cfg.rankingSource }}</span>
       </div>
+      <template v-if="cfg.mode === 'single_asset'">
+        <div class="qs-context__row"><span>Exchange</span><span>{{ cfg.singleAsset.exchange }}</span></div>
+        <div class="qs-context__row"><span>Pair</span><span class="mono">{{ cfg.singleAsset.pair }}</span></div>
+        <div class="qs-context__row"><span>Positions</span><span>{{ cfg.singleAsset.direction === 'long_short' ? 'Long/Short' : 'Long/Cash' }}</span></div>
+      </template>
       <div class="qs-context__group">
         <div class="qs-context__row">
           <span>Trend</span>
@@ -90,7 +98,7 @@ const btState = computed(() => backtest.stateFor(systemId.value))
           <span v-for="kind in compareChips" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
         </div>
       </div>
-      <div class="qs-context__group">
+      <div v-if="cfg.mode !== 'single_asset'" class="qs-context__group">
         <div class="qs-context__row">
           <span>TOTAL filter</span>
           <span class="mono qs-context__compare" :class="cfg.marketFilter ? '' : 'qs-muted'"
@@ -104,16 +112,16 @@ const btState = computed(() => backtest.stateFor(systemId.value))
 
     <!-- Live context -->
     <section v-if="view === 'live'" class="qs-context__section">
-      <span class="label">Best Asset</span>
-      <div v-if="liveState.result?.best" class="qs-context__best">{{ liveState.result.best }}</div>
-      <p v-else class="qs-context__desc">Run a live evaluation to rank today's top coins.</p>
-      <div v-if="liveState.result?.marketFilter?.enabled" class="qs-context__row">
+      <span class="label">{{ cfg.mode === 'single_asset' ? 'Next position' : 'Best Asset' }}</span>
+      <div v-if="liveResult?.best" class="qs-context__best">{{ liveResult.best }}</div>
+      <p v-else class="qs-context__desc">Run a live evaluation to see the confirmed signal.</p>
+      <div v-if="liveResult?.marketFilter?.enabled" class="qs-context__row">
         <span>TOTAL</span>
-        <span :class="liveState.result.marketFilter.bullish ? 'qs-ok' : 'qs-bad'">
-          {{ liveState.result.marketFilter.bullish ? 'bullish' : 'bearish · USD only' }}
+        <span :class="liveResult.marketFilter.bullish ? 'qs-ok' : 'qs-bad'">
+          {{ liveResult.marketFilter.bullish ? 'bullish' : 'bearish · USD only' }}
         </span>
       </div>
-      <div class="qs-legend">
+      <div v-if="cfg.mode !== 'single_asset'" class="qs-legend">
         <div class="qs-legend__item"><span class="qs-legend__box qs-legend__box--win" />A beats B</div>
         <div class="qs-legend__item"><span class="qs-legend__box qs-legend__box--lose" />A loses to B</div>
       </div>
@@ -124,7 +132,7 @@ const btState = computed(() => backtest.stateFor(systemId.value))
       <span class="label">Run Window</span>
       <div class="qs-context__row"><span>Start</span><span class="mono">{{ cfg.startDate }}</span></div>
       <div class="qs-context__row"><span>End</span><span class="mono">{{ cfg.endDate }}</span></div>
-      <div class="qs-context__row"><span>Cadence</span><span class="mono">{{ cfg.cadence }}</span></div>
+      <div class="qs-context__row"><span>{{ cfg.mode === 'single_asset' ? 'Timeframe' : 'Cadence' }}</span><span class="mono">{{ effectiveCadence(cfg) }}</span></div>
       <div class="qs-context__row"><span>Fee</span><span class="mono">{{ (cfg.feeRate * 100).toFixed(2) }}%</span></div>
       <template v-if="btState.notes.length">
         <span class="label" style="margin-top: 14px">Notes</span>

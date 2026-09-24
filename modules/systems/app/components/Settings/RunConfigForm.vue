@@ -4,6 +4,7 @@ import type { SmitheryCatalogEntry } from '@quantsuite/core'
 import { useConfigStore } from '#systems/stores/config'
 import { useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
 import SystemsSettingsMarketFilterSelect from '#systems/components/Settings/MarketFilterSelect.vue'
+import SystemsSettingsSingleAssetForm from '#systems/components/Settings/SingleAssetForm.vue'
 import type { Cadence, PriceSource, RankingSource, RunConfig, TrendKind } from '#systems/types'
 
 const props = defineProps<{ systemId: string }>()
@@ -95,8 +96,9 @@ const slipPct = computed({
     <h2 class="qs-form__heading">Run Configuration</h2>
 
     <div class="qs-form__section qs-form__section--universe">
-      <span class="qs-form__legend">Coin Selection</span>
-      <div class="qs-form__grid">
+      <span class="qs-form__legend">{{ cfg.mode === 'single_asset' ? 'Single Asset' : 'Coin Selection' }}</span>
+      <SystemsSettingsSingleAssetForm v-if="cfg.mode === 'single_asset'" :model-value="cfg.singleAsset" @update:model-value="set('singleAsset', $event)" />
+      <div v-else class="qs-form__grid">
         <div>
           <label class="label">Top N</label>
           <input class="input mono" type="number" min="2" max="1000"
@@ -120,7 +122,7 @@ const slipPct = computed({
           </select>
         </div>
       </div>
-      <div class="qs-form__checks">
+      <div v-if="cfg.mode !== 'single_asset'" class="qs-form__checks">
         <label class="qs-check">
           <input type="checkbox" :checked="cfg.excludeStablecoins" @change="set('excludeStablecoins', ($event.target as HTMLInputElement).checked)" />
           <span>Exclude stablecoins</span>
@@ -182,7 +184,7 @@ const slipPct = computed({
       </p>
       <p v-else-if="trend !== 'ema_cross'" class="qs-form__hint">
         Runs the chosen version's parameters; change them under Parameters. Scores refer to {{ scoreTrack }} candles; historical references are not fresh certification.
-        Validate the indicator on the system’s asset ratios and portfolio, including trading costs.
+        Validate the indicator on the selected markets, including trading costs.
       </p>
       <div v-if="tunable.length" class="qs-form__params">
         <details v-for="t in tunable" :key="t.key" class="qs-form__param-group">
@@ -208,17 +210,17 @@ const slipPct = computed({
         Smithery could not be loaded: {{ catalog.error }}
         <button class="btn btn--sm" type="button" @click="catalog.load()">Retry</button>
       </p>
-      <div class="qs-form__checks">
+      <div v-if="cfg.mode !== 'single_asset'" class="qs-form__checks">
         <label class="qs-check">
           <input type="checkbox" :checked="cfg.marketFilter" @change="set('marketFilter', ($event.target as HTMLInputElement).checked)" />
           <span>Higher filter: TOTAL</span>
         </label>
       </div>
-      <p class="qs-form__hint">
+      <p v-if="cfg.mode !== 'single_asset'" class="qs-form__hint">
         Positions only while TOTAL (the ranked top-N, weighted by market cap) is bullish; otherwise USD.
         An independent filter applies to all variants and live evaluation, without changing coin rankings.
       </p>
-      <SystemsSettingsMarketFilterSelect v-if="cfg.marketFilter" :config="cfg"
+      <SystemsSettingsMarketFilterSelect v-if="cfg.mode !== 'single_asset' && cfg.marketFilter" :config="cfg"
         @update:model-value="set('marketIndicator', $event)" />
       <div v-if="emaInUse" class="qs-form__grid qs-form__grid--three">
         <div>

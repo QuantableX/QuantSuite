@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 
 # Intraday timeframe → milliseconds per bar (used to advance the CCXT cursor).
 _TF_MS: dict[str, int] = {
+    "1d": 24 * 60 * 60 * 1000,
     "1h": 60 * 60 * 1000,
     "4h": 4 * 60 * 60 * 1000,
     "12h": 12 * 60 * 60 * 1000,
@@ -75,12 +76,15 @@ _EXCHANGE_CHAIN = (
     "binance", "bybit", "okx", "bitget", "kucoin", "gate", "mexc", "bitfinex", "htx",
 )
 
+SINGLE_ASSET_EXCHANGES = ("coinbase", "kraken", *_EXCHANGE_CHAIN)
+
 
 @dataclass(frozen=True)
 class CoinRef:
     cg_id: str | None
     symbol: str
     binance_symbol: str | None = None
+    cache_key: str | None = None
 
 
 @dataclass
@@ -90,12 +94,12 @@ class OhlcvSeries:
 
     @property
     def coin_key(self) -> str:
-        if self.coin_ref.cg_id:
-            return f"cg:{self.coin_ref.cg_id}"
-        return f"sym:{self.coin_ref.symbol.upper()}"
+        return coin_key_for(self.coin_ref)
 
 
 def coin_key_for(ref: CoinRef) -> str:
+    if ref.cache_key:
+        return ref.cache_key
     if ref.cg_id:
         return f"cg:{ref.cg_id}"
     return f"sym:{ref.symbol.upper()}"
@@ -249,6 +253,45 @@ class OhlcvFetcher:
         )
 
     # ------------------------------------------------------------------ #
+
+    def pair_markets(self, exchange: str) -> list[str]:
+        """Public spot markets only; no account or execution permissions."""
+        if exchange not in SINGLE_ASSET_EXCHANGES:
+            raise ValueError(f"Unsupported exchange: {exchange}")
+        ex = self._ensure_exchange(exchange)
+        markets = self._markets.get(exchange, {})
+        if ex is None or not markets:
+            raise ValueError(f"Could not load {exchange} markets; retry the connection")
+        return sorted({m.get("symbol", symbol) for symbol, m in markets.items()
+                       if m.get("spot") and m.get("active") is not False
+                       and "/" in m.get("symbol", symbol) and ":" not in m.get("symbol", symbol)})
+
+    def get_pair_series(self, exchange: str, pair: str, start: dt.date, end: dt.date,
+                        timeframe: str = "1d") -> OhlcvSeries:
+        """Exact venue/pair candles, isolated from rotation's USD proxy cache."""
+        if pair not in self.pair_markets(exchange):
+            raise ValueError(f"{pair} is not an available spot pair on {exchange}")
+        if timeframe not in ("1h", "4h", "1d"):
+            raise ValueError("Single Asset supports 1h, 4h or 1d candles")
+        ex = self._ensure_exchange(exchange)
+        if getattr(ex, "timeframes", None) and timeframe not in ex.timeframes:
+            raise ValueError(f"{exchange} does not provide {timeframe} candles")
+        ref = CoinRef(None, pair, cache_key=f"market:{exchange}:{pair}")
+        delta = pd.Timedelta(milliseconds=_TF_MS[timeframe])
+        upper = min(pd.Timestamp(end + dt.timedelta(days=1)), pd.Timestamp(utc_now()).tz_localize(None))
+        freq = "D" if timeframe == "1d" else timeframe
+        last_open = upper.floor(freq) - delta
+        first = dt.datetime.combine(start, dt.time.min)
+        if last_open < first:
+            return OhlcvSeries(ref, _bars_to_frame([]))
+        cached = self.cache.get_ohlcv_intraday_range(ref.cache_key, timeframe, first, last_open.to_pydatetime())
+        expected = set(pd.date_range(first, last_open, freq=freq))
+        if expected - {pd.Timestamp(b.ts) for b in cached}:
+            bars = self._fetch_ccxt_intraday_one(exchange, pair, ref, start, end, timeframe, strict=True)
+            # This path never substitutes a quote, exchange, or CoinGecko data.
+            self.cache.upsert_ohlcv_intraday(bars)
+            cached = self.cache.get_ohlcv_intraday_range(ref.cache_key, timeframe, first, last_open.to_pydatetime())
+        return OhlcvSeries(ref, _bars_to_frame(cached))
 
     def get_series(
         self,
@@ -470,6 +513,8 @@ class OhlcvFetcher:
         start: dt.date,
         end: dt.date,
         tf: str,
+        *,
+        strict: bool = False,
     ) -> list[OhlcvBar]:
         ex = self._ensure_exchange(name)
         if ex is None:
@@ -483,6 +528,9 @@ class OhlcvFetcher:
         )
         bar_ms = _TF_MS.get(tf, 60 * 60 * 1000)
         confirmed_ms = int(utc_now().timestamp() * 1000)
+        end_ms = min(end_ms, confirmed_ms - bar_ms)
+        if since_ms > end_ms:
+            return []
 
         coin_key = coin_key_for(ref)
         out: list[OhlcvBar] = []
@@ -495,6 +543,8 @@ class OhlcvFetcher:
                 batch = ex.fetch_ohlcv(pair, timeframe=tf, since=cursor, limit=1000)
             except Exception as exc:  # noqa: BLE001
                 log.info("CCXT fetch_ohlcv error %s @ %s: %s", pair, cursor, exc)
+                if strict:
+                    raise RuntimeError(f"Could not fetch complete {tf} history for {pair} on {name}: {exc}") from exc
                 break
             if not batch:
                 break

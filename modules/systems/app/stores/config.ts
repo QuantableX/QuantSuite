@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useEngine } from '#systems/composables/useEngine'
 import type { RunConfig, SystemMeta } from '#systems/types'
+import { defaultSingleAsset } from '#systems/utils/systemMode'
 
 function localIso(d: Date): string {
   const y = d.getFullYear()
@@ -22,6 +23,8 @@ export function isoToday(): string {
 export function defaultRunConfig(systemId?: string): RunConfig {
   const sces = systemId === 'sces'
   return {
+    mode: 'rotation',
+    singleAsset: defaultSingleAsset(),
     topN: 100,
     excludeTopN: sces ? 5 : 0,
     cadence: 'daily',
@@ -75,6 +78,7 @@ export const useConfigStore = defineStore('systems/config', () => {
         // deep-merge: configs saved before the trend selector existed
         // have an indicator object without `trend`
         indicator: { ...defaults.indicator, ...cfg.indicator },
+        singleAsset: { ...defaults.singleAsset, ...cfg.singleAsset },
       }
       loadedThisSession.add(systemId)
       errors.value[systemId] = null

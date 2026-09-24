@@ -4,6 +4,7 @@ import { useAppStore } from '#systems/stores/app'
 import { STALE_ENGINE } from '#systems/stores/backtest'
 import { useConfigStore } from '#systems/stores/config'
 import type { LiveResult, RunConfig } from '#systems/types'
+import { matchesMarket } from '#systems/utils/systemMode'
 
 interface LiveState {
   result: LiveResult | null
@@ -26,7 +27,8 @@ export const useLiveStore = defineStore('systems/live', () => {
    *  know the configured indicator (it predates the Python code). */
   async function liveEvalFresh(systemId: string, cfg: RunConfig): Promise<LiveResult> {
     try {
-      return await engine.liveEval(systemId, cfg)
+      const result = await engine.liveEval(systemId, cfg)
+      if (matchesMarket(result, cfg)) return result
     } catch (e) {
       if (!STALE_ENGINE.test(String(e))) throw e
     }
@@ -34,8 +36,10 @@ export const useLiveStore = defineStore('systems/live', () => {
     try { await engine.stopEngine() } catch { /* already stopped */ }
     await engine.startEngine()
     await app.refreshEngineStatus()
-    setProgress("Building today's coin list", 0.05)
-    return engine.liveEval(systemId, cfg)
+    setProgress(cfg.mode === 'single_asset' ? 'Loading confirmed candles' : "Building today's coin list", 0.05)
+    const result = await engine.liveEval(systemId, cfg)
+    if (!matchesMarket(result, cfg)) throw new Error('The engine does not support this system mode. Update QuantSuite and restart the engine.')
+    return result
   }
 
   // Per-system live state, so each system keeps its own evaluation result.
@@ -68,7 +72,7 @@ export const useLiveStore = defineStore('systems/live', () => {
     // in-flight job's progress events.
     await runExclusive(async () => {
       runningSystemId.value = systemId
-      s.progressLabel = "Building today's coin list"
+      s.progressLabel = config.get(systemId).mode === 'single_asset' ? 'Loading confirmed candles' : "Building today's coin list"
       s.progressValue = 0.05
       try {
         s.result = await liveEvalFresh(systemId, config.get(systemId))

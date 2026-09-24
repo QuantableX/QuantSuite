@@ -143,6 +143,10 @@ def _build_indicator(ind_raw: dict[str, Any], inherited: dict[str, dict[str, Any
 
 def _build_config(raw: dict[str, Any]) -> RunConfig:
     raw = raw or {}
+    from .config import SingleAssetConfig
+    mode = str(raw.get("mode", "rotation"))
+    # An unfinished market selection must not prevent switching back to rotation.
+    single = (raw.get("singleAsset", raw.get("single_asset")) or {}) if mode == "single_asset" else {}
     today = dt.date.today()
     indicator = _build_indicator(raw.get("indicator") or {})
     market_raw = raw.get("marketIndicator", raw.get("market_indicator"))
@@ -160,6 +164,13 @@ def _build_config(raw: dict[str, Any]) -> RunConfig:
     compare_raw = raw.get("compareTrends", raw.get("compare_trends")) or []
     compare = tuple(str(kind) for kind in compare_raw if kind)
     return RunConfig(
+        mode=mode,
+        single_asset=SingleAssetConfig(
+            exchange=str(single.get("exchange", "coinbase")),
+            pair=str(single.get("pair", "BTC/USD")),
+            timeframe=str(single.get("timeframe", "1d")),
+            direction=str(single.get("direction", "long_cash")),
+        ),
         top_n=int(raw.get("topN", raw.get("top_n", 5))),
         exclude_top_n=int(raw.get("excludeTopN", raw.get("exclude_top_n", 0))),
         cadence=Cadence(raw.get("cadence", "daily")),
@@ -282,6 +293,8 @@ def _method_universe(params: dict[str, Any]) -> dict[str, Any]:
 
 def _method_live(params: dict[str, Any]) -> dict[str, Any]:
     cfg = _build_config(params.get("config") or {})
+    if cfg.mode == "single_asset":
+        return _method_single_live(cfg, params)
     as_of = _parse_date(params.get("asOf") or params.get("as_of"), cfg.end_date)
 
     registry = RankingRegistry(
@@ -436,6 +449,52 @@ def _method_live(params: dict[str, Any]) -> dict[str, Any]:
 # ── method: backtest ─────────────────────────────────────────────────────────
 
 
+def _market_info(cfg: RunConfig) -> dict[str, Any]:
+    return {"mode": cfg.mode, "singleAsset": asdict(cfg.single_asset) if cfg.mode == "single_asset" else None}
+
+
+def _method_pair_markets(params: dict[str, Any]) -> dict[str, Any]:
+    from .data.ohlcv import SINGLE_ASSET_EXCHANGES
+    exchange = str(params.get("exchange", "coinbase"))
+    fetcher = OhlcvFetcher(get_default_cache())
+    return {"exchange": exchange, "exchanges": list(SINGLE_ASSET_EXCHANGES),
+            "pairs": fetcher.pair_markets(exchange)}
+
+
+def _method_single_live(cfg: RunConfig, params: dict[str, Any]) -> dict[str, Any]:
+    from dataclasses import replace
+    from .backtest.engine import _fetch_start
+    from .backtest.signals import direction_signal
+    from .data.ohlcv import confirmed_frame, utc_now
+    cfg = replace(cfg, cadence=cfg.bar_cadence)
+    market = cfg.single_asset
+    base, quote = market.pair.split("/")
+    as_of = _parse_date(params.get("asOf") or params.get("as_of"), cfg.end_date)
+    now = utc_now()
+    fetcher = OhlcvFetcher(get_default_cache(), min_request_interval=cfg.min_request_interval)
+    _notify("progress", {"label": f"Fetching {market.pair}", "value": 0.1})
+    data = fetcher.get_pair_series(market.exchange, market.pair, _fetch_start(cfg), as_of, market.timeframe)
+    frame = confirmed_frame(data.frame, market.timeframe, now)
+    frame = frame.loc[frame.index < pd.Timestamp(as_of + dt.timedelta(days=1))] if not frame.empty else frame
+    if frame.empty:
+        raise ValueError(f"No confirmed candles for {market.pair} in the selected window")
+    if any(not math.isfinite(float(price)) or price <= 0 for price in frame["close"]):
+        raise ValueError("Single Asset candles contain invalid close prices")
+    verdict = int(direction_signal(frame, cfg.indicator).iloc[-1])
+    position = "long" if verdict > 0 else "short" if verdict < 0 and market.direction == "long_short" else "cash"
+    stamp = pd.Timestamp(frame.index[-1])
+    delta = pd.Timedelta(market.timeframe)
+    closed_at = (stamp + delta).isoformat() + "Z"
+    _notify("progress", {"label": "Done", "value": 1.0})
+    return {**_market_info(cfg), "asOf": as_of.isoformat(), "provider": market.exchange,
+            "universe": [], "symbols": [base, quote], "scoreMatrix": [], "scores": {},
+            "best": base if position == "long" else f"Short {base}" if position == "short" else quote,
+            "marketFilter": {"enabled": False, "bullish": None},
+            "singleAssetSignal": {"signal": "bullish" if verdict > 0 else "bearish" if verdict < 0 else "neutral",
+                                  "position": position, "close": float(frame["close"].iloc[-1]),
+                                  "closedAt": closed_at}}
+
+
 def _method_backtest(params: dict[str, Any]) -> dict[str, Any]:
     cfg = _build_config(params.get("config") or {})
     progress_value = 0.0
@@ -453,7 +512,7 @@ def _method_backtest(params: dict[str, Any]) -> dict[str, Any]:
     )
 
     result = engine.run(cfg, progress=progress)
-    intraday = cfg.cadence.is_intraday
+    intraday = cfg.bar_cadence.is_intraday
 
     # Successful strategies only. Scalars still represent the configured
     # primary, and stay empty if that primary could not be evaluated.
@@ -471,6 +530,7 @@ def _method_backtest(params: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "strategies": strategies,
+        **_market_info(cfg),
         "skippedStrategies": result.skipped_strategies,
         "equityStrategy": _series_to_points(result.equity_strategy, intraday),
         "heldAsset": _held_to_points(result.held_asset, intraday),
@@ -523,6 +583,7 @@ def _method_clear_cache(params: dict[str, Any]) -> dict[str, Any]:
 
 
 _METHODS = {
+    "pair_markets": _method_pair_markets,
     "ping": _method_ping,
     "live": _method_live,
     "backtest": _method_backtest,

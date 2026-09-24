@@ -1,6 +1,7 @@
 import { useSystemsIndicatorsStore } from '#systems/stores/indicators'
 import { findIndicatorOption, indicatorOptionRows } from '#systems/utils/indicatorOptions'
 import type { Cadence, IndicatorOption, RunConfig } from '#systems/types'
+import { effectiveCadence } from '#systems/utils/systemMode'
 
 export const EMA_CROSS_OPTION: IndicatorOption = {
   value: 'ema_cross', name: 'EMA Band Cross', score: null, grade: null,
@@ -32,7 +33,7 @@ export function useIndicatorOptions(cfg: () => RunConfig) {
   const catalog = useSystemsIndicatorsStore()
   onMounted(() => { void catalog.load() })
 
-  const scoreTrack = computed(() => scoreTrackFor(cfg().cadence))
+  const scoreTrack = computed(() => scoreTrackFor(effectiveCadence(cfg())))
 
   const options = computed<IndicatorOption[]>(() => {
     const rows = indicatorOptionRows(catalog.indicators, scoreTrack.value)
