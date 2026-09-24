@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-collection-source-delete"
+description = "Enables the collection_source_delete command without any pre-configured scope."
+commands.allow = ["collection_source_delete"]
+
+[[permission]]
+identifier = "deny-collection-source-delete"
+description = "Denies the collection_source_delete command without any pre-configured scope."
+commands.deny = ["collection_source_delete"]

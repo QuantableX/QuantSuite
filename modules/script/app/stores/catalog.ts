@@ -2,17 +2,17 @@ import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, ref } from 'vue'
 import type {
-  StoreCatalog,
-  StoreInstallOutcome,
-  StoreItemDetail,
-  StorePlan,
-  StoreRemoved,
-  StoreSource,
-  StoreSourceInput,
+  CollectionCatalog,
+  CollectionInstallOutcome,
+  CollectionItemDetail,
+  CollectionPlan,
+  CollectionRemoved,
+  CollectionSource,
+  CollectionSourceInput,
 } from '#script/types'
-import { DEFAULT_STORE_FILTERS, filterItems, type StoreFilters } from '#script/utils/catalog'
+import { DEFAULT_COLLECTION_FILTERS, filterItems, type CollectionFilters } from '#script/utils/catalog'
 
-const SOURCE_KEY = 'quantsuite.script.store.source'
+const SOURCE_KEY = 'quantsuite.script.collection.source'
 
 function rememberedSource(): string | null {
   try {
@@ -23,26 +23,26 @@ function rememberedSource(): string | null {
 }
 
 /**
- * The QuantScript Store (plugin:script|store_*): the catalog of one source
+ * The QuantScript Collection (plugin:script|collection_*): the catalog of one source
  * at a pinned commit, the item on screen, installs and removals. Tokens go
  * straight to the backend's credential store and are never kept here.
  */
 export const useCatalogStore = defineStore('script/catalog', () => {
-  const sources = ref<StoreSource[]>([])
+  const sources = ref<CollectionSource[]>([])
   const sourcesLoading = ref(false)
   const sourcesError = ref<string | null>(null)
   const sourceId = ref<string | null>(rememberedSource())
 
-  const catalog = ref<StoreCatalog | null>(null)
+  const catalog = ref<CollectionCatalog | null>(null)
   const catalogLoading = ref(false)
   const catalogError = ref<string | null>(null)
 
   const selectedKey = ref<string | null>(null)
-  const detail = ref<StoreItemDetail | null>(null)
+  const detail = ref<CollectionItemDetail | null>(null)
   const detailLoading = ref(false)
   const detailError = ref<string | null>(null)
 
-  const filters = ref<StoreFilters>({ ...DEFAULT_STORE_FILTERS })
+  const filters = ref<CollectionFilters>({ ...DEFAULT_COLLECTION_FILTERS })
   /** `install` / `remove` while one runs. */
   const busy = ref<string | null>(null)
 
@@ -57,7 +57,7 @@ export const useCatalogStore = defineStore('script/catalog', () => {
     sourcesLoading.value = true
     sourcesError.value = null
     try {
-      sources.value = await invoke<StoreSource[]>('plugin:script|store_sources')
+      sources.value = await invoke<CollectionSource[]>('plugin:script|collection_sources')
       if (!sources.value.some((s) => s.id === sourceId.value)) {
         sourceId.value = sources.value.find((s) => s.enabled)?.id ?? sources.value[0]?.id ?? null
       }
@@ -88,7 +88,7 @@ export const useCatalogStore = defineStore('script/catalog', () => {
     catalogLoading.value = true
     catalogError.value = null
     try {
-      catalog.value = await invoke<StoreCatalog>('plugin:script|store_catalog', { sourceId: sourceId.value, refresh })
+      catalog.value = await invoke<CollectionCatalog>('plugin:script|collection_catalog', { sourceId: sourceId.value, refresh })
       const updated = catalog.value.source
       sources.value = sources.value.map((s) => (s.id === updated.id ? updated : s))
       if (selectedKey.value && !byKey.value.has(selectedKey.value)) selectedKey.value = null
@@ -107,7 +107,7 @@ export const useCatalogStore = defineStore('script/catalog', () => {
     detailLoading.value = true
     detailError.value = null
     try {
-      const doc = await invoke<StoreItemDetail>('plugin:script|store_item', { sourceId: sourceId.value, key })
+      const doc = await invoke<CollectionItemDetail>('plugin:script|collection_item', { sourceId: sourceId.value, key })
       if (selectedKey.value === key) detail.value = doc
     } catch (err) {
       if (selectedKey.value === key) {
@@ -119,24 +119,24 @@ export const useCatalogStore = defineStore('script/catalog', () => {
     }
   }
 
-  function plan(keys: string[]): Promise<StorePlan> {
-    return invoke<StorePlan>('plugin:script|store_plan', { sourceId: sourceId.value, keys })
+  function plan(keys: string[]): Promise<CollectionPlan> {
+    return invoke<CollectionPlan>('plugin:script|collection_plan', { sourceId: sourceId.value, keys })
   }
 
-  async function install(keys: string[], overwrite: boolean): Promise<StoreInstallOutcome> {
+  async function install(keys: string[], overwrite: boolean): Promise<CollectionInstallOutcome> {
     busy.value = 'install'
     try {
-      return await invoke<StoreInstallOutcome>('plugin:script|store_install', { sourceId: sourceId.value, keys, overwrite })
+      return await invoke<CollectionInstallOutcome>('plugin:script|collection_install', { sourceId: sourceId.value, keys, overwrite })
     } finally {
       busy.value = null
       await loadCatalog(false)
     }
   }
 
-  async function remove(key: string): Promise<StoreRemoved> {
+  async function remove(key: string): Promise<CollectionRemoved> {
     busy.value = 'remove'
     try {
-      return await invoke<StoreRemoved>('plugin:script|store_remove', { key })
+      return await invoke<CollectionRemoved>('plugin:script|collection_remove', { key })
     } finally {
       busy.value = null
       await loadCatalog(false)
@@ -144,32 +144,32 @@ export const useCatalogStore = defineStore('script/catalog', () => {
   }
 
   // ── Settings ──
-  async function saveSource(input: StoreSourceInput): Promise<StoreSource> {
-    const saved = await invoke<StoreSource>('plugin:script|store_source_save', { source: input })
+  async function saveSource(input: CollectionSourceInput): Promise<CollectionSource> {
+    const saved = await invoke<CollectionSource>('plugin:script|collection_source_save', { source: input })
     await loadSources()
     return saved
   }
 
   async function deleteSource(id: string) {
-    await invoke('plugin:script|store_source_delete', { id })
+    await invoke('plugin:script|collection_source_delete', { id })
     if (sourceId.value === id) catalog.value = null
     await loadSources()
   }
 
   async function setToken(id: string, token: string) {
-    const updated = await invoke<StoreSource>('plugin:script|store_token_set', { sourceId: id, token })
+    const updated = await invoke<CollectionSource>('plugin:script|collection_token_set', { sourceId: id, token })
     sources.value = sources.value.map((s) => (s.id === updated.id ? updated : s))
   }
 
   async function clearToken(id: string) {
-    const updated = await invoke<StoreSource>('plugin:script|store_token_clear', { sourceId: id })
+    const updated = await invoke<CollectionSource>('plugin:script|collection_token_clear', { sourceId: id })
     sources.value = sources.value.map((s) => (s.id === updated.id ? updated : s))
   }
 
   /** Test connection: resolve the branch and read the catalog. */
   async function testSource(id: string): Promise<{ ok: boolean; message: string }> {
     try {
-      const doc = await invoke<StoreCatalog>('plugin:script|store_catalog', { sourceId: id, refresh: true })
+      const doc = await invoke<CollectionCatalog>('plugin:script|collection_catalog', { sourceId: id, refresh: true })
       sources.value = sources.value.map((s) => (s.id === doc.source.id ? doc.source : s))
       if (id === sourceId.value) catalog.value = doc
       return { ok: true, message: `${doc.items.length} packages at ${doc.commit.startsWith('local-') ? doc.commit : doc.commit.slice(0, 7)}` }

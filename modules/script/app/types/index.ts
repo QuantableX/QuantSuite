@@ -407,10 +407,10 @@ export interface AlgoStrategy {
   name: string
 }
 
-// ─── The Store (plugin:script|store_*) ───────────────────────────────────────
+// ─── The Collection (plugin:script|collection_*) ───────────────────────────────────────
 
 /** A catalog source; the token itself never leaves the credential store. */
-export interface StoreSource {
+export interface CollectionSource {
   id: string
   kind: 'github' | 'folder'
   name: string
@@ -425,7 +425,7 @@ export interface StoreSource {
   has_token: boolean
 }
 
-export interface StoreSourceInput {
+export interface CollectionSourceInput {
   id?: string
   kind: 'github' | 'folder'
   name: string
@@ -436,7 +436,7 @@ export interface StoreSourceInput {
   enabled?: boolean
 }
 
-export interface StoreVerdict {
+export interface CollectionVerdict {
   score: number
   grade: string
   certified: boolean
@@ -446,20 +446,20 @@ export interface StoreVerdict {
 }
 
 /** The library's state of one catalog item. */
-export interface StoreLocal {
+export interface CollectionLocal {
   installed_version: string | null
   installed_commit: string | null
   update: boolean
-  /** Files the Store installed were changed in the library since. */
+  /** Files the Collection installed were changed in the library since. */
   modified: boolean
-  /** A script of that name the Store did not install. */
+  /** A script of that name the Collection did not install. */
   present: boolean
   conflict: boolean
   /** The engine's contract is older than the package's. */
   too_new: boolean
 }
 
-export interface StoreCatalogItem {
+export interface CollectionCatalogItem {
   type: 'indicator' | 'library'
   key: string
   name: string
@@ -469,29 +469,29 @@ export interface StoreCatalogItem {
   contract: number
   requires: string[]
   /** role → track → verdict */
-  scores: Record<string, Record<string, StoreVerdict>>
+  scores: Record<string, Record<string, CollectionVerdict>>
   manifest: { path: string; sha256: string }
-  local: StoreLocal
+  local: CollectionLocal
 }
 
-export interface StoreCatalog {
-  source: StoreSource
+export interface CollectionCatalog {
+  source: CollectionSource
   commit: string
   generated_at: string | null
   engine_contract: number | null
-  items: StoreCatalogItem[]
+  items: CollectionCatalogItem[]
 }
 
-export interface StoreManifestVersion {
+export interface CollectionManifestVersion {
   key: string
   label: string
   params: Record<string, unknown>
   decision: string | null
   file: string | null
-  evidence: Record<string, StoreVerdict>
+  evidence: Record<string, CollectionVerdict>
 }
 
-export interface StoreManifest {
+export interface CollectionManifest {
   format: number
   type: 'indicator' | 'library'
   key: string
@@ -509,20 +509,20 @@ export interface StoreManifest {
   warmup_bars?: number
   legacy?: { key: string; label: string }[]
   schema?: Record<string, ParamSchemaEntry>
-  versions?: Partial<Record<VersionRole, StoreManifestVersion>>
+  versions?: Partial<Record<VersionRole, CollectionManifestVersion>>
   files: { path: string; sha256: string; role: string }[]
   changelog: { version: string; date: string; change: string; note: string }[]
 }
 
-export interface StoreItemDetail {
+export interface CollectionItemDetail {
   commit: string
-  item: Omit<StoreCatalogItem, 'local'>
-  manifest: StoreManifest
+  item: Omit<CollectionCatalogItem, 'local'>
+  manifest: CollectionManifest
   readme: string | null
-  local: StoreLocal | null
+  local: CollectionLocal | null
 }
 
-export interface StorePlanItem {
+export interface CollectionPlanItem {
   key: string
   name: string
   type: 'indicator' | 'library'
@@ -535,20 +535,20 @@ export interface StorePlanItem {
   files: { path: string; action: 'create' | 'replace' | 'same' | 'remove' }[]
 }
 
-export interface StorePlan {
+export interface CollectionPlan {
   source: string
   commit: string
-  items: StorePlanItem[]
+  items: CollectionPlanItem[]
   conflicts: number
 }
 
-export interface StoreInstallOutcome {
-  plan: StorePlan
+export interface CollectionInstallOutcome {
+  plan: CollectionPlan
   written: { key: string; file: string; created: boolean; version: number | null }[]
   check: unknown
 }
 
-export interface StoreRemoved {
+export interface CollectionRemoved {
   key: string
   file: string
   keys: string[]

@@ -1,13 +1,13 @@
-//! The QuantScript Store: install single indicators — with their
+//! The QuantScript Collection: install single indicators — with their
 //! requirements and all their versions — from a catalog into the private
-//! library (the format: QuantScript-Indicators' FORMAT.md).
+//! library (the format: QuantScript-Collection' FORMAT.md).
 //!
 //! Every file is verified on the way in: the catalog names each manifest's
 //! sha256, each manifest names its files' sha256. An install is planned
 //! first (create / replace / skip / conflict per package), then staged — the
 //! current library with the new files written in, verified by the engine
-//! (`quantscript stage-check`) — and only then written. `<library>/store.json`
-//! remembers what the Store installed, so an update can tell its own files
+//! (`quantscript stage-check`) — and only then written. `<library>/collection.json`
+//! remembers what the Collection installed, so an update can tell its own files
 //! from the user's, and a removal can refuse while another item needs it.
 
 pub mod fetch;
@@ -203,7 +203,7 @@ pub fn closure(catalog: &Catalog, keys: &[String]) -> Result<Vec<String>, String
     Ok(out)
 }
 
-// ─── store.json: what the Store installed ──────────────────────────────────
+// ─── collection.json: what the Collection installed ──────────────────────────────────
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct InstalledItem {
@@ -215,7 +215,7 @@ pub struct InstalledItem {
     pub requires: Vec<String>,
     #[serde(default)]
     pub keys: Vec<String>,
-    /// Library-relative path → sha256 of what the Store wrote.
+    /// Library-relative path → sha256 of what the Collection wrote.
     pub files: BTreeMap<String, String>,
 }
 
@@ -231,10 +231,18 @@ impl Default for Installed {
     }
 }
 
-pub const STATE_FILE: &str = "store.json";
+pub const STATE_FILE: &str = "collection.json";
+
+/// The state file of the Store era, read until the next save replaces it.
+const OLD_STATE_FILE: &str = "store.json";
 
 pub fn load_installed(library: &Path) -> Result<Installed, String> {
-    match fs::read(library.join(STATE_FILE)) {
+    let path = if library.join(STATE_FILE).is_file() || !library.join(OLD_STATE_FILE).is_file() {
+        library.join(STATE_FILE)
+    } else {
+        library.join(OLD_STATE_FILE)
+    };
+    match fs::read(&path) {
         Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("{STATE_FILE} is not readable: {e}")),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Installed::default()),
         Err(e) => Err(format!("Could not read {STATE_FILE}: {e}")),
@@ -243,14 +251,16 @@ pub fn load_installed(library: &Path) -> Result<Installed, String> {
 
 pub fn save_installed(library: &Path, installed: &Installed) -> Result<(), String> {
     let text = serde_json::to_string_pretty(installed).map_err(|e| e.to_string())? + "\n";
-    qs_core::paths::write_atomic(&library.join(STATE_FILE), text.as_bytes()).map_err(|e| format!("Could not write {STATE_FILE}: {e}"))
+    qs_core::paths::write_atomic(&library.join(STATE_FILE), text.as_bytes()).map_err(|e| format!("Could not write {STATE_FILE}: {e}"))?;
+    let _ = fs::remove_file(library.join(OLD_STATE_FILE));
+    Ok(())
 }
 
 fn file_sha(path: &Path) -> Option<String> {
     fs::read(path).ok().map(|b| sha256_hex(&b))
 }
 
-/// Files the Store wrote that the user has changed since.
+/// Files the Collection wrote that the user has changed since.
 pub fn modified_files(library: &Path, item: &InstalledItem) -> Vec<String> {
     item.files
         .iter()
@@ -271,8 +281,8 @@ pub fn newer(candidate: &str, installed: &str) -> bool {
 // ─── What the UI lists ─────────────────────────────────────────────────────
 
 /// The catalog items with the library's state: `installed` (version),
-/// `update`, `modified` (Store files changed locally), `present` (a script
-/// of that name the Store did not install — installing it is a conflict
+/// `update`, `modified` (Collection files changed locally), `present` (a script
+/// of that name the Collection did not install — installing it is a conflict
 /// unless identical), `too_new` (the engine's contract is older).
 pub fn catalog_view(library: &Path, installed: &Installed, catalog: &Catalog, engine_contract: Option<u32>) -> Vec<Value> {
     catalog
@@ -359,11 +369,11 @@ pub fn plan_package(library: &Path, installed: &Installed, package: &Package, re
     let (action, reason) = if all_same {
         ("skip", Some(if record.is_some() { "installed — identical" } else { "already in the library — identical" }.to_string()))
     } else if record.is_some() && !modified.is_empty() {
-        ("conflict", Some(format!("changed in the library since the Store installed it: {}", modified.join(", "))))
+        ("conflict", Some(format!("changed in the library since the Collection installed it: {}", modified.join(", "))))
     } else if record.is_some() {
         ("replace", None)
     } else if differs {
-        ("conflict", Some("the library has files of this name the Store did not install".to_string()))
+        ("conflict", Some("the library has files of this name the Collection did not install".to_string()))
     } else {
         ("create", None)
     };
@@ -535,7 +545,7 @@ pub fn install(
                 if let Ok(current) = fs::read_to_string(&target) {
                     let latest = history::latest(conn, path).map_err(|e| format!("Read versions: {e}"))?;
                     if current != content && latest.as_ref().map(|v| v.sha256.as_str()) != Some(sha256_hex(current.as_bytes()).as_str()) {
-                        history::record(conn, path, &current, "Before the Store replaced it", "external", false)
+                        history::record(conn, path, &current, "Before the Collection replaced it", "external", false)
                             .map_err(|e| format!("Record version: {e}"))?;
                     }
                 }
@@ -606,7 +616,7 @@ pub struct Removed {
     pub files: Vec<String>,
 }
 
-/// Remove an item the Store installed — refused while another installed item
+/// Remove an item the Collection installed — refused while another installed item
 /// requires it. The script's last content becomes a `delete` version, so the
 /// archive keeps it and a restore brings it back.
 pub fn remove(library: &Path, conn: &Connection, key: &str) -> Result<Removed, String> {
@@ -615,7 +625,7 @@ pub fn remove(library: &Path, conn: &Connection, key: &str) -> Result<Removed, S
         .items
         .get(key)
         .cloned()
-        .ok_or_else(|| format!("{key} was not installed by the Store — delete its script in the editor."))?;
+        .ok_or_else(|| format!("{key} was not installed by the Collection — delete its script in the editor."))?;
     let dependents: Vec<String> = installed
         .items
         .iter()
@@ -628,7 +638,7 @@ pub fn remove(library: &Path, conn: &Connection, key: &str) -> Result<Removed, S
     let script = format!("{key}.py");
     let mut version = None;
     if let Ok(content) = fs::read_to_string(library.join(&script)) {
-        let v = history::record(conn, &script, &content, "Removed by the Store — the script as it was", "delete", false)
+        let v = history::record(conn, &script, &content, "Removed by the Collection — the script as it was", "delete", false)
             .map_err(|e| format!("Record version: {e}"))?;
         version = Some(v.version);
     }

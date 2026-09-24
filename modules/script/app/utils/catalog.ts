@@ -1,12 +1,12 @@
 /**
- * The Store page's reading of a catalog — pure, so test:script covers it:
+ * The Collection page's reading of a catalog — pure, so test:script covers it:
  * an item's state badge, its score on a track, the list filters and a
  * plan's summary for the confirmation.
  */
-import type { StoreCatalogItem, StoreLocal, StorePlan } from '#script/types'
+import type { CollectionCatalogItem, CollectionLocal, CollectionPlan } from '#script/types'
 
-export const STORE_TRACKS = ['1h', '4h', '1d'] as const
-export type StoreTrack = (typeof STORE_TRACKS)[number]
+export const COLLECTION_TRACKS = ['1h', '4h', '1d'] as const
+export type CollectionTrack = (typeof COLLECTION_TRACKS)[number]
 
 /** role → the timeframe it was optimized for (null: Standard and general). */
 const ROLE_TRACK: Record<string, string | null> = {
@@ -17,18 +17,18 @@ const ROLE_TRACK: Record<string, string | null> = {
   optimized_1d: '1d',
 }
 
-export type StoreStateFilter = 'all' | 'installed' | 'update' | 'available'
+export type CollectionStateFilter = 'all' | 'installed' | 'update' | 'available'
 
-export interface StoreFilters {
+export interface CollectionFilters {
   search: string
   tag: string
-  state: StoreStateFilter
-  track: StoreTrack
+  state: CollectionStateFilter
+  track: CollectionTrack
   minScore: number
   certifiedOnly: boolean
 }
 
-export const DEFAULT_STORE_FILTERS: StoreFilters = {
+export const DEFAULT_COLLECTION_FILTERS: CollectionFilters = {
   search: '',
   tag: '',
   state: 'all',
@@ -44,24 +44,24 @@ export interface ItemState {
 }
 
 /** The one badge a row shows; the most pressing state wins. */
-export function itemState(local: StoreLocal | null | undefined, version: string): ItemState {
+export function itemState(local: CollectionLocal | null | undefined, version: string): ItemState {
   if (!local) return { label: 'Available', tone: '', title: '' }
   if (local.too_new) return { label: 'Needs a newer QuantSuite', tone: 'is-error', title: 'The package was published for a newer engine contract.' }
   if (local.installed_version && local.modified) {
-    return { label: 'Modified', tone: 'is-warn', title: 'Files the Store installed were changed in your library; an update would be a conflict.' }
+    return { label: 'Modified', tone: 'is-warn', title: 'Files the Collection installed were changed in your library; an update would be a conflict.' }
   }
   if (local.installed_version && local.update) {
     return { label: `Update ${local.installed_version} → ${version}`, tone: 'is-warn', title: 'A newer version is in the catalog.' }
   }
   if (local.installed_version) return { label: `Installed ${local.installed_version}`, tone: 'is-ok', title: '' }
   if (local.conflict) {
-    return { label: 'In your library', tone: 'is-warn', title: 'A script of this name exists that the Store did not install — installing it replaces it only if you confirm.' }
+    return { label: 'In your library', tone: 'is-warn', title: 'A script of this name exists that the Collection did not install — installing it replaces it only if you confirm.' }
   }
   return { label: 'Available', tone: '', title: '' }
 }
 
 /** The best verdict of any version on `track` — what a bot of that timeframe could run. */
-export function trackVerdict(item: Pick<StoreCatalogItem, 'scores'>, track: string) {
+export function trackVerdict(item: Pick<CollectionCatalogItem, 'scores'>, track: string) {
   let best: { score: number; grade: string; certified: boolean; role: string } | null = null
   for (const [role, tracks] of Object.entries(item.scores ?? {})) {
     const verdict = tracks?.[track]
@@ -75,11 +75,11 @@ export function roleTrack(role: string): string | null {
   return ROLE_TRACK[role] ?? null
 }
 
-export function allTags(items: StoreCatalogItem[]): string[] {
+export function allTags(items: CollectionCatalogItem[]): string[] {
   return [...new Set(items.flatMap((i) => i.tags ?? []))].sort()
 }
 
-export function filterItems(items: StoreCatalogItem[], f: StoreFilters): StoreCatalogItem[] {
+export function filterItems(items: CollectionCatalogItem[], f: CollectionFilters): CollectionCatalogItem[] {
   const q = f.search.trim().toLowerCase()
   return items
     .filter((i) => !q || [i.key, i.name, i.summary, ...(i.tags ?? [])].some((s) => (s ?? '').toLowerCase().includes(q)))
@@ -116,7 +116,7 @@ export interface PlanSummary {
   empty: boolean
 }
 
-export function planSummary(plan: StorePlan): PlanSummary {
+export function planSummary(plan: CollectionPlan): PlanSummary {
   const count = (action: string) => plan.items.filter((i) => i.action === action).length
   const s = {
     create: count('create'),

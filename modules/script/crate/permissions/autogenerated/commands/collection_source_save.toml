@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-collection-source-save"
+description = "Enables the collection_source_save command without any pre-configured scope."
+commands.allow = ["collection_source_save"]
+
+[[permission]]
+identifier = "deny-collection-source-save"
+description = "Denies the collection_source_save command without any pre-configured scope."
+commands.deny = ["collection_source_save"]

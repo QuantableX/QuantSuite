@@ -23,8 +23,8 @@ const route = useRoute()
 
 const catalog = useCatalogStore()
 const onForge = computed(() => route.path.startsWith('/script/forge'))
-const onStore = computed(() => route.path.startsWith('/script/store'))
-const editing = computed(() => !!wb.active && !wb.libraryOpen && !onStore.value)
+const onCollection = computed(() => route.path.startsWith('/script/collection'))
+const editing = computed(() => !!wb.active && !wb.libraryOpen && !onCollection.value)
 const entry = computed(() => wb.activeEntry)
 const registered = computed<ScriptClass[]>(() => entry.value?.classes.filter((c) => c.key) ?? [])
 const helpers = computed<ScriptClass[]>(() => entry.value?.classes.filter((c) => !c.key) ?? [])
@@ -146,10 +146,10 @@ async function deleteScript() {
 <template>
   <div class="qsc-side">
     <header class="qsc-inspector-header">
-      <div class="qsc-inspector-heading"><strong>{{ onForge ? 'Forge monitor' : onStore ? 'Store' : editing ? 'Script inspector' : 'Workspace' }}</strong><button class="qsc-icon-btn" aria-label="Close inspector" @click="wb.toggleSidebar('right')"><X :size="14" /></button></div>
+      <div class="qsc-inspector-heading"><strong>{{ onForge ? 'Forge monitor' : onCollection ? 'Collection' : editing ? 'Script inspector' : 'Workspace' }}</strong><button class="qsc-icon-btn" aria-label="Close inspector" @click="wb.toggleSidebar('right')"><X :size="14" /></button></div>
       <p v-if="editing && !onForge" class="qsc-inspector-file mono" :title="wb.active?.file">{{ wb.active?.file }}</p>
       <nav v-if="!onForge && editing" class="qsc-inspector-tabs" aria-label="Script inspector"><button v-for="t in inspectorTabs" :key="t.id" :aria-pressed="wb.inspectorTab === t.id" :class="{ 'is-active': wb.inspectorTab === t.id }" @click="wb.inspectorTab = t.id">{{ t.label }}</button></nav>
-      <nav v-else-if="!onForge && !onStore" class="qsc-inspector-tabs" aria-label="Workspace inspector"><button :class="{ 'is-active': wb.inspectorTab !== 'guide' }" :aria-pressed="wb.inspectorTab !== 'guide'" @click="wb.inspectorTab = 'outline'">Overview</button><button :class="{ 'is-active': wb.inspectorTab === 'guide' }" :aria-pressed="wb.inspectorTab === 'guide'" @click="wb.inspectorTab = 'guide'">Guide</button></nav>
+      <nav v-else-if="!onForge && !onCollection" class="qsc-inspector-tabs" aria-label="Workspace inspector"><button :class="{ 'is-active': wb.inspectorTab !== 'guide' }" :aria-pressed="wb.inspectorTab !== 'guide'" @click="wb.inspectorTab = 'outline'">Overview</button><button :class="{ 'is-active': wb.inspectorTab === 'guide' }" :aria-pressed="wb.inspectorTab === 'guide'" @click="wb.inspectorTab = 'guide'">Guide</button></nav>
     </header>
     <!-- ── The forge ─────────────────────────────────────────────────── -->
     <template v-if="onForge">
@@ -218,8 +218,8 @@ async function deleteScript() {
       </section>
     </template>
 
-    <!-- ── The Store ──────────────────────────────────────────────────── -->
-    <template v-else-if="onStore">
+    <!-- ── The Collection ─────────────────────────────────────────────── -->
+    <template v-else-if="onCollection">
       <section class="qsc-panel">
         <h3 class="qsc-panel-title">Catalog</h3>
         <div class="qsc-meta-row">
@@ -243,7 +243,7 @@ async function deleteScript() {
         <h3 class="qsc-panel-title">How it installs</h3>
         <p class="qsc-help">
           Every file is checked against the catalog's hashes. The new scripts are tried with your library in a
-          sandbox first; only then are they written and recorded as versions. Files the Store did not install are
+          sandbox first; only then are they written and recorded as versions. Files the Collection did not install are
           never replaced without your confirmation. A running QuantSystems engine needs a restart to see new
           indicators.
         </p>

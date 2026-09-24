@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
- * QuantScript's Store settings: the catalog sources (a GitHub repository at
+ * QuantScript's Collection settings: the catalog sources (a GitHub repository at
  * a branch, or a local catalog folder), the token of a private repository —
  * kept in the OS credential store, shown only as "token stored" — and a
  * connection test per source.
  */
 import { useCatalogStore } from '#script/stores/catalog'
-import type { StoreSource, StoreSourceInput } from '#script/types'
+import type { CollectionSource, CollectionSourceInput } from '#script/types'
 
 const store = useCatalogStore()
-const editing = ref<StoreSourceInput | null>(null)
+const editing = ref<CollectionSourceInput | null>(null)
 const formError = ref<string | null>(null)
 const saving = ref(false)
 const tokenFor = ref<string | null>(null)
@@ -27,7 +27,7 @@ function add(kind: 'github' | 'folder') {
     : { kind, name: '', path: '', enabled: true }
 }
 
-function edit(s: StoreSource) {
+function edit(s: CollectionSource) {
   formError.value = null
   editing.value = { id: s.id, kind: s.kind, name: s.name, owner: s.owner, repo: s.repo, branch: s.branch, path: s.path, enabled: s.enabled }
 }
@@ -46,7 +46,7 @@ async function save() {
   }
 }
 
-async function remove(s: StoreSource) {
+async function remove(s: CollectionSource) {
   if (!confirm(`Remove the source "${s.name}"? Its stored token and cached files go too. Installed indicators stay in your library.`)) return
   try {
     await store.deleteSource(s.id)
@@ -55,7 +55,7 @@ async function remove(s: StoreSource) {
   }
 }
 
-async function saveToken(s: StoreSource) {
+async function saveToken(s: CollectionSource) {
   const value = token.value
   token.value = ''
   try {
@@ -66,7 +66,7 @@ async function saveToken(s: StoreSource) {
   }
 }
 
-async function clearToken(s: StoreSource) {
+async function clearToken(s: CollectionSource) {
   try {
     await store.clearToken(s.id)
   } catch (err) {
@@ -74,12 +74,12 @@ async function clearToken(s: StoreSource) {
   }
 }
 
-async function test(s: StoreSource) {
+async function test(s: CollectionSource) {
   tests.value[s.id] = 'running'
   tests.value[s.id] = await store.testSource(s.id)
 }
 
-function where(s: StoreSource): string {
+function where(s: CollectionSource): string {
   if (s.kind === 'folder') return s.path
   return `${s.owner}/${s.repo}@${s.branch}${s.path ? ` · ${s.path}` : ''}`
 }
@@ -92,7 +92,7 @@ function where(s: StoreSource): string {
     <section class="qsc-set-block">
       <h3 class="qsc-set-title">Catalog sources</h3>
       <p class="qsc-set-hint">
-        The Store reads indicator catalogs from these sources and installs single indicators with their requirements
+        The Collection reads indicator catalogs from these sources and installs single indicators with their requirements
         and all their versions into your script folder. A private GitHub repository needs a token that can read it
         (a fine-grained token with read access to its contents); it is kept in the system's credential store, never
         in a file of QuantSuite.
@@ -140,11 +140,11 @@ function where(s: StoreSource): string {
       <label class="qst-field"><span>Name</span><input v-model="editing.name" class="qsc-input" placeholder="My indicators" /></label>
       <template v-if="editing.kind === 'github'">
         <label class="qst-field"><span>Owner</span><input v-model="editing.owner" class="qsc-input mono" spellcheck="false" placeholder="QuantableX" /></label>
-        <label class="qst-field"><span>Repository</span><input v-model="editing.repo" class="qsc-input mono" spellcheck="false" placeholder="QuantScript-Indicators" /></label>
+        <label class="qst-field"><span>Repository</span><input v-model="editing.repo" class="qsc-input mono" spellcheck="false" placeholder="QuantScript-Collection" /></label>
         <label class="qst-field"><span>Branch</span><input v-model="editing.branch" class="qsc-input mono" spellcheck="false" placeholder="main" /></label>
         <label class="qst-field"><span>Folder</span><input v-model="editing.path" class="qsc-input mono" spellcheck="false" placeholder="(the repository root)" /></label>
       </template>
-      <label v-else class="qst-field"><span>Folder</span><input v-model="editing.path" class="qsc-input mono" spellcheck="false" placeholder="C:\Projects\QuantScript-Indicators" /></label>
+      <label v-else class="qst-field"><span>Folder</span><input v-model="editing.path" class="qsc-input mono" spellcheck="false" placeholder="C:\Projects\QuantScript-Collection" /></label>
       <label class="qsc-check"><input v-model="editing.enabled" type="checkbox" /> Enabled</label>
       <p v-if="formError" class="qsc-note is-error">{{ formError }}</p>
       <div class="qsc-set-row">

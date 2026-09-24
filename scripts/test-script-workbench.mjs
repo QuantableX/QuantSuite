@@ -8,7 +8,7 @@ import { nextTick } from 'vue'
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { useWorkbenchStore } from '../modules/script/app/stores/workbench.ts'
 import { decisionLabel, optimizeRowsFor, versionParamDiff, versionSlots, versionWhy } from '../modules/script/app/utils/forge.ts'
-import { DEFAULT_STORE_FILTERS, filterItems, itemState, planSummary, trackVerdict } from '../modules/script/app/utils/catalog.ts'
+import { DEFAULT_COLLECTION_FILTERS, filterItems, itemState, planSummary, trackVerdict } from '../modules/script/app/utils/catalog.ts'
 
 function deferred() {
   let resolve, reject
@@ -389,7 +389,7 @@ test('the version slots resolve roles against the registry and explain themselve
   assert.deepEqual(versionSlots({ key: 'beta', versions: null }, new Map([['beta', entry('beta', {})]])).map((s) => s.key), ['beta', null, null, null, null])
 })
 
-test('the Store lists, filters and badges catalog items and sums up a plan', () => {
+test('the Collection lists, filters and badges catalog items and sums up a plan', () => {
   const local = (over = {}) => ({ installed_version: null, installed_commit: null, update: false, modified: false, present: false, conflict: false, too_new: false, ...over })
   const verdict = (score, certified = score >= 70) => ({ score, grade: score >= 70 ? 'A' : 'B', certified })
   const items = [
@@ -400,7 +400,7 @@ test('the Store lists, filters and badges catalog items and sums up a plan', () 
     { type: 'library', key: 'helper', name: 'helper', summary: 'helpers', tags: ['library'], version: '1.0.0', contract: 2, requires: [],
       scores: {}, manifest: {}, local: local({ installed_version: '1.0.0' }) },
   ]
-  const keys = (f) => filterItems(items, { ...DEFAULT_STORE_FILTERS, ...f }).map((i) => i.key)
+  const keys = (f) => filterItems(items, { ...DEFAULT_COLLECTION_FILTERS, ...f }).map((i) => i.key)
   assert.deepEqual(keys({}), ['alpha', 'beta', 'helper'])
   assert.deepEqual(keys({ search: 'SLOW' }), ['beta'])
   assert.deepEqual(keys({ tag: 'ensemble' }), ['beta'])

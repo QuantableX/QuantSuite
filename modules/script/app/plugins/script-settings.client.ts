@@ -4,11 +4,11 @@
 import { markRaw } from 'vue'
 import { registerSettingsSections } from '@quantsuite/core'
 import General from '../components/Settings/General.vue'
-import Store from '../components/Settings/Store.vue'
+import Collection from '../components/Settings/Collection.vue'
 
 export default defineNuxtPlugin(() => {
   registerSettingsSections('script', [
     { id: 'general', label: 'General', component: markRaw(General), order: 0 },
-    { id: 'store', label: 'Store', component: markRaw(Store), order: 1 },
+    { id: 'collection', label: 'Collection', component: markRaw(Collection), order: 1 },
   ])
 })

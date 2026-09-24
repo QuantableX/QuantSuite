@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-collection-install"
+description = "Enables the collection_install command without any pre-configured scope."
+commands.allow = ["collection_install"]
+
+[[permission]]
+identifier = "deny-collection-install"
+description = "Denies the collection_install command without any pre-configured scope."
+commands.deny = ["collection_install"]

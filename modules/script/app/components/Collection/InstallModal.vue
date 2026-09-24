@@ -1,20 +1,20 @@
 <script setup lang="ts">
 /**
  * The confirmation of an install, update or removal. An install first
- * shows store_plan — what is new, what is replaced, which requirements come
+ * shows collection_plan — what is new, what is replaced, which requirements come
  * with it and what conflicts — and a conflict needs the explicit overwrite
  * box. The install itself stages your library and has the engine check it
  * before anything is written.
  */
 import { useCatalogStore } from '#script/stores/catalog'
 import { PLAN_ACTION_LABELS, planSummary } from '#script/utils/catalog'
-import type { StoreCatalogItem, StorePlan } from '#script/types'
+import type { CollectionCatalogItem, CollectionPlan } from '#script/types'
 
-const props = defineProps<{ item: StoreCatalogItem; mode: 'install' | 'update' | 'remove' }>()
+const props = defineProps<{ item: CollectionCatalogItem; mode: 'install' | 'update' | 'remove' }>()
 const emit = defineEmits<{ close: []; done: [message: string] }>()
 
 const store = useCatalogStore()
-const plan = ref<StorePlan | null>(null)
+const plan = ref<CollectionPlan | null>(null)
 const planError = ref<string | null>(null)
 const error = ref<string | null>(null)
 const overwrite = ref(false)
@@ -79,7 +79,7 @@ function close() {
       <template v-if="mode === 'remove'">
         <p class="qst-modal-text">
           Removes <span class="mono">{{ item.key }}.py</span> and its version files from your library. Its last content stays in
-          the history, so Restore brings it back. The Store refuses while another installed indicator requires it.
+          the history, so Restore brings it back. The Collection refuses while another installed indicator requires it.
         </p>
       </template>
       <template v-else>

@@ -1,4 +1,4 @@
-//! Store sources in script.db: where catalogs come from — a GitHub
+//! Collection sources in script.db: where catalogs come from — a GitHub
 //! repository at a branch (the published catalog) or a local folder (a
 //! checkout, for authoring and tests).
 
@@ -7,18 +7,29 @@ use serde::{Deserialize, Serialize};
 
 use super::tokens::TokenStore;
 
-/// The schema generation of the Store tables (`PRAGMA user_version`).
-const SCHEMA: i64 = 1;
+/// The schema generation of the Collection tables (`PRAGMA user_version`):
+/// 1 = `store_sources` (the feature was called the Store), 2 = `collection_sources`.
+const SCHEMA: i64 = 2;
 
 /// Create the table on first start and seed the user's own catalog once —
-/// a source the user deletes stays deleted.
+/// a source the user deletes stays deleted. A database of the Store era is
+/// renamed, and its untouched seed follows the repository's new name.
 pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= SCHEMA {
         return Ok(());
     }
+    if version == 1 {
+        conn.execute_batch("ALTER TABLE store_sources RENAME TO collection_sources;")?;
+        conn.execute(
+            "UPDATE collection_sources SET repo = 'QuantScript-Collection', last_commit = NULL, last_checked = NULL
+             WHERE id = 'quantablex' AND kind = 'github' AND owner = 'QuantableX' AND repo = 'QuantScript-Indicators'",
+            [],
+        )?;
+        return conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA};"));
+    }
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS store_sources (
+        "CREATE TABLE IF NOT EXISTS collection_sources (
             id           TEXT PRIMARY KEY,
             kind         TEXT    NOT NULL,
             name         TEXT    NOT NULL,
@@ -33,8 +44,8 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         );",
     )?;
     conn.execute(
-        "INSERT OR IGNORE INTO store_sources (id, kind, name, owner, repo, branch, path, enabled, created_at)
-         VALUES ('quantablex', 'github', 'QuantableX', 'QuantableX', 'QuantScript-Indicators', 'main', '', 1, ?1)",
+        "INSERT OR IGNORE INTO collection_sources (id, kind, name, owner, repo, branch, path, enabled, created_at)
+         VALUES ('quantablex', 'github', 'QuantableX', 'QuantableX', 'QuantScript-Collection', 'main', '', 1, ?1)",
         params![super::now_iso()],
     )?;
     conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA};"))
@@ -106,17 +117,17 @@ fn row_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<Source> {
 
 pub fn list(conn: &Connection) -> Result<Vec<Source>, String> {
     let mut stmt = conn
-        .prepare(&format!("SELECT {COLUMNS} FROM store_sources ORDER BY created_at, id"))
+        .prepare(&format!("SELECT {COLUMNS} FROM collection_sources ORDER BY created_at, id"))
         .map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], row_source).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 pub fn get(conn: &Connection, id: &str) -> Result<Source, String> {
-    conn.query_row(&format!("SELECT {COLUMNS} FROM store_sources WHERE id = ?1"), params![id], row_source)
+    conn.query_row(&format!("SELECT {COLUMNS} FROM collection_sources WHERE id = ?1"), params![id], row_source)
         .optional()
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("There is no Store source '{id}'."))
+        .ok_or_else(|| format!("There is no Collection source '{id}'."))
 }
 
 pub fn view(source: Source, tokens: &dyn TokenStore) -> SourceView {
@@ -180,7 +191,7 @@ pub fn save(conn: &Connection, input: SourceInput) -> Result<Source, String> {
             n += 1;
         }
         conn.execute(
-            "INSERT INTO store_sources (id, kind, name, owner, repo, branch, path, enabled, created_at)
+            "INSERT INTO collection_sources (id, kind, name, owner, repo, branch, path, enabled, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![id, input.kind, name, owner, repo, branch, path, input.enabled as i64, super::now_iso()],
         )
@@ -192,7 +203,7 @@ pub fn save(conn: &Connection, input: SourceInput) -> Result<Source, String> {
         // A different place is a different catalog: forget the pinned commit.
         let moved = before.kind != input.kind || before.owner != owner || before.repo != repo || before.branch != branch || before.path != path;
         conn.execute(
-            "UPDATE store_sources SET kind = ?2, name = ?3, owner = ?4, repo = ?5, branch = ?6, path = ?7, enabled = ?8,
+            "UPDATE collection_sources SET kind = ?2, name = ?3, owner = ?4, repo = ?5, branch = ?6, path = ?7, enabled = ?8,
              last_commit = CASE WHEN ?9 THEN NULL ELSE last_commit END,
              last_checked = CASE WHEN ?9 THEN NULL ELSE last_checked END
              WHERE id = ?1",
@@ -206,13 +217,13 @@ pub fn save(conn: &Connection, input: SourceInput) -> Result<Source, String> {
 
 pub fn delete(conn: &Connection, id: &str) -> Result<(), String> {
     get(conn, id)?;
-    conn.execute("DELETE FROM store_sources WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM collection_sources WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 pub fn remember_commit(conn: &Connection, id: &str, commit: &str) -> Result<(), String> {
     conn.execute(
-        "UPDATE store_sources SET last_commit = ?2, last_checked = ?3 WHERE id = ?1",
+        "UPDATE collection_sources SET last_commit = ?2, last_checked = ?3 WHERE id = ?1",
         params![id, commit, super::now_iso()],
     )
     .map_err(|e| e.to_string())?;

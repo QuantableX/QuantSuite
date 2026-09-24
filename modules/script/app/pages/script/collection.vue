@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The Store — indicators from a catalog (the private QuantScript-Indicators
+ * The Collection — indicators from a catalog (the private QuantScript-Collection
  * repo, or a local checkout), browsed, inspected with their five versions
  * and installed with their requirements into your library
  * (plugin:script|store_*). List on the left, the item on the right; both
@@ -36,7 +36,7 @@ onActivated(() => void activate())
 
 <template>
   <div class="qst-page">
-    <QPageHeading title="Store">
+    <QPageHeading title="Collection">
       <div class="qst-head">
         <select
           v-if="store.sources.length > 1"
@@ -54,7 +54,7 @@ onActivated(() => void activate())
         <button class="qsc-btn is-sm" :disabled="store.catalogLoading || !store.sourceId" title="Read the newest commit of the source" @click="store.loadCatalog(true)">
           <RefreshCw :size="13" /> {{ store.catalogLoading ? 'Reading…' : 'Refresh' }}
         </button>
-        <button class="qsc-icon-btn" aria-label="Store settings" title="Sources and tokens: Settings → Store" @click="openSettings">
+        <button class="qsc-icon-btn" aria-label="Collection settings" title="Sources and tokens: Settings → Collection" @click="openSettings">
           <Settings :size="15" />
         </button>
       </div>
@@ -63,7 +63,7 @@ onActivated(() => void activate())
     <div v-if="store.sourcesError" class="qsc-note is-error" role="alert">{{ store.sourcesError }}</div>
     <div v-else-if="!store.sourcesLoading && !store.sources.length" class="qst-empty">
       <h2>No catalog source</h2>
-      <p>Add a GitHub repository or a local catalog folder under Settings → Store.</p>
+      <p>Add a GitHub repository or a local catalog folder under Settings → Collection.</p>
       <button class="qsc-btn is-primary" @click="openSettings">Open settings</button>
     </div>
     <div v-else-if="store.catalogError" class="qsc-note is-error qst-error" role="alert">
@@ -76,8 +76,8 @@ onActivated(() => void activate())
     </div>
 
     <div v-if="store.catalog" class="qst-split">
-      <ScriptStoreList />
-      <ScriptStoreDetail />
+      <ScriptCollectionList />
+      <ScriptCollectionDetail />
     </div>
     <div v-else-if="store.catalogLoading" class="qst-empty qsc-pulse" role="status">Reading the catalog…</div>
   </div>

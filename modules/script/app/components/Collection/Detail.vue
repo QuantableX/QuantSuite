@@ -8,10 +8,10 @@
 import { Download, ExternalLink, Trash2 } from 'lucide-vue-next'
 import { useCatalogStore } from '#script/stores/catalog'
 import { useWorkbenchStore } from '#script/stores/workbench'
-import { STORE_TRACKS, itemState, roleTrack, shortCommit } from '#script/utils/catalog'
+import { COLLECTION_TRACKS, itemState, roleTrack, shortCommit } from '#script/utils/catalog'
 import { decisionLabel } from '#script/utils/forge'
 import { formatParams } from '#script/utils/format'
-import type { StoreManifestVersion, VersionRole } from '#script/types'
+import type { CollectionManifestVersion, VersionRole } from '#script/types'
 
 const store = useCatalogStore()
 const wb = useWorkbenchStore()
@@ -40,7 +40,7 @@ watch(() => store.selectedKey, () => {
 
 const standardParams = computed(() => manifest.value?.versions?.standard?.params ?? {})
 
-function versionParams(role: VersionRole, v: StoreManifestVersion): string {
+function versionParams(role: VersionRole, v: CollectionManifestVersion): string {
   if (role === 'standard') return formatParams(v.params) || 'parameter-free'
   const changed = Object.fromEntries(
     Object.entries(v.params).filter(([k, value]) => JSON.stringify(value) !== JSON.stringify(standardParams.value[k])),
@@ -48,7 +48,7 @@ function versionParams(role: VersionRole, v: StoreManifestVersion): string {
   return Object.keys(changed).length ? formatParams(changed) : 'same as Standard'
 }
 
-function why(role: VersionRole, v: StoreManifestVersion): string {
+function why(role: VersionRole, v: CollectionManifestVersion): string {
   if (role === 'standard') return 'the normal parameters'
   return decisionLabel(v.decision)
 }
@@ -57,7 +57,7 @@ function requirementState(key: string): string {
   const req = store.byKey.get(key)
   if (!req) return 'not in the catalog'
   if (req.local?.installed_version) return `installed ${req.local.installed_version}`
-  if (req.local?.conflict) return 'in your library (not from the Store)'
+  if (req.local?.conflict) return 'in your library (not from the Collection)'
   return 'installed with it'
 }
 
@@ -127,7 +127,7 @@ function finished(message: string) {
                 <tr>
                   <th>Version</th>
                   <th>Parameters</th>
-                  <th v-for="tf in STORE_TRACKS" :key="tf" class="num">{{ tf }}</th>
+                  <th v-for="tf in COLLECTION_TRACKS" :key="tf" class="num">{{ tf }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -141,7 +141,7 @@ function finished(message: string) {
                   </td>
                   <td class="mono qst-params">{{ manifest.versions[r.role] ? versionParams(r.role, manifest.versions[r.role]!) : '' }}</td>
                   <td
-                    v-for="tf in STORE_TRACKS"
+                    v-for="tf in COLLECTION_TRACKS"
                     :key="tf"
                     class="num mono"
                     :class="{ 'qst-own': roleTrack(r.role) === tf }"
@@ -196,7 +196,7 @@ function finished(message: string) {
       </div>
     </template>
 
-    <ScriptStoreInstallModal
+    <ScriptCollectionInstallModal
       v-if="dialog && item"
       :item="item"
       :mode="dialog"
