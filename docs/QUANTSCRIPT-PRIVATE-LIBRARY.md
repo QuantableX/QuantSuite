@@ -54,9 +54,14 @@ QuantSystems stores only the values that differ from the version
 
 ## The Collection
 
-QuantScript → Collection installs indicators from a catalog: a private GitHub
-repository or a local folder in the catalog format of the collection repo
-(its `FORMAT.md`). Installing one indicator brings its `REQUIRES` closure and
+QuantScript → Collection installs indicators from a catalog. Every
+installation knows the public catalog
+[QuantScript-Collection-Public](https://github.com/QuantableX/QuantScript-Collection-Public)
+— no account or token needed; its files are read from GitHub's raw host at a
+pinned commit. Further sources are a private GitHub repository in the same
+format (access controlled by its owner) or a local folder (its `FORMAT.md`
+describes the format). Your own scripts stay next to the installed ones.
+Installing one indicator brings its `REQUIRES` closure and
 all its versions. Every file is checked against the catalog's sha256; the new
 scripts are tried with your library in a sandbox (`python -m
 smithery.quantscript stage-check`) before anything is written; a file the

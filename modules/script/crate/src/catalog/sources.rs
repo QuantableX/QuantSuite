@@ -8,16 +8,50 @@ use serde::{Deserialize, Serialize};
 use super::tokens::TokenStore;
 
 /// The schema generation of the Collection tables (`PRAGMA user_version`):
-/// 1 = `store_sources` (the feature was called the Store), 2 = `collection_sources`.
-const SCHEMA: i64 = 2;
+/// 1 = `store_sources` (the feature was called the Store), 2 = `collection_sources`,
+/// 3 = the public catalog next to the private one.
+const SCHEMA: i64 = 3;
 
-/// Create the table on first start and seed the user's own catalog once —
-/// a source the user deletes stays deleted. A database of the Store era is
-/// renamed, and its untouched seed follows the repository's new name.
+/// The catalog every installation reads without a token.
+pub const PUBLIC_ID: &str = "quantsuite-public";
+
+fn seed_public(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO collection_sources (id, kind, name, owner, repo, branch, path, enabled, created_at)
+         VALUES (?1, 'github', 'QuantSuite Collection', 'QuantableX', 'QuantScript-Collection-Public', 'main', '', 1, ?2)",
+        params![PUBLIC_ID, super::now_iso()],
+    )?;
+    Ok(())
+}
+
+/// Create the table on first start with the public catalog — a source the
+/// user deletes stays deleted. Older databases step forward: the Store era's
+/// table is renamed, the developer's private seed follows its repository
+/// (QuantScript-Indicators → QuantScript-Collection → QuantScript-Collection-Private)
+/// and the public catalog is added.
 pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= SCHEMA {
         return Ok(());
+    }
+    if version == 0 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS collection_sources (
+                id           TEXT PRIMARY KEY,
+                kind         TEXT    NOT NULL,
+                name         TEXT    NOT NULL,
+                owner        TEXT    NOT NULL DEFAULT '',
+                repo         TEXT    NOT NULL DEFAULT '',
+                branch       TEXT    NOT NULL DEFAULT 'main',
+                path         TEXT    NOT NULL DEFAULT '',
+                enabled      INTEGER NOT NULL DEFAULT 1,
+                last_commit  TEXT,
+                last_checked TEXT,
+                created_at   TEXT    NOT NULL
+            );",
+        )?;
+        seed_public(conn)?;
+        return conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA};"));
     }
     if version == 1 {
         conn.execute_batch("ALTER TABLE store_sources RENAME TO collection_sources;")?;
@@ -26,28 +60,16 @@ pub fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
              WHERE id = 'quantablex' AND kind = 'github' AND owner = 'QuantableX' AND repo = 'QuantScript-Indicators'",
             [],
         )?;
-        return conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA};"));
     }
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS collection_sources (
-            id           TEXT PRIMARY KEY,
-            kind         TEXT    NOT NULL,
-            name         TEXT    NOT NULL,
-            owner        TEXT    NOT NULL DEFAULT '',
-            repo         TEXT    NOT NULL DEFAULT '',
-            branch       TEXT    NOT NULL DEFAULT 'main',
-            path         TEXT    NOT NULL DEFAULT '',
-            enabled      INTEGER NOT NULL DEFAULT 1,
-            last_commit  TEXT,
-            last_checked TEXT,
-            created_at   TEXT    NOT NULL
-        );",
-    )?;
+    // version 2 → 3 (and a migrated 1)
     conn.execute(
-        "INSERT OR IGNORE INTO collection_sources (id, kind, name, owner, repo, branch, path, enabled, created_at)
-         VALUES ('quantablex', 'github', 'QuantableX', 'QuantableX', 'QuantScript-Collection', 'main', '', 1, ?1)",
-        params![super::now_iso()],
+        "UPDATE collection_sources SET repo = 'QuantScript-Collection-Private',
+             name = CASE WHEN name = 'QuantableX' THEN 'QuantableX (private)' ELSE name END,
+             last_commit = NULL, last_checked = NULL
+         WHERE id = 'quantablex' AND kind = 'github' AND owner = 'QuantableX' AND repo = 'QuantScript-Collection'",
+        [],
     )?;
+    seed_public(conn)?;
     conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA};"))
 }
 

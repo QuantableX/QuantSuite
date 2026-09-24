@@ -219,7 +219,13 @@ impl Fetch for GitHub {
             return Ok(bytes);
         }
         let full = if self.prefix.is_empty() { path.to_string() } else { format!("{}/{path}", self.prefix) };
-        let url = format!("{API}/repos/{}/{}/contents/{full}?ref={commit}", self.owner, self.repo);
+        // Without a token, a public catalog's files come from the raw host:
+        // the REST API allows 60 anonymous requests an hour, an install
+        // needs one per file. With a token, the contents API (private repos).
+        let url = match self.token {
+            Some(_) => format!("{API}/repos/{}/{}/contents/{full}?ref={commit}", self.owner, self.repo),
+            None => raw_url(&self.owner, &self.repo, commit, &full),
+        };
         let bytes = self
             .get(&url, "application/vnd.github.raw+json")?
             .bytes()
@@ -232,6 +238,11 @@ impl Fetch for GitHub {
         }
         Ok(bytes)
     }
+}
+
+/// A file of a public repository at a commit, from GitHub's raw host.
+pub fn raw_url(owner: &str, repo: &str, commit: &str, path: &str) -> String {
+    format!("https://raw.githubusercontent.com/{owner}/{repo}/{commit}/{path}")
 }
 
 // ─── A folder ───────────────────────────────────────────────────────────────

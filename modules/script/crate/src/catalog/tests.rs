@@ -1,7 +1,7 @@
 //! The Collection against a SYNTHETIC folder source: helper_lib (a library),
 //! alpha (requires helper_lib, one version file) and beta (requires alpha).
 
-use super::fetch::{github_error, safe_path, token_problem, Folder, TokenFacts};
+use super::fetch::{github_error, raw_url, safe_path, token_problem, Folder, TokenFacts};
 use super::sources::{self, SourceInput};
 use super::tokens::{MemoryTokens, TokenStore};
 use super::*;
@@ -322,16 +322,16 @@ fn a_token_is_never_serialized() {
     let conn = db();
     let tokens = MemoryTokens::default();
     let secret = "ghp_synthetic_secret_0123456789";
-    tokens.set("quantablex", secret).unwrap();
-    let seeded = sources::get(&conn, "quantablex").unwrap();
+    tokens.set(sources::PUBLIC_ID, secret).unwrap();
+    let seeded = sources::get(&conn, sources::PUBLIC_ID).unwrap();
     let view = sources::view(seeded, &tokens);
     let text = serde_json::to_string(&view).unwrap();
     assert!(text.contains(r#""has_token":true"#), "{text}");
     assert!(!text.contains(secret));
     let all: Vec<_> = sources::list(&conn).unwrap().into_iter().map(|s| sources::view(s, &tokens)).collect();
     assert!(!serde_json::to_string(&all).unwrap().contains(secret));
-    tokens.clear("quantablex").unwrap();
-    assert!(!sources::view(sources::get(&conn, "quantablex").unwrap(), &tokens).has_token);
+    tokens.clear(sources::PUBLIC_ID).unwrap();
+    assert!(!sources::view(sources::get(&conn, sources::PUBLIC_ID).unwrap(), &tokens).has_token);
 }
 
 #[test]
@@ -339,8 +339,9 @@ fn sources_are_seeded_once_and_validated() {
     let conn = db();
     let seeded = sources::list(&conn).unwrap();
     assert_eq!(seeded.len(), 1);
-    assert_eq!((seeded[0].owner.as_str(), seeded[0].repo.as_str(), seeded[0].branch.as_str()), ("QuantableX", "QuantScript-Collection", "main"));
-    sources::delete(&conn, "quantablex").unwrap();
+    assert_eq!((seeded[0].id.as_str(), seeded[0].owner.as_str(), seeded[0].repo.as_str(), seeded[0].branch.as_str()),
+               (sources::PUBLIC_ID, "QuantableX", "QuantScript-Collection-Public", "main"), "a fresh install knows only the public catalog");
+    sources::delete(&conn, sources::PUBLIC_ID).unwrap();
     sources::init_schema(&conn).unwrap();
     assert!(sources::list(&conn).unwrap().is_empty(), "a deleted seed stays deleted");
 
@@ -377,13 +378,14 @@ fn a_store_era_database_is_renamed_and_its_seed_follows_the_repository() {
     sources::init_schema(&conn).unwrap();
     let all = sources::list(&conn).unwrap();
     let seed = all.iter().find(|s| s.id == "quantablex").unwrap();
-    assert_eq!((seed.repo.as_str(), seed.last_commit.as_deref()), ("QuantScript-Collection", None));
+    assert_eq!((seed.repo.as_str(), seed.name.as_str(), seed.last_commit.as_deref()), ("QuantScript-Collection-Private", "QuantableX (private)", None));
+    assert!(all.iter().any(|s| s.id == sources::PUBLIC_ID), "the public catalog is added");
     let mine = all.iter().find(|s| s.id == "mine").unwrap();
     assert_eq!((mine.repo.as_str(), mine.last_commit.as_deref()), ("QuantScript-Indicators", Some("def")), "only the untouched seed moves");
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
     sources::init_schema(&conn).unwrap();
-    assert_eq!(sources::list(&conn).unwrap().len(), 2, "idempotent");
+    assert_eq!(sources::list(&conn).unwrap().len(), 3, "idempotent");
 }
 
 #[test]
@@ -425,4 +427,38 @@ fn a_refused_token_is_explained_without_showing_it() {
 
     let refused = token_problem("QuantableX/QS", "QuantableX", 404, &facts(None, 401, 404));
     assert_eq!(refused, "GitHub refused the token (fine-grained token): it is wrong, revoked or expired — set a new one.");
+}
+
+#[test]
+fn a_collection_era_database_gains_the_public_catalog_and_its_private_seed_follows() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE collection_sources (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, owner TEXT NOT NULL DEFAULT '',
+            repo TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT 'main', path TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 1, last_commit TEXT, last_checked TEXT, created_at TEXT NOT NULL);
+         INSERT INTO collection_sources (id, kind, name, owner, repo, branch, path, enabled, last_commit, created_at)
+           VALUES ('quantablex', 'github', 'QuantableX', 'QuantableX', 'QuantScript-Collection', 'main', '', 1, 'abc', 'x'),
+                  ('folder', 'folder', 'Checkout', '', '', '', 'C:/x', 1, NULL, 'y');
+         PRAGMA user_version = 2;",
+    )
+    .unwrap();
+    sources::init_schema(&conn).unwrap();
+    let all = sources::list(&conn).unwrap();
+    let private = all.iter().find(|s| s.id == "quantablex").unwrap();
+    assert_eq!((private.repo.as_str(), private.name.as_str(), private.last_commit.as_deref()),
+               ("QuantScript-Collection-Private", "QuantableX (private)", None));
+    let public = all.iter().find(|s| s.id == sources::PUBLIC_ID).unwrap();
+    assert_eq!((public.owner.as_str(), public.repo.as_str(), public.name.as_str()), ("QuantableX", "QuantScript-Collection-Public", "QuantSuite Collection"));
+    assert!(all.iter().any(|s| s.id == "folder"), "other sources stay");
+    sources::delete(&conn, sources::PUBLIC_ID).unwrap();
+    sources::init_schema(&conn).unwrap();
+    assert!(sources::get(&conn, sources::PUBLIC_ID).is_err(), "a deleted public catalog stays deleted");
+}
+
+#[test]
+fn public_files_come_from_the_raw_host_at_the_pinned_commit() {
+    assert_eq!(
+        raw_url("QuantableX", "QuantScript-Collection-Public", "0123abc", "indicators/x/manifest.json"),
+        "https://raw.githubusercontent.com/QuantableX/QuantScript-Collection-Public/0123abc/indicators/x/manifest.json"
+    );
 }
