@@ -66,10 +66,11 @@ npm run test:release
 npm run build
 ```
 
-To build an unsigned local installer without the private release key:
+To build a local installer (unsigned updater artifacts unless
+`TAURI_SIGNING_PRIVATE_KEY` is set):
 
 ```sh
-npm run tauri:build -- --config apps/src-tauri/tauri.local-build.conf.json
+npm run tauri:build
 ```
 
 ## Source layout
