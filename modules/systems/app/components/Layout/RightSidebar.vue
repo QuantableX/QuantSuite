@@ -61,9 +61,11 @@ const btState = computed(() => backtest.stateFor(systemId.value))
               ? aggregateName((cfg.indicator.aggregate ?? []).length)
               : cfg.indicator.trend }}</span>
       </div>
-      <div v-if="cfg.compareTrends?.length" class="qs-context__row">
+      <div v-if="cfg.compareTrends?.length" class="qs-context__row qs-context__row--list">
         <span>Compare</span>
-        <span class="mono qs-context__compare" :title="cfg.compareTrends.join(', ')">{{ cfg.compareTrends.join(', ') }}</span>
+        <ul class="qs-context__list">
+          <li v-for="kind in cfg.compareTrends" :key="kind" class="mono" :title="kind">{{ kind }}</li>
+        </ul>
       </div>
       <div class="qs-context__row">
         <span>TOTAL filter</span>
@@ -148,8 +150,32 @@ const btState = computed(() => backtest.stateFor(systemId.value))
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   font-size: 12px;
   color: var(--qs-text-secondary);
+}
+
+/* A label with several values: the values one below the other. */
+.qs-context__row--list {
+  align-items: flex-start;
+}
+
+.qs-context__list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qs-context__list li {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qs-context__compare {
