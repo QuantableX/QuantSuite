@@ -20,6 +20,7 @@ const { useLiveStore } = await import('../modules/systems/app/stores/live.ts')
 const { useSystemsStore } = await import('../modules/systems/app/stores/systems.ts')
 const { useConfigStore } = await import('../modules/systems/app/stores/config.ts')
 const { findIndicatorOption, indicatorOptionRows } = await import('../modules/systems/app/utils/indicatorOptions.ts')
+const { strategyIcon } = await import('../modules/systems/app/utils/strategyIcons.ts')
 
 function deferred() {
   let resolve, reject
@@ -28,6 +29,30 @@ function deferred() {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const result = { strategies: [], notes: [] }
+
+test('strategy symbols retain legacy defaults and safely handle unknown saved keys', () => {
+  assert.equal(strategyIcon({ id: 'lces' }).id, 'layers')
+  assert.equal(strategyIcon({ id: 'sces' }).id, 'hexagon')
+  assert.equal(strategyIcon({ id: 'custom' }).id, 'grid')
+  assert.equal(strategyIcon({ id: 'lces', icon: 'diamond' }).id, 'diamond')
+  assert.equal(strategyIcon({ id: 'custom', icon: '<svg>unknown</svg>' }).id, 'grid')
+})
+
+test('strategy creation and save send the chosen symbol to persistence', async t => {
+  const calls = []
+  setup(t, (command, args) => {
+    calls.push([command, args])
+    return command.endsWith('|create_system') ? { id: 'copy', ...args } : args.config
+  })
+  const systems = useSystemsStore()
+  const copy = await systems.create('Copy', '', '', { topN: 17 }, 'target')
+  assert.equal(copy.icon, 'target')
+  assert.equal(calls[0][1].icon, 'target')
+  const config = useConfigStore()
+  config.update('copy', { topN: 17 })
+  assert.equal(await config.save('copy', { ...copy, icon: 'wave' }), true)
+  assert.equal(calls[1][1].metadata.icon, 'wave')
+})
 
 test('an empty catalog stays empty and failed mutations do not change the list', async t => {
   setup(t, command => {

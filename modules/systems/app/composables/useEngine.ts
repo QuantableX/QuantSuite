@@ -39,8 +39,8 @@ export function useEngine() {
 
     // Systems & settings
     listSystems: () => invoke<SystemMeta[]>('plugin:systems|list_systems'),
-    createSystem: (name: string, short: string, description: string, config?: RunConfig) =>
-      invoke<SystemMeta>('plugin:systems|create_system', { name, short, description, config }),
+    createSystem: (name: string, short: string, description: string, config?: RunConfig, icon?: string) =>
+      invoke<SystemMeta>('plugin:systems|create_system', { name, short, description, config, icon }),
     deleteSystem: (systemId: string) => invoke<void>('plugin:systems|delete_system', { systemId }),
     getSystemConfig: (systemId: string) => invoke<RunConfig>('plugin:systems|get_system_config', { systemId }),
     saveSystemConfig: (systemId: string, config: RunConfig, metadata?: SystemMeta) =>

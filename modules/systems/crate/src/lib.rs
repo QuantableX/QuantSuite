@@ -59,6 +59,8 @@ pub struct SystemMeta {
     pub short: String,
     pub status: String, // "ready" | "planned"
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 // Starter strategies for new and legacy stores; ordinary editable entries after loading.
@@ -68,6 +70,7 @@ fn systems_catalog() -> Vec<SystemMeta> {
             id: "lces".into(),
             name: "Large-Cap Evaluation System".into(),
             short: "LCES".into(),
+            icon: Some("layers".into()),
             status: "ready".into(),
             description: "Survivorship-bias-free rotation across the top-N large-cap coins, ranked as they stood on each date.".into(),
         },
@@ -75,6 +78,7 @@ fn systems_catalog() -> Vec<SystemMeta> {
             id: "sces".into(),
             name: "Small-Cap Evaluation System".into(),
             short: "SCES".into(),
+            icon: Some("hexagon".into()),
             status: "ready".into(),
             description: "Same engine, applied to a lower-rank small-cap cohort: excludes the top-ranked coins and rotates the slice beneath them.".into(),
         },
@@ -191,12 +195,14 @@ impl PersistedStore {
         short: String,
         description: String,
         config: Option<Value>,
+        icon: Option<String>,
     ) -> Result<SystemMeta, String> {
         let meta = normalize_system(SystemMeta {
             id: uuid::Uuid::new_v4().to_string(),
             name,
             short,
             description,
+            icon,
             status: "ready".into(),
         })?;
         let config = config.unwrap_or_else(|| default_run_config(""));
@@ -801,8 +807,8 @@ fn list_systems(store: State<'_, Store>) -> Result<Vec<SystemMeta>, String> {
 }
 
 #[tauri::command(async)]
-fn create_system(name: String, short: String, description: String, config: Option<Value>, store: State<'_, Store>) -> Result<SystemMeta, String> {
-    store.update(|data| data.create_system(name, short, description, config))
+fn create_system(name: String, short: String, description: String, config: Option<Value>, icon: Option<String>, store: State<'_, Store>) -> Result<SystemMeta, String> {
+    store.update(|data| data.create_system(name, short, description, config, icon))
 }
 
 #[tauri::command(async)]
@@ -1388,13 +1394,28 @@ mod tests {
             let mut meta = data.systems[0].clone();
             meta.name = "Any name / 日本語 System".into();
             meta.short = "My label".into();
+            meta.icon = Some("diamond".into());
             data.save_config("lces", data.system_configs["lces"].clone(), Some(meta))
         }).unwrap();
         let restored = load_store(&dir.0).unwrap();
         assert_eq!(restored.systems[0].id, "lces");
+        assert_eq!(restored.systems[0].icon.as_deref(), Some("diamond"));
         assert_eq!(restored.systems[0].name, "Any name / 日本語 System");
         assert_eq!(serde_json::to_value(&restored.system_configs).unwrap(), legacy["systemConfigs"]);
         assert_eq!(restored.settings.unwrap().active_system_id, "sces");
+    }
+
+    #[test]
+    fn existing_catalog_without_icons_loads_unchanged() {
+        let mut legacy = serde_json::to_value(PersistedStore::default()).unwrap();
+        for system in legacy["systems"].as_array_mut().unwrap() {
+            system.as_object_mut().unwrap().remove("icon");
+        }
+        let restored: PersistedStore = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored.systems.len(), 2);
+        assert_eq!(restored.systems[0].id, "lces");
+        assert_eq!(restored.systems[1].id, "sces");
+        assert!(restored.systems.iter().all(|system| system.icon.is_none()));
     }
 
     #[test]
@@ -1402,12 +1423,13 @@ mod tests {
         let mut data = PersistedStore::default();
         let original = json!({ "topN": 21, "excludeTopN": 6, "indicator": { "aggregate": ["one", "two"], "params": {"one": {"length": 42}} }, "marketIndicator": { "trend": "total_breakout", "entryLength": 20 } });
         data.system_configs.insert("sces".into(), original.clone());
-        let copy = data.create_system("SCES".into(), "Anything".into(), "".into(), Some(original.clone())).unwrap();
+        let copy = data.create_system("SCES".into(), "Anything".into(), "".into(), Some(original.clone()), Some("hexagon".into())).unwrap();
         assert_ne!(copy.id, "sces");
+        assert_eq!(copy.icon.as_deref(), Some("hexagon"));
         assert_eq!(data.system_configs[&copy.id], original);
         data.system_configs.get_mut(&copy.id).unwrap()["indicator"]["params"]["one"]["length"] = json!(13);
         assert_eq!(data.system_configs["sces"], original);
-        let fresh = data.create_system("SCES".into(), "".into(), "".into(), None).unwrap();
+        let fresh = data.create_system("SCES".into(), "".into(), "".into(), None, None).unwrap();
         assert_eq!(data.system_configs[&fresh.id]["excludeTopN"], 0);
     }
 
@@ -1420,7 +1442,7 @@ mod tests {
         assert!(restored.systems.is_empty());
         assert_eq!(restored.settings.as_ref().unwrap().active_system_id, "");
         assert!(restored.save_config("lces", json!({}), None).is_err());
-        let fresh = store.update(|data| data.create_system("Fresh".into(), "".into(), "".into(), None)).unwrap();
+        let fresh = store.update(|data| data.create_system("Fresh".into(), "".into(), "".into(), None, None)).unwrap();
         assert_eq!(load_store(&dir.0).unwrap().systems[0].id, fresh.id);
     }
 
@@ -1430,9 +1452,9 @@ mod tests {
         let blocked = dir.0.join("file");
         fs::write(&blocked, "occupied").unwrap();
         let store = Store { data_dir: blocked, data: Mutex::new(PersistedStore::default()) };
-        assert!(store.update(|data| data.create_system("Fresh".into(), "".into(), "".into(), None)).is_err());
+        assert!(store.update(|data| data.create_system("Fresh".into(), "".into(), "".into(), None, None)).is_err());
         assert_eq!(store.data.lock().unwrap().systems.len(), 2);
-        assert!(store.update(|data| data.create_system("  ".into(), "".into(), "".into(), None)).is_err());
+        assert!(store.update(|data| data.create_system("  ".into(), "".into(), "".into(), None, None)).is_err());
         assert!(store.data.lock().unwrap().system_configs.is_empty());
         fs::write(config_path(&dir.0), "malformed").unwrap();
         assert!(load_store(&dir.0).is_err());

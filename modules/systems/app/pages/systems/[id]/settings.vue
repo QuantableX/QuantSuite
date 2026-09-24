@@ -7,6 +7,7 @@ import { useConfigStore } from '#systems/stores/config'
 import { useEngine } from '#systems/composables/useEngine'
 import { useBacktestStore } from '#systems/stores/backtest'
 import { useLiveStore } from '#systems/stores/live'
+import { strategyIcon } from '#systems/utils/strategyIcons'
 
 const route = useRoute()
 const app = useAppStore()
@@ -28,6 +29,7 @@ const panel = ref<'configuration' | 'signals' | 'data'>('configuration')
 const name = ref('')
 const short = ref('')
 const description = ref('')
+const icon = ref('grid')
 const confirmDelete = ref(false)
 const deleting = ref(false)
 const deleteError = ref<string | null>(null)
@@ -36,6 +38,7 @@ watch(system, s => {
   name.value = s?.name ?? ''
   short.value = s?.short ?? ''
   description.value = s?.description ?? ''
+  icon.value = strategyIcon(s).id
   confirmDelete.value = false
 }, { immediate: true })
 
@@ -47,7 +50,7 @@ onUnmounted(() => { if (savedTimer) clearTimeout(savedTimer) })
 async function save() {
   if (!system.value || !name.value.trim()) return
   saving.value = true
-  const metadata = { ...system.value, name: name.value.trim(), short: short.value.trim(), description: description.value.trim() }
+  const metadata = { ...system.value, name: name.value.trim(), short: short.value.trim(), description: description.value.trim(), icon: icon.value }
   const ok = await config.save(systemId.value, metadata)
   saving.value = false
   if (!ok) return
@@ -118,8 +121,9 @@ async function toggleEngine() {
     <div v-if="engineError" class="qs-settings__error">{{ engineError }}</div>
 
     <section class="card qs-settings__identity" aria-label="Strategy details">
-      <label><span class="label">Name</span><input v-model="name" class="input" :disabled="saving || deleting" required /></label>
+      <label class="qs-settings__name"><span class="label">Name</span><input v-model="name" class="input" :disabled="saving || deleting" required /></label>
       <label><span class="label">Short label (optional)</span><input v-model="short" class="input" :disabled="saving || deleting" /></label>
+      <SystemsSettingsSymbolSelect v-model="icon" :disabled="saving || deleting" />
       <label class="qs-settings__description"><span class="label">Description</span><input v-model="description" class="input" :disabled="saving || deleting" /></label>
       <div class="qs-settings__manage">
         <button class="btn" :disabled="saving || deleting" @click="router.push({ path: '/algo/manual/new', query: { copy: systemId } })">Duplicate</button>
@@ -160,9 +164,9 @@ async function toggleEngine() {
 
 .qs-settings__tabs { display: none; }
 
-.qs-settings__identity { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; padding: 16px; }
+.qs-settings__identity { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 160px; gap: 12px; padding: 16px; }
 .qs-settings__identity label { min-width: 0; }
-.qs-settings__description { grid-column: 1; }
+.qs-settings__description { grid-column: 1 / 3; }
 .qs-settings__manage { display: flex; gap: 8px; align-items: flex-end; justify-content: flex-end; }
 .qs-settings__confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--qs-error); font-size: 13px; }
 .qs-settings__confirm span { flex: 1; }
@@ -280,6 +284,8 @@ async function toggleEngine() {
 }
 
 @container manual-settings (max-width: 540px) {
+  .qs-settings__identity { grid-template-columns: minmax(0, 1fr) 140px; }
+  .qs-settings__name, .qs-settings__description, .qs-settings__manage { grid-column: 1 / -1; }
   [data-panel='data'] .qs-settings__side { grid-template-columns: minmax(0, 1fr); }
   [data-panel='configuration'] .qs-settings__form { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'universe' 'window' 'costs'; }
   [data-panel='configuration'] .qs-settings__form :deep(.qs-form__section--universe .qs-form__grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
