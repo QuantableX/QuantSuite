@@ -501,7 +501,8 @@ fn execute_worktree_tool(
             let wt = worktree::find(&repo, &get_required_string(arguments, "worktree")?)?;
             let cleanup = !get_optional_string(arguments, "cleanup", "true").trim().eq_ignore_ascii_case("false");
             let message = arguments.get("message").and_then(Value::as_str);
-            let r = worktree::merge(&wt, message, cleanup)?;
+            let r = worktree::merge(&wt, message, cleanup)
+                .map_err(|e| with_resolve_steps(e, &format!("The worktree stays at {}.", wt.path), "merge_worktree"))?;
             Ok(format!(
                 "{}\n  Merged: {}\n  Commits: {}\n  Uncommitted work committed first: {}\n  Worktree and branch removed: {}",
                 r.message,
@@ -1352,7 +1353,8 @@ fn execute_complete_card(
         let main_branch = crate::git_helpers::get_default_branch(&project_folder)
             .unwrap_or_else(|_| "main".into());
         if let Some(ref branch_name) = card.branch {
-            crate::git_helpers::merge_branch(&project_folder, branch_name, &main_branch, &card_id, &card.title)?;
+            crate::git_helpers::merge_branch(&project_folder, branch_name, &main_branch, &card_id, &card.title)
+                .map_err(|e| with_resolve_steps(e, &card_worktree_note(&card), "approve_kanban_card"))?;
         }
 
         // Push to remote if origin exists
@@ -1413,7 +1415,34 @@ fn execute_approve_card(
         .ok_or_else(|| format!("Card '{}' not found", card_id))?;
 
     check_agent_kanban_action(&approval_mode_for_card(app, &card)?, "approve_kanban_card", None)?;
+    // Past the gate this is Auto Apply's merge retry, so a conflict is the
+    // agent's to resolve again.
     approve_card_from_ui(app, kanban_db, &card_id)
+        .map_err(|e| with_resolve_steps(e, &card_worktree_note(&card), "approve_kanban_card"))
+}
+
+/// Where a card whose merge conflicted waits, for [`with_resolve_steps`].
+fn card_worktree_note(card: &KanbanCard) -> String {
+    match card.worktree_path.as_deref() {
+        Some(wt) => format!("The card stays in Review with its worktree at {wt}."),
+        None => "The card stays in Review with its worktree.".into(),
+    }
+}
+
+/// A merge the agent may land itself (an Auto Apply card, a standalone
+/// worktree) that conflicted: tell it to resolve the conflict in its
+/// worktree and retry, rather than hand it to the user. Other errors pass
+/// through unchanged.
+fn with_resolve_steps(error: String, waiting: &str, retry: &str) -> String {
+    if !error.starts_with(crate::git_helpers::MERGE_CONFLICT) {
+        return error;
+    }
+    format!(
+        "{error} {waiting}\n\nResolve it yourself, never in the main checkout: in the worktree run `git merge <base>`, \
+         resolve every conflicted file so that both sides' changes survive, build and test again, commit, then call \
+         {retry} to retry the merge. Ask the user only when the two sides contradict each other and you cannot tell \
+         which result is intended."
+    )
 }
 
 pub(crate) fn approve_card_from_ui(app: &tauri::AppHandle, kanban_db: &KanbanDb, card_id: &str) -> Result<String, String> {
@@ -1548,7 +1577,11 @@ async fn execute_codebase_tool(
                 "Parallel work: when other agents may be editing the same repository, call".to_string(),
                 "create_worktree first and do all your work inside the path it returns (an".to_string(),
                 "isolated checkout on its own branch under <repo>/.qs-worktrees/). Commit as".to_string(),
-                "you go; never merge, rebase or switch branches yourself. To review or land".to_string(),
+                "you go; never rebase or switch branches yourself. A merge conflict on an".to_string(),
+                "auto_apply board is yours to resolve inside the worktree (`git merge <base>`,".to_string(),
+                "resolve, build, test, commit), then retry with approve_kanban_card for a card".to_string(),
+                "or merge_worktree for a standalone worktree — never in the main checkout; on".to_string(),
+                "an approval board report it to the user. To review or land".to_string(),
                 "work: list_worktrees, get_worktree_status, get_worktree_diff, merge_worktree,".to_string(),
                 "remove_worktree. A claimed kanban card gets such a worktree automatically.".to_string(),
                 "A worktree is ready to build: the main checkout's node_modules / .venv are".to_string(),
