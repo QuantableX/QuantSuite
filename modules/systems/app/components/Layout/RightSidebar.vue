@@ -16,6 +16,20 @@ const { systemId, view } = useActiveView()
 
 const system = computed(() => systems.byId(systemId.value))
 const cfg = computed(() => config.get(systemId.value))
+const trendLabel = computed(() => {
+  const ind = cfg.value.indicator
+  const trend = ind.trend ?? 'ema_cross'
+  if (trend === 'ema_cross') return `EMA ${ind.emaCross.fastLength}/${ind.emaCross.slowLength}`
+  if (trend === 'aggregate') return aggregateName((ind.aggregate ?? []).length)
+  return trend
+})
+/** An aggregate's members, named as chips under its row like Compare's. */
+const trendMembers = computed(() =>
+  cfg.value.indicator.trend === 'aggregate' ? cfg.value.indicator.aggregate ?? [] : [])
+const marketMembers = computed(() => {
+  const ind = cfg.value.marketIndicator
+  return cfg.value.marketFilter && ind?.trend === 'aggregate' ? ind.aggregate ?? [] : []
+})
 const marketLabel = computed(() => {
   if (!cfg.value.marketFilter) return 'off'
   const ind = cfg.value.marketIndicator
@@ -52,14 +66,14 @@ const btState = computed(() => backtest.stateFor(systemId.value))
         <span>Ranking</span>
         <span class="mono">{{ cfg.rankingSource }}</span>
       </div>
-      <div class="qs-context__row">
-        <span>Trend</span>
-        <span class="mono" :title="cfg.indicator.trend === 'aggregate' ? (cfg.indicator.aggregate ?? []).join(', ') : undefined">{{
-          (cfg.indicator.trend ?? 'ema_cross') === 'ema_cross'
-            ? `EMA ${cfg.indicator.emaCross.fastLength}/${cfg.indicator.emaCross.slowLength}`
-            : cfg.indicator.trend === 'aggregate'
-              ? aggregateName((cfg.indicator.aggregate ?? []).length)
-              : cfg.indicator.trend }}</span>
+      <div class="qs-context__group">
+        <div class="qs-context__row">
+          <span>Trend</span>
+          <span class="mono">{{ trendLabel }}</span>
+        </div>
+        <div v-if="trendMembers.length" class="qs-context__chips">
+          <span v-for="kind in trendMembers" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
+        </div>
       </div>
       <div v-if="cfg.compareTrends?.length" class="qs-context__group">
         <div class="qs-context__row">
@@ -70,10 +84,15 @@ const btState = computed(() => backtest.stateFor(systemId.value))
           <span v-for="kind in cfg.compareTrends" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
         </div>
       </div>
-      <div class="qs-context__row">
-        <span>TOTAL filter</span>
-        <span class="mono qs-context__compare" :class="cfg.marketFilter ? '' : 'qs-muted'"
-          :title="marketLabel">{{ marketLabel }}</span>
+      <div class="qs-context__group">
+        <div class="qs-context__row">
+          <span>TOTAL filter</span>
+          <span class="mono qs-context__compare" :class="cfg.marketFilter ? '' : 'qs-muted'"
+            :title="marketLabel">{{ marketLabel }}</span>
+        </div>
+        <div v-if="marketMembers.length" class="qs-context__chips">
+          <span v-for="kind in marketMembers" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
+        </div>
       </div>
     </section>
 
