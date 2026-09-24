@@ -349,7 +349,7 @@ pub fn kanban_tools() -> Vec<CodebaseIndexToolInfo> {
         },
         CodebaseIndexToolInfo {
             name: "complete_kanban_card".into(),
-            description: "Mark a claimed card as complete. In 'auto_apply' mode (default): automatically merges the branch into main, cleans up the worktree, and moves the card to 'done'. In 'approval' mode: moves to 'review' column with status 'awaiting_review' — the worktree is preserved for review, and the user must click 'Approve result' in the card dialog to merge. Present the result and STOP until that separate approval.".into(),
+            description: "Mark a claimed card as complete. In 'auto_apply' mode (default): automatically merges the branch into main, cleans up the worktree, and moves the card to 'done'. In 'approval' mode: moves to 'review' column with status 'awaiting_review' — the worktree is preserved for review, and the user must click 'Approve result' in the card dialog to merge. Present the result and STOP until that separate approval. On 'auto_apply' a merge conflict aborts the merge, leaves the card in 'review' with its worktree and names the conflicted files: resolve it yourself inside that worktree (`git merge <base>`, resolve, build and test, commit), then call approve_kanban_card to retry the merge — never resolve it in the main checkout.".into(),
             parameters: vec![
                 CodebaseIndexToolParam { name: "card_id".into(), param_type: "string".into(), description: "The UUID of the card to complete.".into(), required: true, default_value: None },
                 CodebaseIndexToolParam { name: "agent_id".into(), param_type: "string".into(), description: "The agent completing the card (for validation).".into(), required: false, default_value: None },
@@ -357,7 +357,7 @@ pub fn kanban_tools() -> Vec<CodebaseIndexToolInfo> {
         },
         CodebaseIndexToolInfo {
             name: "approve_kanban_card".into(),
-            description: "Auto Apply merge retry for a card awaiting review. In approval mode this tool refuses agent self-approval: present the result and wait for the user to click 'Approve result' in the card dialog. Merges the branch into main with --no-ff, removes the worktree, deletes the branch, and moves card to 'done' with status 'merged'.".into(),
+            description: "Auto Apply merge retry for a card awaiting review — after complete_kanban_card hit a merge conflict and you resolved it in the card's worktree (`git merge <base>`, resolve, build and test, commit). In approval mode this tool refuses agent self-approval: present the result and wait for the user to click 'Approve result' in the card dialog. Merges the branch into main with --no-ff, removes the worktree, deletes the branch, and moves card to 'done' with status 'merged'.".into(),
             parameters: vec![
                 CodebaseIndexToolParam { name: "card_id".into(), param_type: "string".into(), description: "The UUID of the card to approve.".into(), required: true, default_value: None },
             ],
@@ -478,7 +478,7 @@ pub fn worktree_tools() -> Vec<CodebaseIndexToolInfo> {
         },
         CodebaseIndexToolInfo {
             name: "merge_worktree".into(),
-            description: "Merge a worktree's branch into the branch it was cut from, as one `--no-ff` merge commit in the repository's main checkout. Uncommitted work in the worktree is committed first. The main checkout must be on the base branch — this tool never switches anyone's branch. A conflict aborts the merge and leaves the worktree untouched; say so and let the user resolve it. With cleanup (default) the worktree and branch are removed afterwards.".into(),
+            description: "Merge a worktree's branch into the branch it was cut from, as one `--no-ff` merge commit in the repository's main checkout. Uncommitted work in the worktree is committed first. The main checkout must be on the base branch — this tool never switches anyone's branch. A conflict aborts the merge, leaves the main checkout and the worktree untouched and names the conflicted files: resolve it yourself inside the worktree (`git merge <base>`, resolve, build and test, commit), then call merge_worktree again. With cleanup (default) the worktree and branch are removed afterwards.".into(),
             parameters: vec![
                 worktree(),
                 workspace(),
