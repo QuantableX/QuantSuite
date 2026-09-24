@@ -13,6 +13,8 @@ match visually:
 7  Sortino Ratio
 8  Omega Ratio
 9  Maximum Drawdown %
+10 Net Return (multiplier)
+11 CAGR %
 """
 
 from __future__ import annotations
@@ -42,6 +44,8 @@ class PerformanceMetrics:
     # Pine QuantFolio's "Net Return (multiplied)" row: final equity
     # multiplier (1.0 = breakeven, 2.0 = doubled, ...).
     net_return_multiplier: float = float("nan")
+    # Compound annual growth over the curve's calendar span, in %.
+    cagr_pct: float = float("nan")
 
     def as_row(self) -> list[float]:
         return [
@@ -50,6 +54,7 @@ class PerformanceMetrics:
             self.sharpe, self.sortino, self.omega,
             self.max_drawdown_pct,
             self.net_return_multiplier,
+            self.cagr_pct,
         ]
 
 
@@ -65,7 +70,10 @@ METRIC_LABELS: tuple[str, ...] = (
     "Omega Ratio",
     "Maximum Drawdown %",
     "Net Return (multiplier)",
+    "CAGR %",
 )
+
+_SECONDS_PER_YEAR = 365.25 * 24 * 3600
 
 
 def max_drawdown(equity: pd.Series) -> float:
@@ -76,6 +84,26 @@ def max_drawdown(equity: pd.Series) -> float:
     peak = equity.cummax()
     dd = (peak - equity) / peak
     return float(dd.max() or 0.0)
+
+
+def cagr(equity: pd.Series, periods_per_year: float = _DEFAULT_PERIODS_PER_YEAR) -> float:
+    """Compound annual growth rate as a fraction (0.5 = +50 % a year).
+
+    Years come from the index's calendar span: crypto trades every day, so
+    the 255-bar convention used for Sharpe would overstate a daily run's
+    length. A non-datetime index falls back to ``bars / periods_per_year``.
+    """
+
+    if equity.size < 2:
+        return float("nan")
+    start, end = float(equity.iloc[0]), float(equity.iloc[-1])
+    if isinstance(equity.index, pd.DatetimeIndex):
+        years = (equity.index[-1] - equity.index[0]).total_seconds() / _SECONDS_PER_YEAR
+    else:
+        years = (equity.size - 1) / max(periods_per_year, 1.0)
+    if years <= 0 or start <= 0 or end <= 0:
+        return float("nan")
+    return (end / start) ** (1.0 / years) - 1.0
 
 
 def compute_metrics(
@@ -135,4 +163,5 @@ def compute_metrics(
         omega=omega,
         max_drawdown_pct=mdd * 100,
         net_return_multiplier=float(equity.iloc[-1]),
+        cagr_pct=cagr(equity, periods_per_year) * 100,
     )
