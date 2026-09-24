@@ -1,7 +1,7 @@
 //! The Collection against a SYNTHETIC folder source: helper_lib (a library),
 //! alpha (requires helper_lib, one version file) and beta (requires alpha).
 
-use super::fetch::{github_error, safe_path, Folder};
+use super::fetch::{github_error, safe_path, token_problem, Folder, TokenFacts};
 use super::sources::{self, SourceInput};
 use super::tokens::{MemoryTokens, TokenStore};
 use super::*;
@@ -397,4 +397,32 @@ fn a_store_era_state_file_is_read_and_replaced() {
     assert!(t.library.join(STATE_FILE).is_file());
     assert!(!t.library.join("store.json").exists(), "and replaced on the next save");
     assert_eq!(load_installed(&t.library).unwrap().items.keys().collect::<Vec<_>>(), ["alpha", "helper_lib"]);
+}
+
+#[test]
+fn a_refused_token_is_explained_without_showing_it() {
+    let facts = |login: Option<&str>, user: u16, repo: u16| TokenFacts {
+        kind: "fine-grained",
+        login: login.map(str::to_string),
+        user_status: Some(user),
+        repo_status: Some(repo),
+        accepted: Some("contents=read".into()),
+        expires: Some("2026-10-24 00:00:00 UTC".into()),
+    };
+    let msg = token_problem("QuantableX/QS", "QuantableX", 404, &facts(Some("QuantableX"), 200, 404));
+    assert!(msg.starts_with("The fine-grained token belongs to QuantableX but GitHub does not show it QuantableX/QS (answer 404)."), "{msg}");
+    assert!(msg.contains("Only select repositories → QuantableX/QS"), "{msg}");
+    assert!(msg.contains("Contents: Read-only"), "{msg}");
+    assert!(msg.contains("GitHub wants: contents=read."), "{msg}");
+    assert!(msg.contains("It expires 2026-10-24"), "{msg}");
+    assert!(!msg.contains("not QuantableX's token"));
+
+    let other = token_problem("QuantableX/QS", "QuantableX", 404, &facts(Some("someone-else"), 200, 404));
+    assert!(other.contains("It is not QuantableX's token"), "{other}");
+
+    let visible = token_problem("QuantableX/QS", "QuantableX", 404, &facts(Some("QuantableX"), 200, 200));
+    assert!(visible.contains("sees QuantableX/QS, but may not read its files"), "{visible}");
+
+    let refused = token_problem("QuantableX/QS", "QuantableX", 404, &facts(None, 401, 404));
+    assert_eq!(refused, "GitHub refused the token (fine-grained token): it is wrong, revoked or expired — set a new one.");
 }
