@@ -202,6 +202,8 @@ export interface PerformanceMetrics {
   omega: number | null
   maxDrawdownPct: number | null
   netReturnMultiplier: number | null
+  /** Absent from an engine process that predates it. */
+  cagrPct?: number | null
 }
 
 /** The rotation simulated with one trend signal. */

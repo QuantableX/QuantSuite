@@ -183,16 +183,44 @@ pub fn merge_branch(
         .map_err(|e| format!("Failed to run git merge: {}", e))?;
 
     if !output.status.success() {
+        let conflicted = unmerged_files(Path::new(project_root));
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         // Abort the merge to restore clean state
         let _ = run_git(&["merge", "--abort"], project_root);
-        return Err(format!(
-            "Merge conflict for branch '{}': {}. Merge aborted, worktree preserved for manual resolution.",
-            branch_name, stderr
-        ));
+        return Err(merge_failure(branch_name, main_branch, &conflicted, &stderr));
     }
 
     Ok(())
+}
+
+/// How every aborted-merge error that is a real conflict begins, so callers
+/// can tell it from other failures.
+pub const MERGE_CONFLICT: &str = "Merge conflict";
+
+/// The files a failed merge in `cwd` left unmerged — read before the abort.
+/// git reports conflicts on stdout, so stderr alone never names them.
+pub fn unmerged_files(cwd: &Path) -> Vec<String> {
+    git()
+        .args(["diff", "--name-only", "--diff-filter=U"])
+        .current_dir(cwd)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// The error of an aborted merge. Only a real conflict starts with
+/// [`MERGE_CONFLICT`] and names its files; any other failure (uncommitted
+/// changes in the main checkout in the way, say) is not fixed by merging
+/// the base into the branch, so it says what git said instead.
+pub fn merge_failure(branch: &str, base: &str, conflicted: &[String], git_said: &str) -> String {
+    if conflicted.is_empty() {
+        format!("Merging '{branch}' into '{base}' failed and was aborted; the main checkout and the worktree are unchanged. git said: {git_said}")
+    } else {
+        format!(
+            "{MERGE_CONFLICT}: '{branch}' and '{base}' both changed {}. The merge was aborted; the main checkout and the worktree are unchanged.",
+            conflicted.join(", ")
+        )
+    }
 }
 
 /// Get diff between a branch and main.

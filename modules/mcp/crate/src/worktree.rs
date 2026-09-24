@@ -899,7 +899,8 @@ pub fn commit_all(dir: &Path, message: &str) -> Result<bool, String> {
 /// Land the branch on its base with `--no-ff`. Uncommitted work in the
 /// worktree is committed first. The main checkout must be on the base
 /// branch — nobody's branch is switched behind their back; on a conflict
-/// the merge is aborted and the worktree stays for whoever sorts it out.
+/// the merge is aborted and the worktree stays for the agent to resolve it
+/// there and merge again.
 pub fn merge(wt: &Worktree, message: Option<&str>, cleanup: bool) -> Result<MergeResult, String> {
     let repo = Path::new(&wt.repo_root);
     let dir = Path::new(&wt.path);
@@ -933,8 +934,9 @@ pub fn merge(wt: &Worktree, message: Option<&str>, cleanup: bool) -> Result<Merg
     }
     let msg = format!("Merge agent worktree '{label}' ({})", wt.branch);
     if let Err(e) = run(repo, &["merge", "--no-ff", "-m", &msg, &wt.branch]) {
+        let conflicted = crate::git_helpers::unmerged_files(repo);
         let _ = run(repo, &["merge", "--abort"]);
-        return Err(format!("Merge failed and was aborted — the worktree and branch are untouched. git said: {e}"));
+        return Err(crate::git_helpers::merge_failure(&wt.branch, &wt.base, &conflicted, &e));
     }
     let mut message = format!("Merged {} commit(s) from {} into {}.", commits, wt.branch, wt.base);
     let mut cleaned = false;
@@ -1118,6 +1120,57 @@ mod tests {
         assert_eq!(removed.unlinked.len(), 1, "{removed:?}");
         assert!(!Path::new(&wt_path).exists());
         assert!(root.join("node_modules").join("marker.txt").is_file(), "the link was dropped, never followed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A conflicting merge names its files and starts with `MERGE_CONFLICT` —
+    /// the cue for an agent to resolve it itself — and leaves the main
+    /// checkout as it was; after `git merge <base>` inside the worktree the
+    /// retry lands. Uncommitted work in the main checkout that is in the way
+    /// is a plain failure, not a conflict: merging the base would not fix it.
+    #[test]
+    fn conflicts_name_their_files_and_resolve_in_the_worktree() {
+        if git().arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+            eprintln!("skipped: no git here");
+            return;
+        }
+        use crate::git_helpers::MERGE_CONFLICT;
+        let root = std::env::temp_dir().join(format!("qs-mcp-conflict-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        init_repo(&root).expect("repo");
+        let repo = repo_root(&root).expect("a repo");
+        let readme = |dir: &Path| std::fs::read_to_string(dir.join("README.md")).unwrap().replace("\r\n", "\n");
+
+        let (wt, _) = create(&repo, "clash", None).expect("worktree");
+        let wtp = Path::new(&wt.path);
+        std::fs::write(wtp.join("README.md"), "hello from the branch\n").unwrap();
+        std::fs::write(root.join("README.md"), "hello from main\n").unwrap();
+        run(&root, &["commit", "-q", "-a", "-m", "main changes README"]).unwrap();
+        let head = run(&root, &["rev-parse", "HEAD"]).unwrap();
+
+        let err = merge(&wt, Some("branch changes README"), true).unwrap_err();
+        assert!(err.starts_with(MERGE_CONFLICT), "{err}");
+        assert!(err.contains("README.md"), "names the file: {err}");
+        assert_eq!(run(&root, &["rev-parse", "HEAD"]).unwrap(), head, "main is untouched");
+        assert!(run(&root, &["diff", "--name-only", "--diff-filter=U"]).unwrap().is_empty(), "no half-done merge left");
+        assert!(wtp.is_dir(), "the worktree stays for the resolution");
+
+        // The resolution the tools ask for, inside the worktree.
+        assert!(run(wtp, &["merge", "main"]).is_err(), "the conflict, now in the worktree");
+        std::fs::write(wtp.join("README.md"), "hello from main and the branch\n").unwrap();
+        run(wtp, &["commit", "-q", "-a", "-m", "resolve"]).unwrap();
+        let r = merge(&wt, None, true).expect("the retry lands");
+        assert!(r.merged && r.cleaned, "{r:?}");
+        assert_eq!(readme(&root), "hello from main and the branch\n");
+
+        let (wt2, _) = create(&repo, "blocked", None).expect("second worktree");
+        std::fs::write(Path::new(&wt2.path).join("README.md"), "the branch again\n").unwrap();
+        std::fs::write(root.join("README.md"), "uncommitted in main\n").unwrap();
+        let err = merge(&wt2, None, true).unwrap_err();
+        assert!(!err.starts_with(MERGE_CONFLICT), "not a conflict: {err}");
+        assert_eq!(readme(&root), "uncommitted in main\n", "the user's edit survives");
+        let _ = remove(&wt2);
         let _ = std::fs::remove_dir_all(&root);
     }
 

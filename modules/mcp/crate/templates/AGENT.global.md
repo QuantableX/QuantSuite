@@ -133,8 +133,9 @@ repository cards. General non-repository tasks use the workflow above.
    file-conflict WARNING means another active card touches the same files —
    coordinate, or choose other files.
 3. **Work** — everything happens inside the worktree path from the reply
-   (absolute paths, or `cd` there). Commit as you go. Never merge, rebase or
-   switch branches yourself. `get_kanban_diff` shows what the card changed.
+   (absolute paths, or `cd` there). Commit as you go. Never rebase or switch
+   branches yourself, and merge only to resolve a conflict (step 4).
+   `get_kanban_diff` shows what the card changed.
 4. **Complete** — `complete_kanban_card` once the work builds, is tested and
    committed. What follows depends on the board's mode
    (`get_kanban_approval_mode`):
@@ -147,8 +148,20 @@ repository cards. General non-repository tasks use the workflow above.
      or **Request changes** to return it to `work` with the worktree preserved.
      Work approval never authorizes result approval. Never approve your own
      result or merge it through another tool, git command or UI automation.
-   A merge conflict leaves the card in `review` — report it; never resolve it
-   in the main checkout.
+   **Merge conflicts.** A conflicting merge is aborted: the main checkout
+   stays as it was, the card waits in `review` with its worktree, and the
+   error names the conflicted files. Never resolve a conflict in the main
+   checkout.
+   - `auto_apply`: resolve it yourself, without waiting for the user. In the
+     card's worktree run `git merge <base>` (the branch the card merges into,
+     usually `main`), resolve every conflicted file so that both sides'
+     changes survive, build and test again, commit, then call
+     `approve_kanban_card` — on `auto_apply` that is the merge retry, not a
+     self-approval. Ask the user only when the two sides contradict each
+     other and you cannot tell which result is intended.
+   - `approval`: report it to the user and leave the merge to them. Resolve
+     it in the worktree the same way only when the user asks you to; never
+     call `approve_kanban_card`.
 5. **Cancel** — `cancel_kanban_card` releases a claim you cannot finish; the
    worktree is removed. Say why.
 
@@ -191,8 +204,10 @@ an isolated checkout on its own branch: a claimed repository card has one, and
   uncommitted files), `get_worktree_diff` (full diff against the base),
   `merge_worktree` (one `--no-ff` merge commit on the base branch, uncommitted
   work committed first; a conflict aborts and leaves everything as it was —
-  report it). `remove_worktree` discards a worktree and its branch for good —
-  only when merged or unwanted.
+  resolve it yourself like a card's: `git merge <base>` inside the worktree,
+  resolve, build and test, commit, then `merge_worktree` again).
+  `remove_worktree` discards a worktree and its branch for good — only when
+  merged or unwanted.
 - The main checkout stays on its branch: the tools never switch it, and
   neither do you.
 - **Build rule**: your own Rust builds use the worktree's own `target/`

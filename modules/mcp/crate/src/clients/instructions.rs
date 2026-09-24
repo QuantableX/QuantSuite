@@ -261,6 +261,16 @@ fn import_paths(
     let preface = format!("# QuantMCP AgentOS\n\nSource: {}\nManaged by QuantMCP. Re-import from General > AgentOS after changing the source.\n", source.display());
     let (body, limit) = match &spec.instructions {
         Instructions::LimitedFile(_, limit) => (format!("{preface}\nBefore any task, read and follow the complete instructions in `{}`. If QuantMCP is connected, call get_instructions to load the current global and workspace instructions. If neither is available, report that AgentOS could not be loaded.\n", source.display()), Some(*limit)),
+        // Claude Code expands `@path` lines in CLAUDE.md at session start, so
+        // it reads the live AGENT.md itself instead of a copy that goes stale.
+        Instructions::Claude => (
+            format!(
+                "# QuantMCP AgentOS\n\nSource: {}\nManaged by QuantMCP. Claude Code loads the live source through the import below at every session start; edits apply without a re-import.\n\n@{}\n",
+                source.display(),
+                claude_import_path(source, dirs::home_dir().as_deref()),
+            ),
+            None,
+        ),
         _ => (format!("{preface}\n{text}"), None),
     };
     paths
@@ -271,6 +281,16 @@ fn import_paths(
             Err(detail) => result(spec, i, Outcome::Failed, detail),
         })
         .collect()
+}
+
+/// The source as a Claude Code import: `~/…` under the home, as its docs
+/// write user imports, otherwise absolute — forward slashes either way.
+fn claude_import_path(source: &Path, home: Option<&Path>) -> String {
+    let path = match home.and_then(|home| source.strip_prefix(home).ok()) {
+        Some(rel) => format!("~/{}", rel.display()),
+        None => source.display().to_string(),
+    };
+    path.replace('\\', "/")
 }
 
 /// Resolve and validate the entire selection before any destination is touched.
@@ -496,6 +516,34 @@ mod tests {
         assert!(text.contains("private overrides"));
         assert!(text.contains("AgentOS rules"));
         assert!(!temp.0.join("AGENTS.md").exists());
+    }
+
+    /// Claude Code gets an `@` import of the live AGENT.md, not a copy of its
+    /// text, so edits reach it without a re-import; its own rules around the
+    /// managed block stay.
+    #[test]
+    fn claude_imports_the_live_source_instead_of_copying_it() {
+        let temp = Scratch::new();
+        let home = temp.0.join("home");
+        let source = home.join(".quantmcp/AGENT.md");
+        assert_eq!(claude_import_path(&source, Some(&home)), "~/.quantmcp/AGENT.md");
+        let elsewhere = claude_import_path(&source, Some(Path::new("/nowhere")));
+        assert!(elsewhere.ends_with("/.quantmcp/AGENT.md") && !elsewhere.starts_with('~') && !elsewhere.contains('\\'), "{elsewhere}");
+
+        let target = temp.0.join(".claude/CLAUDE.md");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, "# My own rules\n").unwrap();
+        let spec = super::super::spec("claude-code").unwrap();
+        let rows = import_paths(spec, &source, "SOURCE TEXT", std::slice::from_ref(&target));
+        assert_eq!(rows[0].outcome, Outcome::Written, "{}", rows[0].detail);
+        let text = fs::read_to_string(&target).unwrap();
+        assert!(text.starts_with("# My own rules\n"));
+        let import = format!("\n@{}\n", claude_import_path(&source, dirs::home_dir().as_deref()));
+        assert!(text.contains(&import), "{text}");
+        assert!(!text.contains("SOURCE TEXT"), "a pointer, not a copy");
+        assert!(!text.contains("Re-import"), "{text}");
+        let rows = import_paths(spec, &source, "EDITED TEXT", std::slice::from_ref(&target));
+        assert!(rows[0].detail.starts_with("Up to date"), "source edits need no re-import: {}", rows[0].detail);
     }
 
     #[test]
