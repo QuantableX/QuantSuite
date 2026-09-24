@@ -307,6 +307,126 @@
           "markdownDescription": "Denies the check_script command without any pre-configured scope."
         },
         {
+          "description": "Enables the collection_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-catalog",
+          "markdownDescription": "Enables the collection_catalog command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-catalog",
+          "markdownDescription": "Denies the collection_catalog command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collection_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-install",
+          "markdownDescription": "Enables the collection_install command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-install",
+          "markdownDescription": "Denies the collection_install command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collection_item command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-item",
+          "markdownDescription": "Enables the collection_item command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_item command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-item",
+          "markdownDescription": "Denies the collection_item command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collection_plan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-plan",
+          "markdownDescription": "Enables the collection_plan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_plan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-plan",
+          "markdownDescription": "Denies the collection_plan command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collection_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-remove",
+          "markdownDescription": "Enables the collection_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-remove",
+          "markdownDescription": "Denies the collection_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collection_source_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-source-delete",
+          "markdownDescription": "Enables the collection_source_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_source_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-source-delete",
+          "markdownDescription": "Denies the collection_source_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collection_source_save command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-source-save",
+          "markdownDescription": "Enables the collection_source_save command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_source_save command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-source-save",
+          "markdownDescription": "Denies the collection_source_save command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collection_sources command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-sources",
+          "markdownDescription": "Enables the collection_sources command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_sources command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-sources",
+          "markdownDescription": "Denies the collection_sources command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collection_token_clear command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-token-clear",
+          "markdownDescription": "Enables the collection_token_clear command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_token_clear command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-token-clear",
+          "markdownDescription": "Denies the collection_token_clear command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collection_token_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collection-token-set",
+          "markdownDescription": "Enables the collection_token_set command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collection_token_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collection-token-set",
+          "markdownDescription": "Denies the collection_token_set command without any pre-configured scope."
+        },
+        {
           "description": "Enables the create_script command without any pre-configured scope.",
           "type": "string",
           "const": "allow-create-script",
@@ -439,130 +559,10 @@
           "markdownDescription": "Denies the script_python command without any pre-configured scope."
         },
         {
-          "description": "Enables the store_catalog command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-catalog",
-          "markdownDescription": "Enables the store_catalog command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_catalog command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-catalog",
-          "markdownDescription": "Denies the store_catalog command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the store_install command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-install",
-          "markdownDescription": "Enables the store_install command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_install command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-install",
-          "markdownDescription": "Denies the store_install command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the store_item command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-item",
-          "markdownDescription": "Enables the store_item command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_item command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-item",
-          "markdownDescription": "Denies the store_item command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the store_plan command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-plan",
-          "markdownDescription": "Enables the store_plan command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_plan command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-plan",
-          "markdownDescription": "Denies the store_plan command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the store_remove command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-remove",
-          "markdownDescription": "Enables the store_remove command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_remove command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-remove",
-          "markdownDescription": "Denies the store_remove command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the store_source_delete command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-source-delete",
-          "markdownDescription": "Enables the store_source_delete command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_source_delete command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-source-delete",
-          "markdownDescription": "Denies the store_source_delete command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the store_source_save command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-source-save",
-          "markdownDescription": "Enables the store_source_save command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_source_save command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-source-save",
-          "markdownDescription": "Denies the store_source_save command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the store_sources command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-sources",
-          "markdownDescription": "Enables the store_sources command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_sources command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-sources",
-          "markdownDescription": "Denies the store_sources command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the store_token_clear command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-token-clear",
-          "markdownDescription": "Enables the store_token_clear command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_token_clear command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-token-clear",
-          "markdownDescription": "Denies the store_token_clear command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the store_token_set command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-store-token-set",
-          "markdownDescription": "Enables the store_token_set command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the store_token_set command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-store-token-set",
-          "markdownDescription": "Denies the store_token_set command without any pre-configured scope."
-        },
-        {
-          "description": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-store-sources`\n- `allow-store-source-save`\n- `allow-store-source-delete`\n- `allow-store-token-set`\n- `allow-store-token-clear`\n- `allow-store-catalog`\n- `allow-store-item`\n- `allow-store-plan`\n- `allow-store-install`\n- `allow-store-remove`",
+          "description": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-collection-sources`\n- `allow-collection-source-save`\n- `allow-collection-source-delete`\n- `allow-collection-token-set`\n- `allow-collection-token-clear`\n- `allow-collection-catalog`\n- `allow-collection-item`\n- `allow-collection-plan`\n- `allow-collection-install`\n- `allow-collection-remove`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-store-sources`\n- `allow-store-source-save`\n- `allow-store-source-delete`\n- `allow-store-token-set`\n- `allow-store-token-clear`\n- `allow-store-catalog`\n- `allow-store-item`\n- `allow-store-plan`\n- `allow-store-install`\n- `allow-store-remove`"
+          "markdownDescription": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-collection-sources`\n- `allow-collection-source-save`\n- `allow-collection-source-delete`\n- `allow-collection-token-set`\n- `allow-collection-token-clear`\n- `allow-collection-catalog`\n- `allow-collection-item`\n- `allow-collection-plan`\n- `allow-collection-install`\n- `allow-collection-remove`"
         }
       ]
     }

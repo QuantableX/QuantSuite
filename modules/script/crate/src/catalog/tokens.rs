@@ -1,6 +1,6 @@
-//! Tokens of Store sources — in the OS credential store (Windows Credential
+//! Tokens of Collection sources — in the OS credential store (Windows Credential
 //! Manager, macOS Keychain, Secret Service), one entry per source id. A
-//! token goes in through `store_token_set` and out only to GitHub: never
+//! token goes in through `collection_token_set` and out only to GitHub: never
 //! into settings, script.db, logs, events or command results — the UI gets
 //! `has_token`.
 
@@ -16,7 +16,7 @@ pub trait TokenStore: Send + Sync {
     fn clear(&self, source_id: &str) -> Result<(), String>;
 }
 
-const SERVICE: &str = "QuantSuite QuantScript Store";
+const SERVICE: &str = "QuantSuite QuantScript Collection";
 
 pub struct KeyringTokens;
 

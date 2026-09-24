@@ -16,16 +16,16 @@ Default permissions for the script module.
 - `allow-delete-script`
 - `allow-lint-script`
 - `allow-script-python`
-- `allow-store-sources`
-- `allow-store-source-save`
-- `allow-store-source-delete`
-- `allow-store-token-set`
-- `allow-store-token-clear`
-- `allow-store-catalog`
-- `allow-store-item`
-- `allow-store-plan`
-- `allow-store-install`
-- `allow-store-remove`
+- `allow-collection-sources`
+- `allow-collection-source-save`
+- `allow-collection-source-delete`
+- `allow-collection-token-set`
+- `allow-collection-token-clear`
+- `allow-collection-catalog`
+- `allow-collection-item`
+- `allow-collection-plan`
+- `allow-collection-install`
+- `allow-collection-remove`
 
 ## Permission Table
 
@@ -58,6 +58,266 @@ Enables the check_script command without any pre-configured scope.
 <td>
 
 Denies the check_script command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-catalog`
+
+</td>
+<td>
+
+Enables the collection_catalog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-catalog`
+
+</td>
+<td>
+
+Denies the collection_catalog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-install`
+
+</td>
+<td>
+
+Enables the collection_install command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-install`
+
+</td>
+<td>
+
+Denies the collection_install command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-item`
+
+</td>
+<td>
+
+Enables the collection_item command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-item`
+
+</td>
+<td>
+
+Denies the collection_item command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-plan`
+
+</td>
+<td>
+
+Enables the collection_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-plan`
+
+</td>
+<td>
+
+Denies the collection_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-remove`
+
+</td>
+<td>
+
+Enables the collection_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-remove`
+
+</td>
+<td>
+
+Denies the collection_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-source-delete`
+
+</td>
+<td>
+
+Enables the collection_source_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-source-delete`
+
+</td>
+<td>
+
+Denies the collection_source_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-source-save`
+
+</td>
+<td>
+
+Enables the collection_source_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-source-save`
+
+</td>
+<td>
+
+Denies the collection_source_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-sources`
+
+</td>
+<td>
+
+Enables the collection_sources command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-sources`
+
+</td>
+<td>
+
+Denies the collection_sources command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-token-clear`
+
+</td>
+<td>
+
+Enables the collection_token_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-token-clear`
+
+</td>
+<td>
+
+Denies the collection_token_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-collection-token-set`
+
+</td>
+<td>
+
+Enables the collection_token_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-collection-token-set`
+
+</td>
+<td>
+
+Denies the collection_token_set command without any pre-configured scope.
 
 </td>
 </tr>
@@ -344,266 +604,6 @@ Enables the script_python command without any pre-configured scope.
 <td>
 
 Denies the script_python command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-catalog`
-
-</td>
-<td>
-
-Enables the store_catalog command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-catalog`
-
-</td>
-<td>
-
-Denies the store_catalog command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-install`
-
-</td>
-<td>
-
-Enables the store_install command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-install`
-
-</td>
-<td>
-
-Denies the store_install command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-item`
-
-</td>
-<td>
-
-Enables the store_item command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-item`
-
-</td>
-<td>
-
-Denies the store_item command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-plan`
-
-</td>
-<td>
-
-Enables the store_plan command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-plan`
-
-</td>
-<td>
-
-Denies the store_plan command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-remove`
-
-</td>
-<td>
-
-Enables the store_remove command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-remove`
-
-</td>
-<td>
-
-Denies the store_remove command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-source-delete`
-
-</td>
-<td>
-
-Enables the store_source_delete command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-source-delete`
-
-</td>
-<td>
-
-Denies the store_source_delete command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-source-save`
-
-</td>
-<td>
-
-Enables the store_source_save command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-source-save`
-
-</td>
-<td>
-
-Denies the store_source_save command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-sources`
-
-</td>
-<td>
-
-Enables the store_sources command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-sources`
-
-</td>
-<td>
-
-Denies the store_sources command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-token-clear`
-
-</td>
-<td>
-
-Enables the store_token_clear command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-token-clear`
-
-</td>
-<td>
-
-Denies the store_token_clear command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:allow-store-token-set`
-
-</td>
-<td>
-
-Enables the store_token_set command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`script:deny-store-token-set`
-
-</td>
-<td>
-
-Denies the store_token_set command without any pre-configured scope.
 
 </td>
 </tr>

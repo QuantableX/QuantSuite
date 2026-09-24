@@ -54,10 +54,10 @@ function scoreTitle(c: ScriptClass): string {
   return `${c.name ?? c.class_name}: ${cert.score}/100 ${cert.grade}${cert.certified ? ' · certified on every track' : ''}${tracks}${cert.source === 'historical' ? ' · historical run' : ''}`
 }
 
-/** The forge and the Store share this sidebar; the editor is /script. */
+/** The forge and the Collection share this sidebar; the editor is /script. */
 function offEditor(): boolean {
   const path = router.currentRoute.value.path
-  return path.startsWith('/script/forge') || path.startsWith('/script/store')
+  return path.startsWith('/script/forge') || path.startsWith('/script/collection')
 }
 
 /** Opening a script from the tree always lands in the editor, wherever the

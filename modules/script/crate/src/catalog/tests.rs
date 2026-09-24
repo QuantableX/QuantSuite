@@ -1,4 +1,4 @@
-//! The Store against a SYNTHETIC folder source: helper_lib (a library),
+//! The Collection against a SYNTHETIC folder source: helper_lib (a library),
 //! alpha (requires helper_lib, one version file) and beta (requires alpha).
 
 use super::fetch::{github_error, safe_path, Folder};
@@ -231,7 +231,7 @@ fn an_update_replaces_the_stores_files_and_a_local_edit_is_a_conflict() {
     write_package(&t.repo, "indicator", "alpha", "1.2.0", 2, &["helper_lib"], "ALPHA = 3\n", None);
     write_catalog(&t.repo);
     let err = run(&t, &conn, &["alpha"], false, &Pass::default()).unwrap_err();
-    assert!(err.contains("changed in the library since the Store installed it: alpha.py"), "{err}");
+    assert!(err.contains("changed in the library since the Collection installed it: alpha.py"), "{err}");
 }
 
 #[test]
@@ -248,7 +248,7 @@ fn a_required_item_cannot_be_removed_and_removal_is_archived() {
     assert_eq!(removed.files, ["alpha.py", "versions/alpha/alpha_opt.json"]);
     assert!(!t.library.join("versions/alpha").exists());
     assert_eq!(history::latest(&conn.lock().unwrap(), "alpha.py").unwrap().unwrap().author, "delete");
-    assert!(remove(&t.library, &conn.lock().unwrap(), "alpha").unwrap_err().contains("not installed by the Store"));
+    assert!(remove(&t.library, &conn.lock().unwrap(), "alpha").unwrap_err().contains("not installed by the Collection"));
     assert_eq!(load_installed(&t.library).unwrap().items.keys().collect::<Vec<_>>(), ["helper_lib"]);
 }
 
@@ -339,7 +339,7 @@ fn sources_are_seeded_once_and_validated() {
     let conn = db();
     let seeded = sources::list(&conn).unwrap();
     assert_eq!(seeded.len(), 1);
-    assert_eq!((seeded[0].owner.as_str(), seeded[0].repo.as_str(), seeded[0].branch.as_str()), ("QuantableX", "QuantScript-Indicators", "main"));
+    assert_eq!((seeded[0].owner.as_str(), seeded[0].repo.as_str(), seeded[0].branch.as_str()), ("QuantableX", "QuantScript-Collection", "main"));
     sources::delete(&conn, "quantablex").unwrap();
     sources::init_schema(&conn).unwrap();
     assert!(sources::list(&conn).unwrap().is_empty(), "a deleted seed stays deleted");
@@ -359,4 +359,42 @@ fn sources_are_seeded_once_and_validated() {
     let mut moved = input("github", "someone-else", "");
     moved.id = "my-catalog".into();
     assert_eq!(sources::save(&conn, moved).unwrap().last_commit, None, "a moved source forgets its commit");
+}
+
+#[test]
+fn a_store_era_database_is_renamed_and_its_seed_follows_the_repository() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE store_sources (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, owner TEXT NOT NULL DEFAULT '',
+            repo TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT 'main', path TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 1, last_commit TEXT, last_checked TEXT, created_at TEXT NOT NULL);
+         INSERT INTO store_sources (id, kind, name, owner, repo, branch, path, enabled, last_commit, created_at)
+           VALUES ('quantablex', 'github', 'QuantableX', 'QuantableX', 'QuantScript-Indicators', 'main', '', 1, 'abc', 'x'),
+                  ('mine', 'github', 'Mine', 'someone', 'QuantScript-Indicators', 'main', '', 1, 'def', 'y');
+         PRAGMA user_version = 1;",
+    )
+    .unwrap();
+    sources::init_schema(&conn).unwrap();
+    let all = sources::list(&conn).unwrap();
+    let seed = all.iter().find(|s| s.id == "quantablex").unwrap();
+    assert_eq!((seed.repo.as_str(), seed.last_commit.as_deref()), ("QuantScript-Collection", None));
+    let mine = all.iter().find(|s| s.id == "mine").unwrap();
+    assert_eq!((mine.repo.as_str(), mine.last_commit.as_deref()), ("QuantScript-Indicators", Some("def")), "only the untouched seed moves");
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    assert_eq!(version, 2);
+    sources::init_schema(&conn).unwrap();
+    assert_eq!(sources::list(&conn).unwrap().len(), 2, "idempotent");
+}
+
+#[test]
+fn a_store_era_state_file_is_read_and_replaced() {
+    let t = tree("old-state");
+    let conn = Mutex::new(db());
+    run(&t, &conn, &["helper_lib"], false, &Pass::default()).unwrap();
+    fs::rename(t.library.join(STATE_FILE), t.library.join("store.json")).unwrap();
+    assert!(load_installed(&t.library).unwrap().items.contains_key("helper_lib"), "the old file is read");
+    run(&t, &conn, &["alpha"], false, &Pass::default()).unwrap();
+    assert!(t.library.join(STATE_FILE).is_file());
+    assert!(!t.library.join("store.json").exists(), "and replaced on the next save");
+    assert_eq!(load_installed(&t.library).unwrap().items.keys().collect::<Vec<_>>(), ["alpha", "helper_lib"]);
 }

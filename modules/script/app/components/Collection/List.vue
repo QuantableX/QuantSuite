@@ -6,8 +6,8 @@
  */
 import { Search } from 'lucide-vue-next'
 import { useCatalogStore } from '#script/stores/catalog'
-import { DEFAULT_STORE_FILTERS, STORE_TRACKS, allTags, itemState } from '#script/utils/catalog'
-import type { StoreCatalogItem } from '#script/types'
+import { DEFAULT_COLLECTION_FILTERS, COLLECTION_TRACKS, allTags, itemState } from '#script/utils/catalog'
+import type { CollectionCatalogItem } from '#script/types'
 
 const store = useCatalogStore()
 const tags = computed(() => allTags(store.items))
@@ -26,17 +26,17 @@ function count(id: string): number {
   return store.items.length
 }
 
-function score(item: StoreCatalogItem, role: string, track: string): string {
+function score(item: CollectionCatalogItem, role: string, track: string): string {
   const v = item.scores?.[role]?.[track]
   return v ? v.score.toFixed(0) : '–'
 }
 
-function certified(item: StoreCatalogItem, role: string, track: string): boolean {
+function certified(item: CollectionCatalogItem, role: string, track: string): boolean {
   return !!item.scores?.[role]?.[track]?.certified
 }
 
 function reset() {
-  store.filters = { ...DEFAULT_STORE_FILTERS, track: store.filters.track }
+  store.filters = { ...DEFAULT_COLLECTION_FILTERS, track: store.filters.track }
 }
 </script>
 
@@ -65,7 +65,7 @@ function reset() {
           <option v-for="t in tags" :key="t" :value="t">{{ t }}</option>
         </select>
         <select v-model="store.filters.track" class="qsc-select" aria-label="Score track">
-          <option v-for="t in STORE_TRACKS" :key="t" :value="t">{{ t }} track</option>
+          <option v-for="t in COLLECTION_TRACKS" :key="t" :value="t">{{ t }} track</option>
         </select>
         <label class="qst-min" title="The best version's score on the chosen track">
           <span>Min score</span>
@@ -94,7 +94,7 @@ function reset() {
           <span v-else class="qst-scores" :title="'Standard / general version on 1h · 4h · 1d'">
             <span v-for="role in ['standard', 'optimized']" :key="role" class="qst-score-group">
               <span class="qst-role">{{ role === 'standard' ? 'S' : 'G' }}</span>
-              <span v-for="tf in STORE_TRACKS" :key="tf" class="mono" :class="{ 'is-ok': certified(item, role, tf) }">{{ score(item, role, tf) }}</span>
+              <span v-for="tf in COLLECTION_TRACKS" :key="tf" class="mono" :class="{ 'is-ok': certified(item, role, tf) }">{{ score(item, role, tf) }}</span>
             </span>
           </span>
           <span class="qsc-chip" :class="itemState(item.local, item.version).tone" :title="itemState(item.local, item.version).title">

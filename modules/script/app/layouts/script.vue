@@ -14,11 +14,11 @@ import { useWorkbenchStore } from '#script/stores/workbench'
 const wb = useWorkbenchStore()
 const route = useRoute()
 const onForge = computed(() => route.path.startsWith('/script/forge'))
-const onStore = computed(() => route.path.startsWith('/script/store'))
+const onCollection = computed(() => route.path.startsWith('/script/collection'))
 const editing = computed(() => !!wb.active && !wb.libraryOpen)
-const panelsVisible = computed(() => !wb.focusMode || onForge.value || onStore.value)
+const panelsVisible = computed(() => !wb.focusMode || onForge.value || onCollection.value)
 watch(() => route.path, () => {
-  if (onForge.value || onStore.value) wb.focusMode = false
+  if (onForge.value || onCollection.value) wb.focusMode = false
 })
 
 function activate() {
@@ -55,7 +55,7 @@ useShortcuts([
     key: 's',
     ctrl: true,
     handler: (e) => {
-      if (onForge.value || onStore.value || !editing.value || !wb.active?.editable || wb.newScriptOpen) return
+      if (onForge.value || onCollection.value || !editing.value || !wb.active?.editable || wb.newScriptOpen) return
       e.preventDefault()
       void wb.save()
     },

@@ -230,7 +230,7 @@ def check(file: str, candidate: Path, depth: str = "quick", frame_bars: int | No
 
     ``isolated`` puts ONLY the candidate and the scripts its ``REQUIRES``
     closure names into the sandbox library: a pass proves the script is
-    self-contained given its declared requirements (what a store package
+    self-contained given its declared requirements (what a Collection package
     ships).
     """
     t0 = time.time()
@@ -315,7 +315,7 @@ def check(file: str, candidate: Path, depth: str = "quick", frame_bars: int | No
 
 
 def stage_check(library: Path, files: list[str], depth: str = "quick", timeout: float = CHECK_TIMEOUT_S) -> dict:
-    """Verify a staged library before a store install writes anything.
+    """Verify a staged library before a Collection install writes anything.
 
     ``library`` is a complete indicator folder — the user's scripts with the
     package's scripts and version files written in. In a sandbox copy of
@@ -546,7 +546,7 @@ PACKAGE_NAMES = {"REGISTRY", "WARMUP_BARS", "DISCOVERY_ERRORS", "DISCOVERED", "V
 def _requires_hints(tree: ast.Module) -> list[dict]:
     """Scripts the source uses — sibling imports, REGISTRY["key"] lookups,
     member tuples of keys — that its REQUIRES does not declare: the version
-    signature and a store package would miss them."""
+    signature and a Collection package would miss them."""
     declared: set[str] | None = set()
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "REQUIRES" for t in node.targets):
@@ -580,7 +580,7 @@ def _requires_hints(tree: ast.Module) -> list[dict]:
         seen.add(name)
         hints.append(_marker("warning", getattr(node, "lineno", 1), getattr(node, "col_offset", 0) + 1,
                              f"'{name}' is used but not declared in REQUIRES — add it so the version "
-                             "signature and a store package include it"))
+                             "signature and a Collection package include it"))
     return hints
 
 
@@ -749,7 +749,7 @@ def _main(argv: list[str]) -> int:
     p.add_argument("--depth", default="quick", choices=DEPTHS)
     p.add_argument("--frame-bars", type=int, default=None)
 
-    p = sub.add_parser("stage-check", help="verify a staged library (a store install) in a sandbox copy")
+    p = sub.add_parser("stage-check", help="verify a staged library (a Collection install) in a sandbox copy")
     p.add_argument("--library", required=True, help="the staged indicator folder")
     p.add_argument("--file", action="append", required=True, help="a script file to verify (repeatable)")
     p.add_argument("--depth", default="quick", choices=DEPTHS)

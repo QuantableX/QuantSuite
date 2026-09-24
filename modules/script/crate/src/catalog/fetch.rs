@@ -45,7 +45,7 @@ impl GitHub {
     /// `cache` is this source's cache folder. Blocking: call it off the async runtime.
     pub fn new(source: &Source, token: Option<String>, cache: PathBuf) -> Result<Self, String> {
         let client = reqwest::blocking::Client::builder()
-            .user_agent("QuantSuite-QuantScript-Store")
+            .user_agent("QuantSuite-QuantScript-Collection")
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|e| format!("HTTP client: {e}"))?;

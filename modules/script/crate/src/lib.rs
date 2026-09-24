@@ -833,17 +833,17 @@ async fn script_python(refresh: Option<bool>, app_handle: AppHandle) -> Result<P
     .map_err(|e| format!("Python task failed: {e}"))?
 }
 
-// ─── The Store ────────────────────────────────────────────────────────────
+// ─── The Collection ─────────────────────────────────────────────────────────
 
-/// The Store's own state: where tokens live, and one install or removal at a time.
-pub struct StoreState {
+/// The Collection's own state: where tokens live, and one install or removal at a time.
+pub struct CollectionState {
     tokens: Box<dyn catalog::tokens::TokenStore>,
     busy: Mutex<()>,
 }
 
 /// Commit-pinned GitHub reads of one source (module data, never the software dir).
-fn store_cache(source_id: &str) -> PathBuf {
-    data_dir().join("store").join(source_id)
+fn collection_cache(source_id: &str) -> PathBuf {
+    data_dir().join("collection").join(source_id)
 }
 
 /// The engine's contract generation, from the listing; None without an interpreter.
@@ -851,9 +851,9 @@ fn engine_contract(state: &ScriptState) -> Option<u32> {
     python_listing(state, false).ok()?.get("contract_version")?.as_u64().map(|v| v as u32)
 }
 
-fn fetcher(source: &catalog::sources::Source, store: &StoreState) -> Result<Box<dyn catalog::fetch::Fetch>, String> {
+fn fetcher(source: &catalog::sources::Source, store: &CollectionState) -> Result<Box<dyn catalog::fetch::Fetch>, String> {
     match source.kind.as_str() {
-        "github" => Ok(Box::new(catalog::fetch::GitHub::new(source, store.tokens.get(&source.id)?, store_cache(&source.id))?)),
+        "github" => Ok(Box::new(catalog::fetch::GitHub::new(source, store.tokens.get(&source.id)?, collection_cache(&source.id))?)),
         "folder" => Ok(Box::new(catalog::fetch::Folder::new(Path::new(&source.path)))),
         other => Err(format!("'{other}' is not a source kind.")),
     }
@@ -898,23 +898,23 @@ impl catalog::Stager for PythonStager<'_> {
     }
 }
 
-/// Run a Store operation on the blocking pool (files, Python, blocking HTTP).
+/// Run a Collection operation on the blocking pool (files, Python, blocking HTTP).
 async fn store_task<T: Send + 'static>(
     app_handle: AppHandle,
-    task: impl FnOnce(&ScriptState, &StoreState, &AppHandle) -> Result<T, String> + Send + 'static,
+    task: impl FnOnce(&ScriptState, &CollectionState, &AppHandle) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app_handle.state::<ScriptState>();
-        let store = app_handle.state::<StoreState>();
+        let store = app_handle.state::<CollectionState>();
         task(&state, &store, &app_handle)
     })
     .await
-    .map_err(|e| format!("Store task failed: {e}"))?
+    .map_err(|e| format!("Collection task failed: {e}"))?
 }
 
 /// Every source, with whether a token is stored (never the token).
 #[tauri::command]
-async fn store_sources(app_handle: AppHandle) -> Result<Vec<catalog::sources::SourceView>, String> {
+async fn collection_sources(app_handle: AppHandle) -> Result<Vec<catalog::sources::SourceView>, String> {
     store_task(app_handle, |state, store, _| {
         let conn = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
         Ok(catalog::sources::list(&conn)?.into_iter().map(|s| catalog::sources::view(s, store.tokens.as_ref())).collect())
@@ -923,7 +923,7 @@ async fn store_sources(app_handle: AppHandle) -> Result<Vec<catalog::sources::So
 }
 
 #[tauri::command]
-async fn store_source_save(source: catalog::sources::SourceInput, app_handle: AppHandle) -> Result<catalog::sources::SourceView, String> {
+async fn collection_source_save(source: catalog::sources::SourceInput, app_handle: AppHandle) -> Result<catalog::sources::SourceView, String> {
     store_task(app_handle, move |state, store, _| {
         let conn = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
         Ok(catalog::sources::view(catalog::sources::save(&conn, source)?, store.tokens.as_ref()))
@@ -933,14 +933,14 @@ async fn store_source_save(source: catalog::sources::SourceInput, app_handle: Ap
 
 /// Forget a source: its row, its token and its cache.
 #[tauri::command]
-async fn store_source_delete(id: String, app_handle: AppHandle) -> Result<(), String> {
+async fn collection_source_delete(id: String, app_handle: AppHandle) -> Result<(), String> {
     store_task(app_handle, move |state, store, _| {
         {
             let conn = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
             catalog::sources::delete(&conn, &id)?;
         }
         store.tokens.clear(&id)?;
-        let _ = fs::remove_dir_all(store_cache(&id));
+        let _ = fs::remove_dir_all(collection_cache(&id));
         Ok(())
     })
     .await
@@ -949,7 +949,7 @@ async fn store_source_delete(id: String, app_handle: AppHandle) -> Result<(), St
 /// Store a GitHub token for a source in the OS credential store. It is
 /// never returned, logged or published.
 #[tauri::command]
-async fn store_token_set(source_id: String, token: String, app_handle: AppHandle) -> Result<catalog::sources::SourceView, String> {
+async fn collection_token_set(source_id: String, token: String, app_handle: AppHandle) -> Result<catalog::sources::SourceView, String> {
     store_task(app_handle, move |state, store, _| {
         let source = source_of(state, &source_id)?;
         if source.kind != "github" {
@@ -966,7 +966,7 @@ async fn store_token_set(source_id: String, token: String, app_handle: AppHandle
 }
 
 #[tauri::command]
-async fn store_token_clear(source_id: String, app_handle: AppHandle) -> Result<catalog::sources::SourceView, String> {
+async fn collection_token_clear(source_id: String, app_handle: AppHandle) -> Result<catalog::sources::SourceView, String> {
     store_task(app_handle, move |state, store, _| {
         let source = source_of(state, &source_id)?;
         store.tokens.clear(&source.id)?;
@@ -978,7 +978,7 @@ async fn store_token_clear(source_id: String, app_handle: AppHandle) -> Result<c
 /// A source's catalog with the library's state per item. `refresh`
 /// resolves the branch to its current commit (also: Test connection).
 #[tauri::command]
-async fn store_catalog(source_id: String, refresh: Option<bool>, app_handle: AppHandle) -> Result<Value, String> {
+async fn collection_catalog(source_id: String, refresh: Option<bool>, app_handle: AppHandle) -> Result<Value, String> {
     store_task(app_handle, move |state, store, _| {
         let source = source_of(state, &source_id)?;
         let fetch = fetcher(&source, store)?;
@@ -1001,7 +1001,7 @@ async fn store_catalog(source_id: String, refresh: Option<bool>, app_handle: App
 
 /// One package: its verified manifest, README and the library's state.
 #[tauri::command]
-async fn store_item(source_id: String, key: String, app_handle: AppHandle) -> Result<Value, String> {
+async fn collection_item(source_id: String, key: String, app_handle: AppHandle) -> Result<Value, String> {
     store_task(app_handle, move |state, store, _| {
         let source = source_of(state, &source_id)?;
         let fetch = fetcher(&source, store)?;
@@ -1028,7 +1028,7 @@ async fn store_item(source_id: String, key: String, app_handle: AppHandle) -> Re
 
 /// What an install of `keys` would do, without writing anything.
 #[tauri::command]
-async fn store_plan(source_id: String, keys: Vec<String>, app_handle: AppHandle) -> Result<catalog::Plan, String> {
+async fn collection_plan(source_id: String, keys: Vec<String>, app_handle: AppHandle) -> Result<catalog::Plan, String> {
     store_task(app_handle, move |state, store, _| {
         let source = source_of(state, &source_id)?;
         let fetch = fetcher(&source, store)?;
@@ -1043,7 +1043,7 @@ async fn store_plan(source_id: String, keys: Vec<String>, app_handle: AppHandle)
 /// verified by the engine, then written and recorded. Conflicts refuse
 /// the install unless `overwrite`.
 #[tauri::command]
-async fn store_install(source_id: String, keys: Vec<String>, overwrite: Option<bool>, app_handle: AppHandle) -> Result<catalog::InstallOutcome, String> {
+async fn collection_install(source_id: String, keys: Vec<String>, overwrite: Option<bool>, app_handle: AppHandle) -> Result<catalog::InstallOutcome, String> {
     store_task(app_handle, move |state, store, app| {
         let _busy = store.busy.lock().map_err(|e| format!("Lock: {e}"))?;
         let source = source_of(state, &source_id)?;
@@ -1072,17 +1072,17 @@ async fn store_install(source_id: String, keys: Vec<String>, overwrite: Option<b
         }
         let changed: Vec<&str> = outcome.plan.items.iter().filter(|i| i.action != "skip").map(|i| i.key.as_str()).collect();
         if !changed.is_empty() {
-            publish(app, "script.store.changed", json!({ "installed": changed, "source": source.id, "commit": commit }));
+            publish(app, "script.collection.changed", json!({ "installed": changed, "source": source.id, "commit": commit }));
         }
         Ok(outcome)
     })
     .await
 }
 
-/// Remove an item the Store installed (archived in the history); refused
+/// Remove an item the Collection installed (archived in the history); refused
 /// while another installed item requires it.
 #[tauri::command]
-async fn store_remove(key: String, app_handle: AppHandle) -> Result<catalog::Removed, String> {
+async fn collection_remove(key: String, app_handle: AppHandle) -> Result<catalog::Removed, String> {
     store_task(app_handle, move |state, store, app| {
         let _busy = store.busy.lock().map_err(|e| format!("Lock: {e}"))?;
         let library = indicators_dir(state)?;
@@ -1092,7 +1092,7 @@ async fn store_remove(key: String, app_handle: AppHandle) -> Result<catalog::Rem
         };
         forget_listing(state);
         publish(app, "script.file.deleted", json!({ "file": removed.file, "keys": removed.keys, "version": removed.version }));
-        publish(app, "script.store.changed", json!({ "removed": [removed.key] }));
+        publish(app, "script.collection.changed", json!({ "removed": [removed.key] }));
         Ok(removed)
     })
     .await
@@ -1131,7 +1131,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 None => log::warn!(target: "script", "sidecars/python with the smithery package was not found"),
             }
 
-            app.manage(StoreState { tokens: Box::new(catalog::tokens::KeyringTokens), busy: Mutex::new(()) });
+            app.manage(CollectionState { tokens: Box::new(catalog::tokens::KeyringTokens), busy: Mutex::new(()) });
             app.manage(ScriptState {
                 db: Mutex::new(conn),
                 sidecar_dir,
@@ -1164,16 +1164,16 @@ pub fn init() -> TauriPlugin<Wry> {
             delete_script,
             lint_script,
             script_python,
-            store_sources,
-            store_source_save,
-            store_source_delete,
-            store_token_set,
-            store_token_clear,
-            store_catalog,
-            store_item,
-            store_plan,
-            store_install,
-            store_remove,
+            collection_sources,
+            collection_source_save,
+            collection_source_delete,
+            collection_token_set,
+            collection_token_clear,
+            collection_catalog,
+            collection_item,
+            collection_plan,
+            collection_install,
+            collection_remove,
         ]))
         .build()
 }
@@ -1337,9 +1337,9 @@ mod tests {
     /// through the real engine check: consensus pulls its members, keltner_risk
     /// pulls trend_common. `cargo test -p tauri-plugin-script --lib -- --ignored`
     #[test]
-    #[ignore = "needs C:/Projects/QuantScript-Indicators with packages and Python with numpy + pandas"]
+    #[ignore = "needs C:/Projects/QuantScript-Collection with packages and Python with numpy + pandas"]
     fn the_published_catalog_installs_consensus_and_keltner_risk_with_their_requirements() {
-        let repo = PathBuf::from(r"C:\Projects\QuantScript-Indicators");
+        let repo = PathBuf::from(r"C:\Projects\QuantScript-Collection");
         let library = std::env::temp_dir().join(format!("qs-store-real-{}", std::process::id()));
         let _ = fs::remove_dir_all(&library);
         fs::create_dir_all(&library).unwrap();

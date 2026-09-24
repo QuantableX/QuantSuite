@@ -15,7 +15,7 @@
     "script.file.saved",
     "script.file.created",
     "script.file.deleted",
-    "script.store.changed"
+    "script.collection.changed"
   ],
   "subscribes": [],
   "entities": [],
