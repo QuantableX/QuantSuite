@@ -5,7 +5,8 @@ import { useConfigStore } from '#systems/stores/config'
 import { useLiveStore } from '#systems/stores/live'
 import { useBacktestStore } from '#systems/stores/backtest'
 import { useActiveView } from '#systems/composables/useActiveView'
-import { aggregateName } from '#systems/composables/useIndicatorOptions'
+import { aggregateName, useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
+import { sortByOptions } from '#systems/utils/indicatorOptions'
 
 const app = useAppStore()
 const systems = useSystemsStore()
@@ -23,12 +24,17 @@ const trendLabel = computed(() => {
   if (trend === 'aggregate') return aggregateName((ind.aggregate ?? []).length)
   return trend
 })
+// The chips read in the pickers' order, not the stored one: a list keeps the
+// order of its last edit, so an aggregate and a comparison of the same
+// indicators could otherwise disagree.
+const { options, compareOptions } = useIndicatorOptions(() => cfg.value)
 /** An aggregate's members, named as chips under its row like Compare's. */
 const trendMembers = computed(() =>
-  cfg.value.indicator.trend === 'aggregate' ? cfg.value.indicator.aggregate ?? [] : [])
+  cfg.value.indicator.trend === 'aggregate' ? sortByOptions(cfg.value.indicator.aggregate ?? [], options.value) : [])
+const compareChips = computed(() => sortByOptions(cfg.value.compareTrends ?? [], compareOptions.value))
 const marketMembers = computed(() => {
   const ind = cfg.value.marketIndicator
-  return cfg.value.marketFilter && ind?.trend === 'aggregate' ? ind.aggregate ?? [] : []
+  return cfg.value.marketFilter && ind?.trend === 'aggregate' ? sortByOptions(ind.aggregate ?? [], options.value) : []
 })
 const marketLabel = computed(() => {
   if (!cfg.value.marketFilter) return 'off'
@@ -81,7 +87,7 @@ const btState = computed(() => backtest.stateFor(systemId.value))
           <span class="mono">{{ cfg.compareTrends.length }}</span>
         </div>
         <div class="qs-context__chips">
-          <span v-for="kind in cfg.compareTrends" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
+          <span v-for="kind in compareChips" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
         </div>
       </div>
       <div class="qs-context__group">

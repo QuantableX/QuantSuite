@@ -19,7 +19,7 @@ const { useBacktestStore } = await import('../modules/systems/app/stores/backtes
 const { useLiveStore } = await import('../modules/systems/app/stores/live.ts')
 const { useSystemsStore } = await import('../modules/systems/app/stores/systems.ts')
 const { useConfigStore } = await import('../modules/systems/app/stores/config.ts')
-const { findIndicatorOption, indicatorOptionRows } = await import('../modules/systems/app/utils/indicatorOptions.ts')
+const { findIndicatorOption, indicatorOptionRows, sortByOptions } = await import('../modules/systems/app/utils/indicatorOptions.ts')
 const { strategyIcon } = await import('../modules/systems/app/utils/strategyIcons.ts')
 
 function deferred() {
@@ -221,4 +221,10 @@ test('the pickers show one row per base indicator with its versions; the values 
   assert.equal(fourHour.find(o => o.name === 'DonchianLevels').value, 'dcl_opt', 'no 4h version: the general one')
   const twelveHour = indicatorOptionRows(catalog, '12h')
   assert.ok(twelveHour.find(o => o.name === 'DonchianLevels').versions.every(v => !v.matches), '12h has no track, so nothing is marked')
+
+  const stored = ['dmi', 'nope', 'dcl_fast', 'dcl_opt']
+  assert.deepEqual(sortByOptions(stored, daily), ['dcl_opt', 'dmi', 'dcl_fast', 'nope'],
+    'picked values read in picker order whatever order they were stored in; unknown keys last')
+  assert.deepEqual(sortByOptions(['dmi', 'dcl_opt'], daily), sortByOptions(['dcl_opt', 'dmi'], daily))
+  assert.deepEqual(stored, ['dmi', 'nope', 'dcl_fast', 'dcl_opt'], 'the stored list is left as it is')
 })
