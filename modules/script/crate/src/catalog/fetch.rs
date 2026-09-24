@@ -72,14 +72,106 @@ impl GitHub {
             return Ok(response);
         }
         let status = response.status().as_u16();
-        let remaining = response
-            .headers()
-            .get("x-ratelimit-remaining")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string);
+        let header = |name: &str| response.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_string);
+        let remaining = header("x-ratelimit-remaining");
+        let accepted = header("x-accepted-github-permissions");
+        let expires = header("github-authentication-token-expiration");
         let body = response.text().unwrap_or_default();
-        Err(github_error(&format!("{}/{}", self.owner, self.repo), status, remaining.as_deref(), &body, self.token.is_some()))
+        let repo = format!("{}/{}", self.owner, self.repo);
+        let rate_limited = matches!(status, 403 | 429) && remaining.as_deref() == Some("0");
+        match &self.token {
+            Some(token) if matches!(status, 401 | 403 | 404) && !rate_limited => {
+                let facts = self.token_facts(token, accepted, expires);
+                Err(token_problem(&repo, &self.owner, status, &facts))
+            }
+            _ => Err(github_error(&repo, status, remaining.as_deref(), &body, self.token.is_some())),
+        }
     }
+
+    /// What GitHub says about the token behind a refused request — whose it
+    /// is, whether it sees the repository, what the request needed. Two
+    /// read-only calls; the token itself is never part of the answer.
+    fn token_facts(&self, token: &str, accepted: Option<String>, expires: Option<String>) -> TokenFacts {
+        let call = |url: String| {
+            self.client
+                .get(url)
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .bearer_auth(token)
+                .send()
+                .ok()
+        };
+        let mut facts = TokenFacts {
+            kind: if token.starts_with("github_pat_") {
+                "fine-grained"
+            } else if token.starts_with("ghp_") {
+                "classic"
+            } else {
+                "unrecognised"
+            },
+            accepted,
+            expires,
+            ..TokenFacts::default()
+        };
+        if let Some(user) = call(format!("{API}/user")) {
+            facts.user_status = Some(user.status().as_u16());
+            if user.status().is_success() {
+                facts.login = user
+                    .json::<serde_json::Value>()
+                    .ok()
+                    .and_then(|v| v.get("login").and_then(|l| l.as_str()).map(str::to_string));
+            }
+        }
+        if let Some(repo) = call(format!("{API}/repos/{}/{}", self.owner, self.repo)) {
+            facts.repo_status = Some(repo.status().as_u16());
+        }
+        facts
+    }
+}
+
+/// GitHub's view of a token (see `GitHub::token_facts`).
+#[derive(Debug, Default, Clone)]
+pub struct TokenFacts {
+    /// `fine-grained` | `classic` | `unrecognised` — from the prefix only.
+    pub kind: &'static str,
+    /// The account the token belongs to.
+    pub login: Option<String>,
+    /// GET /user: 200 = a working token, 401 = refused.
+    pub user_status: Option<u16>,
+    /// GET /repos/{owner}/{repo}: 200 = the repository is visible to it.
+    pub repo_status: Option<u16>,
+    /// X-Accepted-GitHub-Permissions of the refused request, e.g. `contents=read`.
+    pub accepted: Option<String>,
+    /// GitHub-Authentication-Token-Expiration.
+    pub expires: Option<String>,
+}
+
+/// What is wrong with the token, and what to change, in plain words.
+pub fn token_problem(repo: &str, owner: &str, status: u16, facts: &TokenFacts) -> String {
+    let expires = facts.expires.as_deref().map(|e| format!(" It expires {e}.")).unwrap_or_default();
+    if facts.user_status == Some(401) || status == 401 {
+        return format!("GitHub refused the token ({} token): it is wrong, revoked or expired — set a new one.", facts.kind);
+    }
+    let who = match &facts.login {
+        Some(login) => format!("The {} token belongs to {login}", facts.kind),
+        None => format!("The {} token", facts.kind),
+    };
+    let owner_hint = match &facts.login {
+        Some(login) if !login.eq_ignore_ascii_case(owner) => {
+            format!(" It is not {owner}'s token — create it on the {owner} account (or pick {owner} as its resource owner).")
+        }
+        _ => String::new(),
+    };
+    let needed = facts.accepted.as_deref().filter(|a| !a.is_empty()).map(|a| format!(" GitHub wants: {a}.")).unwrap_or_default();
+    if facts.repo_status == Some(200) {
+        return format!(
+            "{who} and sees {repo}, but may not read its files.{needed} Give it Repository permissions → Contents: Read-only.{expires}"
+        );
+    }
+    format!(
+        "{who} but GitHub does not show it {repo} (answer {status}).{owner_hint} In the token's settings: Repository access → Only select \
+         repositories → {repo}, and Repository permissions → Contents: Read-only.{needed}{expires}"
+    )
 }
 
 /// One sentence for a failed GitHub request.
