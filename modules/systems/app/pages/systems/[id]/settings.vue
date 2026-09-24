@@ -8,6 +8,7 @@ import { useEngine } from '#systems/composables/useEngine'
 import { useBacktestStore } from '#systems/stores/backtest'
 import { useLiveStore } from '#systems/stores/live'
 import { strategyIcon } from '#systems/utils/strategyIcons'
+import SystemsSettingsSymbolSelect from '#systems/components/Settings/SymbolSelect.vue'
 
 const route = useRoute()
 const app = useAppStore()
