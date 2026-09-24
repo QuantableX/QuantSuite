@@ -5,6 +5,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+mod claude;
 pub(crate) mod custom;
 mod kilo;
 pub(super) mod pi;
@@ -126,6 +127,7 @@ impl Instructions {
             Self::Kilo => Some("Kilo Code and Kilo CLI share global instructions. Selecting either enables AgentOS for both."),
             Self::Pi => Some("Pi loads instructions directly. MCP access requires a separate Pi extension."),
             Self::Omp => Some("Imports into the active OMP profile. Its native instructions take priority over other agents’ global context files."),
+            Self::Claude => Some("Linked as AGENTS.md into the folder above each workspace, so Claude Code reads General AgentOS itself — no CLAUDE.md. It loads there wherever a project has no CLAUDE.md of its own."),
             _ => None,
         }
     }
@@ -144,12 +146,7 @@ impl Instructions {
                 .iter()
                 .map(|home| codex_file(home))
                 .collect(),
-            Self::Claude => {
-                let dir = env_path("CLAUDE_CONFIG_DIR")
-                    .or_else(|| dirs::home_dir().map(|p| p.join(".claude")))
-                    .ok_or("Could not resolve Claude's home")?;
-                Ok(vec![dir.join("CLAUDE.md")])
-            }
+            Self::Claude => Ok(claude::link_targets(&claude::registered_workspaces())),
             Self::OpenCode => {
                 let dir = env_path("XDG_CONFIG_HOME")
                     .or_else(|| dirs::home_dir().map(|p| p.join(".config")))
@@ -243,6 +240,9 @@ fn import_client(spec: &ClientSpec, source: &Path, text: &str) -> Vec<ConnectRes
     if let Instructions::Manual(note) = &spec.instructions {
         return vec![result(spec, 0, Outcome::Manual, note.to_string())];
     }
+    if matches!(spec.instructions, Instructions::Claude) {
+        return claude::import(spec, source, &claude::registered_workspaces(), claude::claude_md().as_deref());
+    }
     let paths = match spec.instructions.paths() {
         Ok(paths) => paths,
         Err(e) => return vec![result(spec, 0, Outcome::Failed, e)],
@@ -261,16 +261,6 @@ fn import_paths(
     let preface = format!("# QuantMCP AgentOS\n\nSource: {}\nManaged by QuantMCP. Re-import from General > AgentOS after changing the source.\n", source.display());
     let (body, limit) = match &spec.instructions {
         Instructions::LimitedFile(_, limit) => (format!("{preface}\nBefore any task, read and follow the complete instructions in `{}`. If QuantMCP is connected, call get_instructions to load the current global and workspace instructions. If neither is available, report that AgentOS could not be loaded.\n", source.display()), Some(*limit)),
-        // Claude Code expands `@path` lines in CLAUDE.md at session start, so
-        // it reads the live AGENT.md itself instead of a copy that goes stale.
-        Instructions::Claude => (
-            format!(
-                "# QuantMCP AgentOS\n\nSource: {}\nManaged by QuantMCP. Claude Code loads the live source through the import below at every session start; edits apply without a re-import.\n\n@{}\n",
-                source.display(),
-                claude_import_path(source, dirs::home_dir().as_deref()),
-            ),
-            None,
-        ),
         _ => (format!("{preface}\n{text}"), None),
     };
     paths
@@ -281,16 +271,6 @@ fn import_paths(
             Err(detail) => result(spec, i, Outcome::Failed, detail),
         })
         .collect()
-}
-
-/// The source as a Claude Code import: `~/…` under the home, as its docs
-/// write user imports, otherwise absolute — forward slashes either way.
-fn claude_import_path(source: &Path, home: Option<&Path>) -> String {
-    let path = match home.and_then(|home| source.strip_prefix(home).ok()) {
-        Some(rel) => format!("~/{}", rel.display()),
-        None => source.display().to_string(),
-    };
-    path.replace('\\', "/")
 }
 
 /// Resolve and validate the entire selection before any destination is touched.
@@ -516,34 +496,6 @@ mod tests {
         assert!(text.contains("private overrides"));
         assert!(text.contains("AgentOS rules"));
         assert!(!temp.0.join("AGENTS.md").exists());
-    }
-
-    /// Claude Code gets an `@` import of the live AGENT.md, not a copy of its
-    /// text, so edits reach it without a re-import; its own rules around the
-    /// managed block stay.
-    #[test]
-    fn claude_imports_the_live_source_instead_of_copying_it() {
-        let temp = Scratch::new();
-        let home = temp.0.join("home");
-        let source = home.join(".quantmcp/AGENT.md");
-        assert_eq!(claude_import_path(&source, Some(&home)), "~/.quantmcp/AGENT.md");
-        let elsewhere = claude_import_path(&source, Some(Path::new("/nowhere")));
-        assert!(elsewhere.ends_with("/.quantmcp/AGENT.md") && !elsewhere.starts_with('~') && !elsewhere.contains('\\'), "{elsewhere}");
-
-        let target = temp.0.join(".claude/CLAUDE.md");
-        fs::create_dir_all(target.parent().unwrap()).unwrap();
-        fs::write(&target, "# My own rules\n").unwrap();
-        let spec = super::super::spec("claude-code").unwrap();
-        let rows = import_paths(spec, &source, "SOURCE TEXT", std::slice::from_ref(&target));
-        assert_eq!(rows[0].outcome, Outcome::Written, "{}", rows[0].detail);
-        let text = fs::read_to_string(&target).unwrap();
-        assert!(text.starts_with("# My own rules\n"));
-        let import = format!("\n@{}\n", claude_import_path(&source, dirs::home_dir().as_deref()));
-        assert!(text.contains(&import), "{text}");
-        assert!(!text.contains("SOURCE TEXT"), "a pointer, not a copy");
-        assert!(!text.contains("Re-import"), "{text}");
-        let rows = import_paths(spec, &source, "EDITED TEXT", std::slice::from_ref(&target));
-        assert!(rows[0].detail.starts_with("Up to date"), "source edits need no re-import: {}", rows[0].detail);
     }
 
     #[test]

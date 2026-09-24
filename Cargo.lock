@@ -6807,6 +6807,7 @@ dependencies = [
  "qs-mcp-bridge",
  "reqwest 0.12.28",
  "rusqlite",
+ "same-file",
  "serde",
  "serde_json",
  "tauri",
