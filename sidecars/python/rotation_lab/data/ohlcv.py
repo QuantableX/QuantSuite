@@ -101,6 +101,25 @@ def coin_key_for(ref: CoinRef) -> str:
     return f"sym:{ref.symbol.upper()}"
 
 
+def utc_now() -> dt.datetime:
+    """One timezone-aware clock for candle confirmation."""
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def confirmed_frame(frame: pd.DataFrame, timeframe: str, as_of: dt.datetime) -> pd.DataFrame:
+    """Exclude a forming bar before any backtest signal or valuation.
+
+    Frame timestamps are UTC bar opens (daily frames use date labels).
+    The fetcher additionally checks raw exchange timestamps before daily
+    normalization, so non-midnight daily candles cannot enter prematurely.
+    """
+    if frame.empty:
+        return frame
+    duration = pd.Timedelta(days=1) if timeframe == "1d" else pd.Timedelta(milliseconds=_TF_MS[timeframe])
+    closes = pd.to_datetime(frame.index, utc=True) + duration
+    return frame.loc[closes <= pd.Timestamp(as_of)]
+
+
 class CoinGeckoIdResolver:
     """Bridges a ticker symbol to a real CoinGecko coin id.
 
@@ -240,13 +259,15 @@ class OhlcvFetcher:
     ) -> OhlcvSeries:
         if timeframe != "1d":
             return self._get_series_intraday(ref, start, end, timeframe)
+        # Today's daily candle cannot be confirmed yet. Do not make it a
+        # permanent cache miss that re-fetches the entire history each run.
+        end = min(end, utc_now().date() - dt.timedelta(days=1))
+        if end < start:
+            return OhlcvSeries(coin_ref=ref, frame=_rows_to_frame([]))
         key = coin_key_for(ref)
+        self.cache.ensure_confirmed_ohlcv(key, timeframe)
         cached_rows = self.cache.get_ohlcv_range(key, start, end)
-        # The current UTC day is still forming, so whatever an earlier run
-        # cached for it is a partial candle (close = price at fetch time,
-        # incomplete high/low/volume). It never counts as settled and is
-        # re-fetched and replaced until the day is over.
-        settled_days = {r.day for r in cached_rows if r.day < dt.datetime.utcnow().date()}
+        settled_days = {r.day for r in cached_rows}
 
         expected_days = set(_business_days_between(start, end))
         missing = expected_days - settled_days
@@ -348,9 +369,8 @@ class OhlcvFetcher:
                         ref.symbol, cg_id, exc
                     )
 
-        # Everything fetched is written back, not just the days that were
-        # absent: upsert is INSERT OR REPLACE, so this is what corrects a
-        # day that an earlier run cached while it was still forming.
+        # Fetchers return confirmed candles only. A partial close must never
+        # become an immutable historical row after the next clock boundary.
         if rows:
             self.cache.upsert_ohlcv(rows)
 
@@ -372,17 +392,21 @@ class OhlcvFetcher:
 
         key = coin_key_for(ref)
         start_dt = dt.datetime.combine(start, dt.time.min)
-        end_dt = dt.datetime.combine(end, dt.time.max)
-
-        lo, hi = self.cache.intraday_coverage(key, tf)
-        bar_ms = _TF_MS.get(tf, 60 * 60 * 1000)
+        bar_ms = _TF_MS[tf]
         bar_delta = dt.timedelta(milliseconds=bar_ms)
+        upper = min(dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min),
+                    utc_now().replace(tzinfo=None))
+        end_dt = pd.Timestamp(upper).floor(tf).to_pydatetime() - bar_delta
+        if end_dt < start_dt:
+            return OhlcvSeries(coin_ref=ref, frame=_bars_to_frame([]))
+        self.cache.ensure_confirmed_ohlcv(key, tf)
+        lo, hi = self.cache.intraday_coverage(key, tf)
         # Fetch when the cache doesn't already span the requested window.
         needs_fetch = (
             lo is None
             or hi is None
-            or lo > start_dt + bar_delta
-            or hi < end_dt - bar_delta
+            or lo > start_dt
+            or hi < end_dt
         )
         if not needs_fetch:
             # Spanning is not the same as covering: fetching Jan-Feb and
@@ -458,6 +482,7 @@ class OhlcvFetcher:
             dt.datetime.combine(end, dt.time.max).replace(tzinfo=dt.timezone.utc).timestamp() * 1000
         )
         bar_ms = _TF_MS.get(tf, 60 * 60 * 1000)
+        confirmed_ms = int(utc_now().timestamp() * 1000)
 
         coin_key = coin_key_for(ref)
         out: list[OhlcvBar] = []
@@ -476,6 +501,8 @@ class OhlcvFetcher:
             for ts_ms, o, h, l, c, v in batch:
                 if ts_ms > end_ms:
                     break
+                if ts_ms < since_ms or ts_ms + bar_ms > confirmed_ms:
+                    continue
                 ts = dt.datetime.utcfromtimestamp(ts_ms / 1000)
                 out.append(
                     OhlcvBar(
@@ -662,6 +689,7 @@ class OhlcvFetcher:
 
         coin_key = coin_key_for(ref)
         out: list[OhlcvRow] = []
+        confirmed_ms = int(utc_now().timestamp() * 1000)
         cursor = since_ms
         first_page = True
         # Paginate (exchanges return up to ~1000 candles per call).
@@ -688,6 +716,10 @@ class OhlcvFetcher:
             first_page = False
             for ts_ms, o, h, l, c, v in batch:
                 if ts_ms > end_ms or ts_ms < since_ms:
+                    continue
+                # Check the actual exchange bar open BEFORE reducing it to
+                # a date: some daily venues start at 16:00 UTC, not 00:00.
+                if ts_ms + 24 * 60 * 60 * 1000 > confirmed_ms:
                     continue
                 day = dt.datetime.utcfromtimestamp(ts_ms / 1000).date()
                 out.append(
@@ -802,7 +834,10 @@ class OhlcvFetcher:
         coin_key = coin_key_for(ref)
         rows: list[OhlcvRow] = []
         prev_close: float | None = None
+        today = utc_now().date()
         for day in sorted(per_day):
+            if day >= today:
+                continue
             if day < start or day > end:
                 # still emit close to satisfy "open = prev close" continuity
                 last = per_day[day][-1]

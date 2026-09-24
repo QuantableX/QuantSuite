@@ -41,7 +41,7 @@ import pandas as pd
 
 from ..config import IndicatorConfig, RunConfig, TotalBreakoutConfig, TrendKind
 from ..data.cache import get_default_cache
-from ..data.ohlcv import CoinRef, OhlcvFetcher
+from ..data.ohlcv import CoinRef, OhlcvFetcher, confirmed_frame, utc_now
 from ..data.ranking.registry import RankingRegistry
 from .market import market_gate, market_index
 from .metrics import PerformanceMetrics, compute_metrics
@@ -229,6 +229,11 @@ class BacktestEngine:
         progress: Callable[[str, float], None] | None = None,
     ) -> BacktestResult:
         notes: list[str] = []
+        # Freeze the valuation cutoff before fetching, and apply it before
+        # computing signals, TOTAL, comparisons or buy-and-hold curves.
+        as_of = utc_now()
+        if config.end_date >= as_of.date():
+            notes.append("Only confirmed candle closes are included in this backtest.")
 
         def _tick(label: str, value: float) -> None:
             if progress:
@@ -307,10 +312,11 @@ class BacktestEngine:
             except Exception as exc:  # noqa: BLE001
                 log.warning("OHLCV failed for %s: %s", coin.symbol, exc)
                 continue
-            if series.frame.empty:
+            frame = confirmed_frame(series.frame, timeframe, as_of)
+            if frame.empty:
                 notes.append(f"No OHLCV available for {coin.symbol}")
                 continue
-            all_frames[coin.symbol] = series.frame
+            all_frames[coin.symbol] = frame
             _tick(
                 f"OHLCV {coin.symbol}",
                 0.30 + 0.40 * (i + 1) / max(len(fetch_coins), 1),
@@ -399,7 +405,7 @@ class BacktestEngine:
 
         _tick("Computing BTC EMA benchmarks", 0.90)
         benchmarks, metrics_bench = self._btc_ema_benchmarks(
-            config, runs[0].equity_strategy, frames, notes
+            config, runs[0].equity_strategy, frames, notes, as_of=as_of
         )
 
         _tick("Computing metrics", 0.95)
@@ -430,6 +436,8 @@ class BacktestEngine:
         equity: pd.Series,
         frames: dict[str, pd.DataFrame],
         notes: list[str],
+        *,
+        as_of: dt.datetime | None = None,
     ) -> tuple[dict[str, pd.Series], dict[str, PerformanceMetrics]]:
         """Trade BTC with the canonical 12/21 close EMA cross signal.
 
@@ -466,6 +474,8 @@ class BacktestEngine:
 
         if btc_frame is None or btc_frame.empty:
             return {}, {}
+
+        btc_frame = confirmed_frame(btc_frame, config.cadence.ccxt_timeframe, as_of or utc_now())
 
         # The BTC benchmarks are pinned to the canonical 12/21 close EMA
         # cross regardless of the indicator selected for the rotation
