@@ -61,11 +61,14 @@ const btState = computed(() => backtest.stateFor(systemId.value))
               ? aggregateName((cfg.indicator.aggregate ?? []).length)
               : cfg.indicator.trend }}</span>
       </div>
-      <div v-if="cfg.compareTrends?.length" class="qs-context__row qs-context__row--list">
-        <span>Compare</span>
-        <ul class="qs-context__list">
-          <li v-for="kind in cfg.compareTrends" :key="kind" class="mono" :title="kind">{{ kind }}</li>
-        </ul>
+      <div v-if="cfg.compareTrends?.length" class="qs-context__group">
+        <div class="qs-context__row">
+          <span>Compare</span>
+          <span class="mono">{{ cfg.compareTrends.length }}</span>
+        </div>
+        <div class="qs-context__chips">
+          <span v-for="kind in cfg.compareTrends" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
+        </div>
       </div>
       <div class="qs-context__row">
         <span>TOTAL filter</span>
@@ -155,27 +158,31 @@ const btState = computed(() => backtest.stateFor(systemId.value))
   color: var(--qs-text-secondary);
 }
 
-/* A label with several values: the values one below the other. */
-.qs-context__row--list {
-  align-items: flex-start;
-}
-
-.qs-context__list {
+/* A label with several values: the row counts them, chips name them. */
+.qs-context__group {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 6px;
 }
 
-.qs-context__list li {
+.qs-context__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.qs-context__chip {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding: 1px 7px;
+  border: 1px solid var(--qs-border-subtle);
+  border-radius: 999px;
+  background: var(--qs-bg-hover);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--qs-text);
 }
 
 .qs-context__compare {
