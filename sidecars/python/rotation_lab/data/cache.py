@@ -13,10 +13,10 @@ Schemas:
 * ``coin_map(cg_id TEXT PRIMARY KEY, symbol TEXT, name TEXT,
             cmc_slug TEXT, binance_symbol TEXT, last_seen DATE)``
 
-Past (immutable) days cache forever. The ``ohlcv`` tables carry no
-``fetched_at`` column, so the current (still forming) day is never
-treated as settled - ``OhlcvFetcher`` re-fetches and replaces it on
-every run. Only ``rankings`` has a real TTL, via its ``fetched_at``.
+Past (immutable) days cache forever. ``OhlcvFetcher`` only writes candles
+after their actual close time. Legacy cache tails are invalidated once
+because older fetchers also persisted still-forming candles. Only
+``rankings`` has a real TTL, via its ``fetched_at``.
 """
 
 from __future__ import annotations
@@ -295,6 +295,36 @@ class Cache:
         return (dt.datetime.utcnow() - fetched).total_seconds() < ttl_seconds
 
     # ------------------------------ ohlcv ------------------------------- #
+
+    def ensure_confirmed_ohlcv(self, coin_key: str, tf: str) -> None:
+        """Invalidate a legacy partial tail once, even after a long run gap.
+
+        Daily timestamps used to lose the exchange's UTC offset, so both
+        of the last two calendar days may have been forming at fetch time.
+        Intraday timestamps are exact; only the final bar could be open.
+        The marker and invalidation commit together. Older history stays.
+        """
+        marker = f"ohlcv_confirmed_v1:{tf}:{coin_key}"
+        with self._conn() as con:
+            if con.execute("SELECT 1 FROM meta WHERE key=?", (marker,)).fetchone():
+                return
+            # Claim the migration in the same write transaction as the
+            # deletion, including when two Cache instances share the file.
+            inserted = con.execute("INSERT OR IGNORE INTO meta(key, value) VALUES (?, '1')", (marker,))
+            if not inserted.rowcount:
+                return
+            if tf == "1d":
+                con.execute(
+                    "DELETE FROM ohlcv WHERE coin_key=? AND day >= "
+                    "(SELECT date(MAX(day), '-1 day') FROM ohlcv WHERE coin_key=?)",
+                    (coin_key, coin_key),
+                )
+            else:
+                con.execute(
+                    "DELETE FROM ohlcv_intraday WHERE coin_key=? AND tf=? AND ts = "
+                    "(SELECT MAX(ts) FROM ohlcv_intraday WHERE coin_key=? AND tf=?)",
+                    (coin_key, tf, coin_key, tf),
+                )
 
     def upsert_ohlcv(self, rows: Iterable[OhlcvRow]) -> int:
         rows = list(rows)
