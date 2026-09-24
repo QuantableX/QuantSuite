@@ -64,12 +64,12 @@ you want trusted first-run installation without OS security prompts.
 
 ## Local packaging
 
-For an unsigned local installer:
-
 ```sh
-npm run tauri:build -- --config apps/src-tauri/tauri.local-build.conf.json
+npm run tauri:build
 ```
 
-For signed packaging, set `TAURI_SIGNING_PRIVATE_KEY` to the private key file path
-or contents, then run `npm run tauri:build`. Always distribute installer packages,
+Without `TAURI_SIGNING_PRIVATE_KEY` in the environment, `scripts/tauri-build.mjs`
+merges `apps/src-tauri/tauri.local-build.conf.json` and builds unsigned installers
+without updater signatures. For signed packaging, set `TAURI_SIGNING_PRIVATE_KEY`
+to the private key file path or contents first. Always distribute installer packages,
 not a copy of an installed folder containing a user's private library.

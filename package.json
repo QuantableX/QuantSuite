@@ -12,7 +12,7 @@
     "build": "npm run build --workspace=@quantsuite/shell",
     "tauri": "tauri",
     "tauri:dev": "tauri dev --config apps/src-tauri/tauri.dev.conf.json",
-    "tauri:build": "tauri build",
+    "tauri:build": "node scripts/tauri-build.mjs",
     "check": "npm run check:modules && npm run check:css && npm run check:isolation && npm run check:ts && npm run check:components && npm run check:commands && npm run check:rust",
     "check:modules": "node scripts/validate-modules.mjs",
     "check:css": "node scripts/check-css-isolation.mjs",
