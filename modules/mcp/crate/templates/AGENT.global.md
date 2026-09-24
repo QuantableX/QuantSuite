@@ -20,7 +20,8 @@ Your client may show the suite's tools with underscores
 3. `list_kanban_cards` — what is planned, in progress or waiting for review,
    so you never start work that is already on the board or claimed.
 4. `get_kanban_approval_mode` for the target board — check before claiming
-   or implementing anything. Approval gates both the start and the result.
+   or implementing anything. Follow the applicable repository or General
+   workflow below; never bypass the board's approval requirements.
 
 Skip none of these because a task "looks small". Several agents and the
 operator share this suite; its state lives in the tools, not in your context.
@@ -33,8 +34,10 @@ operator share this suite; its state lives in the tools, not in your context.
   path (case-insensitive). Omit it to mean the **active** workspace — the one
   open in the suite. Pass it explicitly when you work on another repository.
 - `"general"` names the suite-wide General board and the general memory vault.
-  It has no folder: a General card must be moved to a workspace
-  (`move_kanban_card_to_workspace`) before it can be claimed.
+  It has no folder. Non-repository tasks stay on General and can move through
+  Plan, Work (in progress), Review and Done without a branch or worktree.
+  Move a card to a workspace (`move_kanban_card_to_workspace`) only when its
+  work requires that repository, then use the repository claim workflow.
 - `list_codebases` and `quantsuite.memory.workspaces` list the workspaces.
 
 ## 3. Code — search first, then read
@@ -68,7 +71,45 @@ Tools: `list_kanban_cards`, `get_kanban_card`, `create_kanban_card`,
 `get_kanban_diff`, `get_kanban_activity_log`, `get_kanban_approval_mode`,
 `set_kanban_approval_mode`.
 
-### The life of a card
+### General tasks — no repository or worktree
+
+General is also a working board for non-repository tasks: local machine
+configuration, research, administration and global AgentOS rule changes.
+A missing repository, branch or worktree does not prevent these tasks from
+being in progress or done. Do not create a dummy repository or move them to
+an unrelated workspace.
+
+1. **Plan** — create a General card with scope and acceptance criteria, after
+   checking the board and its approval mode. Check dependencies and existing
+   ownership before starting; record the responsible agent in the description.
+2. **Work / in progress** — use `move_kanban_card(column="work")` when work
+   starts. No `claim_kanban_card`, branch, worktree or commit is required.
+   Keep the description truthful about progress, affected files/settings and
+   any blockers.
+3. **Verify** — perform checks appropriate to the task and record the
+   evidence and any remaining limitations. Repository builds, commits and
+   worktree app-launch commands apply only when a repository is involved.
+4. **Finish** — on `auto_apply`, use
+   `move_kanban_card(column="done")` after the acceptance criteria are met.
+   On `approval`, present the plan before starting and the verified result
+   before final completion; retain the user's required approvals. Use Review
+   for a result awaiting approval. If the installed tools refuse a General
+   transition, have the user make that transition in the General board;
+   never change the mode, self-approve, or manufacture a worktree to bypass it.
+5. **Report** — name the column and verification. Branch/worktree are "not
+   applicable"; include a task-specific test command only when one exists.
+
+For General cards without a repository, the **column** is the progress and
+completion record: `work` means in progress and `done` means finished.
+The existing move tool may leave the repository lifecycle `status` field
+(for example `backlog`) unchanged; do not treat that field as evidence that
+a General card in Done is unfinished. Check the column and completion notes.
+Do not call repository-only claim/complete/merge tools for these cards.
+
+### The life of a repository card
+
+The following claim/worktree/commit/merge workflow applies to workspace
+repository cards. General non-repository tasks use the workflow above.
 
 1. **Plan** — `create_kanban_card` (title, description, priority; column
    `plan`). Put a card on the board for every piece of work bigger than a
@@ -115,8 +156,9 @@ User approval actions belong to the user: never invoke the native review
 command or click approval controls yourself. Do not change boards, modes or
 use standalone worktrees to bypass either gate.
 
-Let the claim/complete flow move cards through `work → review → done`; use
-`move_kanban_card` for planning only. Only the user changes the approval mode
+Let the claim/complete flow move repository cards through `work → review → done`;
+use `move_kanban_card` for planning only on those boards. General tasks without
+repositories use `move_kanban_card` through their lifecycle as described above. Only the user changes the approval mode
 (`set_kanban_approval_mode`) — never switch a board to `auto_apply` to get your
 own work merged. Delete cards only when asked.
 
@@ -129,13 +171,15 @@ lists them (newest first) — check it before planning anything that sounds
 already done, and never redo or re-create an archived card. An archived card
 cannot be claimed; only the operator restores one.
 
-When you report on a card, name its column, branch and worktree and quote the
-**test command** verbatim (section 5).
+When you report on a repository card, name its column, branch and worktree
+and quote its **test command** verbatim (section 5). For a General task without
+a repository, report the column and verification; branch, worktree and the
+repository test command are not applicable.
 
 ## 5. Parallel work — git worktrees
 
 Other agents may be editing the same repository at the same time. A worktree is
-an isolated checkout on its own branch: a claimed card has one, and
+an isolated checkout on its own branch: a claimed repository card has one, and
 `create_worktree` makes one on request for work that is not a card.
 
 - **Before editing a shared repository, call `create_worktree`** (`name` =
@@ -284,8 +328,9 @@ rare case the user wants a command run inside the suite.
 - Edit existing files over creating new ones; match the code style around you.
 - Before touching shared state (board, memory, merges), check its current
   state with the tool — not what you remember from earlier in the session.
-- Run the project's tests or build before completing a card; report failures
-  with their output, not a summary.
+- Run the project's tests or build before completing a repository card;
+  General tasks without a repository need task-appropriate verification.
+  Report failures with their output, not a summary.
 - A tool error usually names the fix (`not indexed` → `index_codebase`,
   `blocked by` → wait or ask, `already claimed` → another agent has it). Read
   it before retrying.
