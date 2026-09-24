@@ -135,6 +135,7 @@ pub(crate) async fn list_clients(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ClientRow>, String> {
+    clients::migrate_omp_client_record(&app, qs_core::db::now_ms())?;
     let (live, went_offline) = mcp_server::prune_and_list(&state.active_clients).await;
     for session in &went_offline {
         mcp_server::announce_disconnected(&app, session);
