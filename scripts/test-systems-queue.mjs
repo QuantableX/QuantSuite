@@ -17,6 +17,8 @@ registerHooks({
 Object.assign(globalThis, { ref, reactive, computed, window: {} })
 const { useBacktestStore } = await import('../modules/systems/app/stores/backtest.ts')
 const { useLiveStore } = await import('../modules/systems/app/stores/live.ts')
+const { useSystemsStore } = await import('../modules/systems/app/stores/systems.ts')
+const { useConfigStore } = await import('../modules/systems/app/stores/config.ts')
 const { findIndicatorOption, indicatorOptionRows } = await import('../modules/systems/app/utils/indicatorOptions.ts')
 
 function deferred() {
@@ -26,6 +28,65 @@ function deferred() {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const result = { strategies: [], notes: [] }
+
+test('an empty catalog stays empty and failed mutations do not change the list', async t => {
+  setup(t, command => {
+    if (command.endsWith('|list_systems')) return []
+    throw new Error('Disk is read-only')
+  })
+  const systems = useSystemsStore()
+  await systems.load()
+  assert.equal(systems.loaded, true)
+  assert.deepEqual(systems.systems, [])
+  await assert.rejects(systems.create('My strategy', '', ''), /read-only/)
+  assert.deepEqual(systems.systems, [])
+  systems.systems.push({ id: 'custom', name: 'My strategy', short: '', status: 'ready', description: '' })
+  await assert.rejects(systems.remove('custom'), /read-only/)
+  assert.equal(systems.byId('custom').name, 'My strategy')
+})
+
+test('strategy config loading is shared and navigation preserves edits', async t => {
+  const job = deferred()
+  let calls = 0
+  setup(t, () => { calls++; return job.promise })
+  const config = useConfigStore()
+  const a = config.load('custom')
+  const b = config.load('custom')
+  assert.equal(calls, 1)
+  job.resolve({ topN: 23, indicator: { trend: 'aggregate', aggregate: ['one', 'two'] } })
+  await Promise.all([a, b])
+  config.update('custom', { topN: 11, endDate: '2024-01-01' })
+  await config.load('custom')
+  assert.equal(config.get('custom').topN, 11)
+  assert.equal(config.get('custom').endDate, '2024-01-01')
+  assert.equal(calls, 1)
+})
+
+test('failed saves expose the error and keep the edited config', async t => {
+  setup(t, () => { throw new Error('Disk is full') })
+  const config = useConfigStore()
+  config.update('custom', { topN: 17 })
+  assert.equal(await config.save('custom'), false)
+  assert.match(config.errors.custom, /Disk is full/)
+  assert.equal(config.get('custom').topN, 17)
+})
+
+test('a custom strategy can run live and backtest with its own config', async t => {
+  const calls = []
+  const { live, backtest } = setup(t, (command, args) => {
+    calls.push([command, args])
+    return result
+  })
+  useConfigStore().update('custom-id', { topN: 19, excludeTopN: 8 })
+  await live.refresh('custom-id')
+  await backtest.run('custom-id')
+  assert.equal(calls.length, 2)
+  for (const [, args] of calls) {
+    assert.equal(args.systemId, 'custom-id')
+    assert.equal(args.config.topN, 19)
+    assert.equal(args.config.excludeTopN, 8)
+  }
+})
 
 function setup(t, invoke) {
   setActivePinia(createPinia())

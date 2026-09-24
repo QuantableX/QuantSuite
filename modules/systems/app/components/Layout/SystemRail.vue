@@ -22,12 +22,6 @@ const ICONS: Record<string, string> = {
 }
 const FALLBACK_ICON = 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z'
 
-// Names redundantly spell out the acronym (e.g. "Large-Cap Evaluation System"
-// for LCES); trim the trailing "System" so the sidebar label stays concise.
-function displayName(name: string) {
-  return name.replace(/\s*System$/i, '').trim() || name
-}
-
 function select(id: string, status: string) {
   if (status !== 'ready') return
   app.setActiveSystem(id)
@@ -39,7 +33,8 @@ function select(id: string, status: string) {
 <template>
   <QSidebar>
     <nav class="qs-rail">
-      <span class="qs-rail__label">Systems</span>
+      <span class="qs-rail__label">Strategies</span>
+      <button class="btn" @click="router.push('/algo/manual/new')">+ New strategy</button>
       <div class="qs-rail__group">
         <button
           v-for="(s, i) in systems.systems"
@@ -49,15 +44,15 @@ function select(id: string, status: string) {
             'qs-rail-btn--active': systemId === s.id,
             'qs-rail-btn--planned': s.status !== 'ready',
           }"
-          :title="`${s.name} (${s.short}) — Ctrl+${i + 1}${s.status !== 'ready' ? ' · planned' : ''}`"
+          :title="`${s.name}${s.short ? ` (${s.short})` : ''}${i < 9 ? ` — Ctrl+${i + 1}` : ''}`"
           @click="select(s.id, s.status)"
         >
           <svg class="qs-rail-btn__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path :d="ICONS[s.id] ?? FALLBACK_ICON" />
           </svg>
           <span class="qs-rail-btn__text">
-            <span class="qs-rail-btn__short">{{ s.short }}</span>
-            <span class="qs-rail-btn__name">{{ displayName(s.name) }}</span>
+            <span v-if="s.short" class="qs-rail-btn__short">{{ s.short }}</span>
+            <span class="qs-rail-btn__name">{{ s.name }}</span>
           </span>
           <span v-if="s.status !== 'ready'" class="qs-rail-btn__soon">soon</span>
           <span class="qs-rail-btn__bar" aria-hidden="true" />
@@ -125,6 +120,9 @@ function select(id: string, status: string) {
 }
 
 .qs-rail-btn__short {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;

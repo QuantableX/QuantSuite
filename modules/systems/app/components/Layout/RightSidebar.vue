@@ -34,9 +34,9 @@ const btState = computed(() => backtest.stateFor(systemId.value))
 <template>
   <div class="qs-context">
     <section class="qs-context__section">
-      <span class="label">System</span>
+      <span class="label">Strategy</span>
       <div class="qs-context__system">
-        <span class="qs-context__short">{{ system?.short }}</span>
+        <span v-if="system?.short" class="qs-context__short">{{ system.short }}</span>
         <span class="qs-context__name" :title="system?.name">{{ system?.name }}</span>
       </div>
       <p class="qs-context__desc">{{ system?.description }}</p>
@@ -132,6 +132,7 @@ const btState = computed(() => backtest.stateFor(systemId.value))
 }
 
 .qs-context__short {
+  overflow-wrap: anywhere;
   font-weight: 700;
   font-size: 12px;
   color: var(--qs-accent);

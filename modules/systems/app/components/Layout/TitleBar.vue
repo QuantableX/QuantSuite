@@ -51,8 +51,8 @@ function selectSystem(id: string) {
     <div class="qs-titlebar__meta">
       <div ref="switcherRef" class="qs-switcher">
         <button class="qs-switcher__btn" @click.stop="switcherOpen = !switcherOpen">
-          <span class="qs-switcher__short">{{ activeSystem?.short ?? '—' }}</span>
-          <span class="qs-switcher__name">{{ activeSystem?.name ?? 'Select system' }}</span>
+          <span v-if="activeSystem?.short" class="qs-switcher__short">{{ activeSystem.short }}</span>
+          <span class="qs-switcher__name">{{ activeSystem?.name ?? 'Strategies' }}</span>
           <svg class="qs-switcher__caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
         </button>
         <div v-if="switcherOpen" class="qs-switcher__menu" @click.stop>
@@ -63,7 +63,7 @@ function selectSystem(id: string) {
             :class="{ 'qs-switcher__item--disabled': s.status !== 'ready' }"
             @click="selectSystem(s.id)"
           >
-            <span class="qs-switcher__item-short">{{ s.short }}</span>
+            <span v-if="s.short" class="qs-switcher__item-short">{{ s.short }}</span>
             <span class="qs-switcher__item-name">{{ s.name }}</span>
             <span v-if="s.status !== 'ready'" class="qs-switcher__soon">soon</span>
           </button>
@@ -72,7 +72,7 @@ function selectSystem(id: string) {
 
       <AlgoModeSwitch mode="manual" />
 
-      <div ref="viewMenuRef" class="qs-switcher qs-viewsel">
+      <div v-if="activeSystem" ref="viewMenuRef" class="qs-switcher qs-viewsel">
         <button class="qs-switcher__btn qs-viewsel__btn" @click.stop="viewMenuOpen = !viewMenuOpen">
           <span class="qs-viewsel__label">{{ activeViewLabel }}</span>
           <svg class="qs-switcher__caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
@@ -130,6 +130,10 @@ function selectSystem(id: string) {
 }
 
 .qs-switcher__short {
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 700;
   font-size: 11px;
   letter-spacing: 0.05em;
@@ -148,6 +152,9 @@ function selectSystem(id: string) {
 }
 
 .qs-switcher__menu {
+  max-height: min(60vh, 480px);
+  max-width: min(480px, 85vw);
+  overflow-y: auto;
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
@@ -184,6 +191,10 @@ function selectSystem(id: string) {
 }
 
 .qs-switcher__item-short {
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 700;
   font-size: 11px;
   color: var(--qs-accent);
@@ -191,6 +202,8 @@ function selectSystem(id: string) {
 }
 
 .qs-switcher__item-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
   flex: 1;
   font-size: 13px;
 }

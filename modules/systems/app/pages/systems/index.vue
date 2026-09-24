@@ -1,19 +1,18 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'systems', path: '/algo/manual' })
 
-import { useAppStore } from '#systems/stores/app'
-
-const app = useAppStore()
-
-onMounted(() => {
-  navigateTo(`/algo/manual/${app.activeSystemId || 'lces'}/live`, { replace: true })
-})
+import { useSystemsStore } from '#systems/stores/systems'
+const systems = useSystemsStore()
 </script>
 
 <template>
   <div class="qs-redirect">
-    <span class="qs-redirect__mark">⌖</span>
-    <p>Loading QuantAlgo…</p>
+    <template v-if="systems.loaded && !systems.systems.length">
+      <h1>Create your first strategy</h1>
+      <p>Choose your own name, universe, signals and rotation settings.</p>
+      <button class="btn btn-primary" @click="navigateTo('/algo/manual/new')">New strategy</button>
+    </template>
+    <p v-else>Loading strategy…</p>
   </div>
 </template>
 

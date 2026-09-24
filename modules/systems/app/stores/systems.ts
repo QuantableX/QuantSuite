@@ -1,36 +1,20 @@
 import { defineStore } from 'pinia'
 import { useEngine } from '#systems/composables/useEngine'
-import type { SystemMeta } from '#systems/types'
-
-const fallbackSystems: SystemMeta[] = [
-  {
-    id: 'lces',
-    name: 'Large-Cap Evaluation System',
-    short: 'LCES',
-    status: 'ready',
-    description:
-      'Survivorship-bias-free rotation across the top-N large-cap coins, ranked as they stood on each date.',
-  },
-  {
-    id: 'sces',
-    name: 'Small-Cap Evaluation System',
-    short: 'SCES',
-    status: 'ready',
-    description:
-      'Same engine, applied to a lower-rank small-cap cohort: excludes the top-ranked coins and rotates the slice beneath them.',
-  },
-]
+import type { RunConfig, SystemMeta } from '#systems/types'
 
 export const useSystemsStore = defineStore('systems/systems', () => {
   const engine = useEngine()
-  const systems = ref<SystemMeta[]>([...fallbackSystems])
+  const systems = ref<SystemMeta[]>([])
+  const loaded = ref(false)
+  const error = ref<string | null>(null)
 
   async function load() {
+    error.value = null
     try {
-      const loaded = await engine.listSystems()
-      if (loaded?.length) systems.value = loaded
-    } catch {
-      systems.value = [...fallbackSystems]
+      systems.value = await engine.listSystems()
+      loaded.value = true
+    } catch (e) {
+      error.value = String(e)
     }
   }
 
@@ -40,5 +24,20 @@ export const useSystemsStore = defineStore('systems/systems', () => {
 
   const readySystems = computed(() => systems.value.filter(s => s.status === 'ready'))
 
-  return { systems, readySystems, load, byId }
+  async function create(name: string, short: string, description: string, config?: RunConfig) {
+    const system = await engine.createSystem(name, short, description, config)
+    systems.value.push(system)
+    return system
+  }
+
+  function replace(system: SystemMeta) {
+    systems.value = systems.value.map(s => s.id === system.id ? system : s)
+  }
+
+  async function remove(id: string) {
+    await engine.deleteSystem(id)
+    systems.value = systems.value.filter(s => s.id !== id)
+  }
+
+  return { systems, readySystems, loaded, error, load, byId, create, replace, remove }
 })

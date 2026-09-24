@@ -28,16 +28,16 @@ const config = useConfigStore()
 const backtest = useBacktestStore()
 const live = useLiveStore()
 const router = useRouter()
-const route = useRoute()
+const route = router.currentRoute
 
-const activeSystemId = computed(() => (route.params.id as string) || app.activeSystemId)
 const { systemId, view } = useActiveView()
+const bootstrapped = ref(false)
 
 onMounted(async () => {
   await app.loadSettings()
   await systems.load()
-  await app.refreshEngineStatus()
-  await config.load(app.activeSystemId)
+  bootstrapped.value = true
+  void app.refreshEngineStatus()
 })
 
 // Route progress events from the engine into whichever job is running. The
@@ -64,32 +64,31 @@ function gotoSystem(id: string) {
 // mounted while another module is open, so useShortcuts arms the window
 // listener only between onActivated and onDeactivated — otherwise these would
 // fight the shell's and other modules' bindings on the same keystroke.
-useShortcuts([
-  {
-    key: '1',
-    ctrl: true,
-    handler: e => {
-      e.preventDefault()
-      gotoSystem(systems.systems[0]?.id ?? 'lces')
-    },
+useShortcuts(Array.from({ length: 9 }, (_, i) => ({
+  key: String(i + 1),
+  ctrl: true,
+  handler: (e: KeyboardEvent) => {
+    const target = systems.systems[i]
+    if (!target) return
+    e.preventDefault()
+    gotoSystem(target.id)
   },
-  {
-    key: '2',
-    ctrl: true,
-    handler: e => {
-      e.preventDefault()
-      gotoSystem(systems.systems[1]?.id ?? 'sces')
-    },
-  },
-])
+})))
 
 // Keep the active-system setting in sync with the current route.
-watch(activeSystemId, id => {
-  if (id && id !== app.activeSystemId) {
-    app.setActiveSystem(id)
+watch([bootstrapped, () => systems.loaded, () => systems.systems, () => route.value.path], () => {
+  if (!bootstrapped.value || !systems.loaded || !route.value.path.startsWith('/algo/manual')) return
+  const id = systemId.value
+  if (route.value.path === '/algo/manual/new') return
+  if (id && systems.byId(id)) {
+    if (id !== app.activeSystemId) app.setActiveSystem(id)
     void config.load(id)
+    return
   }
-})
+  const fallback = systems.byId(app.activeSystemId)?.id ?? systems.systems[0]?.id
+  if (fallback) void router.replace(`/algo/manual/${fallback}/${app.viewFor(fallback)}`)
+  else if (id) void router.replace('/algo/manual')
+}, { immediate: true })
 
 // Remember each system's active view so switching systems restores its own
 // last-open tab rather than carrying the current one across.
@@ -107,12 +106,24 @@ watch(
       <SystemsLayoutSystemRail />
       <div class="qs-content">
         <main class="qs-main">
-          <slot />
+          <div v-if="systems.error" class="qs-shell__error" role="alert">
+            {{ systems.error }}
+            <button class="btn" @click="systems.load()">Retry</button>
+          </div>
+          <div v-else-if="!bootstrapped || !systems.loaded">Loading strategies…</div>
+          <template v-else>
+            <div v-if="config.errors[systemId]" class="qs-shell__error" role="alert">
+              {{ config.errors[systemId] }}
+              <button v-if="!config.configBySystem[systemId]" class="btn" @click="config.load(systemId)">Retry</button>
+            </div>
+            <slot v-if="!systemId || config.configBySystem[systemId]" />
+            <div v-else-if="!config.errors[systemId]">Loading strategy settings…</div>
+          </template>
         </main>
       </div>
       <!-- V3: the shared right panel — 220px default, same as every module.
            The old StatusBar footer is gone; no module owns a bottom band. -->
-      <QRightPanel storage-key="systems.right">
+      <QRightPanel v-if="systems.byId(systemId)" storage-key="systems.right">
         <SystemsLayoutRightSidebar />
       </QRightPanel>
     </div>
@@ -152,5 +163,7 @@ watch(
   overflow-y: auto;
   padding: 24px 28px;
 }
+
+.qs-shell__error { display: flex; gap: 12px; align-items: center; padding: 12px; color: var(--qs-error); font-size: 13px; }
 
 </style>

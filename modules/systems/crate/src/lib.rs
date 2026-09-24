@@ -61,6 +61,7 @@ pub struct SystemMeta {
     pub description: String,
 }
 
+// Starter strategies for new and legacy stores; ordinary editable entries after loading.
 fn systems_catalog() -> Vec<SystemMeta> {
     vec![
         SystemMeta {
@@ -80,12 +81,25 @@ fn systems_catalog() -> Vec<SystemMeta> {
     ]
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedStore {
     #[serde(default)]
     settings: Option<AppSettings>,
     #[serde(default, rename = "systemConfigs")]
     system_configs: HashMap<String, Value>,
+    // Missing in legacy stores; an explicitly empty list stays empty.
+    #[serde(default = "systems_catalog")]
+    systems: Vec<SystemMeta>,
+}
+
+impl Default for PersistedStore {
+    fn default() -> Self {
+        Self {
+            settings: Some(AppSettings::default()),
+            system_configs: HashMap::new(),
+            systems: systems_catalog(),
+        }
+    }
 }
 
 /// Default run-config (camelCase — matches the frontend `RunConfig` shape and
@@ -122,8 +136,7 @@ fn default_run_config(system_id: &str) -> Value {
 
 struct Store {
     data_dir: PathBuf,
-    settings: Mutex<AppSettings>,
-    system_configs: Mutex<HashMap<String, Value>>,
+    data: Mutex<PersistedStore>,
 }
 
 /// `~/.quantsuite/modules/systems/`. Was `~/.quantsystems` in the standalone
@@ -136,37 +149,110 @@ fn config_path(base: &Path) -> PathBuf {
     base.join("config.json")
 }
 
-fn load_store(base: &Path) -> (AppSettings, HashMap<String, Value>) {
+fn load_store(base: &Path) -> Result<PersistedStore, String> {
     let path = config_path(base);
-    if let Ok(raw) = fs::read_to_string(&path) {
-        if let Ok(parsed) = serde_json::from_str::<PersistedStore>(&raw) {
-            return (
-                parsed.settings.unwrap_or_default(),
-                parsed.system_configs,
-            );
-        }
+    match fs::read_to_string(&path) {
+        Ok(raw) => serde_json::from_str(&raw).map_err(|e| format!("Read systems config: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(PersistedStore::default()),
+        Err(e) => Err(format!("Read systems config: {e}")),
     }
-    (AppSettings::default(), HashMap::new())
 }
 
-fn save_store(store: &Store) -> Result<(), String> {
-    let settings = store
-        .settings
-        .lock()
-        .map_err(|e| format!("Lock settings: {e}"))?
-        .clone();
-    let configs = store
-        .system_configs
-        .lock()
-        .map_err(|e| format!("Lock configs: {e}"))?
-        .clone();
-    let persisted = PersistedStore {
-        settings: Some(settings),
-        system_configs: configs,
-    };
-    let raw = serde_json::to_string_pretty(&persisted).map_err(|e| format!("Serialize store: {e}"))?;
-    fs::create_dir_all(&store.data_dir).map_err(|e| format!("Create data dir: {e}"))?;
-    qs_core::paths::write_atomic(&config_path(&store.data_dir), raw.as_bytes()).map_err(|e| format!("Write config: {e}"))
+impl Store {
+    // Serialize the entire transaction and publish it only after a successful write.
+    fn update<T>(
+        &self,
+        change: impl FnOnce(&mut PersistedStore) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut current = self.data.lock().map_err(|e| format!("Lock systems: {e}"))?;
+        let mut next = current.clone();
+        let result = change(&mut next)?;
+        let raw = serde_json::to_vec_pretty(&next).map_err(|e| format!("Serialize store: {e}"))?;
+        fs::create_dir_all(&self.data_dir).map_err(|e| format!("Create data dir: {e}"))?;
+        qs_core::paths::write_atomic(&config_path(&self.data_dir), &raw)
+            .map_err(|e| format!("Write config: {e}"))?;
+        *current = next;
+        Ok(result)
+    }
+}
+
+impl PersistedStore {
+    fn require_system(&self, id: &str) -> Result<(), String> {
+        if self.systems.iter().any(|s| s.id == id) {
+            Ok(())
+        } else {
+            Err(format!("Strategy no longer exists: {id}"))
+        }
+    }
+
+    fn create_system(
+        &mut self,
+        name: String,
+        short: String,
+        description: String,
+        config: Option<Value>,
+    ) -> Result<SystemMeta, String> {
+        let meta = normalize_system(SystemMeta {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            short,
+            description,
+            status: "ready".into(),
+        })?;
+        let config = config.unwrap_or_else(|| default_run_config(""));
+        if !config.is_object() {
+            return Err("Strategy settings must be an object".into());
+        }
+        self.system_configs.insert(meta.id.clone(), config);
+        self.systems.push(meta.clone());
+        Ok(meta)
+    }
+
+    fn save_config(
+        &mut self,
+        id: &str,
+        config: Value,
+        metadata: Option<SystemMeta>,
+    ) -> Result<Value, String> {
+        self.require_system(id)?;
+        if !config.is_object() {
+            return Err("Strategy settings must be an object".into());
+        }
+        if let Some(meta) = metadata {
+            if meta.id != id {
+                return Err("Strategy ID cannot be changed".into());
+            }
+            let meta = normalize_system(meta)?;
+            if let Some(current) = self.systems.iter_mut().find(|s| s.id == id) {
+                *current = meta;
+            }
+        }
+        self.system_configs.insert(id.into(), config.clone());
+        Ok(config)
+    }
+
+    fn delete_system(&mut self, id: &str) -> Result<(), String> {
+        self.require_system(id)?;
+        self.systems.retain(|s| s.id != id);
+        self.system_configs.remove(id);
+        let fallback = self.systems.first().map(|s| s.id.clone()).unwrap_or_default();
+        let settings = self.settings.get_or_insert_with(AppSettings::default);
+        if settings.active_system_id == id {
+            settings.active_system_id = fallback;
+        }
+        Ok(())
+    }
+}
+
+fn normalize_system(mut meta: SystemMeta) -> Result<SystemMeta, String> {
+    meta.name = meta.name.trim().to_owned();
+    if meta.name.is_empty() {
+        return Err("Enter a strategy name".into());
+    }
+    meta.short = meta.short.trim().to_owned();
+    meta.description = meta.description.trim().to_owned();
+    meta.status = "ready".into();
+    Ok(meta)
 }
 
 // ─── Engine process manager ─────────────────────────────────────────────────
@@ -691,37 +777,47 @@ fn resolve_engine_dir(app: &AppHandle) -> PathBuf {
 #[tauri::command(async)]
 fn get_app_settings(store: State<'_, Store>) -> Result<AppSettings, String> {
     store
-        .settings
+        .data
         .lock()
-        .map(|s| s.clone())
+        .map(|s| s.settings.clone().unwrap_or_default())
         .map_err(|e| format!("Lock settings: {e}"))
 }
 
 #[tauri::command]
 async fn update_app_settings(settings: AppSettings, store: State<'_, Store>) -> Result<AppSettings, String> {
-    {
-        let mut current = store
-            .settings
-            .lock()
-            .map_err(|e| format!("Lock settings: {e}"))?;
-        *current = settings;
-    }
-    save_store(&store)?;
-    get_app_settings(store)
+    store.update(|data| {
+        let mut settings = settings;
+        if !data.systems.iter().any(|s| s.id == settings.active_system_id) {
+            settings.active_system_id = data.systems.first().map(|s| s.id.clone()).unwrap_or_default();
+        }
+        data.settings = Some(settings.clone());
+        Ok(settings)
+    })
 }
 
 #[tauri::command(async)]
-fn list_systems() -> Vec<SystemMeta> {
-    systems_catalog()
+fn list_systems(store: State<'_, Store>) -> Result<Vec<SystemMeta>, String> {
+    store.data.lock().map(|s| s.systems.clone()).map_err(|e| format!("Lock systems: {e}"))
+}
+
+#[tauri::command(async)]
+fn create_system(name: String, short: String, description: String, config: Option<Value>, store: State<'_, Store>) -> Result<SystemMeta, String> {
+    store.update(|data| data.create_system(name, short, description, config))
+}
+
+#[tauri::command(async)]
+fn delete_system(system_id: String, store: State<'_, Store>) -> Result<(), String> {
+    store.update(|data| data.delete_system(&system_id))
 }
 
 #[tauri::command(async)]
 fn get_system_config(system_id: String, store: State<'_, Store>) -> Result<Value, String> {
-    let configs = store
-        .system_configs
+    let data = store
+        .data
         .lock()
         .map_err(|e| format!("Lock configs: {e}"))?;
-    Ok(configs
+    data.require_system(&system_id)?;
+    Ok(data.system_configs
         .get(&system_id)
         .cloned()
         .unwrap_or_else(|| default_run_config(&system_id)))
@@ -731,17 +827,10 @@ fn get_system_config(system_id: String, store: State<'_, Store>) -> Result<Value
 async fn save_system_config(
     system_id: String,
     config: Value,
+    metadata: Option<SystemMeta>,
     store: State<'_, Store>,
 ) -> Result<Value, String> {
-    {
-        let mut configs = store
-            .system_configs
-            .lock()
-            .map_err(|e| format!("Lock configs: {e}"))?;
-        configs.insert(system_id.clone(), config.clone());
-    }
-    save_store(&store)?;
-    Ok(config)
+    store.update(|data| data.save_config(&system_id, config, metadata))
 }
 
 // ─── Engine lifecycle commands ──────────────────────────────────────────────
@@ -1146,6 +1235,8 @@ pub fn init() -> TauriPlugin<Wry> {
             get_app_settings,
             update_app_settings,
             list_systems,
+            create_system,
+            delete_system,
             get_system_config,
             save_system_config,
             start_engine,
@@ -1167,11 +1258,10 @@ pub fn init() -> TauriPlugin<Wry> {
             fs::create_dir_all(&cache_dir).ok();
             let cache_path = cache_dir.join("rotation_lab.sqlite");
 
-            let (settings, configs) = load_store(&dir);
+            let data = load_store(&dir).map_err(std::io::Error::other)?;
             app.manage(Store {
                 data_dir: dir,
-                settings: Mutex::new(settings),
-                system_configs: Mutex::new(configs),
+                data: Mutex::new(data),
             });
 
             // Lazy by contract: this only builds the manager. No Python process
@@ -1268,6 +1358,85 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct TestDir(PathBuf);
+    impl TestDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("qs-strategies-{}", uuid::Uuid::new_v4()));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for TestDir {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+
+    #[test]
+    fn legacy_configs_and_names_survive_migration_and_restart() {
+        let dir = TestDir::new();
+        let legacy = json!({
+            "settings": { "theme": "dark", "fontSize": 14, "activeSystemId": "sces" },
+            "systemConfigs": {
+                "lces": { "topN": 7, "indicator": { "trend": "aggregate", "aggregate": ["one", "two"], "params": {"one": {"length": 42}} }, "futureOption": true },
+                "sces": { "topN": 33, "excludeTopN": 9 }
+            }
+        });
+        fs::write(config_path(&dir.0), legacy.to_string()).unwrap();
+        let store = Store { data_dir: dir.0.clone(), data: Mutex::new(load_store(&dir.0).unwrap()) };
+        assert_eq!(store.data.lock().unwrap().systems.len(), 2);
+        store.update(|data| {
+            let mut meta = data.systems[0].clone();
+            meta.name = "Any name / 日本語 System".into();
+            meta.short = "My label".into();
+            data.save_config("lces", data.system_configs["lces"].clone(), Some(meta))
+        }).unwrap();
+        let restored = load_store(&dir.0).unwrap();
+        assert_eq!(restored.systems[0].id, "lces");
+        assert_eq!(restored.systems[0].name, "Any name / 日本語 System");
+        assert_eq!(serde_json::to_value(&restored.system_configs).unwrap(), legacy["systemConfigs"]);
+        assert_eq!(restored.settings.unwrap().active_system_id, "sces");
+    }
+
+    #[test]
+    fn copies_have_independent_settings_and_names_do_not_select_defaults() {
+        let mut data = PersistedStore::default();
+        let original = json!({ "topN": 21, "excludeTopN": 6, "indicator": { "aggregate": ["one", "two"], "params": {"one": {"length": 42}} }, "marketIndicator": { "trend": "total_breakout", "entryLength": 20 } });
+        data.system_configs.insert("sces".into(), original.clone());
+        let copy = data.create_system("SCES".into(), "Anything".into(), "".into(), Some(original.clone())).unwrap();
+        assert_ne!(copy.id, "sces");
+        assert_eq!(data.system_configs[&copy.id], original);
+        data.system_configs.get_mut(&copy.id).unwrap()["indicator"]["params"]["one"]["length"] = json!(13);
+        assert_eq!(data.system_configs["sces"], original);
+        let fresh = data.create_system("SCES".into(), "".into(), "".into(), None).unwrap();
+        assert_eq!(data.system_configs[&fresh.id]["excludeTopN"], 0);
+    }
+
+    #[test]
+    fn deleting_all_strategies_stays_empty_after_restart_and_rejects_stale_saves() {
+        let dir = TestDir::new();
+        let store = Store { data_dir: dir.0.clone(), data: Mutex::new(PersistedStore::default()) };
+        store.update(|data| { data.delete_system("lces")?; data.delete_system("sces") }).unwrap();
+        let mut restored = load_store(&dir.0).unwrap();
+        assert!(restored.systems.is_empty());
+        assert_eq!(restored.settings.as_ref().unwrap().active_system_id, "");
+        assert!(restored.save_config("lces", json!({}), None).is_err());
+        let fresh = store.update(|data| data.create_system("Fresh".into(), "".into(), "".into(), None)).unwrap();
+        assert_eq!(load_store(&dir.0).unwrap().systems[0].id, fresh.id);
+    }
+
+    #[test]
+    fn failed_writes_and_invalid_names_leave_the_store_unchanged() {
+        let dir = TestDir::new();
+        let blocked = dir.0.join("file");
+        fs::write(&blocked, "occupied").unwrap();
+        let store = Store { data_dir: blocked, data: Mutex::new(PersistedStore::default()) };
+        assert!(store.update(|data| data.create_system("Fresh".into(), "".into(), "".into(), None)).is_err());
+        assert_eq!(store.data.lock().unwrap().systems.len(), 2);
+        assert!(store.update(|data| data.create_system("  ".into(), "".into(), "".into(), None)).is_err());
+        assert!(store.data.lock().unwrap().system_configs.is_empty());
+        fs::write(config_path(&dir.0), "malformed").unwrap();
+        assert!(load_store(&dir.0).is_err());
+    }
 
     #[test]
     fn a_python_command_keeps_the_launcher_flag() {

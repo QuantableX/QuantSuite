@@ -331,6 +331,30 @@
           "markdownDescription": "Denies the clear_cache command without any pre-configured scope."
         },
         {
+          "description": "Enables the create_system command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-system",
+          "markdownDescription": "Enables the create_system command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_system command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-system",
+          "markdownDescription": "Denies the create_system command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_system command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-system",
+          "markdownDescription": "Enables the delete_system command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_system command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-system",
+          "markdownDescription": "Denies the delete_system command without any pre-configured scope."
+        },
+        {
           "description": "Enables the engine_status command without any pre-configured scope.",
           "type": "string",
           "const": "allow-engine-status",
@@ -463,10 +487,10 @@
           "markdownDescription": "Denies the update_app_settings command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the QuantSystems module: settings, system configs, the evaluation engine and its cache.\n#### This default permission set includes:\n\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-list-systems`\n- `allow-get-system-config`\n- `allow-save-system-config`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-engine-status`\n- `allow-live-eval`\n- `allow-run-backtest`\n- `allow-browse-universe`\n- `allow-cache-stats`\n- `allow-clear-cache`\n- `allow-screenshot-to-clipboard`",
+          "description": "Default permissions for the QuantSystems module: settings, system configs, the evaluation engine and its cache.\n#### This default permission set includes:\n\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-list-systems`\n- `allow-create-system`\n- `allow-delete-system`\n- `allow-get-system-config`\n- `allow-save-system-config`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-engine-status`\n- `allow-live-eval`\n- `allow-run-backtest`\n- `allow-browse-universe`\n- `allow-cache-stats`\n- `allow-clear-cache`\n- `allow-screenshot-to-clipboard`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the QuantSystems module: settings, system configs, the evaluation engine and its cache.\n#### This default permission set includes:\n\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-list-systems`\n- `allow-get-system-config`\n- `allow-save-system-config`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-engine-status`\n- `allow-live-eval`\n- `allow-run-backtest`\n- `allow-browse-universe`\n- `allow-cache-stats`\n- `allow-clear-cache`\n- `allow-screenshot-to-clipboard`"
+          "markdownDescription": "Default permissions for the QuantSystems module: settings, system configs, the evaluation engine and its cache.\n#### This default permission set includes:\n\n- `allow-get-app-settings`\n- `allow-update-app-settings`\n- `allow-list-systems`\n- `allow-create-system`\n- `allow-delete-system`\n- `allow-get-system-config`\n- `allow-save-system-config`\n- `allow-start-engine`\n- `allow-stop-engine`\n- `allow-engine-status`\n- `allow-live-eval`\n- `allow-run-backtest`\n- `allow-browse-universe`\n- `allow-cache-stats`\n- `allow-clear-cache`\n- `allow-screenshot-to-clipboard`"
         }
       ]
     }

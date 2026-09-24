@@ -7,6 +7,8 @@ Default permissions for the QuantSystems module: settings, system configs, the e
 - `allow-get-app-settings`
 - `allow-update-app-settings`
 - `allow-list-systems`
+- `allow-create-system`
+- `allow-delete-system`
 - `allow-get-system-config`
 - `allow-save-system-config`
 - `allow-start-engine`
@@ -102,6 +104,58 @@ Enables the clear_cache command without any pre-configured scope.
 <td>
 
 Denies the clear_cache command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:allow-create-system`
+
+</td>
+<td>
+
+Enables the create_system command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:deny-create-system`
+
+</td>
+<td>
+
+Denies the create_system command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:allow-delete-system`
+
+</td>
+<td>
+
+Enables the delete_system command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:deny-delete-system`
+
+</td>
+<td>
+
+Denies the delete_system command without any pre-configured scope.
 
 </td>
 </tr>
