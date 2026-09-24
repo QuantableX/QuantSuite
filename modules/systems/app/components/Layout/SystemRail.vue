@@ -41,9 +41,7 @@ function select(id: string, status: string) {
           :title="`${s.name}${s.short ? ` (${s.short})` : ''}${i < 9 ? ` — Ctrl+${i + 1}` : ''}`"
           @click="select(s.id, s.status)"
         >
-          <svg class="qs-rail-btn__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path :d="strategyIcon(s).path" />
-          </svg>
+          <component :is="strategyIcon(s).component" class="qs-rail-btn__icon" :size="18" :stroke-width="1.7" aria-hidden="true" />
           <span class="qs-rail-btn__text">
             <span v-if="s.short" class="qs-rail-btn__short">{{ s.short }}</span>
             <span class="qs-rail-btn__name">{{ s.name }}</span>
