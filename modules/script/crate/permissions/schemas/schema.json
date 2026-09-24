@@ -439,10 +439,130 @@
           "markdownDescription": "Denies the script_python command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the QuantScript module: the indicator scripts, their checks and their versions.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`",
+          "description": "Enables the store_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-catalog",
+          "markdownDescription": "Enables the store_catalog command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-catalog",
+          "markdownDescription": "Denies the store_catalog command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the store_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-install",
+          "markdownDescription": "Enables the store_install command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-install",
+          "markdownDescription": "Denies the store_install command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the store_item command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-item",
+          "markdownDescription": "Enables the store_item command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_item command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-item",
+          "markdownDescription": "Denies the store_item command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the store_plan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-plan",
+          "markdownDescription": "Enables the store_plan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_plan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-plan",
+          "markdownDescription": "Denies the store_plan command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the store_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-remove",
+          "markdownDescription": "Enables the store_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-remove",
+          "markdownDescription": "Denies the store_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the store_source_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-source-delete",
+          "markdownDescription": "Enables the store_source_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_source_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-source-delete",
+          "markdownDescription": "Denies the store_source_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the store_source_save command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-source-save",
+          "markdownDescription": "Enables the store_source_save command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_source_save command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-source-save",
+          "markdownDescription": "Denies the store_source_save command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the store_sources command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-sources",
+          "markdownDescription": "Enables the store_sources command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_sources command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-sources",
+          "markdownDescription": "Denies the store_sources command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the store_token_clear command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-token-clear",
+          "markdownDescription": "Enables the store_token_clear command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_token_clear command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-token-clear",
+          "markdownDescription": "Denies the store_token_clear command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the store_token_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-store-token-set",
+          "markdownDescription": "Enables the store_token_set command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the store_token_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-store-token-set",
+          "markdownDescription": "Denies the store_token_set command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-store-sources`\n- `allow-store-source-save`\n- `allow-store-source-delete`\n- `allow-store-token-set`\n- `allow-store-token-clear`\n- `allow-store-catalog`\n- `allow-store-item`\n- `allow-store-plan`\n- `allow-store-install`\n- `allow-store-remove`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the QuantScript module: the indicator scripts, their checks and their versions.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`"
+          "markdownDescription": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-store-sources`\n- `allow-store-source-save`\n- `allow-store-source-delete`\n- `allow-store-token-set`\n- `allow-store-token-clear`\n- `allow-store-catalog`\n- `allow-store-item`\n- `allow-store-plan`\n- `allow-store-install`\n- `allow-store-remove`"
         }
       ]
     }

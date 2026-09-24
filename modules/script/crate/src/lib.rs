@@ -10,6 +10,7 @@
 //! import never lands in the registry every consumer loads. The forge itself
 //! (gauntlet, walk-forward, reports) stays in QuantAlgo → Smithery.
 
+mod catalog;
 mod python;
 mod store;
 
@@ -832,6 +833,271 @@ async fn script_python(refresh: Option<bool>, app_handle: AppHandle) -> Result<P
     .map_err(|e| format!("Python task failed: {e}"))?
 }
 
+// ─── The Store ────────────────────────────────────────────────────────────
+
+/// The Store's own state: where tokens live, and one install or removal at a time.
+pub struct StoreState {
+    tokens: Box<dyn catalog::tokens::TokenStore>,
+    busy: Mutex<()>,
+}
+
+/// Commit-pinned GitHub reads of one source (module data, never the software dir).
+fn store_cache(source_id: &str) -> PathBuf {
+    data_dir().join("store").join(source_id)
+}
+
+/// The engine's contract generation, from the listing; None without an interpreter.
+fn engine_contract(state: &ScriptState) -> Option<u32> {
+    python_listing(state, false).ok()?.get("contract_version")?.as_u64().map(|v| v as u32)
+}
+
+fn fetcher(source: &catalog::sources::Source, store: &StoreState) -> Result<Box<dyn catalog::fetch::Fetch>, String> {
+    match source.kind.as_str() {
+        "github" => Ok(Box::new(catalog::fetch::GitHub::new(source, store.tokens.get(&source.id)?, store_cache(&source.id))?)),
+        "folder" => Ok(Box::new(catalog::fetch::Folder::new(Path::new(&source.path)))),
+        other => Err(format!("'{other}' is not a source kind.")),
+    }
+}
+
+/// The commit a source is read at: a GitHub source keeps the commit its
+/// catalog was last read at until a refresh; a folder is read as it is.
+fn source_commit(state: &ScriptState, source: &catalog::sources::Source, fetch: &dyn catalog::fetch::Fetch, refresh: bool) -> Result<String, String> {
+    if !refresh && source.kind == "github" {
+        if let Some(commit) = &source.last_commit {
+            return Ok(commit.clone());
+        }
+    }
+    let commit = fetch.commit()?;
+    let conn = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+    catalog::sources::remember_commit(&conn, &source.id, &commit)?;
+    Ok(commit)
+}
+
+fn source_of(state: &ScriptState, id: &str) -> Result<catalog::sources::Source, String> {
+    let conn = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+    catalog::sources::get(&conn, id)
+}
+
+/// `quantscript stage-check` on a staged library.
+struct PythonStager<'a> {
+    state: &'a ScriptState,
+}
+
+impl catalog::Stager for PythonStager<'_> {
+    fn check(&self, staged: &Path, files: &[String]) -> Result<Value, String> {
+        let (_, info) = python(self.state, false)?;
+        if !info.ok {
+            return Err("Installing needs the Python interpreter: the staged library is checked before anything is written.".into());
+        }
+        let staged = staged.to_string_lossy().to_string();
+        let mut args = vec!["stage-check", "--library", staged.as_str()];
+        for file in files {
+            args.extend(["--file", file.as_str()]);
+        }
+        run_query(self.state, &args)
+    }
+}
+
+/// Run a Store operation on the blocking pool (files, Python, blocking HTTP).
+async fn store_task<T: Send + 'static>(
+    app_handle: AppHandle,
+    task: impl FnOnce(&ScriptState, &StoreState, &AppHandle) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle.state::<ScriptState>();
+        let store = app_handle.state::<StoreState>();
+        task(&state, &store, &app_handle)
+    })
+    .await
+    .map_err(|e| format!("Store task failed: {e}"))?
+}
+
+/// Every source, with whether a token is stored (never the token).
+#[tauri::command]
+async fn store_sources(app_handle: AppHandle) -> Result<Vec<catalog::sources::SourceView>, String> {
+    store_task(app_handle, |state, store, _| {
+        let conn = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+        Ok(catalog::sources::list(&conn)?.into_iter().map(|s| catalog::sources::view(s, store.tokens.as_ref())).collect())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn store_source_save(source: catalog::sources::SourceInput, app_handle: AppHandle) -> Result<catalog::sources::SourceView, String> {
+    store_task(app_handle, move |state, store, _| {
+        let conn = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+        Ok(catalog::sources::view(catalog::sources::save(&conn, source)?, store.tokens.as_ref()))
+    })
+    .await
+}
+
+/// Forget a source: its row, its token and its cache.
+#[tauri::command]
+async fn store_source_delete(id: String, app_handle: AppHandle) -> Result<(), String> {
+    store_task(app_handle, move |state, store, _| {
+        {
+            let conn = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+            catalog::sources::delete(&conn, &id)?;
+        }
+        store.tokens.clear(&id)?;
+        let _ = fs::remove_dir_all(store_cache(&id));
+        Ok(())
+    })
+    .await
+}
+
+/// Store a GitHub token for a source in the OS credential store. It is
+/// never returned, logged or published.
+#[tauri::command]
+async fn store_token_set(source_id: String, token: String, app_handle: AppHandle) -> Result<catalog::sources::SourceView, String> {
+    store_task(app_handle, move |state, store, _| {
+        let source = source_of(state, &source_id)?;
+        if source.kind != "github" {
+            return Err("Only a GitHub source uses a token.".into());
+        }
+        let token = token.trim();
+        if token.is_empty() || token.chars().any(char::is_whitespace) {
+            return Err("That is not a token.".into());
+        }
+        store.tokens.set(&source.id, token)?;
+        Ok(catalog::sources::view(source, store.tokens.as_ref()))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn store_token_clear(source_id: String, app_handle: AppHandle) -> Result<catalog::sources::SourceView, String> {
+    store_task(app_handle, move |state, store, _| {
+        let source = source_of(state, &source_id)?;
+        store.tokens.clear(&source.id)?;
+        Ok(catalog::sources::view(source, store.tokens.as_ref()))
+    })
+    .await
+}
+
+/// A source's catalog with the library's state per item. `refresh`
+/// resolves the branch to its current commit (also: Test connection).
+#[tauri::command]
+async fn store_catalog(source_id: String, refresh: Option<bool>, app_handle: AppHandle) -> Result<Value, String> {
+    store_task(app_handle, move |state, store, _| {
+        let source = source_of(state, &source_id)?;
+        let fetch = fetcher(&source, store)?;
+        let commit = source_commit(state, &source, fetch.as_ref(), refresh.unwrap_or(false))?;
+        let catalog = catalog::load_catalog(fetch.as_ref(), &commit)?;
+        let contract = engine_contract(state);
+        let library = indicators_dir(state)?;
+        let installed = catalog::load_installed(&library)?;
+        let source = source_of(state, &source_id)?;
+        Ok(json!({
+            "source": catalog::sources::view(source, store.tokens.as_ref()),
+            "commit": commit,
+            "generated_at": catalog.generated_at,
+            "engine_contract": contract,
+            "items": catalog::catalog_view(&library, &installed, &catalog, contract),
+        }))
+    })
+    .await
+}
+
+/// One package: its verified manifest, README and the library's state.
+#[tauri::command]
+async fn store_item(source_id: String, key: String, app_handle: AppHandle) -> Result<Value, String> {
+    store_task(app_handle, move |state, store, _| {
+        let source = source_of(state, &source_id)?;
+        let fetch = fetcher(&source, store)?;
+        let commit = source_commit(state, &source, fetch.as_ref(), false)?;
+        let catalog = catalog::load_catalog(fetch.as_ref(), &commit)?;
+        let item = catalog.items.iter().find(|i| i.key == key).ok_or_else(|| format!("{key} is not in the catalog."))?;
+        // Show a package the engine is too old for, too: no contract check here.
+        let package = catalog::load_package(fetch.as_ref(), &commit, item, None)?;
+        let readme = package
+            .files
+            .iter()
+            .find(|(entry, _)| entry.role == "readme")
+            .map(|(_, bytes)| String::from_utf8_lossy(bytes).to_string());
+        let library = indicators_dir(state)?;
+        let installed = catalog::load_installed(&library)?;
+        let local = catalog::catalog_view(&library, &installed, &catalog, engine_contract(state))
+            .into_iter()
+            .find(|v| v["key"] == key.as_str())
+            .map(|v| v["local"].clone());
+        Ok(json!({ "commit": commit, "item": item, "manifest": package.manifest, "readme": readme, "local": local }))
+    })
+    .await
+}
+
+/// What an install of `keys` would do, without writing anything.
+#[tauri::command]
+async fn store_plan(source_id: String, keys: Vec<String>, app_handle: AppHandle) -> Result<catalog::Plan, String> {
+    store_task(app_handle, move |state, store, _| {
+        let source = source_of(state, &source_id)?;
+        let fetch = fetcher(&source, store)?;
+        let commit = source_commit(state, &source, fetch.as_ref(), false)?;
+        let library = indicators_dir(state)?;
+        catalog::prepare(&library, &source, fetch.as_ref(), &commit, &keys, engine_contract(state)).map(|(plan, _)| plan)
+    })
+    .await
+}
+
+/// Install (or update) `keys` with their requirements: planned, staged,
+/// verified by the engine, then written and recorded. Conflicts refuse
+/// the install unless `overwrite`.
+#[tauri::command]
+async fn store_install(source_id: String, keys: Vec<String>, overwrite: Option<bool>, app_handle: AppHandle) -> Result<catalog::InstallOutcome, String> {
+    store_task(app_handle, move |state, store, app| {
+        let _busy = store.busy.lock().map_err(|e| format!("Lock: {e}"))?;
+        let source = source_of(state, &source_id)?;
+        let fetch = fetcher(&source, store)?;
+        let commit = source_commit(state, &source, fetch.as_ref(), false)?;
+        let library = indicators_dir(state)?;
+        fs::create_dir_all(&library).map_err(|e| format!("Could not create {}: {e}", library.display()))?;
+        let outcome = catalog::install(
+            &library,
+            &state.db,
+            &source,
+            fetch.as_ref(),
+            &commit,
+            &keys,
+            overwrite.unwrap_or(false),
+            engine_contract(state),
+            &PythonStager { state },
+        )?;
+        forget_listing(state);
+        for w in &outcome.written {
+            if w.created {
+                publish(app, "script.file.created", json!({ "file": w.file, "key": w.key, "source": source.id }));
+            } else {
+                publish(app, "script.file.saved", json!({ "file": w.file, "version": w.version, "checked": true, "author": "store" }));
+            }
+        }
+        let changed: Vec<&str> = outcome.plan.items.iter().filter(|i| i.action != "skip").map(|i| i.key.as_str()).collect();
+        if !changed.is_empty() {
+            publish(app, "script.store.changed", json!({ "installed": changed, "source": source.id, "commit": commit }));
+        }
+        Ok(outcome)
+    })
+    .await
+}
+
+/// Remove an item the Store installed (archived in the history); refused
+/// while another installed item requires it.
+#[tauri::command]
+async fn store_remove(key: String, app_handle: AppHandle) -> Result<catalog::Removed, String> {
+    store_task(app_handle, move |state, store, app| {
+        let _busy = store.busy.lock().map_err(|e| format!("Lock: {e}"))?;
+        let library = indicators_dir(state)?;
+        let removed = {
+            let conn = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+            catalog::remove(&library, &conn, &key)?
+        };
+        forget_listing(state);
+        publish(app, "script.file.deleted", json!({ "file": removed.file, "keys": removed.keys, "version": removed.version }));
+        publish(app, "script.store.changed", json!({ "removed": [removed.key] }));
+        Ok(removed)
+    })
+    .await
+}
+
 // ─── Plugin ───────────────────────────────────────────────────────────────
 
 fn data_dir() -> PathBuf {
@@ -850,6 +1116,7 @@ pub fn init() -> TauriPlugin<Wry> {
             let conn = Connection::open(db_path())?;
             conn.execute_batch("PRAGMA journal_mode = WAL;")?;
             store::init_schema(&conn)?;
+            catalog::sources::init_schema(&conn)?;
 
             // Repo checkout and installed bundle both resolve through qs-core
             // (it also checks the Tauri resource dir).
@@ -864,6 +1131,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 None => log::warn!(target: "script", "sidecars/python with the smithery package was not found"),
             }
 
+            app.manage(StoreState { tokens: Box::new(catalog::tokens::KeyringTokens), busy: Mutex::new(()) });
             app.manage(ScriptState {
                 db: Mutex::new(conn),
                 sidecar_dir,
@@ -896,6 +1164,16 @@ pub fn init() -> TauriPlugin<Wry> {
             delete_script,
             lint_script,
             script_python,
+            store_sources,
+            store_source_save,
+            store_source_delete,
+            store_token_set,
+            store_token_clear,
+            store_catalog,
+            store_item,
+            store_plan,
+            store_install,
+            store_remove,
         ]))
         .build()
 }
@@ -1053,6 +1331,54 @@ mod tests {
         assert_eq!(archived[0]["latest"], 2);
         assert_eq!(archived[0]["deleted"], true);
         let _ = fs::remove_dir_all(&tree);
+    }
+
+    /// The published catalog (card "Indicators 9/12") from its local checkout,
+    /// through the real engine check: consensus pulls its members, keltner_risk
+    /// pulls trend_common. `cargo test -p tauri-plugin-script --lib -- --ignored`
+    #[test]
+    #[ignore = "needs C:/Projects/QuantScript-Indicators with packages and Python with numpy + pandas"]
+    fn the_published_catalog_installs_consensus_and_keltner_risk_with_their_requirements() {
+        let repo = PathBuf::from(r"C:\Projects\QuantScript-Indicators");
+        let library = std::env::temp_dir().join(format!("qs-store-real-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&library);
+        fs::create_dir_all(&library).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        store::init_schema(&conn).unwrap();
+        catalog::sources::init_schema(&conn).unwrap();
+        let state = ScriptState {
+            db: Mutex::new(conn),
+            sidecar_dir: Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../sidecars/python")),
+            script_dir: library.clone(),
+            python: Mutex::new(None),
+            listing: Mutex::new(None),
+        };
+        let source = catalog::sources::Source {
+            id: "local".into(),
+            kind: "folder".into(),
+            name: "Local checkout".into(),
+            owner: String::new(),
+            repo: String::new(),
+            branch: String::new(),
+            path: repo.to_string_lossy().to_string(),
+            enabled: true,
+            last_commit: None,
+            last_checked: None,
+        };
+        let fetch = catalog::fetch::Folder::new(&repo);
+        let commit = catalog::fetch::Fetch::commit(&fetch).unwrap();
+        let keys = vec!["consensus".to_string(), "keltner_risk".to_string()];
+        let contract = engine_contract(&state);
+        assert!(contract.is_some(), "the engine answers");
+        let outcome = catalog::install(&library, &state.db, &source, &fetch, &commit, &keys, false, contract, &PythonStager { state: &state })
+            .unwrap_or_else(|e| panic!("install failed: {e}"));
+        assert_eq!(outcome.check.as_ref().unwrap()["blocking"], false);
+        let installed = catalog::load_installed(&library).unwrap();
+        for key in ["consensus", "hilbert", "slopes", "dc", "bocpd", "extremes", "page", "keltner_risk", "trend_common"] {
+            assert!(installed.items.contains_key(key), "{key} installed");
+        }
+        assert!(library.join("versions/keltner_risk/keltner_risk_opt.json").is_file());
+        let _ = fs::remove_dir_all(&library);
     }
 
     #[test]

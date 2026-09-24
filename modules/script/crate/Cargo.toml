@@ -24,6 +24,9 @@ rusqlite = { workspace = true }
 sha2 = "0.10"
 # Explorer needs ordinary absolute Windows paths, not verbatim (\\?\) paths.
 dunce = "1"
+# The Store: catalogs from GitHub (on the blocking pool), tokens in the OS credential store.
+reqwest = { workspace = true, features = ["blocking"] }
+keyring = { workspace = true }
 
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
 

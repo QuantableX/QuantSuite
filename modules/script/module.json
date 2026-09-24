@@ -14,7 +14,8 @@
   "publishes": [
     "script.file.saved",
     "script.file.created",
-    "script.file.deleted"
+    "script.file.deleted",
+    "script.store.changed"
   ],
   "subscribes": [],
   "entities": [],

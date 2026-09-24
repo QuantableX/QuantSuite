@@ -1,6 +1,6 @@
 ## Default Permission
 
-Default permissions for the QuantScript module: the indicator scripts, their checks and their versions.
+Default permissions for the script module.
 
 #### This default permission set includes the following:
 
@@ -16,6 +16,16 @@ Default permissions for the QuantScript module: the indicator scripts, their che
 - `allow-delete-script`
 - `allow-lint-script`
 - `allow-script-python`
+- `allow-store-sources`
+- `allow-store-source-save`
+- `allow-store-source-delete`
+- `allow-store-token-set`
+- `allow-store-token-clear`
+- `allow-store-catalog`
+- `allow-store-item`
+- `allow-store-plan`
+- `allow-store-install`
+- `allow-store-remove`
 
 ## Permission Table
 
@@ -334,6 +344,266 @@ Enables the script_python command without any pre-configured scope.
 <td>
 
 Denies the script_python command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-catalog`
+
+</td>
+<td>
+
+Enables the store_catalog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-catalog`
+
+</td>
+<td>
+
+Denies the store_catalog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-install`
+
+</td>
+<td>
+
+Enables the store_install command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-install`
+
+</td>
+<td>
+
+Denies the store_install command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-item`
+
+</td>
+<td>
+
+Enables the store_item command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-item`
+
+</td>
+<td>
+
+Denies the store_item command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-plan`
+
+</td>
+<td>
+
+Enables the store_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-plan`
+
+</td>
+<td>
+
+Denies the store_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-remove`
+
+</td>
+<td>
+
+Enables the store_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-remove`
+
+</td>
+<td>
+
+Denies the store_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-source-delete`
+
+</td>
+<td>
+
+Enables the store_source_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-source-delete`
+
+</td>
+<td>
+
+Denies the store_source_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-source-save`
+
+</td>
+<td>
+
+Enables the store_source_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-source-save`
+
+</td>
+<td>
+
+Denies the store_source_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-sources`
+
+</td>
+<td>
+
+Enables the store_sources command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-sources`
+
+</td>
+<td>
+
+Denies the store_sources command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-token-clear`
+
+</td>
+<td>
+
+Enables the store_token_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-token-clear`
+
+</td>
+<td>
+
+Denies the store_token_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-store-token-set`
+
+</td>
+<td>
+
+Enables the store_token_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-store-token-set`
+
+</td>
+<td>
+
+Denies the store_token_set command without any pre-configured scope.
 
 </td>
 </tr>

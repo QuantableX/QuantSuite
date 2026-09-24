@@ -11,6 +11,16 @@ const COMMANDS: &[&str] = &[
     "delete_script",
     "lint_script",
     "script_python",
+    "store_sources",
+    "store_source_save",
+    "store_source_delete",
+    "store_token_set",
+    "store_token_clear",
+    "store_catalog",
+    "store_item",
+    "store_plan",
+    "store_install",
+    "store_remove",
 ];
 
 fn main() {
