@@ -128,7 +128,7 @@ pub static CLIENTS: &[ClientSpec] = &[
     ClientSpec {
         id: "omp",
         name: "Oh My Pi (OMP)",
-        aliases: &["omp", "oh-my-pi"],
+        aliases: &["omp", "oh-my-pi", "omp-coding-agent"],
         detect: &[Detect::Binary("omp"), Detect::Dir(Home(&[".omp", "agent"]))],
         instructions: Instructions::Omp,
         install: Install::JsonFile {
@@ -1269,6 +1269,52 @@ pub fn load_records(app: &tauri::AppHandle) -> Result<Vec<(qs_core::db::Entity, 
     })
 }
 
+/// Merge the one legacy OMP identity that predates its upstream client name
+/// being recognized. Keep the canonical row and all useful history; only the
+/// exact generated legacy key is eligible for removal.
+pub fn migrate_omp_client_record(app: &tauri::AppHandle, now_ms: i64) -> Result<(), String> {
+    let legacy_id = format!("{CLIENT_ID_PREFIX}omp-coding-agent");
+    let canonical_key = client_key_for_spec(spec("omp").expect("OMP client spec exists"));
+    let records = load_records(app)?;
+    let Some((legacy_entity, legacy)) = records.into_iter().find(|(entity, _)| entity.id == legacy_id) else {
+        return Ok(());
+    };
+    let mut canonical = load_record(app, &canonical_key.id)?;
+    merge_client_records(&mut canonical, legacy);
+    save_record(&canonical_key, &canonical, now_ms)?;
+    forget_record(&legacy_entity.id)
+}
+
+fn merge_client_records(target: &mut ClientRecord, source: ClientRecord) {
+    let source_is_newer = source.last_seen > target.last_seen;
+    target.spec_id = Some("omp".into());
+    target.reported_names.extend(source.reported_names);
+    target.reported_names.sort();
+    target.reported_names.dedup();
+    target.first_seen = match (target.first_seen, source.first_seen) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
+    target.last_seen = match (target.last_seen, source.last_seen) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    };
+    target.sessions_total = target.sessions_total.saturating_add(source.sessions_total);
+    if source_is_newer || target.last_version.is_none() {
+        target.last_version = source.last_version.or_else(|| target.last_version.take());
+    }
+    target.installed_at = match (target.installed_at, source.installed_at) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    };
+    target.installed_to.extend(source.installed_to);
+    target.installed_to.sort();
+    target.installed_to.dedup();
+    if target.install_source.is_none() {
+        target.install_source = source.install_source;
+    }
+}
+
 fn load_record(app: &tauri::AppHandle, id: &str) -> Result<ClientRecord, String> {
     Ok(load_records(app)?
         .into_iter()
@@ -1502,6 +1548,48 @@ mod tests {
         assert_eq!(client_key("   ").id, "mcp:client:unknown");
         assert!(is_client_id("mcp:client:cursor"));
         assert!(!is_client_id("core:workspace:x"));
+    }
+
+    #[test]
+    fn omp_upstream_identity_uses_canonical_key() {
+        assert_eq!(client_key("omp-coding-agent").id, "mcp:client:omp");
+        assert_eq!(client_key("omp-coding-agent/0.1.0").spec_id.as_deref(), Some("omp"));
+    }
+
+    #[test]
+    fn merging_legacy_omp_record_preserves_history_and_installation() {
+        let mut canonical = ClientRecord {
+            spec_id: Some("omp".into()),
+            first_seen: Some(20),
+            last_seen: Some(40),
+            sessions_total: 2,
+            last_version: Some("2.0".into()),
+            installed_to: vec!["canonical.json".into()],
+            ..Default::default()
+        };
+        let legacy = ClientRecord {
+            reported_names: vec!["omp-coding-agent".into()],
+            first_seen: Some(10),
+            last_seen: Some(50),
+            sessions_total: 3,
+            last_version: Some("2.1".into()),
+            installed_at: Some(30),
+            installed_to: vec!["legacy.json".into()],
+            install_source: Some("detected".into()),
+            ..Default::default()
+        };
+
+        merge_client_records(&mut canonical, legacy);
+
+        assert_eq!(canonical.spec_id.as_deref(), Some("omp"));
+        assert_eq!(canonical.reported_names, ["omp-coding-agent"]);
+        assert_eq!(canonical.first_seen, Some(10));
+        assert_eq!(canonical.last_seen, Some(50));
+        assert_eq!(canonical.sessions_total, 5);
+        assert_eq!(canonical.last_version.as_deref(), Some("2.1"));
+        assert_eq!(canonical.installed_at, Some(30));
+        assert_eq!(canonical.installed_to, ["canonical.json", "legacy.json"]);
+        assert_eq!(canonical.install_source.as_deref(), Some("detected"));
     }
 
     #[test]
