@@ -100,7 +100,7 @@ def shelf_listing() -> list[dict]:
     return rows
 
 
-# `2026-09-08 PageTrend Gauntlet`, `… Gauntlet (4h)`, `… Gauntlet (1h, fast)`
+# `2026-09-08 MyTrend Gauntlet`, `… Gauntlet (4h)`, `… Gauntlet (1h, fast)`
 _REPORT_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2}) (.+?) Gauntlet(?: \(([^)]*)\))?$")
 _TRACKS = TIMEFRAMES
 _SCORE = re.compile(r"Robustness Score: \*\*(\d+(?:\.\d+)?)/100\*\* — Grade \*\*([^*]+)\*\*")

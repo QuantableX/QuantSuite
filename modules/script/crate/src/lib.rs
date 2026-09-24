@@ -1221,7 +1221,7 @@ mod tests {
         assert!(!valid_key("1st"));
         assert!(!valid_key("a-b"));
         assert!(!valid_key(""));
-        assert!(valid_class_name("ExtremeFlow"));
+        assert!(valid_class_name("MyTrend"));
         assert!(!valid_class_name("extremeFlow"));
         assert!(!valid_class_name("Extreme Flow"));
     }
@@ -1331,6 +1331,85 @@ mod tests {
         assert_eq!(archived[0]["latest"], 2);
         assert_eq!(archived[0]["deleted"], true);
         let _ = fs::remove_dir_all(&tree);
+    }
+
+    /// The end-to-end run of card "Indicators 12/12", one step per call, on a
+    /// folder source and a library the caller names and keeps:
+    /// QS_E2E_STEP=install|update QS_E2E_REPO=<catalog checkout> QS_E2E_LIBRARY=<library>
+    /// `cargo test -p tauri-plugin-script --lib collection_e2e -- --ignored --nocapture`
+    #[test]
+    #[ignore = "driven by artifacts/indicator-versions/card12/e2e.py"]
+    fn collection_e2e() {
+        let step = std::env::var("QS_E2E_STEP").expect("QS_E2E_STEP");
+        let repo = PathBuf::from(std::env::var("QS_E2E_REPO").expect("QS_E2E_REPO"));
+        let library = PathBuf::from(std::env::var("QS_E2E_LIBRARY").expect("QS_E2E_LIBRARY"));
+        fs::create_dir_all(&library).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        store::init_schema(&conn).unwrap();
+        catalog::sources::init_schema(&conn).unwrap();
+        let state = ScriptState {
+            db: Mutex::new(conn),
+            sidecar_dir: Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../sidecars/python")),
+            script_dir: library.clone(),
+            python: Mutex::new(None),
+            listing: Mutex::new(None),
+        };
+        let source = catalog::sources::Source {
+            id: "e2e".into(),
+            kind: "folder".into(),
+            name: "E2E checkout".into(),
+            owner: String::new(),
+            repo: String::new(),
+            branch: String::new(),
+            path: repo.to_string_lossy().to_string(),
+            enabled: true,
+            last_commit: None,
+            last_checked: None,
+        };
+        let fetch = catalog::fetch::Folder::new(&repo);
+        let commit = catalog::fetch::Fetch::commit(&fetch).unwrap();
+        let contract = engine_contract(&state);
+        let stager = PythonStager { state: &state };
+        let keys = |list: &[&str]| list.iter().map(|k| k.to_string()).collect::<Vec<_>>();
+        let view = |key: &str| {
+            let cat = catalog::load_catalog(&fetch, &commit).unwrap();
+            let installed = catalog::load_installed(&library).unwrap();
+            catalog::catalog_view(&library, &installed, &cat, contract)
+                .into_iter()
+                .find(|v| v["key"] == key)
+                .map(|v| v["local"].clone())
+                .unwrap()
+        };
+        let mut report = json!({ "step": step, "commit": commit, "engine_contract": contract });
+        match step.as_str() {
+            "install" => {
+                let outcome = catalog::install(&library, &state.db, &source, &fetch, &commit, &keys(&["consensus", "keltner_risk"]), false, contract, &stager)
+                    .unwrap_or_else(|e| panic!("install failed: {e}"));
+                report["plan"] = json!(outcome.plan.items.iter().map(|i| json!([i.key, i.action, i.requested])).collect::<Vec<_>>());
+                report["written"] = json!(outcome.written.iter().map(|w| w.file.clone()).collect::<Vec<_>>());
+                report["blocking"] = outcome.check.as_ref().unwrap()["blocking"].clone();
+                report["keltner_risk"] = view("keltner_risk");
+            }
+            "update" => {
+                let before = view("keltner_risk");
+                assert_eq!(before["update"], true, "the bumped package shows as an update: {before}");
+                let plan = catalog::prepare(&library, &source, &fetch, &commit, &keys(&["keltner_risk"]), contract).unwrap().0;
+                let outcome = catalog::install(&library, &state.db, &source, &fetch, &commit, &keys(&["keltner_risk"]), false, contract, &stager)
+                    .unwrap_or_else(|e| panic!("update failed: {e}"));
+                let after_update = catalog::load_installed(&library).unwrap().items.get("keltner_risk").map(|i| i.version.clone());
+                let refused = catalog::remove(&library, &state.db.lock().unwrap(), "hilbert").unwrap_err();
+                let removed = catalog::remove(&library, &state.db.lock().unwrap(), "keltner_risk").unwrap();
+                report["before"] = before;
+                report["plan"] = json!(plan.items.iter().map(|i| json!([i.key, i.action, i.installed_version, i.version])).collect::<Vec<_>>());
+                report["written"] = json!(outcome.written.iter().map(|w| w.file.clone()).collect::<Vec<_>>());
+                report["after_update"] = json!(after_update);
+                report["remove_required"] = json!(refused);
+                report["removed"] = json!(removed);
+                report["installed_after"] = json!(catalog::load_installed(&library).unwrap().items.keys().collect::<Vec<_>>());
+            }
+            other => panic!("unknown step {other}"),
+        }
+        println!("E2E {}", serde_json::to_string(&report).unwrap());
     }
 
     /// The published catalog (card "Indicators 9/12") from its local checkout,

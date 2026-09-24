@@ -201,7 +201,7 @@ class IntegrationTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[3] / 'modules/algo/crate/src/strategies.rs').read_text(encoding='utf-8')
         template = source.split('const REGIME_TREND_TEMPLATE: &str = r#"', 1)[1].split('"#;', 1)[0]
         params = {"band": .2, "nullable": None, "boolean": True, "text": 'quote " slash \\'}
-        code = template.replace('__CLASS_NAME__', 'Generated').replace('__INDICATOR_NAME__', 'RobustConsensus') \
+        code = template.replace('__CLASS_NAME__', 'Generated').replace('__INDICATOR_NAME__', 'SomeTrend') \
             .replace('__INDICATOR_KEY__', 'robust').replace('__WARMUP_BARS__', '600') \
             .replace('__INDICATOR_PARAMS__', f"__import__('json').loads({json.dumps(json.dumps(params))})")
         namespace = {}

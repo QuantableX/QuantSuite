@@ -19,15 +19,64 @@ imports continue to work. New indicator creates the usual EMA starter.
 Settings shows the active path and provides Copy folder path. Restart running
 bots and engines to load changed scripts.
 
-Forge parameter variants stay in `indicators/versions/<base key>/`. Optional
-`indicators/library.json` contains `certification`, `certification_tf` and
-`legacy_variants` tables. They default to empty on a new installation. Script
-version history remains in the existing user `modules/script/script.db`.
+Forge parameter versions stay in `indicators/versions/<base key>/` (see
+Versions below). Optional `indicators/library.json` contains `certification`,
+`certification_tf` and `legacy_variants` tables. They default to empty on a new
+installation. Script version history remains in the existing user
+`modules/script/script.db`.
 
 There is no first-run seeding, fallback to installed indicator implementations,
 or automatic import from an old user library. Removing a script keeps it removed.
 The installer owns only the README in this folder; private files are not update
 resources. Back up the private folder separately before uninstalling or moving.
+
+## Versions
+
+Every indicator exists in up to five versions, each its own registry key:
+
+| Role | Key | What it is |
+|---|---|---|
+| Standard | `<key>` | the script's own defaults; every variable adjustable |
+| Optimized (general) | `<key>_opt` | the parameters the indicator was used with before versions existed, frozen |
+| Optimized 1H / 4H / 1D | `<key>_opt_1h`, `<key>_opt_4h`, `<key>_opt_1d` | the forge's pick for 1h, 4h and daily bots |
+
+A version other than the Standard is a JSON file (format 2) in
+`indicators/versions/<key>/<version key>.json` holding its parameters, its
+evidence per track and the signature of the script and its `REQUIRES`
+closure. When the script changes, its versions become unavailable until the
+forge writes them again (QuantScript → Forge → Optimize timeframes). A
+Standard's evidence file (`<key>.json`) records the Standard's verdicts only.
+
+Where an indicator is used, QuantSystems and QuantAlgo pick a version by key,
+and every variable of any version can be changed there (the parameter form):
+QuantSystems stores only the values that differ from the version
+(`indicator.params`), QuantAlgo freezes them into the new strategy.
+
+## The Collection
+
+QuantScript → Collection installs indicators from a catalog: a private GitHub
+repository or a local folder in the catalog format of the collection repo
+(its `FORMAT.md`). Installing one indicator brings its `REQUIRES` closure and
+all its versions. Every file is checked against the catalog's sha256; the new
+scripts are tried with your library in a sandbox (`python -m
+smithery.quantscript stage-check`) before anything is written; a file the
+Collection did not install is replaced only after you confirm, and its old
+content stays in the script history. `indicators/collection.json` records
+what the Collection installed (source, version, commit, file hashes); removing
+an item is refused while another installed item requires it.
+
+Sources live in `modules/script/script.db`; Settings → QuantScript →
+Collection adds, edits and tests them. A private GitHub repository needs a
+fine-grained token with Repository access to that repository and
+Contents: Read-only. The token is kept in the operating system's credential
+store (Windows Credential Manager) under "QuantSuite QuantScript Collection"
+and is never written to settings, logs, events or command results — the
+interface only shows whether one is stored. Catalog files are cached per
+source and commit under `modules/script/collection/`.
+
+None of this ships: the installer contains no catalog, no cache, no
+`collection.json`, no version files and no script declaring `REGISTER`
+(`npm run check:distribution` reads every bundled Python file to make sure).
 
 ## Building and sharing
 

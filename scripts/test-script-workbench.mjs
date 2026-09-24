@@ -345,7 +345,7 @@ test('an optimize job folds into one row per indicator and track', () => {
     summary: [],
     events: [
       { event: 'job', kind: 'optimize', indicators: ['dmi'], tracks: ['1h', '4h'] },
-      { event: 'begin', indicator: 'dmi', name: 'DMITrend' },
+      { event: 'begin', indicator: 'dmi', name: 'SomeTrend' },
       { event: 'walkforward', indicator: 'dmi', timeframe: '1h', wfe: 0.62 },
       { event: 'decision', indicator: 'dmi', timeframe: '1h', key: 'dmi_opt_1h', decision: 'promoted', score: 77,
         grade: 'A', written: true, candidates: [{ source: 'general', score: 71 }, { source: 'standard', score: 52 },
@@ -356,7 +356,7 @@ test('an optimize job folds into one row per indicator and track', () => {
   const rows = optimizeRowsFor(job)
   assert.deepEqual(rows.map((r) => r.key), ['dmi@1h', 'dmi@4h'])
   const [h1, h4] = rows
-  assert.equal(h1.name, 'DMITrend')
+  assert.equal(h1.name, 'SomeTrend')
   assert.equal(h1.wfe, 0.62)
   assert.deepEqual([h1.standard, h1.general, h1.winner, h1.score], [52, 71, 77, 77])
   assert.equal(h1.versionKey, 'dmi_opt_1h')

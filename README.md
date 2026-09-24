@@ -43,7 +43,8 @@ user directory, separate from the repository.
 
 QuantScript ships with an empty personal indicator library. Add your own scripts
 in the app. Private indicators and research results are excluded from this
-repository and installers. See [the library guide](docs/QUANTSCRIPT-PRIVATE-LIBRARY.md).
+repository and installers; the Collection installs indicators with their
+versions from a private catalog of your own. See [the library guide](docs/QUANTSCRIPT-PRIVATE-LIBRARY.md).
 
 ## Development
 
