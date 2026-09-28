@@ -42,12 +42,9 @@ pub async fn suite_check_for_update(
         .try_lock()
         .map_err(|_| "An update operation is already running.")?;
     *pending = None;
-    // On Windows the installer takes over and relaunches the suite itself,
-    // with this process's arguments; this runs right before that hand-over.
     let updater = app
         .updater_builder()
         .timeout(Duration::from_secs(600))
-        .on_before_exit(qs_core::autostart::mark_update_relaunch)
         .build()
         .map_err(|e| e.to_string())?;
     let update = tokio::time::timeout(Duration::from_secs(30), updater.check())
@@ -107,7 +104,5 @@ pub async fn suite_install_update(
         )
         .await
         .map_err(|e| e.to_string())?;
-    // Not reached on Windows: the installer exited this process already.
-    qs_core::autostart::mark_update_relaunch();
     app.restart();
 }
