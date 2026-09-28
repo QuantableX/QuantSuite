@@ -37,6 +37,10 @@ log = { workspace = true }
 tauri-plugin-autostart = { workspace = true }
 qs-mcp-bridge = { path = "../qs-mcp-bridge" }
 
+# `system_path` reads the current PATH from the registry.
+[target.'cfg(windows)'.dependencies]
+windows-registry = "0.6"
+
 # New code: held to the full lint gate (see workspace root).
 [lints]
 workspace = true
