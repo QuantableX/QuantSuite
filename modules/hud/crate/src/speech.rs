@@ -193,8 +193,10 @@ fn no_window(_cmd: &mut Command) {
     }
 }
 
+/// Through the current PATH (`qs_core::system_path`): `uv` or a driver
+/// installed after the suite started counts too.
 fn which(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = qs_core::system_path::current();
     let names: Vec<String> = if cfg!(windows) { vec![format!("{name}.exe"), name.to_string()] } else { vec![name.to_string()] };
     for dir in std::env::split_paths(&path) {
         for n in &names {

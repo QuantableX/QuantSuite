@@ -28,9 +28,10 @@ pub struct ShellOption {
 /// Resolve an executable name against `PATH`.
 ///
 /// No `which` crate for one lookup — and on Windows the extension matters, so
-/// the candidate is expected to carry it (`pwsh.exe`, not `pwsh`).
+/// the candidate is expected to carry it (`pwsh.exe`, not `pwsh`). The PATH is
+/// the current one, as the shell itself will get it, not the suite's own.
 fn in_path(exe: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = qs_core::system_path::current();
     std::env::split_paths(&path)
         .map(|dir| dir.join(exe))
         .find(|candidate| candidate.is_file())

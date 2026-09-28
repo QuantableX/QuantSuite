@@ -49,13 +49,16 @@ pub fn base_cmd(exe: &Path) -> Command {
         .extension()
         .map(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
         .unwrap_or(false);
-    let cmd = if is_script {
+    let mut cmd = if is_script {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(exe);
         c
     } else {
         Command::new(exe)
     };
+    // A `.cmd` shim finds `node` through PATH, and the suite's own can
+    // predate its installation (see `qs_core::system_path`).
+    cmd.env("PATH", qs_core::system_path::current());
     #[cfg(windows)]
     let cmd = {
         use std::os::windows::process::CommandExt;
@@ -66,8 +69,10 @@ pub fn base_cmd(exe: &Path) -> Command {
     cmd
 }
 
+/// Found through the current PATH, not the suite's own: a CLI installed
+/// after the suite started is on the first but not always on the second.
 pub fn which(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = qs_core::system_path::current();
     let names: Vec<String> = if cfg!(windows) {
         vec![format!("{name}.exe"), format!("{name}.cmd"), name.to_string()]
     } else {
