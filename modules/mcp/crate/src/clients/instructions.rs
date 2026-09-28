@@ -33,7 +33,8 @@ fn env_path(name: &str) -> Option<PathBuf> {
 }
 
 fn push_unique(paths: &mut Vec<PathBuf>, path: PathBuf) {
-    let path = fs::canonicalize(&path).unwrap_or(path);
+    // dunce: no `\\?\C:\…` verbatim prefix in the paths the UI shows.
+    let path = dunce::canonicalize(&path).unwrap_or(path);
     if !paths.iter().any(|p| {
         if cfg!(windows) {
             p.to_string_lossy()
@@ -127,7 +128,7 @@ impl Instructions {
             Self::Kilo => Some("Kilo Code and Kilo CLI share global instructions. Selecting either enables AgentOS for both."),
             Self::Pi => Some("Pi loads instructions directly. MCP access requires a separate Pi extension."),
             Self::Omp => Some("Imports into the active OMP profile. Its native instructions take priority over other agents’ global context files."),
-            Self::Claude => Some("Linked as AGENTS.md into the folder above each workspace, so Claude Code reads General AgentOS itself — no CLAUDE.md. It loads there wherever a project has no CLAUDE.md of its own."),
+            Self::Claude => Some("Linked into Claude Code's rules folder, which every Claude Code session loads — General AgentOS itself, no CLAUDE.md and no workspace needed."),
             _ => None,
         }
     }
@@ -146,7 +147,7 @@ impl Instructions {
                 .iter()
                 .map(|home| codex_file(home))
                 .collect(),
-            Self::Claude => Ok(claude::link_targets(&claude::registered_workspaces())),
+            Self::Claude => Ok(vec![claude::target().ok_or("Could not resolve Claude Code's home")?]),
             Self::OpenCode => {
                 let dir = env_path("XDG_CONFIG_HOME")
                     .or_else(|| dirs::home_dir().map(|p| p.join(".config")))
@@ -241,7 +242,10 @@ fn import_client(spec: &ClientSpec, source: &Path, text: &str) -> Vec<ConnectRes
         return vec![result(spec, 0, Outcome::Manual, note.to_string())];
     }
     if matches!(spec.instructions, Instructions::Claude) {
-        return claude::import(spec, source, &claude::registered_workspaces(), claude::claude_md().as_deref());
+        return match claude::target() {
+            Some(target) => claude::import(spec, source, &target, &claude::registered_workspaces(), claude::claude_md().as_deref()),
+            None => vec![result(spec, 0, Outcome::Failed, "Could not resolve Claude Code's home".into())],
+        };
     }
     let paths = match spec.instructions.paths() {
         Ok(paths) => paths,
@@ -476,7 +480,7 @@ mod tests {
         .unwrap();
         assert_eq!(paths.len(), 4);
         for dir in [default, custom, profile, second] {
-            assert!(paths.contains(&fs::canonicalize(dir).unwrap()));
+            assert!(paths.contains(&dunce::canonicalize(dir).unwrap()));
         }
         assert!(codex_homes(&temp.0, &[PathBuf::from("relative")], &[]).is_err());
     }

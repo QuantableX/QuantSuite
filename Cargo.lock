@@ -6802,6 +6802,7 @@ dependencies = [
  "axum",
  "chrono",
  "dirs 5.0.1",
+ "dunce",
  "futures",
  "jsonc-parser",
  "qs-mcp-bridge",
