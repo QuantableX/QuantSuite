@@ -537,7 +537,8 @@ impl ConfigPath {
 }
 
 fn find_on_path(binary: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    // Not the suite's own PATH: it can predate the CLI's installation.
+    let path = qs_core::system_path::current();
     let exts: &[&str] = if cfg!(windows) {
         &["", ".exe", ".cmd", ".bat"]
     } else {
@@ -954,6 +955,9 @@ fn cli_command(binary: &str, args: &[String]) -> tokio::process::Command {
         cmd.arg("/C").arg(binary);
     }
     cmd.args(args);
+    // A CLI installed after the suite started is found through the current
+    // PATH (see `qs_core::system_path`), and so are the tools it runs itself.
+    cmd.env("PATH", qs_core::system_path::current());
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     cmd

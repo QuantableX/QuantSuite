@@ -20,6 +20,7 @@ pub mod migrations;
 pub mod paths;
 pub mod processes;
 pub mod shutdown;
+pub mod system_path;
 pub mod tray;
 pub mod window;
 pub mod workspaces;
