@@ -184,7 +184,7 @@ pub static CLIENTS: &[ClientSpec] = &[
     },
     ClientSpec {
         id: "cursor",
-        instructions: Instructions::Manual("Paste the General AgentOS text into Cursor Settings > Rules > User Rules. Cursor does not document a writable global rules file."),
+        instructions: Instructions::Cursor,
         name: "Cursor",
         aliases: &["cursor-vscode", "cursor"],
         detect: &[Detect::Dir(Home(&[".cursor"]))],
