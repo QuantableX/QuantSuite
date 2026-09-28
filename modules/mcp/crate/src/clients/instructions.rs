@@ -6,6 +6,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 mod claude;
+mod cursor;
 pub(crate) mod custom;
 mod kilo;
 pub(super) mod pi;
@@ -19,6 +20,7 @@ pub enum Instructions {
     LimitedFile(ConfigPath, usize),
     Codex,
     Claude,
+    Cursor,
     OpenCode,
     Kilo,
     Pi,
@@ -129,6 +131,7 @@ impl Instructions {
             Self::Pi => Some("Pi loads instructions directly. MCP access requires a separate Pi extension."),
             Self::Omp => Some("Imports into the active OMP profile. Its native instructions take priority over other agents’ global context files."),
             Self::Claude => Some("Linked into Claude Code's rules folder, which every Claude Code session loads — General AgentOS itself, no CLAUDE.md and no workspace needed."),
+            Self::Cursor => Some("Installed as a small local Cursor plugin whose rule Cursor applies to every chat, with no User Rules setting. It is a copy: re-import after changing General AgentOS, then reload Cursor's windows."),
             _ => None,
         }
     }
@@ -148,6 +151,7 @@ impl Instructions {
                 .map(|home| codex_file(home))
                 .collect(),
             Self::Claude => Ok(vec![claude::target().ok_or("Could not resolve Claude Code's home")?]),
+            Self::Cursor => Ok(vec![cursor::rule_path(&cursor::plugin_dir().ok_or("Could not resolve Cursor's home")?)]),
             Self::OpenCode => {
                 let dir = env_path("XDG_CONFIG_HOME")
                     .or_else(|| dirs::home_dir().map(|p| p.join(".config")))
@@ -241,6 +245,15 @@ fn import_client(spec: &ClientSpec, source: &Path, text: &str) -> Vec<ConnectRes
     if let Instructions::Manual(note) = &spec.instructions {
         return vec![result(spec, 0, Outcome::Manual, note.to_string())];
     }
+    if matches!(spec.instructions, Instructions::Cursor) {
+        let installed = cursor::plugin_dir()
+            .ok_or_else(|| "Could not resolve Cursor's home".to_string())
+            .and_then(|dir| cursor::install(&dir, &cursor::rule(&format!("{}\n{text}", preface(source)))));
+        return vec![match installed {
+            Ok(detail) => result(spec, 0, Outcome::Written, detail),
+            Err(detail) => result(spec, 0, Outcome::Failed, detail),
+        }];
+    }
     if matches!(spec.instructions, Instructions::Claude) {
         return match claude::target() {
             Some(target) => claude::import(spec, source, &target, &claude::registered_workspaces(), claude::claude_md().as_deref()),
@@ -254,6 +267,10 @@ fn import_client(spec: &ClientSpec, source: &Path, text: &str) -> Vec<ConnectRes
     import_paths(spec, source, text, &paths)
 }
 
+fn preface(source: &Path) -> String {
+    format!("# QuantMCP AgentOS\n\nSource: {}\nManaged by QuantMCP. Re-import from General > AgentOS after changing the source.\n", source.display())
+}
+
 fn import_paths(
     spec: &ClientSpec,
     source: &Path,
@@ -262,7 +279,7 @@ fn import_paths(
 ) -> Vec<ConnectResult> {
     // A short startup directive fits Windsurf's 6,000-character cap and loads
     // the same live source. Other clients receive the complete instructions.
-    let preface = format!("# QuantMCP AgentOS\n\nSource: {}\nManaged by QuantMCP. Re-import from General > AgentOS after changing the source.\n", source.display());
+    let preface = preface(source);
     let (body, limit) = match &spec.instructions {
         Instructions::LimitedFile(_, limit) => (format!("{preface}\nBefore any task, read and follow the complete instructions in `{}`. If QuantMCP is connected, call get_instructions to load the current global and workspace instructions. If neither is available, report that AgentOS could not be loaded.\n", source.display()), Some(*limit)),
         _ => (format!("{preface}\n{text}"), None),
@@ -504,11 +521,11 @@ mod tests {
 
     #[test]
     fn unsupported_clients_are_manual_and_never_claim_an_import() {
-        let spec = super::super::spec("cursor").unwrap();
+        let spec = super::super::spec("claude-desktop").unwrap();
         let rows = import_client(spec, Path::new("unused"), "rules");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].outcome, Outcome::Manual);
-        assert!(rows[0].detail.contains("User Rules"));
+        assert!(rows[0].detail.contains("project instructions"));
         assert!(
             super::super::spec(&rows[0].id).is_none(),
             "instruction imports must not be recorded as MCP connection installs"

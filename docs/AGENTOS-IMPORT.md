@@ -48,6 +48,7 @@ uses its supported global profile paths; custom targets can name another profile
 | Oh My Pi (OMP) | `~/.omp/agent/AGENTS.md`. Respects `PI_CONFIG_DIR`, `PI_CODING_AGENT_DIR`, and active `OMP_PROFILE` (fallback `PI_PROFILE`); named profiles use `<root>/profiles/<name>/agent` and take precedence over the agent-dir override. Other profiles can be added as custom targets. OMP's native MCP config is a separate `mcp.json` in the same agent directory, configured by Settings → Connect. |
 | Codex | `AGENTS.md` in the default home, explicit `CODEX_HOME` / `ORCA_CODEX_HOME`, and existing Orca `codex-accounts/<account>/home` profiles. A nonempty `AGENTS.override.md` receives the section instead because it shadows `AGENTS.md`. |
 | Claude Code | `~/.claude/rules/AGENT.md` (or `CLAUDE_CONFIG_DIR/rules/AGENT.md`) as a link to `~/.quantmcp/AGENT.md` itself — a symbolic link, else a hard link — not a managed section. Claude Code loads its user rules folder in every session, so no workspace and no CLAUDE.md is needed, and AgentOS edits apply without re-import. A foreign file at that path is never replaced. Once the link exists, the import removes what earlier versions left: the `AGENTS.md` link above each registered workspace (only if it is General AgentOS itself) and the AgentOS section of `CLAUDE.md` (the file goes when nothing else is in it, with a backup). |
+| Cursor | A local plugin, `~/.cursor/plugins/local/quantmcp-agentos/`: `.cursor-plugin/plugin.json` declares `rules: ./rules/`, and `rules/agentos.mdc` holds the full brief under `alwaysApply: true` frontmatter, which makes it a global rule in every Cursor chat — no User Rules setting. The rule needs that frontmatter, so it is a copy: re-import after changing General AgentOS, then reload Cursor's windows. A folder of that name that holds another plugin is never replaced. (A `sessionStart` hook cannot carry the brief: Cursor caps hook context at 10,000 characters.) |
 | Gemini CLI | `~/.gemini/GEMINI.md` (default context filename) |
 | OpenCode | `~/.config/opencode/AGENTS.md`, respecting `XDG_CONFIG_HOME`; also an explicit `OPENCODE_CONFIG_DIR` |
 | Cline | The user's Documents directory, `Cline/Rules/quantmcp-agentos.md` |
@@ -66,12 +67,11 @@ or an invalid instructions value are reported without writing the file.
 This targets current Kilo versions using the shared global config; old
 extension versions that only load legacy rules should be upgraded.
 
-Cursor, Claude Desktop, VS Code Copilot and aider receive manual setup
+Claude Desktop, VS Code Copilot and aider receive manual setup
 instructions in the report. **Copy instructions for manual setup** copies
 the General text. These rows are not counted as successful native imports.
-For example, Cursor's global User Rules live in its settings UI, whereas
-its documented rule files are project scoped. The importer does not rewrite
-private application databases.
+The importer does not rewrite private application databases, such as the
+one holding Cursor's User Rules.
 
 Custom instruction discovery settings in other clients can change what they
 load; the destinations above describe the supported defaults. The report
