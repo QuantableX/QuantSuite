@@ -7,6 +7,7 @@ pub mod kanban_db;
 mod logs;
 mod mcp;
 mod mcp_server;
+mod memory_hook;
 mod native_tools;
 mod process;
 mod scripts;
@@ -248,6 +249,9 @@ pub fn init() -> TauriPlugin<Wry> {
             commands::clients::get_connect_snippet,
             commands::clients::list_clients,
             commands::clients::forget_client,
+            // Memory in prompts: the QuantMemory prompt hooks
+            commands::memory_hooks::memory_hook_status,
+            commands::memory_hooks::set_memory_hooks,
             commands::tools::list_codebase_index_tools,
             commands::tools::list_agentos_tools,
             commands::tools::list_kanban_tools,

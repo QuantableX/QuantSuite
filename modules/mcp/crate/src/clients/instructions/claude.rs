@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 const FILE: &str = "AGENT.md";
 const OLD_FILE: &str = "AGENTS.md";
 
-fn config_dir() -> Option<PathBuf> {
+pub(super) fn config_dir() -> Option<PathBuf> {
     super::env_path("CLAUDE_CONFIG_DIR").or_else(|| dirs::home_dir().map(|p| p.join(".claude")))
 }
 

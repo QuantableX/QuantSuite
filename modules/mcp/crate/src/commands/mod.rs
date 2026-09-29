@@ -6,6 +6,7 @@
 pub(crate) mod agentos;
 pub(crate) mod clients;
 pub(crate) mod kanban;
+pub(crate) mod memory_hooks;
 pub(crate) mod registry;
 pub(crate) mod tools;
 pub(crate) mod workspace;

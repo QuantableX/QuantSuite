@@ -2662,7 +2662,15 @@ pub async fn start_mcp_server(
                     .delete(mcp_delete_handler),
             )
         .layer(tower_http::cors::CorsLayer::permissive())
-        .with_state(state);
+        .with_state(state.clone())
+        // After the CORS layer on purpose: the memory hooks answer curl, and
+        // no browser may read the vault through them.
+        .merge(crate::memory_hook::router(crate::memory_hook::HookState {
+            app: state.app.clone(),
+            server_enabled: state.server_enabled.clone(),
+            log_store: state.log_store.clone(),
+            port: state.port,
+        }));
 
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
         .await

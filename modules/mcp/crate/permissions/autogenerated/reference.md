@@ -41,6 +41,8 @@ Default permissions for the mcp module.
 - `allow-get-connect-snippet`
 - `allow-list-clients`
 - `allow-forget-client`
+- `allow-memory-hook-status`
+- `allow-set-memory-hooks`
 - `allow-list-codebase-index-tools`
 - `allow-list-agentos-tools`
 - `allow-list-kanban-tools`
@@ -1278,6 +1280,32 @@ Denies the list_worktree_tools command without any pre-configured scope.
 <tr>
 <td>
 
+`mcp:allow-memory-hook-status`
+
+</td>
+<td>
+
+Enables the memory_hook_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:deny-memory-hook-status`
+
+</td>
+<td>
+
+Denies the memory_hook_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `mcp:allow-move-kanban-card`
 
 </td>
@@ -1609,6 +1637,32 @@ Enables the set_approval_mode command without any pre-configured scope.
 <td>
 
 Denies the set_approval_mode command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:allow-set-memory-hooks`
+
+</td>
+<td>
+
+Enables the set_memory_hooks command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:deny-set-memory-hooks`
+
+</td>
+<td>
+
+Denies the set_memory_hooks command without any pre-configured scope.
 
 </td>
 </tr>

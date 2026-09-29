@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-memory-hooks"
+description = "Enables the set_memory_hooks command without any pre-configured scope."
+commands.allow = ["set_memory_hooks"]
+
+[[permission]]
+identifier = "deny-set-memory-hooks"
+description = "Denies the set_memory_hooks command without any pre-configured scope."
+commands.deny = ["set_memory_hooks"]

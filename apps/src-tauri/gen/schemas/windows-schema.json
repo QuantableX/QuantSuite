@@ -8379,10 +8379,10 @@
           "markdownDescription": "Denies the tuck_window command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-get-tool-preferences`\n- `allow-set-tool-preference`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-review-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`",
+          "description": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-get-tool-preferences`\n- `allow-set-tool-preference`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-memory-hook-status`\n- `allow-set-memory-hooks`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-review-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`",
           "type": "string",
           "const": "mcp:default",
-          "markdownDescription": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-get-tool-preferences`\n- `allow-set-tool-preference`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-review-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`"
+          "markdownDescription": "Default permissions for the mcp module.\n#### This default permission set includes:\n\n- `allow-list-mcps`\n- `allow-toggle-mcp`\n- `allow-get-mcp-config`\n- `allow-add-mcp`\n- `allow-update-mcp`\n- `allow-delete-mcp`\n- `allow-start-mcp`\n- `allow-stop-mcp`\n- `allow-get-mcp-status`\n- `allow-get-all-mcp-statuses`\n- `allow-process-start-servers`\n- `allow-process-stop-servers`\n- `allow-list-tools`\n- `allow-get-tool-preferences`\n- `allow-set-tool-preference`\n- `allow-add-tool`\n- `allow-update-tool`\n- `allow-delete-tool`\n- `allow-toggle-tool`\n- `allow-test-tool`\n- `allow-get-quantmcp-enabled`\n- `allow-set-quantmcp-enabled`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-list-logs`\n- `allow-clear-logs`\n- `allow-list-scripts`\n- `allow-add-script`\n- `allow-update-script`\n- `allow-delete-script`\n- `allow-get-script-path`\n- `allow-scan-clients`\n- `allow-connect-clients`\n- `allow-connect-mcp-entry`\n- `allow-get-connect-snippet`\n- `allow-list-clients`\n- `allow-forget-client`\n- `allow-memory-hook-status`\n- `allow-set-memory-hooks`\n- `allow-list-codebase-index-tools`\n- `allow-list-agentos-tools`\n- `allow-list-kanban-tools`\n- `allow-list-worktree-tools`\n- `allow-list-bridge-tools`\n- `allow-get-mcp-server-port`\n- `allow-get-approval-mode`\n- `allow-set-approval-mode`\n- `allow-get-workspace-index-settings`\n- `allow-set-workspace-index-settings`\n- `allow-list-kanban-cards`\n- `allow-add-kanban-card`\n- `allow-update-kanban-card`\n- `allow-move-kanban-card`\n- `allow-review-kanban-card`\n- `allow-move-kanban-card-to-workspace`\n- `allow-delete-kanban-card`\n- `allow-list-archived-kanban-cards`\n- `allow-archive-done-kanban-cards`\n- `allow-archive-kanban-card`\n- `allow-unarchive-kanban-card`\n- `allow-index-project-codebase`\n- `allow-get-codebase-index-stats`\n- `allow-get-agent-md-paths`\n- `allow-read-agent-md`\n- `allow-write-agent-md`\n- `allow-init-agent-md`\n- `allow-reset-agent-md`"
         },
         {
           "description": "Enables the add_kanban_card command without any pre-configured scope.",
@@ -8661,6 +8661,12 @@
           "markdownDescription": "Enables the list_worktree_tools command without any pre-configured scope."
         },
         {
+          "description": "Enables the memory_hook_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:allow-memory-hook-status",
+          "markdownDescription": "Enables the memory_hook_status command without any pre-configured scope."
+        },
+        {
           "description": "Enables the move_kanban_card command without any pre-configured scope.",
           "type": "string",
           "const": "mcp:allow-move-kanban-card",
@@ -8737,6 +8743,12 @@
           "type": "string",
           "const": "mcp:allow-set-approval-mode",
           "markdownDescription": "Enables the set_approval_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_memory_hooks command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:allow-set-memory-hooks",
+          "markdownDescription": "Enables the set_memory_hooks command without any pre-configured scope."
         },
         {
           "description": "Enables the set_project_index_filter command without any pre-configured scope.",
@@ -9123,6 +9135,12 @@
           "markdownDescription": "Denies the list_worktree_tools command without any pre-configured scope."
         },
         {
+          "description": "Denies the memory_hook_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:deny-memory-hook-status",
+          "markdownDescription": "Denies the memory_hook_status command without any pre-configured scope."
+        },
+        {
           "description": "Denies the move_kanban_card command without any pre-configured scope.",
           "type": "string",
           "const": "mcp:deny-move-kanban-card",
@@ -9199,6 +9217,12 @@
           "type": "string",
           "const": "mcp:deny-set-approval-mode",
           "markdownDescription": "Denies the set_approval_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_memory_hooks command without any pre-configured scope.",
+          "type": "string",
+          "const": "mcp:deny-set-memory-hooks",
+          "markdownDescription": "Denies the set_memory_hooks command without any pre-configured scope."
         },
         {
           "description": "Denies the set_project_index_filter command without any pre-configured scope.",

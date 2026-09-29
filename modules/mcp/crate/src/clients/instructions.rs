@@ -86,7 +86,8 @@ fn codex_homes(
     Ok(paths)
 }
 
-fn current_codex_homes() -> Result<Vec<PathBuf>, String> {
+/// Every Codex home this machine uses — also where the memory prompt hooks go.
+pub(crate) fn current_codex_homes() -> Result<Vec<PathBuf>, String> {
     let home = dirs::home_dir().ok_or("Could not resolve the user home")?;
     let overrides: Vec<_> = [env_path("CODEX_HOME"), env_path("ORCA_CODEX_HOME")]
         .into_iter()
@@ -100,6 +101,12 @@ fn current_codex_homes() -> Result<Vec<PathBuf>, String> {
     .flatten()
     .collect();
     codex_homes(&home, &overrides, &roots)
+}
+
+/// Claude Code's config home (`CLAUDE_CONFIG_DIR`, else `~/.claude`), whose
+/// settings.json also carries the memory prompt hook.
+pub(crate) fn claude_config_dir() -> Option<PathBuf> {
+    claude::config_dir()
 }
 
 pub(super) fn has_codex_profile() -> bool {

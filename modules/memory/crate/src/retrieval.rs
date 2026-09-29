@@ -81,6 +81,11 @@ pub struct ContextSource {
     pub truncated: bool,
     pub quality: Quality,
     pub reasons: Vec<String>,
+    /// The fused rank score (reciprocal-rank fusion with k = 60, then the
+    /// quality rerank): one retriever's top hit alone is 1/60, agreement
+    /// between retrievers adds up. Rank-based, so compare it to thresholds
+    /// in those units, never to a raw BM25 or cosine value.
+    pub score: f64,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -430,6 +435,7 @@ pub fn assemble(
             excerpt,
             quality: meta.quality,
             reasons,
+            score,
         };
         ranked.push((score, source));
     }
