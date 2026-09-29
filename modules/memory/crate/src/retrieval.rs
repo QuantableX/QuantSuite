@@ -283,20 +283,12 @@ pub fn assemble(
     reviewed_only: bool,
 ) -> Result<ContextResult, String> {
     let mut candidates: HashMap<String, (f64, Vec<String>, Option<String>)> = HashMap::new();
-    let mut lexical = Vec::new();
-    for scope in scopes {
-        lexical.extend(index::search(conn, Some(scope), query, "any", 100)?);
-    }
-    lexical.sort_by(|a, b| a.score.total_cmp(&b.score).then(a.id.cmp(&b.id)));
-    for (rank, hit) in lexical.into_iter().enumerate() {
-        candidates.insert(
-            hit.id,
-            (
-                1.0 / (60.0 + rank as f64),
-                vec!["lexical match".into()],
-                None,
-            ),
-        );
+    for (reason, ids) in crate::lexical::signals(conn, query, scopes, 100)? {
+        for (rank, id) in ids.into_iter().enumerate() {
+            let entry = candidates.entry(id).or_insert_with(|| (0.0, vec![], None));
+            entry.0 += 1.0 / (60.0 + rank as f64);
+            entry.1.push(reason.into());
+        }
     }
     let mut warnings = vec![];
     if let Some((config, query_vector)) = semantic {

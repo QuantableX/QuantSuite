@@ -23,6 +23,7 @@
 mod base;
 mod consolidation;
 mod index;
+mod lexical;
 mod quality;
 mod retrieval;
 mod intelligence;
