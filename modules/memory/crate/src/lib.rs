@@ -21,6 +21,7 @@
 //! tools declared in module.json — this crate is also their backend.
 
 mod base;
+mod engine;
 mod index;
 mod quality;
 mod retrieval;
@@ -1744,6 +1745,8 @@ pub fn init() -> TauriPlugin<Wry> {
 
             // Seed, legacy import, first scans and the watchers all touch the
             // filesystem — off the main thread, the window must not wait.
+            intelligence::init_embeddings(app);
+
             let handle = app.clone();
             std::thread::Builder::new()
                 .name("qm-init".into())
@@ -1783,6 +1786,10 @@ pub fn init() -> TauriPlugin<Wry> {
             intelligence::get_embedding_config,
             intelligence::set_embedding_config,
             intelligence::index_embeddings,
+            intelligence::embedding_engine_status,
+            intelligence::embedding_engine_setup,
+            intelligence::embedding_engine_stop,
+            intelligence::embedding_engine_logs,
             intelligence::set_memory_quality,
             intelligence::review_memory_quality,
             intelligence::get_memory_review_queue,

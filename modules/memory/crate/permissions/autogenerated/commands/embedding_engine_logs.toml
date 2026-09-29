@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-embedding-engine-logs"
+description = "Enables the embedding_engine_logs command without any pre-configured scope."
+commands.allow = ["embedding_engine_logs"]
+
+[[permission]]
+identifier = "deny-embedding-engine-logs"
+description = "Denies the embedding_engine_logs command without any pre-configured scope."
+commands.deny = ["embedding_engine_logs"]

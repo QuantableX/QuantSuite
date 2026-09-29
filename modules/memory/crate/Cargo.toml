@@ -22,6 +22,9 @@ chrono = { workspace = true }
 dirs = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true }
+# The built-in embedding engine: async child supervision and download checks.
+tokio = { workspace = true }
+sha2 = "0.11"
 rusqlite = { version = "0.31", features = ["bundled"] }
 # The vault is watched for edits made outside the suite (Obsidian, editors).
 notify = "8"

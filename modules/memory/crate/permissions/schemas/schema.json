@@ -343,6 +343,54 @@
           "markdownDescription": "Denies the describe_base command without any pre-configured scope."
         },
         {
+          "description": "Enables the embedding_engine_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-embedding-engine-logs",
+          "markdownDescription": "Enables the embedding_engine_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the embedding_engine_logs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-embedding-engine-logs",
+          "markdownDescription": "Denies the embedding_engine_logs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the embedding_engine_setup command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-embedding-engine-setup",
+          "markdownDescription": "Enables the embedding_engine_setup command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the embedding_engine_setup command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-embedding-engine-setup",
+          "markdownDescription": "Denies the embedding_engine_setup command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the embedding_engine_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-embedding-engine-status",
+          "markdownDescription": "Enables the embedding_engine_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the embedding_engine_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-embedding-engine-status",
+          "markdownDescription": "Denies the embedding_engine_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the embedding_engine_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-embedding-engine-stop",
+          "markdownDescription": "Enables the embedding_engine_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the embedding_engine_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-embedding-engine-stop",
+          "markdownDescription": "Denies the embedding_engine_stop command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_backlinks command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-backlinks",
@@ -703,10 +751,10 @@
           "markdownDescription": "Denies the update_memory command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the QuantMemory module: the markdown vault, its index, search, links and graph.\n#### This default permission set includes:\n\n- `allow-list-memories`\n- `allow-get-memory`\n- `allow-create-memory`\n- `allow-update-memory`\n- `allow-append-memory`\n- `allow-rename-memory`\n- `allow-set-memory-meta`\n- `allow-delete-memory`\n- `allow-restore-memory`\n- `allow-list-trash`\n- `allow-purge-trash`\n- `allow-search-memories`\n- `allow-get-backlinks`\n- `allow-get-graph`\n- `allow-get-orphans`\n- `allow-get-unresolved-links`\n- `allow-suggest-connections`\n- `allow-get-stats`\n- `allow-get-vault-info`\n- `allow-set-vault-path`\n- `allow-reindex-vault`\n- `allow-list-tags`\n- `allow-list-scopes`\n- `allow-sync-base`\n- `allow-list-base`\n- `allow-get-base`\n- `allow-describe-base`\n- `allow-memory-context`\n- `allow-get-embedding-config`\n- `allow-set-embedding-config`\n- `allow-index-embeddings`\n- `allow-set-memory-quality`\n- `allow-review-memory-quality`\n- `allow-get-memory-review-queue`",
+          "description": "Default permissions for the QuantMemory module: the markdown vault, its index, search, links and graph.\n#### This default permission set includes:\n\n- `allow-list-memories`\n- `allow-get-memory`\n- `allow-create-memory`\n- `allow-update-memory`\n- `allow-append-memory`\n- `allow-rename-memory`\n- `allow-set-memory-meta`\n- `allow-delete-memory`\n- `allow-restore-memory`\n- `allow-list-trash`\n- `allow-purge-trash`\n- `allow-search-memories`\n- `allow-get-backlinks`\n- `allow-get-graph`\n- `allow-get-orphans`\n- `allow-get-unresolved-links`\n- `allow-suggest-connections`\n- `allow-get-stats`\n- `allow-get-vault-info`\n- `allow-set-vault-path`\n- `allow-reindex-vault`\n- `allow-list-tags`\n- `allow-list-scopes`\n- `allow-sync-base`\n- `allow-list-base`\n- `allow-get-base`\n- `allow-describe-base`\n- `allow-memory-context`\n- `allow-get-embedding-config`\n- `allow-set-embedding-config`\n- `allow-index-embeddings`\n- `allow-embedding-engine-status`\n- `allow-embedding-engine-setup`\n- `allow-embedding-engine-stop`\n- `allow-embedding-engine-logs`\n- `allow-set-memory-quality`\n- `allow-review-memory-quality`\n- `allow-get-memory-review-queue`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the QuantMemory module: the markdown vault, its index, search, links and graph.\n#### This default permission set includes:\n\n- `allow-list-memories`\n- `allow-get-memory`\n- `allow-create-memory`\n- `allow-update-memory`\n- `allow-append-memory`\n- `allow-rename-memory`\n- `allow-set-memory-meta`\n- `allow-delete-memory`\n- `allow-restore-memory`\n- `allow-list-trash`\n- `allow-purge-trash`\n- `allow-search-memories`\n- `allow-get-backlinks`\n- `allow-get-graph`\n- `allow-get-orphans`\n- `allow-get-unresolved-links`\n- `allow-suggest-connections`\n- `allow-get-stats`\n- `allow-get-vault-info`\n- `allow-set-vault-path`\n- `allow-reindex-vault`\n- `allow-list-tags`\n- `allow-list-scopes`\n- `allow-sync-base`\n- `allow-list-base`\n- `allow-get-base`\n- `allow-describe-base`\n- `allow-memory-context`\n- `allow-get-embedding-config`\n- `allow-set-embedding-config`\n- `allow-index-embeddings`\n- `allow-set-memory-quality`\n- `allow-review-memory-quality`\n- `allow-get-memory-review-queue`"
+          "markdownDescription": "Default permissions for the QuantMemory module: the markdown vault, its index, search, links and graph.\n#### This default permission set includes:\n\n- `allow-list-memories`\n- `allow-get-memory`\n- `allow-create-memory`\n- `allow-update-memory`\n- `allow-append-memory`\n- `allow-rename-memory`\n- `allow-set-memory-meta`\n- `allow-delete-memory`\n- `allow-restore-memory`\n- `allow-list-trash`\n- `allow-purge-trash`\n- `allow-search-memories`\n- `allow-get-backlinks`\n- `allow-get-graph`\n- `allow-get-orphans`\n- `allow-get-unresolved-links`\n- `allow-suggest-connections`\n- `allow-get-stats`\n- `allow-get-vault-info`\n- `allow-set-vault-path`\n- `allow-reindex-vault`\n- `allow-list-tags`\n- `allow-list-scopes`\n- `allow-sync-base`\n- `allow-list-base`\n- `allow-get-base`\n- `allow-describe-base`\n- `allow-memory-context`\n- `allow-get-embedding-config`\n- `allow-set-embedding-config`\n- `allow-index-embeddings`\n- `allow-embedding-engine-status`\n- `allow-embedding-engine-setup`\n- `allow-embedding-engine-stop`\n- `allow-embedding-engine-logs`\n- `allow-set-memory-quality`\n- `allow-review-memory-quality`\n- `allow-get-memory-review-queue`"
         }
       ]
     }
