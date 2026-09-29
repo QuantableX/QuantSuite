@@ -168,12 +168,17 @@ fn no_window(_cmd: &mut Command) {
 /// `nvidia-smi` on the current PATH.
 pub fn nvidia_present() -> bool {
     if cfg!(windows) {
-        let system = std::env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
+        let system = std::env::var_os("SystemRoot")
+            .map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
         if system.join("System32").join("nvcuda.dll").is_file() {
             return true;
         }
     }
-    let exe = if cfg!(windows) { "nvidia-smi.exe" } else { "nvidia-smi" };
+    let exe = if cfg!(windows) {
+        "nvidia-smi.exe"
+    } else {
+        "nvidia-smi"
+    };
     std::env::split_paths(&qs_core::system_path::current()).any(|dir| dir.join(exe).is_file())
 }
 
@@ -362,11 +367,17 @@ impl Engine {
     }
 
     fn runtime_dir(&self, variant: &str) -> PathBuf {
-        self.root.join("runtime").join(format!("{LLAMA_BUILD}-{variant}"))
+        self.root
+            .join("runtime")
+            .join(format!("{LLAMA_BUILD}-{variant}"))
     }
 
     fn server_exe(&self, variant: &str) -> PathBuf {
-        let exe = if cfg!(windows) { "llama-server.exe" } else { "llama-server" };
+        let exe = if cfg!(windows) {
+            "llama-server.exe"
+        } else {
+            "llama-server"
+        };
         self.runtime_dir(variant).join(exe)
     }
 
@@ -375,7 +386,12 @@ impl Engine {
     }
 
     fn marker_for(runtime: &Runtime) -> String {
-        runtime.assets.iter().map(|a| a.sha256).collect::<Vec<_>>().join("\n")
+        runtime
+            .assets
+            .iter()
+            .map(|a| a.sha256)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     pub fn runtime_installed(&self, variant: &str) -> bool {
@@ -389,7 +405,8 @@ impl Engine {
     pub fn model_installed(&self, spec: &ModelSpec) -> bool {
         let path = self.model_path(spec);
         path.metadata().is_ok_and(|m| m.len() == spec.size)
-            && std::fs::read_to_string(path.with_extension("sha256")).is_ok_and(|s| s.trim() == spec.sha256)
+            && std::fs::read_to_string(path.with_extension("sha256"))
+                .is_ok_and(|s| s.trim() == spec.sha256)
     }
 
     /// The runtime a setting wants downloaded: CUDA on an NVIDIA machine unless
@@ -404,18 +421,33 @@ impl Engine {
 
     /// The installed runtime to start for a setting (the CUDA build runs on the CPU too).
     fn installed_runtime(&self, config: &EmbeddingConfig) -> Option<&'static Runtime> {
-        let order: &[&str] = if config.device == "cpu" { &["cpu", "cuda"] } else { &["cuda", "cpu"] };
-        order.iter().copied().find(|v| self.runtime_installed(v)).and_then(runtime)
+        let order: &[&str] = if config.device == "cpu" {
+            &["cpu", "cuda"]
+        } else {
+            &["cuda", "cpu"]
+        };
+        order
+            .iter()
+            .copied()
+            .find(|v| self.runtime_installed(v))
+            .and_then(runtime)
     }
 
     /// What a setting still has to download: runtime variant (if any) and whether the model is missing.
-    fn missing(&self, config: &EmbeddingConfig) -> Result<(Option<&'static Runtime>, Option<&'static ModelSpec>), String> {
+    fn missing(
+        &self,
+        config: &EmbeddingConfig,
+    ) -> Result<(Option<&'static Runtime>, Option<&'static ModelSpec>), String> {
         if RUNTIMES.is_empty() {
-            return Err("The built-in engine ships for Windows x64 so far; use Ollama on this system".into());
+            return Err(
+                "The built-in engine ships for Windows x64 so far; use Ollama on this system"
+                    .into(),
+            );
         }
         let spec = model(&config.builtin_model).ok_or("Unknown built-in model")?;
         let wanted = Self::wanted_runtime(config);
-        let runtime_ok = self.runtime_installed(wanted) || (wanted == "cpu" && self.runtime_installed("cuda"));
+        let runtime_ok =
+            self.runtime_installed(wanted) || (wanted == "cpu" && self.runtime_installed("cuda"));
         Ok((
             (!runtime_ok).then(|| runtime(wanted)).flatten(),
             (!self.model_installed(spec)).then_some(spec),
@@ -424,10 +456,14 @@ impl Engine {
 
     pub fn status(&self, config: &EmbeddingConfig) -> EngineStatus {
         let missing_bytes = self.missing(config).map_or(0, |(rt, spec)| {
-            rt.map_or(0, |r| r.assets.iter().map(|a| a.size).sum::<u64>()) + spec.map_or(0, |s| s.size)
+            rt.map_or(0, |r| r.assets.iter().map(|a| a.size).sum::<u64>())
+                + spec.map_or(0, |s| s.size)
         });
         let mut inner = lock(&self.inner);
-        let alive = inner.server.as_mut().is_some_and(|s| matches!(s.child.try_wait(), Ok(None)));
+        let alive = inner
+            .server
+            .as_mut()
+            .is_some_and(|s| matches!(s.child.try_wait(), Ok(None)));
         let server = inner.server.as_ref().filter(|_| alive);
         EngineStatus {
             supported: !RUNTIMES.is_empty(),
@@ -441,7 +477,13 @@ impl Engine {
                     download_bytes: r.assets.iter().map(|a| a.size).sum(),
                 })
                 .collect(),
-            models: MODELS.iter().map(|spec| ModelStatus { spec, installed: self.model_installed(spec) }).collect(),
+            models: MODELS
+                .iter()
+                .map(|spec| ModelStatus {
+                    spec,
+                    installed: self.model_installed(spec),
+                })
+                .collect(),
             missing_bytes,
             running: alive,
             ready: server.is_some_and(|s| s.ready),
@@ -461,12 +503,21 @@ impl Engine {
     pub fn logs(&self, limit: usize) -> Vec<String> {
         let inner = lock(&self.inner);
         let n = limit.min(inner.logs.len());
-        inner.logs.iter().skip(inner.logs.len() - n).cloned().collect()
+        inner
+            .logs
+            .iter()
+            .skip(inner.logs.len() - n)
+            .cloned()
+            .collect()
     }
 
     /// The device the running server uses (`cuda`/`cpu`), if one runs.
     pub fn device(&self) -> Option<String> {
-        lock(&self.inner).server.as_ref().filter(|s| s.ready).map(|s| s.device.clone())
+        lock(&self.inner)
+            .server
+            .as_ref()
+            .filter(|s| s.ready)
+            .map(|s| s.device.clone())
     }
 
     /// Stop the server; its RAM and VRAM go back to the system.
@@ -495,7 +546,10 @@ impl Engine {
             if setup.busy {
                 return Err("A download is already running".into());
             }
-            *setup = SetupState { busy: true, ..Default::default() };
+            *setup = SetupState {
+                busy: true,
+                ..Default::default()
+            };
         }
         let outcome = self.install_inner(config).await;
         let mut setup = lock(&self.setup);
@@ -524,7 +578,8 @@ impl Engine {
             for asset in rt.assets {
                 let name = asset.url.rsplit('/').next().unwrap_or("runtime.zip");
                 let dest = downloads.join(name);
-                self.download(&web, "runtime", asset.url, &dest, asset.sha256, asset.size).await?;
+                self.download(&web, "runtime", asset.url, &dest, asset.sha256, asset.size)
+                    .await?;
                 archives.push(dest);
             }
             self.set_phase("extract", "llama.cpp runtime", 0, 0);
@@ -537,10 +592,15 @@ impl Engine {
             let _ = std::fs::remove_dir_all(&downloads);
         }
         if let Some(spec) = spec {
-            let url = format!("https://huggingface.co/{}/resolve/{}/{}", spec.repo, spec.revision, spec.file);
+            let url = format!(
+                "https://huggingface.co/{}/resolve/{}/{}",
+                spec.repo, spec.revision, spec.file
+            );
             let dest = self.model_path(spec);
-            self.download(&web, "model", &url, &dest, spec.sha256, spec.size).await?;
-            std::fs::write(dest.with_extension("sha256"), spec.sha256).map_err(|e| e.to_string())?;
+            self.download(&web, "model", &url, &dest, spec.sha256, spec.size)
+                .await?;
+            std::fs::write(dest.with_extension("sha256"), spec.sha256)
+                .map_err(|e| e.to_string())?;
         }
         Ok(())
     }
@@ -554,12 +614,24 @@ impl Engine {
     }
 
     /// Stream `url` into `dest`, hashing on the way; a wrong size or digest is deleted, never used.
-    async fn download(&self, web: &reqwest::Client, phase: &str, url: &str, dest: &Path, sha256: &str, size: u64) -> Result<(), String> {
+    async fn download(
+        &self,
+        web: &reqwest::Client,
+        phase: &str,
+        url: &str,
+        dest: &Path,
+        sha256: &str,
+        size: u64,
+    ) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
-        let name = dest.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let name = dest
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         self.set_phase(phase, &name, 0, size);
         if let Some(dir) = dest.parent() {
-            tokio::fs::create_dir_all(dir).await.map_err(|e| e.to_string())?;
+            tokio::fs::create_dir_all(dir)
+                .await
+                .map_err(|e| e.to_string())?;
         }
         let part = dest.with_extension("part");
         let mut response = web
@@ -568,11 +640,17 @@ impl Engine {
             .await
             .and_then(reqwest::Response::error_for_status)
             .map_err(|e| format!("Download of {name} failed: {e}"))?;
-        let mut file = tokio::fs::File::create(&part).await.map_err(|e| e.to_string())?;
+        let mut file = tokio::fs::File::create(&part)
+            .await
+            .map_err(|e| e.to_string())?;
         let mut hasher = Sha256::new();
         let mut done = 0u64;
         let result: Result<(), String> = async {
-            while let Some(chunk) = response.chunk().await.map_err(|e| format!("Download of {name} failed: {e}"))? {
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|e| format!("Download of {name} failed: {e}"))?
+            {
                 done += chunk.len() as u64;
                 if done > size {
                     return Err(format!("{name} is larger than the pinned file"));
@@ -591,19 +669,27 @@ impl Engine {
             if done == size && digest == sha256 {
                 Ok(())
             } else {
-                Err(format!("{name} failed its integrity check (size {done}/{size}, sha256 {digest})"))
+                Err(format!(
+                    "{name} failed its integrity check (size {done}/{size}, sha256 {digest})"
+                ))
             }
         }) {
             let _ = tokio::fs::remove_file(&part).await;
             return Err(e);
         }
-        tokio::fs::rename(&part, dest).await.map_err(|e| e.to_string())
+        tokio::fs::rename(&part, dest)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     // ── Running ──
 
     /// Embed `inputs` (1-64 texts), starting the server when needed.
-    pub async fn embed(&self, config: &EmbeddingConfig, inputs: &[String]) -> Result<Vec<Vec<f32>>, String> {
+    pub async fn embed(
+        &self,
+        config: &EmbeddingConfig,
+        inputs: &[String],
+    ) -> Result<Vec<Vec<f32>>, String> {
         if inputs.is_empty() || inputs.len() > 64 {
             return Err("Embedding batch must contain 1-64 chunks".into());
         }
@@ -619,7 +705,12 @@ impl Engine {
         result
     }
 
-    async fn request(&self, port: u16, key: &str, inputs: &[String]) -> Result<Vec<Vec<f32>>, String> {
+    async fn request(
+        &self,
+        port: u16,
+        key: &str,
+        inputs: &[String],
+    ) -> Result<Vec<Vec<f32>>, String> {
         #[derive(Deserialize)]
         struct Item {
             index: usize,
@@ -641,15 +732,23 @@ impl Engine {
         let bytes = response.bytes().await.map_err(|e| e.to_string())?;
         if !status.is_success() {
             let text = String::from_utf8_lossy(&bytes);
-            return Err(format!("Built-in embedding engine returned {status}: {}", text.chars().take(300).collect::<String>()));
+            return Err(format!(
+                "Built-in embedding engine returned {status}: {}",
+                text.chars().take(300).collect::<String>()
+            ));
         }
-        let mut parsed: Response = serde_json::from_slice(&bytes).map_err(|e| format!("Invalid embedding response: {e}"))?;
+        let mut parsed: Response = serde_json::from_slice(&bytes)
+            .map_err(|e| format!("Invalid embedding response: {e}"))?;
         parsed.data.sort_by_key(|item| item.index);
         let dims = parsed.data.first().map_or(0, |item| item.embedding.len());
         if parsed.data.len() != inputs.len()
             || dims == 0
             || dims > 16384
-            || parsed.data.iter().enumerate().any(|(i, item)| item.index != i || item.embedding.len() != dims || cosine(&item.embedding, &item.embedding).is_none())
+            || parsed.data.iter().enumerate().any(|(i, item)| {
+                item.index != i
+                    || item.embedding.len() != dims
+                    || cosine(&item.embedding, &item.embedding).is_none()
+            })
         {
             return Err("Embedding response has invalid vectors or dimensions".into());
         }
@@ -663,16 +762,26 @@ impl Engine {
             .installed_runtime(config)
             .ok_or("The built-in engine is not downloaded yet — activate it in Memory settings")?;
         if !self.model_installed(spec) {
-            return Err(format!("{} is not downloaded yet — activate it in Memory settings", spec.label));
+            return Err(format!(
+                "{} is not downloaded yet — activate it in Memory settings",
+                spec.label
+            ));
         }
         let signature = format!("{}|{}|{}", spec.id, config.device, rt.variant);
         let _guard = self.start.lock().await;
         let resume = {
             let mut inner = lock(&self.inner);
             inner.idle = Duration::from_secs(u64::from(config.idle_minutes.max(1)) * 60);
-            let alive = inner.server.as_mut().is_some_and(|s| matches!(s.child.try_wait(), Ok(None)));
+            let alive = inner
+                .server
+                .as_mut()
+                .is_some_and(|s| matches!(s.child.try_wait(), Ok(None)));
             let generation = inner.generation;
-            match inner.server.as_ref().filter(|s| alive && s.signature == signature) {
+            match inner
+                .server
+                .as_ref()
+                .filter(|s| alive && s.signature == signature)
+            {
                 Some(s) if s.ready => {
                     let found = (s.port, s.api_key.clone());
                     inner.in_flight += 1;
@@ -714,7 +823,12 @@ impl Engine {
             let label = gpu.as_ref().map_or("CPU".to_string(), |g| g.name.clone());
             match self.start_server(rt, spec, gpu, &signature, config).await {
                 Ok(ok) => {
-                    lock(&self.inner).last_warning = (!errors.is_empty()).then(|| format!("GPU start failed, running on the CPU: {}", errors.join("; ")));
+                    lock(&self.inner).last_warning = (!errors.is_empty()).then(|| {
+                        format!(
+                            "GPU start failed, running on the CPU: {}",
+                            errors.join("; ")
+                        )
+                    });
                     self.count_in();
                     return Ok(ok);
                 }
@@ -739,20 +853,34 @@ impl Engine {
             let mut cmd = Command::new(&exe);
             cmd.arg("--list-devices").stdin(Stdio::null());
             no_window(&mut cmd);
-            cmd.output().map(|o| parse_devices(&format!("{}\n{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))))
+            cmd.output().map(|o| {
+                parse_devices(&format!(
+                    "{}\n{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                ))
+            })
         })
         .await;
         let devices = match listed {
             Ok(Ok(devices)) => devices,
             other => {
-                push_log(&self.inner, format!("[engine] --list-devices failed: {other:?}"));
+                push_log(
+                    &self.inner,
+                    format!("[engine] --list-devices failed: {other:?}"),
+                );
                 Vec::new()
             }
         };
-        push_log(&self.inner, format!("[engine] {} devices: {devices:?}", rt.variant));
+        push_log(
+            &self.inner,
+            format!("[engine] {} devices: {devices:?}", rt.variant),
+        );
         // Only a found device is cached: a driver installed later is seen on the next start.
         if !devices.is_empty() {
-            lock(&self.inner).devices.insert(rt.variant, devices.clone());
+            lock(&self.inner)
+                .devices
+                .insert(rt.variant, devices.clone());
         }
         devices
     }
@@ -760,20 +888,31 @@ impl Engine {
     /// A server a crashed suite left behind would hold its model until it sleeps; end it.
     fn kill_orphan(&self) {
         let pid_file = self.root.join("server.pid");
-        let Ok(pid) = std::fs::read_to_string(&pid_file) else { return };
+        let Ok(pid) = std::fs::read_to_string(&pid_file) else {
+            return;
+        };
         let _ = std::fs::remove_file(&pid_file);
-        let Ok(pid) = pid.trim().parse::<u32>() else { return };
+        let Ok(pid) = pid.trim().parse::<u32>() else {
+            return;
+        };
         if cfg!(windows) {
             let mut list = Command::new("tasklist");
             list.args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"]);
             no_window(&mut list);
-            let is_ours = list.output().is_ok_and(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains("llama-server"));
+            let is_ours = list.output().is_ok_and(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .to_lowercase()
+                    .contains("llama-server")
+            });
             if is_ours {
                 let mut kill = Command::new("taskkill");
                 kill.args(["/PID", &pid.to_string(), "/F"]);
                 no_window(&mut kill);
                 let _ = kill.output();
-                push_log(&self.inner, format!("[engine] ended orphaned server pid {pid}"));
+                push_log(
+                    &self.inner,
+                    format!("[engine] ended orphaned server pid {pid}"),
+                );
             }
         }
     }
@@ -795,9 +934,37 @@ impl Engine {
         let mut cmd = Command::new(self.server_exe(rt.variant));
         cmd.arg("-m")
             .arg(self.model_path(spec))
-            .args(["--embedding", "--pooling", "last", "--host", "127.0.0.1", "--port", &port.to_string()])
-            .args(["--no-webui", "--offline", "-np", "1", "-c", CONTEXT, "-b", CONTEXT, "-ub", CONTEXT])
-            .args(["--cache-ram", "0", "-fa", "on", "-lv", "2", "--sleep-idle-seconds", &sleep_after]);
+            .args([
+                "--embedding",
+                "--pooling",
+                "last",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                &port.to_string(),
+            ])
+            .args([
+                "--no-webui",
+                "--offline",
+                "-np",
+                "1",
+                "-c",
+                CONTEXT,
+                "-b",
+                CONTEXT,
+                "-ub",
+                CONTEXT,
+            ])
+            .args([
+                "--cache-ram",
+                "0",
+                "-fa",
+                "on",
+                "-lv",
+                "2",
+                "--sleep-idle-seconds",
+                &sleep_after,
+            ]);
         match &gpu {
             Some(g) => cmd.args(["-dev", &g.id, "-ngl", "all"]),
             None => cmd.args(["-dev", "none", "-ngl", "0"]),
@@ -808,19 +975,29 @@ impl Engine {
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
         no_window(&mut cmd);
-        let mut child = cmd.spawn().map_err(|e| format!("could not start llama-server: {e}"))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("could not start llama-server: {e}"))?;
         let pid = child.id();
         let _ = std::fs::write(self.root.join("server.pid"), pid.to_string());
         if let Some(stderr) = child.stderr.take() {
             let inner = Arc::clone(&self.inner);
-            let _ = std::thread::Builder::new().name("qm-embed-log".into()).spawn(move || {
-                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                    push_log(&inner, line);
-                }
-            });
+            let _ = std::thread::Builder::new()
+                .name("qm-embed-log".into())
+                .spawn(move || {
+                    for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                        push_log(&inner, line);
+                    }
+                });
         }
         let device = if gpu.is_some() { "cuda" } else { "cpu" };
-        push_log(&self.inner, format!("[engine] started pid {pid}: {} on {device} ({})", spec.id, rt.variant));
+        push_log(
+            &self.inner,
+            format!(
+                "[engine] started pid {pid}: {} on {device} ({})",
+                spec.id, rt.variant
+            ),
+        );
         let started = Instant::now();
         let generation = {
             let mut inner = lock(&self.inner);
@@ -868,11 +1045,19 @@ impl Engine {
                 if let Some(s) = inner.server.as_mut() {
                     if let Ok(Some(status)) = s.child.try_wait() {
                         let tail: Vec<String> = inner.logs.iter().rev().take(4).cloned().collect();
-                        return Err(format!("llama-server exited ({status}): {}", tail.join(" | ")));
+                        return Err(format!(
+                            "llama-server exited ({status}): {}",
+                            tail.join(" | ")
+                        ));
                     }
                 }
             }
-            let health = self.local.get(format!("http://127.0.0.1:{port}/health")).timeout(Duration::from_secs(5)).send().await;
+            let health = self
+                .local
+                .get(format!("http://127.0.0.1:{port}/health"))
+                .timeout(Duration::from_secs(5))
+                .send()
+                .await;
             if health.is_ok_and(|r| r.status().is_success()) {
                 break;
             }
@@ -886,7 +1071,11 @@ impl Engine {
         let ready = inner.server.as_mut().map(|s| {
             s.ready = true;
             s.load_ms = Some(started.elapsed().as_millis());
-            format!("[engine] ready after {} ms on {}", started.elapsed().as_millis(), s.device)
+            format!(
+                "[engine] ready after {} ms on {}",
+                started.elapsed().as_millis(),
+                s.device
+            )
         });
         if let Some(line) = ready {
             inner.log(line);
@@ -900,29 +1089,34 @@ impl Engine {
         let inner = Arc::clone(&self.inner);
         let notifier = lock(&self.notifier).clone();
         let pid_file = self.root.join("server.pid");
-        let _ = std::thread::Builder::new().name("qm-embed-idle".into()).spawn(move || loop {
-            std::thread::sleep(Duration::from_secs(5));
-            let mut guard = lock(&inner);
-            if guard.generation != generation || guard.server.is_none() {
+        let _ = std::thread::Builder::new()
+            .name("qm-embed-idle".into())
+            .spawn(move || loop {
+                std::thread::sleep(Duration::from_secs(5));
+                let mut guard = lock(&inner);
+                if guard.generation != generation || guard.server.is_none() {
+                    return;
+                }
+                let idle = guard.last_used.is_some_and(|t| t.elapsed() >= guard.idle);
+                if !idle || guard.in_flight > 0 {
+                    continue;
+                }
+                guard.generation += 1;
+                if let Some(mut s) = guard.server.take() {
+                    let _ = s.child.kill();
+                    let _ = s.child.wait();
+                    let _ = std::fs::remove_file(&pid_file);
+                    guard.log(format!(
+                        "[engine] idle: stopped pid {} to free its memory",
+                        s.pid
+                    ));
+                }
+                drop(guard);
+                if let Some(n) = &notifier {
+                    n(None);
+                }
                 return;
-            }
-            let idle = guard.last_used.is_some_and(|t| t.elapsed() >= guard.idle);
-            if !idle || guard.in_flight > 0 {
-                continue;
-            }
-            guard.generation += 1;
-            if let Some(mut s) = guard.server.take() {
-                let _ = s.child.kill();
-                let _ = s.child.wait();
-                let _ = std::fs::remove_file(&pid_file);
-                guard.log(format!("[engine] idle: stopped pid {} to free its memory", s.pid));
-            }
-            drop(guard);
-            if let Some(n) = &notifier {
-                n(None);
-            }
-            return;
-        });
+            });
     }
 }
 
@@ -930,25 +1124,47 @@ impl Engine {
 /// staging folder, keep only the server and its libraries, then swap the
 /// folder into place. (bsdtar fails on an `--include` pattern an archive does
 /// not contain, so each archive is unpacked whole and pruned afterwards.)
-fn extract(archives: &[PathBuf], staging: &Path, final_dir: &Path, marker: &str) -> Result<(), String> {
+fn extract(
+    archives: &[PathBuf],
+    staging: &Path,
+    final_dir: &Path,
+    marker: &str,
+) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(staging);
     std::fs::create_dir_all(staging).map_err(|e| e.to_string())?;
     let tar = if cfg!(windows) {
-        std::env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from).join("System32").join("tar.exe")
+        std::env::var_os("SystemRoot")
+            .map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from)
+            .join("System32")
+            .join("tar.exe")
     } else {
         PathBuf::from("tar")
     };
     for archive in archives {
         let mut cmd = Command::new(&tar);
-        cmd.arg("-xf").arg(archive).arg("-C").arg(staging).stdin(Stdio::null());
+        cmd.arg("-xf")
+            .arg(archive)
+            .arg("-C")
+            .arg(staging)
+            .stdin(Stdio::null());
         no_window(&mut cmd);
-        let out = cmd.output().map_err(|e| format!("could not run {}: {e}", tar.display()))?;
+        let out = cmd
+            .output()
+            .map_err(|e| format!("could not run {}: {e}", tar.display()))?;
         if !out.status.success() {
-            return Err(format!("unpacking {} failed: {}", archive.display(), String::from_utf8_lossy(&out.stderr).trim()));
+            return Err(format!(
+                "unpacking {} failed: {}",
+                archive.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
         }
     }
     prune_runtime(staging).map_err(|e| e.to_string())?;
-    let exe = if cfg!(windows) { "llama-server.exe" } else { "llama-server" };
+    let exe = if cfg!(windows) {
+        "llama-server.exe"
+    } else {
+        "llama-server"
+    };
     if !staging.join(exe).is_file() {
         return Err(format!("{exe} is missing from the runtime archive"));
     }
@@ -993,10 +1209,21 @@ mod tests {
 
     #[test]
     fn keeps_only_the_server_and_its_libraries() {
-        for name in ["llama-server.exe", "llama-server-impl.dll", "ggml-cuda.dll", "cublasLt64_13.dll", "LICENSE-LLVM-OpenMP"] {
+        for name in [
+            "llama-server.exe",
+            "llama-server-impl.dll",
+            "ggml-cuda.dll",
+            "cublasLt64_13.dll",
+            "LICENSE-LLVM-OpenMP",
+        ] {
             assert!(keep_runtime_file(name), "{name}");
         }
-        for name in ["llama-cli.exe", "llama-bench.exe", "llama-quantize.exe", "rpc-server.exe"] {
+        for name in [
+            "llama-cli.exe",
+            "llama-bench.exe",
+            "llama-quantize.exe",
+            "rpc-server.exe",
+        ] {
             assert!(!keep_runtime_file(name), "{name}");
         }
     }
@@ -1020,9 +1247,13 @@ mod tests {
 
     #[test]
     fn nothing_installed_means_nothing_runs() {
-        let root = std::env::temp_dir().join(format!("qm-engine-{}", uuid::Uuid::new_v4().simple()));
+        let root =
+            std::env::temp_dir().join(format!("qm-engine-{}", uuid::Uuid::new_v4().simple()));
         let engine = Engine::new(root.clone());
-        let config = EmbeddingConfig { enabled: true, ..EmbeddingConfig::fresh() };
+        let config = EmbeddingConfig {
+            enabled: true,
+            ..EmbeddingConfig::fresh()
+        };
         let status = engine.status(&config);
         assert!(!status.running);
         assert!(status.models.iter().all(|m| !m.installed));
@@ -1030,8 +1261,13 @@ mod tests {
             assert!(status.missing_bytes >= MODELS[0].size);
         }
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let err = runtime.block_on(engine.embed(&config, &["x".into()])).unwrap_err();
-        assert!(err.contains("not downloaded") || err.contains("Windows x64"), "{err}");
+        let err = runtime
+            .block_on(engine.embed(&config, &["x".into()]))
+            .unwrap_err();
+        assert!(
+            err.contains("not downloaded") || err.contains("Windows x64"),
+            "{err}"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1041,25 +1277,51 @@ mod tests {
     #[test]
     #[ignore = "needs QS_MEMORY_ENGINE_DIR with an installed runtime and model"]
     fn embeds_on_every_device() {
-        let Some(dir) = std::env::var_os("QS_MEMORY_ENGINE_DIR") else { return };
+        let Some(dir) = std::env::var_os("QS_MEMORY_ENGINE_DIR") else {
+            return;
+        };
         let engine = Engine::new(PathBuf::from(dir));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         if std::env::var("QS_MEMORY_ENGINE_INSTALL").is_ok_and(|v| v == "1") {
-            let config = EmbeddingConfig { enabled: true, ..EmbeddingConfig::fresh() };
+            let config = EmbeddingConfig {
+                enabled: true,
+                ..EmbeddingConfig::fresh()
+            };
             let started = Instant::now();
             runtime.block_on(engine.install(&config)).unwrap();
             let status = engine.status(&config);
-            println!("installed in {:?}: missing {} bytes, runtimes {:?}", started.elapsed(), status.missing_bytes, status.runtimes);
+            println!(
+                "installed in {:?}: missing {} bytes, runtimes {:?}",
+                started.elapsed(),
+                status.missing_bytes,
+                status.runtimes
+            );
             assert_eq!(status.missing_bytes, 0);
         }
-        let texts: Vec<String> = ["Der Hund schläft im Garten.", "The dog is sleeping in the garden.", "株価が急落した。"].map(String::from).to_vec();
+        let texts: Vec<String> = [
+            "Der Hund schläft im Garten.",
+            "The dog is sleeping in the garden.",
+            "株価が急落した。",
+        ]
+        .map(String::from)
+        .to_vec();
         let mut by_device = Vec::new();
         for device in ["auto", "cpu"] {
-            let config = EmbeddingConfig { enabled: true, device: device.into(), ..EmbeddingConfig::fresh() };
+            let config = EmbeddingConfig {
+                enabled: true,
+                device: device.into(),
+                ..EmbeddingConfig::fresh()
+            };
             let started = Instant::now();
             let v = runtime.block_on(engine.embed(&config, &texts)).unwrap();
             let status = engine.status(&config);
-            println!("{device}: ran on {:?} ({:?}), first call {:?}, load {:?} ms", status.device, status.gpu, started.elapsed(), status.load_ms);
+            println!(
+                "{device}: ran on {:?} ({:?}), first call {:?}, load {:?} ms",
+                status.device,
+                status.gpu,
+                started.elapsed(),
+                status.load_ms
+            );
             assert!(cosine(&v[0], &v[1]).unwrap() > cosine(&v[0], &v[2]).unwrap());
             by_device.push(v);
         }

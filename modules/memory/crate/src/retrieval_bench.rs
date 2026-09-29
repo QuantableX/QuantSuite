@@ -348,7 +348,8 @@ fn private_set() {
     let engine_dir = std::env::var_os("QS_MEMORY_ENGINE_DIR");
     let real = match &engine_dir {
         Some(_) => {
-            let env = |key: &str, default: &str| std::env::var(key).unwrap_or_else(|_| default.into());
+            let env =
+                |key: &str, default: &str| std::env::var(key).unwrap_or_else(|_| default.into());
             Some(EmbeddingConfig {
                 enabled: true,
                 builtin_model: env("QS_MEMORY_BENCH_MODEL", engine::DEFAULT_MODEL),
@@ -373,6 +374,9 @@ fn private_set() {
     bench(&set, real.as_ref().map(|c| (c, &real_embed as Embedder)));
     if let Some(config) = &real {
         let status = engine.status(config);
-        println!("engine: model {:?} on {:?} ({:?}), load {:?} ms", status.model, status.device, status.gpu, status.load_ms);
+        println!(
+            "engine: model {:?} on {:?} ({:?}), load {:?} ms",
+            status.model, status.device, status.gpu, status.load_ms
+        );
     }
 }

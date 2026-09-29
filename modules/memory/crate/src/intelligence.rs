@@ -39,7 +39,10 @@ pub fn get_embedding_config(app: AppHandle) -> Result<retrieval::EmbeddingConfig
         .unwrap_or_else(|| Ok(retrieval::EmbeddingConfig::fresh()))
 }
 
-fn save_embedding_config(app: &AppHandle, config: &retrieval::EmbeddingConfig) -> Result<(), String> {
+fn save_embedding_config(
+    app: &AppHandle,
+    config: &retrieval::EmbeddingConfig,
+) -> Result<(), String> {
     config.validate()?;
     let previous = get_embedding_config(app.clone())?;
     let db = app
@@ -70,7 +73,10 @@ fn save_embedding_config(app: &AppHandle, config: &retrieval::EmbeddingConfig) -
 
 /// Operator-only command: deliberately NOT exposed in the MCP capability catalogue.
 #[tauri::command(async)]
-pub fn set_embedding_config(config: retrieval::EmbeddingConfig, app: AppHandle) -> Result<(), String> {
+pub fn set_embedding_config(
+    config: retrieval::EmbeddingConfig,
+    app: AppHandle,
+) -> Result<(), String> {
     save_embedding_config(&app, &config)
 }
 
@@ -353,8 +359,12 @@ fn lock_or_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// Engine, download and indexer state for the Memory settings (operator-only).
+/// `draft` is the form's unsaved selection: what it would still download.
 #[tauri::command(async)]
-pub fn embedding_engine_status(app: AppHandle) -> Result<Value, String> {
+pub fn embedding_engine_status(
+    app: AppHandle,
+    draft: Option<retrieval::EmbeddingConfig>,
+) -> Result<Value, String> {
     let config = get_embedding_config(app.clone())?;
     let engine = app.state::<engine::Engine>();
     let indexer = app.state::<Indexer>();
@@ -367,7 +377,7 @@ pub fn embedding_engine_status(app: AppHandle) -> Result<Value, String> {
     let last_error = lock_or_recover(&indexer.last_error).clone();
     let last_run = lock_or_recover(&indexer.last_run).clone();
     Ok(json!({
-        "engine": engine.status(&config),
+        "engine": engine.status(draft.as_ref().unwrap_or(&config)),
         "config": config,
         "pending": pending,
         "indexerError": last_error,
