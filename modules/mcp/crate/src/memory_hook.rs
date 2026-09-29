@@ -1,14 +1,16 @@
-//! Memory in prompts (docs/MEMORY-HOOKS.md): agents' prompt hooks post their
-//! event JSON to `POST /quantmemory/<client>/<event>` on the QuantMCP port and
-//! get back ready-to-inject QuantMemory excerpts — or an empty answer.
+//! Memory in prompts (docs/MEMORY-HOOKS.md): agents' hooks post their event
+//! JSON to `POST /quantmemory/<client>/<event>` on the QuantMCP port and get
+//! back ready-to-inject QuantMemory context — or an empty answer.
 //!
-//! Recall used to be pull-only: an agent had to remember to call
-//! `quantsuite.memory.context`. The hook asks for it on every prompt instead.
-//! Retrieval is not duplicated here: the request goes through the same
-//! `quantsuite.memory.context` capability an agent would call (the qs-core
-//! broker, its gate, the app switches and QuantMCP > Tools), for the one
-//! registered workspace that contains the hook's `cwd`. This module only
-//! decides what is worth injecting and renders it.
+//! Two events. On every prompt, `user-prompt-submit` answers with the few
+//! excerpts relevant to it: recall used to be pull-only, an agent had to
+//! remember to call `quantsuite.memory.context`. At session start,
+//! `session-start` answers with a compact index of the workspace's memories
+//! ([`index`]) — what Claude Code's MEMORY.md used to be, for every agent.
+//! Retrieval is not duplicated here: both go through the capabilities an
+//! agent would call (the qs-core broker, its gate, the app switches and
+//! QuantMCP > Tools), for the one registered workspace that contains the
+//! hook's folder. This module only decides what is worth injecting.
 //!
 //! Fail open, always: a stopped suite, a disabled server or tool, a folder
 //! outside every workspace, a slow answer or any error yields an empty 200 —
@@ -19,6 +21,8 @@
 //! refuses any request that carries an `Origin` header or a foreign `Host`:
 //! hooks run `curl`, browsers are not welcome to read the vault.
 
+pub mod auto_memory;
+pub mod index;
 pub mod install;
 
 use crate::logs::{LogDirection, LogStore};
@@ -91,21 +95,23 @@ const MAX_QUERY_BYTES: usize = 2000;
 /// command itself gives up after two seconds.
 pub const SERVER_BUDGET: Duration = Duration::from_millis(1500);
 
-/// The agents whose prompt hooks can add context (docs/MEMORY-HOOKS.md has
-/// the evidence for the ones that cannot). The slug is the `clients.rs` id.
+/// The agents whose hooks can add context (docs/MEMORY-HOOKS.md has the
+/// evidence, and the clients that cannot). The slug is the `clients.rs` id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookClient {
     ClaudeCode,
     Codex,
+    Cursor,
 }
 
 impl HookClient {
-    pub const ALL: [HookClient; 2] = [HookClient::ClaudeCode, HookClient::Codex];
+    pub const ALL: [HookClient; 3] = [HookClient::ClaudeCode, HookClient::Codex, HookClient::Cursor];
 
     pub fn slug(self) -> &'static str {
         match self {
             HookClient::ClaudeCode => "claude-code",
             HookClient::Codex => "codex-cli",
+            HookClient::Cursor => "cursor",
         }
     }
 
@@ -115,29 +121,35 @@ impl HookClient {
 
     /// The events QuantMemory hooks into for this client.
     pub fn events(self) -> &'static [HookEvent] {
-        &[HookEvent::UserPromptSubmit]
+        &HookEvent::ALL
+    }
+
+    /// The event's name in this client's hook config (the key under
+    /// `hooks`, and `hookEventName` in Claude-style answers).
+    pub fn event_name(self, event: HookEvent) -> &'static str {
+        match (self, event) {
+            (HookClient::Cursor, HookEvent::UserPromptSubmit) => "beforeSubmitPrompt",
+            (HookClient::Cursor, HookEvent::SessionStart) => "sessionStart",
+            (_, HookEvent::UserPromptSubmit) => "UserPromptSubmit",
+            (_, HookEvent::SessionStart) => "SessionStart",
+        }
     }
 }
 
-/// A hook event: its URL slug and the name both clients use for it — as the
-/// key in their hook config and as `hookSpecificOutput.hookEventName`.
+/// A hook event, by its URL slug.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookEvent {
     UserPromptSubmit,
+    SessionStart,
 }
 
 impl HookEvent {
-    pub const ALL: [HookEvent; 1] = [HookEvent::UserPromptSubmit];
+    pub const ALL: [HookEvent; 2] = [HookEvent::UserPromptSubmit, HookEvent::SessionStart];
 
     pub fn slug(self) -> &'static str {
         match self {
             HookEvent::UserPromptSubmit => "user-prompt-submit",
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            HookEvent::UserPromptSubmit => "UserPromptSubmit",
+            HookEvent::SessionStart => "session-start",
         }
     }
 
@@ -174,6 +186,8 @@ enum Skip {
     ShortPrompt,
     NoWorkspace,
     BelowThreshold(usize),
+    Resumed,
+    NoMemories,
     Failed(String),
     Timeout,
 }
@@ -183,10 +197,12 @@ impl std::fmt::Display for Skip {
         match self {
             Skip::ServerDisabled => write!(f, "QuantMCP server is disabled"),
             Skip::ToolUnavailable(why) => write!(f, "{why}"),
-            Skip::NoPrompt => write!(f, "no prompt or cwd in the hook input"),
+            Skip::NoPrompt => write!(f, "no prompt or folder in the hook input"),
             Skip::ShortPrompt => write!(f, "prompt shorter than {MIN_PROMPT_CHARS} characters"),
             Skip::NoWorkspace => write!(f, "cwd is in no registered workspace"),
             Skip::BelowThreshold(n) => write!(f, "{n} source(s), none above the relevance threshold"),
+            Skip::Resumed => write!(f, "resumed session: its transcript already holds the index"),
+            Skip::NoMemories => write!(f, "no memories to list for this folder"),
             Skip::Failed(e) => write!(f, "error: {e}"),
             Skip::Timeout => write!(f, "no answer within {} ms", SERVER_BUDGET.as_millis()),
         }
@@ -197,6 +213,15 @@ struct Recall {
     workspace: String,
     ids: Vec<String>,
     text: String,
+}
+
+/// Server switch plus the doors of one capability — the checks every hook
+/// event passes before it touches the vault.
+fn require_open(state: &HookState, tool: &str) -> Result<(), Skip> {
+    if !*state.server_enabled.lock().map_err(|e| Skip::Failed(e.to_string()))? {
+        return Err(Skip::ServerDisabled);
+    }
+    require_tool(&state.app, tool).map_err(Skip::ToolUnavailable)
 }
 
 async fn handle(
@@ -212,7 +237,13 @@ async fn handle(
         return StatusCode::NOT_FOUND.into_response();
     };
     let started = Instant::now();
-    let outcome = tokio::time::timeout(SERVER_BUDGET, recall(&state, &body))
+    let work = async {
+        match event {
+            HookEvent::UserPromptSubmit => recall(&state, &body).await,
+            HookEvent::SessionStart => index::session_index(&state, &body).await,
+        }
+    };
+    let outcome = tokio::time::timeout(SERVER_BUDGET, work)
         .await
         .unwrap_or(Err(Skip::Timeout));
     log(&state, client, event, &outcome, started.elapsed());
@@ -223,7 +254,7 @@ async fn handle(
         Err(skip) => format!("skipped: {skip}"),
     });
     let mut response = match outcome {
-        Ok(recall) => Json(hook_output(event, &recall.text)).into_response(),
+        Ok(recall) => Json(hook_output(client, event, &recall.text)).into_response(),
         // An empty 2xx body is "success, nothing to add" for every client.
         Err(_) => StatusCode::OK.into_response(),
     };
@@ -275,17 +306,14 @@ fn log(state: &HookState, client: HookClient, event: HookEvent, outcome: &Result
 }
 
 async fn recall(state: &HookState, body: &[u8]) -> Result<Recall, Skip> {
-    if !*state.server_enabled.lock().map_err(|e| Skip::Failed(e.to_string()))? {
-        return Err(Skip::ServerDisabled);
-    }
-    require_tool(&state.app).map_err(Skip::ToolUnavailable)?;
+    require_open(state, MEMORY_CONTEXT_TOOL)?;
     let input = HookInput::parse(body).ok_or(Skip::NoPrompt)?;
-    let query = query_for(&input.prompt).ok_or(Skip::ShortPrompt)?;
+    let query = query_for(input.prompt.as_deref().unwrap_or_default()).ok_or(Skip::ShortPrompt)?;
     let (workspace, min_score) = settings::with_core_db(&state.app, |conn| {
         let min_score = qs_core::db::get_setting(conn, "mcp", MIN_SCORE_SETTING)
             .ok()
             .flatten();
-        Ok((qs_core::workspaces::containing(conn, &input.cwd), min_score))
+        Ok((qs_core::workspaces::containing(conn, &input.folder), min_score))
     })
     .map_err(Skip::Failed)?;
     let workspace = workspace.ok_or(Skip::NoWorkspace)?;
@@ -315,36 +343,58 @@ async fn recall(state: &HookState, body: &[u8]) -> Result<Recall, Skip> {
 /// The same doors an MCP `tools/call` passes: the tool must be exposed
 /// (Settings > Apps, QuantMCP > Tools) and the gate must answer `allow` even
 /// in strict mode — a hook must never put a prompt into the approval queue.
-fn require_tool(app: &tauri::AppHandle) -> Result<(), String> {
-    if !qs_core::apps::read(app)?.tool_enabled(MEMORY_CONTEXT_TOOL) {
-        return Err(format!("{MEMORY_CONTEXT_TOOL} is deactivated in Settings > Apps"));
+fn require_tool(app: &tauri::AppHandle, tool: &str) -> Result<(), String> {
+    if !qs_core::apps::read(app)?.tool_enabled(tool) {
+        return Err(format!("{tool} is deactivated in Settings > Apps"));
     }
-    if !crate::tool_preferences::read(app)?.tool_enabled(MEMORY_CONTEXT_TOOL, false) {
-        return Err(format!("{MEMORY_CONTEXT_TOOL} is disabled in QuantMCP > Tools"));
+    if !crate::tool_preferences::read(app)?.tool_enabled(tool, false) {
+        return Err(format!("{tool} is disabled in QuantMCP > Tools"));
     }
-    match qs_mcp_bridge::decide_tool(MEMORY_CONTEXT_TOOL, qs_mcp_bridge::ApprovalMode::Strict) {
+    match qs_mcp_bridge::decide_tool(tool, qs_mcp_bridge::ApprovalMode::Strict) {
         qs_mcp_bridge::Decision::Allow => Ok(()),
-        other => Err(format!("{MEMORY_CONTEXT_TOOL} is not auto-approved: {other:?}")),
+        other => Err(format!("{tool} is not auto-approved: {other:?}")),
     }
 }
 
-/// The fields every wired client sends (Claude Code and Codex both use
-/// `prompt` and `cwd`, observed live).
+/// What the endpoint reads from a hook's input. Claude Code and Codex send
+/// `prompt`, `cwd` and (at session start) `source`, observed live; Cursor
+/// sends `prompt` and `workspace_roots` — URI paths such as
+/// `/c:/Projects/QuantSuite` — and runs user hooks from `~/.cursor`, so its
+/// folder is the first workspace root.
 #[derive(Debug, PartialEq)]
 struct HookInput {
-    prompt: String,
-    cwd: String,
+    prompt: Option<String>,
+    folder: String,
+    source: Option<String>,
 }
 
 impl HookInput {
     fn parse(body: &[u8]) -> Option<HookInput> {
         let value: Value = serde_json::from_slice(body).ok()?;
         let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
+        let root = value
+            .get("workspace_roots")
+            .and_then(Value::as_array)
+            .and_then(|roots| roots.first())
+            .and_then(Value::as_str)
+            .map(folder_from_uri_path);
         Some(HookInput {
             // `user_prompt` is the name a docs page shows; the live field is `prompt`.
-            prompt: text("prompt").or_else(|| text("user_prompt"))?,
-            cwd: text("cwd").filter(|cwd| !cwd.trim().is_empty())?,
+            prompt: text("prompt").or_else(|| text("user_prompt")),
+            folder: text("cwd").or(root).filter(|folder| !folder.trim().is_empty())?,
+            source: text("source"),
         })
+    }
+}
+
+/// `/c:/Projects/x` (a VS Code URI path) → `c:/Projects/x`; anything else as is.
+fn folder_from_uri_path(path: &str) -> String {
+    let path = path.strip_prefix("file://").unwrap_or(path);
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+        path[1..].to_string()
+    } else {
+        path.to_string()
     }
 }
 
@@ -480,14 +530,18 @@ fn render(workspace: &str, context: &Context) -> String {
     out
 }
 
-/// The JSON both Claude Code and Codex read from a prompt hook's stdout.
-fn hook_output(event: HookEvent, text: &str) -> Value {
-    json!({
-        "hookSpecificOutput": {
-            "hookEventName": event.name(),
-            "additionalContext": text,
-        }
-    })
+/// The JSON each client reads from a hook's stdout: Claude Code and Codex
+/// take `hookSpecificOutput.additionalContext`, Cursor `additional_context`.
+fn hook_output(client: HookClient, event: HookEvent, text: &str) -> Value {
+    match client {
+        HookClient::Cursor => json!({ "additional_context": text }),
+        HookClient::ClaudeCode | HookClient::Codex => json!({
+            "hookSpecificOutput": {
+                "hookEventName": client.event_name(event),
+                "additionalContext": text,
+            }
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -510,8 +564,12 @@ mod tests {
             assert!(crate::clients::spec(client.slug()).is_some(), "{} is not in CLIENTS", client.slug());
         }
         assert_eq!(HookEvent::from_slug("user-prompt-submit"), Some(HookEvent::UserPromptSubmit));
+        assert_eq!(HookEvent::from_slug("session-start"), Some(HookEvent::SessionStart));
         assert_eq!(HookEvent::from_slug("UserPromptSubmit"), None);
-        assert_eq!(HookClient::from_slug("cursor"), None);
+        assert_eq!(HookClient::from_slug("gemini-cli"), None);
+        assert_eq!(HookClient::Cursor.event_name(HookEvent::SessionStart), "sessionStart");
+        assert_eq!(HookClient::Cursor.event_name(HookEvent::UserPromptSubmit), "beforeSubmitPrompt");
+        assert_eq!(HookClient::Codex.event_name(HookEvent::SessionStart), "SessionStart");
     }
 
     #[test]
@@ -523,15 +581,30 @@ mod tests {
     }
 
     #[test]
-    fn input_takes_prompt_and_cwd_as_the_clients_send_them() {
+    fn input_takes_prompt_folder_and_source_as_the_clients_send_them() {
         let claude = br#"{"session_id":"s","prompt_id":"p","transcript_path":"t","cwd":"C:\\Projects\\QuantSuite","permission_mode":"default","hook_event_name":"UserPromptSubmit","prompt":"How does the hook work?"}"#;
         assert_eq!(
             HookInput::parse(claude),
-            Some(HookInput { prompt: "How does the hook work?".into(), cwd: r"C:\Projects\QuantSuite".into() })
+            Some(HookInput {
+                prompt: Some("How does the hook work?".into()),
+                folder: r"C:\Projects\QuantSuite".into(),
+                source: None
+            })
         );
+        let start = br#"{"session_id":"s","transcript_path":"t","cwd":"/w","hook_event_name":"SessionStart","source":"resume"}"#;
+        assert_eq!(
+            HookInput::parse(start),
+            Some(HookInput { prompt: None, folder: "/w".into(), source: Some("resume".into()) })
+        );
+        // Cursor: no cwd, the first workspace root as a URI path.
+        let cursor = br#"{"conversation_id":"c","hook_event_name":"sessionStart","workspace_roots":["/c:/Projects/QuantSuite","/d:/Other"],"session_id":"s"}"#;
+        assert_eq!(HookInput::parse(cursor).map(|i| i.folder), Some("c:/Projects/QuantSuite".into()));
+        let unix = br#"{"workspace_roots":["/home/me/repo"],"prompt":"x"}"#;
+        assert_eq!(HookInput::parse(unix).map(|i| i.folder), Some("/home/me/repo".into()));
         let documented = br#"{"cwd":"/w","user_prompt":"fallback name"}"#;
-        assert_eq!(HookInput::parse(documented).map(|i| i.prompt), Some("fallback name".into()));
-        assert_eq!(HookInput::parse(br#"{"prompt":"no cwd"}"#), None);
+        assert_eq!(HookInput::parse(documented).and_then(|i| i.prompt), Some("fallback name".into()));
+        assert_eq!(HookInput::parse(br#"{"prompt":"no folder"}"#), None);
+        assert_eq!(HookInput::parse(br#"{"prompt":"x","cwd":"  "}"#), None);
         assert_eq!(HookInput::parse(b"not json"), None);
     }
 
@@ -586,11 +659,16 @@ mod tests {
     }
 
     #[test]
-    fn output_is_the_hook_specific_json_both_clients_read() {
+    fn output_is_the_json_each_client_reads() {
         assert_eq!(
-            hook_output(HookEvent::UserPromptSubmit, "ctx"),
+            hook_output(HookClient::ClaudeCode, HookEvent::UserPromptSubmit, "ctx"),
             json!({ "hookSpecificOutput": { "hookEventName": "UserPromptSubmit", "additionalContext": "ctx" } })
         );
+        assert_eq!(
+            hook_output(HookClient::Codex, HookEvent::SessionStart, "idx"),
+            json!({ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": "idx" } })
+        );
+        assert_eq!(hook_output(HookClient::Cursor, HookEvent::SessionStart, "idx"), json!({ "additional_context": "idx" }));
     }
 
     #[test]

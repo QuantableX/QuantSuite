@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-claude-auto-memory-status"
+description = "Enables the claude_auto_memory_status command without any pre-configured scope."
+commands.allow = ["claude_auto_memory_status"]
+
+[[permission]]
+identifier = "deny-claude-auto-memory-status"
+description = "Denies the claude_auto_memory_status command without any pre-configured scope."
+commands.deny = ["claude_auto_memory_status"]
