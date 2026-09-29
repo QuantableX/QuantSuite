@@ -1331,4 +1331,49 @@ mod tests {
         engine.stop();
         assert!(!engine.status(&EmbeddingConfig::fresh()).running);
     }
+
+    /// The server listens on loopback only and stops by itself once idle
+    /// (one minute here), which is what hands its VRAM back.
+    #[test]
+    #[ignore = "needs QS_MEMORY_ENGINE_DIR with an installed runtime and model; takes over a minute"]
+    fn listens_on_loopback_and_stops_when_idle() {
+        let Some(dir) = std::env::var_os("QS_MEMORY_ENGINE_DIR") else {
+            return;
+        };
+        let engine = Engine::new(PathBuf::from(dir));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let config = EmbeddingConfig {
+            enabled: true,
+            idle_minutes: 1,
+            ..EmbeddingConfig::fresh()
+        };
+        runtime
+            .block_on(engine.embed(&config, &["loopback".into()]))
+            .unwrap();
+        let status = engine.status(&config);
+        let pid = status.pid.unwrap().to_string();
+        println!("running pid {pid} on {:?}", status.device);
+        let netstat = Command::new("netstat").args(["-ano", "-p", "TCP"]).output().unwrap();
+        let rows: Vec<String> = String::from_utf8_lossy(&netstat.stdout)
+            .lines()
+            .filter(|l| l.split_whitespace().last() == Some(pid.as_str()))
+            .map(str::to_string)
+            .collect();
+        println!("sockets of the server:\n{}", rows.join("\n"));
+        assert!(!rows.is_empty());
+        for row in &rows {
+            let cols: Vec<&str> = row.split_whitespace().collect();
+            assert!(cols[1].starts_with("127.0.0.1:"), "{row}");
+            assert!(
+                cols[2].starts_with("127.0.0.1:") || cols[2].starts_with("0.0.0.0:"),
+                "{row}"
+            );
+        }
+        let started = Instant::now();
+        while engine.status(&config).running && started.elapsed() < Duration::from_secs(120) {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        println!("stopped after {:?} idle", started.elapsed());
+        assert!(!engine.status(&config).running);
+    }
 }
