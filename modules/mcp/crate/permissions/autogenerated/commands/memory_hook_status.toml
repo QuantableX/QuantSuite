@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-memory-hook-status"
+description = "Enables the memory_hook_status command without any pre-configured scope."
+commands.allow = ["memory_hook_status"]
+
+[[permission]]
+identifier = "deny-memory-hook-status"
+description = "Denies the memory_hook_status command without any pre-configured scope."
+commands.deny = ["memory_hook_status"]

@@ -50,6 +50,7 @@ const skipped = computed(() => (report.value ?? []).filter(r => r.outcome === 's
 onMounted(() => {
   void loadSnippet()
   void detectAgents()
+  void loadMemoryHooks()
 })
 onBeforeUnmount(() => { ++scanToken })
 
@@ -127,6 +128,82 @@ function copyUrl() {
 
 function copySnippet() {
   if (snippet.value) copyText(snippet.value.snippet, snippetCopied)
+}
+
+// Memory in prompts: the QuantMemory prompt hook per agent (docs/MEMORY-HOOKS.md).
+interface MemoryHookTarget {
+  path: string
+  installed: boolean
+  error: string | null
+}
+
+interface MemoryHookStatus {
+  id: string
+  name: string
+  detected: boolean
+  installed: boolean
+  targets: MemoryHookTarget[]
+  note: string
+}
+
+type MemoryHookChange = 'installed' | 'up_to_date' | 'restored' | 'removed' | 'not_installed'
+
+interface MemoryHookResult {
+  id: string
+  name: string
+  path: string
+  change: MemoryHookChange | null
+  error: string | null
+}
+
+const CHANGE_LABELS: Record<MemoryHookChange, string> = {
+  installed: 'Installed',
+  up_to_date: 'Already installed',
+  restored: 'Removed, file restored byte for byte',
+  removed: 'Removed; the file had changed since, so only the hook was taken out',
+  not_installed: 'Was not installed',
+}
+
+const memoryHooks = ref<MemoryHookStatus[]>([])
+const memoryHookBusy = ref('')
+const memoryHookError = ref('')
+const memoryHookReport = ref<MemoryHookResult[] | null>(null)
+
+function hookInstalledAnywhere(hook: MemoryHookStatus) {
+  return hook.targets.some(t => t.installed)
+}
+
+function hookState(hook: MemoryHookStatus) {
+  const installed = hook.targets.filter(t => t.installed)
+  if (installed.length) return installed.map(t => t.path).join(', ')
+  if (!hook.detected) return 'Not found on this machine'
+  return hook.targets.find(t => t.error)?.error ?? 'Not installed'
+}
+
+async function loadMemoryHooks() {
+  if (!window.__TAURI_INTERNALS__) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    memoryHooks.value = await invoke<MemoryHookStatus[]>('plugin:mcp|memory_hook_status')
+  } catch (e) {
+    memoryHookError.value = `Could not read the memory hooks: ${e}`
+  }
+}
+
+async function setMemoryHook(hook: MemoryHookStatus, enabled: boolean) {
+  if (!window.__TAURI_INTERNALS__ || memoryHookBusy.value) return
+  memoryHookBusy.value = hook.id
+  memoryHookError.value = ''
+  memoryHookReport.value = null
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    memoryHookReport.value = await invoke<MemoryHookResult[]>('plugin:mcp|set_memory_hooks', { clientIds: [hook.id], enabled })
+  } catch (e) {
+    memoryHookError.value = String(e)
+  } finally {
+    memoryHookBusy.value = ''
+  }
+  await loadMemoryHooks()
 }
 
 </script>
@@ -220,6 +297,63 @@ function copySnippet() {
             </button>
           </div>
           <pre class="config-block">{{ snippet?.snippet ?? '' }}</pre>
+        </div>
+      </div>
+
+      <!-- Memory in prompts: install or remove the QuantMemory prompt hook per agent -->
+      <div class="connect-card">
+        <div class="connect-head">
+          <div class="connect-title">
+            <div class="setting-label">Memory in prompts</div>
+            <div class="setting-description">
+              Adds the most relevant QuantMemory excerpts, with citations, to each prompt an agent sends from a registered workspace.
+              Nothing is added below the relevance threshold or while QuantSuite is closed; the prompt always goes through.
+            </div>
+          </div>
+        </div>
+        <div class="report">
+          <template v-for="hook in memoryHooks" :key="hook.id">
+            <div class="report-row" :class="hookInstalledAnywhere(hook) ? 'ok' : 'note'">
+              <span class="report-mark">{{ hookInstalledAnywhere(hook) ? '✓' : '–' }}</span>
+              <span class="report-name">{{ hook.name }}</span>
+              <span class="report-detail" :title="hookState(hook)">{{ hookState(hook) }}</span>
+              <button
+                v-if="!hook.installed"
+                class="setting-action"
+                :disabled="!hook.detected || !!memoryHookBusy"
+                @click="setMemoryHook(hook, true)"
+              >
+                {{ memoryHookBusy === hook.id ? 'Installing…' : 'Install' }}
+              </button>
+              <button
+                v-if="hookInstalledAnywhere(hook)"
+                class="setting-action"
+                :disabled="!!memoryHookBusy"
+                @click="setMemoryHook(hook, false)"
+              >
+                {{ memoryHookBusy === hook.id ? 'Removing…' : 'Remove' }}
+              </button>
+            </div>
+            <div class="report-row note">
+              <span class="report-mark" />
+              <span class="report-detail">{{ hook.note }}</span>
+            </div>
+          </template>
+        </div>
+
+        <div v-if="memoryHookError" class="result-box error" role="alert">{{ memoryHookError }}</div>
+
+        <div v-if="memoryHookReport" class="report">
+          <div
+            v-for="r in memoryHookReport"
+            :key="`${r.id}:${r.path}`"
+            class="report-row"
+            :class="r.error ? 'bad' : 'ok'"
+          >
+            <span class="report-mark">{{ r.error ? '✗' : '✓' }}</span>
+            <span class="report-name">{{ r.name }}</span>
+            <span class="report-detail" :title="r.path">{{ r.error ?? (r.change ? CHANGE_LABELS[r.change] : '') }}{{ r.path ? ` · ${r.path}` : '' }}</span>
+          </div>
         </div>
       </div>
 

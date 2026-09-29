@@ -37,6 +37,8 @@ const COMMANDS: &[&str] = &[
     "get_connect_snippet",
     "list_clients",
     "forget_client",
+    "memory_hook_status",
+    "set_memory_hooks",
     "list_codebase_index_tools",
     "list_agentos_tools",
     "list_kanban_tools",
