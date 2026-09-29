@@ -3,6 +3,7 @@ import { bus, inActiveKeepAliveTree } from '@quantsuite/core'
 import { useMcps } from '#mcp/composables/useMcps'
 import { GENERAL_WORKSPACE_ID, useMcpWorkspaces } from '#mcp/composables/useMcpWorkspaces'
 import { useTools } from '#mcp/composables/useTools'
+import { useWorkspaceReorder } from '#mcp/composables/useWorkspaceReorder'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,9 +15,7 @@ const { mcps, refresh: refreshMcps } = useMcps()
 // bridge catalogue, scripted tools) — `tools` alone is just the scripted
 // registry, which is empty without a native manifest or user scripts.
 const { customTools, refresh: refreshTools, quantmcpToolCount, enabledQuantmcpToolCount } = useTools()
-// The suite workspace registry replaced the module's project list — order is
-// pinned-first-then-recency (the one display order), so the old reorder
-// drag-and-drop is gone with the registry it wrote to.
+// Workspace identity and saved display order belong to the suite registry.
 const {
   workspaces,
   selectedWorkspaceId,
@@ -26,6 +25,13 @@ const {
   selectWorkspace,
   addFolder,
 } = useMcpWorkspaces()
+const {
+  list: workspaceList, draggedId, drop: workspaceDrop, saving: orderSaving,
+  error: orderError, announcement: orderAnnouncement,
+  start: startWorkspaceDrag, click: workspaceClick, keydown: workspaceKeydown,
+  cancel: cancelWorkspaceDrag,
+} = useWorkspaceReorder(workspaces, refreshWorkspaces)
+watch(() => route.path, cancelWorkspaceDrag)
 
 const quantmcpEnabled = useState<boolean>('quantmcp-enabled', () => true)
 
@@ -342,13 +348,31 @@ onUnmounted(() => {
             Add Workspace
           </button>
         </div>
-        <ul v-else class="project-list">
+        <p v-if="orderError" class="workspace-order-error" role="alert">{{ orderError }}</p>
+        <p class="workspace-order-announcement" role="status">{{ orderAnnouncement }}</p>
+        <ul v-if="workspaces.length" ref="workspaceList" class="project-list" :class="{ 'workspace-dragging': draggedId }" :aria-busy="orderSaving">
           <li
             v-for="w in workspaces"
             :key="w.id"
             class="project-item"
-            :class="{ active: selectedWorkspaceId === w.id }"
-            @click="selectWorkspace(w.id)"
+            :class="{
+              active: selectedWorkspaceId === w.id,
+              'workspace-drag-source': draggedId === w.id,
+              'workspace-drop-before': workspaceDrop?.id === w.id && workspaceDrop.edge === 'before',
+              'workspace-drop-after': workspaceDrop?.id === w.id && workspaceDrop.edge === 'after',
+            }"
+            :data-workspace-id="w.id"
+            tabindex="0"
+            role="button"
+            :aria-pressed="selectedWorkspaceId === w.id"
+            :aria-label="`${w.name}. Drag to reorder, or use Alt+Up and Alt+Down. Pinned workspaces stay at the top.`"
+            title="Drag to reorder · Alt+↑ / Alt+↓"
+            @pointerdown="startWorkspaceDrag($event, w.id)"
+            @lostpointercapture="cancelWorkspaceDrag"
+            @click="workspaceClick($event, w.id, selectWorkspace)"
+            @keydown="workspaceKeydown($event, w.id)"
+            @keydown.enter.prevent="selectWorkspace(w.id)"
+            @keydown.space.prevent="selectWorkspace(w.id)"
           >
             <span class="project-item-name">
               <span v-if="w.pinned" class="ws-pin" title="Pinned">&#9733;</span>
@@ -599,6 +623,48 @@ onUnmounted(() => {
 
 .project-item:hover {
   background: var(--bg-hover);
+}
+
+.project-list .project-item {
+  position: relative;
+  touch-action: none;
+  cursor: grab;
+}
+
+.project-list .project-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.workspace-dragging .project-item { cursor: grabbing; }
+.workspace-drag-source { opacity: 0.45; }
+
+.workspace-drop-before::before,
+.workspace-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.workspace-drop-before::before { top: -2px; }
+.workspace-drop-after::after { bottom: -2px; }
+
+.workspace-order-error {
+  margin: 8px;
+  color: var(--error);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.workspace-order-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
 .project-item.active {
