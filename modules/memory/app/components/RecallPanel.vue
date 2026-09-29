@@ -9,7 +9,7 @@ const includeGeneral = ref(false)
 const reviewedOnly = ref(false)
 const busy = ref(false)
 const error = ref('')
-interface Context { mode: string; elapsedMs: number; excerptChars: number; warnings: string[]; sources: { id: string; title: string; citation: string; scope: string; path: string; excerpt: string; reasons: string[]; quality: MemoryQuality }[] }
+interface Context { mode: string; device?: string; embeddingModel?: string; elapsedMs: number; excerptChars: number; warnings: string[]; sources: { id: string; title: string; citation: string; scope: string; path: string; excerpt: string; reasons: string[]; quality: MemoryQuality }[] }
 const result = ref<Context | null>(null)
 let request = 0
 watch([query, scope, includeGeneral, reviewedOnly], () => { request++; result.value = null; error.value = ''; busy.value = false })
@@ -34,7 +34,7 @@ async function recall() {
         <button :disabled="busy || !query.trim()">{{ busy ? 'Retrieving…' : 'Recall' }}</button></div>
     </form>
     <p v-if="error" role="alert">{{ error }}</p>
-    <template v-if="result"><p>{{ result.mode }} · {{ result.elapsedMs }} ms · {{ result.excerptChars }} excerpt characters</p>
+    <template v-if="result"><p>{{ result.mode }}<template v-if="result.device"> · {{ result.device }} · {{ result.embeddingModel }}</template> · {{ result.elapsedMs }} ms · {{ result.excerptChars }} excerpt characters</p>
       <p v-for="warning in result.warnings" :key="warning" role="status">{{ warning }}</p>
       <article v-for="source in result.sources" :key="source.id"><NuxtLink :to="`/memory/m/${encodeURIComponent(source.id)}`">{{ source.title }}</NuxtLink>
         <p>{{ vault.scopeName(source.scope) }} / {{ source.path }} · {{ source.quality.reviewed ? 'Reviewed' : 'Unverified claim' }}</p>

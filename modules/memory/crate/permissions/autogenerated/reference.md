@@ -35,6 +35,10 @@ Default permissions for the QuantMemory module: the markdown vault, its index, s
 - `allow-get-embedding-config`
 - `allow-set-embedding-config`
 - `allow-index-embeddings`
+- `allow-embedding-engine-status`
+- `allow-embedding-engine-setup`
+- `allow-embedding-engine-stop`
+- `allow-embedding-engine-logs`
 - `allow-set-memory-quality`
 - `allow-review-memory-quality`
 - `allow-get-memory-review-queue`
@@ -148,6 +152,110 @@ Enables the describe_base command without any pre-configured scope.
 <td>
 
 Denies the describe_base command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`memory:allow-embedding-engine-logs`
+
+</td>
+<td>
+
+Enables the embedding_engine_logs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`memory:deny-embedding-engine-logs`
+
+</td>
+<td>
+
+Denies the embedding_engine_logs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`memory:allow-embedding-engine-setup`
+
+</td>
+<td>
+
+Enables the embedding_engine_setup command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`memory:deny-embedding-engine-setup`
+
+</td>
+<td>
+
+Denies the embedding_engine_setup command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`memory:allow-embedding-engine-status`
+
+</td>
+<td>
+
+Enables the embedding_engine_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`memory:deny-embedding-engine-status`
+
+</td>
+<td>
+
+Denies the embedding_engine_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`memory:allow-embedding-engine-stop`
+
+</td>
+<td>
+
+Enables the embedding_engine_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`memory:deny-embedding-engine-stop`
+
+</td>
+<td>
+
+Denies the embedding_engine_stop command without any pre-configured scope.
 
 </td>
 </tr>
