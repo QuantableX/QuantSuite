@@ -136,6 +136,7 @@ function copySnippet() {
 interface MemoryHookTarget {
   path: string
   installed: boolean
+  complete: boolean
   error: string | null
 }
 
@@ -177,7 +178,10 @@ function hookInstalledAnywhere(hook: MemoryHookStatus) {
 
 function hookState(hook: MemoryHookStatus) {
   const installed = hook.targets.filter(t => t.installed)
-  if (installed.length) return installed.map(t => t.path).join(', ')
+  if (installed.length) {
+    const paths = installed.map(t => t.path).join(', ')
+    return hook.installed ? paths : `Partly installed (Install adds the missing hook) · ${paths}`
+  }
   if (!hook.detected) return 'Not found on this machine'
   return hook.targets.find(t => t.error)?.error ?? 'Not installed'
 }

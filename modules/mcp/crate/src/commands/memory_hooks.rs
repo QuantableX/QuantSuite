@@ -29,7 +29,10 @@ fn name(client: HookClient) -> &'static str {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HookTarget {
     path: String,
+    /// The file holds at least one hook of ours.
     installed: bool,
+    /// ... and one for every event the client hooks into.
+    complete: bool,
     error: Option<String>,
 }
 
@@ -39,7 +42,7 @@ pub(crate) struct MemoryHookStatus {
     id: &'static str,
     name: &'static str,
     detected: bool,
-    /// Every target file carries the hook.
+    /// Every target file carries all of the client's hooks.
     installed: bool,
     targets: Vec<HookTarget>,
     note: &'static str,
@@ -54,18 +57,29 @@ pub(crate) fn memory_hook_status() -> Vec<MemoryHookStatus> {
             let targets: Vec<HookTarget> = match install::targets(client) {
                 Ok(paths) => paths
                     .into_iter()
-                    .map(|path| match install::complete_in(&path, client) {
-                        Ok(installed) => HookTarget { path: path.display().to_string(), installed, error: None },
-                        Err(e) => HookTarget { path: path.display().to_string(), installed: false, error: Some(e) },
+                    .map(|path| {
+                        let state = install::installed_in(&path)
+                            .and_then(|installed| Ok((installed, install::complete_in(&path, client)?)));
+                        match state {
+                            Ok((installed, complete)) => {
+                                HookTarget { path: path.display().to_string(), installed, complete, error: None }
+                            }
+                            Err(e) => HookTarget {
+                                path: path.display().to_string(),
+                                installed: false,
+                                complete: false,
+                                error: Some(e),
+                            },
+                        }
                     })
                     .collect(),
-                Err(e) => vec![HookTarget { path: String::new(), installed: false, error: Some(e) }],
+                Err(e) => vec![HookTarget { path: String::new(), installed: false, complete: false, error: Some(e) }],
             };
             MemoryHookStatus {
                 id: client.slug(),
                 name: name(client),
                 detected: detected(client),
-                installed: !targets.is_empty() && targets.iter().all(|t| t.installed),
+                installed: !targets.is_empty() && targets.iter().all(|t| t.complete),
                 targets,
                 note: note(client),
             }
