@@ -80,7 +80,7 @@
     {
       "name": "review_queue",
       "command": "plugin:memory|get_memory_review_queue",
-      "description": "List memories needing review, lacking sources, stale verification, declared conflicts or duplicate content. Conflict flags are declarations, not automatic fact checking. Read-only; does not merge or delete anything.",
+      "description": "List memories needing review, lacking sources, stale verification, declared conflicts or duplicate content, plus log-like memories (many dated entries) and near-duplicates (embedding similarity, when vectors exist) with consolidation proposals, listed first. Conflict flags are declarations, not automatic fact checking. Read-only; does not merge or delete anything. A proposal is applied only after the user reviewed it, never automatically.",
       "sideEffects": "read",
       "inputSchema": { "type": "object", "properties": { "scope": { "type": "string" } } }
     },

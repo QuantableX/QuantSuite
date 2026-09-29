@@ -218,6 +218,113 @@ fn duplicate_review_never_merges_notes() {
 }
 
 #[test]
+fn review_queue_proposes_consolidation_for_logs_and_near_duplicates_without_writing() {
+    let mut conn = Connection::open_in_memory().unwrap();
+    index::init_schema(&conn).unwrap();
+    let mut log = "# Synthetic experiment log\n\nWhat the experiment is for.\n".to_string();
+    for day in 1..=crate::consolidation::LOG_MIN_DATED_ENTRIES {
+        log.push_str(&format!(
+            "\n## 2026-01-{day:02} — run {day}\n\n{}\n",
+            "measured value ".repeat(100)
+        ));
+    }
+    add(&conn, "log", "alpha", &log);
+    add(
+        &conn,
+        "a",
+        "alpha",
+        "# Cache A\nThe cache is rebuilt on start.",
+    );
+    add(
+        &conn,
+        "d",
+        "alpha",
+        "# Cache D\nThe cache is rebuilt on start.",
+    );
+    add(
+        &conn,
+        "b",
+        "alpha",
+        "# Cache B\nOn start the cache gets rebuilt.",
+    );
+    add(&conn, "c", "alpha", "# Unrelated\nSomething else entirely.");
+    add(
+        &conn,
+        "x",
+        "beta",
+        "# Cache X\nThe cache is rebuilt on start.",
+    );
+    let config = EmbeddingConfig {
+        enabled: true,
+        model: "fixture".into(),
+        ..Default::default()
+    };
+    for job in pending(&conn, &["alpha".into(), "beta".into()], &config, 10).unwrap() {
+        let vector = match job.id.as_str() {
+            "a" | "d" | "x" => vec![1.0, 0.0, 0.0],
+            "b" => vec![0.95, 0.2, 0.0],
+            "c" => vec![0.0, 0.0, 1.0],
+            _ => vec![0.0, 1.0, 0.0],
+        };
+        store_vectors(
+            &mut conn,
+            &job,
+            &config.key(),
+            &vec![vector; job.inputs.len()],
+        )
+        .unwrap();
+    }
+    let snapshot = |conn: &Connection| -> Vec<(String, String, String)> {
+        let mut stmt = conn
+            .prepare("SELECT m.id, m.content_hash, d.body FROM memories m JOIN docs d ON d.memory_id=m.id ORDER BY m.id")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap();
+        rows.map(Result::unwrap).collect()
+    };
+    let before = snapshot(&conn);
+    let queue = review_queue(&conn, Some("alpha")).unwrap();
+    assert_eq!(snapshot(&conn), before, "the review queue never writes");
+    let issue = |id: &str| queue.iter().find(|q| q.id == id).unwrap();
+    // Proposals come first.
+    let with: Vec<_> = queue.iter().map(|q| !q.proposals.is_empty()).collect();
+    assert!(with.windows(2).all(|w| w[0] >= w[1]), "{with:?}");
+    assert_eq!(with.iter().filter(|p| **p).count(), 4);
+    let words = vault::word_count(&log);
+    assert!(issue("log").reasons.contains(&format!(
+        "log-like: 5 dated entries (2026-01-01 to 2026-01-05), {words} words"
+    )));
+    assert!(issue("log").proposals[0].contains("## Current state"));
+    assert!(issue("log").related_ids.is_empty());
+    // a and d are exact duplicates: flagged once as such, not again as near.
+    let a = issue("a");
+    assert_eq!(a.related_ids, vec!["d".to_string(), "b".to_string()]);
+    assert!(a.reasons.contains(&"duplicate content".into()));
+    assert!(a
+        .reasons
+        .contains(&"near-duplicate (embedding similarity 0.98)".into()));
+    assert!(a.proposals[0].contains("supersededBy"));
+    let b = issue("b");
+    assert_eq!(b.related_ids, vec!["a".to_string(), "d".to_string()]);
+    assert!(!b.reasons.contains(&"duplicate content".into()));
+    // Other scopes, unrelated vectors and memories without flags stay out.
+    assert!(queue.iter().all(|q| !q.related_ids.contains(&"x".into())));
+    assert!(issue("c").proposals.is_empty() && issue("c").related_ids.is_empty());
+    // Changed content drops its vectors, so stale similarity never flags.
+    add(
+        &conn,
+        "b",
+        "alpha",
+        "# Cache B\nNow about something different.",
+    );
+    let queue = review_queue(&conn, Some("alpha")).unwrap();
+    assert!(queue
+        .iter()
+        .all(|q| !q.reasons.iter().any(|r| r.starts_with("near-duplicate"))));
+}
+
+#[test]
 fn v2_migration_preserves_notes_and_forces_provenance_backfill() {
     let conn = Connection::open_in_memory().unwrap();
     index::init_schema(&conn).unwrap();

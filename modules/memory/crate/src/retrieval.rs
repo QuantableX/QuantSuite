@@ -417,14 +417,21 @@ pub struct ReviewIssue {
     pub scope: String,
     pub reasons: Vec<String>,
     pub related_ids: Vec<String>,
+    /// Consolidation proposals for a human to review; never applied here.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub proposals: Vec<String>,
 }
 
 pub fn review_queue(conn: &Connection, scope: Option<&str>) -> Result<Vec<ReviewIssue>, String> {
     let notes = index::list(conn, scope, None, None, 10000)?;
     let mut fingerprints: HashMap<u64, Vec<String>> = HashMap::new();
+    let mut log_like = HashMap::new();
     for m in &notes {
-        let body = index::body_of(conn, &m.id)?
-            .unwrap_or_default()
+        let raw = index::body_of(conn, &m.id)?.unwrap_or_default();
+        if let Some(flag) = crate::consolidation::log_like(&raw, m.word_count) {
+            log_like.insert(m.id.clone(), flag);
+        }
+        let body = raw
             .lines()
             .filter(|line| !line.starts_with("# "))
             .collect::<Vec<_>>()
@@ -455,6 +462,7 @@ pub fn review_queue(conn: &Connection, scope: Option<&str>) -> Result<Vec<Review
             })
         })
         .collect();
+    let near_duplicates = crate::consolidation::near_duplicates(conn, scope)?;
     let mut out = vec![];
     for m in notes {
         let mut reasons = vec![];
@@ -480,6 +488,27 @@ pub fn review_queue(conn: &Connection, scope: Option<&str>) -> Result<Vec<Review
             reasons.push("duplicate content".into());
             related_ids.extend(ids.clone());
         }
+        let mut proposals = vec![];
+        if let Some((reason, proposal)) = log_like.remove(&m.id) {
+            reasons.push(reason);
+            proposals.push(proposal);
+        }
+        // Exact duplicates are already flagged above.
+        let near: Vec<_> = near_duplicates
+            .get(&m.id)
+            .into_iter()
+            .flatten()
+            .filter(|(other, _)| !duplicates.get(&m.id).is_some_and(|ids| ids.contains(other)))
+            .collect();
+        for (other, similarity) in &near {
+            reasons.push(format!(
+                "near-duplicate (embedding similarity {similarity:.2})"
+            ));
+            related_ids.push(other.clone());
+        }
+        if !near.is_empty() {
+            proposals.push("Near-duplicate proposal: keep one memory with the combined facts and mark the other supersededBy it; nothing is merged automatically.".into());
+        }
         if !reasons.is_empty() {
             out.push(ReviewIssue {
                 id: m.id,
@@ -487,8 +516,11 @@ pub fn review_queue(conn: &Connection, scope: Option<&str>) -> Result<Vec<Review
                 scope: m.scope,
                 reasons,
                 related_ids,
+                proposals,
             });
         }
     }
+    // Actionable consolidation proposals first; otherwise newest first as listed.
+    out.sort_by_key(|issue| issue.proposals.is_empty());
     Ok(out)
 }
