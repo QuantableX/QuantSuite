@@ -216,11 +216,32 @@ async fn handle(
         .await
         .unwrap_or(Err(Skip::Timeout));
     log(&state, client, event, &outcome, started.elapsed());
-    match outcome {
+    // The decision also rides in a header: the hook command never prints
+    // headers, so the agent sees nothing of it, but a `curl -i` shows why.
+    let decision = header_value(&match &outcome {
+        Ok(recall) => format!("injected {}", recall.ids.len()),
+        Err(skip) => format!("skipped: {skip}"),
+    });
+    let mut response = match outcome {
         Ok(recall) => Json(hook_output(event, &recall.text)).into_response(),
         // An empty 2xx body is "success, nothing to add" for every client.
         Err(_) => StatusCode::OK.into_response(),
+    };
+    if let Ok(value) = header::HeaderValue::from_str(&decision) {
+        response.headers_mut().insert(DECISION_HEADER, value);
     }
+    response
+}
+
+/// Response header naming what the hook decided (`injected 2`, `skipped: …`).
+pub const DECISION_HEADER: &str = "x-quantmemory";
+
+/// Printable ASCII only, bounded — error texts can carry anything.
+fn header_value(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_ascii_graphic() || c == ' ' { c } else { '?' })
+        .take(200)
+        .collect()
 }
 
 /// Loopback callers only, and never a browser: curl sends no `Origin`, every
@@ -570,6 +591,14 @@ mod tests {
             hook_output(HookEvent::UserPromptSubmit, "ctx"),
             json!({ "hookSpecificOutput": { "hookEventName": "UserPromptSubmit", "additionalContext": "ctx" } })
         );
+    }
+
+    #[test]
+    fn the_decision_header_is_printable_ascii_and_bounded() {
+        assert_eq!(header_value("skipped: cwd is in no registered workspace"), "skipped: cwd is in no registered workspace");
+        assert_eq!(header_value("error: Gedächtnis\nweg"), "error: Ged?chtnis?weg");
+        assert_eq!(header_value(&"x".repeat(500)).len(), 200);
+        assert!(header::HeaderValue::from_str(&header_value("a\u{0}b\r\nc")).is_ok());
     }
 
     #[test]

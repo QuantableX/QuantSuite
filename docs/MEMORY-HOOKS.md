@@ -52,7 +52,10 @@ agent prompt ──► hook command (curl, stdin = the event JSON)
   "UserPromptSubmit", "additionalContext": "…"}}`, which both clients read.
 - **Log.** Each call adds one line to the QuantMCP request log: the
   workspace and the injected ids, or why nothing was injected. The prompt
-  text is never logged.
+  text is never logged. The same decision rides in the response header
+  `x-quantmemory` (`injected 1`, `skipped: cwd is in no registered
+  workspace`, …); the hook command never prints headers, so only a
+  `curl -i` sees it.
 
 ## The relevance gate
 
@@ -158,11 +161,28 @@ absent file, a shared group and a port change.
   round trips, foreign edits, shared groups, refused shapes).
 - `cargo test -p tauri-plugin-qs --lib containing` — the cwd → workspace
   resolution.
-- Live: run a debug build (port 3101, `~/.quantsuite-dev`), register a test
-  workspace with a memory, and start `claude -p "<prompt about it>"
-  --settings <temp file with the hook>` from that folder; `--debug-file`
-  shows `Hook UserPromptSubmit (…) provided additionalContext`. Stop the
-  build and run the prompt again: it answers normally, the hook exits 0.
+- Live: build the worktree as an isolated debug app (`node
+  scripts/tauri-build.mjs --debug --no-bundle --config
+  apps/src-tauri/tauri.dev.conf.json`; port 3101, data in
+  `~/.quantsuite-dev`), register a throwaway workspace with one memory, and
+  run `claude -p "<prompt about it>" --setting-sources project,local
+  --strict-mcp-config --settings <temp file with the hook> --debug-file
+  <log>` from that folder. Never install into the real settings for a test.
+
+Observed 2026-09-29 with Claude Code 2.1.284 and a throwaway workspace
+holding one memory ("Zephyr staging deploy flag"):
+
+- `What is the Zephyr staging deploy flag?` → the hook took ~140 ms, the
+  debug log shows `provided additionalContext`, and the model answered
+  with the flag and `[memory:5f0c1d2e-…]`, which it could only know from
+  the injection.
+- The same question with an extra sentence of instructions, and a prompt
+  with `need` where the memory says `needs`, stayed below the gate
+  (`skipped: 1 source(s), none above the relevance threshold`); an
+  unrelated prompt and a `cwd` outside every workspace injected nothing.
+- Suite stopped: the prompt ran normally (`I don't know …`), the hook took
+  ~640 ms and left no hook error, only `Hook output does not start with {`
+  in the debug log.
 
 ## Adding an event or a client
 
