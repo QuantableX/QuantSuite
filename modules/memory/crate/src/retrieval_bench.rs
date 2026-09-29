@@ -183,8 +183,9 @@ fn run(
         .iter()
         .map(|case| {
             let scopes = scopes_of(set, case);
-            let vector = semantic
-                .map(|(_, embed)| embed(std::slice::from_ref(&case.query)).unwrap().remove(0));
+            let vector = semantic.map(|(config, embed)| {
+                embed(&[config.query_input(&case.query)]).unwrap().remove(0)
+            });
             let config = semantic.map(|(config, _)| config);
             let result = assemble(
                 conn,
@@ -341,7 +342,36 @@ fn private_set() {
     };
     let set = load(std::path::Path::new(&path));
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let real = set.embedding.clone().filter(|c| c.enabled);
-    let real_embed = |inputs: &[String]| runtime.block_on(embed(real.as_ref().unwrap(), inputs));
+    // QS_MEMORY_ENGINE_DIR runs the hybrid mode through the built-in engine installed
+    // there (QS_MEMORY_BENCH_MODEL / QS_MEMORY_BENCH_DEVICE pick model and device).
+    let engine_dir = std::env::var_os("QS_MEMORY_ENGINE_DIR");
+    let real = match &engine_dir {
+        Some(_) => {
+            let env = |key: &str, default: &str| std::env::var(key).unwrap_or_else(|_| default.into());
+            Some(EmbeddingConfig {
+                enabled: true,
+                builtin_model: env("QS_MEMORY_BENCH_MODEL", engine::DEFAULT_MODEL),
+                device: env("QS_MEMORY_BENCH_DEVICE", "auto"),
+                ..EmbeddingConfig::fresh()
+            })
+        }
+        None => set.embedding.clone().filter(|c| c.enabled),
+    };
+    let engine = engine::Engine::new(engine_dir.map_or_else(
+        || qs_core::paths::module_dir("memory").join("engine"),
+        PathBuf::from,
+    ));
+    let real_embed = |inputs: &[String]| {
+        let config = real.as_ref().unwrap();
+        if config.is_builtin() {
+            runtime.block_on(engine.embed(config, inputs))
+        } else {
+            runtime.block_on(embed(config, inputs))
+        }
+    };
     bench(&set, real.as_ref().map(|c| (c, &real_embed as Embedder)));
+    if let Some(config) = &real {
+        let status = engine.status(config);
+        println!("engine: model {:?} on {:?} ({:?}), load {:?} ms", status.model, status.device, status.gpu, status.load_ms);
+    }
 }

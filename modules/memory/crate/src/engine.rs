@@ -1007,14 +1007,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    /// Real inference, when `QS_MEMORY_ENGINE_DIR` names an engine folder with a
-    /// runtime and the default model installed (nothing is downloaded here).
+    /// Real inference in the engine folder `QS_MEMORY_ENGINE_DIR`. With
+    /// `QS_MEMORY_ENGINE_INSTALL=1` it first downloads what the default setting
+    /// needs (the activation path); otherwise nothing is downloaded.
     #[test]
     #[ignore = "needs QS_MEMORY_ENGINE_DIR with an installed runtime and model"]
     fn embeds_on_every_device() {
         let Some(dir) = std::env::var_os("QS_MEMORY_ENGINE_DIR") else { return };
         let engine = Engine::new(PathBuf::from(dir));
         let runtime = tokio::runtime::Runtime::new().unwrap();
+        if std::env::var("QS_MEMORY_ENGINE_INSTALL").is_ok_and(|v| v == "1") {
+            let config = EmbeddingConfig { enabled: true, ..EmbeddingConfig::fresh() };
+            let started = Instant::now();
+            runtime.block_on(engine.install(&config)).unwrap();
+            let status = engine.status(&config);
+            println!("installed in {:?}: missing {} bytes, runtimes {:?}", started.elapsed(), status.missing_bytes, status.runtimes);
+            assert_eq!(status.missing_bytes, 0);
+        }
         let texts: Vec<String> = ["Der Hund schläft im Garten.", "The dog is sleeping in the garden.", "株価が急落した。"].map(String::from).to_vec();
         let mut by_device = Vec::new();
         for device in ["auto", "cpu"] {
