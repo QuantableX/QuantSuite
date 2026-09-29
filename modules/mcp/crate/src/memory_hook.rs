@@ -45,15 +45,27 @@ pub const ROUTE_SEGMENT: &str = "quantmemory";
 /// Reciprocal-rank fusion in `retrieval::assemble` uses k = 60: a source that
 /// one retriever ranks first scores 1/60, each further agreeing retriever adds
 /// up to another 1/60, and the quality rerank multiplies (reviewed ×1.1,
-/// unresolved conflict ×0.7).
+/// unresolved conflict ×0.7, recency at most ×1.03).
 const RRF_TOP: f64 = 1.0 / 60.0;
 
 /// The relevance gate. Nothing below it is injected. 1.5 top ranks' worth
 /// means at least two retrieval signals agree near the top — e.g. a
 /// semantic and a lexical match, or an all-terms and a some-terms lexical
 /// match — while any single list's best hit alone (1/60) never gets in: a
-/// lone OR match on a function word is the noise this gate exists for.
+/// lone OR match on a function word is the noise this gate exists for. On
+/// the private retrieval set (lexical, 2026-09-29) one-signal sources scored
+/// at most 0.0172 and two-signal sources at least 0.0308.
 pub const DEFAULT_MIN_SCORE: f64 = 1.5 * RRF_TOP;
+
+// Checked at compile time: one list's best hit stays out even with every
+// multiplier retrieval applies (human-reviewed ×1.1, recency ≤ ×1.03 —
+// RECENCY_MAX_BONUS in retrieval.rs); two agreeing signals get in even from
+// ranks 1 and 10; an unresolved conflict (×0.7) needs more agreement.
+const _: () = assert!(
+    RRF_TOP * 1.1 * 1.03 < DEFAULT_MIN_SCORE
+        && 1.0 / 61.0 + 1.0 / 70.0 >= DEFAULT_MIN_SCORE
+        && 2.0 / 61.0 * 0.7 < DEFAULT_MIN_SCORE
+);
 
 /// core.db override for the gate: scope `mcp`, this key, a non-negative
 /// number in the same fused-score units. Absent or invalid → the default.
@@ -482,12 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_gate_needs_two_agreeing_signals() {
-        // One list's best hit, even human-reviewed, stays out; two agreeing
-        // top-ranked signals get in.
-        assert!(RRF_TOP * 1.1 < DEFAULT_MIN_SCORE);
-        assert!(2.0 / 61.0 >= DEFAULT_MIN_SCORE);
-        assert!(2.0 / 61.0 * 0.7 < DEFAULT_MIN_SCORE, "an unresolved conflict needs more agreement");
+    fn the_gate_setting_overrides_only_with_a_valid_number() {
         assert_eq!(min_score_from(None), DEFAULT_MIN_SCORE);
         assert_eq!(min_score_from(Some(&json!(0.01))), 0.01);
         assert_eq!(min_score_from(Some(&json!(-1))), DEFAULT_MIN_SCORE);
