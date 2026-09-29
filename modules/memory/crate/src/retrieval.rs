@@ -154,6 +154,11 @@ pub struct ContextResult {
     pub embedding_model: Option<String>,
 }
 
+/// The fixed windows that get embedded. Heading-aware sections with a "Title › Section"
+/// prefix were measured on the card-1 benchmark (2026-09-29, Qwen3-Embedding 0.6B) and
+/// lost: MRR 0.86 → 0.81 (cross-language 0.80 → 0.69); sections without the prefix
+/// 0.84. Short, one-topic memories embed best as whole windows; [`sections`] only
+/// shapes what is shown.
 pub fn chunks(text: &str) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     (0..chars.len())
@@ -165,6 +170,106 @@ pub fn chunks(text: &str) -> Vec<String> {
                 .collect()
         })
         .collect()
+}
+
+/// Longest section in characters; longer ones split at blank lines, longer paragraphs
+/// into windows.
+pub const SECTION_CHARS: usize = 1200;
+/// A section shorter than this joins the one before it when both fit.
+const MIN_SECTION_CHARS: usize = 300;
+
+/// One piece of a memory body and the headings it sits under.
+#[derive(Debug, PartialEq)]
+pub struct Section {
+    pub path: Vec<String>,
+    pub text: String,
+}
+
+fn heading(line: &str) -> Option<(usize, &str)> {
+    let level = line.bytes().take_while(|b| *b == b'#').count();
+    let rest = &line[level..];
+    ((1..=6).contains(&level) && (rest.is_empty() || rest.starts_with([' ', '\t'])))
+        .then(|| (level, rest.trim().trim_end_matches('#').trim()))
+}
+
+/// A memory body cut at its Markdown headings (not inside fenced code), each piece with
+/// its heading path, so an excerpt starts where a section starts.
+pub fn sections(body: &str) -> Vec<Section> {
+    let len = |s: &str| s.chars().count();
+    let mut raw: Vec<(Vec<String>, String)> = vec![(vec![], String::new())];
+    let mut stack: Vec<(usize, String)> = vec![];
+    let mut fence = false;
+    for line in body.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            fence = !fence;
+        }
+        if let Some((level, title)) = heading(line).filter(|_| !fence) {
+            stack.retain(|(l, _)| *l < level);
+            stack.push((level, title.to_string()));
+            raw.push((stack.iter().map(|(_, t)| t.clone()).collect(), String::new()));
+        }
+        let text = &mut raw.last_mut().expect("never empty").1;
+        text.push_str(line);
+        text.push('\n');
+    }
+    let mut out: Vec<Section> = vec![];
+    for (path, text) in raw {
+        let text = text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let mut pieces = vec![];
+        if len(text) <= SECTION_CHARS {
+            pieces.push(text.to_string());
+        } else {
+            let mut current = String::new();
+            for paragraph in text.split("\n\n").map(str::trim).filter(|p| !p.is_empty()) {
+                if !current.is_empty() && len(&current) + 2 + len(paragraph) > SECTION_CHARS {
+                    pieces.push(std::mem::take(&mut current));
+                }
+                if len(paragraph) > SECTION_CHARS {
+                    pieces.extend(chunks(paragraph));
+                } else {
+                    if !current.is_empty() {
+                        current.push_str("\n\n");
+                    }
+                    current.push_str(paragraph);
+                }
+            }
+            if !current.is_empty() {
+                pieces.push(current);
+            }
+        }
+        for piece in pieces {
+            match out.last_mut() {
+                Some(last)
+                    if len(&piece) < MIN_SECTION_CHARS
+                        && len(&last.text) + 2 + len(&piece) <= SECTION_CHARS =>
+                {
+                    last.text.push_str("\n\n");
+                    last.text.push_str(&piece);
+                }
+                _ => out.push(Section { path: path.clone(), text: piece }),
+            }
+        }
+    }
+    out
+}
+
+/// The section a semantic hit's embedded window sits in (by the window's middle), so its
+/// excerpt starts at a heading too; the window itself when it straddles sections.
+fn section_of(body: &str, window: &str) -> Option<String> {
+    let chars: Vec<char> = window.chars().filter(|c| *c != '\r').collect();
+    let middle = chars.len() / 2;
+    let probe: String = chars[middle.saturating_sub(40)..(middle + 40).min(chars.len())]
+        .iter()
+        .collect();
+    let probe = probe.trim();
+    if probe.is_empty() {
+        return None;
+    }
+    sections(body).into_iter().map(|s| s.text).find(|text| text.contains(probe))
 }
 
 pub fn cosine(a: &[f32], b: &[f32]) -> Option<f64> {
@@ -345,15 +450,25 @@ pub fn store_vectors(
     Ok(true)
 }
 
+/// The section of a lexical hit that holds the most of the query's content words (the
+/// first one on a tie), whole from its heading on.
 fn best_excerpt(body: &str, query: &str) -> String {
-    let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
-    chunks(body)
-        .into_iter()
-        .max_by_key(|chunk| {
-            let text = chunk.to_lowercase();
-            terms.iter().filter(|t| text.contains(t.as_str())).count()
-        })
-        .unwrap_or_default()
+    let analysis = crate::lexical::analyze(query);
+    let words: Vec<&str> = analysis
+        .terms
+        .iter()
+        .map(crate::lexical::Term::text)
+        .chain(analysis.fragments.iter().map(String::as_str))
+        .collect();
+    let mut best: Option<(usize, String)> = None;
+    for section in sections(body) {
+        let text = section.text.to_lowercase();
+        let hits = words.iter().filter(|w| text.contains(**w)).count();
+        if best.as_ref().map_or(true, |(most, _)| hits > *most) {
+            best = Some((hits, section.text));
+        }
+    }
+    best.map(|(_, text)| text).unwrap_or_default()
 }
 
 /// Graph expansion: the best fused hits lend part of their score to the memories they link
@@ -502,7 +617,10 @@ pub fn assemble(
             }
         }
         let body = index::body_of(conn, &id)?.unwrap_or_default();
-        let excerpt = excerpt.unwrap_or_else(|| best_excerpt(&body, query));
+        let excerpt = match excerpt {
+            Some(window) => section_of(&body, &window).unwrap_or(window),
+            None => best_excerpt(&body, query),
+        };
         let source = ContextSource {
             citation: format!("[memory:{}]", meta.id),
             id: meta.id,

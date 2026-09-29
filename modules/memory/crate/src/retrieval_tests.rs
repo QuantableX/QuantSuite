@@ -488,3 +488,44 @@ async fn embedding_transport_is_explicit_local_and_rejects_redirects_or_invalid_
         .contains("invalid"));
     server.join().unwrap();
 }
+
+#[test]
+fn sections_follow_headings_and_keep_fenced_code_whole() {
+    let long = "word ".repeat(80);
+    let body = format!(
+        "# Title\n{long}\n\n## Setup\n{long}\n\n```\n# not a heading\n```\n\n## Usage\n### Keys\n{long}\n"
+    );
+    let pieces = sections(&body);
+    let paths: Vec<Vec<&str>> =
+        pieces.iter().map(|c| c.path.iter().map(String::as_str).collect()).collect();
+    assert_eq!(paths, [vec!["Title"], vec!["Title", "Setup"], vec!["Title", "Usage", "Keys"]]);
+    assert!(pieces[1].text.starts_with("## Setup") && pieces[1].text.contains("# not a heading"));
+    // "## Usage" alone is shorter than a section and joins the one before it.
+    assert!(pieces[1].text.ends_with("## Usage"));
+    assert!(pieces[2].text.starts_with("### Keys"));
+}
+
+#[test]
+fn long_sections_split_at_paragraphs_and_windows() {
+    let para = "a".repeat(500);
+    let body = format!("## Log\n{para}\n\n{para}\n\n{para}");
+    let pieces = sections(&body);
+    assert_eq!(pieces.len(), 2);
+    assert!(pieces.iter().all(|c| c.path == ["Log"] && c.text.chars().count() <= SECTION_CHARS));
+    let huge = "b".repeat(3000);
+    assert!(sections(&huge).iter().all(|c| c.text.chars().count() <= SECTION_CHARS));
+}
+
+#[test]
+fn excerpts_start_at_the_section_that_matched() {
+    let filler = "Background detail that does not matter here. ".repeat(12);
+    let tail = "Keep the old build around for a day. ".repeat(12);
+    let body = format!(
+        "# Deploy notes\n{filler}\n\n## Rollback\nRestore the previous release with the rollback script, then {tail}"
+    );
+    assert!(best_excerpt(&body, "how do I rollback a release").starts_with("## Rollback"));
+    // A semantic hit's embedded window snaps to the section around its middle.
+    let window = chunks(&format!("Deploy notes\n{body}"))[1].clone();
+    let snapped = section_of(&body, &window).unwrap();
+    assert!(snapped.starts_with("## Rollback"), "{snapped}");
+}
