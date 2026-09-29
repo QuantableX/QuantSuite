@@ -43,6 +43,8 @@ Default permissions for the mcp module.
 - `allow-forget-client`
 - `allow-memory-hook-status`
 - `allow-set-memory-hooks`
+- `allow-claude-auto-memory-status`
+- `allow-set-claude-auto-memory`
 - `allow-list-codebase-index-tools`
 - `allow-list-agentos-tools`
 - `allow-list-kanban-tools`
@@ -259,6 +261,32 @@ Enables the archive_kanban_card command without any pre-configured scope.
 <td>
 
 Denies the archive_kanban_card command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:allow-claude-auto-memory-status`
+
+</td>
+<td>
+
+Enables the claude_auto_memory_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:deny-claude-auto-memory-status`
+
+</td>
+<td>
+
+Denies the claude_auto_memory_status command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1637,6 +1665,32 @@ Enables the set_approval_mode command without any pre-configured scope.
 <td>
 
 Denies the set_approval_mode command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:allow-set-claude-auto-memory`
+
+</td>
+<td>
+
+Enables the set_claude_auto_memory command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:deny-set-claude-auto-memory`
+
+</td>
+<td>
+
+Denies the set_claude_auto_memory command without any pre-configured scope.
 
 </td>
 </tr>

@@ -39,6 +39,8 @@ const COMMANDS: &[&str] = &[
     "forget_client",
     "memory_hook_status",
     "set_memory_hooks",
+    "claude_auto_memory_status",
+    "set_claude_auto_memory",
     "list_codebase_index_tools",
     "list_agentos_tools",
     "list_kanban_tools",

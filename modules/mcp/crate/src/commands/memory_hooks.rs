@@ -1,17 +1,19 @@
 //! Memory in prompts (docs/MEMORY-HOOKS.md): which agents carry the
-//! QuantMemory prompt hook, and the install / remove buttons on the Connect
-//! page. The endpoint the hooks call lives in `crate::memory_hook`.
+//! QuantMemory hooks (session-start index, per-prompt excerpts), the install
+//! / remove buttons on the Connect page, and the Claude Code auto-memory
+//! switch. The endpoint the hooks call lives in `crate::memory_hook`.
 
 use crate::clients;
 use crate::memory_hook::install::{self, Change};
-use crate::memory_hook::HookClient;
+use crate::memory_hook::{auto_memory, HookClient};
 use crate::AppState;
 use serde::Serialize;
 
 fn note(client: HookClient) -> &'static str {
     match client {
-        HookClient::ClaudeCode => "New Claude Code sessions pick it up.",
-        HookClient::Codex => "Codex runs a new hook only after you trust it once in /hooks, and shows the added context in its transcript.",
+        HookClient::ClaudeCode => "New Claude Code sessions start with the index and get excerpts with each prompt.",
+        HookClient::Codex => "Codex runs a new or changed hook only after you trust it once in /hooks, and shows the added context in its transcript.",
+        HookClient::Cursor => "Cursor adds the index when an agent chat starts and excerpts with each prompt; reload Cursor after installing.",
     }
 }
 
@@ -27,7 +29,10 @@ fn name(client: HookClient) -> &'static str {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HookTarget {
     path: String,
+    /// The file holds at least one hook of ours.
     installed: bool,
+    /// ... and one for every event the client hooks into.
+    complete: bool,
     error: Option<String>,
 }
 
@@ -37,7 +42,7 @@ pub(crate) struct MemoryHookStatus {
     id: &'static str,
     name: &'static str,
     detected: bool,
-    /// Every target file carries the hook.
+    /// Every target file carries all of the client's hooks.
     installed: bool,
     targets: Vec<HookTarget>,
     note: &'static str,
@@ -52,18 +57,29 @@ pub(crate) fn memory_hook_status() -> Vec<MemoryHookStatus> {
             let targets: Vec<HookTarget> = match install::targets(client) {
                 Ok(paths) => paths
                     .into_iter()
-                    .map(|path| match install::installed_in(&path) {
-                        Ok(installed) => HookTarget { path: path.display().to_string(), installed, error: None },
-                        Err(e) => HookTarget { path: path.display().to_string(), installed: false, error: Some(e) },
+                    .map(|path| {
+                        let state = install::installed_in(&path)
+                            .and_then(|installed| Ok((installed, install::complete_in(&path, client)?)));
+                        match state {
+                            Ok((installed, complete)) => {
+                                HookTarget { path: path.display().to_string(), installed, complete, error: None }
+                            }
+                            Err(e) => HookTarget {
+                                path: path.display().to_string(),
+                                installed: false,
+                                complete: false,
+                                error: Some(e),
+                            },
+                        }
                     })
                     .collect(),
-                Err(e) => vec![HookTarget { path: String::new(), installed: false, error: Some(e) }],
+                Err(e) => vec![HookTarget { path: String::new(), installed: false, complete: false, error: Some(e) }],
             };
             MemoryHookStatus {
                 id: client.slug(),
                 name: name(client),
                 detected: detected(client),
-                installed: !targets.is_empty() && targets.iter().all(|t| t.installed),
+                installed: !targets.is_empty() && targets.iter().all(|t| t.complete),
                 targets,
                 note: note(client),
             }
@@ -131,4 +147,61 @@ pub(crate) fn set_memory_hooks(
         }
     }
     Ok(report)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AutoMemoryStatus {
+    path: String,
+    /// Claude Code is on this machine.
+    detected: bool,
+    /// Claude Code's own auto memory is on (its default).
+    enabled: bool,
+    error: Option<String>,
+}
+
+/// Whether Claude Code's auto memory is on, per its user settings.
+#[tauri::command(async)]
+pub(crate) fn claude_auto_memory_status() -> AutoMemoryStatus {
+    let detected = detected(HookClient::ClaudeCode);
+    let path = match auto_memory::settings_path() {
+        Ok(path) => path,
+        Err(e) => return AutoMemoryStatus { path: String::new(), detected, enabled: true, error: Some(e) },
+    };
+    let read = install_read(&path).and_then(|text| auto_memory::enabled_in(&text));
+    AutoMemoryStatus {
+        path: path.display().to_string(),
+        detected,
+        enabled: *read.as_ref().unwrap_or(&true),
+        error: read.err(),
+    }
+}
+
+fn install_read(path: &std::path::Path) -> Result<String, String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("Cannot read {}: {e}", path.display())),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AutoMemoryResult {
+    path: String,
+    change: auto_memory::Change,
+}
+
+/// Turn Claude Code's auto memory off (`enabled: false`) or back on. Only
+/// the one key in its user settings changes; memory files stay as they are.
+#[tauri::command(async)]
+pub(crate) fn set_claude_auto_memory(enabled: bool) -> Result<AutoMemoryResult, String> {
+    let path = auto_memory::settings_path()?;
+    let state_dir = install::state_dir();
+    let change = if enabled {
+        auto_memory::turn_on(&path, &state_dir)?
+    } else {
+        auto_memory::turn_off(&path, &state_dir)?
+    };
+    Ok(AutoMemoryResult { path: path.display().to_string(), change })
 }

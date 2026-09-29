@@ -51,6 +51,7 @@ onMounted(() => {
   void loadSnippet()
   void detectAgents()
   void loadMemoryHooks()
+  void loadAutoMemory()
 })
 onBeforeUnmount(() => { ++scanToken })
 
@@ -130,10 +131,12 @@ function copySnippet() {
   if (snippet.value) copyText(snippet.value.snippet, snippetCopied)
 }
 
-// Memory in prompts: the QuantMemory prompt hook per agent (docs/MEMORY-HOOKS.md).
+// Memory in prompts: the QuantMemory hooks per agent — session-start index and
+// per-prompt excerpts — and the Claude Code auto-memory switch (docs/MEMORY-HOOKS.md).
 interface MemoryHookTarget {
   path: string
   installed: boolean
+  complete: boolean
   error: string | null
 }
 
@@ -175,7 +178,10 @@ function hookInstalledAnywhere(hook: MemoryHookStatus) {
 
 function hookState(hook: MemoryHookStatus) {
   const installed = hook.targets.filter(t => t.installed)
-  if (installed.length) return installed.map(t => t.path).join(', ')
+  if (installed.length) {
+    const paths = installed.map(t => t.path).join(', ')
+    return hook.installed ? paths : `Partly installed (Install adds the missing hook) · ${paths}`
+  }
   if (!hook.detected) return 'Not found on this machine'
   return hook.targets.find(t => t.error)?.error ?? 'Not installed'
 }
@@ -204,6 +210,58 @@ async function setMemoryHook(hook: MemoryHookStatus, enabled: boolean) {
     memoryHookBusy.value = ''
   }
   await loadMemoryHooks()
+}
+
+interface AutoMemoryStatus {
+  path: string
+  detected: boolean
+  enabled: boolean
+  error: string | null
+}
+
+type AutoMemoryChange = 'turned_off' | 'already_off' | 'restored' | 'turned_on' | 'already_on'
+
+const AUTO_MEMORY_LABELS: Record<AutoMemoryChange, string> = {
+  turned_off: 'Turned off',
+  already_off: 'Already off',
+  restored: 'Turned on, settings file restored byte for byte',
+  turned_on: 'Turned on; the settings file had changed since, so only the setting was put back',
+  already_on: 'Already on',
+}
+
+const autoMemory = ref<AutoMemoryStatus | null>(null)
+const autoMemoryResult = ref('')
+
+function autoMemoryState(status: AutoMemoryStatus) {
+  if (status.error) return status.error
+  return status.enabled ? 'On: Claude Code also keeps its own memory files' : `Off · ${status.path}`
+}
+
+async function loadAutoMemory() {
+  if (!window.__TAURI_INTERNALS__) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    autoMemory.value = await invoke<AutoMemoryStatus>('plugin:mcp|claude_auto_memory_status')
+  } catch (e) {
+    memoryHookError.value = `Could not read the Claude Code auto-memory setting: ${e}`
+  }
+}
+
+async function setAutoMemory(enabled: boolean) {
+  if (!window.__TAURI_INTERNALS__ || memoryHookBusy.value) return
+  memoryHookBusy.value = 'auto-memory'
+  memoryHookError.value = ''
+  autoMemoryResult.value = ''
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const result = await invoke<{ path: string, change: AutoMemoryChange }>('plugin:mcp|set_claude_auto_memory', { enabled })
+    autoMemoryResult.value = `${AUTO_MEMORY_LABELS[result.change]} · ${result.path}`
+  } catch (e) {
+    memoryHookError.value = String(e)
+  } finally {
+    memoryHookBusy.value = ''
+  }
+  await loadAutoMemory()
 }
 
 </script>
@@ -306,8 +364,8 @@ async function setMemoryHook(hook: MemoryHookStatus, enabled: boolean) {
           <div class="connect-title">
             <div class="setting-label">Memory in prompts</div>
             <div class="setting-description">
-              Adds the most relevant QuantMemory excerpts, with citations, to each prompt an agent sends from a registered workspace.
-              Nothing is added below the relevance threshold or while QuantSuite is closed; the prompt always goes through.
+              Agents start each session with an index of the workspace's QuantMemory and get the most relevant excerpts, with citations, with each prompt.
+              Nothing is added below the relevance threshold or while QuantSuite is closed; the session and the prompt always go through.
             </div>
           </div>
         </div>
@@ -337,6 +395,32 @@ async function setMemoryHook(hook: MemoryHookStatus, enabled: boolean) {
             <div class="report-row note">
               <span class="report-mark" />
               <span class="report-detail">{{ hook.note }}</span>
+            </div>
+          </template>
+          <template v-if="autoMemory">
+            <div class="report-row" :class="autoMemory.enabled ? 'note' : 'ok'">
+              <span class="report-mark">{{ autoMemory.enabled ? '–' : '✓' }}</span>
+              <span class="report-name">Claude auto-memory</span>
+              <span class="report-detail" :title="autoMemory.path">{{ autoMemoryState(autoMemory) }}</span>
+              <button
+                class="setting-action"
+                :disabled="!!memoryHookBusy || !!autoMemory.error || (autoMemory.enabled && !autoMemory.detected)"
+                @click="setAutoMemory(!autoMemory.enabled)"
+              >
+                {{ memoryHookBusy === 'auto-memory' ? 'Saving…' : autoMemory.enabled ? 'Turn off' : 'Turn on' }}
+              </button>
+            </div>
+            <div class="report-row note">
+              <span class="report-mark" />
+              <span class="report-detail">
+                QuantMemory is the only memory: with Claude Code's own auto-memory off, sessions stop loading and writing its memory files.
+                The existing files stay until you delete them.
+              </span>
+            </div>
+            <div v-if="autoMemoryResult" class="report-row ok">
+              <span class="report-mark">✓</span>
+              <span class="report-name">Claude auto-memory</span>
+              <span class="report-detail" :title="autoMemoryResult">{{ autoMemoryResult }}</span>
             </div>
           </template>
         </div>

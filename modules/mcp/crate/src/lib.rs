@@ -252,6 +252,8 @@ pub fn init() -> TauriPlugin<Wry> {
             // Memory in prompts: the QuantMemory prompt hooks
             commands::memory_hooks::memory_hook_status,
             commands::memory_hooks::set_memory_hooks,
+            commands::memory_hooks::claude_auto_memory_status,
+            commands::memory_hooks::set_claude_auto_memory,
             commands::tools::list_codebase_index_tools,
             commands::tools::list_agentos_tools,
             commands::tools::list_kanban_tools,
