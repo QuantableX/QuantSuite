@@ -372,7 +372,7 @@ mod tests {
 
     /// A settings.json the way Claude Code writes it, with a foreign hook on
     /// the same event (Orca's) and unrelated settings around it.
-    const CLAUDE: &str = "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git status)\"\n    ]\n  },\n  \"model\": \"opus\",\n  \"hooks\": {\n    \"UserPromptSubmit\": [\n      {\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"C:/Users/root/.orca/agent-hooks/claude-hook.cmd || echo {}\",\n            \"timeout\": 10\n          }\n        ]\n      }\n    ]\n  },\n  \"theme\": \"dark\"\n}\n";
+    const CLAUDE: &str = "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git status)\"\n    ]\n  },\n  \"model\": \"opus\",\n  \"hooks\": {\n    \"UserPromptSubmit\": [\n      {\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"C:/Users/me/.orca/agent-hooks/claude-hook.cmd || echo {}\",\n            \"timeout\": 10\n          }\n        ]\n      }\n    ]\n  },\n  \"theme\": \"dark\"\n}\n";
 
     fn parsed(text: &str) -> serde_json::Value {
         serde_json::from_str(text).unwrap()
@@ -386,7 +386,7 @@ mod tests {
         assert!(is_ours(&command));
         assert!(is_ours(&command.replace("3100", "3101")));
         assert!(!is_ours("curl -s -X POST --data-binary @- http://127.0.0.1:4545/claude/hook"));
-        assert!(!is_ours("C:/Users/root/.orca/agent-hooks/claude-hook.cmd || echo {}"));
+        assert!(!is_ours("C:/Users/me/.orca/agent-hooks/claude-hook.cmd || echo {}"));
     }
 
     #[test]
@@ -395,7 +395,7 @@ mod tests {
         let value = parsed(&added);
         let groups = value["hooks"]["UserPromptSubmit"].as_array().unwrap();
         assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0]["hooks"][0]["command"], "C:/Users/root/.orca/agent-hooks/claude-hook.cmd || echo {}");
+        assert_eq!(groups[0]["hooks"][0]["command"], "C:/Users/me/.orca/agent-hooks/claude-hook.cmd || echo {}");
         assert_eq!(groups[1]["hooks"][0]["type"], "command");
         assert_eq!(groups[1]["hooks"][0]["timeout"], HOOK_TIMEOUT_SECS);
         assert!(is_ours(groups[1]["hooks"][0]["command"].as_str().unwrap()));
