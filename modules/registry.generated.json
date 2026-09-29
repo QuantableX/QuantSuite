@@ -1042,7 +1042,7 @@
       "module": "memory",
       "name": "index_embeddings",
       "command": "plugin:memory|index_embeddings",
-      "description": "Incrementally embed up to ten changed memories in one explicit scope using the operator-enabled local engine (the built-in llama.cpp engine or Ollama). A background indexer does this on its own; call it only to catch up now. Returns hasMore; call again for another bounded batch. Does not download or install models or allow remote endpoints. Disabled until the user activates it.",
+      "description": "Incrementally embed up to ten changed memories in one explicit scope using the operator-enabled local engine (the built-in llama.cpp engine). A background indexer does this on its own; call it only to catch up now. Returns hasMore; call again for another bounded batch. Does not download or install models or allow remote endpoints. Disabled until the user activates it.",
       "sideEffects": "write",
       "inputSchema": {
         "type": "object",

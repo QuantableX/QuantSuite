@@ -77,13 +77,17 @@ pub const RUNTIMES: &[Runtime] = &[
         }],
     },
 ];
-/// Other platforms keep Ollama until their llama.cpp archives are pinned here.
+/// Other platforms get no built-in engine (and no semantic recall) until their
+/// llama.cpp archives are pinned here.
 #[cfg(not(all(windows, target_arch = "x86_64")))]
 pub const RUNTIMES: &[Runtime] = &[];
 
 /// Qwen's recommended query format: an English task instruction, then the query.
 const QWEN3_QUERY: &str =
     "Instruct: Given a question, retrieve the memory notes that answer it\nQuery:";
+/// The same format for the code index's semantic search.
+const QWEN3_CODE_QUERY: &str =
+    "Instruct: Given a code search query, retrieve the code snippets that answer it\nQuery:";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +104,9 @@ pub struct ModelSpec {
     pub license: &'static str,
     /// Prepended to recall queries; memories are embedded as they are.
     pub query_prefix: &'static str,
+    /// Prepended to code search queries (the semantic code index, reached
+    /// through `qs_core::embeddings`); code chunks are embedded as they are.
+    pub code_query_prefix: &'static str,
     /// Worth it with a GPU; slow on a CPU.
     pub gpu_recommended: bool,
 }
@@ -118,6 +125,7 @@ pub const MODELS: &[ModelSpec] = &[
         dims: 1024,
         license: "Apache-2.0",
         query_prefix: QWEN3_QUERY,
+        code_query_prefix: QWEN3_CODE_QUERY,
         gpu_recommended: false,
     },
     ModelSpec {
@@ -131,6 +139,7 @@ pub const MODELS: &[ModelSpec] = &[
         dims: 2560,
         license: "Apache-2.0",
         query_prefix: QWEN3_QUERY,
+        code_query_prefix: QWEN3_CODE_QUERY,
         gpu_recommended: true,
     },
     ModelSpec {
@@ -144,6 +153,7 @@ pub const MODELS: &[ModelSpec] = &[
         dims: 4096,
         license: "Apache-2.0",
         query_prefix: QWEN3_QUERY,
+        code_query_prefix: QWEN3_CODE_QUERY,
         gpu_recommended: true,
     },
 ];
@@ -440,7 +450,7 @@ impl Engine {
     ) -> Result<(Option<&'static Runtime>, Option<&'static ModelSpec>), String> {
         if RUNTIMES.is_empty() {
             return Err(
-                "The built-in engine ships for Windows x64 so far; use Ollama on this system"
+                "The built-in engine ships for Windows x64 so far; semantic search is not available on this system"
                     .into(),
             );
         }
@@ -520,10 +530,54 @@ impl Engine {
             .map(|s| s.device.clone())
     }
 
+    /// Runtime and model for `config` are on disk, so the server can start
+    /// without downloading anything.
+    pub fn ready_to_run(&self, config: &EmbeddingConfig) -> bool {
+        self.installed_runtime(config).is_some()
+            && model(&config.builtin_model).is_some_and(|spec| self.model_installed(spec))
+    }
+
+    /// Device (`cuda`/`cpu`) and GPU name of a server that is up.
+    pub fn running_on(&self) -> Option<(String, Option<String>)> {
+        lock(&self.inner)
+            .server
+            .as_ref()
+            .filter(|s| s.ready)
+            .map(|s| (s.device.clone(), s.gpu.clone()))
+    }
+
+    /// Hold the server for a client outside this process (the code index's
+    /// Python run): start it for `config` when needed and keep the idle watch
+    /// off it until the returned release runs. Port and key are the running
+    /// server's; a restart (another model or device saved meanwhile) changes both.
+    pub async fn lease(
+        &self,
+        config: &EmbeddingConfig,
+    ) -> Result<(u16, String, impl FnOnce() + Send + Sync + 'static), String> {
+        // `ensure_running` counts the lease in; the release counts it out.
+        let (port, key) = self.ensure_running(config).await?;
+        // The captured guard also releases if the future is cancelled or a
+        // caller drops the closure without calling it.
+        let guard = InFlight(Arc::clone(&self.inner));
+        let release = move || drop(guard);
+        Ok((port, key, release))
+    }
+
+    /// Stop the server unless a request or a lease is using it; a leased
+    /// server idles out on its own once released.
+    pub fn stop_if_unused(&self) {
+        self.stop_inner(true);
+    }
+
     /// Stop the server; its RAM and VRAM go back to the system.
     pub fn stop(&self) {
+        self.stop_inner(false);
+    }
+
+    fn stop_inner(&self, only_unused: bool) {
         let server = {
             let mut inner = lock(&self.inner);
+            if only_unused && inner.in_flight > 0 { return; }
             inner.generation += 1;
             inner.server.take()
         };
@@ -694,13 +748,11 @@ impl Engine {
             return Err("Embedding batch must contain 1-64 chunks".into());
         }
         // `ensure_running` counts the request in, so the idle watch cannot stop the server under it.
-        let (port, key) = self.ensure_running(config).await?;
+        let (port, key, release) = self.lease(config).await?;
         let result = self.request(port, &key, inputs).await;
-        let mut inner = lock(&self.inner);
-        inner.in_flight -= 1;
-        inner.last_used = Some(Instant::now());
+        release();
         if let Err(e) = &result {
-            inner.last_error = Some(e.clone());
+            lock(&self.inner).last_error = Some(e.clone());
         }
         result
     }
@@ -790,6 +842,9 @@ impl Engine {
                 }
                 // A start whose caller gave up (a recall timeout): keep waiting for it.
                 Some(s) => Some((s.port, s.api_key.clone(), s.started, generation)),
+                None if inner.in_flight > 0 => {
+                    return Err("The embedding engine is busy with another model or device. Retry after the current indexing or recall finishes.".into());
+                }
                 None => None,
             }
         };
@@ -1252,7 +1307,7 @@ mod tests {
         let engine = Engine::new(root.clone());
         let config = EmbeddingConfig {
             enabled: true,
-            ..EmbeddingConfig::fresh()
+            ..EmbeddingConfig::default()
         };
         let status = engine.status(&config);
         assert!(!status.running);
@@ -1285,7 +1340,7 @@ mod tests {
         if std::env::var("QS_MEMORY_ENGINE_INSTALL").is_ok_and(|v| v == "1") {
             let config = EmbeddingConfig {
                 enabled: true,
-                ..EmbeddingConfig::fresh()
+                ..EmbeddingConfig::default()
             };
             let started = Instant::now();
             runtime.block_on(engine.install(&config)).unwrap();
@@ -1310,7 +1365,7 @@ mod tests {
             let config = EmbeddingConfig {
                 enabled: true,
                 device: device.into(),
-                ..EmbeddingConfig::fresh()
+                ..EmbeddingConfig::default()
             };
             let started = Instant::now();
             let v = runtime.block_on(engine.embed(&config, &texts)).unwrap();
@@ -1329,7 +1384,7 @@ mod tests {
         println!("GPU/CPU vector agreement: {agreement:.5}");
         assert!(agreement > 0.99);
         engine.stop();
-        assert!(!engine.status(&EmbeddingConfig::fresh()).running);
+        assert!(!engine.status(&EmbeddingConfig::default()).running);
     }
 
     /// The server listens on loopback only and stops by itself once idle
@@ -1345,7 +1400,7 @@ mod tests {
         let config = EmbeddingConfig {
             enabled: true,
             idle_minutes: 1,
-            ..EmbeddingConfig::fresh()
+            ..EmbeddingConfig::default()
         };
         runtime
             .block_on(engine.embed(&config, &["loopback".into()]))
@@ -1376,4 +1431,85 @@ mod tests {
         println!("stopped after {:?} idle", started.elapsed());
         assert!(!engine.status(&config).running);
     }
+
+    #[test]
+    fn a_lease_needs_an_installed_engine() {
+        let root =
+            std::env::temp_dir().join(format!("qm-engine-{}", uuid::Uuid::new_v4().simple()));
+        let engine = Engine::new(root.clone());
+        let config = EmbeddingConfig::default();
+        assert!(!engine.ready_to_run(&config));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let err = runtime.block_on(engine.lease(&config)).err().unwrap();
+        assert!(
+            err.contains("not downloaded") || err.contains("Windows x64"),
+            "{err}"
+        );
+        assert_eq!(lock(&engine.inner).in_flight, 0);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A lease keeps the server past its idle time (one minute here) while
+    /// an outside client works against it; released, it idles out as usual.
+    #[test]
+    #[ignore = "needs QS_MEMORY_ENGINE_DIR with an installed runtime and model; takes about three minutes"]
+    fn a_lease_outlives_the_idle_time_and_then_idles_out() {
+        let Some(dir) = std::env::var_os("QS_MEMORY_ENGINE_DIR") else {
+            return;
+        };
+        let engine = Engine::new(PathBuf::from(dir));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let config = EmbeddingConfig {
+            idle_minutes: 1,
+            ..EmbeddingConfig::default()
+        };
+        assert!(engine.ready_to_run(&config));
+        let (port, key, release) = runtime.block_on(engine.lease(&config)).unwrap();
+        println!("leased 127.0.0.1:{port} on {:?}", engine.running_on());
+        // No request for longer than the idle time: only the lease holds it.
+        std::thread::sleep(Duration::from_secs(80));
+        assert!(engine.status(&config).running, "stopped under a lease");
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let url = format!("http://127.0.0.1:{port}/v1/embeddings");
+        let answer = runtime
+            .block_on(
+                client
+                    .post(&url)
+                    .bearer_auth(&key)
+                    .json(&serde_json::json!({ "input": ["still here"] }))
+                    .send(),
+            )
+            .unwrap();
+        assert!(answer.status().is_success(), "{}", answer.status());
+        let unauthorised = runtime
+            .block_on(
+                client
+                    .post(&url)
+                    .json(&serde_json::json!({ "input": ["no key"] }))
+                    .send(),
+            )
+            .unwrap();
+        assert_eq!(unauthorised.status().as_u16(), 401);
+        release();
+        let released = Instant::now();
+        while engine.status(&config).running && released.elapsed() < Duration::from_secs(120) {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        println!("stopped {:?} after the release", released.elapsed());
+        assert!(!engine.status(&config).running);
+    }
 }
+
+/// One active request/lease. Cancellation must release the idle hold too.
+struct InFlight(Arc<Mutex<Inner>>);
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        let mut inner = lock(&self.0);
+        inner.in_flight = inner.in_flight.saturating_sub(1);
+        inner.last_used = Some(Instant::now());
+    }
+}
+
+#[cfg(test)]
+#[path = "engine_code_index_test.rs"]
+mod code_index_test;

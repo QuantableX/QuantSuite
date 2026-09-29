@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { useMcpWorkspaces } from '#mcp/composables/useMcpWorkspaces'
+function openMemorySettings() {
+  window.dispatchEvent(new CustomEvent('qss:settings', { detail: { module: 'memory' } }))
+}
+
+import { useMcpWorkspaces, type EmbeddingInfo } from '#mcp/composables/useMcpWorkspaces'
 definePageMeta({ layout: 'mcp' })
 const router = useRouter()
 
@@ -33,6 +37,7 @@ const {
   unarchiveCard,
   getApprovalMode,
   setApprovalMode,
+  getEmbeddingInfo,
   getIndexSettings,
   setIndexSettings,
   getIndexStats,
@@ -52,9 +57,11 @@ const indexStatusMap = ref<Record<string, {
 }>>({});
 const structuralIndexingIds = ref<Set<string>>(new Set());
 const semanticIndexingIds = ref<Set<string>>(new Set());
-const embedProvider = ref<"ollama" | "lmstudio">("ollama");
-const embedModel = ref("nomic-embed-text");
-const embedBaseUrl = ref("http://localhost:11434");
+const embeddingInfo = ref<EmbeddingInfo | null>(null);
+async function loadEmbeddingInfo() {
+  try { embeddingInfo.value = await getEmbeddingInfo(); }
+  catch (e) { embeddingInfo.value = { installed: false, modelLabel: '', device: '', hint: String(e) }; }
+}
 const structuralResultMap = ref<Record<string, string>>({});
 const semanticResultMap = ref<Record<string, string>>({});
 const indexFilter = ref<"everything" | "smart">("smart");
@@ -159,38 +166,18 @@ const hasSemantic = computed(
   () => !!indexStatus.value?.semantic_indexed_at || indexStatus.value?.mode === "semantic" || indexStatus.value?.mode === "both",
 );
 
-// Track whether we're restoring saved settings (skip base URL auto-sync)
+// Index filters belong to the workspace; engine settings are shared with Memory.
 let restoringSettings = false;
-
-// Sync base URL when provider changes (only on user interaction, not restore)
-watch(embedProvider, (provider) => {
-  if (restoringSettings) return;
-  embedBaseUrl.value =
-    provider === "ollama" ? "http://localhost:11434" : "http://localhost:1234";
-});
-
-// Saved index settings live in core.db (scope "mcp"), not on the registry
-// entry — the registry only knows folders.
 async function restoreIndexSettings() {
   const ws = selectedWorkspace.value;
   if (!ws) return;
   restoringSettings = true;
+  void loadEmbeddingInfo();
   try {
     const saved = await getIndexSettings(ws.id);
-    embedProvider.value = (saved.provider as "ollama" | "lmstudio") || "ollama";
-    embedModel.value = saved.model || "nomic-embed-text";
-    embedBaseUrl.value =
-      saved.baseUrl ||
-      (embedProvider.value === "ollama"
-        ? "http://localhost:11434"
-        : "http://localhost:1234");
     indexFilter.value = (saved.filter as "everything" | "smart") || "smart";
-  } catch {
-    // defaults stand
-  }
-  nextTick(() => {
-    restoringSettings = false;
-  });
+  } catch { /* defaults stand */ }
+  nextTick(() => { restoringSettings = false; });
 }
 
 async function loadIndexStatus() {
@@ -227,9 +214,6 @@ async function startIndexing(mode: "structural" | "semantic") {
     const result = await indexWorkspaceCodebase(
       wid,
       mode,
-      !isStructural ? embedProvider.value : undefined,
-      !isStructural ? embedModel.value : undefined,
-      !isStructural ? embedBaseUrl.value : undefined,
       forceReindex,
       indexFilter.value,
     );
@@ -247,6 +231,7 @@ async function startIndexing(mode: "structural" | "semantic") {
     if (isStructural) structuralResultMap.value = { ...structuralResultMap.value, [wid]: msg };
     else semanticResultMap.value = { ...semanticResultMap.value, [wid]: msg };
   } finally {
+    void loadEmbeddingInfo();
     if (isStructural) {
       const s = new Set(structuralIndexingIds.value);
       s.delete(wid);
@@ -611,10 +596,12 @@ function onCardPointerDown(e: PointerEvent, card: KanbanCard) {
 }
 
 let unsubscribeWorkspaces: (() => void) | null = null;
+let embeddingTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
   await refresh();
   unsubscribeWorkspaces = subscribe();
+  embeddingTimer = setInterval(() => { if (selectedWorkspace.value) void loadEmbeddingInfo(); }, 4000);
   // Restore saved indexing settings after fresh data is loaded
   if (selectedWorkspace.value) {
     restoreIndexSettings();
@@ -625,6 +612,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   resetDragState();
+  if (embeddingTimer) clearInterval(embeddingTimer);
   unsubscribeWorkspaces?.();
   unsubscribeWorkspaces = null;
 });
@@ -814,27 +802,18 @@ onBeforeUnmount(() => {
                 </template>
                 <button
                   class="btn-primary btn-xs index-card-btn"
-                  :disabled="semanticIndexing || !selectedWorkspace?.path"
+                  :disabled="semanticIndexing || !selectedWorkspace?.path || !embeddingInfo?.installed"
                   @click="startIndexing('semantic')"
                 >
                   {{ semanticIndexing ? "Indexing..." : hasSemantic ? "Re-index" : "Index" }}
                 </button>
               </div>
               <div class="embed-settings-compact">
-                <select v-model="embedProvider" class="form-input form-input-xs">
-                  <option value="ollama">Ollama</option>
-                  <option value="lmstudio">LM Studio</option>
-                </select>
-                <input
-                  v-model="embedModel"
-                  class="form-input form-input-xs embed-model-input"
-                  placeholder="model name"
-                />
-                <input
-                  v-model="embedBaseUrl"
-                  class="form-input form-input-xs embed-url-input"
-                  placeholder="http://localhost:11434"
-                />
+                <span v-if="embeddingInfo?.installed">
+                  {{ embeddingInfo.modelLabel }} · {{ embeddingInfo.runningDevice || embeddingInfo.device }}{{ embeddingInfo.gpu ? ` (${embeddingInfo.gpu})` : '' }}
+                </span>
+                <span v-else>{{ embeddingInfo?.hint || 'Checking the built-in embedding engine…' }}</span>
+                <button type="button" @click="openMemorySettings">Memory settings</button>
               </div>
               <div v-if="semanticResult" class="index-card-result">
                 <p
@@ -1768,8 +1747,10 @@ onBeforeUnmount(() => {
 
 .embed-settings-compact {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
   padding: 0 12px 8px;
   align-items: center;
 }

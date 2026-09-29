@@ -51,9 +51,6 @@ pub(crate) async fn index_project_codebase(
     app: tauri::AppHandle,
     workspace_id: String,
     mode: String,
-    embed_provider: Option<String>,
-    embed_model: Option<String>,
-    embed_base_url: Option<String>,
     force_reindex: Option<bool>,
     filter_mode: Option<String>,
 ) -> Result<IndexCodebaseResult, String> {
@@ -80,18 +77,6 @@ pub(crate) async fn index_project_codebase(
             mode.clone(),
         ]
     };
-    if let Some(ref provider) = embed_provider {
-        args.push("--provider".to_string());
-        args.push(provider.clone());
-    }
-    if let Some(ref model) = embed_model {
-        args.push("--model".to_string());
-        args.push(model.clone());
-    }
-    if let Some(ref url) = embed_base_url {
-        args.push("--base-url".to_string());
-        args.push(url.clone());
-    }
     if let Some(ref fm) = filter_mode {
         args.push("--filter".to_string());
         args.push(fm.clone());
@@ -108,9 +93,6 @@ pub(crate) async fn index_project_codebase(
             ws.b36(),
             &settings::IndexSettings {
                 mode: Some(mode),
-                provider: embed_provider,
-                model: embed_model,
-                base_url: embed_base_url,
                 filter: filter_mode,
             },
         );
@@ -158,4 +140,10 @@ pub(crate) async fn get_codebase_index_stats(
         structural_indexed_at,
         semantic_indexed_at,
     })
+}
+
+/// The same engine Memory uses, exposed through the module-neutral service.
+#[tauri::command(async)]
+pub(crate) fn get_codebase_embedding_info() -> qs_core::embeddings::EmbeddingInfo {
+    qs_core::embeddings::info()
 }

@@ -45,6 +45,13 @@ def init_db(db_path: str | Path, dimensions: int = 768) -> sqlite3.Connection:
         )
     """)
 
+    # Track successes independently: refreshing structural data must not make
+    # a changed file appear current to semantic indexing (or hide a failure).
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(files)")}
+    for column in ("structural_hash", "semantic_hash"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE files ADD COLUMN {column} TEXT")
+
     # Structural mode: FTS5 full-text search
     conn.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS code_fts USING fts5(

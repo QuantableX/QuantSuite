@@ -22,6 +22,7 @@
 
 mod base;
 mod consolidation;
+mod embedding_service;
 mod engine;
 mod index;
 mod lexical;

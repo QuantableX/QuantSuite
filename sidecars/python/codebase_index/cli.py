@@ -4,7 +4,7 @@ Used by the QuantMCP Tauri backend to trigger indexing and queries directly,
 without going through the MCP protocol. Also useful for standalone usage.
 
 Usage:
-    python cli.py index <path> [--mode structural|semantic|both] [--provider ollama] [--model nomic-embed-text] [--base-url http://localhost:11434]
+    python cli.py index <path> [--mode structural|semantic|both]
     python cli.py search <query> --codebase <name> [--limit 20] [--mode structural|semantic|auto]
     python cli.py lookup <symbol> --codebase <name>
     python cli.py list
@@ -95,19 +95,23 @@ def _run_index(args) -> dict:
 
     if do_semantic:
         try:
-            provider_instance = EmbedProvider(
-                provider=args.provider,
-                base_url=args.base_url,
-                model=args.model,
-            )
+            provider_instance = EmbedProvider()
             dimensions = provider_instance.get_dimensions()
         except Exception as e:
-            return {"error": f"Cannot connect to embedding provider: {e}"}
+            return {"error": f"Built-in embedding engine unavailable: {e}"}
 
     is_new = not db_path.exists()
     conn = init_db(db_path, dimensions=dimensions)
 
     if do_semantic:
+        if not _same_embedding_model(get_all_meta(conn), provider_instance):
+            # A structural index may have created a default-size vector table.
+            # Recreate it for the selected model; keep structural data intact.
+            conn.execute("DROP TABLE IF EXISTS vec_index")
+            conn.execute(f"CREATE VIRTUAL TABLE vec_index USING vec0(embedding float[{dimensions}], chunk_id INTEGER)")
+            clear_chunks(conn)
+            conn.execute("UPDATE files SET semantic_hash = NULL")
+            set_meta(conn, "semantic_indexed_at", "")
         vec_backend = SqliteVecBackend(conn)
 
     # Determine if this is the first time indexing each mode. Falsy covers
@@ -125,10 +129,12 @@ def _run_index(args) -> dict:
     set_meta(conn, "vector_backend", "sqlite")
 
     if do_semantic:
-        set_meta(conn, "embed_provider", args.provider)
-        set_meta(conn, "embed_model", args.model)
-        set_meta(conn, "embed_base_url", args.base_url)
+        set_meta(conn, "embed_provider", "builtin")
+        set_meta(conn, "embed_model", provider_instance.model)
         set_meta(conn, "embed_dimensions", str(dimensions))
+        set_meta(conn, "embed_chunk_version", "2")
+    # Retire legacy endpoint metadata, even on structural-only refreshes.
+    conn.execute("DELETE FROM meta WHERE key IN ('embed_base_url', 'embed_api_key')")
 
     filter_mode = getattr(args, "filter", "everything") or "everything"
     set_meta(conn, "filter_mode", filter_mode)
@@ -137,9 +143,20 @@ def _run_index(args) -> dict:
         conn.close()
         return {"error": f"No indexable files found in {path}"}
 
+    current_paths = set(all_files)
+    for row in conn.execute("SELECT id, file_path FROM files").fetchall():
+        if row["file_path"] not in current_paths:
+            ids = [r[0] for r in conn.execute("SELECT id FROM chunks WHERE file_id = ?", (row["id"],))]
+            if ids:
+                SqliteVecBackend(conn).delete_by_chunk_ids(ids)
+            conn.execute("DELETE FROM chunks WHERE file_id = ?", (row["id"],))
+            conn.execute("DELETE FROM code_fts WHERE file_path = ?", (format_file_path(row["file_path"], path),))
+            conn.execute("DELETE FROM files WHERE id = ?", (row["id"],))
+
     indexed = 0
     skipped = 0
     errors = 0
+    error_details = []
     structural_entries = 0
     semantic_entries = 0
 
@@ -147,11 +164,10 @@ def _run_index(args) -> dict:
         try:
             file_hash = compute_file_hash(file_path)
             existing = get_file(conn, file_path)
-            file_unchanged = existing and existing["file_hash"] == file_hash
 
             # Determine what to skip per mode
-            skip_structural = not do_structural or (file_unchanged and not is_first_structural)
-            skip_semantic = not do_semantic or (file_unchanged and not is_first_semantic)
+            skip_structural = not do_structural or (existing and existing["structural_hash"] == file_hash and not is_first_structural)
+            skip_semantic = not do_semantic or (existing and existing["semantic_hash"] == file_hash and not is_first_semantic)
 
             if skip_structural and skip_semantic:
                 skipped += 1
@@ -165,19 +181,25 @@ def _run_index(args) -> dict:
             file_id = upsert_file(conn, file_path, file_hash)
 
             if do_structural and not skip_structural:
+                conn.execute("UPDATE files SET structural_hash = NULL WHERE id = ?", (file_id,))
                 count = index_file_structural(conn, rel_path, content, language)
+                conn.execute("UPDATE files SET structural_hash = ? WHERE id = ?", (file_hash, file_id))
                 structural_entries += count
 
             if do_semantic and not skip_semantic:
+                conn.execute("UPDATE files SET semantic_hash = NULL WHERE id = ?", (file_id,))
                 count = index_file_semantic(
                     conn, rel_path, file_id, content, language,
                     provider_instance, vec_backend,
                 )
+                conn.execute("UPDATE files SET semantic_hash = ? WHERE id = ?", (file_hash, file_id))
                 semantic_entries += count
 
             indexed += 1
         except Exception as e:
             errors += 1
+            if len(error_details) < 3:
+                error_details.append(f"{format_file_path(file_path, path)}: {e}")
 
     now = str(int(time.time()))
     set_meta(conn, "last_indexed", now)
@@ -194,7 +216,8 @@ def _run_index(args) -> dict:
     total_entries = structural_entries + semantic_entries
 
     return {
-        "status": "ok",
+        "status": "error" if errors else "ok",
+        **({"error": f"{errors} files failed to index: " + "; ".join(error_details)} if errors else {}),
         "action": "created" if is_new else "updated",
         "codebase": codebase_name,
         "mode": effective_mode,
@@ -216,8 +239,8 @@ def cmd_index(args):
         sys.exit(1)
 
 
-def _auto_refresh_if_stale(codebase_name: str) -> dict | None:
-    """Auto-refresh structural index if codebase files have changed.
+def _auto_refresh_if_stale(codebase_name: str, semantic: bool = False) -> dict | None:
+    """Refresh changed or previously failed files in the requested index modes.
 
     Returns the refresh result dict if a refresh was performed, None otherwise.
     """
@@ -228,7 +251,7 @@ def _auto_refresh_if_stale(codebase_name: str) -> dict | None:
     conn = open_db(db_path)
     meta = get_all_meta(conn)
 
-    last_indexed = meta.get("last_indexed")
+    last_indexed = meta.get("semantic_indexed_at" if semantic else "structural_indexed_at") or meta.get("last_indexed")
     codebase_path = meta.get("codebase_path", "")
     filter_mode = meta.get("filter_mode", "everything")
 
@@ -239,11 +262,16 @@ def _auto_refresh_if_stale(codebase_name: str) -> dict | None:
     # Only auto-refresh if structural index exists
     has_structural = bool(meta.get("structural_indexed_at"))
     stored_mode = meta.get("mode", "")
-    if not has_structural and stored_mode not in ("structural", "both"):
+    if not semantic and not has_structural and stored_mode not in ("structural", "both"):
         conn.close()
         return None
 
     file_count = conn.execute("SELECT COUNT(*) as cnt FROM files").fetchone()["cnt"]
+    hash_column = "semantic_hash" if semantic else "structural_hash"
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(files)")}
+    pending = hash_column not in columns or bool(conn.execute(
+        f"SELECT 1 FROM files WHERE {hash_column} IS NULL OR {hash_column} != file_hash LIMIT 1"
+    ).fetchone())
     conn.close()
 
     try:
@@ -251,7 +279,7 @@ def _auto_refresh_if_stale(codebase_name: str) -> dict | None:
     except ValueError:
         return None
 
-    if not is_index_stale(codebase_path, last_indexed_ts, file_count, filter_mode):
+    if not pending and not is_index_stale(codebase_path, last_indexed_ts, file_count, filter_mode):
         return None
 
     # Stale — do incremental structural re-index
@@ -261,10 +289,7 @@ def _auto_refresh_if_stale(codebase_name: str) -> dict | None:
     index_args = IndexArgs()
     index_args.path = codebase_path
     index_args.name = codebase_name
-    index_args.mode = "structural"
-    index_args.provider = "ollama"
-    index_args.model = "nomic-embed-text"
-    index_args.base_url = "http://localhost:11434"
+    index_args.mode = ("both" if has_structural else "semantic") if semantic else "structural"
     index_args.filter = filter_mode
 
     return _run_index(index_args)
@@ -291,15 +316,10 @@ def _search_semantic(conn, query, limit):
     from embeddings import EmbedProvider
     from vector_backend import SqliteVecBackend
 
-    meta = get_all_meta(conn)
     try:
-        provider = EmbedProvider(
-            provider=meta.get("embed_provider", "ollama"),
-            base_url=meta.get("embed_base_url", "http://localhost:11434"),
-            model=meta.get("embed_model", "nomic-embed-text"),
-        )
+        provider = EmbedProvider()
     except Exception as e:
-        return {"error": f"Cannot connect to embedding provider: {e}"}
+        return {"error": f"Built-in embedding engine unavailable: {e}"}
 
     vec_backend = SqliteVecBackend(conn)
     try:
@@ -317,9 +337,54 @@ def _search_semantic(conn, query, limit):
     }
 
 
+def _same_embedding_model(meta, provider):
+    return (meta.get("embed_provider") == "builtin"
+            and meta.get("embed_model") == provider.model
+            and meta.get("embed_dimensions") == str(provider.dimensions)
+            and meta.get("embed_chunk_version") == "2")
+
+
+def _prepare_search(args):
+    """Rebuild changed-model vectors; auto falls back to structural offline."""
+    from types import SimpleNamespace
+    path = get_db_path(args.codebase)
+    if not path.exists():
+        return None
+    conn = open_db(path)
+    meta = get_all_meta(conn)
+    conn.close()
+    mode = args.mode
+    has_structural = bool(meta.get("structural_indexed_at"))
+    if mode == "auto" and (has_structural or meta.get("mode") in ("structural", "both")):
+        return _auto_refresh_if_stale(args.codebase)
+    if mode not in ("semantic", "auto"):
+        return _auto_refresh_if_stale(args.codebase)
+    from embeddings import EmbedProvider
+    try:
+        provider = EmbedProvider()
+        try:
+            matches = _same_embedding_model(meta, provider)
+        finally:
+            provider.close()
+    except Exception as e:
+        if mode == "auto":
+            # A semantic-only index can still be searched when the model is
+            # unavailable: build its structural view without an engine.
+            return _run_index(SimpleNamespace(path=meta["codebase_path"], name=args.codebase,
+                mode="structural", filter=meta.get("filter_mode", "everything")))
+        return {"error": f"Built-in embedding engine unavailable: {e}"}
+    if not matches:
+        return _run_index(SimpleNamespace(path=meta["codebase_path"], name=args.codebase,
+            mode="semantic", filter=meta.get("filter_mode", "everything")))
+    return _auto_refresh_if_stale(args.codebase, semantic=True)
+
+
 def cmd_search(args):
     """Search an indexed codebase."""
-    _auto_refresh_if_stale(args.codebase)
+    refresh = _prepare_search(args)
+    if refresh and "error" in refresh:
+        print(json.dumps(refresh))
+        sys.exit(1)
 
     db_path = get_db_path(args.codebase)
     if not db_path.exists():
@@ -330,8 +395,8 @@ def cmd_search(args):
     stored_mode = get_meta(conn, "mode")
     search_mode = args.mode  # "structural", "semantic", or "auto"
 
-    has_structural = get_meta(conn, "structural_indexed_at") is not None
-    has_semantic = get_meta(conn, "semantic_indexed_at") is not None
+    has_structural = bool(get_meta(conn, "structural_indexed_at"))
+    has_semantic = bool(get_meta(conn, "semantic_indexed_at"))
 
     # Backward compatibility: if no per-mode timestamps, infer from stored mode
     if not has_structural and not has_semantic:
@@ -389,7 +454,7 @@ def cmd_lookup(args):
     conn = open_db(db_path)
 
     # Check if structural data exists (lookup only works with structural index)
-    has_structural = get_meta(conn, "structural_indexed_at") is not None
+    has_structural = bool(get_meta(conn, "structural_indexed_at"))
     stored_mode = get_meta(conn, "mode")
     if not has_structural and stored_mode not in ("structural", "both"):
         conn.close()
@@ -470,6 +535,19 @@ def cmd_reindex(args):
     do_structural = reindex_mode in ("structural", "both")
     do_semantic = reindex_mode in ("semantic", "both")
 
+    if do_semantic:
+        from embeddings import EmbedProvider
+        try:
+            provider = EmbedProvider()
+            try:
+                provider.get_dimensions()
+            finally:
+                provider.close()
+        except Exception as e:
+            conn.close()
+            print(json.dumps({"error": f"Built-in embedding engine unavailable: {e}"}))
+            sys.exit(1)
+
     # Clear only data for the modes being re-indexed
     if do_structural:
         clear_fts(conn)
@@ -495,9 +573,6 @@ def cmd_reindex(args):
     index_args.path = codebase_path
     index_args.name = args.codebase
     index_args.mode = reindex_mode
-    index_args.provider = getattr(args, "provider", None) or meta.get("embed_provider", "ollama")
-    index_args.model = getattr(args, "model", None) or meta.get("embed_model", "nomic-embed-text")
-    index_args.base_url = getattr(args, "base_url", None) or meta.get("embed_base_url", "http://localhost:11434")
     index_args.filter = getattr(args, "filter", None) or meta.get("filter_mode", "everything")
 
     cmd_index(index_args)
@@ -513,9 +588,6 @@ def main():
     p_index = subparsers.add_parser("index", help="Index a codebase directory")
     p_index.add_argument("path", help="Path to codebase directory")
     p_index.add_argument("--mode", default="structural", choices=["structural", "semantic", "both"])
-    p_index.add_argument("--provider", default="ollama", choices=["ollama", "lmstudio"])
-    p_index.add_argument("--model", default="nomic-embed-text")
-    p_index.add_argument("--base-url", default="http://localhost:11434")
     p_index.add_argument("--filter", default="everything", choices=["everything", "smart"],
                          help="File filter mode: 'everything' indexes all recognised files, 'smart' skips config/docs/styles")
     p_index.add_argument("--name", default=None,
@@ -546,9 +618,6 @@ def main():
     p_reindex.add_argument("--codebase", required=True, help="Codebase name")
     p_reindex.add_argument("--mode", default=None, choices=["structural", "semantic", "both"],
                            help="Which mode(s) to re-index (default: all currently indexed modes)")
-    p_reindex.add_argument("--provider", default=None, choices=["ollama", "lmstudio"], help="Override embedding provider")
-    p_reindex.add_argument("--model", default=None, help="Override embedding model name")
-    p_reindex.add_argument("--base-url", default=None, help="Override embedding service base URL")
     p_reindex.add_argument("--filter", default=None, choices=["everything", "smart"],
                            help="File filter mode (default: use stored setting or 'everything')")
 

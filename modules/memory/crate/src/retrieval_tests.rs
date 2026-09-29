@@ -110,7 +110,7 @@ fn hybrid_recalls_paraphrases_and_never_stale_or_foreign_vectors() {
     add(&conn, "b", "beta", "# Allergies\nPrivate medical detail.");
     let config = EmbeddingConfig {
         enabled: true,
-        model: "fixture".into(),
+        builtin_model: "fixture".into(),
         ..Default::default()
     };
     let jobs = pending(&conn, &["alpha".into(), "beta".into()], &config, 10).unwrap();
@@ -171,7 +171,7 @@ fn bounds_unicode_and_model_change() {
     assert!(result.sources[0].truncated);
     let config = EmbeddingConfig {
         enabled: true,
-        model: "a".into(),
+        builtin_model: "a".into(),
         ..Default::default()
     };
     let job = pending(&conn, &["general".into()], &config, 1)
@@ -185,7 +185,7 @@ fn bounds_unicode_and_model_change() {
     )
     .unwrap();
     let changed = EmbeddingConfig {
-        model: "b".into(),
+        builtin_model: "b".into(),
         ..config.clone()
     };
     assert!(pending(&conn, &["general".into()], &config, 1)
@@ -256,7 +256,7 @@ fn review_queue_proposes_consolidation_for_logs_and_near_duplicates_without_writ
     );
     let config = EmbeddingConfig {
         enabled: true,
-        model: "fixture".into(),
+        builtin_model: "fixture".into(),
         ..Default::default()
     };
     for job in pending(&conn, &["alpha".into(), "beta".into()], &config, 10).unwrap() {
@@ -410,83 +410,67 @@ fn v2_migration_preserves_notes_and_forces_provenance_backfill() {
     assert_eq!(mtime, -1);
 }
 
-fn local_embedding_stub(status: &str, body: &str) -> (u16, std::thread::JoinHandle<String>) {
-    use std::io::{Read, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let response=format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nLocation: http://192.0.2.1/never-follow\r\nConnection: close\r\n\r\n{body}",body.len());
-    let handle = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-            .unwrap();
-        let mut request = vec![];
-        let mut buffer = [0u8; 4096];
-        loop {
-            let n = stream.read(&mut buffer).unwrap();
-            if n == 0 {
-                break;
-            }
-            request.extend_from_slice(&buffer[..n]);
-            let text = String::from_utf8_lossy(&request);
-            if let Some((headers, body)) = text.split_once("\r\n\r\n") {
-                let length = headers
-                    .lines()
-                    .find_map(|l| {
-                        l.to_lowercase()
-                            .strip_prefix("content-length:")
-                            .and_then(|v| v.trim().parse::<usize>().ok())
-                    })
-                    .unwrap_or(0);
-                if body.len() >= length {
-                    break;
-                }
-            }
-        }
-        stream.write_all(response.as_bytes()).unwrap();
-        String::from_utf8(request).unwrap()
-    });
-    (port, handle)
-}
+#[test]
+fn stored_settings_from_before_the_ollama_removal_migrate_to_the_builtin_engine() {
+    // Saved before the built-in engine existed: no provider, so it was Ollama.
+    let pre_engine =
+        json!({"enabled": true, "port": 11434, "model": "nomic-embed-text", "revision": "1"});
+    let stored = StoredEmbeddingConfig::parse(pre_engine).unwrap();
+    assert!(stored.legacy && stored.legacy_ollama);
+    assert_eq!(stored.clone().migrate(false), EmbeddingConfig::default());
+    assert!(stored.migrate(true).enabled);
 
-#[tokio::test]
-async fn embedding_transport_is_explicit_local_and_rejects_redirects_or_invalid_vectors() {
-    assert!(
-        embed(&EmbeddingConfig::default(), &["synthetic fixture".into()])
-            .await
-            .unwrap_err()
-            .contains("disabled")
-    );
-    let (port, server) = local_embedding_stub("200 OK", r#"{"embeddings":[[1.0,0.0]]}"#);
-    let mut config = EmbeddingConfig {
-        enabled: true,
-        port,
-        model: "fixture-only".into(),
-        ..Default::default()
-    };
+    // Ollama chosen explicitly: the engine choices survive, recall stays off
+    // until the engine is downloaded.
+    let ollama = json!({"enabled": true, "provider": "ollama", "port": 11434, "model": "bge-m3",
+        "revision": "2", "builtinModel": "qwen3-embedding-4b", "device": "cpu", "idleMinutes": 9});
     assert_eq!(
-        embed(&config, &["synthetic fixture".into()]).await.unwrap(),
-        vec![vec![1.0, 0.0]]
+        StoredEmbeddingConfig::parse(ollama).unwrap().migrate(false),
+        EmbeddingConfig {
+            enabled: false,
+            builtin_model: "qwen3-embedding-4b".into(),
+            device: "cpu".into(),
+            idle_minutes: 9,
+        }
     );
-    let request = server.join().unwrap();
-    assert!(request.starts_with("POST /api/embed "));
-    let payload: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
-    assert_eq!(payload["input"], json!(["synthetic fixture"]));
-    assert_eq!(payload["truncate"], false);
-    let (port, server) = local_embedding_stub("302 Found", r#"{"embeddings":[[1.0,0.0]]}"#);
-    config.port = port;
-    assert!(embed(&config, &["fixture".into()])
-        .await
-        .unwrap_err()
-        .contains("redirects"));
-    server.join().unwrap();
-    let (port, server) = local_embedding_stub("200 OK", r#"{"embeddings":[[0.0,0.0]]}"#);
-    config.port = port;
-    assert!(embed(&config, &["fixture".into()])
-        .await
-        .unwrap_err()
-        .contains("invalid"));
-    server.join().unwrap();
+
+    // The built-in engine saved with the old fields keeps its switch.
+    let builtin = json!({"enabled": true, "provider": "builtin", "port": 11434, "model": "",
+        "revision": "1", "builtinModel": "qwen3-embedding-0.6b", "device": "auto", "idleMinutes": 5});
+    let stored = StoredEmbeddingConfig::parse(builtin).unwrap();
+    assert!(stored.legacy && !stored.legacy_ollama);
+    assert!(stored.migrate(false).enabled);
+
+    // Today's shape round-trips and is not legacy; unknown keys are still refused.
+    let current = serde_json::to_value(EmbeddingConfig {
+        enabled: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let mut keys: Vec<&String> = current.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["builtinModel", "device", "enabled", "idleMinutes"]);
+    let stored = StoredEmbeddingConfig::parse(current).unwrap();
+    assert!(!stored.legacy && stored.config.enabled);
+    assert!(StoredEmbeddingConfig::parse(json!({"enabled": true, "endpoint": "x"})).is_err());
+
+    // Only the engine's catalog validates; the vector key names no provider port.
+    assert!(EmbeddingConfig::default().validate().is_ok());
+    assert!(EmbeddingConfig {
+        builtin_model: "nomic-embed-text".into(),
+        ..Default::default()
+    }
+    .validate()
+    .is_err());
+    assert!(EmbeddingConfig::default()
+        .key()
+        .starts_with("builtin:qwen3-embedding-0.6b:"));
+    // An unknown stored model falls back to the default instead of failing.
+    let unknown = json!({"enabled": false, "builtinModel": "gone-model"});
+    assert_eq!(
+        StoredEmbeddingConfig::parse(unknown).unwrap().migrate(true).builtin_model,
+        engine::DEFAULT_MODEL
+    );
 }
 
 #[test]

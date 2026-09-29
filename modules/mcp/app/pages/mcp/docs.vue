@@ -1,4 +1,8 @@
 <script setup lang="ts">
+function openMemorySettings() {
+  window.dispatchEvent(new CustomEvent('qss:settings', { detail: { module: 'memory' } }))
+}
+
 definePageMeta({ layout: 'mcp' })
 
 const activeSection = ref('getting-started')
@@ -326,7 +330,7 @@ print(json.dumps({
             <ul class="docs-list">
               <li>Understands meaning — searches by concept, not just keywords</li>
               <li>Finds related code even if the exact terms don't match</li>
-              <li>Requires a local embedding model running via <strong>Ollama</strong> or <strong>LM Studio</strong></li>
+              <li>Uses the <strong>built-in embedding engine</strong> downloaded in Memory settings</li>
               <li>Slower to index (depends on model size and hardware)</li>
               <li>All data stays local — nothing is sent to the cloud</li>
             </ul>
@@ -337,169 +341,14 @@ print(json.dumps({
           </div>
 
           <div class="docs-card">
-            <h3 class="docs-card-title">Embedding Providers</h3>
+            <h3 class="docs-card-title">Built-in Embedding Engine</h3>
             <p class="docs-text">
-              Semantic mode requires a locally running embedding service. Two providers are supported:
-            </p>
-            <ul class="docs-list">
-              <li><strong>Ollama</strong> — Default, runs at <code>http://localhost:11434</code>. Pull a model with <code>ollama pull nomic-embed-text</code></li>
-              <li><strong>LM Studio</strong> — Runs at <code>http://localhost:1234</code>. Load an embedding model from the LM Studio UI, then enable the local server</li>
-            </ul>
-          </div>
-
-          <div class="docs-card">
-            <h3 class="docs-card-title">Recommended Embedding Models</h3>
-            <p class="docs-text">
-              All models below run locally on CPU. Choose based on your RAM, quality needs, and
-              whether you need general-purpose or code-specific embeddings.
-            </p>
-
-            <h4 class="docs-h4">General Purpose (Ollama)</h4>
-            <div class="docs-table-wrapper">
-              <table class="docs-table">
-                <thead>
-                  <tr>
-                    <th>Model</th>
-                    <th>Sizes</th>
-                    <th>Dims</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><code>nomic-embed-text</code></td>
-                    <td>274 MB</td>
-                    <td>768</td>
-                    <td>Best default — great balance of quality and speed, large context window</td>
-                  </tr>
-                  <tr>
-                    <td><code>nomic-embed-text-v2-moe</code></td>
-                    <td>~300 MB</td>
-                    <td>768</td>
-                    <td>Multilingual MoE variant, optimized for retrieval tasks</td>
-                  </tr>
-                  <tr>
-                    <td><code>mxbai-embed-large</code></td>
-                    <td>670 MB</td>
-                    <td>1024</td>
-                    <td>State-of-the-art from mixedbread.ai, outperforms some proprietary models</td>
-                  </tr>
-                  <tr>
-                    <td><code>all-minilm</code></td>
-                    <td>22 / 33 MB</td>
-                    <td>384</td>
-                    <td>Ultra-fast, tiny footprint — great for quick experiments or low-RAM machines</td>
-                  </tr>
-                  <tr>
-                    <td><code>snowflake-arctic-embed</code></td>
-                    <td>22 MB &ndash; 670 MB</td>
-                    <td>384 &ndash; 1024</td>
-                    <td>Suite of 5 sizes (22m to 335m params) — pick for your hardware. Strong retrieval</td>
-                  </tr>
-                  <tr>
-                    <td><code>snowflake-arctic-embed2</code></td>
-                    <td>~1.1 GB</td>
-                    <td>1024</td>
-                    <td>v2 with multilingual support, 100+ languages, up to 32K token context</td>
-                  </tr>
-                  <tr>
-                    <td><code>bge-m3</code></td>
-                    <td>1.2 GB</td>
-                    <td>1024</td>
-                    <td>Multilingual + multi-granularity, high quality, larger footprint</td>
-                  </tr>
-                  <tr>
-                    <td><code>bge-large</code></td>
-                    <td>670 MB</td>
-                    <td>1024</td>
-                    <td>BAAI English-focused embedding, strong benchmark scores</td>
-                  </tr>
-                  <tr>
-                    <td><code>granite-embedding:30m</code></td>
-                    <td>30 MB</td>
-                    <td>384</td>
-                    <td>IBM tiny model, good for constrained environments</td>
-                  </tr>
-                  <tr>
-                    <td><code>granite-embedding:278m</code></td>
-                    <td>278 MB</td>
-                    <td>768</td>
-                    <td>IBM dense biencoder, good for code</td>
-                  </tr>
-                  <tr>
-                    <td><code>paraphrase-multilingual</code></td>
-                    <td>~560 MB</td>
-                    <td>768</td>
-                    <td>Optimized for clustering and semantic search across 50+ languages</td>
-                  </tr>
-                  <tr>
-                    <td><code>embeddinggemma</code></td>
-                    <td>~600 MB</td>
-                    <td>768</td>
-                    <td>Google's 300M param embedding model</td>
-                  </tr>
-                  <tr>
-                    <td><code>qwen3-embedding</code></td>
-                    <td>0.6B / 4B / 8B</td>
-                    <td>varies</td>
-                    <td>#1 on MTEB multilingual leaderboard, 100+ languages — powerful but large</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <h4 class="docs-h4" style="margin-top:16px">Code-Specialized Models</h4>
-            <p class="docs-text">
-              These models are specifically trained or optimized for code retrieval and understanding.
-              They can be used via LM Studio or Hugging Face (load as an embedding model).
-            </p>
-            <div class="docs-table-wrapper">
-              <table class="docs-table">
-                <thead>
-                  <tr>
-                    <th>Model</th>
-                    <th>Params</th>
-                    <th>Dims</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><code>nomic-embed-code</code></td>
-                    <td>7B</td>
-                    <td>4096</td>
-                    <td>State-of-the-art code embedding, fully open-source, strong multilingual code support</td>
-                  </tr>
-                  <tr>
-                    <td><code>CodeRankEmbed</code></td>
-                    <td>137M</td>
-                    <td>768</td>
-                    <td>Optimized specifically for code search and retrieval tasks</td>
-                  </tr>
-                  <tr>
-                    <td><code>jina-embeddings-v2-base-code</code></td>
-                    <td>137M</td>
-                    <td>768</td>
-                    <td>Jina's code-optimized embeddings, fast inference, 30+ programming languages</td>
-                  </tr>
-                  <tr>
-                    <td><code>CodeSage-large-v2</code></td>
-                    <td>1.3B</td>
-                    <td>flex</td>
-                    <td>Three sizes (130M/356M/1.3B), Matryoshka flexible dimensions</td>
-                  </tr>
-                  <tr>
-                    <td colspan="4" style="text-align:center;color:var(--text-muted);font-style:italic">
-                      Code models may need to be loaded via LM Studio or downloaded from Hugging Face
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <p class="docs-text" style="margin-top:12px">
-              To pull an Ollama model: <code>ollama pull &lt;model-name&gt;</code><br />
-              For LM Studio: search and download the model from the LM Studio UI, then start the local server.
+              Open <button type="button" @click="openMemorySettings">Memory settings</button> to download the engine and a model once.
+              Memory recall and code search share the model, device and idle timeout.
+              Qwen3-Embedding 0.6B is the default; 4B and 8B are available for larger GPUs.
+              Auto uses an NVIDIA GPU when available and falls back to the CPU. The engine currently supports Windows x64.
+              After download, embedding runs locally without network access. No provider or server URL is needed.
+              Changing models rebuilds code vectors on the next semantic index or search.
             </p>
           </div>
 
@@ -508,7 +357,7 @@ print(json.dumps({
             <ol class="docs-list docs-list-ordered">
               <li>Select your workspace on the Workspaces page</li>
               <li>Choose a mode — <strong>Structural</strong> or <strong>Semantic</strong></li>
-              <li>If semantic, configure the provider, model, and base URL</li>
+              <li>For semantic mode, download the built-in engine in Memory settings</li>
               <li>Click <strong>Index</strong></li>
               <li>QuantMCP walks the codebase, skipping common non-code directories (<code>node_modules</code>, <code>.git</code>, <code>target</code>, etc.) and binary files</li>
               <li>Each file is hashed (SHA-256) — unchanged files are skipped on re-index</li>

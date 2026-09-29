@@ -1,13 +1,13 @@
 """Semantic indexing using text chunking and vector embeddings.
 
 Splits source files into overlapping chunks, embeds them via a local
-AI provider (Ollama / LM Studio), and stores vectors for KNN search.
+built-in embedding engine, and stores vectors for KNN search.
 """
 
 import sqlite3
 
 from db import clear_chunks_for_file, insert_chunk, get_chunks_by_ids
-from embeddings import EmbedProvider
+from embeddings import EmbedProvider, MAX_INPUT_BYTES
 from vector_backend import VectorBackend
 
 
@@ -51,7 +51,25 @@ def chunk_file(
             break
         i += step
 
-    return chunks
+    # Bound bytes as well as lines: minified/generated code can put thousands
+    # of tokens on one line. Keep every character and accurate line ranges.
+    bounded = []
+    for chunk in chunks:
+        content, size = "", 0
+        start = line = chunk["start_line"]
+        for char in chunk["content"]:
+            width = len(char.encode("utf-8"))
+            if content and size + width > MAX_INPUT_BYTES:
+                if content.strip():
+                    bounded.append({"content": content, "start_line": start, "end_line": line})
+                content, size, start = "", 0, line
+            content += char
+            size += width
+            if char == "\n":
+                line += 1
+        if content.strip():
+            bounded.append({"content": content, "start_line": start, "end_line": line})
+    return bounded
 
 
 def index_file_semantic(
@@ -118,7 +136,7 @@ def search_semantic(
     with their metadata.
     """
     # Embed the query
-    query_embedding = embed_provider.embed(query)
+    query_embedding = embed_provider.embed(query, query=True)
 
     # KNN search
     chunk_ids = vector_backend.search(query_embedding, top_k=top_k)

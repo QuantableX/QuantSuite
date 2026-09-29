@@ -28,15 +28,63 @@ fn context_scopes(
 
 #[tauri::command(async)]
 pub fn get_embedding_config(app: AppHandle) -> Result<retrieval::EmbeddingConfig, String> {
+    let Some(stored) = stored_embedding_config(&app)? else {
+        return Ok(retrieval::EmbeddingConfig::default());
+    };
+    let installed = app
+        .try_state::<engine::Engine>()
+        .is_some_and(|engine| engine.ready_to_run(&stored.config));
+    Ok(stored.migrate(installed))
+}
+
+fn stored_embedding_config(
+    app: &AppHandle,
+) -> Result<Option<retrieval::StoredEmbeddingConfig>, String> {
     let db = app
         .try_state::<qs_core::db::Db>()
         .ok_or("Core settings unavailable")?;
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let value = qs_core::db::get_setting(&conn, "memory", "retrieval.embeddings")
         .map_err(|e| e.to_string())?;
-    value
-        .map(|v| serde_json::from_value(v).map_err(|e| e.to_string()))
-        .unwrap_or_else(|| Ok(retrieval::EmbeddingConfig::fresh()))
+    value.map(retrieval::StoredEmbeddingConfig::parse).transpose()
+}
+
+/// Rewrite a setting saved before the Ollama provider was removed: the
+/// built-in engine takes over, enabled only when it is installed, and the
+/// vectors the Ollama model left behind are dropped (never current again).
+fn migrate_embedding_config(app: &AppHandle) -> Result<(), String> {
+    let Some(stored) = stored_embedding_config(app)? else {
+        return Ok(());
+    };
+    if !stored.legacy {
+        return Ok(());
+    }
+    let was_ollama = stored.legacy_ollama;
+    let config = get_embedding_config(app.clone())?;
+    {
+        let db = app
+            .try_state::<qs_core::db::Db>()
+            .ok_or("Core settings unavailable")?;
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        qs_core::db::set_setting(&conn, "memory", "retrieval.embeddings", &json!(config))
+            .map_err(|e| e.to_string())?;
+    }
+    let removed = app
+        .state::<AppState>()
+        .db
+        .lock()
+        .map_err(|e| e.to_string())?
+        .execute(
+            "DELETE FROM memory_embeddings WHERE model_key NOT LIKE 'builtin:%'",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    log::info!(
+        "memory embeddings: migrated the {} setting to the built-in engine (enabled: {}), dropped {removed} old vectors",
+        if was_ollama { "Ollama" } else { "built-in" },
+        config.enabled
+    );
+    Ok(())
 }
 
 fn save_embedding_config(
@@ -60,9 +108,11 @@ fn save_embedding_config(
             .execute("DELETE FROM memory_embeddings", [])
             .map_err(|e| e.to_string())?;
     }
+    // Recall switched off: free the engine now, unless a lease (the code
+    // index) is using it; a leased engine idles out once released.
     if let Some(engine) = app.try_state::<engine::Engine>() {
-        if !config.enabled || !config.is_builtin() {
-            engine.stop();
+        if !config.enabled {
+            engine.stop_if_unused();
         }
     }
     if let Some(indexer) = app.try_state::<Indexer>() {
@@ -80,20 +130,16 @@ pub fn set_embedding_config(
     save_embedding_config(&app, &config)
 }
 
-/// Embed with whatever the setting names: the built-in engine or Ollama.
+/// Embed with the built-in engine.
 async fn embed_texts(
     app: &AppHandle,
     config: &retrieval::EmbeddingConfig,
     inputs: &[String],
 ) -> Result<Vec<Vec<f32>>, String> {
-    if config.is_builtin() {
-        let engine = app
-            .try_state::<engine::Engine>()
-            .ok_or("The built-in embedding engine is unavailable")?;
-        engine.embed(config, inputs).await
-    } else {
-        retrieval::embed(config, inputs).await
-    }
+    let engine = app
+        .try_state::<engine::Engine>()
+        .ok_or("The built-in embedding engine is unavailable")?;
+    engine.embed(config, inputs).await
 }
 
 #[derive(Deserialize)]
@@ -174,17 +220,9 @@ pub async fn memory_context(
         result.warnings.push(warning);
     }
     if result.mode == "hybrid" {
-        let (device, model) = if config.is_builtin() {
-            let device = app.try_state::<engine::Engine>().and_then(|e| e.device());
-            (
-                device.unwrap_or_else(|| "unknown".into()),
-                config.builtin_model.clone(),
-            )
-        } else {
-            ("ollama".into(), config.model.clone())
-        };
-        result.device = Some(device);
-        result.embedding_model = Some(model);
+        let device = app.try_state::<engine::Engine>().and_then(|e| e.device());
+        result.device = Some(device.unwrap_or_else(|| "unknown".into()));
+        result.embedding_model = Some(config.builtin_model.clone());
     }
     result.elapsed_ms = started.elapsed().as_millis();
     Ok(result)
@@ -293,8 +331,17 @@ pub fn init_embeddings(app: &AppHandle) {
             }
         }),
     );
+    // Other modules (the semantic code index) reach the engine through this seam.
+    qs_core::embeddings::register(Arc::new(crate::embedding_service::EngineService::new(
+        app.clone(),
+    )));
     let handle = app.clone();
-    tauri::async_runtime::spawn(async move { background_indexer(handle).await });
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = migrate_embedding_config(&handle) {
+            log::warn!("memory embeddings: migrating the stored setting failed: {e}");
+        }
+        background_indexer(handle).await
+    });
 }
 
 fn all_scopes(app: &AppHandle) -> Vec<String> {
@@ -323,7 +370,7 @@ async fn background_indexer(app: AppHandle) {
             continue;
         }
         // The built-in engine runs only once the operator downloaded it.
-        if config.is_builtin() && app.state::<engine::Engine>().status(&config).missing_bytes > 0 {
+        if !app.state::<engine::Engine>().ready_to_run(&config) {
             continue;
         }
         let scopes = all_scopes(&app);
@@ -395,7 +442,6 @@ pub fn embedding_engine_setup(
     app: AppHandle,
 ) -> Result<(), String> {
     let mut config = get_embedding_config(app.clone())?;
-    config.provider = "builtin".into();
     config.builtin_model = model;
     config.device = device;
     if let Some(minutes) = idle_minutes {

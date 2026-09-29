@@ -49,6 +49,7 @@ const COMMANDS: &[&str] = &[
     "get_mcp_server_port",
     "get_approval_mode",
     "set_approval_mode",
+    "get_codebase_embedding_info",
     "get_workspace_index_settings",
     "set_workspace_index_settings",
     "list_kanban_cards",
