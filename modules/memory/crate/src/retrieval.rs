@@ -362,20 +362,12 @@ pub fn assemble(
     reviewed_only: bool,
 ) -> Result<ContextResult, String> {
     let mut candidates: HashMap<String, (f64, Vec<String>, Option<String>)> = HashMap::new();
-    let mut lexical = Vec::new();
-    for scope in scopes {
-        lexical.extend(index::search(conn, Some(scope), query, "any", 100)?);
-    }
-    lexical.sort_by(|a, b| a.score.total_cmp(&b.score).then(a.id.cmp(&b.id)));
-    for (rank, hit) in lexical.into_iter().enumerate() {
-        candidates.insert(
-            hit.id,
-            (
-                1.0 / (60.0 + rank as f64),
-                vec!["lexical match".into()],
-                None,
-            ),
-        );
+    for (reason, ids) in crate::lexical::signals(conn, query, scopes, 100)? {
+        for (rank, id) in ids.into_iter().enumerate() {
+            let entry = candidates.entry(id).or_insert_with(|| (0.0, vec![], None));
+            entry.0 += 1.0 / (60.0 + rank as f64);
+            entry.1.push(reason.into());
+        }
     }
     let mut warnings = vec![];
     if let Some((config, query_vector)) = semantic {
@@ -439,6 +431,16 @@ pub fn assemble(
             score *= 0.7;
             reasons.push("unresolved conflict — verify before use".into());
         }
+        if let Some((bonus, reason)) = recency(
+            &meta.updated_at,
+            meta.quality.last_verified.as_deref(),
+            chrono::Utc::now(),
+        ) {
+            score *= 1.0 + bonus;
+            if bonus >= RECENCY_MAX_BONUS / 2.0 {
+                reasons.push(reason.into());
+            }
+        }
         let body = index::body_of(conn, &id)?.unwrap_or_default();
         let excerpt = excerpt.unwrap_or_else(|| best_excerpt(&body, query));
         let source = ContextSource {
@@ -493,6 +495,37 @@ pub fn assemble(
     })
 }
 
+/// Recency is a tie-breaker, never relevance: at most +3% for a memory
+/// updated or verified today, halving every [`RECENCY_HALF_LIFE_DAYS`].
+/// Neighbouring fused ranks at the top differ by ~1.6%, so it lifts a memory
+/// past at most one equally relevant neighbour there; human review (×1.1) and
+/// declared conflicts (×0.7) stay stronger. Superseded memories stay excluded.
+pub const RECENCY_MAX_BONUS: f64 = 0.03;
+pub const RECENCY_HALF_LIFE_DAYS: f64 = 30.0;
+// Checked at compile time: below two fused ranks at the top and below review.
+const _: () = assert!(1.0 + RECENCY_MAX_BONUS < 62.0 / 60.0 && 1.0 + RECENCY_MAX_BONUS < 1.1);
+
+/// The bonus and its reason, from the later of the last update and the last
+/// verification. Unparseable dates give none; future dates count as today.
+fn recency(
+    updated_at: &str,
+    last_verified: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<(f64, &'static str)> {
+    let parse = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
+    let (when, reason) = match (parse(updated_at), last_verified.and_then(parse)) {
+        (Some(updated), Some(verified)) if verified >= updated => (verified, "recently verified"),
+        (Some(updated), _) => (updated, "recently updated"),
+        (None, Some(verified)) => (verified, "recently verified"),
+        (None, None) => return None,
+    };
+    let age_days = now.signed_duration_since(when).num_seconds().max(0) as f64 / 86_400.0;
+    Some((
+        RECENCY_MAX_BONUS * 0.5_f64.powf(age_days / RECENCY_HALF_LIFE_DAYS),
+        reason,
+    ))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewIssue {
@@ -501,14 +534,21 @@ pub struct ReviewIssue {
     pub scope: String,
     pub reasons: Vec<String>,
     pub related_ids: Vec<String>,
+    /// Consolidation proposals for a human to review; never applied here.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub proposals: Vec<String>,
 }
 
 pub fn review_queue(conn: &Connection, scope: Option<&str>) -> Result<Vec<ReviewIssue>, String> {
     let notes = index::list(conn, scope, None, None, 10000)?;
     let mut fingerprints: HashMap<u64, Vec<String>> = HashMap::new();
+    let mut log_like = HashMap::new();
     for m in &notes {
-        let body = index::body_of(conn, &m.id)?
-            .unwrap_or_default()
+        let raw = index::body_of(conn, &m.id)?.unwrap_or_default();
+        if let Some(flag) = crate::consolidation::log_like(&raw, m.word_count) {
+            log_like.insert(m.id.clone(), flag);
+        }
+        let body = raw
             .lines()
             .filter(|line| !line.starts_with("# "))
             .collect::<Vec<_>>()
@@ -539,6 +579,7 @@ pub fn review_queue(conn: &Connection, scope: Option<&str>) -> Result<Vec<Review
             })
         })
         .collect();
+    let near_duplicates = crate::consolidation::near_duplicates(conn, scope)?;
     let mut out = vec![];
     for m in notes {
         let mut reasons = vec![];
@@ -564,6 +605,27 @@ pub fn review_queue(conn: &Connection, scope: Option<&str>) -> Result<Vec<Review
             reasons.push("duplicate content".into());
             related_ids.extend(ids.clone());
         }
+        let mut proposals = vec![];
+        if let Some((reason, proposal)) = log_like.remove(&m.id) {
+            reasons.push(reason);
+            proposals.push(proposal);
+        }
+        // Exact duplicates are already flagged above.
+        let near: Vec<_> = near_duplicates
+            .get(&m.id)
+            .into_iter()
+            .flatten()
+            .filter(|(other, _)| !duplicates.get(&m.id).is_some_and(|ids| ids.contains(other)))
+            .collect();
+        for (other, similarity) in &near {
+            reasons.push(format!(
+                "near-duplicate (embedding similarity {similarity:.2})"
+            ));
+            related_ids.push(other.clone());
+        }
+        if !near.is_empty() {
+            proposals.push("Near-duplicate proposal: keep one memory with the combined facts and mark the other supersededBy it; nothing is merged automatically.".into());
+        }
         if !reasons.is_empty() {
             out.push(ReviewIssue {
                 id: m.id,
@@ -571,8 +633,11 @@ pub fn review_queue(conn: &Connection, scope: Option<&str>) -> Result<Vec<Review
                 scope: m.scope,
                 reasons,
                 related_ids,
+                proposals,
             });
         }
     }
+    // Actionable consolidation proposals first; otherwise newest first as listed.
+    out.sort_by_key(|issue| issue.proposals.is_empty());
     Ok(out)
 }

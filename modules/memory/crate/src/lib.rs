@@ -21,8 +21,10 @@
 //! tools declared in module.json — this crate is also their backend.
 
 mod base;
+mod consolidation;
 mod engine;
 mod index;
+mod lexical;
 mod quality;
 mod retrieval;
 mod intelligence;
