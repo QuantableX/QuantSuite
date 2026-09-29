@@ -69,9 +69,6 @@ export interface IndexCodebaseResult {
 /** What core.db remembers about how a workspace's index is built. */
 export interface IndexSettings {
   mode?: string | null
-  provider?: string | null
-  model?: string | null
-  baseUrl?: string | null
   filter?: string | null
 }
 
@@ -321,6 +318,12 @@ export function useMcpWorkspaces() {
     await invoke('plugin:mcp|set_approval_mode', { workspaceId, mode })
   }
 
+  async function getEmbeddingInfo(): Promise<EmbeddingInfo> {
+    if (!hasTauri()) return { installed: false, modelLabel: '', device: '', hint: 'Open QuantSuite to check the built-in engine.' }
+    const invoke = await tauriInvoke()
+    return invoke<EmbeddingInfo>('plugin:mcp|get_codebase_embedding_info')
+  }
+
   async function getIndexSettings(workspaceId: string): Promise<IndexSettings> {
     if (!hasTauri()) return {}
     const invoke = await tauriInvoke()
@@ -349,9 +352,6 @@ export function useMcpWorkspaces() {
   async function indexWorkspaceCodebase(
     workspaceId: string,
     mode: string = 'structural',
-    embedProvider?: string,
-    embedModel?: string,
-    embedBaseUrl?: string,
     forceReindex?: boolean,
     filterMode?: string,
   ): Promise<IndexCodebaseResult> {
@@ -359,9 +359,6 @@ export function useMcpWorkspaces() {
     return invoke<IndexCodebaseResult>('plugin:mcp|index_project_codebase', {
       workspaceId,
       mode,
-      embedProvider,
-      embedModel,
-      embedBaseUrl,
       forceReindex,
       filterMode,
     })
@@ -400,9 +397,19 @@ export function useMcpWorkspaces() {
     unarchiveCard,
     getApprovalMode,
     setApprovalMode,
+    getEmbeddingInfo,
     getIndexSettings,
     setIndexSettings,
     getIndexStats,
     indexWorkspaceCodebase,
   }
+}
+
+export interface EmbeddingInfo {
+  installed: boolean
+  modelLabel: string
+  device: string
+  runningDevice?: string | null
+  gpu?: string | null
+  hint?: string | null
 }

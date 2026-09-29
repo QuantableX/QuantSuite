@@ -207,18 +207,12 @@ pub fn set_approval_mode(
 
 /// What the projects.json rows used to remember per project: how this
 /// workspace's code index is built. All optional — the CLI has its own
-/// defaults (structural / ollama / nomic-embed-text / localhost:11434).
+/// defaults (structural). Legacy provider fields are ignored when read.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexSettings {
     #[serde(default)]
     pub mode: Option<String>,
-    #[serde(default)]
-    pub provider: Option<String>,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub base_url: Option<String>,
     #[serde(default)]
     pub filter: Option<String>,
 }

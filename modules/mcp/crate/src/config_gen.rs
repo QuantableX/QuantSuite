@@ -36,7 +36,7 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
         },
         CodebaseIndexToolInfo {
             name: "index_codebase".into(),
-            description: "Index or re-index a workspace's code. Creates one index DB per workspace. Omit `workspace` to index the active workspace; an unregistered folder path is registered as a new workspace. Use mode 'both' to create structural AND semantic indexes simultaneously.".into(),
+            description: "Index or re-index a workspace's code. Creates one index DB per workspace. Omit `workspace` to index the active workspace; an unregistered folder path is registered as a new workspace. Use mode 'both' to create structural AND semantic indexes simultaneously. Semantic indexing uses the built-in engine downloaded in Memory settings.".into(),
             parameters: vec![
                 CodebaseIndexToolParam {
                     name: "workspace".into(),
@@ -51,27 +51,6 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
                     description: "\"structural\" (BM25), \"semantic\" (vector), or \"both\"".into(),
                     required: false,
                     default_value: Some("structural".into()),
-                },
-                CodebaseIndexToolParam {
-                    name: "embed_provider".into(),
-                    param_type: "string".into(),
-                    description: "Embedding provider for semantic mode".into(),
-                    required: false,
-                    default_value: Some("ollama".into()),
-                },
-                CodebaseIndexToolParam {
-                    name: "embed_model".into(),
-                    param_type: "string".into(),
-                    description: "Embedding model name".into(),
-                    required: false,
-                    default_value: Some("nomic-embed-text".into()),
-                },
-                CodebaseIndexToolParam {
-                    name: "embed_base_url".into(),
-                    param_type: "string".into(),
-                    description: "Base URL of the embedding service".into(),
-                    required: false,
-                    default_value: Some("http://localhost:11434".into()),
                 },
             ],
         },

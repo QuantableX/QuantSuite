@@ -1730,21 +1730,6 @@ async fn execute_codebase_tool(
                 "mode",
                 stored.mode.as_deref().unwrap_or("structural"),
             );
-            let embed_provider = get_optional_string(
-                arguments,
-                "embed_provider",
-                stored.provider.as_deref().unwrap_or("ollama"),
-            );
-            let embed_model = get_optional_string(
-                arguments,
-                "embed_model",
-                stored.model.as_deref().unwrap_or("nomic-embed-text"),
-            );
-            let embed_base_url = get_optional_string(
-                arguments,
-                "embed_base_url",
-                stored.base_url.as_deref().unwrap_or("http://localhost:11434"),
-            );
             let filter = stored.filter.clone().unwrap_or_else(|| "everything".into());
 
             let payload = indexing::run_cli(app, vec![
@@ -1754,12 +1739,6 @@ async fn execute_codebase_tool(
                 ws.b36().to_string(),
                 "--mode".into(),
                 mode.clone(),
-                "--provider".into(),
-                embed_provider.clone(),
-                "--model".into(),
-                embed_model.clone(),
-                "--base-url".into(),
-                embed_base_url.clone(),
                 "--filter".into(),
                 filter.clone(),
             ])
@@ -1771,9 +1750,6 @@ async fn execute_codebase_tool(
                 ws.b36(),
                 &settings::IndexSettings {
                     mode: Some(mode),
-                    provider: Some(embed_provider),
-                    model: Some(embed_model),
-                    base_url: Some(embed_base_url),
                     filter: Some(filter),
                 },
             );

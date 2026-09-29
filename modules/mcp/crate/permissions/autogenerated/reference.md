@@ -53,6 +53,7 @@ Default permissions for the mcp module.
 - `allow-get-mcp-server-port`
 - `allow-get-approval-mode`
 - `allow-set-approval-mode`
+- `allow-get-codebase-embedding-info`
 - `allow-get-workspace-index-settings`
 - `allow-set-workspace-index-settings`
 - `allow-list-kanban-cards`
@@ -599,6 +600,32 @@ Enables the get_approval_mode command without any pre-configured scope.
 <td>
 
 Denies the get_approval_mode command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:allow-get-codebase-embedding-info`
+
+</td>
+<td>
+
+Enables the get_codebase_embedding_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:deny-get-codebase-embedding-info`
+
+</td>
+<td>
+
+Denies the get_codebase_embedding_info command without any pre-configured scope.
 
 </td>
 </tr>

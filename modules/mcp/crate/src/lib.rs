@@ -264,6 +264,7 @@ pub fn init() -> TauriPlugin<Wry> {
             // workspace registry, read via @quantsuite/core in the webview)
             commands::workspace::get_approval_mode,
             commands::workspace::set_approval_mode,
+            commands::workspace::get_codebase_embedding_info,
             commands::workspace::get_workspace_index_settings,
             commands::workspace::set_workspace_index_settings,
             commands::kanban::list_kanban_cards,

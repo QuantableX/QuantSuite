@@ -10,7 +10,8 @@
 //! A set file: `vaults` (scope → vault folder, `~` allowed) and/or synthetic `notes`,
 //! `defaultScopes`, `cases` (`query`, `lang`, optional `cross` = query language differs from
 //! the memory's, `scopes`, `expected` ids or titles), optional `embedding` (an
-//! [`EmbeddingConfig`]; adds the hybrid mode) and optional `floors` per mode.
+//! [`EmbeddingConfig`] for the built-in engine; adds the hybrid mode) and optional
+//! `floors` per mode.
 use super::*;
 use crate::index::FileRecord;
 use serde_json::{json, Value};
@@ -29,8 +30,9 @@ struct BenchSet {
     #[serde(default)]
     default_scopes: Vec<String>,
     cases: Vec<Case>,
+    /// A stored-style setting; one saved before the Ollama removal still parses.
     #[serde(default)]
-    embedding: Option<EmbeddingConfig>,
+    embedding: Option<Value>,
     #[serde(default)]
     floors: BTreeMap<String, Metrics>,
 }
@@ -348,7 +350,7 @@ fn fixture_meets_floors() {
         serde_json::from_str(include_str!("../tests/fixtures/retrieval_bench.json")).unwrap();
     let fake = EmbeddingConfig {
         enabled: true,
-        model: "bench-trigram".into(),
+        builtin_model: "bench-trigram".into(),
         ..Default::default()
     };
     let results = bench(&set, Some((&fake, &trigram_embed)));
@@ -375,23 +377,21 @@ fn private_set() {
                 enabled: true,
                 builtin_model: env("QS_MEMORY_BENCH_MODEL", engine::DEFAULT_MODEL),
                 device: env("QS_MEMORY_BENCH_DEVICE", "auto"),
-                ..EmbeddingConfig::fresh()
+                ..EmbeddingConfig::default()
             })
         }
-        None => set.embedding.clone().filter(|c| c.enabled),
+        None => set
+            .embedding
+            .clone()
+            .map(|v| StoredEmbeddingConfig::parse(v).unwrap().config)
+            .filter(|c| c.enabled),
     };
     let engine = engine::Engine::new(engine_dir.map_or_else(
         || qs_core::paths::module_dir("memory").join("engine"),
         PathBuf::from,
     ));
-    let real_embed = |inputs: &[String]| {
-        let config = real.as_ref().unwrap();
-        if config.is_builtin() {
-            runtime.block_on(engine.embed(config, inputs))
-        } else {
-            runtime.block_on(embed(config, inputs))
-        }
-    };
+    let real_embed =
+        |inputs: &[String]| runtime.block_on(engine.embed(real.as_ref().unwrap(), inputs));
     bench(&set, real.as_ref().map(|c| (c, &real_embed as Embedder)));
     if let Some(config) = &real {
         let status = engine.status(config);

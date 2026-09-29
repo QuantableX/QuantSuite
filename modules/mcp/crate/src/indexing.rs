@@ -152,12 +152,45 @@ pub async fn run_cli(app: &tauri::AppHandle, args: Vec<String>) -> Result<Value,
     let index_dir = index_dir();
     let _ = std::fs::create_dir_all(&index_dir);
 
+    // Acquire per invocation: the port/key change on every engine start. The
+    // lease stays alive until the subprocess exits, including auto-refresh.
+    let meta = index_metadata(&args, &index_dir);
+    let request = embedding_request(&args, &meta);
+    let mut engine_error = None;
+    let lease = if request != EmbeddingRequest::None {
+        match qs_core::embeddings::acquire().await {
+            Ok(lease) => Some(lease),
+            Err(e) if request == EmbeddingRequest::Optional => {
+                engine_error = Some(e);
+                None
+            }
+            Err(e) => return Err(e),
+        }
+    } else {
+        None
+    };
+
     let mut cmd_args = vec![cli_path.to_string_lossy().to_string()];
     cmd_args.extend(args);
 
     let mut cmd = tokio::process::Command::new(python_exe());
     cmd.args(&cmd_args);
     cmd.env("QUANTMCP_INDEX_DIR", &index_dir);
+    cmd.kill_on_drop(true);
+    // Never inherit a stale endpoint, even for a structural operation.
+    for key in ["QUANTMCP_EMBEDDING_ENDPOINT", "QUANTMCP_EMBEDDING_KEY", "QUANTMCP_EMBEDDING_ERROR"] {
+        cmd.env_remove(key);
+    }
+    if let Some(lease) = &lease {
+        let e = lease.endpoint();
+        cmd.env("QUANTMCP_EMBEDDING_ENDPOINT", serde_json::json!({
+            "url": e.url, "model": e.model, "dims": e.dims, "queryPrefix": e.query_prefix,
+        }).to_string());
+        cmd.env("QUANTMCP_EMBEDDING_KEY", &e.api_key);
+    }
+    if let Some(error) = engine_error {
+        cmd.env("QUANTMCP_EMBEDDING_ERROR", error);
+    }
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     let output = cmd
@@ -247,4 +280,58 @@ pub struct IndexCodebaseResult {
     pub semantic_entries: Option<u32>,
     pub db_path: Option<String>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, PartialEq)]
+enum EmbeddingRequest { None, Optional, Required }
+
+fn cli_option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+    // Positional search text may itself equal "--mode"; skip it.
+    let skip = if matches!(args.first().map(String::as_str), Some("index" | "search" | "lookup")) { 2 } else { 1 };
+    args.get(skip..).unwrap_or_default().windows(2)
+        .find(|pair| pair[0] == name).map(|pair| pair[1].as_str())
+}
+
+fn index_metadata(args: &[String], directory: &std::path::Path) -> Value {
+    let Some(name) = cli_option(args, "--codebase") else { return Value::Null };
+    let Ok(db) = rusqlite::Connection::open_with_flags(
+        directory.join(format!("{name}.db")), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ) else { return Value::Null };
+    let Ok(mut statement) = db.prepare("SELECT key, value FROM meta") else { return Value::Null };
+    let Ok(rows) = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) else { return Value::Null };
+    let mut meta = serde_json::Map::new();
+    for (key, value) in rows.flatten() { meta.insert(key, Value::String(value)); }
+    Value::Object(meta)
+}
+
+fn embedding_request(args: &[String], meta: &Value) -> EmbeddingRequest {
+    let mode = cli_option(args, "--mode");
+    match args.first().map(String::as_str) {
+        Some("index") if matches!(mode, Some("semantic" | "both")) => EmbeddingRequest::Required,
+        Some("reindex") if matches!(mode.or_else(|| meta["mode"].as_str()), Some("semantic" | "both")) => EmbeddingRequest::Required,
+        Some("search") if mode == Some("semantic") => EmbeddingRequest::Required,
+        // Auto prefers the existing structural index, so it need not load a model.
+        Some("search") if mode.unwrap_or("auto") == "auto"
+            && !matches!(meta["mode"].as_str(), Some("structural" | "both"))
+            && meta["mode"] == "semantic" => EmbeddingRequest::Optional,
+        _ => EmbeddingRequest::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn only_semantic_operations_acquire_the_shared_engine() {
+        let request = |args: &[&str], mode: &str| embedding_request(
+            &args.iter().map(|s| s.to_string()).collect::<Vec<_>>(), &serde_json::json!({"mode": mode}));
+        assert_eq!(request(&["index", "repo", "--mode", "structural"], ""), EmbeddingRequest::None);
+        assert_eq!(request(&["index", "repo", "--mode", "both"], ""), EmbeddingRequest::Required);
+        assert_eq!(request(&["reindex", "--codebase", "id"], "both"), EmbeddingRequest::Required);
+        assert_eq!(request(&["reindex", "--codebase", "id", "--mode", "structural"], "both"), EmbeddingRequest::None);
+        assert_eq!(request(&["search", "--mode", "--mode", "semantic"], "both"), EmbeddingRequest::Required);
+        assert_eq!(request(&["search", "term", "--mode", "auto"], "both"), EmbeddingRequest::None);
+        assert_eq!(request(&["search", "term", "--mode", "auto"], "semantic"), EmbeddingRequest::Optional);
+        assert_eq!(request(&["lookup", "term", "--codebase", "id"], "semantic"), EmbeddingRequest::None);
+    }
 }
