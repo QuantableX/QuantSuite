@@ -132,6 +132,7 @@ fn build(set: &BenchSet) -> (PathBuf, Connection) {
         );
         index::scan_vault(&conn, &root, scope).unwrap();
     }
+    index::resolve_links(&conn).unwrap();
     (path, conn)
 }
 
