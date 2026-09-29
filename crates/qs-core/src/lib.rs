@@ -4,9 +4,10 @@
 //! `plugin:core|<name>` and cannot collide with a module's (ARCHITECTURE.md §2).
 //!
 //! What lives here: the event bus (§3), `core.db` with entities/links/settings
-//! (§5), the process register (§6), the tray and window lifecycle (§10) and the
-//! ordered shutdown. Modules own their own data and commands; they never
-//! duplicate any of this.
+//! (§5), the process register (§6), the tray and window lifecycle (§10), the
+//! ordered shutdown and the seams one module offers another without a crate
+//! dependency (`agent`, `runtime`, `embeddings`). Modules own their own data
+//! and commands; they never duplicate any of this.
 
 pub mod agent;
 pub mod apps;
@@ -14,6 +15,7 @@ pub mod autostart;
 pub mod bus;
 pub mod commands;
 pub mod diagnostics;
+pub mod embeddings;
 pub mod runtime;
 pub mod db;
 pub mod migrations;
