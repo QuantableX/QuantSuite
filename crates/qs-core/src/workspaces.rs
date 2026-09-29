@@ -106,6 +106,39 @@ pub fn by_id(conn: &Connection, id: &str) -> Option<WorkspaceEntry> {
     list(conn).into_iter().find(|w| w.id == id)
 }
 
+/// The registered workspace a folder lies in: the one whose path is `path`
+/// itself or its closest ancestor, compared by whole path components (so
+/// `C:/Projects/Quant` never claims `C:/Projects/QuantSuite`). Nested
+/// registrations resolve to the innermost one, and a card worktree under
+/// `<repo>/.qs-worktrees/` resolves to its repository. `None` when no
+/// registered folder contains `path` — never a fallback to the active one.
+pub fn containing(conn: &Connection, path: &str) -> Option<WorkspaceEntry> {
+    containing_in(list(conn), path)
+}
+
+/// [`containing`] over an already loaded list.
+pub fn containing_in(
+    workspaces: impl IntoIterator<Item = WorkspaceEntry>,
+    path: &str,
+) -> Option<WorkspaceEntry> {
+    let target = normalize_path(path.trim());
+    if target.is_empty() {
+        return None;
+    }
+    workspaces
+        .into_iter()
+        .filter_map(|ws| {
+            let root = normalize_path(&ws.path);
+            let inside = target == root
+                || target
+                    .strip_prefix(root.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'));
+            (!root.is_empty() && inside).then_some((root.len(), ws))
+        })
+        .max_by_key(|(len, _)| *len)
+        .map(|(_, ws)| ws)
+}
+
 /// Resolve a caller-supplied workspace identifier.
 ///
 /// `None` or `"active"` means the open workspace; anything else matches the
@@ -165,6 +198,29 @@ mod tests {
         ] {
             assert_eq!(workspace_id_for(path), expected, "path: {path}");
         }
+    }
+
+    #[test]
+    fn containing_picks_the_innermost_registered_ancestor() {
+        let ws = |name: &str, path: &str| WorkspaceEntry {
+            id: workspace_id_for(path),
+            name: name.into(),
+            path: path.into(),
+        };
+        let all = vec![
+            ws("Games", r"C:\Projects\QuantGames"),
+            ws("VoidVeil", r"C:\Projects\QuantGames\VoidVeil"),
+            ws("Suite", "C:/Projects/QuantSuite/"),
+        ];
+        let name = |path: &str| containing_in(all.clone(), path).map(|w| w.name);
+        assert_eq!(name(r"C:\Projects\QuantSuite").as_deref(), Some("Suite"));
+        assert_eq!(name("c:/projects/quantsuite/.qs-worktrees/eb178c53/src").as_deref(), Some("Suite"));
+        assert_eq!(name(r"C:\Projects\QuantGames\VoidVeil\src").as_deref(), Some("VoidVeil"));
+        assert_eq!(name(r"C:\Projects\QuantGames\BloodGate").as_deref(), Some("Games"));
+        // Whole components only, and never a fallback.
+        assert_eq!(name(r"C:\Projects\QuantSuiteOld"), None);
+        assert_eq!(name(r"C:\Projects"), None);
+        assert_eq!(name("  "), None);
     }
 
     #[test]

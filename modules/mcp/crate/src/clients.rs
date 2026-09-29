@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 mod instructions;
 use instructions::Instructions;
 pub use instructions::import_agent_instructions;
+pub(crate) use instructions::{claude_config_dir, current_codex_homes};
 pub use instructions::custom::{load_custom_recipients, validate_custom_recipients, CustomRecipient};
 
 /// The name QuantMCP registers itself under in every client.
