@@ -152,6 +152,10 @@ pub struct Term {
 }
 
 impl Term {
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
     /// The term as an FTS5 query string.
     pub fn expr(&self) -> String {
         let star = if self.prefix { "*" } else { "" };
