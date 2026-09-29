@@ -1,6 +1,6 @@
 {
   "defaultScopes": ["alpha"],
-  "floors": {"lexical": {"recall1": 0.73, "recall5": 0.82, "mrr": 0.77}},
+  "floors": {"lexical": {"recall1": 0.82, "recall5": 0.86, "mrr": 0.84}},
   "notes": [
     {"id":"storage-en","scope":"alpha","body":"# Storage decision\nThe desktop app keeps its local cache in SQLite with WAL mode. PostgreSQL was rejected because it needs a server process."},
     {"id":"hotkey-de","scope":"alpha","body":"# Diktat-Tastenkürzel\nDas Diktat startet mit Strg+Umschalt+Leertaste. Gedrückt halten ist Push-to-Talk, kurz tippen schaltet um."},
