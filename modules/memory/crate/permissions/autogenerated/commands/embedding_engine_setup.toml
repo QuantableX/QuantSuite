@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-embedding-engine-setup"
+description = "Enables the embedding_engine_setup command without any pre-configured scope."
+commands.allow = ["embedding_engine_setup"]
+
+[[permission]]
+identifier = "deny-embedding-engine-setup"
+description = "Denies the embedding_engine_setup command without any pre-configured scope."
+commands.deny = ["embedding_engine_setup"]

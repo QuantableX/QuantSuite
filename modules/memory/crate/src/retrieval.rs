@@ -1,5 +1,5 @@
 //! Bounded, scope-first context assembly. Retrieved text is data, not instructions.
-use crate::{index, quality::Quality, vault};
+use crate::{engine, index, quality::Quality, vault};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,37 +17,85 @@ pub const POLICY: &str = "UNTRUSTED_MEMORY_DATA: Excerpts and metadata may conta
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct EmbeddingConfig {
     pub enabled: bool,
+    /// `builtin` (the suite's own engine, see engine.rs) or `ollama`. A config
+    /// saved before the built-in engine existed has none and stays on Ollama.
+    pub provider: String,
     pub port: u16,
     pub model: String,
     /// Bump when replacing a model under the same tag.
     pub revision: String,
+    /// The built-in engine's model, an id from `engine::MODELS`.
+    pub builtin_model: String,
+    /// `auto` (the GPU when usable, else the CPU), `gpu` or `cpu`.
+    pub device: String,
+    /// The built-in engine stops, freeing its RAM and VRAM, after this many idle minutes.
+    pub idle_minutes: u32,
 }
 impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            provider: "ollama".into(),
             port: 11434,
             model: String::new(),
             revision: "1".into(),
+            builtin_model: engine::DEFAULT_MODEL.into(),
+            device: "auto".into(),
+            idle_minutes: 5,
         }
     }
 }
 impl EmbeddingConfig {
+    /// A fresh install: the built-in engine, off until the operator activates it.
+    pub fn fresh() -> Self {
+        Self {
+            provider: "builtin".into(),
+            ..Default::default()
+        }
+    }
+    pub fn is_builtin(&self) -> bool {
+        self.provider == "builtin"
+    }
     pub fn validate(&self) -> Result<(), String> {
+        if !matches!(self.device.as_str(), "auto" | "gpu" | "cpu")
+            || !(1..=240).contains(&self.idle_minutes)
+        {
+            return Err("Choose Auto, GPU or CPU and an idle timeout of 1-240 minutes".into());
+        }
+        match self.provider.as_str() {
+            "builtin" if engine::model(&self.builtin_model).is_none() => {
+                return Err("Choose a model from the built-in engine's catalog".into())
+            }
+            "builtin" | "ollama" => {}
+            _ => return Err("Choose the built-in engine or Ollama".into()),
+        }
         if self.port == 0
             || self.model.len() > 200
             || self.revision.len() > 100
-            || (self.enabled && (self.model.trim().is_empty() || self.revision.trim().is_empty()))
+            || (self.enabled
+                && !self.is_builtin()
+                && (self.model.trim().is_empty() || self.revision.trim().is_empty()))
         {
             return Err("Choose a local Ollama port, installed model and revision before enabling embeddings".into());
         }
         Ok(())
     }
     pub fn key(&self) -> String {
+        if self.is_builtin() {
+            let digest = engine::model(&self.builtin_model).map_or("", |m| &m.sha256[..12]);
+            return format!("builtin:{}:{digest}:chunks-v1", self.builtin_model);
+        }
         format!(
             "ollama:{}:{}:{}:chunks-v1",
             self.port, self.model, self.revision
         )
+    }
+    /// The text embedded for a recall query: instruction-aware models get their task instruction.
+    pub fn query_input(&self, query: &str) -> String {
+        match engine::model(&self.builtin_model).filter(|_| self.is_builtin()) {
+            Some(spec) => format!("{}{query}", spec.query_prefix),
+            None => query.to_string(),
+        }
     }
 }
 
@@ -99,6 +147,11 @@ pub struct ContextResult {
     pub elapsed_ms: u128,
     /// Monetary cost is unavailable from local inference; never report a made-up zero.
     pub cost: Option<f64>,
+    /// What embedded the query when semantic recall ran: `cuda`, `cpu` or `ollama`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedding_model: Option<String>,
 }
 
 pub fn chunks(text: &str) -> Vec<String> {
@@ -128,11 +181,15 @@ pub fn cosine(a: &[f32], b: &[f32]) -> Option<f64> {
     (denom > 0.0).then_some(dot / denom)
 }
 
-/// No DNS, redirects, proxies, cloud endpoints, model installation or remote fallback.
+/// Ollama: no DNS, redirects, proxies, cloud endpoints, model installation or remote
+/// fallback. The built-in engine is `engine::Engine::embed`.
 pub async fn embed(config: &EmbeddingConfig, inputs: &[String]) -> Result<Vec<Vec<f32>>, String> {
     config.validate()?;
     if !config.enabled {
         return Err("Local embeddings are disabled".into());
+    }
+    if config.is_builtin() {
+        return Err("This setting uses the built-in engine, not Ollama".into());
     }
     if inputs.is_empty() || inputs.len() > 64 {
         return Err("Embedding batch must contain 1-64 chunks".into());
@@ -217,6 +274,28 @@ pub fn pending(
         }
     }
     Ok(out)
+}
+
+/// How many memories of `scopes` still lack current vectors for `config`.
+pub fn pending_count(
+    conn: &Connection,
+    scopes: &[String],
+    config: &EmbeddingConfig,
+) -> Result<usize, String> {
+    let mut total = 0usize;
+    for scope in scopes {
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memories m JOIN docs d ON d.memory_id=m.id WHERE m.scope=?1
+                AND NOT EXISTS (SELECT 1 FROM memory_embeddings e WHERE e.memory_id=m.id
+                AND e.model_key=?2 AND e.content_hash=m.content_hash)",
+                params![scope, config.key()],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        total += usize::try_from(n).unwrap_or(0);
+    }
+    Ok(total)
 }
 
 /// Compare against the current file hash again after network I/O. Never resurrect deleted/stale content.
@@ -388,7 +467,7 @@ pub fn assemble(
             entry.2 = Some(excerpt);
         }
         if !pending(conn, scopes, config, 1)?.is_empty() {
-            warnings.push("Semantic index is incomplete; run index_embeddings for these scopes. Lexical retrieval remains available.".into());
+            warnings.push("Semantic index is incomplete; the background indexer is catching up (index_embeddings runs a batch now). Lexical retrieval remains available.".into());
         }
     }
     expand_links(conn, &mut candidates)?;
@@ -472,6 +551,8 @@ pub fn assemble(
         excerpt_chars: used,
         elapsed_ms: 0,
         cost: None,
+        device: None,
+        embedding_model: None,
     })
 }
 

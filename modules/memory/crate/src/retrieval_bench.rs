@@ -60,6 +60,7 @@ struct Outcome {
     query: String,
     expected: Vec<String>,
     got: Vec<String>,
+    scores: Vec<f64>,
 }
 
 impl Outcome {
@@ -184,8 +185,9 @@ fn run(
         .iter()
         .map(|case| {
             let scopes = scopes_of(set, case);
-            let vector = semantic
-                .map(|(_, embed)| embed(std::slice::from_ref(&case.query)).unwrap().remove(0));
+            let vector = semantic.map(|(config, embed)| {
+                embed(&[config.query_input(&case.query)]).unwrap().remove(0)
+            });
             let config = semantic.map(|(config, _)| config);
             let result = assemble(
                 conn,
@@ -206,6 +208,7 @@ fn run(
                     .iter()
                     .map(|e| resolve(conn, scopes, e))
                     .collect(),
+                scores: result.sources.iter().map(|s| s.score).collect(),
                 got: result.sources.into_iter().map(|s| s.id).collect(),
             }
         })
@@ -234,6 +237,25 @@ fn report(conn: &Connection, mode: &str, outcomes: &[Outcome]) -> Metrics {
     );
     let all = metrics(outcomes.iter());
     row("all", all);
+    // The prompt hook's default gate (mcp memory_hook::DEFAULT_MIN_SCORE = 1.5 / 60).
+    let gate = 1.5 / 60.0;
+    let passing = outcomes
+        .iter()
+        .filter(|o| o.scores.first().is_some_and(|s| *s >= gate))
+        .count();
+    let expected_passing = outcomes
+        .iter()
+        .filter(|o| {
+            o.got
+                .iter()
+                .zip(&o.scores)
+                .any(|(id, s)| *s >= gate && o.expected.contains(id))
+        })
+        .count();
+    println!(
+        "{mode:<8} hook gate {gate:.3}: {passing}/{} queries pass, {expected_passing} with an expected memory",
+        outcomes.len()
+    );
     row("same-lang", metrics(outcomes.iter().filter(|o| !o.cross)));
     row("cross-lang", metrics(outcomes.iter().filter(|o| o.cross)));
     let langs: std::collections::BTreeSet<_> = outcomes.iter().map(|o| o.lang.as_str()).collect();
@@ -342,7 +364,40 @@ fn private_set() {
     };
     let set = load(std::path::Path::new(&path));
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let real = set.embedding.clone().filter(|c| c.enabled);
-    let real_embed = |inputs: &[String]| runtime.block_on(embed(real.as_ref().unwrap(), inputs));
+    // QS_MEMORY_ENGINE_DIR runs the hybrid mode through the built-in engine installed
+    // there (QS_MEMORY_BENCH_MODEL / QS_MEMORY_BENCH_DEVICE pick model and device).
+    let engine_dir = std::env::var_os("QS_MEMORY_ENGINE_DIR");
+    let real = match &engine_dir {
+        Some(_) => {
+            let env =
+                |key: &str, default: &str| std::env::var(key).unwrap_or_else(|_| default.into());
+            Some(EmbeddingConfig {
+                enabled: true,
+                builtin_model: env("QS_MEMORY_BENCH_MODEL", engine::DEFAULT_MODEL),
+                device: env("QS_MEMORY_BENCH_DEVICE", "auto"),
+                ..EmbeddingConfig::fresh()
+            })
+        }
+        None => set.embedding.clone().filter(|c| c.enabled),
+    };
+    let engine = engine::Engine::new(engine_dir.map_or_else(
+        || qs_core::paths::module_dir("memory").join("engine"),
+        PathBuf::from,
+    ));
+    let real_embed = |inputs: &[String]| {
+        let config = real.as_ref().unwrap();
+        if config.is_builtin() {
+            runtime.block_on(engine.embed(config, inputs))
+        } else {
+            runtime.block_on(embed(config, inputs))
+        }
+    };
     bench(&set, real.as_ref().map(|c| (c, &real_embed as Embedder)));
+    if let Some(config) = &real {
+        let status = engine.status(config);
+        println!(
+            "engine: model {:?} on {:?} ({:?}), load {:?} ms",
+            status.model, status.device, status.gpu, status.load_ms
+        );
+    }
 }
