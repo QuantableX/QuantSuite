@@ -2,7 +2,7 @@
 import { getInvoke } from '#memory/utils/invoke'
 import { useVaultStore } from '#memory/stores/vault'
 const vault = useVaultStore()
-interface Issue { id: string; title: string; scope: string; reasons: string[]; relatedIds: string[] }
+interface Issue { id: string; title: string; scope: string; reasons: string[]; relatedIds: string[]; proposals?: string[] }
 const issues = ref<Issue[]>([])
 const error = ref('')
 const busy = ref(false)
@@ -27,6 +27,7 @@ onBeforeUnmount(() => { request++ })
     <article v-for="issue in issues" v-else :key="issue.id">
       <NuxtLink :to="`/memory/m/${encodeURIComponent(issue.id)}`">{{ issue.title }}</NuxtLink>
       <p>{{ vault.scopeName(issue.scope) }} · {{ issue.reasons.join(' · ') }}</p>
+      <p v-for="proposal in issue.proposals ?? []" :key="proposal" class="qm-review-proposal">{{ proposal }}</p>
       <div v-if="issue.relatedIds.length" class="qm-review-related">Related: <NuxtLink v-for="id in issue.relatedIds" :key="id" :to="`/memory/m/${encodeURIComponent(id)}`">{{ vault.memories.find(m => m.id === id)?.title ?? id }}</NuxtLink></div>
     </article>
     <p v-if="!busy && !error && !issues.length">No pending issues.</p>
@@ -40,6 +41,7 @@ button { padding: 6px 10px; border: 1px solid var(--qm-border); border-radius: 4
 article { padding: 18px 0; border-bottom: 1px solid var(--qm-border); }
 article > a { font-size: 14px; color: var(--qm-text); }
 p, .qm-review-related { color: var(--qm-text-muted); line-height: 1.6; }
+.qm-review-proposal { color: var(--qm-text-secondary); }
 .qm-review-related { display: flex; flex-wrap: wrap; gap: 8px; }
 a { color: var(--qm-text-secondary); }
 </style>
