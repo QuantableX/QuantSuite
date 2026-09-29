@@ -360,6 +360,16 @@ pub fn assemble(
             score *= 0.7;
             reasons.push("unresolved conflict — verify before use".into());
         }
+        if let Some((bonus, reason)) = recency(
+            &meta.updated_at,
+            meta.quality.last_verified.as_deref(),
+            chrono::Utc::now(),
+        ) {
+            score *= 1.0 + bonus;
+            if bonus >= RECENCY_MAX_BONUS / 2.0 {
+                reasons.push(reason.into());
+            }
+        }
         let body = index::body_of(conn, &id)?.unwrap_or_default();
         let excerpt = excerpt.unwrap_or_else(|| best_excerpt(&body, query));
         let source = ContextSource {
@@ -410,6 +420,37 @@ pub fn assemble(
         elapsed_ms: 0,
         cost: None,
     })
+}
+
+/// Recency is a tie-breaker, never relevance: at most +3% for a memory
+/// updated or verified today, halving every [`RECENCY_HALF_LIFE_DAYS`].
+/// Neighbouring fused ranks at the top differ by ~1.6%, so it lifts a memory
+/// past at most one equally relevant neighbour there; human review (×1.1) and
+/// declared conflicts (×0.7) stay stronger. Superseded memories stay excluded.
+pub const RECENCY_MAX_BONUS: f64 = 0.03;
+pub const RECENCY_HALF_LIFE_DAYS: f64 = 30.0;
+// Checked at compile time: below two fused ranks at the top and below review.
+const _: () = assert!(1.0 + RECENCY_MAX_BONUS < 62.0 / 60.0 && 1.0 + RECENCY_MAX_BONUS < 1.1);
+
+/// The bonus and its reason, from the later of the last update and the last
+/// verification. Unparseable dates give none; future dates count as today.
+fn recency(
+    updated_at: &str,
+    last_verified: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<(f64, &'static str)> {
+    let parse = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok();
+    let (when, reason) = match (parse(updated_at), last_verified.and_then(parse)) {
+        (Some(updated), Some(verified)) if verified >= updated => (verified, "recently verified"),
+        (Some(updated), _) => (updated, "recently updated"),
+        (None, Some(verified)) => (verified, "recently verified"),
+        (None, None) => return None,
+    };
+    let age_days = now.signed_duration_since(when).num_seconds().max(0) as f64 / 86_400.0;
+    Some((
+        RECENCY_MAX_BONUS * 0.5_f64.powf(age_days / RECENCY_HALF_LIFE_DAYS),
+        reason,
+    ))
 }
 
 #[derive(Serialize)]

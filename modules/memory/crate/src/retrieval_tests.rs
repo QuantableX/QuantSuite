@@ -325,6 +325,68 @@ fn review_queue_proposes_consolidation_for_logs_and_near_duplicates_without_writ
 }
 
 #[test]
+fn recency_is_a_small_decaying_bonus_from_the_later_of_update_and_verification() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-09-29T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let bonus = |updated: &str, verified: Option<&str>| recency(updated, verified, now).unwrap();
+    assert_eq!(
+        bonus("2026-09-29T12:00:00Z", None),
+        (RECENCY_MAX_BONUS, "recently updated")
+    );
+    let (half, _) = bonus("2026-08-30T12:00:00+00:00", None);
+    assert!((half - RECENCY_MAX_BONUS / 2.0).abs() < 1e-9);
+    assert!(bonus("2025-09-29T12:00:00Z", None).0 < 1e-4);
+    assert_eq!(
+        bonus("2025-01-01T00:00:00Z", Some("2026-09-29T12:00:00Z")),
+        (RECENCY_MAX_BONUS, "recently verified")
+    );
+    assert_eq!(bonus("2030-01-01T00:00:00Z", None).0, RECENCY_MAX_BONUS);
+    assert!(recency("not a date", None, now).is_none());
+}
+
+#[test]
+fn recency_breaks_ties_but_never_beats_relevance_or_supersession() {
+    let conn = Connection::open_in_memory().unwrap();
+    index::init_schema(&conn).unwrap();
+    let today = chrono::Utc::now().to_rfc3339();
+    let put = |id: &str, updated: &str, quality: Value, body: &str| {
+        let fm = json!({"id": id, "updated": updated, "quality": quality});
+        let text = vault::compose(fm.as_object().unwrap(), body);
+        index::upsert_from_file(
+            &conn,
+            &FileRecord {
+                scope: "alpha",
+                rel_path: &format!("{id}.md"),
+                text: &text,
+                mtime_ms: 1,
+            },
+        )
+        .unwrap();
+    };
+    let tie = "# Cache note\nThe cache rebuilds on start.";
+    put("a-old", "2020-01-01T00:00:00Z", json!({}), tie);
+    put("b-new", &today, json!({}), tie);
+    put("c-replaced", &today, json!({"supersededBy": "b-new"}), tie);
+    put(
+        "z-strong",
+        "2020-01-01T00:00:00Z",
+        json!({}),
+        "# Cache cache\nCache: the cache, the cache and the cache.",
+    );
+    let result = assemble(&conn, "cache", &["alpha".into()], 8, 8000, None, false).unwrap();
+    let ids: Vec<_> = result.sources.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["z-strong", "b-new", "a-old"]);
+    assert!(result.sources[1]
+        .reasons
+        .contains(&"recently updated".into()));
+    assert!(!result.sources[2]
+        .reasons
+        .iter()
+        .any(|r| r.starts_with("recently")));
+}
+
+#[test]
 fn v2_migration_preserves_notes_and_forces_provenance_backfill() {
     let conn = Connection::open_in_memory().unwrap();
     index::init_schema(&conn).unwrap();
