@@ -1,0 +1,43 @@
+{
+  "defaultScopes": ["alpha"],
+  "floors": {"lexical": {"recall1": 0.73, "recall5": 0.82, "mrr": 0.77}},
+  "notes": [
+    {"id":"storage-en","scope":"alpha","body":"# Storage decision\nThe desktop app keeps its local cache in SQLite with WAL mode. PostgreSQL was rejected because it needs a server process."},
+    {"id":"hotkey-de","scope":"alpha","body":"# Diktat-Tastenkürzel\nDas Diktat startet mit Strg+Umschalt+Leertaste. Gedrückt halten ist Push-to-Talk, kurz tippen schaltet um."},
+    {"id":"backup-es","scope":"alpha","body":"# Copias de seguridad\nLas copias de seguridad del vault se guardan cada noche en el disco externo y se conservan treinta días."},
+    {"id":"gpu-ja","scope":"alpha","body":"# GPU の設定\n埋め込みモデルは GPU で実行する。アイドル時には VRAM を解放して、ゲームが使えるようにする。"},
+    {"id":"search-de","scope":"alpha","body":"# Gedächtnissuche\nDie Gedächtnissuche kombiniert BM25 mit Vektoren und sortiert Treffer nach Relevanz."},
+    {"id":"window-de","scope":"alpha","body":"# Fensterverhalten im Hintergrund\nWenn die App im Hintergrund startet, bleibt sie im Tray. Die Leiste zeigt wie immer die Uhrzeit, und die Fenster öffnen sich erst, wenn man sie braucht. Das ist wie bei den meisten Programmen im Alltag."},
+    {"id":"release-en","scope":"alpha","body":"# Release process\nA release bumps the version in eight files, runs the checks, pushes main and a lightweight tag, then waits for the tag build."},
+    {"id":"prestige-de","scope":"alpha","body":"# Kein Prestige\nSpiele bekommen niemals Prestige-Resets. Permanenter Fortschritt, Käufe und Freischaltungen bleiben immer erhalten."},
+    {"id":"theme-fr","scope":"alpha","body":"# Thème sombre\nLe thème sombre suit le réglage du système ; les couleurs sont définies comme variables CSS."},
+    {"id":"ports-en","scope":"alpha","body":"# Reserved ports\nPort 1420 belongs to the user's dev server. Agents use 4179 or 4180 for browser checks."},
+    {"id":"paste-en","scope":"alpha","body":"# Image paste in the terminal\nPasting an image into the console saves it to a temporary file and inserts the file path."},
+    {"id":"indent","scope":"general","body":"# Indentation convention\nAll code uses two spaces for indentation."}
+  ],
+  "cases": [
+    {"query":"which database does the local cache use","lang":"en","expected":["storage-en"]},
+    {"query":"which port is reserved for the dev server","lang":"en","expected":["ports-en"]},
+    {"query":"how does a release get published","lang":"en","expected":["release-en"]},
+    {"query":"paste an image into the terminal","lang":"en","expected":["paste-en"]},
+    {"query":"keyboard shortcut to start dictation","lang":"en","cross":true,"expected":["hotkey-de"]},
+    {"query":"never reset permanent progress in games","lang":"en","cross":true,"expected":["prestige-de"]},
+    {"query":"where are backups stored","lang":"en","cross":true,"expected":["backup-es"]},
+    {"query":"dark theme colors","lang":"en","cross":true,"expected":["theme-fr"]},
+    {"query":"Welches Tastenkürzel startet das Diktat?","lang":"de","expected":["hotkey-de"]},
+    {"query":"wie funktioniert die Suche im Gedächtnis","lang":"de","note":"compound word + function words; window-de is the function-word decoy","expected":["search-de"]},
+    {"query":"Prestige Fortschritt Spiele","lang":"de","expected":["prestige-de"]},
+    {"query":"Welche Datenbank nutzt der lokale Cache?","lang":"de","cross":true,"expected":["storage-en"]},
+    {"query":"Wie veröffentlicht man ein Release?","lang":"de","cross":true,"expected":["release-en"]},
+    {"query":"Welcher Port gehört dem Entwicklungsserver?","lang":"de","cross":true,"expected":["ports-en"]},
+    {"query":"¿Dónde se guardan las copias de seguridad?","lang":"es","expected":["backup-es"]},
+    {"query":"¿Qué base de datos usa la caché local?","lang":"es","cross":true,"expected":["storage-en"]},
+    {"query":"atajo de teclado para el dictado","lang":"es","cross":true,"expected":["hotkey-de"]},
+    {"query":"VRAM はいつ解放する？","lang":"ja","expected":["gpu-ja"]},
+    {"query":"埋め込みモデルはどこで実行する","lang":"ja","note":"no spaces: one unicode61 token","expected":["gpu-ja"]},
+    {"query":"ローカルキャッシュのデータベース","lang":"ja","cross":true,"expected":["storage-en"]},
+    {"query":"comment fonctionne le thème sombre","lang":"fr","expected":["theme-fr"]},
+    {"query":"sauvegardes nocturnes du vault","lang":"fr","cross":true,"expected":["backup-es"]},
+    {"query":"combien d'espaces pour l'indentation","lang":"fr","cross":true,"scopes":["alpha","general"],"expected":["indent"]}
+  ]
+}
