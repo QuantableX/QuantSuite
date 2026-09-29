@@ -531,6 +531,7 @@ fn codebase_tool_input_schema(tool: &config_gen::CodebaseIndexToolInfo) -> Value
         let mut prop = Map::new();
         let json_type = match param.param_type.as_str() {
             "integer" => "integer",
+            "boolean" => "boolean",
             _ => "string",
         };
         prop.insert("type".into(), json!(json_type));
@@ -542,6 +543,10 @@ fn codebase_tool_input_schema(tool: &config_gen::CodebaseIndexToolInfo) -> Value
                     prop.insert("default".into(), json!(parsed));
                 } else {
                     prop.insert("default".into(), json!(default_value));
+                }
+            } else if json_type == "boolean" {
+                if let Ok(parsed) = default_value.parse::<bool>() {
+                    prop.insert("default".into(), json!(parsed));
                 }
             } else {
                 prop.insert("default".into(), json!(default_value));
@@ -708,7 +713,13 @@ overridden by this file.
 
 ## Coding Standards
 - Follow the existing code style in this project.
-- Run tests before completing any task.
+- Locate exact text with `rg -n`, then read bounded line ranges. Never read
+  whole files longer than 300 lines; follow the global search/read rules.
+- Per card, run changed-area tests, then the full `npm test` once before
+  merging when available (otherwise the project's documented test commands).
+- If this project requires packaged delivery, run the package build, shortcut
+  update and native QA once at session end or on explicit user request, not
+  after every card. Record merged changes awaiting delivery.
 "#,
         project_name, project_name
     )
@@ -720,20 +731,35 @@ overridden by this file.
 /// ones and never overrides them — so an agent reading the text cannot
 /// take the last file for the whole contract.
 fn read_merged_agent_instructions(project_path: Option<&str>) -> String {
+    read_scoped_agent_instructions(project_path, true)
+}
+
+/// Native startup files can already contain the global brief. Only an
+/// explicit boolean false omits it; legacy or malformed calls get all rules.
+fn read_session_agent_instructions(project_path: Option<&str>, arguments: &Value) -> String {
+    let include_global = arguments.get("include_global").and_then(Value::as_bool).unwrap_or(true);
+    read_scoped_agent_instructions(project_path, include_global)
+}
+
+fn read_scoped_agent_instructions(project_path: Option<&str>, include_global: bool) -> String {
     let mut sections: Vec<String> = Vec::new();
 
     // Global scope
-    let global_path = get_global_agent_md_path();
-    let global_content = read_agent_md_file(&global_path);
-    let global_content = if global_content.trim().is_empty() {
-        default_global_agent_md()
+    if include_global {
+        let global_path = get_global_agent_md_path();
+        let global_content = read_agent_md_file(&global_path);
+        let global_content = if global_content.trim().is_empty() {
+            default_global_agent_md()
+        } else {
+            global_content
+        };
+        sections.push(format!(
+            "─── Global AGENT.md — every workspace, every agent ───\n\n{}",
+            global_content.trim()
+        ));
     } else {
-        global_content
-    };
-    sections.push(format!(
-        "─── Global AGENT.md — every workspace, every agent ───\n\n{}",
-        global_content.trim()
-    ));
+        sections.push("Global AGENT.md omitted because include_global=false: continue following the complete global brief already in your startup context. If it was not loaded or the source changed, call get_instructions with include_global=true.".into());
+    }
 
     // Project scope
     if let Some(proj_path) = project_path {
@@ -757,12 +783,13 @@ fn read_merged_agent_instructions(project_path: Option<&str>) -> String {
 
 /// Keep the MCP `initialize.instructions` brief: some clients repeat it in
 /// every tool description. The full global and workspace AGENT.md content is
-/// returned once by `get_instructions` instead.
+/// returned by `get_instructions`, with optional omission of an already-loaded
+/// global brief.
 fn server_instructions(instructions_enabled: bool) -> String {
     if !instructions_enabled {
         return "Only tools in tools/list are enabled. Tool availability is controlled in QuantMCP > Tools.".into();
     }
-    "Call get_instructions now, before any other QuantMCP tool. It returns the operator's global AGENT.md, the active workspace's AGENT.md, the workspace/index status, and QuantMemory guidance. Follow those instructions for this session.".into()
+    "Call get_instructions now, before any other QuantMCP tool. If the full global AGENT.md is already in startup context, pass include_global=false. It still returns workspace rules, index status and memory guidance. Follow the loaded instructions.".into()
 }
 
 /// The project folder an agentos call means. An explicit
@@ -1595,11 +1622,11 @@ async fn execute_codebase_tool(
                 "the user verbatim whenever you report on a claimed card or a worktree.".to_string(),
                 "".to_string(),
                 "Code index rules:".to_string(),
-                "1. Always call search_code before reading or editing any file.".to_string(),
+                "1. Use rg --files for paths and rg -n for exact text; use search_code for unfamiliar code or semantic discovery.".to_string(),
                 "2. Call list_codebases to see every workspace and its index status.".to_string(),
                 "3. Use lookup_symbol for exact function/class definitions (requires structural index).".to_string(),
-                "4. Never assume code structure - always query the index first.".to_string(),
-                "5. If search returns no results, call reindex_codebase and retry.".to_string(),
+                "4. Read bounded line ranges around matches; never read whole files longer than 300 lines.".to_string(),
+                "5. If indexed results are stale after changes, call reindex_codebase and retry.".to_string(),
                 "6. Use search_mode in search_code to choose: 'structural' (keyword), 'semantic' (meaning), or 'auto'.".to_string(),
                 "".to_string(),
                 "Workspaces:".to_string(),
@@ -1618,9 +1645,10 @@ async fn execute_codebase_tool(
             }
 
 
-            // --- Include AGENT.md instructions (global + active workspace) ---
+            // Always include workspace rules; global rules can already be in
+            // native startup context and are omitted only on explicit request.
             let agent_instructions =
-                read_merged_agent_instructions(active_ws.as_ref().map(|w| w.path.as_str()));
+                read_session_agent_instructions(active_ws.as_ref().map(|w| w.path.as_str()), arguments);
             if !agent_instructions.trim().is_empty() {
                 lines.push("".to_string());
                 lines.push("─── Agent Instructions (from AGENT.md) ───".to_string());
@@ -2923,6 +2951,46 @@ mod tests {
         // The default global template applies when no global file exists.
         assert!(merged.starts_with("─── Global AGENT.md — every workspace, every agent ───"));
         assert!(merged.find("─── Global").unwrap() < merged.find("─── Workspace").unwrap());
+    }
+
+    #[test]
+    fn session_instructions_omit_only_explicitly_loaded_global_rules() {
+        let dir = std::env::temp_dir().join(format!("qs-agent-md-session-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("AGENT.md"), "# Project rules\n\nPROJECT-MARKER\n").unwrap();
+        let path = Some(dir.to_str().unwrap());
+        let full = read_merged_agent_instructions(path);
+        for args in [json!({}), json!({"include_global": true}), json!({"include_global": "false"}), json!({"include_global": null})] {
+            assert_eq!(read_session_agent_instructions(path, &args), full);
+        }
+        let compact = read_session_agent_instructions(path, &json!({"include_global": false}));
+        assert!(compact.contains("Global AGENT.md omitted"));
+        assert!(compact.contains("PROJECT-MARKER"));
+        assert!(compact.contains("never overrides the global one"));
+        assert!(!compact.contains("─── Global AGENT.md —"));
+        assert!(compact.len() < full.len());
+        // Missing project files and General-only sessions still explain the
+        // omission and how to retrieve the full brief.
+        std::fs::remove_file(dir.join("AGENT.md")).unwrap();
+        let no_project = read_session_agent_instructions(path, &json!({"include_global": false}));
+        assert_eq!(no_project, read_session_agent_instructions(None, &json!({"include_global": false})));
+        assert!(no_project.contains("include_global=true"));
+        assert!(!no_project.contains("─── Workspace"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn session_instruction_catalogue_exposes_optional_boolean_opt_out() {
+        let tool = crate::config_gen::codebase_index_tools().into_iter()
+            .find(|tool| tool.name == "get_instructions").unwrap();
+        let parameter = tool.parameters.iter().find(|p| p.name == "include_global").unwrap();
+        assert_eq!(parameter.param_type, "boolean");
+        assert!(!parameter.required);
+        assert_eq!(parameter.default_value.as_deref(), Some("true"));
+        let schema = codebase_tool_input_schema(&tool);
+        assert_eq!(schema["properties"]["include_global"]["type"], "boolean");
+        assert_eq!(schema["properties"]["include_global"]["default"], true);
+        assert!(schema.get("required").is_none());
     }
 
     #[test]

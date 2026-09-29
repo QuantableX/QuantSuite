@@ -34,8 +34,14 @@ watcher. Workspace instructions remain available through QuantMCP's
 The MCP connection sends only a short pointer to `get_instructions`. Some
 clients repeat connection instructions in every tool description, so sending
 the full AgentOS brief there can multiply its token cost by the number of
-tools. The full brief and workspace rules are still returned by
-`get_instructions` once per session.
+tools. By default, `get_instructions` returns the full global brief and
+workspace rules. If the complete global brief is already loaded through a
+native startup file, call `get_instructions(include_global=false)` to omit
+that duplicate. Workspace instructions, workspace/index status, artifact paths
+and memory guidance remain included. Never use the flag for an unloaded brief.
+After editing the source, refresh copied imports or request the full response.
+Older servers without the parameter still return the full brief; rebuild and
+restart QuantSuite to activate this option, then start a new agent session.
 
 ## Automatic destinations
 

@@ -25,8 +25,14 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
         CodebaseIndexToolInfo {
             name: "get_instructions".into(),
             description:
-                "Call this first every session. Returns usage rules, the workspace model, the workspace list, and the operator's AGENT.md instructions.".into(),
-            parameters: vec![],
+                "Call this first every session. Returns runtime context, workspaces and AGENT.md instructions. If the complete global brief was already loaded through native startup instructions, set include_global=false to avoid a duplicate; workspace rules are always returned.".into(),
+            parameters: vec![CodebaseIndexToolParam {
+                name: "include_global".into(),
+                param_type: "boolean".into(),
+                description: "Default true. Set false only when the complete global AGENT.md is already in context. Workspace instructions and runtime guidance remain included.".into(),
+                required: false,
+                default_value: Some("true".into()),
+            }],
         },
         CodebaseIndexToolInfo {
             name: "index_codebase".into(),

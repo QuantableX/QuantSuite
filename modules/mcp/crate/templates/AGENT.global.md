@@ -3,8 +3,9 @@
 You are connected to QuantSuite through QuantMCP. This file is the operator's
 standing brief for EVERY AI agent (Claude Code, Codex, Cursor, Gemini CLI,
 OpenCode, ...) in EVERY workspace. QuantMCP points you to `get_instructions`
-at connection time; that tool returns this brief with the active workspace's
-`AGENT.md`. Native instruction imports may also provide this brief at startup.
+at connection time; that tool returns the active workspace's `AGENT.md` and
+runtime context. Native instruction imports may already provide this global
+brief at startup; avoid loading a second copy as described below.
 
 Your client may show the suite's tools with underscores
 (`quantsuite_memory_search`); this file uses the server's names
@@ -13,7 +14,12 @@ Your client may show the suite's tools with underscores
 ## 1. Session start — every session, before any other work
 
 1. `get_instructions` — the workspace model, every workspace with its index
-   status, and these rules merged with the active workspace's AGENT.md.
+   status, and the active workspace's AGENT.md. If this complete global brief
+   is already in your startup context and the tool exposes `include_global`,
+   call `get_instructions(include_global=false)` to avoid loading it twice.
+   Otherwise use the default full response. Never omit rules you have not
+   loaded; after global source changes, refresh the native import or request
+   the full response. Still call the tool for current workspace/runtime data.
 2. `quantsuite.memory.search` with the task's keywords, then
    `quantsuite.memory.read` what matters — earlier sessions, yours and other
    agents', left their knowledge there.
@@ -42,12 +48,23 @@ operator share this suite; its state lives in the tools, not in your context.
 
 ## 3. Code — search first, then read
 
-The index is faster and wider than grepping, and it is what the other agents
-rely on too.
+Use targeted searches to locate the relevant code, then read only the needed
+lines. Do not dump files into the context to find a symbol.
 
-- `search_code` before reading or editing any file. `search_mode`:
-  `structural` (keyword, always available once indexed), `semantic` (meaning;
-  needs the semantic index and its embedding service) or `auto` (default).
+- Prefer `rg --files` for paths and `rg -n` for exact text or symbols, scoped
+  to likely files/directories. Use bounded context (`-A`, `-B`, `-C`) or
+  explicit line ranges around matches, usually 40–120 lines per read.
+- Never read or print a whole file longer than 300 lines. Do not work around
+  this by reading every consecutive range; select only the ranges needed for
+  the task. Read shorter files in full only when their entire content matters.
+  On PowerShell, use `Get-Content -LiteralPath <file> | Select-Object -Skip
+  <start-minus-one> -First <count>` for a bounded range; never bare
+  `Get-Content`/`cat` or `-Raw` to display a large file. Programmatic edits may
+  process the whole file internally while outputting only the relevant diff.
+- Use `search_code` for unfamiliar code, cross-file discovery or semantic
+  questions. `search_mode`: `structural` (keyword), `semantic` (needs the
+  semantic index and its embedding service), or `auto` (default). Follow
+  discovery with `rg -n` and bounded reads; avoid repeated full-file output.
 - `lookup_symbol` for an exact function, class or variable by name.
 - `list_codebases` shows every workspace and whether it is indexed;
   `get_codebase_stats` gives file and chunk counts and the mode.
@@ -56,7 +73,8 @@ rely on too.
   `reindex_codebase`, then search again.
 - A folder path that is not registered yet becomes a new workspace when you
   pass it to `index_codebase` — only when the user asked to work on it.
-- Never assume a file's structure from its name: query the index, then read.
+- Never assume a file's structure from its name: search, then read the
+  relevant ranges. Reuse instructions and excerpts already in context.
 
 ## 4. Tasks — the kanban board
 
@@ -136,8 +154,9 @@ repository cards. General non-repository tasks use the workflow above.
    (absolute paths, or `cd` there). Commit as you go. Never rebase or switch
    branches yourself, and merge only to resolve a conflict (step 4).
    `get_kanban_diff` shows what the card changed.
-4. **Complete** — `complete_kanban_card` once the work builds, is tested and
-   committed. What follows depends on the board's mode
+4. **Complete** — `complete_kanban_card` once the card's checks pass (see
+   section 9) and the work is committed. Packaging is a session-end step,
+   not a requirement after every card. What follows depends on the board's mode
    (`get_kanban_approval_mode`):
    - `auto_apply` (default): merged into the main branch at once, pushed when
      a remote exists, worktree and branch cleaned up, card → `done`.
@@ -318,14 +337,16 @@ rare case the user wants a command run inside the suite.
 ## 8. Instructions — this file and the workspace's (AgentOS)
 
 - `get_agent_instructions` (scope `global`, `project` or `all`) reads what
-  `get_instructions` already merged. Global = `~/.quantmcp/AGENT.md` (this
+  `get_instructions` returns unless the already-loaded global brief was
+  omitted with `include_global=false`. Global = `~/.quantmcp/AGENT.md` (this
   file; the operator edits it under General → AgentOS in QuantMCP). Project =
   `<workspace>/AGENT.md`, edited under the workspace's AgentOS.
 - `update_agent_instructions` rewrites one scope; `init_agent_md` creates the
   default template for a scope that has none. Change instructions only when
   the user asks. Project rules go into the project file, never into this one.
-  A rewrite replaces the whole file: read it first, keep everything the user
-  wrote.
+  A rewrite replaces the whole file: inspect the relevant ranges first and
+  preserve all existing text programmatically; never reconstruct unreviewed
+  sections from memory or dump a large file merely to rewrite a small section.
 
 ## 9. Working rules
 
@@ -334,9 +355,21 @@ rare case the user wants a command run inside the suite.
 - Edit existing files over creating new ones; match the code style around you.
 - Before touching shared state (board, memory, merges), check its current
   state with the tool — not what you remember from earlier in the session.
-- Run the project's tests or build before completing a repository card;
-  General tasks without a repository need task-appropriate verification.
-  Report failures with their output, not a summary.
+- Per repository card, run tests for the changed area during implementation,
+  then run the full `npm test` once on the final changes before merging when
+  that script exists. For projects without it, use their documented test/check
+  commands. Re-run only when subsequent changes or failures invalidate the
+  result. Compile/check affected code when necessary to verify it.
+- Where the project requires packaged delivery, package once per session:
+  after the session's approved cards are merged,
+  perform the release/package build, shortcut update and native QA together
+  once at the end, or when the user explicitly asks. Do not repeat these steps
+  after each card. Track merged changes pending delivery and report them
+  honestly; a merged card does not imply its packaged executable is updated.
+  Skip packaging when no shipped runtime changed (for example, instruction-
+  only edits). Preserve project-specific delivery checks and approval gates.
+- General tasks without a repository need task-appropriate verification.
+  Report failures with their relevant output, using bounded excerpts.
 - A tool error usually names the fix (`not indexed` → `index_codebase`,
   `blocked by` → wait or ask, `already claimed` → another agent has it). Read
   it before retrying.
