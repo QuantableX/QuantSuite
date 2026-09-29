@@ -277,6 +277,60 @@ fn best_excerpt(body: &str, query: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Graph expansion: the best fused hits lend part of their score to the memories they link
+/// to or are linked from — related context the query's words and vectors do not reach.
+pub const GRAPH_SEEDS: usize = 3;
+/// 0 = off: on the card-1 benchmark (2026-09-29) every weight tried lowered MRR
+/// (0.25 → 0.45, 0.5 → 0.43, 1.0 → 0.33, off 0.61). Re-measure once vectors exist.
+pub const GRAPH_WEIGHT: f64 = 0.0;
+/// Hubs (a codebase overview, an index note) link to everything; they neither lend nor
+/// receive.
+pub const GRAPH_MAX_DEGREE: usize = 12;
+
+/// Memories linked from or to `id`, resolved links only.
+fn neighbours(conn: &Connection, id: &str) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT target_id FROM links WHERE source_id = ?1 AND target_id IS NOT NULL
+               AND target_id != ?1
+             UNION SELECT source_id FROM links WHERE target_id = ?1 AND source_id != ?1",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([id], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
+}
+
+/// Adds the neighbours of the [`GRAPH_SEEDS`] best candidates. Scope and supersession
+/// filters run afterwards like for every other candidate.
+fn expand_links(
+    conn: &Connection,
+    candidates: &mut HashMap<String, (f64, Vec<String>, Option<String>)>,
+) -> Result<(), String> {
+    let weight = GRAPH_WEIGHT;
+    if weight <= 0.0 {
+        return Ok(());
+    }
+    let mut seeds: Vec<(String, f64)> = candidates.iter().map(|(id, c)| (id.clone(), c.0)).collect();
+    seeds.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    for (seed, score) in seeds.into_iter().take(GRAPH_SEEDS) {
+        let linked = neighbours(conn, &seed)?;
+        if linked.len() > GRAPH_MAX_DEGREE {
+            continue;
+        }
+        for id in linked {
+            if neighbours(conn, &id)?.len() > GRAPH_MAX_DEGREE {
+                continue;
+            }
+            let entry = candidates.entry(id).or_insert_with(|| (0.0, vec![], None));
+            entry.0 += score * weight;
+            entry.1.push(format!("linked from [memory:{seed}]"));
+        }
+    }
+    Ok(())
+}
+
 /// Reciprocal-rank fusion followed by transparent quality reranking, not an LLM judge.
 pub fn assemble(
     conn: &Connection,
@@ -337,6 +391,7 @@ pub fn assemble(
             warnings.push("Semantic index is incomplete; run index_embeddings for these scopes. Lexical retrieval remains available.".into());
         }
     }
+    expand_links(conn, &mut candidates)?;
     let mut ranked = Vec::new();
     for (id, (mut score, mut reasons, excerpt)) in candidates {
         let Some(meta) = index::get_by_identifier(conn, &id, None)? else {
