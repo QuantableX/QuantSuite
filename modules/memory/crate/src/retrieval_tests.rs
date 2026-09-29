@@ -218,6 +218,175 @@ fn duplicate_review_never_merges_notes() {
 }
 
 #[test]
+fn review_queue_proposes_consolidation_for_logs_and_near_duplicates_without_writing() {
+    let mut conn = Connection::open_in_memory().unwrap();
+    index::init_schema(&conn).unwrap();
+    let mut log = "# Synthetic experiment log\n\nWhat the experiment is for.\n".to_string();
+    for day in 1..=crate::consolidation::LOG_MIN_DATED_ENTRIES {
+        log.push_str(&format!(
+            "\n## 2026-01-{day:02} — run {day}\n\n{}\n",
+            "measured value ".repeat(100)
+        ));
+    }
+    add(&conn, "log", "alpha", &log);
+    add(
+        &conn,
+        "a",
+        "alpha",
+        "# Cache A\nThe cache is rebuilt on start.",
+    );
+    add(
+        &conn,
+        "d",
+        "alpha",
+        "# Cache D\nThe cache is rebuilt on start.",
+    );
+    add(
+        &conn,
+        "b",
+        "alpha",
+        "# Cache B\nOn start the cache gets rebuilt.",
+    );
+    add(&conn, "c", "alpha", "# Unrelated\nSomething else entirely.");
+    add(
+        &conn,
+        "x",
+        "beta",
+        "# Cache X\nThe cache is rebuilt on start.",
+    );
+    let config = EmbeddingConfig {
+        enabled: true,
+        model: "fixture".into(),
+        ..Default::default()
+    };
+    for job in pending(&conn, &["alpha".into(), "beta".into()], &config, 10).unwrap() {
+        let vector = match job.id.as_str() {
+            "a" | "d" | "x" => vec![1.0, 0.0, 0.0],
+            "b" => vec![0.95, 0.2, 0.0],
+            "c" => vec![0.0, 0.0, 1.0],
+            _ => vec![0.0, 1.0, 0.0],
+        };
+        store_vectors(
+            &mut conn,
+            &job,
+            &config.key(),
+            &vec![vector; job.inputs.len()],
+        )
+        .unwrap();
+    }
+    let snapshot = |conn: &Connection| -> Vec<(String, String, String)> {
+        let mut stmt = conn
+            .prepare("SELECT m.id, m.content_hash, d.body FROM memories m JOIN docs d ON d.memory_id=m.id ORDER BY m.id")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap();
+        rows.map(Result::unwrap).collect()
+    };
+    let before = snapshot(&conn);
+    let queue = review_queue(&conn, Some("alpha")).unwrap();
+    assert_eq!(snapshot(&conn), before, "the review queue never writes");
+    let issue = |id: &str| queue.iter().find(|q| q.id == id).unwrap();
+    // Proposals come first.
+    let with: Vec<_> = queue.iter().map(|q| !q.proposals.is_empty()).collect();
+    assert!(with.windows(2).all(|w| w[0] >= w[1]), "{with:?}");
+    assert_eq!(with.iter().filter(|p| **p).count(), 4);
+    let words = vault::word_count(&log);
+    assert!(issue("log").reasons.contains(&format!(
+        "log-like: 5 dated entries (2026-01-01 to 2026-01-05), {words} words"
+    )));
+    assert!(issue("log").proposals[0].contains("## Current state"));
+    assert!(issue("log").related_ids.is_empty());
+    // a and d are exact duplicates: flagged once as such, not again as near.
+    let a = issue("a");
+    assert_eq!(a.related_ids, vec!["d".to_string(), "b".to_string()]);
+    assert!(a.reasons.contains(&"duplicate content".into()));
+    assert!(a
+        .reasons
+        .contains(&"near-duplicate (embedding similarity 0.98)".into()));
+    assert!(a.proposals[0].contains("supersededBy"));
+    let b = issue("b");
+    assert_eq!(b.related_ids, vec!["a".to_string(), "d".to_string()]);
+    assert!(!b.reasons.contains(&"duplicate content".into()));
+    // Other scopes, unrelated vectors and memories without flags stay out.
+    assert!(queue.iter().all(|q| !q.related_ids.contains(&"x".into())));
+    assert!(issue("c").proposals.is_empty() && issue("c").related_ids.is_empty());
+    // Changed content drops its vectors, so stale similarity never flags.
+    add(
+        &conn,
+        "b",
+        "alpha",
+        "# Cache B\nNow about something different.",
+    );
+    let queue = review_queue(&conn, Some("alpha")).unwrap();
+    assert!(queue
+        .iter()
+        .all(|q| !q.reasons.iter().any(|r| r.starts_with("near-duplicate"))));
+}
+
+#[test]
+fn recency_is_a_small_decaying_bonus_from_the_later_of_update_and_verification() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-09-29T12:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let bonus = |updated: &str, verified: Option<&str>| recency(updated, verified, now).unwrap();
+    assert_eq!(
+        bonus("2026-09-29T12:00:00Z", None),
+        (RECENCY_MAX_BONUS, "recently updated")
+    );
+    let (half, _) = bonus("2026-08-30T12:00:00+00:00", None);
+    assert!((half - RECENCY_MAX_BONUS / 2.0).abs() < 1e-9);
+    assert!(bonus("2025-09-29T12:00:00Z", None).0 < 1e-4);
+    assert_eq!(
+        bonus("2025-01-01T00:00:00Z", Some("2026-09-29T12:00:00Z")),
+        (RECENCY_MAX_BONUS, "recently verified")
+    );
+    assert_eq!(bonus("2030-01-01T00:00:00Z", None).0, RECENCY_MAX_BONUS);
+    assert!(recency("not a date", None, now).is_none());
+}
+
+#[test]
+fn recency_breaks_ties_but_never_beats_relevance_or_supersession() {
+    let conn = Connection::open_in_memory().unwrap();
+    index::init_schema(&conn).unwrap();
+    let today = chrono::Utc::now().to_rfc3339();
+    let put = |id: &str, updated: &str, quality: Value, body: &str| {
+        let fm = json!({"id": id, "updated": updated, "quality": quality});
+        let text = vault::compose(fm.as_object().unwrap(), body);
+        index::upsert_from_file(
+            &conn,
+            &FileRecord {
+                scope: "alpha",
+                rel_path: &format!("{id}.md"),
+                text: &text,
+                mtime_ms: 1,
+            },
+        )
+        .unwrap();
+    };
+    let tie = "# Cache note\nThe cache rebuilds on start.";
+    put("a-old", "2020-01-01T00:00:00Z", json!({}), tie);
+    put("b-new", &today, json!({}), tie);
+    put("c-replaced", &today, json!({"supersededBy": "b-new"}), tie);
+    put(
+        "z-strong",
+        "2020-01-01T00:00:00Z",
+        json!({}),
+        "# Cache cache\nCache: the cache, the cache and the cache.",
+    );
+    let result = assemble(&conn, "cache", &["alpha".into()], 8, 8000, None, false).unwrap();
+    let ids: Vec<_> = result.sources.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["z-strong", "b-new", "a-old"]);
+    assert!(result.sources[1]
+        .reasons
+        .contains(&"recently updated".into()));
+    assert!(!result.sources[2]
+        .reasons
+        .iter()
+        .any(|r| r.starts_with("recently")));
+}
+
+#[test]
 fn v2_migration_preserves_notes_and_forces_provenance_backfill() {
     let conn = Connection::open_in_memory().unwrap();
     index::init_schema(&conn).unwrap();

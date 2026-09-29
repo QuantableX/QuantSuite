@@ -169,7 +169,7 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Migrate provenance index: {e}"))?;
     }
     if version >= 2 {
-        return crate::retrieval::init(conn);
+        return init_derived(conn);
     }
     if version == 1 {
         // v1 had no scope column. The index is a cache — drop and rebuild is
@@ -266,7 +266,13 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         ",
     )
     .map_err(|e| format!("Init memory schema: {e}"))?;
-    crate::retrieval::init(conn)
+    init_derived(conn)
+}
+
+/// Tables that other modules derive from `memories` / `docs`.
+fn init_derived(conn: &Connection) -> Result<(), String> {
+    crate::retrieval::init(conn)?;
+    crate::lexical::init(conn)
 }
 
 // ─── Markers (one-time migrations) ────────────────────────────────────────
@@ -672,13 +678,16 @@ pub fn list(
 /// Characters FTS5 would read as syntax are stripped, every remaining word
 /// becomes a quoted prefix term (the core.db approach). `all` requires every
 /// term, `any` settles for one — precision versus recall, the caller picks.
+/// Content words of the query (its language's function words removed, prefixes only from
+/// four characters on) plus runs of unspaced scripts as prefixes.
 fn fts_query(query: &str, mode: &str) -> Option<String> {
-    let cleaned: String = query
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c } else { ' ' })
+    let analysis = crate::lexical::analyze(query);
+    let terms: Vec<String> = analysis
+        .terms
+        .iter()
+        .map(crate::lexical::Term::expr)
+        .chain(analysis.runs.iter().map(|run| format!("\"{run}\"*")))
         .collect();
-    let terms: Vec<String> =
-        cleaned.split_whitespace().map(|t| format!("\"{t}\"*")).collect();
     if terms.is_empty() {
         return None;
     }
