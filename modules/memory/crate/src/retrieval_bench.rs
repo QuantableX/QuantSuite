@@ -60,6 +60,7 @@ struct Outcome {
     query: String,
     expected: Vec<String>,
     got: Vec<String>,
+    scores: Vec<f64>,
 }
 
 impl Outcome {
@@ -207,6 +208,7 @@ fn run(
                     .iter()
                     .map(|e| resolve(conn, scopes, e))
                     .collect(),
+                scores: result.sources.iter().map(|s| s.score).collect(),
                 got: result.sources.into_iter().map(|s| s.id).collect(),
             }
         })
@@ -235,6 +237,25 @@ fn report(conn: &Connection, mode: &str, outcomes: &[Outcome]) -> Metrics {
     );
     let all = metrics(outcomes.iter());
     row("all", all);
+    // The prompt hook's default gate (mcp memory_hook::DEFAULT_MIN_SCORE = 1.5 / 60).
+    let gate = 1.5 / 60.0;
+    let passing = outcomes
+        .iter()
+        .filter(|o| o.scores.first().is_some_and(|s| *s >= gate))
+        .count();
+    let expected_passing = outcomes
+        .iter()
+        .filter(|o| {
+            o.got
+                .iter()
+                .zip(&o.scores)
+                .any(|(id, s)| *s >= gate && o.expected.contains(id))
+        })
+        .count();
+    println!(
+        "{mode:<8} hook gate {gate:.3}: {passing}/{} queries pass, {expected_passing} with an expected memory",
+        outcomes.len()
+    );
     row("same-lang", metrics(outcomes.iter().filter(|o| !o.cross)));
     row("cross-lang", metrics(outcomes.iter().filter(|o| o.cross)));
     let langs: std::collections::BTreeSet<_> = outcomes.iter().map(|o| o.lang.as_str()).collect();
