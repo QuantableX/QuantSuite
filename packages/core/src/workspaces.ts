@@ -36,6 +36,8 @@ export interface Workspace {
   path: string
   pinned: boolean
   lastOpenedAt: number
+  /** Display rank from core/workspace.order; never part of the entity payload. */
+  order?: number
 }
 
 /** What `core / workspace.active` holds — the open workspace, minimally. */
@@ -50,6 +52,8 @@ export const WORKSPACE_OPENED = 'core.workspace.opened'
 const SETTINGS_SCOPE = 'core'
 const ACTIVE_KEY = 'workspace.active'
 const REOPEN_KEY = 'workspace.reopenLast'
+const ORDER_KEY = 'workspace.order'
+const ORDER_CHANGED = 'core.workspace.reordered'
 const DEV_STORE = 'qss-workspaces-dev'
 
 // ---------------------------------------------------------------------------
@@ -68,19 +72,25 @@ interface DevStore {
   list: Workspace[]
   active: ActiveWorkspace | null
   reopenLast: boolean
+  order: string[]
+}
+
+function parseOrder(value: unknown): string[] {
+  return Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string' && !!id))] : []
 }
 
 function readDev(): DevStore {
-  if (typeof localStorage === 'undefined') return { list: [], active: null, reopenLast: false }
+  if (typeof localStorage === 'undefined') return { list: [], active: null, reopenLast: false, order: [] }
   try {
     const raw = JSON.parse(localStorage.getItem(DEV_STORE) ?? '{}')
     return {
       list: Array.isArray(raw.list) ? raw.list : [],
       active: raw.active ?? null,
       reopenLast: !!raw.reopenLast,
+      order: parseOrder(raw.order),
     }
   } catch {
-    return { list: [], active: null, reopenLast: false }
+    return { list: [], active: null, reopenLast: false, order: [] }
   }
 }
 
@@ -138,11 +148,49 @@ export function workspaceFor(path: string, name?: string): Workspace {
   }
 }
 
-/** Pinned first, then most recently opened. The one display order. */
+/** Pinned first, then manual order, then recency for entries not yet ordered. */
 export function sortWorkspaces(list: Workspace[]): Workspace[] {
   return [...list].sort(
-    (a, b) => Number(b.pinned) - Number(a.pinned) || b.lastOpenedAt - a.lastOpenedAt
+    (a, b) => Number(b.pinned) - Number(a.pinned)
+      || (a.order ?? Infinity) - (b.order ?? Infinity)
+      || b.lastOpenedAt - a.lastOpenedAt
   )
+}
+
+function applyOrder(list: Workspace[], order: string[]): Workspace[] {
+  const positions = new Map(order.map((id, index) => [id, index]))
+  return list.map(w => ({ ...w, order: positions.get(w.id) }))
+}
+
+async function readOrder(): Promise<string[]> {
+  return hasTauri() ? parseOrder(await qs.core.getSetting(SETTINGS_SCOPE, ORDER_KEY)) : readDev().order
+}
+
+/** Move within the pinned/unpinned group, saving only IDs, never registry data. */
+export async function reorderWorkspace(id: string, beforeId: string | null): Promise<void> {
+  const list = hasTauri() ? await listRegistered() : readDev().list
+  const ordered = sortWorkspaces(applyOrder(list, await readOrder()))
+  const moving = ordered.find(w => w.id === id)
+  if (!moving) throw new Error('This workspace is no longer registered.')
+  if (beforeId === id) return
+  const target = beforeId === null ? null : ordered.find(w => w.id === beforeId)
+  if (beforeId !== null && (!target || target.pinned !== moving.pinned)) {
+    throw new Error('Move workspaces within their pinned or unpinned group.')
+  }
+  const group = ordered.filter(w => w.pinned === moving.pinned && w.id !== id)
+  group.splice(target ? group.findIndex(w => w.id === target.id) : group.length, 0, moving)
+  const other = ordered.filter(w => w.pinned !== moving.pinned)
+  const ids = (moving.pinned ? [...group, ...other] : [...other, ...group]).map(w => w.id)
+  if (ids.every((value, index) => value === ordered[index]?.id)) return
+  if (!hasTauri()) {
+    const store = readDev()
+    // Unlike the development registry's best-effort writes, report a failed save.
+    localStorage.setItem(DEV_STORE, JSON.stringify({ ...store, order: ids }))
+    notify()
+    return
+  }
+  await qs.core.setSetting(SETTINGS_SCOPE, ORDER_KEY, ids)
+  await bus.emit(ORDER_CHANGED).catch(() => notify())
 }
 
 // ---------------------------------------------------------------------------
@@ -169,14 +217,16 @@ function notify(): void {
  * Subscribe to "the registry changed" — a workspace was opened, removed or
  * pinned, here or in another window.
  *
- * Opens go out on the bus and come back to every webview including this one,
+ * Opens and manual ordering go out on the bus to every webview including this one,
  * so the handler fires once for them; removals and pins have no topic and are
  * announced locally. Either way the contract is the same: re-read, don't
  * assume what changed.
  */
 export function onWorkspacesChanged(handler: ChangeHandler): () => void {
   if (!busOff && hasTauri()) {
-    busOff = bus.on(WORKSPACE_OPENED, () => notify())
+    const offOpen = bus.on(WORKSPACE_OPENED, () => notify())
+    const offOrder = bus.on(ORDER_CHANGED, () => notify())
+    busOff = () => { offOpen(); offOrder() }
   }
   changeHandlers.add(handler)
   return () => {
@@ -220,9 +270,9 @@ async function listRegistered(): Promise<Workspace[]> {
 
 /** Every known workspace, unsorted. Empty on failure — never throws. */
 export async function listWorkspaces(): Promise<Workspace[]> {
-  if (!hasTauri()) return readDev().list
   try {
-    return await listRegistered()
+    const list = hasTauri() ? await listRegistered() : readDev().list
+    return applyOrder(list, await readOrder().catch(() => []))
   } catch (e) {
     console.error('[workspaces] listing failed', e)
     return []
