@@ -926,8 +926,10 @@ impl Engine {
     }
 }
 
-/// Unpack the runtime archives with the system's bsdtar (Windows 10+), keeping
-/// only the server and its libraries, then swap the folder into place.
+/// Unpack the runtime archives with the system's bsdtar (Windows 10+) into a
+/// staging folder, keep only the server and its libraries, then swap the
+/// folder into place. (bsdtar fails on an `--include` pattern an archive does
+/// not contain, so each archive is unpacked whole and pruned afterwards.)
 fn extract(archives: &[PathBuf], staging: &Path, final_dir: &Path, marker: &str) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(staging);
     std::fs::create_dir_all(staging).map_err(|e| e.to_string())?;
@@ -938,17 +940,14 @@ fn extract(archives: &[PathBuf], staging: &Path, final_dir: &Path, marker: &str)
     };
     for archive in archives {
         let mut cmd = Command::new(&tar);
-        cmd.arg("-xf").arg(archive).arg("-C").arg(staging);
-        for pattern in ["llama-server*", "*.dll", "LICENSE*"] {
-            cmd.args(["--include", pattern]);
-        }
-        cmd.stdin(Stdio::null());
+        cmd.arg("-xf").arg(archive).arg("-C").arg(staging).stdin(Stdio::null());
         no_window(&mut cmd);
         let out = cmd.output().map_err(|e| format!("could not run {}: {e}", tar.display()))?;
         if !out.status.success() {
             return Err(format!("unpacking {} failed: {}", archive.display(), String::from_utf8_lossy(&out.stderr).trim()));
         }
     }
+    prune_runtime(staging).map_err(|e| e.to_string())?;
     let exe = if cfg!(windows) { "llama-server.exe" } else { "llama-server" };
     if !staging.join(exe).is_file() {
         return Err(format!("{exe} is missing from the runtime archive"));
@@ -956,6 +955,25 @@ fn extract(archives: &[PathBuf], staging: &Path, final_dir: &Path, marker: &str)
     std::fs::write(staging.join(INSTALLED_MARKER), marker).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_dir_all(final_dir);
     std::fs::rename(staging, final_dir).map_err(|e| e.to_string())
+}
+
+/// What the server needs from a llama.cpp release: itself, its libraries, the licenses.
+fn keep_runtime_file(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("llama-server") || lower.ends_with(".dll") || lower.starts_with("license")
+}
+
+/// Drop every other tool and folder the release archives carry.
+fn prune_runtime(dir: &Path) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            std::fs::remove_dir_all(entry.path())?;
+        } else if !keep_runtime_file(&entry.file_name().to_string_lossy()) {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -971,6 +989,16 @@ mod tests {
         assert_eq!(devices[0].name, "NVIDIA GeForce RTX 5090 Laptop GPU");
         assert_eq!((devices[0].total_mib, devices[0].free_mib), (24435, 23151));
         assert!(parse_devices("Available devices:\n  (none)\n").is_empty());
+    }
+
+    #[test]
+    fn keeps_only_the_server_and_its_libraries() {
+        for name in ["llama-server.exe", "llama-server-impl.dll", "ggml-cuda.dll", "cublasLt64_13.dll", "LICENSE-LLVM-OpenMP"] {
+            assert!(keep_runtime_file(name), "{name}");
+        }
+        for name in ["llama-cli.exe", "llama-bench.exe", "llama-quantize.exe", "rpc-server.exe"] {
+            assert!(!keep_runtime_file(name), "{name}");
+        }
     }
 
     #[test]
