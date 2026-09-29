@@ -28,7 +28,7 @@ pub const LIST_TOOL: &str = "quantsuite.memory.list";
 pub const INDEX_BUDGET: usize = 6000;
 
 const TITLE_CHARS: usize = 80;
-const SUMMARY_CHARS: usize = 90;
+const SUMMARY_CHARS: usize = 72;
 
 /// Kinds that carry the user's standing preferences and corrections — the
 /// types Claude Code's auto memory writes as `user` and `feedback`.
@@ -122,11 +122,18 @@ pub fn summary(preview: &str, title: &str) -> String {
         .find(|line| !line.is_empty() && !line.eq_ignore_ascii_case(title.trim()))
         .unwrap_or_default();
     let plain: String = line.chars().filter(|c| !matches!(c, '*' | '`' | '_')).collect();
-    let sentence = match plain.find(". ") {
-        Some(end) if end >= 12 => &plain[..=end],
-        _ => plain.as_str(),
-    };
+    let sentence = sentence_end(&plain).map_or(plain.as_str(), |end| &plain[..=end]);
     super::one_line(sentence, SUMMARY_CHARS)
+}
+
+/// Byte index of the period that ends the first sentence: `. ` after a
+/// word of three or more characters without a dot of its own, so `e.g.`,
+/// `z. B.` and `v1.0` do not end it, and not in the first 12 bytes.
+fn sentence_end(text: &str) -> Option<usize> {
+    text.match_indices(". ").map(|(i, _)| i).find(|&i| {
+        let word = text[..i].rsplit(char::is_whitespace).next().unwrap_or_default();
+        i >= 12 && word.chars().count() >= 3 && !word.contains('.')
+    })
 }
 
 /// The index text, or `None` when there is nothing to list.
@@ -143,9 +150,10 @@ pub fn render(workspace: Option<&str>, general: &[Entry], local: &[Entry], base:
     );
     if let Some(name) = workspace {
         out.push_str(&format!(
-            "Workspace \"{}\": {} memories{}.\n",
+            "Workspace \"{}\": {} {}{}.\n",
             super::one_line(name, 80),
             local.len(),
+            if local.len() == 1 { "memory" } else { "memories" },
             if base > 0 {
                 format!(" plus {base} directory descriptions (quantsuite.memory.base_read with a path)")
             } else {
@@ -266,6 +274,8 @@ mod tests {
         assert_eq!(summary("# No Vim, ever\n\nThe user hates **Vim**. Never offer it.", "No Vim, ever"), "The user hates Vim.");
         assert_eq!(summary("- `curl` needs --connect-timeout on Windows", "x"), "curl needs --connect-timeout on Windows");
         assert_eq!(summary("# Only a title", "Only a title"), "");
+        assert_eq!(summary("Always use npm run scripts (e.g. npm run tauri:dev). Not npx.", "t"), "Always use npm run scripts (e.g. npm run tauri:dev).");
+        assert_eq!(summary("Ships in v1.0.6 of the suite. More.", "t"), "Ships in v1.0.6 of the suite.");
         assert!(summary(&"word ".repeat(100), "t").chars().count() <= SUMMARY_CHARS + 1);
     }
 
