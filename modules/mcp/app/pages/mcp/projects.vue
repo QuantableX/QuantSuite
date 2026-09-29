@@ -58,6 +58,11 @@ const indexStatusMap = ref<Record<string, {
 const structuralIndexingIds = ref<Set<string>>(new Set());
 const semanticIndexingIds = ref<Set<string>>(new Set());
 const embeddingInfo = ref<EmbeddingInfo | null>(null);
+const embeddingSettingsTitle = computed(() => {
+  const info = embeddingInfo.value;
+  if (!info?.installed) return info?.hint || 'Checking the built-in embedding engine…';
+  return `${info.modelLabel} · ${info.runningDevice || info.device}${info.gpu ? ` (${info.gpu})` : ''}`;
+});
 async function loadEmbeddingInfo() {
   try { embeddingInfo.value = await getEmbeddingInfo(); }
   catch (e) { embeddingInfo.value = { installed: false, modelLabel: '', device: '', hint: String(e) }; }
@@ -733,14 +738,24 @@ onBeforeUnmount(() => {
             <span v-if="hasStructural && hasSemantic" class="badge-indexed">Both</span>
             <span v-else-if="hasStructural || hasSemantic" class="badge-indexed">Indexed</span>
             <span v-else-if="structuralIndexing || semanticIndexing" class="badge-indexing">Indexing...</span>
-            <select
-              v-model="indexFilter"
-              class="form-input form-input-xs index-filter-select"
-              title="File filter: Smart skips config, docs & style files"
-            >
-              <option value="everything">Everything</option>
-              <option value="smart">Smart Select</option>
-            </select>
+            <div class="indexing-actions">
+              <button
+                type="button"
+                class="btn-secondary btn-xs embedding-settings-btn"
+                :title="embeddingSettingsTitle"
+                @click="openMemorySettings"
+              >
+                Embedding settings
+              </button>
+              <select
+                v-model="indexFilter"
+                class="form-input form-input-xs index-filter-select"
+                title="File filter: Smart skips config, docs & style files"
+              >
+                <option value="everything">Everything</option>
+                <option value="smart">Smart Select</option>
+              </select>
+            </div>
           </div>
 
           <p v-if="!selectedWorkspace?.path" class="indexing-desc">
@@ -807,13 +822,6 @@ onBeforeUnmount(() => {
                 >
                   {{ semanticIndexing ? "Indexing..." : hasSemantic ? "Re-index" : "Index" }}
                 </button>
-              </div>
-              <div class="embed-settings-compact">
-                <span v-if="embeddingInfo?.installed">
-                  {{ embeddingInfo.modelLabel }} · {{ embeddingInfo.runningDevice || embeddingInfo.device }}{{ embeddingInfo.gpu ? ` (${embeddingInfo.gpu})` : '' }}
-                </span>
-                <span v-else>{{ embeddingInfo?.hint || 'Checking the built-in embedding engine…' }}</span>
-                <button type="button" @click="openMemorySettings">Memory settings</button>
               </div>
               <div v-if="semanticResult" class="index-card-result">
                 <p
@@ -1642,6 +1650,7 @@ onBeforeUnmount(() => {
 
 .indexing-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
@@ -1653,14 +1662,26 @@ onBeforeUnmount(() => {
   margin-bottom: 0;
 }
 
-.index-filter-select {
+.indexing-actions {
+  display: flex;
+  gap: 8px;
   margin-left: auto;
+  width: 50%;
+  min-width: min(290px, 100%);
+  max-width: 100%;
+}
+
+.embedding-settings-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.index-filter-select {
+  flex: 1;
   width: auto;
-  max-width: 50%;
   min-width: 0;
   padding: 4px 8px;
   font-size: 12px;
-  flex-shrink: 1;
 }
 
 .badge-indexed {
@@ -1743,22 +1764,6 @@ onBeforeUnmount(() => {
 
 .index-card-result {
   padding: 0 12px 8px;
-}
-
-.embed-settings-compact {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-  padding: 0 12px 8px;
-  align-items: center;
-}
-
-@media (max-width: 1050px) {
-  .embed-settings-compact {
-    grid-template-columns: 1fr;
-  }
 }
 
 .status-dot {
