@@ -355,11 +355,11 @@ rare case the user wants a command run inside the suite.
 - Edit existing files over creating new ones; match the code style around you.
 - Before touching shared state (board, memory, merges), check its current
   state with the tool — not what you remember from earlier in the session.
-- Per repository card, run tests for the changed area during implementation,
-  then run the full `npm test` once on the final changes before merging when
-  that script exists. For projects without it, use their documented test/check
-  commands. Re-run only when subsequent changes or failures invalidate the
-  result. Compile/check affected code when necessary to verify it.
+- Per repository card, run tests for the changed area during implementation.
+  Do NOT run the full test suite (for example `npm test`) after each card: it
+  is slow and wastes the user's time and tokens. Suggest that the user run the
+  full suite when they want it, and report honestly which tests were and were
+  not run. Compile/check affected code when necessary to verify it.
 - Where the project requires packaged delivery, package once per session:
   after the session's approved cards are merged,
   perform the release/package build, shortcut update and native QA together

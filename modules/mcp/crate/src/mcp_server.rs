@@ -715,8 +715,8 @@ overridden by this file.
 - Follow the existing code style in this project.
 - Locate exact text with `rg -n`, then read bounded line ranges. Never read
   whole files longer than 300 lines; follow the global search/read rules.
-- Per card, run changed-area tests, then the full `npm test` once before
-  merging when available (otherwise the project's documented test commands).
+- Per card, run changed-area tests only. Do not run the full test suite after
+  each card; suggest that the user run it and report which tests were not run.
 - If this project requires packaged delivery, run the package build, shortcut
   update and native QA once at session end or on explicit user request, not
   after every card. Record merged changes awaiting delivery.
