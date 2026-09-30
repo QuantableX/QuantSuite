@@ -15,7 +15,7 @@ const holding = computed(() => {
 <template>
   <section class="card qs-live-overview" aria-label="Current stats">
     <div class="qs-live-overview__body">
-      <SystemsBacktestMetricsTable v-if="result.tracking" :result="result.tracking" />
+      <SystemsBacktestMetricsTable v-if="result.tracking" :result="result.tracking" strategy-only />
       <div v-else class="qs-live-overview__empty">No performance data in this window.</div>
       <div class="qs-live-overview__standings">
         <SystemsLiveSingleAsset v-if="single" :result="result" compact />
@@ -32,7 +32,7 @@ const holding = computed(() => {
 
 <style scoped>
 .qs-live-overview { container: live-overview / inline-size; display: flex; min-height: 0; overflow: auto; }
-.qs-live-overview__body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); flex: 1; min-width: 0; min-height: 0; }
+.qs-live-overview__body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1; min-width: 0; min-height: 0; }
 .qs-live-overview__body > * { min-width: 0; min-height: 0; }
 .qs-live-overview__body :deep(.card.card) { border: 0; border-radius: 0; background: transparent; }
 .qs-live-overview__body > :deep(.qs-metrics) { overflow: auto; }
