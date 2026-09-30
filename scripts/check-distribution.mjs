@@ -1,6 +1,6 @@
 /** Keep setup resources explicit: private code/data must never enter the bundle. */
 import assert from 'node:assert/strict'
-import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -46,6 +46,12 @@ export function validateResources(resources) {
 }
 
 const config = readConfig('tauri.conf.json')
+// The CLI imports sibling helpers at runtime. A missing mapping works in dev
+// but crashes installed builds before any indexing command can run.
+for (const name of readdirSync(resolve(pythonRoot, 'codebase_index')).filter(name => name.endsWith('.py'))) {
+  assert.equal(config.bundle.resources[`../../sidecars/python/codebase_index/${name}`],
+    `sidecars/python/codebase_index/${name}`, `Missing code-index runtime resource: ${name}`)
+}
 for (const name of ['tauri.conf.json', 'tauri.windows.conf.json', 'tauri.dev.conf.json']) {
   const resources = readConfig(name).bundle?.resources
   if (resources) validateResources(resources)

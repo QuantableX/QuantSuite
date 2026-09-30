@@ -42,6 +42,7 @@
       "../../sidecars/python/codebase_index/cli.py": "sidecars/python/codebase_index/cli.py",
       "../../sidecars/python/codebase_index/db.py": "sidecars/python/codebase_index/db.py",
       "../../sidecars/python/codebase_index/embeddings.py": "sidecars/python/codebase_index/embeddings.py",
+      "../../sidecars/python/codebase_index/locking.py": "sidecars/python/codebase_index/locking.py",
       "../../sidecars/python/codebase_index/requirements.txt": "sidecars/python/codebase_index/requirements.txt",
       "../../sidecars/python/codebase_index/semantic.py": "sidecars/python/codebase_index/semantic.py",
       "../../sidecars/python/codebase_index/structural.py": "sidecars/python/codebase_index/structural.py",
