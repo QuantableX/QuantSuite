@@ -49,6 +49,19 @@ export interface CodebaseIndexStatus {
   chunk_count?: number | null
   structural_indexed_at?: number | null
   semantic_indexed_at?: number | null
+  structural_pending_count?: number | null
+  semantic_pending_count?: number | null
+  jobs?: IndexJobStatus[]
+  stats_error?: string | null
+}
+
+export interface IndexJobStatus {
+  request_id: string
+  started_at: number
+  mode: 'structural' | 'semantic'
+  status: 'running' | 'succeeded' | 'failed'
+  result?: IndexCodebaseResult | null
+  error?: string | null
 }
 
 export interface IndexCodebaseResult {
@@ -354,6 +367,7 @@ export function useMcpWorkspaces() {
     mode: string = 'structural',
     forceReindex?: boolean,
     filterMode?: string,
+    requestId?: string,
   ): Promise<IndexCodebaseResult> {
     const invoke = await tauriInvoke()
     return invoke<IndexCodebaseResult>('plugin:mcp|index_project_codebase', {
@@ -361,6 +375,7 @@ export function useMcpWorkspaces() {
       mode,
       forceReindex,
       filterMode,
+      requestId,
     })
   }
 

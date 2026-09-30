@@ -11,7 +11,82 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+
+/// Kept outside the webview: reloading a page must not forget an active job.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexJobStatus {
+    pub request_id: String,
+    pub started_at: u64,
+    pub mode: String,
+    pub status: String,
+    pub result: Option<Value>,
+    pub error: Option<String>,
+}
+
+type IndexJobs = HashMap<String, HashMap<String, IndexJobStatus>>;
+fn jobs() -> &'static Mutex<IndexJobs> {
+    static JOBS: OnceLock<Mutex<IndexJobs>> = OnceLock::new();
+    JOBS.get_or_init(Mutex::default)
+}
+
+pub fn index_jobs(codebase: &str) -> Vec<IndexJobStatus> {
+    jobs().lock().unwrap_or_else(|e| e.into_inner())
+        .get(codebase).map(|modes| modes.values().cloned().collect()).unwrap_or_default()
+}
+
+struct IndexJob {
+    codebase: String,
+    request_id: String,
+    finished: bool,
+}
+
+impl IndexJob {
+    fn start(codebase: &str, mode: &str, request_id: Option<String>) -> Result<Self, String> {
+        let modes: &[&str] = match mode {
+            "both" => &["structural", "semantic"],
+            "semantic" => &["semantic"],
+            _ => &["structural"],
+        };
+        let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let started_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default().as_millis() as u64;
+        let mut all = jobs().lock().unwrap_or_else(|e| e.into_inner());
+        let workspace = all.entry(codebase.to_string()).or_default();
+        if modes.iter().any(|mode| workspace.get(*mode).is_some_and(|job| job.status == "running")) {
+            return Err("Indexing is already running for this workspace and mode. Wait for it to finish.".into());
+        }
+        for mode in modes {
+            workspace.insert((*mode).into(), IndexJobStatus {
+                request_id: request_id.clone(), started_at, mode: (*mode).into(), status: "running".into(),
+                result: None, error: None,
+            });
+        }
+        Ok(Self { codebase: codebase.into(), request_id, finished: false })
+    }
+
+    fn finish(&mut self, result: &Result<Value, String>) {
+        let mut all = jobs().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(workspace) = all.get_mut(&self.codebase) {
+            for job in workspace.values_mut().filter(|job| job.request_id == self.request_id) {
+                job.status = if result.is_ok() { "succeeded" } else { "failed" }.into();
+                job.result = result.as_ref().ok().cloned();
+                job.error = result.as_ref().err().cloned();
+            }
+        }
+        self.finished = true;
+    }
+}
+
+impl Drop for IndexJob {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.finish(&Err("Indexing was interrupted. Retry to finish the index.".into()));
+        }
+    }
+}
 
 /// Where the vendored CLI lives. The marker package is `codebase_index`, and
 /// the scripts sit inside that package directory.
@@ -141,6 +216,26 @@ pub fn ensure_venv(app: &tauri::AppHandle) {
 /// pinned on every invocation so the CLI can never fall back to the legacy
 /// `~/.quantmcp/indexes/` — the suite owns its indexes.
 pub async fn run_cli(app: &tauri::AppHandle, args: Vec<String>) -> Result<Value, String> {
+    run_cli_with_request(app, args, None).await
+}
+
+pub async fn run_cli_with_request(
+    app: &tauri::AppHandle, args: Vec<String>, request_id: Option<String>,
+) -> Result<Value, String> {
+    let mut job = if matches!(args.first().map(String::as_str), Some("index" | "reindex")) {
+        let name = cli_option(&args, "--name").or_else(|| cli_option(&args, "--codebase"));
+        if let Some(name) = name {
+            let meta = index_metadata(&args, &index_dir());
+            let mode = cli_option(&args, "--mode").or_else(|| meta["mode"].as_str()).unwrap_or("structural");
+            Some(IndexJob::start(name, mode, request_id)?)
+        } else { None }
+    } else { None };
+    let result = run_cli_inner(app, args).await;
+    if let Some(job) = &mut job { job.finish(&result); }
+    result
+}
+
+async fn run_cli_inner(app: &tauri::AppHandle, args: Vec<String>) -> Result<Value, String> {
     let cli_path = cli_dir(app)?.join("cli.py");
     if !cli_path.exists() {
         return Err(format!(
@@ -246,6 +341,10 @@ pub struct CodebaseIndexStatus {
     pub structural_indexed_at: Option<u64>,
     #[serde(default)]
     pub semantic_indexed_at: Option<u64>,
+    pub structural_pending_count: Option<u32>,
+    pub semantic_pending_count: Option<u32>,
+    pub jobs: Vec<IndexJobStatus>,
+    pub stats_error: Option<String>,
 }
 
 impl CodebaseIndexStatus {
@@ -260,6 +359,10 @@ impl CodebaseIndexStatus {
             chunk_count: None,
             structural_indexed_at: None,
             semantic_indexed_at: None,
+            structural_pending_count: None,
+            semantic_pending_count: None,
+            jobs: Vec::new(),
+            stats_error: None,
         }
     }
 }
@@ -321,6 +424,55 @@ fn embedding_request(args: &[String], meta: &Value) -> EmbeddingRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn job_snapshot_survives_the_caller_and_records_success() {
+        let workspace = uuid::Uuid::new_v4().to_string();
+        let mut job = IndexJob::start(&workspace, "semantic", Some("request-one".into())).unwrap();
+        let snapshot = index_jobs(&workspace);
+        assert_eq!(snapshot[0].status, "running");
+        assert_eq!(snapshot[0].request_id, "request-one");
+        let result = serde_json::json!({"status": "ok", "files_indexed": 12});
+        job.finish(&Ok(result.clone()));
+        drop(job);
+        let snapshot = index_jobs(&workspace);
+        assert_eq!(snapshot[0].status, "succeeded");
+        assert_eq!(snapshot[0].result, Some(result));
+        assert!(snapshot[0].error.is_none());
+    }
+
+    #[test]
+    fn job_errors_and_cancelled_futures_are_terminal() {
+        let workspace = uuid::Uuid::new_v4().to_string();
+        let mut job = IndexJob::start(&workspace, "both", None).unwrap();
+        job.finish(&Err("Engine unavailable".into()));
+        assert!(index_jobs(&workspace).iter().all(|job| job.status == "failed"
+            && job.error.as_deref() == Some("Engine unavailable")));
+        let interrupted = IndexJob::start(&workspace, "semantic", None).unwrap();
+        drop(interrupted);
+        let snapshot = index_jobs(&workspace);
+        let semantic = snapshot.iter().find(|job| job.mode == "semantic").unwrap();
+        assert_eq!(semantic.status, "failed");
+        assert!(semantic.error.as_ref().unwrap().contains("interrupted"));
+    }
+
+    #[test]
+    fn jobs_reject_overlapping_modes_without_replacing_the_active_request() {
+        let workspace = uuid::Uuid::new_v4().to_string();
+        let mut semantic = IndexJob::start(&workspace, "semantic", Some("active".into())).unwrap();
+        assert!(IndexJob::start(&workspace, "semantic", None).is_err());
+        assert!(IndexJob::start(&workspace, "both", None).is_err());
+        assert_eq!(index_jobs(&workspace)[0].request_id, "active");
+        let structural = IndexJob::start(&workspace, "structural", None).unwrap();
+        let independent = IndexJob::start(&uuid::Uuid::new_v4().to_string(), "both", None).unwrap();
+        assert_eq!(index_jobs(&workspace).len(), 2);
+        semantic.finish(&Ok(serde_json::json!({"status": "ok"})));
+        let retry = IndexJob::start(&workspace, "semantic", Some("retry".into())).unwrap();
+        drop(semantic);
+        assert!(index_jobs(&workspace).iter().any(|job| job.request_id == "retry" && job.status == "running"));
+        drop((structural, independent, retry));
+    }
+
     #[test]
     fn only_semantic_operations_acquire_the_shared_engine() {
         let request = |args: &[&str], mode: &str| embedding_request(

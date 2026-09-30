@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "codebase_index"))
 import cli
-from db import open_db, get_all_meta, set_meta
+from db import open_db, get_all_meta, get_db_stats, set_meta
 from embeddings import EmbedProvider, MAX_INPUT_BYTES
 from semantic import chunk_file
 from vector_backend import SqliteVecBackend
@@ -103,6 +103,40 @@ class EmbeddingFixture(unittest.TestCase):
 
 
 class EmbeddingTests(EmbeddingFixture):
+    def test_stats_distinguish_configured_modes_from_completed_files(self):
+        self.index("structural")
+        with contextlib.closing(self.db()) as conn:
+            stats = get_db_stats(conn)
+            self.assertEqual(stats["structural_pending_count"], 0)
+            self.assertEqual(stats["semantic_pending_count"], 1)
+            self.assertFalse(stats["semantic_indexed_at"])
+        self.index("semantic")
+        with contextlib.closing(self.db()) as conn:
+            stats = get_db_stats(conn)
+            self.assertEqual(stats["semantic_pending_count"], 0)
+            self.assertTrue(stats["semantic_indexed_at"])
+            conn.execute("UPDATE files SET semantic_hash=NULL")
+            conn.commit()
+            stats = get_db_stats(conn)
+            self.assertEqual(stats["semantic_pending_count"], 1)
+            self.assertGreater(stats["chunk_count"], 0)
+            self.assertTrue(stats["semantic_indexed_at"], "a timestamp alone cannot prove all files succeeded")
+
+    def test_legacy_stats_do_not_migrate_the_database_or_claim_files_are_current(self):
+        with contextlib.closing(sqlite3.connect(":memory:")) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.executescript("""
+                CREATE TABLE meta (key TEXT, value TEXT);
+                CREATE TABLE files (file_hash TEXT);
+                CREATE TABLE chunks (content TEXT);
+                CREATE TABLE code_fts (content TEXT);
+                INSERT INTO files VALUES ('legacy');
+            """)
+            stats = get_db_stats(conn)
+            self.assertEqual(stats["semantic_pending_count"], 1)
+            self.assertEqual(stats["structural_pending_count"], 1)
+            self.assertEqual(len(conn.execute("PRAGMA table_info(files)").fetchall()), 1)
+
     def test_structural_then_semantic_query_prefix_and_private_metadata(self):
         self.assertEqual(self.index("structural")["status"], "ok")
         self.assertEqual(self.index("semantic")["status"], "ok")

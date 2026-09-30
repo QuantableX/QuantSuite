@@ -4,6 +4,7 @@ function openMemorySettings() {
 }
 
 import { useMcpWorkspaces, type EmbeddingInfo } from '#mcp/composables/useMcpWorkspaces'
+import { useCodebaseIndexing } from '#mcp/composables/useCodebaseIndexing'
 definePageMeta({ layout: 'mcp' })
 const router = useRouter()
 
@@ -45,18 +46,7 @@ const {
 } = useMcpWorkspaces();
 
 // ── Codebase Indexing state (per-workspace) ──
-const indexStatusMap = ref<Record<string, {
-  status: string;
-  file_count: number;
-  indexed_at: number | null;
-  mode?: string | null;
-  fts_entry_count?: number | null;
-  chunk_count?: number | null;
-  structural_indexed_at?: number | null;
-  semantic_indexed_at?: number | null;
-}>>({});
-const structuralIndexingIds = ref<Set<string>>(new Set());
-const semanticIndexingIds = ref<Set<string>>(new Set());
+const indexing = useCodebaseIndexing({ getIndexStats, indexWorkspaceCodebase });
 const embeddingInfo = ref<EmbeddingInfo | null>(null);
 const embeddingSettingsTitle = computed(() => {
   const info = embeddingInfo.value;
@@ -67,30 +57,28 @@ async function loadEmbeddingInfo() {
   try { embeddingInfo.value = await getEmbeddingInfo(); }
   catch (e) { embeddingInfo.value = { installed: false, modelLabel: '', device: '', hint: String(e) }; }
 }
-const structuralResultMap = ref<Record<string, string>>({});
-const semanticResultMap = ref<Record<string, string>>({});
 const indexFilter = ref<"everything" | "smart">("smart");
 
 // Computed proxies for the currently selected workspace
 const indexStatus = computed(() => {
   const id = selectedWorkspace.value?.id;
-  return id ? indexStatusMap.value[id] ?? null : null;
+  return id ? indexing.statuses.value[id] ?? null : null;
 });
 const structuralIndexing = computed(() => {
   const id = selectedWorkspace.value?.id;
-  return id ? structuralIndexingIds.value.has(id) : false;
+  return id ? indexing.busy(id, 'structural') : false;
 });
 const semanticIndexing = computed(() => {
   const id = selectedWorkspace.value?.id;
-  return id ? semanticIndexingIds.value.has(id) : false;
+  return id ? indexing.busy(id, 'semantic') : false;
 });
 const structuralResult = computed(() => {
   const id = selectedWorkspace.value?.id;
-  return id ? structuralResultMap.value[id] ?? null : null;
+  return id ? indexing.message(id, 'structural') : null;
 });
 const semanticResult = computed(() => {
   const id = selectedWorkspace.value?.id;
-  return id ? semanticResultMap.value[id] ?? null : null;
+  return id ? indexing.message(id, 'semantic') : null;
 });
 
 // ── AgentOS (merged from the old /mcp/agent page) ──
@@ -165,10 +153,10 @@ const visibleColumns = computed(() =>
 );
 
 const hasStructural = computed(
-  () => !!indexStatus.value?.structural_indexed_at || indexStatus.value?.mode === "structural" || indexStatus.value?.mode === "both",
+  () => !!selectedWorkspace.value && indexing.completed(selectedWorkspace.value.id, 'structural'),
 );
 const hasSemantic = computed(
-  () => !!indexStatus.value?.semantic_indexed_at || indexStatus.value?.mode === "semantic" || indexStatus.value?.mode === "both",
+  () => !!selectedWorkspace.value && indexing.completed(selectedWorkspace.value.id, 'semantic'),
 );
 
 // Index filters belong to the workspace; engine settings are shared with Memory.
@@ -186,67 +174,14 @@ async function restoreIndexSettings() {
 }
 
 async function loadIndexStatus() {
-  if (!selectedWorkspace.value) return;
-  const wid = selectedWorkspace.value.id;
-  try {
-    const stats = await getIndexStats(wid);
-    indexStatusMap.value = { ...indexStatusMap.value, [wid]: stats };
-  } catch {
-    const { [wid]: _, ...rest } = indexStatusMap.value;
-    indexStatusMap.value = rest;
-  }
+  if (selectedWorkspace.value) await indexing.refresh(selectedWorkspace.value.id);
 }
 
 async function startIndexing(mode: "structural" | "semantic") {
   if (!selectedWorkspace.value) return;
   const wid = selectedWorkspace.value.id;
-  const isStructural = mode === "structural";
-  if (isStructural && structuralIndexingIds.value.has(wid)) return;
-  if (!isStructural && semanticIndexingIds.value.has(wid)) return;
-
-  if (isStructural) {
-    structuralIndexingIds.value = new Set([...structuralIndexingIds.value, wid]);
-    const { [wid]: _, ...rest } = structuralResultMap.value;
-    structuralResultMap.value = rest;
-  } else {
-    semanticIndexingIds.value = new Set([...semanticIndexingIds.value, wid]);
-    const { [wid]: _, ...rest } = semanticResultMap.value;
-    semanticResultMap.value = rest;
-  }
-
-  try {
-    const forceReindex = isStructural ? hasStructural.value : hasSemantic.value;
-    const result = await indexWorkspaceCodebase(
-      wid,
-      mode,
-      forceReindex,
-      indexFilter.value,
-    );
-    const msg = result.error
-      ? `Error: ${result.error}`
-      : `Indexed ${result.files_indexed ?? 0} files (${result.files_skipped ?? 0} unchanged, ${result.errors ?? 0} errors). Entries: ${result.total_entries ?? 0}`;
-    if (isStructural) structuralResultMap.value = { ...structuralResultMap.value, [wid]: msg };
-    else semanticResultMap.value = { ...semanticResultMap.value, [wid]: msg };
-
-    // Reload status for the workspace that was indexed
-    const stats = await getIndexStats(wid);
-    indexStatusMap.value = { ...indexStatusMap.value, [wid]: stats };
-  } catch (e: any) {
-    const msg = `Error: ${e?.message || e}`;
-    if (isStructural) structuralResultMap.value = { ...structuralResultMap.value, [wid]: msg };
-    else semanticResultMap.value = { ...semanticResultMap.value, [wid]: msg };
-  } finally {
-    void loadEmbeddingInfo();
-    if (isStructural) {
-      const s = new Set(structuralIndexingIds.value);
-      s.delete(wid);
-      structuralIndexingIds.value = s;
-    } else {
-      const s = new Set(semanticIndexingIds.value);
-      s.delete(wid);
-      semanticIndexingIds.value = s;
-    }
-  }
+  await indexing.start(wid, mode, indexing.completed(wid, mode), indexFilter.value);
+  void loadEmbeddingInfo();
 }
 
 function formatTimestamp(ts: number | null | undefined): string {
@@ -602,11 +537,15 @@ function onCardPointerDown(e: PointerEvent, card: KanbanCard) {
 
 let unsubscribeWorkspaces: (() => void) | null = null;
 let embeddingTimer: ReturnType<typeof setInterval> | null = null;
+let indexTimer: ReturnType<typeof setInterval> | null = null;
+let pageClosed = false;
 
 onMounted(async () => {
   await refresh();
+  if (pageClosed) return;
   unsubscribeWorkspaces = subscribe();
   embeddingTimer = setInterval(() => { if (selectedWorkspace.value) void loadEmbeddingInfo(); }, 4000);
+  indexTimer = setInterval(() => indexing.poll(selectedWorkspace.value?.id), 2000);
   // Restore saved indexing settings after fresh data is loaded
   if (selectedWorkspace.value) {
     restoreIndexSettings();
@@ -616,8 +555,11 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  pageClosed = true;
   resetDragState();
   if (embeddingTimer) clearInterval(embeddingTimer);
+  if (indexTimer) clearInterval(indexTimer);
+  indexing.dispose();
   unsubscribeWorkspaces?.();
   unsubscribeWorkspaces = null;
 });
@@ -735,9 +677,9 @@ onBeforeUnmount(() => {
         <section v-if="!showAgentOS" class="indexing-section">
           <div class="indexing-header">
             <h2 class="section-title">Codebase Indexing</h2>
-            <span v-if="hasStructural && hasSemantic" class="badge-indexed">Both</span>
+            <span v-if="structuralIndexing || semanticIndexing" class="badge-indexing">Indexing...</span>
+            <span v-else-if="hasStructural && hasSemantic" class="badge-indexed">Both</span>
             <span v-else-if="hasStructural || hasSemantic" class="badge-indexed">Indexed</span>
-            <span v-else-if="structuralIndexing || semanticIndexing" class="badge-indexing">Indexing...</span>
             <div class="indexing-actions">
               <button
                 type="button"
@@ -776,7 +718,7 @@ onBeforeUnmount(() => {
                 />
                 <span class="index-card-title">Structural</span>
                 <span class="index-card-subtitle">(BM25)</span>
-                <template v-if="hasStructural && !structuralIndexing">
+                <template v-if="hasStructural || structuralIndexing || indexStatus?.fts_entry_count">
                   <span class="stat-sep">&mdash;</span>
                   <span class="stat-inline">{{ indexStatus?.file_count ?? 0 }} files, {{ indexStatus?.fts_entry_count ?? 0 }} symbols</span>
                 </template>
@@ -811,7 +753,7 @@ onBeforeUnmount(() => {
                 />
                 <span class="index-card-title">Semantic</span>
                 <span class="index-card-subtitle">(Vectors)</span>
-                <template v-if="hasSemantic && !semanticIndexing">
+                <template v-if="hasSemantic || semanticIndexing || indexStatus?.chunk_count">
                   <span class="stat-sep">&mdash;</span>
                   <span class="stat-inline">{{ indexStatus?.file_count ?? 0 }} files, {{ indexStatus?.chunk_count ?? 0 }} chunks</span>
                 </template>
@@ -833,6 +775,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+          <p v-if="indexStatus?.stats_error" class="indexing-desc" role="status">{{ indexStatus.stats_error }}</p>
         </section>
 
       </template>
