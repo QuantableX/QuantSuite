@@ -292,14 +292,66 @@ def _method_universe(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _method_live(params: dict[str, Any]) -> dict[str, Any]:
+    """Current signal plus a replay from the saved live start through today.
+
+    Backtest dates and comparison indicators do not change the live window.
+    Explicit asOf remains available for historical RPC callers.
+    """
+    from .data.ohlcv import utc_now
+    cutoff = utc_now()
+    today = cutoff.date()
+    as_of = _parse_date(params.get("asOf") or params.get("as_of"), today)
+    raw = dict(params.get("config") or {})
+    value = raw.get("liveStartDate", raw.get("live_start_date", as_of.isoformat()))
+    try:
+        start = dt.date.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise ValueError("Choose a valid live start day (YYYY-MM-DD)") from None
+    if start.isoformat() != value or start > as_of or as_of > today:
+        raise ValueError("Live start day must be on or before the evaluation day, which cannot be after today")
+    raw.update(startDate=start.isoformat(), endDate=as_of.isoformat(), compareTrends=[])
+    request = {**params, "asOf": as_of.isoformat(), "config": raw}
+    snapshot = _method_live_snapshot(request, progress=lambda label, value: _notify(
+        "progress", {"label": label, "value": min(1.0, max(0.0, value)) * 0.25}))
+    try:
+        tracking = _method_backtest(request, progress_callback=lambda label, value: _notify(
+            "progress", {"label": f"Tracking · {label}", "value": 0.25 + min(1.0, max(0.0, value)) * 0.75}))
+    except ValueError as exc:
+        # A new daily tracker can start before its first candle has closed.
+        # Keep the current signal available, without inventing a return.
+        cfg = _build_config(raw)
+        first_close = pd.Timestamp(start, tz="UTC") + pd.Timedelta(cfg.bar_cadence.ccxt_timeframe.replace('d', 'D'))
+        waiting_for_close = cfg.mode == "single_asset" and first_close > pd.Timestamp(cutoff)
+        if str(exc) != "No confirmed candles in the selected backtest window" and not (
+            waiting_for_close and str(exc).startswith("No confirmed ")
+        ):
+            raise
+        tracking = {**_market_info(_build_config(raw)), "strategies": [], "skippedStrategies": [],
+                    "equityStrategy": [], "heldAsset": [], "buyAndHold": {}, "benchmarks": {},
+                    "metricsStrategy": _metrics_to_dict(PerformanceMetrics()), "metricsBuyAndHold": {},
+                    "metricsBenchmarks": {}, "metricLabels": list(METRIC_LABELS),
+                    "forcedRotations": [], "notes": ["Waiting for the first confirmed candle in the live window."], "coins": []}
+    _notify("progress", {"label": "Done", "value": 1.0})
+    return {**snapshot, "tracking": {**tracking, "startDate": start.isoformat(), "endDate": as_of.isoformat()}}
+
+
+def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str, Any]:
+    from .data.ohlcv import confirmed_frame, utc_now
+    if progress is None:
+        progress = lambda label, value: _notify("progress", {"label": label, "value": value})
     cfg = _build_config(params.get("config") or {})
     if cfg.mode == "single_asset":
-        return _method_single_live(cfg, params)
+        return _method_single_live(cfg, params, progress=progress)
     as_of = _parse_date(params.get("asOf") or params.get("as_of"), cfg.end_date)
+    now = utc_now()
+
+    def confirmed(frame):
+        frame = confirmed_frame(frame, cfg.cadence.ccxt_timeframe, now)
+        return frame.loc[frame.index < pd.Timestamp(as_of + dt.timedelta(days=1))] if not frame.empty else frame
 
     registry = RankingRegistry(
         get_default_cache(),
-        progress=lambda label: _notify("progress", {"label": label, "value": 0.05}),
+        progress=lambda label: progress(label, 0.05),
     )
     resolved = registry.get_top_n(
         as_of,
@@ -312,7 +364,7 @@ def _method_live(params: dict[str, Any]) -> dict[str, Any]:
     coins = resolved.coins
     if not coins:
         return {"asOf": as_of.isoformat(), "provider": resolved.provider,
-                "universe": [], "symbols": [], "scoreMatrix": [], "best": None}
+                "universe": [], "symbols": [], "scoreMatrix": [], "scores": {}, "best": None}
 
     # Pull enough history to resolve the trend signal at `as_of`. Smithery
     # indicators self-tune on trailing windows and need far more bars than
@@ -338,13 +390,14 @@ def _method_live(params: dict[str, Any]) -> dict[str, Any]:
     frames: dict[str, pd.DataFrame] = {}
     total = len(coins)
     for i, coin in enumerate(coins):
-        _notify("progress", {"label": f"OHLCV {coin.symbol}", "value": (i + 1) / max(total, 1)})
+        progress(f"OHLCV {coin.symbol}", 0.05 + 0.7 * (i + 1) / max(total, 1))
         try:
             series = fetcher.get_series(CoinRef(cg_id=coin.cg_id, symbol=coin.symbol), start, as_of, timeframe)
         except Exception:  # noqa: BLE001
             continue
-        if not series.frame.empty:
-            frames[coin.symbol] = series.frame
+        frame = confirmed(series.frame)
+        if not frame.empty:
+            frames[coin.symbol] = frame
 
     symbols = [c.symbol for c in coins if c.symbol in frames]
     include_usd = bool(cfg.include_usd)
@@ -376,8 +429,9 @@ def _method_live(params: dict[str, Any]) -> dict[str, Any]:
                 series = fetcher.get_series(CoinRef(cg_id=coin.cg_id, symbol=coin.symbol), market_start, as_of, timeframe)
             except Exception:  # noqa: BLE001
                 continue
-            if not series.frame.empty:
-                market_frames[coin.symbol] = series.frame
+            frame = confirmed(series.frame)
+            if not frame.empty:
+                market_frames[coin.symbol] = frame
         total = market_index([UniverseSnapshot(on_date=as_of, provider=resolved.provider, coins=market_coins)], market_frames)
         gate = market_gate(total, market_indicator)
         market_filter["bullish"] = bool(int(gate.iloc[-1]) == 1) if not gate.empty else False
@@ -461,18 +515,21 @@ def _method_pair_markets(params: dict[str, Any]) -> dict[str, Any]:
             "pairs": fetcher.pair_markets(exchange)}
 
 
-def _method_single_live(cfg: RunConfig, params: dict[str, Any]) -> dict[str, Any]:
+def _method_single_live(cfg: RunConfig, params: dict[str, Any], *, progress) -> dict[str, Any]:
     from dataclasses import replace
     from .backtest.engine import _fetch_start
-    from .backtest.signals import direction_signal
+    from .backtest.signals import direction_signal, warmup_bars
     from .data.ohlcv import confirmed_frame, utc_now
     cfg = replace(cfg, cadence=cfg.bar_cadence)
     market = cfg.single_asset
     base, quote = market.pair.split("/")
     as_of = _parse_date(params.get("asOf") or params.get("as_of"), cfg.end_date)
+    bars = warmup_bars(cfg.indicator) or max(180, cfg.indicator.ema_cross.slow_length * 8)
+    days = math.ceil(bars * pd.Timedelta(market.timeframe.replace('d', 'D')).total_seconds() / 86400) + 2
+    cfg = replace(cfg, start_date=min(cfg.start_date, as_of - dt.timedelta(days=days)))
     now = utc_now()
     fetcher = OhlcvFetcher(get_default_cache(), min_request_interval=cfg.min_request_interval)
-    _notify("progress", {"label": f"Fetching {market.pair}", "value": 0.1})
+    progress(f"Fetching {market.pair}", 0.1)
     data = fetcher.get_pair_series(market.exchange, market.pair, _fetch_start(cfg), as_of, market.timeframe)
     frame = confirmed_frame(data.frame, market.timeframe, now)
     frame = frame.loc[frame.index < pd.Timestamp(as_of + dt.timedelta(days=1))] if not frame.empty else frame
@@ -483,9 +540,9 @@ def _method_single_live(cfg: RunConfig, params: dict[str, Any]) -> dict[str, Any
     verdict = int(direction_signal(frame, cfg.indicator).iloc[-1])
     position = "long" if verdict > 0 else "short" if verdict < 0 and market.direction == "long_short" else "cash"
     stamp = pd.Timestamp(frame.index[-1])
-    delta = pd.Timedelta(market.timeframe)
+    delta = pd.Timedelta(market.timeframe.replace('d', 'D'))
     closed_at = (stamp + delta).isoformat() + "Z"
-    _notify("progress", {"label": "Done", "value": 1.0})
+    progress("Current signal ready", 1.0)
     return {**_market_info(cfg), "asOf": as_of.isoformat(), "provider": market.exchange,
             "universe": [], "symbols": [base, quote], "scoreMatrix": [], "scores": {},
             "best": base if position == "long" else f"Short {base}" if position == "short" else quote,
@@ -495,14 +552,17 @@ def _method_single_live(cfg: RunConfig, params: dict[str, Any]) -> dict[str, Any
                                   "closedAt": closed_at}}
 
 
-def _method_backtest(params: dict[str, Any]) -> dict[str, Any]:
+def _method_backtest(params: dict[str, Any], *, progress_callback=None) -> dict[str, Any]:
     cfg = _build_config(params.get("config") or {})
     progress_value = 0.0
 
     def progress(label: str, value: float) -> None:
         nonlocal progress_value
         progress_value = float(value)
-        _notify("progress", {"label": label, "value": progress_value})
+        if progress_callback is not None:
+            progress_callback(label, progress_value)
+        else:
+            _notify("progress", {"label": label, "value": progress_value})
 
     engine = BacktestEngine(
         registry=RankingRegistry(

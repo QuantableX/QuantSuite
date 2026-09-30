@@ -5,7 +5,9 @@ import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
 import { useLiveStore } from '#systems/stores/live'
 import { matchesMarket } from '#systems/utils/systemMode'
-import SystemsLiveSingleAsset from '#systems/components/Live/SingleAsset.vue'
+import SystemsLiveOverview from '#systems/components/Live/Overview.vue'
+import SystemsBacktestEquityChart from '#systems/components/Backtest/EquityChart.vue'
+import SystemsBacktestForcedRotations from '#systems/components/Backtest/ForcedRotations.vue'
 
 const route = useRoute()
 const systems = useSystemsStore()
@@ -18,6 +20,8 @@ const planned = computed(() => system.value?.status !== 'ready')
 const state = computed(() => live.stateFor(systemId.value))
 const cfg = computed(() => config.get(systemId.value))
 const result = computed(() => state.value.result && matchesMarket(state.value.result, cfg.value) ? state.value.result : null)
+const tracking = computed(() => result.value?.tracking)
+const startChanged = computed(() => tracking.value && tracking.value.startDate !== cfg.value.liveStartDate)
 
 onMounted(() => config.load(systemId.value))
 
@@ -31,6 +35,7 @@ function run() {
   <div v-else class="qs-live">
     <header class="qs-live__head">
       <h1 class="qs-live__title">Live Evaluation</h1>
+      <span class="qs-live__range mono">{{ cfg.liveStartDate }} → Today</span>
 
       <button class="btn btn-primary qs-live__run" :disabled="state.loading" @click="run">
         {{ state.loading ? (live.runningSystemId === systemId ? 'Evaluating…' : 'Queued…') : 'Run Live Eval' }}
@@ -48,21 +53,29 @@ function run() {
         <span class="qs-live__progress-lbl" :title="state.progressLabel || 'Working…'" role="status">{{ state.progressLabel || 'Working…' }}</span>
       </div>
       <div v-else-if="result" class="qs-live__meta mono">
-        {{ result.asOf }} · {{ result.provider }} · {{ result.mode === 'single_asset' ? result.singleAsset?.pair : `${result.universe.length} assets` }}
+        {{ tracking?.startDate }} → {{ result.asOf }} · {{ result.provider }} · {{ result.mode === 'single_asset' ? result.singleAsset?.pair : `${result.universe.length} assets` }} · Confirmed candles
       </div>
     </div>
 
     <div v-if="state.error" class="qs-live__error">{{ state.error }}</div>
 
-    <SystemsLiveSingleAsset v-if="result?.mode === 'single_asset'" :result="result" />
-    <div v-else-if="result" class="qs-live__grid">
-      <SystemsLiveRanking :result="result" />
-      <SystemsLiveScoreMatrix :result="result" />
-    </div>
+    <p v-if="startChanged" class="qs-live__notice" role="status">The live start day changed. Run Live Eval to update the graph and history.</p>
+
+    <template v-if="result && tracking">
+      <div v-if="tracking.skippedStrategies?.length" class="qs-live__notice" role="status">
+        <p v-for="skipped in tracking.skippedStrategies" :key="skipped.key">{{ skipped.label }}: {{ skipped.reason }}</p>
+      </div>
+      <SystemsBacktestEquityChart v-if="tracking.equityStrategy.length" :result="tracking" class="qs-live__chart" />
+      <div v-else class="card qs-live__chart qs-live__no-history">{{ tracking.skippedStrategies?.length ? 'The selected strategy could not be evaluated. Check the indicator data shown above.' : 'No confirmed candles to track in this window. Choose an earlier live start day in Settings, or wait for a candle to close.' }}</div>
+      <div class="qs-live__grid">
+        <SystemsLiveOverview :result="result" />
+        <SystemsBacktestForcedRotations :result="tracking" />
+      </div>
+    </template>
 
     <div v-else-if="!state.loading" class="qs-empty">
       <span class="qs-empty__mark">◈</span>
-      <p>{{ cfg.mode === 'single_asset' ? 'Run an evaluation for the selected pair’s confirmed signal.' : 'No evaluation yet. Run an evaluation to score today’s coins.' }}</p>
+      <p>Set your live start day in Settings, then run an evaluation to track performance, standings and holdings through today.</p>
     </div>
   </div>
 </template>
@@ -71,6 +84,7 @@ function run() {
 /* The page owns the full main area so both panels scroll internally instead of
    pushing the layout into one long vertical scroll. */
 .qs-live {
+  container: manual-live / inline-size;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -91,6 +105,12 @@ function run() {
   font-size: 17px;
   font-weight: 600;
 }
+
+.qs-live__range { font-size: 12px; color: var(--qs-text-muted); }
+.qs-live__notice { flex-shrink: 0; margin: 0; font-size: 12px; color: var(--qs-warning); }
+.qs-live__notice p { margin: 0; }
+.qs-live__chart { flex: 1 1 45%; min-height: 230px; }
+.qs-live__no-history { display: flex; align-items: center; justify-content: center; padding: 20px; color: var(--qs-text-muted); font-size: 13px; }
 
 .qs-live__meta {
   overflow: hidden;
@@ -164,10 +184,10 @@ function run() {
 }
 
 .qs-live__grid {
-  flex: 1;
+  flex: 1 1 55%;
   min-height: 0;
   display: grid;
-  grid-template-columns: clamp(240px, 32%, 340px) 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -191,13 +211,11 @@ function run() {
   color: var(--qs-accent);
 }
 
-@media (max-width: 1120px) {
-  .qs-live {
-    height: auto;
-  }
-
+@container manual-live (max-width: 620px) {
   .qs-live__grid {
     grid-template-columns: 1fr;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    flex: 0 0 660px;
   }
 }
 </style>

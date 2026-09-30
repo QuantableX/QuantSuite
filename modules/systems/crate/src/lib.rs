@@ -127,6 +127,7 @@ fn default_run_config(system_id: &str) -> Value {
         "cadence": "daily",
         "startDate": format!("{:04}-{:02}-{:02}", start.year(), start.month(), start.day()),
         "endDate": format!("{:04}-{:02}-{:02}", today.year(), today.month(), today.day()),
+        "liveStartDate": today.to_string(),
         "rankingSource": "auto",
         "excludeStablecoins": true,
         "excludeWrapped": true,
@@ -255,6 +256,14 @@ impl PersistedStore {
 }
 
 fn validate_run_config(config: &Value) -> Result<(), String> {
+    if let Some(raw) = config.get("liveStartDate") {
+        let value = raw.as_str().ok_or("Choose a valid live start day")?;
+        let day = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+            .map_err(|_| "Choose a valid live start day (YYYY-MM-DD)")?;
+        if day.to_string() != value || day > Utc::now().date_naive() {
+            return Err("Live start day must be a valid date on or before today".into());
+        }
+    }
     match config.get("mode").and_then(Value::as_str).unwrap_or("rotation") {
         "rotation" => Ok(()),
         "single_asset" => {
@@ -894,7 +903,8 @@ fn engine_status(engine: State<'_, EngineManager>) -> EngineStatus {
 
 // ─── Evaluation commands (proxy to the Python engine) ───────────────────────
 
-const LIVE_TIMEOUT: Duration = Duration::from_secs(600);
+// Live evaluation includes the full tracking window, like a backtest.
+const LIVE_TIMEOUT: Duration = Duration::from_secs(1800);
 const BACKTEST_TIMEOUT: Duration = Duration::from_secs(1800);
 const QUICK_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -1482,6 +1492,22 @@ mod tests {
         assert_eq!(restored.systems[0].id, "lces");
         assert_eq!(restored.systems[1].id, "sces");
         assert!(restored.systems.iter().all(|system| system.icon.is_none()));
+    }
+
+    #[test]
+    fn live_start_day_persists_and_rejects_invalid_dates_without_changing_saved_config() {
+        let dir = TestDir::new();
+        let store = Store { data_dir: dir.0.clone(), data: Mutex::new(PersistedStore::default()) };
+        let mut config = default_run_config("lces");
+        config["liveStartDate"] = json!("2024-02-29");
+        store.update(|data| data.save_config("lces", config.clone(), None)).unwrap();
+        assert_eq!(load_store(&dir.0).unwrap().system_configs["lces"], config);
+        for value in [json!(""), json!("2025-02-29"), json!("2026-9-01"), json!("9999-01-01"), json!(null)] {
+            let mut invalid = config.clone();
+            invalid["liveStartDate"] = value;
+            assert!(store.update(|data| data.save_config("lces", invalid, None)).is_err());
+        }
+        assert_eq!(load_store(&dir.0).unwrap().system_configs["lces"], config);
     }
 
     #[test]

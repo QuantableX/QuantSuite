@@ -14,7 +14,7 @@ from rotation_lab.backtest.engine import BacktestEngine
 from rotation_lab.config import Cadence, IndicatorConfig, RunConfig, SingleAssetConfig
 from rotation_lab.data.cache import Cache
 from rotation_lab.data.ohlcv import OhlcvFetcher
-from rotation_lab.rpc import _build_config, _method_backtest, _method_live
+from rotation_lab.rpc import _build_config, _method_backtest, _method_live_snapshot
 
 NOW = dt.datetime(2026, 9, 24, 14, 30, tzinfo=dt.timezone.utc)
 
@@ -123,7 +123,7 @@ class SingleAssetTests(unittest.TestCase):
                  patch("rotation_lab.data.ohlcv.utc_now", return_value=NOW), \
                  patch("rotation_lab.backtest.signals.direction_signal", side_effect=lambda f, _: pd.Series(-1, index=f.index)):
                 fetcher.return_value.get_pair_series.return_value = SimpleNamespace(frame=candles())
-                result = _method_live({"config": {"mode": "single_asset", "startDate": "2026-09-19", "endDate": "2026-09-24",
+                result = _method_live_snapshot({"config": {"mode": "single_asset", "startDate": "2026-09-19", "endDate": "2026-09-24",
                                                    "singleAsset": {"direction": direction}}})
                 self.assertEqual(result["singleAssetSignal"]["position"], position)
                 self.assertEqual(result["singleAssetSignal"]["close"], 120)

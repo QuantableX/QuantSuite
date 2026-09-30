@@ -213,7 +213,7 @@ class SystemCadenceTests(unittest.TestCase):
                 patch.object(rpc, '_notify'):
             ranking.return_value.get_top_n.return_value = resolved
             fetcher.return_value.get_series.return_value = SimpleNamespace(frame=frame)
-            result = rpc._method_live({'config': {'cadence': '1h', 'topN': 1}, 'asOf': '2026-01-03'})
+            result = rpc._method_live_snapshot({'config': {'cadence': '1h', 'topN': 1}, 'asOf': '2026-01-03'})
             args = fetcher.return_value.get_series.call_args.args
             # EMA 12/21 cross: 21 × 8 bars of history = 168 hours → 7 + 2 days
             self.assertEqual(args[1:], (dt.date(2025, 12, 25), dt.date(2026, 1, 3), '1h'))

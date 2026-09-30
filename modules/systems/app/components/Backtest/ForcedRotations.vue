@@ -12,7 +12,7 @@ const active = computed(() => runs.value.find(r => r.key === activeKey.value) ??
 
 const held = computed(() => {
   // Compress the per-day held series into contiguous holding segments.
-  const segments: { symbol: string | null; from: string; to: string }[] = []
+  const segments: { symbol: string | null; from: string | number; to: string | number }[] = []
   for (const point of active.value?.heldAsset ?? props.result.heldAsset) {
     const last = segments[segments.length - 1]
     if (last && last.symbol === point.symbol) {
@@ -23,6 +23,10 @@ const held = computed(() => {
   }
   return segments.slice().reverse()
 })
+
+function dateLabel(time: string | number): string {
+  return typeof time === 'number' ? new Date(time * 1000).toISOString().slice(0, 16).replace('T', ' ') : time
+}
 </script>
 
 <template>
@@ -46,8 +50,8 @@ const held = computed(() => {
       <div class="qs-forced__table">
         <div class="qs-forced__row qs-forced__row--head">
           <span>Asset</span>
-          <span>From</span>
-          <span>Until</span>
+          <span>From (UTC)</span>
+          <span>Until (UTC)</span>
         </div>
         <div class="qs-forced__rows">
           <div
@@ -57,8 +61,8 @@ const held = computed(() => {
             :class="{ 'qs-forced__row--cash': !seg.symbol }"
           >
             <span class="qs-forced__sym mono">{{ seg.symbol ?? 'USD' }}</span>
-            <span class="qs-forced__cell mono">{{ seg.from }}</span>
-            <span class="qs-forced__cell mono">{{ seg.to }}</span>
+            <span class="qs-forced__cell mono" :title="dateLabel(seg.from)">{{ dateLabel(seg.from) }}</span>
+            <span class="qs-forced__cell mono" :title="dateLabel(seg.to)">{{ dateLabel(seg.to) }}</span>
           </div>
           <div v-if="!held.length" class="qs-forced__empty">No holdings recorded.</div>
         </div>

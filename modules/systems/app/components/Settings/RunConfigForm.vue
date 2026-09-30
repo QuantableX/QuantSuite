@@ -2,6 +2,7 @@
 import { paramDiff, paramProblems, type ParamValues } from '@quantsuite/ui'
 import type { SmitheryCatalogEntry } from '@quantsuite/core'
 import { useConfigStore } from '#systems/stores/config'
+import { liveToday } from '#systems/utils/liveTracking'
 import { useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
 import SystemsSettingsMarketFilterSelect from '#systems/components/Settings/MarketFilterSelect.vue'
 import SystemsSettingsSingleAssetForm from '#systems/components/Settings/SingleAssetForm.vue'
@@ -139,15 +140,21 @@ const slipPct = computed({
     </div>
 
     <div class="qs-form__section qs-form__section--window">
-      <span class="qs-form__legend">Window</span>
+      <span class="qs-form__legend">Evaluation dates</span>
       <div class="qs-form__grid">
         <div>
-          <label class="label">Start Date</label>
+          <label class="label">Backtest Start Date</label>
           <input class="input mono" type="date" :value="cfg.startDate" @change="set('startDate', ($event.target as HTMLInputElement).value)" />
         </div>
         <div>
-          <label class="label">End Date</label>
+          <label class="label">Backtest End Date</label>
           <input class="input mono" type="date" :value="cfg.endDate" @change="set('endDate', ($event.target as HTMLInputElement).value)" />
+        </div>
+        <div>
+          <label class="label" :for="`live-start-${systemId}`">Live start day</label>
+          <input :id="`live-start-${systemId}`" class="input mono" type="date" required :max="liveToday()"
+            :value="cfg.liveStartDate" @change="set('liveStartDate', ($event.target as HTMLInputElement).value)" />
+          <p class="qs-form__hint">Track this day through today (UTC) using confirmed candles. Save to keep the start day.</p>
         </div>
       </div>
     </div>

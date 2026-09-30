@@ -137,6 +137,8 @@ export interface RunConfig {
   cadence: Cadence
   startDate: string
   endDate: string
+  /** Live tracking begins here; its end is always today. */
+  liveStartDate: string
   rankingSource: RankingSource
   excludeStablecoins: boolean
   excludeWrapped: boolean
@@ -172,6 +174,8 @@ export interface RankedCoin {
 }
 
 export interface LiveResult extends MarketContext {
+  /** Absent only on engine processes predating live tracking. */
+  tracking?: BacktestResult & { startDate: string; endDate: string }
   singleAssetSignal?: { signal: 'bullish' | 'bearish' | 'neutral'; position: 'long' | 'short' | 'cash'; close: number; closedAt: string }
   asOf: string
   provider: string
@@ -212,7 +216,7 @@ export interface StrategyRun {
   /** Engine label: the Smithery class name, or `EMA 12/21`. */
   label: string
   equityStrategy: EquityPoint[]
-  heldAsset: { time: string; symbol: string | null }[]
+  heldAsset: { time: string | number; symbol: string | null }[]
   metricsStrategy: PerformanceMetrics
   forcedRotations: string[]
 }
@@ -225,7 +229,7 @@ export interface BacktestResult extends MarketContext {
   /** Variants that could not run with the available indicator data. */
   skippedStrategies?: { key: TrendKind; label: string; reason: string }[]
   equityStrategy: EquityPoint[]
-  heldAsset: { time: string; symbol: string | null }[]
+  heldAsset: { time: string | number; symbol: string | null }[]
   buyAndHold: Record<string, EquityPoint[]>
   benchmarks: Record<string, EquityPoint[]>
   metricsStrategy: PerformanceMetrics

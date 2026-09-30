@@ -172,7 +172,7 @@ class HigherFilterTests(unittest.TestCase):
         self.assertIsNone(_build_config({'marketFilter':True}).market_indicator)
 
     def test_live_market_signal_changes_gate_but_not_scores_or_ranking_history(self):
-        from rotation_lab.rpc import _method_live
+        from rotation_lab.rpc import _method_live_snapshot
         resolved=SimpleNamespace(coins=_coins(),provider='test')
         def run(market):
             with patch('rotation_lab.rpc.RankingRegistry') as reg, \
@@ -182,7 +182,7 @@ class HigherFilterTests(unittest.TestCase):
                  patch('rotation_lab.backtest.market.market_gate',
                        side_effect=lambda f,c: pd.Series(int(c.trend=='ema_cross'),index=f.index)) as gate:
                 reg.return_value.get_top_n.return_value=resolved
-                result=_method_live({'asOf':'2024-09-01','config':{
+                result=_method_live_snapshot({'asOf':'2024-09-01','config':{
                     'indicator':{'trend':'ema_cross'},'marketFilter':True,'marketIndicator':market}})
                 return result,gate.call_args
         same,_=run(None)
