@@ -292,7 +292,18 @@ def get_db_stats(conn: sqlite3.Connection) -> dict:
 
     meta = get_all_meta(conn)
 
+    # Mode means configured, not completed. Failed/interrupted files keep a
+    # missing or outdated mode hash even when some chunks already exist.
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(files)")}
+    pending = {}
+    for mode in ("structural", "semantic"):
+        column = f"{mode}_hash"
+        pending[f"{mode}_pending_count"] = conn.execute(
+            f"SELECT COUNT(*) FROM files WHERE {column} IS NULL OR {column} != file_hash"
+        ).fetchone()[0] if column in columns else file_count
+
     return {
+        **pending,
         "file_count": file_count,
         "fts_entry_count": fts_count,
         "chunk_count": chunk_count,

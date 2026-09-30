@@ -53,6 +53,7 @@ pub(crate) async fn index_project_codebase(
     mode: String,
     force_reindex: Option<bool>,
     filter_mode: Option<String>,
+    request_id: Option<String>,
 ) -> Result<IndexCodebaseResult, String> {
     let ws = settings::with_core_db(&app, |conn| {
         qs_core::workspaces::by_id(conn, &workspace_id)
@@ -82,7 +83,7 @@ pub(crate) async fn index_project_codebase(
         args.push(fm.clone());
     }
 
-    let payload = indexing::run_cli(&app, args).await?;
+    let payload = indexing::run_cli_with_request(&app, args, request_id).await?;
     let result: IndexCodebaseResult = serde_json::from_value(payload)
         .map_err(|e| format!("Failed to parse indexer output: {}", e))?;
 
@@ -108,15 +109,28 @@ pub(crate) async fn get_codebase_index_stats(
 ) -> Result<CodebaseIndexStatus, String> {
     let b36 = workspace_b36(&workspace_id).to_string();
 
-    let stats = match indexing::run_cli(
+    let mut unavailable = CodebaseIndexStatus::not_indexed(workspace_id.clone());
+    if !indexing::index_dir().join(format!("{b36}.db")).exists() {
+        unavailable.jobs = indexing::index_jobs(&b36);
+        return Ok(unavailable);
+    }
+    // Stats are optional UI enrichment, and must never hold a completed job's
+    // busy indicator indefinitely. Preserve a job snapshot even if stats fail.
+    let stats = match tokio::time::timeout(std::time::Duration::from_secs(5), indexing::run_cli(
         &app,
-        vec!["stats".to_string(), "--codebase".to_string(), b36],
-    )
+        vec!["stats".to_string(), "--codebase".to_string(), b36.clone()],
+    ))
     .await
     {
-        Ok(stats) => stats,
-        // "not found" and a missing CLI both read as not indexed in the UI.
-        Err(_) => return Ok(CodebaseIndexStatus::not_indexed(workspace_id)),
+        Ok(Ok(stats)) => stats,
+        error => {
+            unavailable.jobs = indexing::index_jobs(&b36);
+            unavailable.stats_error = Some(match error {
+                Ok(Err(error)) => error,
+                _ => "Index statistics took too long to load. Retrying automatically.".into(),
+            });
+            return Ok(unavailable);
+        }
     };
 
     let last_indexed = stats["last_indexed"]
@@ -139,6 +153,10 @@ pub(crate) async fn get_codebase_index_stats(
         chunk_count: stats["chunk_count"].as_u64().map(|n| n as u32),
         structural_indexed_at,
         semantic_indexed_at,
+        structural_pending_count: stats["structural_pending_count"].as_u64().map(|n| n as u32),
+        semantic_pending_count: stats["semantic_pending_count"].as_u64().map(|n| n as u32),
+        jobs: indexing::index_jobs(&b36),
+        stats_error: None,
     })
 }
 
