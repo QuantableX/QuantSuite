@@ -89,7 +89,7 @@ const liveResult = computed(() => liveState.value.result && matchesMarket(liveSt
           <span v-for="kind in trendMembers" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
         </div>
       </div>
-      <div v-if="cfg.compareTrends?.length" class="qs-context__group">
+      <div v-if="view !== 'live' && cfg.compareTrends?.length" class="qs-context__group">
         <div class="qs-context__row">
           <span>Compare</span>
           <span class="mono">{{ cfg.compareTrends.length }}</span>
@@ -125,6 +125,17 @@ const liveResult = computed(() => liveState.value.result && matchesMarket(liveSt
         <div class="qs-legend__item"><span class="qs-legend__box qs-legend__box--win" />A beats B</div>
         <div class="qs-legend__item"><span class="qs-legend__box qs-legend__box--lose" />A loses to B</div>
       </div>
+    </section>
+
+    <section v-if="view === 'live'" class="qs-context__section">
+      <span class="label">Live Window</span>
+      <div class="qs-context__row"><span>Start</span><span class="mono">{{ cfg.liveStartDate }}</span></div>
+      <div class="qs-context__row"><span>End</span><span>Today (UTC)</span></div>
+      <div class="qs-context__row"><span>{{ cfg.mode === 'single_asset' ? 'Timeframe' : 'Cadence' }}</span><span class="mono">{{ effectiveCadence(cfg) }}</span></div>
+      <div class="qs-context__row"><span>Fee</span><span class="mono">{{ (cfg.feeRate * 100).toFixed(2) }}%</span></div>
+      <ul v-if="liveResult?.tracking?.notes.length" class="qs-notes">
+        <li v-for="(note, i) in liveResult.tracking.notes" :key="i">{{ note }}</li>
+      </ul>
     </section>
 
     <!-- Backtest context -->

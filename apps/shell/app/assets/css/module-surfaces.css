@@ -110,7 +110,7 @@
 [data-module='systems'] :is(.qs-live.qs-live, .qs-backtest.qs-backtest, .qs-settings.qs-settings) { padding: var(--qss-surface-padding); }
 [data-module='systems'] .qs-live__head.qs-live__head { flex-wrap: wrap; gap: 16px; }
 @media (max-width: 1700px) {
-  [data-module='systems'] :is(.qs-backtest.qs-backtest, .qs-settings.qs-settings) { padding: 12px; }
+  [data-module='systems'] :is(.qs-backtest.qs-backtest, .qs-live.qs-live, .qs-settings.qs-settings) { padding: 12px; }
 }
 [data-module='mcp'] .action-card.action-card { background: var(--qss-bg-raised); border-radius: 14px; padding: 24px 20px; }
 [data-module='mcp'] .section-title.section-title { font-size: 15px; font-weight: 500; }

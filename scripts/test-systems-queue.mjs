@@ -97,6 +97,65 @@ test('failed saves expose the error and keep the edited config', async t => {
   assert.equal(config.get('custom').topN, 17)
 })
 
+test('live start day survives save, reload and copy independently of backtest dates', async t => {
+  let saved = { topN: 7, startDate: '2020-01-01', endDate: '2020-02-01' }
+  setup(t, (command, args) => {
+    if (command.endsWith('|save_system_config')) saved = JSON.parse(JSON.stringify(args.config))
+    return structuredClone(saved)
+  })
+  const config = useConfigStore()
+  await config.load('lces')
+  assert.match(config.get('lces').liveStartDate, /^\d{4}-\d{2}-\d{2}$/)
+  config.update('lces', { liveStartDate: '2024-02-29' })
+  assert.equal(await config.save('lces'), true)
+  config.forget('lces')
+  await config.load('lces')
+  assert.equal(config.get('lces').liveStartDate, '2024-02-29')
+  assert.equal(config.get('lces').startDate, '2020-01-01')
+  config.remember('copy', structuredClone(saved))
+  config.update('copy', { liveStartDate: '2024-03-01' })
+  assert.equal(config.get('lces').liveStartDate, '2024-02-29')
+})
+
+test('invalid live dates cannot be saved or evaluated', async t => {
+  let calls = 0
+  const { live } = setup(t, () => { calls++; return {} })
+  const config = useConfigStore()
+  for (const liveStartDate of ['', '2025-02-29', '2026-9-1', '9999-01-01']) {
+    config.update('lces', { liveStartDate })
+    assert.equal(await config.save('lces'), false)
+    await live.refresh('lces')
+    assert.match(config.errors.lces, /[Ll]ive start day/)
+    assert.match(live.stateFor('lces').error, /[Ll]ive start day/)
+  }
+  assert.equal(calls, 0)
+})
+
+test('live tracking restarts an older engine once and accepts only the requested window', async t => {
+  let runs = 0
+  let restarts = 0
+  const { live } = setup(t, (command, args) => {
+    if (command.endsWith('|start_engine')) restarts++
+    if (command.endsWith('|live_eval')) return ++runs === 1
+      ? { tracking: null }
+      : { asOf: '2026-09-30', tracking: { startDate: args.config.liveStartDate, endDate: '2026-09-30' } }
+    return { status: 'running' }
+  })
+  useConfigStore().update('lces', { liveStartDate: '2026-09-01' })
+  await live.refresh('lces')
+  assert.equal(runs, 2)
+  assert.equal(restarts, 1)
+  assert.equal(live.stateFor('lces').result.tracking.startDate, '2026-09-01')
+  assert.equal(live.stateFor('lces').error, null)
+})
+
+test('an engine still missing tracking after restart returns a clear error', async t => {
+  const { live } = setup(t, () => ({ tracking: null }))
+  await live.refresh('lces')
+  assert.match(live.stateFor('lces').error, /does not support this live tracking window/)
+  assert.equal(live.stateFor('lces').result, null)
+})
+
 test('a custom strategy can run live and backtest with its own config', async t => {
   const calls = []
   const { live, backtest } = setup(t, (command, args) => {
@@ -116,7 +175,15 @@ test('a custom strategy can run live and backtest with its own config', async t 
 
 function setup(t, invoke) {
   setActivePinia(createPinia())
-  mockIPC(invoke)
+  mockIPC(async (command, args) => {
+    const response = await invoke(command, args)
+    // Ordinary fixtures represent a current engine; explicit tracking=null
+    // exercises legacy-engine recovery below.
+    if (command.endsWith('|live_eval') && response && !('tracking' in response)) {
+      return { ...response, asOf: '2026-09-30', tracking: { startDate: args.config.liveStartDate, endDate: '2026-09-30' } }
+    }
+    return response
+  })
   t.after(clearMocks)
   return { live: useLiveStore(), backtest: useBacktestStore() }
 }

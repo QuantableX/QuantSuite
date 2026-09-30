@@ -5,6 +5,7 @@ import { STALE_ENGINE } from '#systems/stores/backtest'
 import { useConfigStore } from '#systems/stores/config'
 import type { LiveResult, RunConfig } from '#systems/types'
 import { matchesMarket } from '#systems/utils/systemMode'
+import { liveDateError, matchesLiveWindow } from '#systems/utils/liveTracking'
 
 interface LiveState {
   result: LiveResult | null
@@ -28,7 +29,7 @@ export const useLiveStore = defineStore('systems/live', () => {
   async function liveEvalFresh(systemId: string, cfg: RunConfig): Promise<LiveResult> {
     try {
       const result = await engine.liveEval(systemId, cfg)
-      if (matchesMarket(result, cfg)) return result
+      if (matchesMarket(result, cfg) && matchesLiveWindow(result, cfg)) return result
     } catch (e) {
       if (!STALE_ENGINE.test(String(e))) throw e
     }
@@ -39,6 +40,7 @@ export const useLiveStore = defineStore('systems/live', () => {
     setProgress(cfg.mode === 'single_asset' ? 'Loading confirmed candles' : "Building today's coin list", 0.05)
     const result = await engine.liveEval(systemId, cfg)
     if (!matchesMarket(result, cfg)) throw new Error('The engine does not support this system mode. Update QuantSuite and restart the engine.')
+    if (!matchesLiveWindow(result, cfg)) throw new Error('The engine does not support this live tracking window. Update QuantSuite and restart the engine.')
     return result
   }
 
@@ -63,6 +65,11 @@ export const useLiveStore = defineStore('systems/live', () => {
   async function refresh(systemId: string) {
     const s = stateFor(systemId)
     if (s.loading) return
+    const dateError = liveDateError(config.get(systemId).liveStartDate)
+    if (dateError) {
+      s.error = dateError
+      return
+    }
     s.loading = true
     s.error = null
     s.progressLabel = 'Queued — waiting for the current evaluation'

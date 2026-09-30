@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { useEngine } from '#systems/composables/useEngine'
 import type { RunConfig, SystemMeta } from '#systems/types'
 import { defaultSingleAsset } from '#systems/utils/systemMode'
+import { liveDateError, liveToday } from '#systems/utils/liveTracking'
 
 function localIso(d: Date): string {
   const y = d.getFullYear()
@@ -30,6 +31,7 @@ export function defaultRunConfig(systemId?: string): RunConfig {
     cadence: 'daily',
     startDate: isoDaysAgo(365 * 3),
     endDate: isoToday(),
+    liveStartDate: liveToday(),
     rankingSource: 'auto',
     excludeStablecoins: true,
     excludeWrapped: true,
@@ -94,6 +96,11 @@ export const useConfigStore = defineStore('systems/config', () => {
 
   async function save(systemId: string, metadata?: SystemMeta): Promise<boolean> {
     const cfg = get(systemId)
+    const dateError = liveDateError(cfg.liveStartDate)
+    if (dateError) {
+      errors.value[systemId] = dateError
+      return false
+    }
     try {
       const saved = await engine.saveSystemConfig(systemId, cfg, metadata)
       if (configBySystem.value[systemId] === cfg) configBySystem.value[systemId] = saved

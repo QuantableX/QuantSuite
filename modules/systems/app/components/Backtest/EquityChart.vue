@@ -86,7 +86,7 @@ function buildDefs(): SeriesDef[] {
   runs.forEach((run, i) => {
     defs.push({
       key: `strategy:${run.key}`,
-      label: runs.length > 1 || props.result.skippedStrategies?.length ? run.label : 'Rotation Strategy',
+      label: runs.length > 1 || props.result.skippedStrategies?.length ? run.label : props.result.mode === 'single_asset' ? 'Single Asset Strategy' : 'Rotation Strategy',
       color: strategyColors[i % strategyColors.length]!,
       data: run.equityStrategy,
       width: 2,
