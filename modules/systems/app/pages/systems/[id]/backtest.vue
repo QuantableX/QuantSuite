@@ -6,6 +6,7 @@ import { useConfigStore } from '#systems/stores/config'
 import { useBacktestStore } from '#systems/stores/backtest'
 import { useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
 import SystemsSettingsMarketFilterSelect from '#systems/components/Settings/MarketFilterSelect.vue'
+import SystemsBacktestResultPanels from '#systems/components/Backtest/ResultPanels.vue'
 import type { MarketIndicatorConfig, TrendKind } from '#systems/types'
 import { matchesMarket } from '#systems/utils/systemMode'
 
@@ -164,11 +165,7 @@ function run() {
       <p v-if="result.strategies?.length === 0" class="qs-backtest__notice">
         No strategy could be evaluated. Choose an indicator compatible with the available data.
       </p>
-      <SystemsBacktestEquityChart v-else :result="result" class="qs-backtest__chart" />
-      <div v-if="result.strategies?.length !== 0" class="qs-backtest__grid">
-        <SystemsBacktestMetricsTable :result="result" />
-        <SystemsBacktestForcedRotations :result="result" />
-      </div>
+      <SystemsBacktestResultPanels v-else :result="result" />
     </template>
 
     <div v-else-if="!state.isRunning" class="qs-empty">
@@ -275,11 +272,6 @@ function run() {
   font-size: 13px;
 }
 
-.qs-backtest__chart {
-  flex: 1 1 0;
-  min-height: 260px;
-}
-
 .qs-backtest__progress {
   min-width: 0;
   width: 100%;
@@ -335,20 +327,6 @@ function run() {
 
 .qs-backtest__notice ul { margin: 6px 0 0; padding-left: 20px; }
 
-.qs-backtest__grid {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  align-items: stretch;
-}
-
-/* Allow the grid children to shrink below their content width so a wide
-   metrics table scrolls inside its tile instead of stretching it. */
-.qs-backtest__grid > * {
-  min-width: 0;
-}
-
 .qs-empty {
   flex: 1;
   display: flex;
@@ -362,12 +340,6 @@ function run() {
 .qs-empty__mark {
   font-size: 32px;
   color: var(--qs-accent);
-}
-
-@media (max-width: 1000px) {
-  .qs-backtest__grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* A small window keeps the primary signal and Run on one row. Secondary
