@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BacktestResult, PerformanceMetrics, StrategyRun } from '#systems/types'
 
-const props = defineProps<{ result: BacktestResult }>()
+const props = defineProps<{ result: BacktestResult; strategyOnly?: boolean }>()
 
 type Fmt = 'mult' | 'pct' | 'ratio'
 /** `mult` compares against 1.0 (break-even), `sign` against 0. */
@@ -41,6 +41,10 @@ function isKeyed(run: StrategyRun): boolean {
 }
 
 const columns = computed<Column[]>(() => {
+  if (props.strategyOnly) {
+    return [{ key: 'strategy', label: 'Strategy', metrics: props.result.metricsStrategy, strong: true }]
+  }
+
   // One column per trend signal, the configured indicator first and tinted;
   // a lone run keeps the plain "Strategy" heading.
   const runs = props.result.strategies ?? []

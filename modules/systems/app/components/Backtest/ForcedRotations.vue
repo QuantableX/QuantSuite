@@ -58,7 +58,8 @@ function dateLabel(time: string | number): string {
             v-for="(seg, i) in held"
             :key="i"
             class="qs-forced__row"
-            :class="{ 'qs-forced__row--cash': !seg.symbol }"
+            :class="{ 'qs-forced__row--current': i === 0 }"
+            :aria-current="i === 0 ? 'true' : undefined"
           >
             <span class="qs-forced__sym mono">{{ seg.symbol ?? 'USD' }}</span>
             <span class="qs-forced__cell mono" :title="dateLabel(seg.from)">{{ dateLabel(seg.from) }}</span>
@@ -156,13 +157,9 @@ function dateLabel(time: string | number): string {
   background: var(--qs-bg-hover);
 }
 
-/* Cash legs are the forced exits — worth spotting without reading symbols. */
-.qs-forced__row--cash {
-  box-shadow: inset 2px 0 0 var(--qs-warning);
-}
-
-.qs-forced__row--cash .qs-forced__sym {
-  color: var(--qs-warning);
+/* Holdings are newest first; mark only the latest position, including cash. */
+.qs-forced__row--current {
+  box-shadow: inset 2px 0 0 #fff;
 }
 
 .qs-forced__sym {
