@@ -90,36 +90,36 @@ def index_file_semantic(
 
     Returns the number of chunks indexed.
     """
-    # Clear existing chunks and vectors for this file
-    old_chunk_ids = clear_chunks_for_file(conn, file_id)
-    if old_chunk_ids:
-        vector_backend.delete_by_chunk_ids(old_chunk_ids)
-
     # Split into chunks
     chunks = chunk_file(content, chunk_size=chunk_size, overlap=overlap)
-    if not chunks:
-        return 0
 
     # Prepare texts for batch embedding
     texts = [c["content"] for c in chunks]
 
-    # Generate embeddings
-    embeddings = embed_provider.embed_batch(texts)
-
-    # Store chunks and vectors
-    for chunk_data, embedding in zip(chunks, embeddings):
-        chunk_id = insert_chunk(
-            conn,
-            file_id=file_id,
-            file_path=file_path,
-            language=language,
-            content=chunk_data["content"],
-            start_line=chunk_data["start_line"],
-            end_line=chunk_data["end_line"],
-        )
-        vector_backend.insert(chunk_id, embedding)
-
+    # Finish the caller's hash/structural bookkeeping before inference. Model
+    # loading and large batches may take far longer than SQLite's busy timeout.
     conn.commit()
+    embeddings = embed_provider.embed_batch(texts) if texts else []
+    if len(embeddings) != len(chunks):
+        raise ValueError("Embedding count does not match the file's chunks")
+
+    # Swap one file atomically; a failed request/write leaves its old vectors
+    # usable. Empty files intentionally replace their prior chunks with none.
+    with conn:
+        old_chunk_ids = clear_chunks_for_file(conn, file_id)
+        if old_chunk_ids:
+            vector_backend.delete_by_chunk_ids(old_chunk_ids)
+        for chunk_data, embedding in zip(chunks, embeddings):
+            chunk_id = insert_chunk(
+                conn,
+                file_id=file_id,
+                file_path=file_path,
+                language=language,
+                content=chunk_data["content"],
+                start_line=chunk_data["start_line"],
+                end_line=chunk_data["end_line"],
+            )
+            vector_backend.insert(chunk_id, embedding)
     return len(chunks)
 
 

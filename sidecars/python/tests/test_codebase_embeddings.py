@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import sqlite3
 from pathlib import Path
 import sys
 import tempfile
@@ -17,9 +18,10 @@ import cli
 from db import open_db, get_all_meta, set_meta
 from embeddings import EmbedProvider, MAX_INPUT_BYTES
 from semantic import chunk_file
+from vector_backend import SqliteVecBackend
 
 
-class EmbeddingTests(unittest.TestCase):
+class EmbeddingFixture(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         class Handler(BaseHTTPRequestHandler):
@@ -33,6 +35,8 @@ class EmbeddingTests(unittest.TestCase):
                     return
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 server.inputs.extend(body["input"])
+                if server.on_inputs:
+                    server.on_inputs(body["input"])
                 if server.fail and any("FAIL_ONCE" in text for text in body["input"]):
                     server.fail = False
                     self.send_error(500)
@@ -65,6 +69,7 @@ class EmbeddingTests(unittest.TestCase):
         self.server.dims = 3
         self.server.inputs = []
         self.server.fail = False
+        self.server.on_inputs = None
         self.env = patch.dict(os.environ, {"QUANTMCP_INDEX_DIR": str(self.root / "indexes")})
         self.env.start()
         self.endpoint()
@@ -96,6 +101,8 @@ class EmbeddingTests(unittest.TestCase):
     def db(self):
         return open_db(self.root / "indexes" / "fixture.db")
 
+
+class EmbeddingTests(EmbeddingFixture):
     def test_structural_then_semantic_query_prefix_and_private_metadata(self):
         self.assertEqual(self.index("structural")["status"], "ok")
         self.assertEqual(self.index("semantic")["status"], "ok")
@@ -179,6 +186,78 @@ class EmbeddingTests(unittest.TestCase):
             cli.cmd_reindex(SimpleNamespace(codebase="fixture", mode="semantic", filter=None))
         with contextlib.closing(self.db()) as conn:
             self.assertEqual(before, conn.execute("SELECT count(*) FROM vec_index").fetchone()[0])
+
+    def test_inference_does_not_hold_a_database_write_transaction(self):
+        self.index()
+        (self.repo / "one.py").write_text("def replacement():\n    return 2\n", encoding="utf-8")
+        embed = EmbedProvider.embed_batch
+        probes = []
+
+        def checked_embed(provider, texts):
+            # A second connection can write while the slow model is running.
+            with contextlib.closing(sqlite3.connect(self.root / "indexes" / "fixture.db", timeout=0)) as probe:
+                probe.execute("BEGIN IMMEDIATE")
+                probe.rollback()
+                probes.append(True)
+            return embed(provider, texts)
+
+        with patch.object(EmbedProvider, "embed_batch", autospec=True, side_effect=checked_embed):
+            self.assertEqual(self.index()["status"], "ok")
+        self.assertTrue(probes)
+
+    def test_failed_force_reindex_preserves_old_file_vectors_and_retries(self):
+        self.index()
+        with contextlib.closing(self.db()) as conn:
+            before = [tuple(row) for row in conn.execute("SELECT * FROM chunks")]
+            vectors = [tuple(row) for row in conn.execute("SELECT * FROM vec_index")]
+        (self.repo / "one.py").write_text("def FAIL_ONCE():\n    return 1\n", encoding="utf-8")
+        self.server.fail = True
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+            cli.cmd_reindex(SimpleNamespace(codebase="fixture", mode="both", filter=None))
+        with contextlib.closing(self.db()) as conn:
+            self.assertEqual(before, [tuple(row) for row in conn.execute("SELECT * FROM chunks")])
+            self.assertEqual(vectors, [tuple(row) for row in conn.execute("SELECT * FROM vec_index")])
+            self.assertIsNone(conn.execute("SELECT semantic_hash FROM files").fetchone()[0])
+        self.assertEqual(self.index()["status"], "ok")
+        with contextlib.closing(self.db()) as conn:
+            self.assertIn("FAIL_ONCE", conn.execute("SELECT content FROM chunks").fetchone()[0])
+
+    def test_failed_vector_write_rolls_back_the_whole_file_replacement(self):
+        self.index()
+        with contextlib.closing(self.db()) as conn:
+            before = [tuple(row) for row in conn.execute("SELECT * FROM chunks")]
+            vectors = [tuple(row) for row in conn.execute("SELECT * FROM vec_index")]
+        (self.repo / "one.py").write_text("def replacement():\n    return 2\n", encoding="utf-8")
+        with patch.object(SqliteVecBackend, "insert", side_effect=RuntimeError("fixture write failure")):
+            self.assertIn("error", self.index())
+        with contextlib.closing(self.db()) as conn:
+            self.assertEqual(before, [tuple(row) for row in conn.execute("SELECT * FROM chunks")])
+            self.assertEqual(vectors, [tuple(row) for row in conn.execute("SELECT * FROM vec_index")])
+            self.assertIsNone(conn.execute("SELECT semantic_hash FROM files").fetchone()[0])
+            self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
+    def test_empty_file_removes_old_vectors(self):
+        self.index()
+        (self.repo / "one.py").write_text("", encoding="utf-8")
+        self.assertEqual(self.index()["status"], "ok")
+        with contextlib.closing(self.db()) as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM chunks").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT count(*) FROM vec_index").fetchone()[0], 0)
+            row = conn.execute("SELECT file_hash, semantic_hash FROM files").fetchone()
+            self.assertEqual(row[0], row[1])
+
+    def test_unreadable_file_does_not_roll_back_a_completed_file(self):
+        self.index()
+        first = str(self.repo / "one.py")
+        missing = str(self.repo / "removed_during_index.py")
+        Path(first).write_text("def completed_update():\n    return 2\n", encoding="utf-8")
+        with patch.object(cli, "walk_codebase", return_value=[first, missing]):
+            result = self.index("structural")
+        self.assertEqual(result["errors"], 1)
+        with contextlib.closing(self.db()) as conn:
+            self.assertIsNotNone(conn.execute("SELECT structural_hash FROM files").fetchone()[0])
+            names = [row[0] for row in conn.execute("SELECT symbol_name FROM code_fts")]
+            self.assertIn("completed_update", names)
 
     def test_long_unicode_lines_are_bounded_without_losing_text(self):
         text = "\u6f22\u5b57\U0001f600" * 3000

@@ -16,6 +16,8 @@ import sys
 import os
 import json
 import argparse
+import sqlite3
+from contextlib import nullcontext
 
 # Add the codebase-index directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,11 +43,10 @@ from db import (
     upsert_file,
     search_fts,
     lookup_symbol as db_lookup_symbol,
-    clear_fts,
     clear_chunks,
-    clear_vec_index,
     get_db_stats,
 )
+from locking import codebase_lock, IndexBusyError
 
 # Heavy deps (tree-sitter, embeddings) are imported lazily inside
 # cmd_index / cmd_search / cmd_reindex so that lightweight commands
@@ -195,8 +196,12 @@ def _run_index(args) -> dict:
                 conn.execute("UPDATE files SET semantic_hash = ? WHERE id = ?", (file_hash, file_id))
                 semantic_entries += count
 
+            # A later file can fail before opening its own transaction. Keep
+            # its rollback from undoing this completed file's entries/hashes.
+            conn.commit()
             indexed += 1
         except Exception as e:
+            conn.rollback()
             errors += 1
             if len(error_details) < 3:
                 error_details.append(f"{format_file_path(file_path, path)}: {e}")
@@ -548,20 +553,17 @@ def cmd_reindex(args):
             print(json.dumps({"error": f"Built-in embedding engine unavailable: {e}"}))
             sys.exit(1)
 
-    # Clear only data for the modes being re-indexed
+    # Invalidate hashes, but retain old entries until each replacement is ready.
+    # Clearing vectors first would lose usable data if embedding a file fails.
     if do_structural:
-        clear_fts(conn)
+        conn.execute("UPDATE files SET structural_hash = NULL")
         if meta.get("structural_indexed_at"):
             set_meta(conn, "structural_indexed_at", "")
     if do_semantic:
-        clear_chunks(conn)
-        clear_vec_index(conn)
+        conn.execute("UPDATE files SET semantic_hash = NULL")
         if meta.get("semantic_indexed_at"):
             set_meta(conn, "semantic_indexed_at", "")
 
-    # Only clear files table if re-indexing all modes
-    if do_structural and do_semantic:
-        conn.execute("DELETE FROM files")
     conn.commit()
     conn.close()
 
@@ -636,7 +638,25 @@ def main():
         "reindex": cmd_reindex,
     }
 
-    commands[args.command](args)
+    # Search and lookup can auto-refresh, so they join the same queue as manual
+    # indexing. Hold the lock across reindex invalidation AND reconstruction.
+    # Stats/list are read-only and can observe the last committed data meanwhile.
+    name = None
+    if args.command == "index":
+        name = args.name or codebase_name_from_path(os.path.abspath(args.path))
+    elif args.command in ("reindex", "search", "lookup"):
+        name = args.codebase
+    try:
+        with codebase_lock(get_db_path(name)) if name is not None else nullcontext():
+            commands[args.command](args)
+    except IndexBusyError as error:
+        print(json.dumps({"error": str(error)}))
+        sys.exit(1)
+    except sqlite3.OperationalError as error:
+        if "locked" not in str(error).lower() and "busy" not in str(error).lower():
+            raise
+        print(json.dumps({"error": "The code index database is busy. Let the current indexing operation finish, then retry."}))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
