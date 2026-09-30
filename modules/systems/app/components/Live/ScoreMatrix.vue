@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { LiveResult } from '#systems/types'
 
-const props = defineProps<{ result: LiveResult }>()
+const props = defineProps<{ result: LiveResult; compact?: boolean }>()
 
 const symbols = computed(() => props.result.symbols)
 
@@ -27,10 +27,10 @@ function cellTitle(i: number, j: number): string {
 </script>
 
 <template>
-  <section class="card qs-mx">
+  <section class="card qs-mx" :class="{ 'qs-mx--compact': compact }">
     <header class="qs-mx__head">
-      <h3 class="qs-mx__title">Pairwise Score Matrix</h3>
-      <span class="qs-mx__hint">row beats column → green</span>
+      <h3 class="qs-mx__title" title="Row beats column → green">{{ compact ? 'Score matrix' : 'Pairwise Score Matrix' }}</h3>
+      <span v-if="!compact" class="qs-mx__hint">row beats column → green</span>
     </header>
     <div class="qs-mx__scroll">
       <table class="qs-mx__table" :style="{ '--n': symbols.length }">
@@ -76,6 +76,15 @@ function cellTitle(i: number, j: number): string {
   min-height: 0;
   overflow: hidden;
 }
+
+.qs-mx--compact .qs-mx__head { padding: 6px 10px; }
+.qs-mx--compact .qs-mx__title { font-size: 12px; }
+.qs-mx--compact .qs-mx__scroll { padding: 0 8px 4px; }
+.qs-mx--compact .qs-mx__table { max-width: calc(74px + var(--n) * 22px); }
+.qs-mx--compact .qs-mx__corner,
+.qs-mx--compact .qs-mx__colhead,
+.qs-mx--compact .qs-mx__winhead { height: 28px; }
+.qs-mx--compact .qs-mx__colhead span { max-height: 24px; }
 
 .qs-mx__head {
   display: flex;

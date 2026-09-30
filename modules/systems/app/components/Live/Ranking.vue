@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { LiveResult } from '#systems/types'
 
-const props = defineProps<{ result: LiveResult }>()
+const props = defineProps<{ result: LiveResult; compact?: boolean }>()
 
 const maxScore = computed(() => Math.max(1, props.result.symbols.length - 1))
 
@@ -23,18 +23,21 @@ function fmtCap(cap: number | null): string {
 </script>
 
 <template>
-  <section class="card qs-rank">
+  <section class="card qs-rank" :class="{ 'qs-rank--compact': compact }">
     <header class="qs-rank__head">
+      <h3 v-if="compact" class="qs-rank__title">Standings</h3>
+      <template v-else>
       <span class="qs-rank__lbl">Winner</span>
       <span class="qs-rank__symbol">{{ result.best ?? '—' }}</span>
       <span class="qs-rank__wins mono">{{ bestScore }}/{{ maxScore }}</span>
+      </template>
     </header>
 
     <div class="qs-rank__cols">
       <span>#</span>
       <span>Asset</span>
       <span class="qs-rank__right">Wins</span>
-      <span class="qs-rank__right">Mkt Cap</span>
+      <span class="qs-rank__right qs-rank__cap">Mkt Cap</span>
     </div>
 
     <div class="qs-rank__scroll">
@@ -45,7 +48,7 @@ function fmtCap(cap: number | null): string {
         :key="coin.symbol"
         class="qs-rank__row"
         :class="{ 'qs-rank__row--best': coin.symbol === result.best }"
-        :title="coin.name ?? coin.symbol"
+        :title="`${coin.name ?? coin.symbol} · ${fmtCap(coin.marketCap)}`"
       >
         <div class="qs-rank__fill" :style="{ width: `${((coin.score ?? 0) / maxScore) * 100}%` }" />
         <span class="qs-rank__num mono">{{ coin.rank }}</span>
@@ -62,10 +65,20 @@ function fmtCap(cap: number | null): string {
 
 <style scoped>
 .qs-rank {
+  container: live-ranking / inline-size;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.qs-rank__title { margin: 0; font-size: 12px; font-weight: 600; }
+.qs-rank--compact .qs-rank__head { padding: 8px 10px; }
+.qs-rank--compact .qs-rank__row { flex: 0 0 26px; }
+@container live-ranking (max-width: 270px) {
+  .qs-rank--compact .qs-rank__cols,
+  .qs-rank--compact .qs-rank__row { grid-template-columns: 22px minmax(0, 1fr) 34px; gap: 6px; padding-inline: 10px; }
+  .qs-rank--compact .qs-rank__cap { display: none; }
 }
 
 .qs-rank__head {

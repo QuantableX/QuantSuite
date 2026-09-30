@@ -6,8 +6,7 @@ import { useConfigStore } from '#systems/stores/config'
 import { useLiveStore } from '#systems/stores/live'
 import { matchesMarket } from '#systems/utils/systemMode'
 import SystemsLiveOverview from '#systems/components/Live/Overview.vue'
-import SystemsBacktestEquityChart from '#systems/components/Backtest/EquityChart.vue'
-import SystemsBacktestForcedRotations from '#systems/components/Backtest/ForcedRotations.vue'
+import SystemsBacktestResultPanels from '#systems/components/Backtest/ResultPanels.vue'
 
 const route = useRoute()
 const systems = useSystemsStore()
@@ -65,12 +64,10 @@ function run() {
       <div v-if="tracking.skippedStrategies?.length" class="qs-live__notice" role="status">
         <p v-for="skipped in tracking.skippedStrategies" :key="skipped.key">{{ skipped.label }}: {{ skipped.reason }}</p>
       </div>
-      <SystemsBacktestEquityChart v-if="tracking.equityStrategy.length" :result="tracking" class="qs-live__chart" />
-      <div v-else class="card qs-live__chart qs-live__no-history">{{ tracking.skippedStrategies?.length ? 'The selected strategy could not be evaluated. Check the indicator data shown above.' : 'No confirmed candles to track in this window. Choose an earlier live start day in Settings, or wait for a candle to close.' }}</div>
-      <div class="qs-live__grid">
-        <SystemsLiveOverview :result="result" />
-        <SystemsBacktestForcedRotations :result="tracking" />
-      </div>
+      <SystemsBacktestResultPanels :result="tracking"
+        :empty-message="tracking.skippedStrategies?.length ? 'The selected strategy could not be evaluated. Check the indicator data shown above.' : 'No confirmed candles to track in this window. Choose an earlier live start day in Settings, or wait for a candle to close.'">
+        <template #overview><SystemsLiveOverview :result="result" /></template>
+      </SystemsBacktestResultPanels>
     </template>
 
     <div v-else-if="!state.loading" class="qs-empty">
@@ -109,8 +106,6 @@ function run() {
 .qs-live__range { font-size: 12px; color: var(--qs-text-muted); }
 .qs-live__notice { flex-shrink: 0; margin: 0; font-size: 12px; color: var(--qs-warning); }
 .qs-live__notice p { margin: 0; }
-.qs-live__chart { flex: 1 1 45%; min-height: 230px; }
-.qs-live__no-history { display: flex; align-items: center; justify-content: center; padding: 20px; color: var(--qs-text-muted); font-size: 13px; }
 
 .qs-live__meta {
   overflow: hidden;
@@ -183,19 +178,6 @@ function run() {
   font-size: 12px;
 }
 
-.qs-live__grid {
-  flex: 1 1 55%;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-}
-
-.qs-live__grid > * {
-  min-width: 0;
-  min-height: 0;
-}
-
 .qs-empty {
   flex: 1;
   display: flex;
@@ -211,11 +193,4 @@ function run() {
   color: var(--qs-accent);
 }
 
-@container manual-live (max-width: 620px) {
-  .qs-live__grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-    flex: 0 0 660px;
-  }
-}
 </style>
