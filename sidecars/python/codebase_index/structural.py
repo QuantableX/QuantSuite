@@ -252,6 +252,10 @@ def _extract_symbol_name(node, language: str) -> str:
     return text[:60] if len(text) > 60 else text
 
 
+# Symbols are the root node and its children (top-level declarations).
+_SYMBOL_MAX_DEPTH = 1
+
+
 def _get_symbol_type(node_type: str, symbol_nodes: dict[str, list[str]]) -> str | None:
     """Determine the symbol type from a tree-sitter node type."""
     for sym_type, node_types in symbol_nodes.items():
@@ -279,10 +283,15 @@ def extract_symbols_treesitter(
     tree = parser.parse(source_bytes)
     symbols: list[dict[str, str]] = []
 
-    def walk(node, depth: int = 0):
-        # Only extract top-level and class-level symbols (depth <= 1)
+    # Depth-first, in source order, with an explicit stack: a recursive walk
+    # hit Python's recursion limit (1000) on deeply nested files such as a
+    # C++ else-if chain with a few hundred branches. Nodes below
+    # _SYMBOL_MAX_DEPTH never become symbols, so the walk stops there.
+    stack = [(tree.root_node, 0)]
+    while stack:
+        node, depth = stack.pop()
         sym_type = _get_symbol_type(node.type, symbol_defs)
-        if sym_type and depth <= 1:
+        if sym_type:
             name = _extract_symbol_name(node, language)
             node_text = node.text.decode("utf-8", errors="replace")
             symbols.append({
@@ -291,11 +300,9 @@ def extract_symbols_treesitter(
                 "content": node_text,
             })
 
-        # Recurse into children for nested symbols (e.g., methods in classes)
-        for child in node.children:
-            walk(child, depth + 1)
+        if depth < _SYMBOL_MAX_DEPTH:
+            stack.extend((child, depth + 1) for child in reversed(node.children))
 
-    walk(tree.root_node)
     return symbols
 
 
@@ -331,7 +338,12 @@ def extract_symbols_regex(
 
 def extract_symbols(content: str, language: str) -> list[dict[str, str]]:
     """Extract symbols using tree-sitter with regex fallback."""
-    symbols = extract_symbols_treesitter(content, language)
+    try:
+        symbols = extract_symbols_treesitter(content, language)
+    except Exception:
+        # A file tree-sitter cannot handle still belongs in the index: the
+        # regex symbols (or the line chunks after them) take its place.
+        symbols = []
     if symbols:
         return symbols
     return extract_symbols_regex(content, language)
