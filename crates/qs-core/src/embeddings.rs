@@ -25,6 +25,9 @@ use std::sync::{Arc, RwLock};
 pub struct EmbeddingInfo {
     /// Runtime and model are on disk: [`acquire`] can start the engine.
     pub installed: bool,
+    /// Switched off suite-wide by the operator: nothing may start the engine,
+    /// whatever a workspace has chosen. `installed` is false then too.
+    pub off: bool,
     /// The model id vectors are tagged with, e.g. `qwen3-embedding-0.6b`.
     pub model: String,
     pub model_label: String,
