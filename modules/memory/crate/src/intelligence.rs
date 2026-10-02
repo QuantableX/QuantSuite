@@ -118,6 +118,8 @@ fn save_embedding_config(
     if let Some(indexer) = app.try_state::<Indexer>() {
         indexer.wake.notify_one();
     }
+    // The code index page shows the engine's state in every workspace.
+    let _ = app.emit(qs_core::embeddings::CHANGED_EVENT, ());
     Ok(())
 }
 

@@ -3,6 +3,7 @@ function openMemorySettings() {
   window.dispatchEvent(new CustomEvent('qss:settings', { detail: { module: 'memory' } }))
 }
 
+import { useTauriEvent } from '@quantsuite/core'
 import { useMcpWorkspaces, type EmbeddingInfo } from '#mcp/composables/useMcpWorkspaces'
 import { useCodebaseIndexing } from '#mcp/composables/useCodebaseIndexing'
 definePageMeta({ layout: 'mcp' })
@@ -57,6 +58,9 @@ async function loadEmbeddingInfo() {
   try { embeddingInfo.value = await getEmbeddingInfo(); }
   catch (e) { embeddingInfo.value = { installed: false, modelLabel: '', device: '', hint: String(e) }; }
 }
+// Memory announces every change of its embedding setting; the 4 s poll
+// below only catches the engine starting or idling out.
+useTauriEvent('embeddings:changed', () => void loadEmbeddingInfo());
 const indexFilter = ref<"everything" | "smart">("smart");
 
 // Computed proxies for the currently selected workspace
