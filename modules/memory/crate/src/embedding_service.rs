@@ -3,13 +3,16 @@
 //!
 //! The code index uses the model, device and idle time of Memory's setting.
 //! It does not need Memory's own recall switched on: an engine the operator
-//! downloaded is available to both. Nothing here downloads or enables anything.
+//! downloaded is available to both — unless the suite-wide switch
+//! (`engine_off`) turns it off for both. Nothing here downloads or enables anything.
 use crate::{engine, intelligence, retrieval::EmbeddingConfig};
 use qs_core::embeddings::{AcquireFuture, EmbeddingInfo, EmbeddingService, Endpoint, Lease};
 use tauri::{AppHandle, Manager};
 
 /// Where the user downloads the engine.
 pub const SETUP_HINT: &str = "The built-in embedding engine is not downloaded yet. Download it in Memory settings (QuantMemory → Settings → Local semantic recall).";
+/// Where the user switches the engine back on.
+pub const OFF_HINT: &str = "Local embeddings are switched off. Switch them on in Memory settings (QuantMemory → Settings → Local semantic recall).";
 
 pub struct EngineService {
     app: AppHandle,
@@ -30,6 +33,9 @@ fn usable(app: &AppHandle) -> Result<EmbeddingConfig, String> {
         return Err("The built-in embedding engine ships for Windows x64 so far; semantic search is not available on this system.".into());
     }
     let config = intelligence::get_embedding_config(app.clone())?;
+    if config.engine_off {
+        return Err(OFF_HINT.into());
+    }
     let engine = app
         .try_state::<engine::Engine>()
         .ok_or("The built-in embedding engine is unavailable")?;

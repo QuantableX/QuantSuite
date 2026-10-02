@@ -4,6 +4,8 @@ const props = defineProps<{
   disabled?: boolean
   label: string
   groupOff?: boolean
+  /** Just the switch, in line where it stands — no status word, no push to the right. */
+  compact?: boolean
 }>()
 const emit = defineEmits<{ change: [enabled: boolean] }>()
 
@@ -17,8 +19,8 @@ function change(event: Event) {
 </script>
 
 <template>
-  <label class="tool-toggle" @click.stop>
-    <span class="toggle-status">{{ groupOff ? 'Group off' : checked ? 'Enabled' : 'Disabled' }}</span>
+  <label class="tool-toggle" :class="{ 'tool-toggle--compact': compact }" @click.stop>
+    <span v-if="!compact" class="toggle-status">{{ groupOff ? 'Group off' : checked ? 'Enabled' : 'Disabled' }}</span>
     <input
       type="checkbox"
       role="switch"
@@ -33,6 +35,7 @@ function change(event: Event) {
 
 <style scoped>
 .tool-toggle { display: inline-flex; align-items: center; gap: 8px; position: relative; flex-shrink: 0; cursor: pointer; margin-left: auto; }
+.tool-toggle--compact { margin-left: 0; }
 .toggle-status { font-size: 11px; color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: normal; }
 input { position: absolute; right: 0; width: 34px; height: 20px; opacity: 0; cursor: pointer; }
 .toggle-track { width: 34px; height: 20px; background: var(--bg-hover); border: 1px solid var(--border); border-radius: 12px; pointer-events: none; }

@@ -411,6 +411,17 @@ fn v2_migration_preserves_notes_and_forces_provenance_backfill() {
 }
 
 #[test]
+fn the_suite_wide_switch_turns_recall_off_and_keeps_memorys_own_choice() {
+    // Saved before the switch existed: the engine stays on.
+    let saved = json!({"enabled": true, "builtinModel": "qwen3-embedding-0.6b", "device": "auto", "idleMinutes": 5});
+    let config = StoredEmbeddingConfig::parse(saved).unwrap().config;
+    assert!(!config.engine_off && config.recall_on());
+    let off = EmbeddingConfig { engine_off: true, ..config };
+    assert!(off.enabled && !off.recall_on());
+    assert!(!EmbeddingConfig::default().recall_on());
+}
+
+#[test]
 fn stored_settings_from_before_the_ollama_removal_migrate_to_the_builtin_engine() {
     // Saved before the built-in engine existed: no provider, so it was Ollama.
     let pre_engine =
@@ -431,6 +442,7 @@ fn stored_settings_from_before_the_ollama_removal_migrate_to_the_builtin_engine(
             builtin_model: "qwen3-embedding-4b".into(),
             device: "cpu".into(),
             idle_minutes: 9,
+            engine_off: false,
         }
     );
 
@@ -449,7 +461,7 @@ fn stored_settings_from_before_the_ollama_removal_migrate_to_the_builtin_engine(
     .unwrap();
     let mut keys: Vec<&String> = current.as_object().unwrap().keys().collect();
     keys.sort();
-    assert_eq!(keys, ["builtinModel", "device", "enabled", "idleMinutes"]);
+    assert_eq!(keys, ["builtinModel", "device", "enabled", "engineOff", "idleMinutes"]);
     let stored = StoredEmbeddingConfig::parse(current).unwrap();
     assert!(!stored.legacy && stored.config.enabled);
     assert!(StoredEmbeddingConfig::parse(json!({"enabled": true, "endpoint": "x"})).is_err());

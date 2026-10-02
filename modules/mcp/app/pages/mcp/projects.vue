@@ -81,6 +81,33 @@ const semanticResult = computed(() => {
   return id ? indexing.message(id, 'semantic') : null;
 });
 
+// Each half of the workspace's index can be switched off: it is then never
+// indexed or searched (agents included) and its "incomplete" notice goes away.
+const indexOff = reactive({ structural: false, semantic: false });
+const indexSwitchBusy = ref(false);
+async function setIndexHalf(mode: "structural" | "semantic", on: boolean) {
+  const ws = selectedWorkspace.value;
+  if (!ws || indexSwitchBusy.value) return;
+  indexSwitchBusy.value = true;
+  try {
+    const saved = await getIndexSettings(ws.id);
+    await setIndexSettings(ws.id, { ...saved, [`${mode}Off`]: !on });
+    if (selectedWorkspace.value?.id === ws.id) indexOff[mode] = !on;
+  } catch (err) {
+    console.error("Failed to switch the index:", err);
+  } finally {
+    indexSwitchBusy.value = false;
+  }
+}
+const structuralNote = computed(() => (indexOff.structural ? null : structuralResult.value));
+// Embeddings switched off or not downloaded: say why, instead of "Run Index".
+const semanticNote = computed(() => {
+  if (indexOff.semantic) return null;
+  const info = embeddingInfo.value;
+  if (info && !info.installed && !semanticIndexing.value && info.hint) return info.hint;
+  return semanticResult.value;
+});
+
 // ── AgentOS (merged from the old /mcp/agent page) ──
 // Per-entry toggle between the board view and the AGENT.md editor — the
 // "General" entry carries the suite-wide board plus the global AGENT.md.
@@ -166,9 +193,15 @@ async function restoreIndexSettings() {
   if (!ws) return;
   restoringSettings = true;
   void loadEmbeddingInfo();
+  indexOff.structural = false;
+  indexOff.semantic = false;
   try {
     const saved = await getIndexSettings(ws.id);
     indexFilter.value = (saved.filter as "everything" | "smart") || "smart";
+    if (selectedWorkspace.value?.id === ws.id) {
+      indexOff.structural = !!saved.structuralOff;
+      indexOff.semantic = !!saved.semanticOff;
+    }
   } catch { /* defaults stand */ }
   nextTick(() => { restoringSettings = false; });
 }
@@ -706,8 +739,16 @@ onBeforeUnmount(() => {
 
           <div v-else class="index-cards">
             <!-- Structural Card -->
-            <div class="index-card">
+            <div class="index-card" :class="{ 'index-card-off': indexOff.structural }">
               <div class="index-card-header">
+                <McpToolToggle
+                  compact
+                  :checked="!indexOff.structural"
+                  :disabled="indexSwitchBusy"
+                  label="Structural index for this workspace"
+                  :title="indexOff.structural ? 'Switched off: never indexed or searched, agents included. The index data stays.' : 'Switch the structural index off for this workspace'"
+                  @change="setIndexHalf('structural', $event)"
+                />
                 <span
                   class="status-dot"
                   :class="{
@@ -724,25 +765,33 @@ onBeforeUnmount(() => {
                 </template>
                 <button
                   class="btn-primary btn-xs index-card-btn"
-                  :disabled="structuralIndexing || !selectedWorkspace?.path"
+                  :disabled="structuralIndexing || indexOff.structural || !selectedWorkspace?.path"
                   @click="startIndexing('structural')"
                 >
                   {{ structuralIndexing ? "Indexing..." : hasStructural ? "Re-index" : "Index" }}
                 </button>
               </div>
-              <div v-if="structuralResult" class="index-card-result">
+              <div v-if="structuralNote" class="index-card-result">
                 <p
                   class="index-result index-result-sm"
-                  :class="{ 'index-error': structuralResult.startsWith('Error') }"
+                  :class="{ 'index-error': structuralNote.startsWith('Error') }"
                 >
-                  {{ structuralResult }}
+                  {{ structuralNote }}
                 </p>
               </div>
             </div>
 
             <!-- Semantic Card -->
-            <div class="index-card">
+            <div class="index-card" :class="{ 'index-card-off': indexOff.semantic }">
               <div class="index-card-header">
+                <McpToolToggle
+                  compact
+                  :checked="!indexOff.semantic"
+                  :disabled="indexSwitchBusy"
+                  label="Semantic index for this workspace"
+                  :title="indexOff.semantic ? 'Switched off: never indexed or searched, agents included. The index data stays.' : 'Switch the semantic index off for this workspace'"
+                  @change="setIndexHalf('semantic', $event)"
+                />
                 <span
                   class="status-dot"
                   :class="{
@@ -759,18 +808,18 @@ onBeforeUnmount(() => {
                 </template>
                 <button
                   class="btn-primary btn-xs index-card-btn"
-                  :disabled="semanticIndexing || !selectedWorkspace?.path || !embeddingInfo?.installed"
+                  :disabled="semanticIndexing || indexOff.semantic || !selectedWorkspace?.path || !embeddingInfo?.installed"
                   @click="startIndexing('semantic')"
                 >
                   {{ semanticIndexing ? "Indexing..." : hasSemantic ? "Re-index" : "Index" }}
                 </button>
               </div>
-              <div v-if="semanticResult" class="index-card-result">
+              <div v-if="semanticNote" class="index-card-result">
                 <p
                   class="index-result index-result-sm"
-                  :class="{ 'index-error': semanticResult.startsWith('Error') }"
+                  :class="{ 'index-error': semanticNote.startsWith('Error') }"
                 >
-                  {{ semanticResult }}
+                  {{ semanticNote }}
                 </p>
               </div>
             </div>
@@ -1707,6 +1756,14 @@ onBeforeUnmount(() => {
 
 .index-card-result {
   padding: 0 12px 8px;
+}
+
+.index-card-off .status-dot,
+.index-card-off .index-card-title,
+.index-card-off .index-card-subtitle,
+.index-card-off .stat-sep,
+.index-card-off .stat-inline {
+  opacity: 0.45;
 }
 
 .status-dot {

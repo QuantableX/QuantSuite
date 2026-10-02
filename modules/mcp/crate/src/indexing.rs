@@ -407,6 +407,13 @@ fn index_metadata(args: &[String], directory: &std::path::Path) -> Value {
     Value::Object(meta)
 }
 
+/// The mode a workspace's index was built with (`structural`, `semantic` or
+/// `both`), `None` before its first index run.
+pub fn stored_index_mode(b36: &str) -> Option<String> {
+    let args = ["stats".to_string(), "--codebase".into(), b36.into()];
+    index_metadata(&args, &index_dir())["mode"].as_str().map(str::to_string)
+}
+
 fn embedding_request(args: &[String], meta: &Value) -> EmbeddingRequest {
     let mode = cli_option(args, "--mode");
     match args.first().map(String::as_str) {

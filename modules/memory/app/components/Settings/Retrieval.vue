@@ -10,7 +10,9 @@ interface EngineStatus {
 }
 interface Status { engine: EngineStatus; pending: number; indexerError: string | null }
 const vault = useVaultStore()
-const config = reactive({ enabled: false, builtinModel: 'qwen3-embedding-0.6b', device: 'auto', idleMinutes: 5 })
+const config = reactive({ enabled: false, builtinModel: 'qwen3-embedding-0.6b', device: 'auto', idleMinutes: 5, engineOff: false })
+/** The setting as last saved — the suite-wide switch saves on its own, without the form's draft. */
+let saved = { ...config }
 const loaded = ref(false)
 const busy = ref(false)
 const savedEnabled = ref(false)
@@ -35,7 +37,7 @@ async function poll() {
   if (alive) timer = setTimeout(poll, downloading.value ? 700 : 4000)
 }
 onMounted(async () => {
-  try { const invoke = await getInvoke(); Object.assign(config, await invoke('plugin:memory|get_embedding_config')); savedEnabled.value = config.enabled; loaded.value = true }
+  try { const invoke = await getInvoke(); Object.assign(config, await invoke('plugin:memory|get_embedding_config')); saved = { ...config }; savedEnabled.value = config.enabled; loaded.value = true }
   catch (e) { notice.value = String(e) }
   void poll()
 })
@@ -45,7 +47,7 @@ watch(downloading, (now, before) => {
   if (before && !now) {
     const error = engine.value?.setup.error
     if (error) notice.value = error
-    else { config.enabled = true; savedEnabled.value = true; notice.value = 'Downloaded. Local embeddings are on; memories are indexed in the background.' }
+    else { config.enabled = true; config.engineOff = false; saved = { ...saved, enabled: true, engineOff: false }; savedEnabled.value = true; notice.value = 'Downloaded. Local embeddings are on; memories are indexed in the background.' }
   }
 })
 async function save() {
@@ -53,8 +55,26 @@ async function save() {
   try {
     const invoke = await getInvoke()
     await invoke('plugin:memory|set_embedding_config', { config: draft() })
+    saved = draft()
     savedEnabled.value = config.enabled
     notice.value = config.enabled ? 'Local embeddings enabled; memories are indexed in the background.' : 'Embeddings disabled; lexical recall remains available.'
+    await refresh()
+  } catch (e) { notice.value = String(e) }
+  finally { busy.value = false }
+}
+/** The suite-wide switch: off, nothing starts the engine — Memory's recall nor the code index. */
+async function setEngine(event: Event) {
+  const input = event.target as HTMLInputElement
+  const on = input.checked
+  input.checked = !config.engineOff // stays on the saved value until the write lands
+  busy.value = true; notice.value = ''
+  try {
+    const invoke = await getInvoke()
+    const next = { ...saved, engineOff: !on }
+    await invoke('plugin:memory|set_embedding_config', { config: next })
+    saved = next
+    config.engineOff = !on
+    notice.value = on ? 'Local embeddings are on again.' : 'Local embeddings are off for the whole suite.'
     await refresh()
   } catch (e) { notice.value = String(e) }
   finally { busy.value = false }
@@ -96,16 +116,20 @@ const progress = computed(() => {
   <section class="qm-embedding" aria-label="Local memory embeddings">
     <h3>Local semantic recall</h3>
     <p>A multilingual embedding model finds memories across languages. The built-in engine downloads llama.cpp and the model once (GitHub, Hugging Face) and then runs offline on this machine. Code search uses the same model and device. Enabling this sends memory text and recall queries to that local engine only.</p>
-    <div class="qm-embedding-fields"><label>Model<select v-model="config.builtinModel" :disabled="!loaded || busy || downloading"><option v-for="m in engine?.models ?? []" :key="m.id" :value="m.id">{{ m.label }} · {{ gb(m.size) }}{{ m.gpuRecommended ? ' · GPU' : '' }}{{ m.installed ? ' · ready' : '' }}</option></select></label><label>Device<select v-model="config.device" :disabled="!loaded || busy || downloading"><option value="auto">Auto (GPU first)</option><option value="gpu">GPU</option><option value="cpu">CPU</option></select></label><label>Unload after (min)<input v-model.number="config.idleMinutes" type="number" min="1" max="240" :disabled="!loaded || busy || downloading" /></label></div>
-    <p v-if="engineLine" role="status">{{ engineLine }}</p>
-    <p v-if="engine?.lastWarning">{{ engine.lastWarning }}</p>
-    <p v-if="engine?.lastError && !engine.running">{{ engine.lastError }}</p>
-    <template v-if="downloading"><progress :value="engine?.setup.done ?? 0" :max="engine?.setup.total || 1" /><p>{{ progress }}</p></template>
-    <button v-else-if="engine && engine.supported && engine.missingBytes > 0" :disabled="!loaded || busy" @click="download">Download and enable ({{ gb(engine.missingBytes) }})</button>
-    <label class="qm-embedding-check"><input v-model="config.enabled" type="checkbox" :disabled="!loaded || busy || downloading || (!config.enabled && (!engine?.supported || (engine?.missingBytes ?? 0) > 0))" /> Enable local embeddings</label>
-    <button :disabled="!loaded || busy || downloading" @click="save">Save retrieval settings</button>
-    <p v-if="savedEnabled && status && (status.pending > 0 || status.indexerError)">{{ status.pending }} memories waiting for vectors.{{ status.indexerError ? ` ${status.indexerError}` : '' }}</p>
-    <div class="qm-embedding-actions"><select v-model="scope" aria-label="Workspace to embed" :disabled="busy"><option v-for="s in vault.scopes" :key="s.scope" :value="s.scope">{{ s.name }}</option></select><button :disabled="busy || !savedEnabled" @click="indexBatch">Index next batch</button></div>
+    <label class="qm-embedding-switch"><input type="checkbox" role="switch" :checked="!config.engineOff" :disabled="!loaded || busy || downloading" @change="setEngine" /><span class="qm-embedding-track" aria-hidden="true" />Local embeddings {{ config.engineOff ? 'off' : 'on' }}</label>
+    <p v-if="config.engineOff">Off for the whole suite: nothing starts the engine. Memory recall is lexical only, and code search uses the structural index.</p>
+    <template v-else>
+      <div class="qm-embedding-fields"><label>Model<select v-model="config.builtinModel" :disabled="!loaded || busy || downloading"><option v-for="m in engine?.models ?? []" :key="m.id" :value="m.id">{{ m.label }} · {{ gb(m.size) }}{{ m.gpuRecommended ? ' · GPU' : '' }}{{ m.installed ? ' · ready' : '' }}</option></select></label><label>Device<select v-model="config.device" :disabled="!loaded || busy || downloading"><option value="auto">Auto (GPU first)</option><option value="gpu">GPU</option><option value="cpu">CPU</option></select></label><label>Unload after (min)<input v-model.number="config.idleMinutes" type="number" min="1" max="240" :disabled="!loaded || busy || downloading" /></label></div>
+      <p v-if="engineLine" role="status">{{ engineLine }}</p>
+      <p v-if="engine?.lastWarning">{{ engine.lastWarning }}</p>
+      <p v-if="engine?.lastError && !engine.running">{{ engine.lastError }}</p>
+      <template v-if="downloading"><progress :value="engine?.setup.done ?? 0" :max="engine?.setup.total || 1" /><p>{{ progress }}</p></template>
+      <button v-else-if="engine && engine.supported && engine.missingBytes > 0" :disabled="!loaded || busy" @click="download">Download and enable ({{ gb(engine.missingBytes) }})</button>
+      <label class="qm-embedding-check"><input v-model="config.enabled" type="checkbox" :disabled="!loaded || busy || downloading || (!config.enabled && (!engine?.supported || (engine?.missingBytes ?? 0) > 0))" /> Use for memory recall</label>
+      <button :disabled="!loaded || busy || downloading" @click="save">Save retrieval settings</button>
+      <p v-if="savedEnabled && status && (status.pending > 0 || status.indexerError)">{{ status.pending }} memories waiting for vectors.{{ status.indexerError ? ` ${status.indexerError}` : '' }}</p>
+      <div class="qm-embedding-actions"><select v-model="scope" aria-label="Workspace to embed" :disabled="busy"><option v-for="s in vault.scopes" :key="s.scope" :value="s.scope">{{ s.name }}</option></select><button :disabled="busy || !savedEnabled" @click="indexBatch">Index next batch</button></div>
+    </template>
     <p v-if="notice" role="status">{{ notice }}</p>
   </section>
 </template>
@@ -115,6 +139,13 @@ h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacin
 p { font-size: 12px; color: var(--qss-text-secondary); margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
 label { display: grid; gap: 6px; font-size: 12px; color: var(--qss-text-secondary); }
 .qm-embedding-check, .qm-embedding-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qm-embedding-switch { display: inline-flex; align-items: center; gap: 8px; position: relative; justify-self: start; cursor: pointer; color: var(--qss-text); }
+.qm-embedding-switch input { position: absolute; left: 0; width: 34px; height: 20px; margin: 0; opacity: 0; cursor: pointer; }
+.qm-embedding-track { width: 34px; height: 20px; flex-shrink: 0; border: 1px solid var(--qss-border); border-radius: 12px; background: var(--qss-bg); pointer-events: none; }
+.qm-embedding-track::after { content: ''; display: block; width: 14px; height: 14px; margin: 2px; border-radius: 50%; background: var(--qss-text-muted); transition: transform .15s; }
+.qm-embedding-switch input:checked + .qm-embedding-track { background: var(--qss-accent); border-color: var(--qss-accent); }
+.qm-embedding-switch input:checked + .qm-embedding-track::after { transform: translateX(14px); background: var(--qss-bg); }
+.qm-embedding-switch input:focus-visible + .qm-embedding-track { outline: 2px solid var(--qss-accent); outline-offset: 3px; }
 .qm-embedding-fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(70px, 1fr) minmax(70px, 1fr); gap: 8px; }
 input:not([type=checkbox]), select, button { min-width: 0; padding: 6px 10px; border: 1px solid var(--qss-border); border-radius: 4px; background: var(--qss-bg); color: var(--qss-text); }
 button { justify-self: start; }

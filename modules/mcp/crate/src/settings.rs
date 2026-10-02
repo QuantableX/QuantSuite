@@ -215,6 +215,53 @@ pub struct IndexSettings {
     pub mode: Option<String>,
     #[serde(default)]
     pub filter: Option<String>,
+    /// Switched off on the workspace's index card: nothing indexes or
+    /// searches that half of the index until it is switched on again. The
+    /// data stays.
+    #[serde(default)]
+    pub structural_off: bool,
+    #[serde(default)]
+    pub semantic_off: bool,
+}
+
+impl IndexSettings {
+    fn off_error(&self, half: &str, workspace: &str) -> String {
+        format!(
+            "The {half} code index of workspace '{workspace}' is switched off (QuantMCP → Projects → Codebase Indexing)."
+        )
+    }
+
+    /// The part of an index `mode` (`structural`, `semantic` or `both`) this
+    /// workspace has switched on, or why nothing of it may run.
+    pub fn allowed_mode(&self, mode: &str, workspace: &str) -> Result<String, String> {
+        let structural = matches!(mode, "structural" | "both");
+        let semantic = matches!(mode, "semantic" | "both");
+        if !structural && !semantic {
+            return Ok(mode.to_string());
+        }
+        match (structural && !self.structural_off, semantic && !self.semantic_off) {
+            (true, true) => Ok("both".into()),
+            (true, false) => Ok("structural".into()),
+            (false, true) => Ok("semantic".into()),
+            (false, false) if structural && semantic => Err(format!(
+                "Both code indexes of workspace '{workspace}' are switched off (QuantMCP → Projects → Codebase Indexing)."
+            )),
+            (false, false) => Err(self.off_error(if structural { "structural" } else { "semantic" }, workspace)),
+        }
+    }
+
+    /// The search mode to run: `auto` chooses among the switched-on indexes
+    /// only, an explicit mode must be switched on.
+    pub fn search_mode(&self, requested: &str, workspace: &str) -> Result<String, String> {
+        match requested {
+            "auto" => self.allowed_mode("both", workspace).map(|mode| match mode.as_str() {
+                "both" => "auto".into(),
+                _ => mode,
+            }),
+            "structural" | "semantic" => self.allowed_mode(requested, workspace),
+            _ => Ok(requested.to_string()),
+        }
+    }
 }
 
 pub fn get_index_settings(app: &tauri::AppHandle, b36: &str) -> IndexSettings {
@@ -238,4 +285,46 @@ pub fn set_index_settings(
         qs_core::db::set_setting(conn, "mcp", &format!("workspace.{b36}.index"), &value)
             .map_err(|e| e.to_string())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IndexSettings;
+
+    fn switched(structural_off: bool, semantic_off: bool) -> IndexSettings {
+        IndexSettings { structural_off, semantic_off, ..Default::default() }
+    }
+
+    #[test]
+    fn older_settings_read_as_both_halves_on_and_keep_their_switches() {
+        let old: IndexSettings = serde_json::from_value(serde_json::json!({"mode": "both", "filter": "smart"})).unwrap();
+        assert!(!old.structural_off && !old.semantic_off);
+        let saved = serde_json::to_value(switched(false, true)).unwrap();
+        assert_eq!(saved["semanticOff"], true);
+        assert!(serde_json::from_value::<IndexSettings>(saved).unwrap().semantic_off);
+    }
+
+    #[test]
+    fn index_runs_only_the_switched_on_halves() {
+        let on = switched(false, false);
+        assert_eq!(on.allowed_mode("both", "w").unwrap(), "both");
+        assert_eq!(on.allowed_mode("semantic", "w").unwrap(), "semantic");
+        let no_semantic = switched(false, true);
+        assert_eq!(no_semantic.allowed_mode("both", "w").unwrap(), "structural");
+        assert!(no_semantic.allowed_mode("semantic", "w").unwrap_err().contains("semantic code index of workspace 'w' is switched off"));
+        let no_structural = switched(true, false);
+        assert_eq!(no_structural.allowed_mode("both", "w").unwrap(), "semantic");
+        assert!(no_structural.allowed_mode("structural", "w").is_err());
+        assert!(switched(true, true).allowed_mode("both", "w").unwrap_err().contains("Both code indexes"));
+    }
+
+    #[test]
+    fn auto_search_picks_among_switched_on_indexes_only() {
+        assert_eq!(switched(false, false).search_mode("auto", "w").unwrap(), "auto");
+        assert_eq!(switched(false, true).search_mode("auto", "w").unwrap(), "structural");
+        assert_eq!(switched(true, false).search_mode("auto", "w").unwrap(), "semantic");
+        assert!(switched(true, true).search_mode("auto", "w").is_err());
+        assert!(switched(false, true).search_mode("semantic", "w").is_err());
+        assert_eq!(switched(false, true).search_mode("structural", "w").unwrap(), "structural");
+    }
 }

@@ -108,10 +108,10 @@ fn save_embedding_config(
             .execute("DELETE FROM memory_embeddings", [])
             .map_err(|e| e.to_string())?;
     }
-    // Recall switched off: free the engine now, unless a lease (the code
-    // index) is using it; a leased engine idles out once released.
+    // Recall or the whole engine switched off: free the engine now, unless a
+    // lease (the code index) is using it; a leased engine idles out once released.
     if let Some(engine) = app.try_state::<engine::Engine>() {
-        if !config.enabled {
+        if !config.recall_on() {
             engine.stop_if_unused();
         }
     }
@@ -175,7 +175,7 @@ pub async fn memory_context(
     )?;
     let config = get_embedding_config(app.clone())?;
     let mut warning = None;
-    let vector = if config.enabled {
+    let vector = if config.recall_on() {
         let query = config.query_input(&request.query);
         // A cold engine loads its model first; recall does not wait for a slow start.
         match tokio::time::timeout(
@@ -232,6 +232,9 @@ pub async fn memory_context(
 pub async fn index_embeddings(scope: String, app: AppHandle) -> Result<Value, String> {
     let scopes = context_scopes(&app, Some(&scope), false, &[])?;
     let config = get_embedding_config(app.clone())?;
+    if config.engine_off {
+        return Err("Local embeddings are switched off in Memory settings".into());
+    }
     if !config.enabled {
         return Err("Enable a local embedding model in Memory settings first".into());
     }
@@ -366,7 +369,7 @@ async fn background_indexer(app: AppHandle) {
         let Ok(config) = get_embedding_config(app.clone()) else {
             continue;
         };
-        if !config.enabled {
+        if !config.recall_on() {
             continue;
         }
         // The built-in engine runs only once the operator downloaded it.
@@ -457,6 +460,7 @@ pub fn embedding_engine_setup(
         let outcome = match engine.install(&config).await {
             Ok(()) => {
                 config.enabled = true;
+                config.engine_off = false;
                 save_embedding_config(&handle, &config)
             }
             Err(e) => Err(e),

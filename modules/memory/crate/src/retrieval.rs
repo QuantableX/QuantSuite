@@ -25,6 +25,10 @@ pub struct EmbeddingConfig {
     pub device: String,
     /// The built-in engine stops, freeing its RAM and VRAM, after this many idle minutes.
     pub idle_minutes: u32,
+    /// The suite-wide switch: while set, nothing starts the engine — neither
+    /// Memory's recall (`enabled` stays as chosen for when it is back on)
+    /// nor the code index's semantic search.
+    pub engine_off: bool,
 }
 impl Default for EmbeddingConfig {
     /// A fresh install: the built-in engine, off until the operator activates it.
@@ -34,6 +38,7 @@ impl Default for EmbeddingConfig {
             builtin_model: engine::DEFAULT_MODEL.into(),
             device: "auto".into(),
             idle_minutes: 5,
+            engine_off: false,
         }
     }
 }
@@ -90,6 +95,10 @@ impl StoredEmbeddingConfig {
 }
 
 impl EmbeddingConfig {
+    /// Memory's recall embeds: switched on for Memory and not off suite-wide.
+    pub fn recall_on(&self) -> bool {
+        self.enabled && !self.engine_off
+    }
     pub fn validate(&self) -> Result<(), String> {
         if !matches!(self.device.as_str(), "auto" | "gpu" | "cpu")
             || !(1..=240).contains(&self.idle_minutes)
