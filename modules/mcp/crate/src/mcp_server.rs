@@ -1564,6 +1564,16 @@ async fn workspace_index_listing(app: &tauri::AppHandle) -> Result<Vec<String>, 
             ),
             None => "not indexed".to_string(),
         };
+        let index = settings::get_index_settings(app, ws.b36());
+        let off: Vec<&str> = [("structural", index.structural_off), ("semantic", index.semantic_off)]
+            .into_iter()
+            .filter_map(|(half, off)| off.then_some(half))
+            .collect();
+        let status = if off.is_empty() {
+            status
+        } else {
+            format!("{status}; switched off: {}", off.join(", "))
+        };
         let marker = if active.as_ref().is_some_and(|a| a.id == ws.id) {
             " [active]"
         } else {
@@ -1730,6 +1740,7 @@ async fn execute_codebase_tool(
                 "mode",
                 stored.mode.as_deref().unwrap_or("structural"),
             );
+            let mode = stored.allowed_mode(&mode, &ws.name)?;
             let filter = stored.filter.clone().unwrap_or_else(|| "everything".into());
 
             let payload = indexing::run_cli(app, vec![
@@ -1751,6 +1762,7 @@ async fn execute_codebase_tool(
                 &settings::IndexSettings {
                     mode: Some(mode),
                     filter: Some(filter),
+                    ..stored
                 },
             );
 
@@ -1761,6 +1773,8 @@ async fn execute_codebase_tool(
             let ws = resolve_workspace_arg(app, arguments)?;
             let limit = get_optional_i64(arguments, "limit", 20)?;
             let search_mode = get_optional_string(arguments, "search_mode", "auto");
+            let search_mode = settings::get_index_settings(app, ws.b36())
+                .search_mode(&search_mode, &ws.name)?;
 
             let payload = indexing::run_cli(app, vec![
                 "search".into(),
@@ -1780,6 +1794,8 @@ async fn execute_codebase_tool(
         "lookup_symbol" => {
             let symbol_name = get_required_string(arguments, "symbol_name")?;
             let ws = resolve_workspace_arg(app, arguments)?;
+            // Symbols live in the structural index.
+            settings::get_index_settings(app, ws.b36()).allowed_mode("structural", &ws.name)?;
 
             let payload = indexing::run_cli(app, vec![
                 "lookup".into(),
@@ -1805,9 +1821,13 @@ async fn execute_codebase_tool(
             let ws = resolve_workspace_arg(app, arguments)?;
             let mut cli_args = vec!["reindex".into(), "--codebase".into(), ws.b36().to_string()];
 
-            if let Some(mode) = arguments.get("mode").and_then(|v| v.as_str()) {
+            // Without a mode the CLI rebuilds what the index holds; either way
+            // only the halves switched on for this workspace run.
+            let requested = arguments.get("mode").and_then(|v| v.as_str()).map(str::to_string)
+                .or_else(|| indexing::stored_index_mode(ws.b36()));
+            if let Some(mode) = requested {
                 cli_args.push("--mode".into());
-                cli_args.push(mode.to_string());
+                cli_args.push(settings::get_index_settings(app, ws.b36()).allowed_mode(&mode, &ws.name)?);
             }
 
             let payload = indexing::run_cli(app, cli_args)

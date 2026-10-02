@@ -83,6 +83,9 @@ export interface IndexCodebaseResult {
 export interface IndexSettings {
   mode?: string | null
   filter?: string | null
+  /** Switched off on the index card: never indexed or searched; the data stays. */
+  structuralOff?: boolean
+  semanticOff?: boolean
 }
 
 // Selection id for the "General" entry in the workspace list. It is not a

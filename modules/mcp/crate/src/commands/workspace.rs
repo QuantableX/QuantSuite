@@ -59,6 +59,8 @@ pub(crate) async fn index_project_codebase(
         qs_core::workspaces::by_id(conn, &workspace_id)
             .ok_or_else(|| format!("Workspace '{}' not registered", workspace_id))
     })?;
+    let stored = settings::get_index_settings(&app, ws.b36());
+    let mode = stored.allowed_mode(&mode, &ws.name)?;
 
     let mut args = if force_reindex.unwrap_or(false) {
         vec![
@@ -95,6 +97,7 @@ pub(crate) async fn index_project_codebase(
             &settings::IndexSettings {
                 mode: Some(mode),
                 filter: filter_mode,
+                ..stored
             },
         );
     }
