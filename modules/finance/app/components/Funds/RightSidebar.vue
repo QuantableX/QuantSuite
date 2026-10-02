@@ -56,9 +56,9 @@ async function togglePlan(plan: FundPlan) {
             <button class="qff-right__text" :disabled="store.busy" :aria-label="`Delete ${plan.name}`" @click="store.openEditor({ kind: 'delete', recordKind: 'plan', id: plan.id, name: plan.name })">Delete</button>
           </div>
         </article>
-        <p class="qff-right__hint">Active savings plans appear in Saving &amp; investing and the cash-flow chart. Book each deposit once it arrives to update the fund balance.</p>
+        <p class="qff-right__hint">Active savings plans appear in Saving &amp; investing and the cash-flow chart. Each deposit is booked into the fund on its date.</p>
       </template>
-      <p v-else class="qff-right__hint">Monthly, quarterly or yearly contributions. Due deposits will appear here for confirmation.</p>
+      <p v-else class="qff-right__hint">Monthly, quarterly or yearly contributions, booked into the fund on their date.</p>
     </section>
   </div>
 </template>

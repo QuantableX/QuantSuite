@@ -560,6 +560,7 @@ fn list_items(state: State<'_, AppState>) -> Result<Vec<Item>, String> {
     let arc = db(&state);
     let conn = arc.lock().map_err(|e| format!("Lock db: {e}"))?;
     roll_forward(&conn, current_month())?;
+    funds::book_due(&conn, funds::today())?;
     read_budget_items(&conn)
 }
 
@@ -997,7 +998,7 @@ fn project(
 fn goals(state: State<'_, AppState>) -> Result<Vec<GoalProgress>, String> {
     let arc = db(&state);
     let conn = arc.lock().map_err(|e| format!("Lock db: {e}"))?;
-
+    funds::book_due(&conn, funds::today())?;
     build_goals(&conn)
 }
 
