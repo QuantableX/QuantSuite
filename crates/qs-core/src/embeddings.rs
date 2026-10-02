@@ -116,6 +116,11 @@ pub trait EmbeddingService: Send + Sync {
     fn acquire(&self) -> AcquireFuture;
 }
 
+/// Emitted (no payload) by the owning module after every change of its
+/// setting, so a view showing [`info`] reloads it at once instead of on its
+/// next poll.
+pub const CHANGED_EVENT: &str = "embeddings:changed";
+
 /// The message for a suite without a registered service.
 pub const NOT_LOADED: &str =
     "Semantic search needs QuantMemory's built-in embedding engine, and QuantMemory is not loaded in this build.";
