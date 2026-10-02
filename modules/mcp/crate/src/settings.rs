@@ -222,10 +222,24 @@ pub struct IndexSettings {
     pub structural_off: bool,
     #[serde(default)]
     pub semantic_off: bool,
+    /// Local embeddings are switched off suite-wide (Memory settings): the
+    /// semantic half is off in every workspace, whatever it chose. Read from
+    /// the engine, never stored.
+    #[serde(skip)]
+    pub embeddings_off: bool,
 }
 
 impl IndexSettings {
+    fn semantic_on(&self) -> bool {
+        !self.semantic_off && !self.embeddings_off
+    }
+
     fn off_error(&self, half: &str, workspace: &str) -> String {
+        if half == "semantic" && !self.semantic_off && self.embeddings_off {
+            return format!(
+                "Local embeddings are switched off for the whole suite (QuantMemory → Settings → Local semantic recall), so the semantic code index of workspace '{workspace}' cannot run."
+            );
+        }
         format!(
             "The {half} code index of workspace '{workspace}' is switched off (QuantMCP → Projects → Codebase Indexing)."
         )
@@ -239,12 +253,14 @@ impl IndexSettings {
         if !structural && !semantic {
             return Ok(mode.to_string());
         }
-        match (structural && !self.structural_off, semantic && !self.semantic_off) {
+        match (structural && !self.structural_off, semantic && self.semantic_on()) {
             (true, true) => Ok("both".into()),
             (true, false) => Ok("structural".into()),
             (false, true) => Ok("semantic".into()),
             (false, false) if structural && semantic => Err(format!(
-                "Both code indexes of workspace '{workspace}' are switched off (QuantMCP → Projects → Codebase Indexing)."
+                "{} {}",
+                self.off_error("structural", workspace),
+                self.off_error("semantic", workspace)
             )),
             (false, false) => Err(self.off_error(if structural { "structural" } else { "semantic" }, workspace)),
         }
@@ -261,6 +277,15 @@ impl IndexSettings {
             "structural" | "semantic" => self.allowed_mode(requested, workspace),
             _ => Ok(requested.to_string()),
         }
+    }
+}
+
+/// The settings a code index run follows: the workspace's own, with the
+/// suite-wide embeddings switch applied.
+pub fn get_effective_index_settings(app: &tauri::AppHandle, b36: &str) -> IndexSettings {
+    IndexSettings {
+        embeddings_off: qs_core::embeddings::info().off,
+        ..get_index_settings(app, b36)
     }
 }
 
@@ -315,7 +340,20 @@ mod tests {
         let no_structural = switched(true, false);
         assert_eq!(no_structural.allowed_mode("both", "w").unwrap(), "semantic");
         assert!(no_structural.allowed_mode("structural", "w").is_err());
-        assert!(switched(true, true).allowed_mode("both", "w").unwrap_err().contains("Both code indexes"));
+        let both_off = switched(true, true).allowed_mode("both", "w").unwrap_err();
+        assert!(both_off.contains("structural code index") && both_off.contains("semantic code index"));
+    }
+
+    #[test]
+    fn embeddings_off_suite_wide_turns_semantic_off_without_touching_the_workspace_choice() {
+        let off = IndexSettings { embeddings_off: true, ..switched(false, false) };
+        assert_eq!(off.allowed_mode("both", "w").unwrap(), "structural");
+        assert_eq!(off.search_mode("auto", "w").unwrap(), "structural");
+        let error = off.search_mode("semantic", "w").unwrap_err();
+        assert!(error.contains("switched off for the whole suite"), "{error}");
+        // Never stored: switching embeddings back on restores the workspace's own choice.
+        let stored = serde_json::to_value(&off).unwrap();
+        assert!(stored.get("embeddingsOff").is_none() && stored["semanticOff"] == false);
     }
 
     #[test]

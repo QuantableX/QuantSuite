@@ -100,10 +100,15 @@ async function setIndexHalf(mode: "structural" | "semantic", on: boolean) {
   }
 }
 const structuralNote = computed(() => (indexOff.structural ? null : structuralResult.value));
+// Local embeddings switched off suite-wide (Embedding settings): the semantic
+// half is off in every workspace, without touching the workspace's own choice.
+const embeddingsOff = computed(() => !!embeddingInfo.value?.off);
+const semanticOff = computed(() => indexOff.semantic || embeddingsOff.value);
 // Embeddings switched off or not downloaded: say why, instead of "Run Index".
 const semanticNote = computed(() => {
-  if (indexOff.semantic) return null;
   const info = embeddingInfo.value;
+  if (embeddingsOff.value) return info?.hint || null;
+  if (indexOff.semantic) return null;
   if (info && !info.installed && !semanticIndexing.value && info.hint) return info.hint;
   return semanticResult.value;
 });
@@ -782,14 +787,14 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- Semantic Card -->
-            <div class="index-card" :class="{ 'index-card-off': indexOff.semantic }">
+            <div class="index-card" :class="{ 'index-card-off': semanticOff }">
               <div class="index-card-header">
                 <McpToolToggle
                   compact
-                  :checked="!indexOff.semantic"
-                  :disabled="indexSwitchBusy"
+                  :checked="!semanticOff"
+                  :disabled="indexSwitchBusy || embeddingsOff"
                   label="Semantic index for this workspace"
-                  :title="indexOff.semantic ? 'Switched off: never indexed or searched, agents included. The index data stays.' : 'Switch the semantic index off for this workspace'"
+                  :title="embeddingsOff ? 'Local embeddings are off for the whole suite — switch them on in Embedding settings.' : indexOff.semantic ? 'Switched off: never indexed or searched, agents included. The index data stays.' : 'Switch the semantic index off for this workspace'"
                   @change="setIndexHalf('semantic', $event)"
                 />
                 <span
@@ -808,7 +813,7 @@ onBeforeUnmount(() => {
                 </template>
                 <button
                   class="btn-primary btn-xs index-card-btn"
-                  :disabled="semanticIndexing || indexOff.semantic || !selectedWorkspace?.path || !embeddingInfo?.installed"
+                  :disabled="semanticIndexing || semanticOff || !selectedWorkspace?.path || !embeddingInfo?.installed"
                   @click="startIndexing('semantic')"
                 >
                   {{ semanticIndexing ? "Indexing..." : hasSemantic ? "Re-index" : "Index" }}

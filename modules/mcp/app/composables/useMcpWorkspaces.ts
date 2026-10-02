@@ -425,6 +425,8 @@ export function useMcpWorkspaces() {
 
 export interface EmbeddingInfo {
   installed: boolean
+  /** Local embeddings switched off suite-wide in Embedding settings. */
+  off?: boolean
   modelLabel: string
   device: string
   runningDevice?: string | null

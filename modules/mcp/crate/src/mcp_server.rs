@@ -1553,6 +1553,7 @@ async fn workspace_index_listing(app: &tauri::AppHandle) -> Result<Vec<String>, 
         lines.push("  (none — open a folder in QuantSuite, or call index_codebase with a folder path)".to_string());
         return Ok(lines);
     }
+    let embeddings_off = qs_core::embeddings::info().off;
     for ws in &workspaces {
         let entry = indexed.iter().find(|c| {
             c.get("name").and_then(|v| v.as_str()) == Some(ws.b36())
@@ -1565,10 +1566,14 @@ async fn workspace_index_listing(app: &tauri::AppHandle) -> Result<Vec<String>, 
             None => "not indexed".to_string(),
         };
         let index = settings::get_index_settings(app, ws.b36());
-        let off: Vec<&str> = [("structural", index.structural_off), ("semantic", index.semantic_off)]
-            .into_iter()
-            .filter_map(|(half, off)| off.then_some(half))
-            .collect();
+        let semantic = if embeddings_off { "semantic (embeddings off suite-wide)" } else { "semantic" };
+        let off: Vec<&str> = [
+            ("structural", index.structural_off),
+            (semantic, index.semantic_off || embeddings_off),
+        ]
+        .into_iter()
+        .filter_map(|(half, off)| off.then_some(half))
+        .collect();
         let status = if off.is_empty() {
             status
         } else {
@@ -1734,7 +1739,7 @@ async fn execute_codebase_tool(
                 },
             };
 
-            let stored = settings::get_index_settings(app, ws.b36());
+            let stored = settings::get_effective_index_settings(app, ws.b36());
             let mode = get_optional_string(
                 arguments,
                 "mode",
@@ -1773,7 +1778,7 @@ async fn execute_codebase_tool(
             let ws = resolve_workspace_arg(app, arguments)?;
             let limit = get_optional_i64(arguments, "limit", 20)?;
             let search_mode = get_optional_string(arguments, "search_mode", "auto");
-            let search_mode = settings::get_index_settings(app, ws.b36())
+            let search_mode = settings::get_effective_index_settings(app, ws.b36())
                 .search_mode(&search_mode, &ws.name)?;
 
             let payload = indexing::run_cli(app, vec![
@@ -1827,7 +1832,7 @@ async fn execute_codebase_tool(
                 .or_else(|| indexing::stored_index_mode(ws.b36()));
             if let Some(mode) = requested {
                 cli_args.push("--mode".into());
-                cli_args.push(settings::get_index_settings(app, ws.b36()).allowed_mode(&mode, &ws.name)?);
+                cli_args.push(settings::get_effective_index_settings(app, ws.b36()).allowed_mode(&mode, &ws.name)?);
             }
 
             let payload = indexing::run_cli(app, cli_args)

@@ -56,6 +56,7 @@ impl EmbeddingService for EngineService {
         let hint = usable(&self.app).err();
         EmbeddingInfo {
             installed: hint.is_none(),
+            off: config.engine_off,
             model: config.builtin_model.clone(),
             model_label: spec.map_or_else(|| config.builtin_model.clone(), |s| s.label.into()),
             dims: spec.map_or(0, |s| s.dims),
