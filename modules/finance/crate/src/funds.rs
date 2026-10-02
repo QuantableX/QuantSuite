@@ -11,7 +11,7 @@ const MAX_CENTS: i64 = 9_007_199_254_740_991;
 fn err(e: rusqlite::Error) -> String {
     e.to_string()
 }
-fn today() -> NaiveDate {
+pub(super) fn today() -> NaiveDate {
     Local::now().date_naive()
 }
 
@@ -329,8 +329,7 @@ pub(super) fn migrate_budget(conn: &Connection) -> Result<()> {
                     name: "Regular contribution".into(),
                     amount_cents: item.amount_cents,
                     every_months: item.every_months as u32,
-                    next_on: next_date(today(), item.every_months as u32, today().day())?
-                        .to_string(),
+                    next_on: first_installment(item.every_months as u32)?,
                     is_active: item.is_active,
                 },
             )?;
@@ -352,6 +351,7 @@ pub(super) fn create_budget_item(conn: &Connection, item: ItemInput) -> Result<S
     tx.execute("INSERT INTO funds (id,name,opened_on,opening_cents,opening_value_cents,target_cents,notes) VALUES (?1,?2,?3,0,0,?4,?5)",
         params![id, if item.name.trim().is_empty() { "New fund" } else { item.name.trim() }, today().to_string(), item.target_cents, item.notes.unwrap_or_default()]).map_err(err)?;
     if item.amount_cents > 0 {
+        let every = item.every_months.unwrap_or(1) as u32;
         save_plan(
             &tx,
             None,
@@ -359,8 +359,8 @@ pub(super) fn create_budget_item(conn: &Connection, item: ItemInput) -> Result<S
                 fund_id: id.clone(),
                 name: "Regular contribution".into(),
                 amount_cents: item.amount_cents,
-                every_months: item.every_months.unwrap_or(1) as u32,
-                next_on: today().to_string(),
+                every_months: every,
+                next_on: first_installment(every)?,
                 is_active: true,
             },
         )?;
@@ -436,6 +436,7 @@ pub(super) fn update_budget_item(conn: &Connection, id: &str, patch: ItemPatch) 
             let every = patch
                 .every_months
                 .unwrap_or_else(|| previous.map_or(1, |p| i64::from(p.details.every_months)));
+            let every = u32::try_from(every).map_err(|_| "Invalid contribution interval.")?;
             save_plan(
                 &tx,
                 previous.map(|p| p.id.clone()),
@@ -444,10 +445,11 @@ pub(super) fn update_budget_item(conn: &Connection, id: &str, patch: ItemPatch) 
                     name: previous
                         .map_or_else(|| "Regular contribution".into(), |p| p.details.name.clone()),
                     amount_cents: cents,
-                    every_months: u32::try_from(every)
-                        .map_err(|_| "Invalid contribution interval.")?,
-                    next_on: previous
-                        .map_or_else(|| today().to_string(), |p| p.details.next_on.clone()),
+                    every_months: every,
+                    next_on: match previous {
+                        Some(p) => p.details.next_on.clone(),
+                        None => first_installment(every)?,
+                    },
                     is_active: patch
                         .is_active
                         .unwrap_or_else(|| previous.map_or(true, |p| p.details.is_active)),
@@ -589,6 +591,13 @@ fn save_plan(conn: &Connection, id: Option<String>, input: PlanInput) -> Result<
     Ok(())
 }
 
+/// A rate typed on the Plan page starts one period from today: what is already
+/// saved goes into the balance, and the deposits are booked on their own, so
+/// starting today would book money nobody has paid in yet.
+fn first_installment(every: u32) -> Result<String> {
+    Ok(next_date(today(), every, today().day())?.to_string())
+}
+
 fn next_date(day: NaiveDate, every: u32, anchor: u32) -> Result<NaiveDate> {
     let month = day
         .with_day(1)
@@ -637,9 +646,79 @@ fn book_plan(conn: &Connection, id: &str, expected_on: &str, now: NaiveDate) -> 
     tx.commit().map_err(err)
 }
 
+/// id, fund_id, name, amount_cents, every_months, next_on, anchor_day, is_active
+type DuePlan = (String, String, String, i64, u32, String, u32, bool);
+
+/// Book every installment whose day has come, as the standing order behind the
+/// plan does, so a fund and its target grow without a click. A paused plan
+/// pays nothing in: its date only moves past today, so resuming it does not
+/// back-pay the paused months. Idempotent — a second call on the same day
+/// finds nothing due, so every read path may call it — and an installment
+/// already in the history is not booked twice.
+pub(super) fn book_due(conn: &Connection, now: NaiveDate) -> Result<()> {
+    let tx = conn.unchecked_transaction().map_err(err)?;
+    let due: Vec<DuePlan> = {
+        let mut stmt = tx.prepare("SELECT id,fund_id,name,amount_cents,every_months,next_on,anchor_day,is_active FROM fund_plans WHERE next_on<=?1").map_err(err)?;
+        let rows = stmt
+            .query_map([now.to_string()], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                ))
+            })
+            .map_err(err)?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(err)?;
+        rows
+    };
+    for (id, fund_id, name, cents, every, next, anchor, active) in due {
+        let mut day = date(&next)?;
+        while day <= now {
+            let occurred_on = day.to_string();
+            let booked = tx
+                .query_row(
+                    "SELECT 1 FROM fund_entries WHERE plan_id=?1 AND occurred_on=?2",
+                    params![id, occurred_on],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(err)?
+                .is_some();
+            if active && !booked {
+                insert_entry(
+                    &tx,
+                    &EntryInput {
+                        fund_id: fund_id.clone(),
+                        kind: "deposit".into(),
+                        amount_cents: cents,
+                        occurred_on,
+                        notes: name.clone(),
+                    },
+                    Some(&id),
+                    now,
+                )?;
+            }
+            day = next_date(day, every, anchor)?;
+        }
+        tx.execute(
+            "UPDATE fund_plans SET next_on=?2 WHERE id=?1",
+            params![id, day.to_string()],
+        )
+        .map_err(err)?;
+    }
+    tx.commit().map_err(err)
+}
+
 #[tauri::command(async)]
 pub fn funds_overview(state: State<'_, AppState>) -> Result<Vec<Fund>> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
+    book_due(&conn, today())?;
     read_funds(&conn)
 }
 
@@ -909,6 +988,85 @@ mod tests {
         assert!(f.entries.is_empty());
         assert_eq!(f.plans[0].details.next_on, "2026-01-31");
     }
+    #[test]
+    fn due_installments_book_themselves_once_and_paused_months_are_not_back_paid() {
+        let conn = db();
+        let id = fund(&conn);
+        let pid = plan(&conn, &id);
+        book_due(&conn, date("2026-03-31").unwrap()).unwrap();
+        book_due(&conn, date("2026-03-31").unwrap()).unwrap();
+        let f = read_funds(&conn).unwrap().remove(0);
+        assert_eq!((f.entries.len(), f.current_value_cents), (3, 13500));
+        assert!(f
+            .entries
+            .iter()
+            .all(|e| e.plan_id.as_deref() == Some(pid.as_str())));
+        assert_eq!(f.plans[0].details.next_on, "2026-04-30");
+
+        let mut plan = f.plans[0].details.clone();
+        plan.is_active = false;
+        save_plan(&conn, Some(pid.clone()), plan.clone()).unwrap();
+        book_due(&conn, date("2026-06-15").unwrap()).unwrap();
+        let f = read_funds(&conn).unwrap().remove(0);
+        assert_eq!(
+            (f.entries.len(), f.plans[0].details.next_on.as_str()),
+            (3, "2026-06-30")
+        );
+
+        plan.is_active = true;
+        plan.next_on = f.plans[0].details.next_on.clone();
+        save_plan(&conn, Some(pid.clone()), plan.clone()).unwrap();
+        book_due(&conn, date("2026-07-01").unwrap()).unwrap();
+        let f = read_funds(&conn).unwrap().remove(0);
+        assert_eq!((f.entries.len(), f.current_value_cents), (4, 14000));
+
+        // Moving the date back onto a booked installment does not book it again.
+        plan.next_on = "2026-06-30".into();
+        save_plan(&conn, Some(pid), plan).unwrap();
+        book_due(&conn, date("2026-07-31").unwrap()).unwrap();
+        let f = read_funds(&conn).unwrap().remove(0);
+        assert_eq!((f.entries.len(), f.current_value_cents), (5, 14500));
+        assert_eq!(f.plans[0].details.next_on, "2026-08-30");
+    }
+    #[test]
+    fn a_plan_target_grows_on_its_deposit_day_without_a_click() {
+        let conn = db();
+        let id = save_fund(
+            &conn,
+            None,
+            FundInput {
+                name: "Car Budget".into(),
+                opened_on: "2026-09-19".into(),
+                opening_cents: 650000,
+                opening_value_cents: 650000,
+                target_cents: Some(1000000),
+                notes: String::new(),
+            },
+            date("2026-09-19").unwrap(),
+        )
+        .unwrap();
+        save_plan(
+            &conn,
+            None,
+            PlanInput {
+                fund_id: id,
+                name: "Regular contribution".into(),
+                amount_cents: 150000,
+                every_months: 1,
+                next_on: "2026-10-05".into(),
+                is_active: true,
+            },
+        )
+        .unwrap();
+        let saved = |day: &str| {
+            book_due(&conn, date(day).unwrap()).unwrap();
+            super::super::build_goals(&conn).unwrap()[0].saved_cents
+        };
+        assert_eq!(saved("2026-10-04"), 650000);
+        assert_eq!(saved("2026-10-05"), 800000);
+        assert_eq!(saved("2026-11-05"), 950000);
+        assert_eq!(saved("2026-11-05"), 950000);
+    }
 
     #[test]
     fn fund_rates_balances_targets_and_chart_share_the_same_identity() {
@@ -954,7 +1112,8 @@ mod tests {
             (goal.id, goal.saved_cents, goal.monthly_cents),
             (id.clone(), 11500, 3833)
         );
-        // Reads and month changes never invent additional fund deposits.
+        // The legacy month roll-forward leaves funds alone; their deposits
+        // come from their plans through book_due.
         super::super::roll_forward(&conn, super::super::current_month() + 12).unwrap();
         assert_eq!(budget_items(&conn).unwrap()[0].saved_cents, 11500);
         update_budget_item(
@@ -1123,7 +1282,11 @@ mod tests {
         let conn = db();
         conn.execute("INSERT INTO items (id,kind,name,amount_cents,every_months,color,saved_cents,saved_as_of,sort_index,created_at,updated_at) VALUES ('valid','saving','Valid',1000,1,'saving',5000,?1,0,'t','t'), ('invalid','saving','Invalid',1000,2,'saving',5000,?1,1,'t','t')", [super::super::current_month()]).unwrap();
         assert!(migrate_budget(&conn).is_err());
-        assert_eq!(conn.query_row("SELECT COUNT(*) FROM items", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM items", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
         assert!(read_funds(&conn).unwrap().is_empty());
     }
 }
