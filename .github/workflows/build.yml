@@ -1,8 +1,9 @@
 name: Build QuantSuite
 
 on:
+  # Releases push main and their tag together, so a main push alone would only
+  # repeat the tag run. Run workflow (workflow_dispatch) builds any branch on demand.
   push:
-    branches: [main]
     tags: ['v*']
   pull_request:
     branches: [main]
