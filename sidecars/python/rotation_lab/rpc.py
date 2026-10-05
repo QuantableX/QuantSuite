@@ -37,7 +37,7 @@ from typing import Any
 import pandas as pd
 
 from . import __version__
-from .backtest.engine import USD_SYMBOL, BacktestEngine
+from .backtest.engine import USD_SYMBOL, BacktestEngine, HoldingTrade
 from .backtest.metrics import METRIC_LABELS, PerformanceMetrics
 from .backtest.signals import pair_signal
 from .config import (
@@ -230,6 +230,24 @@ def _held_to_points(series: pd.Series, intraday: bool = False) -> list[dict[str,
             "symbol": None if value is None or (isinstance(value, float) and pd.isna(value)) else str(value),
         })
     return out
+
+
+def _trades_to_dicts(trades: list[HoldingTrade], intraday: bool = False) -> list[dict[str, Any]]:
+    """Holdings history rows with their PnL in percent (None for cash)."""
+
+    def pct(value: float | None) -> float | None:
+        return None if value is None or not math.isfinite(value) else value * 100
+
+    return [
+        {
+            "symbol": trade.symbol,
+            "from": _chart_time(trade.start, intraday),
+            "to": _chart_time(trade.end, intraday),
+            "tradePct": pct(trade.trade_return),
+            "equityPct": pct(trade.equity_change),
+        }
+        for trade in trades
+    ]
 
 
 def _to_camel(name: str) -> str:
@@ -582,6 +600,7 @@ def _method_backtest(params: dict[str, Any], *, progress_callback=None) -> dict[
             "label": run.label,
             "equityStrategy": _series_to_points(run.equity_strategy, intraday),
             "heldAsset": _held_to_points(run.held_asset, intraday),
+            "trades": _trades_to_dicts(run.trades, intraday),
             "metricsStrategy": _metrics_to_dict(run.metrics_strategy),
             "forcedRotations": [d.isoformat() for d in run.forced_rotations],
         }

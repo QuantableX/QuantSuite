@@ -11,7 +11,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from rotation_lab.backtest.engine import BacktestEngine
+from rotation_lab.backtest.engine import USD_SYMBOL, BacktestEngine
 from rotation_lab.backtest.universe import UniverseSnapshot, UniverseTimeline
 from rotation_lab.config import IndicatorConfig, RunConfig
 from rotation_lab.data.ranking.base import RankedCoin
@@ -160,6 +160,24 @@ class CompareTests(unittest.TestCase):
     def test_an_unknown_compared_indicator_fails_before_fetching(self):
         with self.assertRaisesRegex(ValueError, "unknown trend signal 'nope'"):
             _run("ema_cross", ("nope",))
+
+    def test_holdings_pnl_compounds_bar_returns_and_sums_to_the_net_return(self):
+        run = _run("ema_cross").strategies[0]
+        cost = 1 - RunConfig().fee_rate
+        held = []
+        for k, trade in enumerate(run.trades):
+            span = run.held_asset.loc[trade.start:trade.end]
+            held.extend(span.tolist())
+            if trade.symbol in (None, USD_SYMBOL):
+                self.assertIsNone(trade.equity_change)
+                continue
+            bars = FRAMES[trade.symbol].reindex(span.index)
+            fills = 2 if k + 1 < len(run.trades) else 1  # the newest is still open
+            self.assertAlmostEqual(trade.trade_return, (bars.close / bars.open).prod() * cost ** fills - 1, places=10)
+        self.assertEqual(held, run.held_asset.tolist())
+        self.assertGreater(sum(t.trade_return is not None for t in run.trades), 3)
+        self.assertAlmostEqual(sum(t.equity_change or 0 for t in run.trades),
+                               run.equity_strategy.iloc[-1] - 1, places=10)
 
 
 if __name__ == "__main__":

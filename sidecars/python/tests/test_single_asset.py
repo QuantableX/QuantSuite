@@ -14,7 +14,7 @@ from rotation_lab.backtest.engine import BacktestEngine
 from rotation_lab.config import Cadence, IndicatorConfig, RunConfig, SingleAssetConfig
 from rotation_lab.data.cache import Cache
 from rotation_lab.data.ohlcv import OhlcvFetcher
-from rotation_lab.rpc import _build_config, _method_backtest, _method_live_snapshot
+from rotation_lab.rpc import _build_config, _method_backtest, _method_live_snapshot, _trades_to_dicts
 
 NOW = dt.datetime(2026, 9, 24, 14, 30, tzinfo=dt.timezone.utc)
 
@@ -62,6 +62,32 @@ class SingleAssetTests(unittest.TestCase):
         expected = [1, .99 * 1.1, .99**3 * 1.1 * 1.1, .99**4 * 1.1**2, .99**5 * 1.1**2 * 1.2]
         np.testing.assert_allclose(result.equity_strategy, expected)
         self.assertEqual(result.held_asset.tolist(), ["BTC", "ETH", "Short ETH", "BTC", "ETH"])
+
+    def test_holdings_pnl_charges_each_trade_its_own_fills(self):
+        result = self.run_system(config(), signals=[1, -1, 0, 1, -1])
+        trades = result.strategies[0].trades
+        self.assertEqual([t.symbol for t in trades], ["USD", "BTC", "USD", "BTC"])
+        self.assertEqual([(t.trade_return, t.equity_change) for t in trades[::2]], [(None, None)] * 2)
+        # Closed: buy and sell fill. Open (newest): buy fill only.
+        self.assertAlmostEqual(trades[1].trade_return, .99**2 * 1.1 - 1)
+        self.assertAlmostEqual(trades[3].trade_return, .99 * 1.2 - 1)
+        # Equity PnL is in units of the starting capital, so it compounds.
+        self.assertAlmostEqual(trades[3].equity_change, .99**2 * 1.1 * (.99 * 1.2 - 1))
+        self.assertAlmostEqual(sum(t.equity_change or 0 for t in trades), result.equity_strategy.iloc[-1] - 1)
+        rows = _trades_to_dicts(trades)
+        self.assertEqual(rows[1]["from"], "2026-09-20")
+        self.assertAlmostEqual(rows[1]["tradePct"], (.99**2 * 1.1 - 1) * 100)
+        self.assertIsNone(rows[2]["equityPct"])
+
+    def test_holdings_pnl_of_a_reversal_splits_its_two_fills(self):
+        result = self.run_system(config("long_short", "ETH/BTC"), signals=[1, -1, 0, 1, -1])
+        trades = result.strategies[0].trades
+        self.assertEqual([t.symbol for t in trades], ["BTC", "ETH", "Short ETH", "BTC", "ETH"])
+        self.assertIsNone(trades[0].trade_return)  # the quote is the cash leg
+        self.assertAlmostEqual(trades[1].trade_return, .99**2 * 1.1 - 1)
+        self.assertAlmostEqual(trades[2].trade_return, .99**2 * 1.1 - 1)  # short through a 10% drop
+        self.assertAlmostEqual(trades[2].equity_change, .99**2 * 1.1 * (.99**2 * 1.1 - 1))
+        self.assertAlmostEqual(sum(t.equity_change or 0 for t in trades), result.equity_strategy.iloc[-1] - 1)
 
     def test_open_candle_is_excluded_and_historical_last_bar_is_retained(self):
         before = self.run_system(config(), signals=[1] * 6)
@@ -138,6 +164,7 @@ class SingleAssetTests(unittest.TestCase):
             engine.return_value.run.return_value = result
             payload = _method_backtest({"config": {"mode": "single_asset", "singleAsset": {"timeframe": "4h"}}})
         self.assertIsInstance(payload["equityStrategy"][0]["time"], int)
+        self.assertIsInstance(payload["strategies"][0]["trades"][0]["from"], int)
         self.assertEqual(payload["singleAsset"]["timeframe"], "4h")
 
 

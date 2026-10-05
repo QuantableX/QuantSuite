@@ -210,6 +210,18 @@ export interface PerformanceMetrics {
   cagrPct?: number | null
 }
 
+/** One contiguous holding of a run. Both PnL values are null for cash. */
+export interface HoldingTrade {
+  symbol: string | null
+  from: string | number
+  to: string | number
+  /** The holding's own return in %, net of its entry and exit fills. */
+  tradePct: number | null
+  /** Equity gained or lost in % of the starting capital; all rows add up
+   *  to the run's net return. */
+  equityPct: number | null
+}
+
 /** The rotation simulated with one trend signal. */
 export interface StrategyRun {
   key: TrendKind
@@ -217,6 +229,8 @@ export interface StrategyRun {
   label: string
   equityStrategy: EquityPoint[]
   heldAsset: { time: string | number; symbol: string | null }[]
+  /** Absent from an engine process that predates it. */
+  trades?: HoldingTrade[]
   metricsStrategy: PerformanceMetrics
   forcedRotations: string[]
 }
