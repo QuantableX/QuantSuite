@@ -125,6 +125,20 @@ _PARALLEL_MIN_SECONDS = 1.0
 
 
 @dataclass
+class HoldingTrade:
+    """One contiguous holding of a run: a row of the holdings history."""
+
+    symbol: str | None
+    start: pd.Timestamp
+    end: pd.Timestamp
+    # The holding's own return, net of its entry and exit fills. None for cash.
+    trade_return: float | None = None
+    # Equity gained or lost, in units of the starting capital (equity starts
+    # at 1.0): summed over a run, it is the run's net return. None for cash.
+    equity_change: float | None = None
+
+
+@dataclass
 class StrategyRun:
     """The rotation simulated with one trend signal."""
 
@@ -136,6 +150,7 @@ class StrategyRun:
     forced_rotations: list[dt.date] = field(default_factory=list)
     # The higher filter's 0/1 series when the run used it (1 = TOTAL bullish).
     market_gate: pd.Series | None = None
+    trades: list[HoldingTrade] = field(default_factory=list)
 
 
 @dataclass
@@ -192,6 +207,42 @@ def _switch_legs(prev: str | None, new: str | None) -> int:
     if prev_cash or new_cash:
         return 1
     return 0 if prev == new else 2
+
+
+def _holding_trades(equity: pd.Series, held: pd.Series, cost_mult: float, cash: str) -> list[HoldingTrade]:
+    """Split a run into contiguous holdings with their PnL.
+
+    Every fill is charged to the position it opens or closes: a switch's sell
+    leg belongs to the old holding, its buy leg to the new one. The newest
+    holding is still open and has paid no exit fill yet. ``cash`` (or no
+    holding at all) earns nothing and lists no PnL. Reads the simulated
+    curve only, so the equity itself stays bit-identical.
+    """
+
+    values = equity.to_numpy(dtype=float)
+    symbols = [None if pd.isna(value) else str(value) for value in held]
+    spans: list[list] = []  # [symbol, first bar, last bar]
+    for i, symbol in enumerate(symbols):
+        if spans and spans[-1][0] == symbol:
+            spans[-1][2] = i
+        else:
+            spans.append([symbol, i, i])
+
+    def position(symbol: str | None) -> bool:
+        return symbol is not None and symbol != cash
+
+    trades: list[HoldingTrade] = []
+    for k, (symbol, first, last) in enumerate(spans):
+        trade = HoldingTrade(symbol, held.index[first], held.index[last])
+        if position(symbol):
+            before = values[first - 1] if first else 1.0
+            if k and position(spans[k - 1][0]):
+                before *= cost_mult  # the previous holding's sell fill
+            after = values[last] * (cost_mult if k + 1 < len(spans) else 1.0)
+            trade.equity_change = after - before
+            trade.trade_return = after / before - 1.0 if before > 0 else None
+        trades.append(trade)
+    return trades
 
 
 def _bar_returns(frame: pd.DataFrame, index: pd.DatetimeIndex) -> np.ndarray:
@@ -390,6 +441,9 @@ class BacktestEngine:
                 metrics_strategy=compute_metrics(equity, bars_per_year),
                 forced_rotations=forced,
                 market_gate=gate,
+                trades=_holding_trades(
+                    equity, held, (1.0 - variant.fee_rate) * (1.0 - variant.slippage_rate), USD_SYMBOL,
+                ),
             ))
         if not runs:
             _tick("Done — no compatible strategies", 1.0)
@@ -487,8 +541,10 @@ class BacktestEngine:
                 holdings.append(base if position == 1 else f"Short {base}" if position == -1 else quote)
                 previous = position
             curve = pd.Series(values, index=index, name="equity")
-            runs.append(StrategyRun(kind, label, curve, pd.Series(holdings, index=index, name="held"),
-                                    compute_metrics(curve, config.cadence.bars_per_year)))
+            held = pd.Series(holdings, index=index, name="held")
+            runs.append(StrategyRun(kind, label, curve, held,
+                                    compute_metrics(curve, config.cadence.bars_per_year),
+                                    trades=_holding_trades(curve, held, cost, quote)))
         empty = StrategyRun(config.indicator.trend, _trend_label(config.indicator),
                             pd.Series(dtype=float), pd.Series(dtype=object))
         primary = next((run for run in runs if run.key == config.indicator.trend), empty)
