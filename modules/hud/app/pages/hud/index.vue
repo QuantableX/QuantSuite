@@ -327,7 +327,7 @@
           v-else-if="activeModule === 'chart-analyzer'"
           class="module-content module-content--fill"
         >
-          <HudChartAnalyzerModule @open-history="activeModule = 'chart-analyzer-history'" />
+          <HudChartAnalyzerModule :tuck-for-capture="tuckForCapture" @open-history="activeModule = 'chart-analyzer-history'" />
         </div>
 
         <!-- Chart Analyzer History -->
@@ -734,6 +734,7 @@ import type { WindowPosition } from '#hud/composables/useConfig'
 import { useCalculator } from '#hud/composables/useCalculator'
 import { useConfig, speechLanguageCode, DEFAULT_SPEECH_HOTKEY } from '#hud/composables/useConfig'
 import { useFibExtractor } from '#hud/composables/useFibExtractor'
+import type { TuckForCapture } from '#hud/composables/useChartAnalyzer'
 import { useTranscript } from '#hud/composables/useTranscript'
 definePageMeta({ layout: 'hud' })
 
@@ -1237,24 +1238,23 @@ async function togglePin() {
 // hover and tab clicks must neither re-tuck nor reopen it in between.
 let tuckedForCapture = false;
 
-async function handleCapture() {
-  if (isProcessing.value || tuckedForCapture) return;
-  // An open panel covers part of the screen it captures. Tuck it for the
-  // shot, like the chart analyzer, and reopen it once the screen is grabbed.
-  const reopen = isTauri && invoke && !isTucked.value;
-  if (reopen) {
-    tuckedForCapture = true;
-    try {
-      await invoke("plugin:hud|tuck_window", {
-        position: windowPosition.value,
-        monitorIndex: config.value.monitorIndex,
-      });
-      await new Promise((r) => setTimeout(r, 250));
-    } catch (e) {
-      console.warn("Failed to tuck the HUD for the capture:", e);
-    }
+// An open panel covers part of the screen it captures. Tuck it for the shot
+// — on this window's own edge, which in Dual is left or right — and resolve
+// to the function that reopens it once the screen is grabbed. Nothing to
+// reopen when it is tucked already (F9) or another capture holds it.
+const tuckForCapture: TuckForCapture = async () => {
+  if (!isTauri || !invoke || isTucked.value || tuckedForCapture) return undefined;
+  tuckedForCapture = true;
+  try {
+    await invoke("plugin:hud|tuck_window", {
+      position: windowPosition.value,
+      monitorIndex: config.value.monitorIndex,
+    });
+    await new Promise((r) => setTimeout(r, 250));
+  } catch (e) {
+    console.warn("Failed to tuck the HUD for the capture:", e);
   }
-  const regionDropped = await captureAndExtract(reopen ? async () => {
+  return async () => {
     try {
       await invoke("plugin:hud|show_window", {
         position: windowPosition.value,
@@ -1265,7 +1265,12 @@ async function handleCapture() {
     } finally {
       tuckedForCapture = false;
     }
-  } : undefined);
+  };
+};
+
+async function handleCapture() {
+  if (isProcessing.value || tuckedForCapture) return;
+  const regionDropped = await captureAndExtract(await tuckForCapture());
   // The saved region lay off the current screen and was ignored
   if (regionDropped) setScanRegion(null);
   // Update levels from extracted fib prices
