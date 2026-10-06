@@ -14,18 +14,59 @@ pub enum CaptureError {
     EncodeFailed(String),
 }
 
+/// A region needs at least this much of itself on the screen in both axes —
+/// the region selector itself rejects drags of 10px or less.
+const MIN_REGION_PX: u32 = 10;
+
+pub struct CapturedImage {
+    pub image_base64: String,
+    pub width: u32,
+    pub height: u32,
+    /// The requested region was (almost) entirely off the captured screen —
+    /// saved under another display layout — so the default crop was used.
+    pub region_dropped: bool,
+}
+
+/// The `[x, y, width, height]` to keep of a `width` x `height` capture, and
+/// whether the requested region had to be dropped. A region is clipped to the
+/// screen; one that keeps less than `MIN_REGION_PX` in either axis is dropped
+/// for the default crop, which would otherwise be an empty image.
+fn resolve_crop(width: u32, height: u32, region: Option<[i32; 4]>, default_crop: bool) -> ([u32; 4], bool) {
+    let fallback = if default_crop {
+        // Right 20% of the screen, where fib levels typically appear
+        let crop_x = (width as f32 * 0.80) as u32;
+        [crop_x, 0, width - crop_x, height]
+    } else {
+        [0, 0, width, height]
+    };
+    let Some([x, y, w, h]) = region else {
+        return (fallback, false);
+    };
+    // i64: x + w must not overflow, and negative origins clip to 0
+    let left = (x as i64).clamp(0, width as i64);
+    let top = (y as i64).clamp(0, height as i64);
+    let right = (x as i64 + w.max(0) as i64).clamp(0, width as i64);
+    let bottom = (y as i64 + h.max(0) as i64).clamp(0, height as i64);
+    let (crop_w, crop_h) = ((right - left) as u32, (bottom - top) as u32);
+    if crop_w < MIN_REGION_PX || crop_h < MIN_REGION_PX {
+        return (fallback, true);
+    }
+    ([left as u32, top as u32, crop_w, crop_h], false)
+}
+
 /// Capture the primary screen, optionally cropping to a region, return as base64 PNG
-/// When `default_crop` is true and no region is given, crops to right 20% (fib levels).
+/// When `default_crop` is true and no usable region is given, crops to right 20% (fib levels).
 /// When false, returns the full screen.
-pub fn capture_screen_base64(region: Option<[i32; 4]>, default_crop: bool) -> Result<(String, u32, u32), CaptureError> {
+pub fn capture_screen_base64(region: Option<[i32; 4]>, default_crop: bool) -> Result<CapturedImage, CaptureError> {
     let screens = Screen::all().map_err(|e| CaptureError::CaptureFailed(e.to_string()))?;
 
-    if screens.is_empty() {
-        return Err(CaptureError::NoScreens);
-    }
-
-    // Get primary screen (first one)
-    let screen = &screens[0];
+    // The region selector opens on the primary monitor, which is not always
+    // the first one enumerated.
+    let screen = screens
+        .iter()
+        .find(|s| s.display_info.is_primary)
+        .or_else(|| screens.first())
+        .ok_or(CaptureError::NoScreens)?;
 
     let capture = screen
         .capture()
@@ -39,21 +80,8 @@ pub fn capture_screen_base64(region: Option<[i32; 4]>, default_crop: bool) -> Re
     let img = RgbaImage::from_raw(width, height, raw_pixels)
         .ok_or_else(|| CaptureError::CaptureFailed("Failed to create image".into()))?;
 
-    let mut dynamic_img = DynamicImage::ImageRgba8(img);
-
-    // Apply region crop if specified [x, y, width, height]
-    if let Some([x, y, w, h]) = region {
-        let crop_x = x.max(0) as u32;
-        let crop_y = y.max(0) as u32;
-        let crop_w = w.max(1) as u32;
-        let crop_h = h.max(1) as u32;
-
-        dynamic_img = dynamic_img.crop_imm(crop_x, crop_y, crop_w, crop_h);
-    } else if default_crop {
-        // Default: crop to right 20% where fib levels typically appear
-        let crop_x = (width as f32 * 0.80) as u32;
-        dynamic_img = dynamic_img.crop_imm(crop_x, 0, width - crop_x, height);
-    }
+    let ([crop_x, crop_y, crop_w, crop_h], region_dropped) = resolve_crop(width, height, region, default_crop);
+    let dynamic_img = DynamicImage::ImageRgba8(img).crop_imm(crop_x, crop_y, crop_w, crop_h);
 
     let final_width = dynamic_img.width();
     let final_height = dynamic_img.height();
@@ -66,6 +94,49 @@ pub fn capture_screen_base64(region: Option<[i32; 4]>, default_crop: bool) -> Re
 
     let base64_data = STANDARD.encode(png_bytes.into_inner());
 
-    Ok((base64_data, final_width, final_height))
+    Ok(CapturedImage {
+        image_base64: base64_data,
+        width: final_width,
+        height: final_height,
+        region_dropped,
+    })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_region_uses_the_default_crop() {
+        assert_eq!(resolve_crop(1920, 1200, None, true), ([1536, 0, 384, 1200], false));
+        assert_eq!(resolve_crop(1920, 1200, None, false), ([0, 0, 1920, 1200], false));
+    }
+
+    #[test]
+    fn region_inside_the_screen_is_kept() {
+        assert_eq!(resolve_crop(1920, 1200, Some([1500, 100, 276, 900]), true), ([1500, 100, 276, 900], false));
+    }
+
+    #[test]
+    fn region_partly_off_screen_is_clipped() {
+        // The chart analyzer region saved on a 2560px-wide layout
+        assert_eq!(resolve_crop(1920, 1200, Some([436, 96, 1978, 1365]), false), ([436, 96, 1484, 1104], false));
+        assert_eq!(resolve_crop(1920, 1200, Some([-50, -20, 200, 120]), true), ([0, 0, 150, 100], false));
+    }
+
+    #[test]
+    fn region_off_screen_is_dropped_for_the_default_crop() {
+        // The position sizer region that produced a zero-width image
+        assert_eq!(resolve_crop(1920, 1200, Some([2154, 103, 276, 1358]), true), ([1536, 0, 384, 1200], true));
+        assert_eq!(resolve_crop(1920, 1200, Some([2154, 103, 276, 1358]), false), ([0, 0, 1920, 1200], true));
+        // Only a sliver on screen, and a degenerate region
+        assert_eq!(resolve_crop(1920, 1200, Some([1915, 100, 300, 300]), true), ([1536, 0, 384, 1200], true));
+        assert_eq!(resolve_crop(1920, 1200, Some([100, 100, 0, 0]), true), ([1536, 0, 384, 1200], true));
+    }
+
+    #[test]
+    fn huge_values_do_not_overflow() {
+        assert_eq!(resolve_crop(1920, 1200, Some([i32::MAX, i32::MAX, i32::MAX, i32::MAX]), true), ([1536, 0, 384, 1200], true));
+        assert_eq!(resolve_crop(1920, 1200, Some([i32::MIN, i32::MIN, i32::MAX, i32::MAX]), false), ([0, 0, 1920, 1200], true));
+    }
+}

@@ -57,20 +57,25 @@ for (const native of [false, true]) {
 
 const { descriptor } = parse(read('pages/hud/index.vue'))
 const script = ts.createSourceFile('hud.ts', descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true)
-const handlers = script.statements.filter(node => ts.isFunctionDeclaration(node)
-  && ['onMouseEnter', 'onMouseLeave', 'onTriggerClick'].includes(node.name?.text))
+const pageNames = ['tuckedForCapture', 'onMouseEnter', 'onMouseLeave', 'onTriggerClick', 'handleCapture']
+const handlers = script.statements.filter(node => (ts.isFunctionDeclaration(node) && pageNames.includes(node.name?.text))
+  || (ts.isVariableStatement(node) && node.declarationList.declarations.some(d => pageNames.includes(d.name.getText(script)))))
   .map(node => node.getText(script)).join('\n')
 
-function controls(side, mode) {
+// `extract` stands in for useFibExtractor's captureAndExtract.
+function controls(side, mode, extract = async () => false) {
   const isTucked = ref(true)
   const isPinned = ref(false)
   const calls = []
+  const savedRegions = []
   const api = new Function('isTucked', 'isPinned', 'activationMode', 'windowPosition', 'config', 'isTauri', 'invoke',
-    `${transpile(handlers)}; return { onMouseEnter, onMouseLeave, onTriggerClick }`)(
+    'isProcessing', 'captureAndExtract', 'setScanRegion', 'getLevelPrices', 'isLong', 'levels',
+    `${transpile(handlers)}; return { onMouseEnter, onMouseLeave, onTriggerClick, handleCapture }`)(
     isTucked, isPinned, ref(mode), ref(side), ref({ monitorIndex: 2 }), true,
     async (command, args) => { calls.push({ command, args }) },
+    ref(false), extract, region => savedRegions.push(region), () => ({ entry: 0, tp: 0, sl: 0 }), ref(true), {},
   )
-  return { ...api, isTucked, isPinned, calls }
+  return { ...api, isTucked, isPinned, calls, savedRegions }
 }
 
 for (const side of ['left', 'right', 'top']) {
@@ -99,7 +104,87 @@ for (const side of ['left', 'right', 'top']) {
     assert.equal(h.isTucked.value, false)
     assert.equal(h.calls.length, 1)
   })
+
+  test(`${side}: capture tucks the open HUD out of the shot and reopens it before the OCR`, async () => {
+    const h = controls(side, 'hover', async afterCapture => {
+      h.calls.push({ command: 'capture' })
+      // Leaving the shrunken panel or clicking its tab mid-capture changes nothing
+      await h.onMouseLeave()
+      await h.onTriggerClick()
+      await afterCapture()
+      h.calls.push({ command: 'ocr' })
+      return false
+    })
+    await h.onMouseEnter()
+    h.calls.length = 0
+    // A second press during the tuck delay is ignored
+    await Promise.all([h.handleCapture(), h.handleCapture()])
+    assert.deepEqual(h.calls.map(c => c.command), ['plugin:hud|tuck_window', 'capture', 'plugin:hud|show_window', 'ocr'])
+    assert.deepEqual(h.calls[0].args, { position: side, monitorIndex: 2 })
+    assert.equal(h.isTucked.value, false)
+    assert.deepEqual(h.savedRegions, [])
+    await h.onMouseLeave()
+    assert.equal(h.isTucked.value, true, 'hover works again after the capture')
+  })
 }
+
+test('F9 on a tucked HUD captures without opening it, and a dropped region is forgotten', async () => {
+  let hook
+  const h = controls('right', 'click', async afterCapture => { hook = afterCapture; return true })
+  await h.handleCapture()
+  assert.equal(hook, undefined)
+  assert.deepEqual(h.calls, [])
+  assert.equal(h.isTucked.value, true)
+  assert.deepEqual(h.savedRegions, [null])
+})
+
+// The real composable; only IPC and the OCR engine are substituted.
+function fibExtractor(ipc, ocrText = '') {
+  const compile = source => transpile(source).replace(/export /g, '')
+    .replaceAll('import("@tauri-apps/api/core")', 'Promise.resolve({ invoke: ipc })')
+    .replaceAll('import("tesseract.js")', 'Promise.resolve(tesseract)')
+  const tesseract = { createWorker: async () => ({ recognize: async () => ({ data: { text: ocrText } }) }) }
+  return new Function('ref', 'window', 'ipc', 'tesseract', 'console',
+    `${compile(read('composables/useFibExtractor.ts'))}; return useFibExtractor`)(
+    ref, { __TAURI_INTERNALS__: {} }, ipc, tesseract, { log() {}, error() {} })()
+}
+
+test('a failed capture shows the command error text and still reopens the HUD', async () => {
+  let reopened = 0
+  const f = fibExtractor(async () => { throw 'Failed to capture screen: no display' })
+  assert.equal(await f.captureAndExtract(async () => { reopened++ }), false)
+  assert.equal(f.status.value, '❌ Failed to capture screen: no display')
+  assert.equal(reopened, 1)
+  assert.equal(f.isProcessing.value, false)
+})
+
+test('a capture while one is running hands a tucked HUD back at once', async () => {
+  let release, reopened = 0
+  const f = fibExtractor(() => new Promise(resolve => { release = resolve }))
+  const first = f.captureAndExtract()
+  assert.equal(await f.captureAndExtract(async () => { reopened++ }), false)
+  assert.equal(reopened, 1)
+  await new Promise(setImmediate)
+  release({ image_base64: 'AA==', width: 1, height: 1, region_dropped: false })
+  assert.equal(await first, false)
+  assert.equal(f.isProcessing.value, false)
+})
+
+test('an off-screen region is cleared and the default crop still yields levels', async () => {
+  let sent, reopened = 0
+  const f = fibExtractor(async (command, args) => {
+    assert.equal(command, 'plugin:hud|capture_screen')
+    sent = args.region
+    return { image_base64: 'AA==', width: 384, height: 1200, region_dropped: true }
+  }, '1 (3,151.25)\n0 (3,100.50)')
+  f.scanRegion.value = [2154, 103, 276, 1358]
+  assert.equal(await f.captureAndExtract(async () => { reopened++ }), true)
+  assert.deepEqual(sent, [2154, 103, 276, 1358])
+  assert.equal(f.scanRegion.value, null)
+  assert.deepEqual({ ...f.fibPrices.value }, { 0: 3100.5, 1: 3151.25 })
+  assert.equal(f.status.value, '✓ 2/7 levels found · off-screen region cleared')
+  assert.equal(reopened, 1, 'the HUD reopens exactly once')
+})
 
 for (const native of [false, true]) {
   test(`${native ? 'native' : 'browser'} persists top mode and preserves shared settings`, async () => {

@@ -262,6 +262,9 @@ pub struct CaptureResult {
     pub image_base64: String,
     pub width: u32,
     pub height: u32,
+    /// The region lay off the captured screen and was ignored — the caller
+    /// should forget its saved region.
+    pub region_dropped: bool,
 }
 
 /// Capture screen and return as base64 PNG for frontend OCR processing
@@ -270,7 +273,7 @@ async fn capture_screen(region: Option<[i32; 4]>, default_crop: Option<bool>) ->
     let crop = default_crop.unwrap_or(true);
     // Capture, PNG encode and base64 are hundreds of ms of CPU — running them
     // inline would park an async-runtime worker for the whole time.
-    let (base64_data, width, height) = tauri::async_runtime::spawn_blocking(move || {
+    let captured = tauri::async_runtime::spawn_blocking(move || {
         capture::capture_screen_base64(region, crop)
     })
     .await
@@ -278,9 +281,10 @@ async fn capture_screen(region: Option<[i32; 4]>, default_crop: Option<bool>) ->
     .map_err(|e| e.to_string())?;
 
     Ok(CaptureResult {
-        image_base64: base64_data,
-        width,
-        height,
+        image_base64: captured.image_base64,
+        width: captured.width,
+        height: captured.height,
+        region_dropped: captured.region_dropped,
     })
 }
 
