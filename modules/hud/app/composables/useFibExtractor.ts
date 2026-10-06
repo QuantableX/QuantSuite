@@ -51,11 +51,30 @@ export function useFibExtractor() {
   const status = ref("Press F9 to capture");
   const scanRegion = ref<[number, number, number, number] | null>(null);
 
-  async function captureAndExtract() {
-    if (isProcessing.value) return;
+  /**
+   * `afterCapture` runs once, as soon as the screen is grabbed or the grab
+   * failed — the page shows its HUD again there instead of after the OCR.
+   * Resolves true when the backend dropped `scanRegion` because it lies off
+   * the captured screen (saved under another display layout); the region is
+   * cleared here, the caller forgets it in the config.
+   */
+  async function captureAndExtract(
+    afterCapture?: () => Promise<void>,
+  ): Promise<boolean> {
+    if (isProcessing.value) {
+      await afterCapture?.();
+      return false;
+    }
 
     isProcessing.value = true;
     status.value = "⏳ Capturing...";
+    let regionDropped = false;
+    let pendingAfterCapture = afterCapture;
+    const runAfterCapture = async () => {
+      const run = pendingAfterCapture;
+      pendingAfterCapture = undefined;
+      await run?.();
+    };
 
     try {
       // Check if running in Tauri
@@ -70,9 +89,14 @@ export function useFibExtractor() {
           image_base64: string;
           width: number;
           height: number;
+          region_dropped: boolean;
         }>("plugin:hud|capture_screen", {
           region: scanRegion.value,
-        });
+        }).finally(runAfterCapture);
+        if (result.region_dropped) {
+          regionDropped = true;
+          scanRegion.value = null;
+        }
 
         status.value = "⏳ Running OCR...";
 
@@ -95,15 +119,19 @@ export function useFibExtractor() {
         } else {
           status.value = "❌ Could not extract levels";
         }
+        if (regionDropped) status.value += " · off-screen region cleared";
       } else {
         status.value = "⚠️ Capture only works in Tauri";
       }
     } catch (e: any) {
       console.error("Capture error:", e);
-      status.value = `❌ ${e.message || "Capture failed"}`;
+      // Tauri commands reject with the plain error string, not an Error
+      status.value = `❌ ${e?.message || (typeof e === "string" && e) || "Capture failed"}`;
     } finally {
+      await runAfterCapture();
       isProcessing.value = false;
     }
+    return regionDropped;
   }
 
   function getLevelPrices(isLong: boolean) {

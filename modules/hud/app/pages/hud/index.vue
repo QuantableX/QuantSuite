@@ -1137,7 +1137,10 @@ onMounted(async () => {
 
     try {
       const { register } = await import("@tauri-apps/plugin-global-shortcut");
-      await register("F9", handleCapture);
+      // The handler fires on press AND release — capture once per press.
+      await register("F9", (event) => {
+        if (event.state === "Pressed") void handleCapture();
+      });
     } catch (e) {
       console.warn("Failed to register hotkey:", e);
     }
@@ -1191,7 +1194,7 @@ async function onMouseEnter() {
 }
 
 async function onMouseLeave() {
-  if (isTucked.value || isPinned.value) return;
+  if (isTucked.value || isPinned.value || tuckedForCapture) return;
   // In click mode, don't auto-tuck on mouse leave
   if (activationMode.value === "click") return;
   if (isTauri && invoke) {
@@ -1204,6 +1207,7 @@ async function onMouseLeave() {
 }
 
 async function onTriggerClick() {
+  if (tuckedForCapture) return;
   if (isTucked.value) {
     await onMouseEnter();
   } else {
@@ -1229,8 +1233,41 @@ async function togglePin() {
   }
 }
 
+// True while a capture keeps the open HUD tucked out of its own screenshot:
+// hover and tab clicks must neither re-tuck nor reopen it in between.
+let tuckedForCapture = false;
+
 async function handleCapture() {
-  await captureAndExtract();
+  if (isProcessing.value || tuckedForCapture) return;
+  // An open panel covers part of the screen it captures. Tuck it for the
+  // shot, like the chart analyzer, and reopen it once the screen is grabbed.
+  const reopen = isTauri && invoke && !isTucked.value;
+  if (reopen) {
+    tuckedForCapture = true;
+    try {
+      await invoke("plugin:hud|tuck_window", {
+        position: windowPosition.value,
+        monitorIndex: config.value.monitorIndex,
+      });
+      await new Promise((r) => setTimeout(r, 250));
+    } catch (e) {
+      console.warn("Failed to tuck the HUD for the capture:", e);
+    }
+  }
+  const regionDropped = await captureAndExtract(reopen ? async () => {
+    try {
+      await invoke("plugin:hud|show_window", {
+        position: windowPosition.value,
+        monitorIndex: config.value.monitorIndex,
+      });
+    } catch (e) {
+      console.warn("Failed to reopen the HUD after the capture:", e);
+    } finally {
+      tuckedForCapture = false;
+    }
+  } : undefined);
+  // The saved region lay off the current screen and was ignored
+  if (regionDropped) setScanRegion(null);
   // Update levels from extracted fib prices
   const { entry, tp, sl } = getLevelPrices(isLong.value);
   if (entry) levels.entry = entry;

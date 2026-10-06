@@ -228,7 +228,7 @@ async function handleAnalyze() {
     status.value = "Select at least one analysis type";
     return;
   }
-  await captureAndAnalyze(
+  const regionDropped = await captureAndAnalyze(
     chartRegion.value,
     config.value.aiProvider || "ollama",
     config.value.aiBaseUrl || "http://localhost:11434",
@@ -239,6 +239,12 @@ async function handleAnalyze() {
       monitorIndex: config.value.monitorIndex || 0,
     },
   );
+  // The saved region lay off the current screen; the full screen was analyzed
+  if (regionDropped) {
+    chartRegion.value = null;
+    setChartAnalyzerRegion(null);
+    status.value += " · off-screen region cleared";
+  }
 }
 
 async function openPreview() {

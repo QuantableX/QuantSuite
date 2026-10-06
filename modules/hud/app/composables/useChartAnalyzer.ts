@@ -193,6 +193,9 @@ export function useChartAnalyzer() {
     saveHistory();
   }
 
+  /** Resolves true when the backend ignored `region` because it lies off the
+   *  captured screen (saved under another display layout) and analyzed the
+   *  full screen — the caller forgets its saved region. */
   async function captureAndAnalyze(
     region: [number, number, number, number] | null,
     provider: string,
@@ -203,20 +206,21 @@ export function useChartAnalyzer() {
       position: string;
       monitorIndex: number;
     },
-  ) {
-    if (isAnalyzing.value) return;
+  ): Promise<boolean> {
+    if (isAnalyzing.value) return false;
 
     isAnalyzing.value = true;
     status.value = "Capturing...";
     result.value = null;
     rawResponse.value = "";
+    let regionDropped = false;
 
     try {
       const isTauri =
         typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
       if (!isTauri) {
         status.value = "Only works in Tauri";
-        return;
+        return false;
       }
 
       const { invoke } = await import("@tauri-apps/api/core");
@@ -233,10 +237,12 @@ export function useChartAnalyzer() {
         image_base64: string;
         width: number;
         height: number;
+        region_dropped: boolean;
       }>("plugin:hud|capture_screen", {
         region,
         defaultCrop: false,
       });
+      regionDropped = capture.region_dropped;
 
       // Show HUD again immediately after capture
       await invoke("plugin:hud|show_window", {
@@ -293,6 +299,7 @@ export function useChartAnalyzer() {
     } finally {
       isAnalyzing.value = false;
     }
+    return regionDropped;
   }
 
   function clearResults() {
