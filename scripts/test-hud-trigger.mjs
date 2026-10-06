@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import ts from 'typescript'
 import { parse } from '@vue/compiler-sfc'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 const read = path => readFileSync(new URL(`../modules/hud/app/${path}`, import.meta.url), 'utf8')
 const transpile = source => ts.transpile(source, { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext })
@@ -57,7 +57,7 @@ for (const native of [false, true]) {
 
 const { descriptor } = parse(read('pages/hud/index.vue'))
 const script = ts.createSourceFile('hud.ts', descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true)
-const pageNames = ['tuckedForCapture', 'onMouseEnter', 'onMouseLeave', 'onTriggerClick', 'handleCapture']
+const pageNames = ['tuckedForCapture', 'tuckForCapture', 'onMouseEnter', 'onMouseLeave', 'onTriggerClick', 'handleCapture']
 const handlers = script.statements.filter(node => (ts.isFunctionDeclaration(node) && pageNames.includes(node.name?.text))
   || (ts.isVariableStatement(node) && node.declarationList.declarations.some(d => pageNames.includes(d.name.getText(script)))))
   .map(node => node.getText(script)).join('\n')
@@ -156,6 +156,55 @@ test('a failed capture shows the command error text and still reopens the HUD', 
   assert.equal(f.status.value, '❌ Failed to capture screen: no display')
   assert.equal(reopened, 1)
   assert.equal(f.isProcessing.value, false)
+})
+
+test('Dual: each pane tucks and reopens on its own edge for a capture', async () => {
+  const names = ['windowPosition', 'tuckedForCapture', 'tuckForCapture']
+  const code = script.statements.filter(node => ts.isVariableStatement(node)
+    && node.declarationList.declarations.some(d => names.includes(d.name.getText(script))))
+    .map(node => node.getText(script)).join('\n')
+  for (const [label, edge] of [['dual-right', 'right'], ['hud', 'left']]) {
+    const calls = []
+    const tuckForCapture = new Function('computed', 'config', 'windowLabel', 'isTauri', 'invoke', 'isTucked',
+      `${transpile(code)}; return tuckForCapture`)(
+      computed, ref({ windowPosition: 'dual', monitorIndex: 1 }), ref(label), true,
+      async (command, args) => { calls.push({ command, args }) }, ref(false),
+    )
+    const reopen = await tuckForCapture()
+    assert.equal(await tuckForCapture(), undefined, 'a second capture does not tuck again')
+    await reopen()
+    assert.deepEqual(calls, [
+      { command: 'plugin:hud|tuck_window', args: { position: edge, monitorIndex: 1 } },
+      { command: 'plugin:hud|show_window', args: { position: edge, monitorIndex: 1 } },
+    ], label)
+  }
+})
+
+// The real composable; only IPC and storage are substituted.
+function chartAnalyzer(ipc) {
+  const source = transpile(read('composables/useChartAnalyzer.ts')).replace(/export /g, '')
+    .replaceAll('import("@tauri-apps/api/core")', 'Promise.resolve({ invoke: ipc })')
+  return new Function('ref', 'window', 'localStorage', 'ipc', `${source}; return useChartAnalyzer`)(
+    ref, { __TAURI_INTERNALS__: {} }, { getItem: () => null, setItem() {} }, ipc)()
+}
+
+test('the chart analyzer reopens the HUD right after the grab, before the AI call, also on errors', async () => {
+  for (const failCapture of [false, true]) {
+    const order = []
+    const analyzer = chartAnalyzer(async command => {
+      order.push(command)
+      if (command !== 'plugin:hud|capture_screen') return 'no json here'
+      if (failCapture) throw 'Failed to capture screen: gone'
+      return { image_base64: 'AA==', width: 1, height: 1, region_dropped: false }
+    })
+    const tuck = async () => { order.push('tuck'); return async () => { order.push('reopen') } }
+    assert.equal(await analyzer.captureAndAnalyze(null, 'ollama', 'http://localhost:11434', 'm', ['wyckoff'], tuck), false)
+    assert.deepEqual(order, failCapture
+      ? ['tuck', 'plugin:hud|capture_screen', 'reopen']
+      : ['tuck', 'plugin:hud|capture_screen', 'reopen', 'plugin:hud|analyze_chart'])
+    assert.equal(analyzer.status.value, failCapture ? 'Failed to capture screen: gone' : 'Could not parse response')
+    assert.equal(analyzer.isAnalyzing.value, false)
+  }
 })
 
 test('a capture while one is running hands a tucked HUD back at once', async () => {

@@ -160,8 +160,9 @@
 </template>
 
 <script setup lang="ts">
-import { useChartAnalyzer } from '#hud/composables/useChartAnalyzer'
+import { useChartAnalyzer, type TuckForCapture } from '#hud/composables/useChartAnalyzer'
 import { useConfig } from '#hud/composables/useConfig'
+const props = defineProps<{ tuckForCapture?: TuckForCapture }>();
 const { config, setChartAnalyzerRegion } = useConfig();
 
 const {
@@ -178,11 +179,6 @@ const chartRegion = ref<[number, number, number, number] | null>(null);
 
 onMounted(() => {
   chartRegion.value = config.value.chartAnalyzerRegion || null;
-});
-
-const effectivePosition = computed(() => {
-  const pos = config.value.windowPosition || "left";
-  return pos === "dual" ? "left" : pos;
 });
 
 const isErrorStatus = computed(() => {
@@ -234,10 +230,7 @@ async function handleAnalyze() {
     config.value.aiBaseUrl || "http://localhost:11434",
     config.value.aiModel,
     analysisTypes.value,
-    {
-      position: effectivePosition.value,
-      monitorIndex: config.value.monitorIndex || 0,
-    },
+    props.tuckForCapture,
   );
   // The saved region lay off the current screen; the full screen was analyzed
   if (regionDropped) {

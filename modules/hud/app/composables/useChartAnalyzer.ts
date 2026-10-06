@@ -16,6 +16,11 @@ export interface AnalysisHistoryEntry {
   imageBase64?: string;
 }
 
+/** The page's way to keep its open HUD out of a screenshot: tucks it and
+ *  resolves to the function that reopens it, or to undefined when nothing
+ *  was tucked. Only the page knows its pane (dual → left/right) and hover state. */
+export type TuckForCapture = () => Promise<(() => Promise<void>) | undefined>;
+
 const HISTORY_KEY = "quanthud_analysis_history";
 const MAX_HISTORY = 30;
 // Longest thumbnail edge: MAX_HISTORY full captures are several MB of base64
@@ -202,10 +207,7 @@ export function useChartAnalyzer() {
     baseUrl: string,
     model: string,
     analysisTypes: string[],
-    windowConfig: {
-      position: string;
-      monitorIndex: number;
-    },
+    tuckForCapture?: TuckForCapture,
   ): Promise<boolean> {
     if (isAnalyzing.value) return false;
 
@@ -226,13 +228,9 @@ export function useChartAnalyzer() {
       const { invoke } = await import("@tauri-apps/api/core");
 
       // Hide HUD so it doesn't appear in the screenshot
-      await invoke("plugin:hud|tuck_window", {
-        position: windowConfig.position,
-        monitorIndex: windowConfig.monitorIndex,
-      });
-      await new Promise((r) => setTimeout(r, 250));
+      const reopen = await tuckForCapture?.();
 
-      // Capture screenshot
+      // Capture screenshot, then show the HUD again at once — also on error
       const capture = await invoke<{
         image_base64: string;
         width: number;
@@ -241,14 +239,8 @@ export function useChartAnalyzer() {
       }>("plugin:hud|capture_screen", {
         region,
         defaultCrop: false,
-      });
+      }).finally(() => reopen?.());
       regionDropped = capture.region_dropped;
-
-      // Show HUD again immediately after capture
-      await invoke("plugin:hud|show_window", {
-        position: windowConfig.position,
-        monitorIndex: windowConfig.monitorIndex,
-      });
 
       capturedImage.value = capture.image_base64;
       status.value = "Analyzing chart...";
@@ -286,16 +278,6 @@ export function useChartAnalyzer() {
     } catch (e: any) {
       const msg = e.message || String(e);
       status.value = msg.length > 80 ? msg.slice(0, 80) + "..." : msg;
-      // Try to show window on error too
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("plugin:hud|show_window", {
-          position: windowConfig.position,
-          monitorIndex: windowConfig.monitorIndex,
-        });
-      } catch {
-        /* ignore */
-      }
     } finally {
       isAnalyzing.value = false;
     }
