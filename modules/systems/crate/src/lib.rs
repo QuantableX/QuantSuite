@@ -13,6 +13,8 @@
 //! metrics) lives in the reused `rotation_lab` Python package. Rust just
 //! manages the process and routes requests/notifications.
 
+mod screenshot;
+
 use chrono::{Datelike, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1008,7 +1010,9 @@ async fn screenshot_to_clipboard(window: tauri::Window) -> Result<(), String> {
     let pos = window
         .outer_position()
         .map_err(|e| format!("Window position: {e}"))?;
-    let size = window.outer_size().map_err(|e| format!("Window size: {e}"))?;
+    let size = window
+        .outer_size()
+        .map_err(|e| format!("Window size: {e}"))?;
     let (wx, wy, ww, wh) = (pos.x, pos.y, size.width as i32, size.height as i32);
 
     // Real window handle so the clipboard is owned by our GUI thread on Windows.
@@ -1021,54 +1025,51 @@ async fn screenshot_to_clipboard(window: tauri::Window) -> Result<(), String> {
     #[cfg(windows)]
     let (wx, wy, ww, wh) = dwm_frame_bounds(hwnd_isize).unwrap_or((wx, wy, ww, wh));
 
+    // xcap uses CoreGraphics desktop points on macOS; Tauri returns physical
+    // coordinates (including the global origin). Convert BEFORE monitor selection.
+    #[cfg(target_os = "macos")]
+    let desktop_scale = window
+        .scale_factor()
+        .map_err(|e| format!("Window scale factor: {e}"))?;
+    #[cfg(not(target_os = "macos"))]
+    let desktop_scale = 1.0;
+    let window_rect = screenshot::Rect::from_window(wx, wy, ww, wh, desktop_scale);
+
     // 1. Capture the monitor + crop to the window rect (heavy work, off-thread).
     let (bytes, png_bytes, rw, rh) = tauri::async_runtime::spawn_blocking(
         move || -> Result<(Vec<u8>, Vec<u8>, usize, usize), String> {
             let monitors = xcap::Monitor::all().map_err(|e| format!("Enumerate monitors: {e}"))?;
 
-            let cx = wx + ww / 2;
-            let cy = wy + wh / 2;
-            let monitor = monitors
-                .into_iter()
-                .find(|m| {
-                    let mx = m.x().unwrap_or(0);
-                    let my = m.y().unwrap_or(0);
-                    let mw = m.width().unwrap_or(0) as i32;
-                    let mh = m.height().unwrap_or(0) as i32;
-                    cx >= mx && cx < mx + mw && cy >= my && cy < my + mh
+            let bounds = monitors
+                .iter()
+                .map(|monitor| {
+                    Ok(screenshot::Rect {
+                        x: f64::from(monitor.x().map_err(|e| format!("Monitor x: {e}"))?),
+                        y: f64::from(monitor.y().map_err(|e| format!("Monitor y: {e}"))?),
+                        width: f64::from(
+                            monitor.width().map_err(|e| format!("Monitor width: {e}"))?,
+                        ),
+                        height: f64::from(
+                            monitor
+                                .height()
+                                .map_err(|e| format!("Monitor height: {e}"))?,
+                        ),
+                    })
                 })
-                .ok_or("No monitor contains the window")?;
-
-            let mx = monitor.x().map_err(|e| format!("Monitor x: {e}"))?;
-            let my = monitor.y().map_err(|e| format!("Monitor y: {e}"))?;
-            let image = monitor
+                .collect::<Result<Vec<_>, String>>()?;
+            let index = screenshot::select_monitor(window_rect, &bounds)
+                .ok_or("No monitor overlaps the window")?;
+            let image = monitors[index]
                 .capture_image()
                 .map_err(|e| format!("Capture monitor: {e}"))?;
-            let img_w = image.width() as i32;
-            let img_h = image.height() as i32;
-            let raw = image.into_raw(); // RGBA, row-major
-
-            let rx = (wx - mx).clamp(0, img_w.max(1) - 1);
-            let ry = (wy - my).clamp(0, img_h.max(1) - 1);
-            let rw = ww.min(img_w - rx).max(0);
-            let rh = wh.min(img_h - ry).max(0);
-            if rw == 0 || rh == 0 {
-                return Err("Window is outside the captured monitor area".into());
-            }
-
-            let stride = (img_w * 4) as usize;
-            let mut cropped = Vec::with_capacity((rw * rh * 4) as usize);
-            for row in 0..rh {
-                let src_y = (ry + row) as usize;
-                let start = src_y * stride + (rx as usize) * 4;
-                let end = start + (rw as usize) * 4;
-                cropped.extend_from_slice(&raw[start..end]);
-            }
+            let (rx, ry, rw, rh) =
+                screenshot::crop_rect(window_rect, bounds[index], image.width(), image.height())
+                    .ok_or("Window is outside the captured monitor area")?;
+            let buf = image::imageops::crop_imm(&image, rx, ry, rw, rh).to_image();
+            let cropped = buf.as_raw().clone();
 
             // PNG copy for Chromium/Electron apps (Discord, Cursor, browsers),
             // which read the registered "PNG" clipboard format, not CF_DIB.
-            let buf = image::RgbaImage::from_raw(rw as u32, rh as u32, cropped.clone())
-                .ok_or("Build image buffer")?;
             let mut png_bytes = Vec::new();
             buf.write_to(
                 &mut std::io::Cursor::new(&mut png_bytes),
@@ -1077,9 +1078,10 @@ async fn screenshot_to_clipboard(window: tauri::Window) -> Result<(), String> {
             .map_err(|e| format!("Encode PNG: {e}"))?;
 
             Ok((cropped, png_bytes, rw as usize, rh as usize))
-        })
-        .await
-        .map_err(|e| e.to_string())??;
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())??;
 
     // 2. Write to the clipboard on the MAIN thread. On Windows the clipboard must
     //    be opened from a thread with a message queue, otherwise SetClipboardData
