@@ -178,12 +178,18 @@
 [data-module="hud"] .position-top .cb-empty, [data-module="hud"] .position-top .ss-empty, [data-module="hud"] .position-top .sc-empty, [data-module="hud"] .position-top .tr-empty, [data-module="hud"] .position-top .ca-history-empty, [data-module="hud"] .position-top .empty-hint {
   width: var(--top-column); align-self: center; padding: 20px; box-sizing: border-box;
 }
-[data-module="hud"] .position-top .cb-list, [data-module="hud"] .position-top .ss-list, [data-module="hud"] .position-top .sc-list, [data-module="hud"] .position-top .tr-list {
+[data-module="hud"] .position-top .cb-list, [data-module="hud"] .position-top .ss-list, [data-module="hud"] .position-top .tr-list {
   display: grid; flex: 0 0 auto; grid-auto-flow: column; grid-auto-columns: var(--top-column);
   grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 8px; height: 100%;
   max-height: none; overflow: visible; padding: 0;
 }
-[data-module="hud"] .position-top .cb-row, [data-module="hud"] .position-top .ss-row, [data-module="hud"] .position-top .sc-row, [data-module="hud"] .position-top .tr-row { overflow-y: auto; scroll-snap-align: start; margin: 0; }
+[data-module="hud"] .position-top .cb-row, [data-module="hud"] .position-top .ss-row, [data-module="hud"] .position-top .tr-row { overflow-y: auto; scroll-snap-align: start; margin: 0; }
+/* Shortcuts use an icon lane with a separate editor so tiles keep their shape. */
+[data-module="hud"] .position-top .sc-module { padding: 0; }
+[data-module="hud"] .position-top .sc-controls { position: sticky; left: 0; z-index: 2; flex: 0 0 216px; width: 216px; padding-right: 20px; border-right: 1px solid var(--border-color); background: var(--bg-primary); box-shadow: -20px 0 var(--bg-primary); }
+[data-module="hud"] .position-top .sc-list { flex: 0 0 auto; grid-auto-flow: column; grid-auto-columns: 116px; grid-template-columns: none; grid-template-rows: minmax(0, 1fr); align-content: stretch; gap: 12px; height: 100%; }
+[data-module="hud"] .position-top .sc-tile { min-height: 0; scroll-margin-left: 232px; }
+[data-module="hud"] .position-top .sc-edit-form { flex: 0 0 340px; width: 340px; max-height: 100%; align-self: flex-start; overflow-y: auto; scroll-margin-left: 232px; }
 [data-module="hud"] .position-top .ca-history-list { flex: 0 0 520px; width: 520px; height: 100%; overflow-y: auto; }
 [data-module="hud"] .position-top .ca-result { flex: 0 0 360px; width: 360px; height: 100%; box-sizing: border-box; overflow-y: auto; margin: 0; scroll-snap-align: start; }
 [data-module="hud"] .position-top .ca-clear-btn { align-self: flex-start; }
