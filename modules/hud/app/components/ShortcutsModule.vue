@@ -1,211 +1,110 @@
 <template>
-  <div class="sc-module">
-    <div class="hud-top-group">
-    <div class="sc-header">
-      <span class="sc-title">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          style="vertical-align: middle; margin-right: 4px"
-        >
-          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  <div class="sc-module" :class="{ 'sc-edit-mode': editMode }">
+    <div class="sc-controls">
+      <div class="sc-header">
+        <span class="sc-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+          Shortcuts
+        </span>
+        <button class="btn btn-primary btn-sm" :disabled="saving" @click="startAdd">+ Add</button>
+      </div>
+      <button class="sc-mode-toggle" :aria-pressed="editMode" :disabled="saving" @click="toggleEditMode">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L9 17l-4 1 1-4z" />
         </svg>
-        Shortcuts
-      </span>
-      <button class="btn btn-primary btn-sm" @click="startAdd">
-        + Add
+        Edit mode
+        <span class="sc-switch" aria-hidden="true"><span /></span>
       </button>
+      <p class="sc-mode-hint">{{ editMode ? 'Click to edit · Drag to reorder' : 'Click a shortcut to open it.' }}</p>
     </div>
 
-    <!-- Add form -->
-    <div v-if="adding" class="sc-edit-form">
-      <input
-        v-model="editLabel"
-        class="sc-input"
-        placeholder="Label"
-        @keydown.enter="saveNew"
-        @keydown.escape="cancelAdd"
-      />
+    <form v-if="adding || editingId" class="sc-edit-form" :aria-label="adding ? 'Add shortcut' : 'Edit shortcut'" @submit.prevent="saveForm" @keydown.esc.prevent="cancelEditor">
+      <input ref="labelInput" v-model="editLabel" class="sc-input" placeholder="Name" aria-label="Shortcut name" :disabled="saving" />
       <div class="sc-url-row">
-        <input
-          v-model="editUrl"
-          class="sc-input sc-input-url"
-          :placeholder="editType === 'url' ? 'https://...' : 'C:\\path\\to\\app.exe'"
-          @keydown.enter="saveNew"
-          @keydown.escape="cancelAdd"
-        />
-        <button
-          v-if="editType === 'app'"
-          class="btn btn-ghost btn-sm"
-          @click="browseFile"
-          title="Browse"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <input v-model="editUrl" class="sc-input sc-input-url" :placeholder="editType === 'url' ? 'https://...' : 'C:\\path\\to\\app.exe'" aria-label="Shortcut URL or application path" :disabled="saving" />
+        <button v-if="editType === 'app'" type="button" class="btn btn-ghost btn-sm" :disabled="saving" @click="browseFile" title="Browse" aria-label="Browse for application">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
         </button>
       </div>
       <div class="sc-edit-actions">
-        <select v-model="editType" class="sc-select">
+        <select v-model="editType" class="sc-select" aria-label="Shortcut type" :disabled="saving">
           <option value="url">URL</option>
           <option value="app">Application</option>
         </select>
         <div class="sc-edit-btns">
-          <button class="btn btn-primary btn-sm" @click="saveNew">Save</button>
-          <button class="btn btn-ghost btn-sm" @click="cancelAdd">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm" :disabled="saving || !editUrl.trim()">{{ saving ? 'Saving…' : 'Save' }}</button>
+          <button type="button" class="btn btn-ghost btn-sm" :disabled="saving" @click="cancelEditor">Cancel</button>
+          <button v-if="editingId" type="button" class="ctrl-btn ctrl-del" :disabled="saving" @click="removeSelected" title="Delete shortcut" aria-label="Delete shortcut">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" />
+            </svg>
+          </button>
         </div>
       </div>
-    </div>
+    </form>
 
-    </div>
     <div v-if="!shortcuts.length && !adding" class="sc-empty">
       <p>No shortcuts yet.</p>
       <p class="sc-hint">Add URLs or applications for quick access.</p>
     </div>
 
-    <div v-if="shortcuts.length" class="sc-list">
-      <div
+    <div v-if="shortcuts.length" class="sc-list" aria-label="Shortcuts">
+      <button
         v-for="(s, index) in shortcuts"
         :key="s.id"
-        class="sc-row"
+        type="button"
+        class="sc-tile"
         :class="{
+          'sc-selected': editingId === s.id,
           'sc-dragging': dragIndex === index,
           'sc-drag-over': dragOverIndex === index && dragIndex !== index,
         }"
-        :draggable="editingId !== s.id"
+        :aria-label="`${editMode ? 'Edit' : 'Open'} ${s.label}`"
+        :title="`${editMode ? 'Edit ' + s.label + '\n' : ''}${s.url}`"
+        :disabled="saving"
+        :draggable="editMode && !saving"
+        @click="activateShortcut(s)"
         @dragstart="onDragStart($event, index)"
         @dragover="onDragOver($event, index)"
         @dragend="onDragEnd"
         @drop="onDrop($event, index)"
       >
-        <!-- Normal view -->
-        <template v-if="editingId !== s.id">
-          <div class="sc-drag-handle" title="Drag to reorder">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="8" cy="4" r="2" /><circle cx="16" cy="4" r="2" />
-              <circle cx="8" cy="12" r="2" /><circle cx="16" cy="12" r="2" />
-              <circle cx="8" cy="20" r="2" /><circle cx="16" cy="20" r="2" />
-            </svg>
-          </div>
-          <div class="sc-icon" @click="openShortcut(s)">
-            <img
-              v-if="s.favicon"
-              :src="s.favicon"
-              class="sc-favicon"
-            />
-            <svg
-              v-else-if="s.type === 'url'"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-            </svg>
-            <svg
-              v-else
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-          </div>
-          <div class="sc-content" @click="openShortcut(s)">
-            <span class="sc-label">{{ s.label }}</span>
-            <span class="sc-url-hint">{{
-              s.url.length > 40 ? s.url.slice(0, 40) + "…" : s.url
-            }}</span>
-          </div>
-          <div class="sc-actions">
-            <button
-              class="ctrl-btn"
-              @click="startEdit(s)"
-              title="Edit"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
-            <button
-              class="ctrl-btn ctrl-del"
-              @click="deleteShortcut(s.id)"
-              title="Delete"
-            >
-              ✕
-            </button>
-          </div>
-        </template>
-
-        <!-- Inline edit view -->
-        <template v-else>
-          <div class="sc-edit-inline">
-            <input
-              v-model="editLabel"
-              class="sc-input"
-              placeholder="Label"
-              @keydown.enter="saveEdit(s.id)"
-              @keydown.escape="cancelEdit"
-            />
-            <div class="sc-url-row">
-              <input
-                v-model="editUrl"
-                class="sc-input sc-input-url"
-                :placeholder="editType === 'url' ? 'https://...' : 'C:\\path\\to\\app.exe'"
-                @keydown.enter="saveEdit(s.id)"
-                @keydown.escape="cancelEdit"
-              />
-              <button
-                v-if="editType === 'app'"
-                class="btn btn-ghost btn-sm"
-                @click="browseFile"
-                title="Browse"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                </svg>
-              </button>
-            </div>
-            <div class="sc-edit-actions">
-              <select v-model="editType" class="sc-select">
-                <option value="url">URL</option>
-                <option value="app">Application</option>
-              </select>
-              <div class="sc-edit-btns">
-                <button class="btn btn-primary btn-sm" @click="saveEdit(s.id)">Save</button>
-                <button class="btn btn-ghost btn-sm" @click="cancelEdit">Cancel</button>
-              </div>
-            </div>
-          </div>
-        </template>
-      </div>
+        <span v-if="editMode" class="sc-drag-handle" aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="8" cy="4" r="2" /><circle cx="16" cy="4" r="2" />
+            <circle cx="8" cy="12" r="2" /><circle cx="16" cy="12" r="2" />
+            <circle cx="8" cy="20" r="2" /><circle cx="16" cy="20" r="2" />
+          </svg>
+        </span>
+        <svg v-if="editMode" class="sc-edit-badge" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L9 17l-4 1 1-4z" />
+        </svg>
+        <span class="sc-icon" aria-hidden="true">
+          <img v-if="s.favicon" :src="s.favicon" class="sc-favicon" alt="" draggable="false" />
+          <svg v-else-if="s.type === 'url'" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+          <svg v-else width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+        </span>
+        <span class="sc-label">{{ s.label }}</span>
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useShortcuts } from '#hud/composables/useShortcuts'
+import { useShortcuts, type Shortcut } from '#hud/composables/useShortcuts'
 const {
   shortcuts,
   addShortcut,
@@ -218,24 +117,33 @@ const {
   pickFile,
 } = useShortcuts();
 
+const editMode = ref(false);
 const adding = ref(false);
 const editingId = ref<string | null>(null);
 const editLabel = ref("");
 const editUrl = ref("");
 const editType = ref<"url" | "app">("url");
+const labelInput = ref<HTMLInputElement | null>(null);
+const saving = ref(false);
 
-// --- Drag and drop ---
+// --- Drag and drop (only while arranging shortcuts) ---
 const dragIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
 
 function onDragStart(e: DragEvent, index: number) {
+  if (!editMode.value || saving.value) {
+    e.preventDefault();
+    return;
+  }
   dragIndex.value = index;
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", shortcuts.value[index].id);
   }
 }
 
 function onDragOver(e: DragEvent, index: number) {
+  if (dragIndex.value === null) return;
   e.preventDefault();
   if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
   dragOverIndex.value = index;
@@ -243,16 +151,32 @@ function onDragOver(e: DragEvent, index: number) {
 
 function onDrop(e: DragEvent, toIndex: number) {
   e.preventDefault();
-  if (dragIndex.value !== null && dragIndex.value !== toIndex) {
+  if (editMode.value && dragIndex.value !== null && dragIndex.value !== toIndex) {
     reorderShortcuts(dragIndex.value, toIndex);
   }
-  dragIndex.value = null;
-  dragOverIndex.value = null;
+  onDragEnd();
 }
 
 function onDragEnd() {
   dragIndex.value = null;
   dragOverIndex.value = null;
+}
+
+function toggleEditMode() {
+  editMode.value = !editMode.value;
+  cancelEditor();
+  onDragEnd();
+}
+
+function activateShortcut(shortcut: Shortcut) {
+  if (saving.value || dragIndex.value !== null) return;
+  if (editMode.value) startEdit(shortcut);
+  else openShortcut(shortcut);
+}
+
+async function focusEditor() {
+  await nextTick();
+  labelInput.value?.focus();
 }
 
 function startAdd() {
@@ -261,64 +185,55 @@ function startAdd() {
   editLabel.value = "";
   editUrl.value = "";
   editType.value = "url";
+  focusEditor();
 }
 
-function cancelAdd() {
-  adding.value = false;
-}
-
-async function saveNew() {
-  if (!editLabel.value.trim() && !editUrl.value.trim()) return;
-  const label = editLabel.value.trim() || editUrl.value.trim();
-  addShortcut(label, editUrl.value.trim(), editType.value);
-
-  // Auto-fetch icon
-  const last = shortcuts.value[shortcuts.value.length - 1];
-  if (last && editUrl.value.trim()) {
-    if (editType.value === "url") {
-      const fav = await fetchFavicon(editUrl.value.trim());
-      if (fav) updateShortcut(last.id, { favicon: fav });
-    } else if (editType.value === "app") {
-      const icon = await fetchAppIcon(editUrl.value.trim());
-      if (icon) updateShortcut(last.id, { favicon: icon });
-    }
-  }
-
-  adding.value = false;
-}
-
-function startEdit(s: { id: string; label: string; url: string; type: "url" | "app" }) {
+function startEdit(s: Shortcut) {
   editingId.value = s.id;
   adding.value = false;
   editLabel.value = s.label;
   editUrl.value = s.url;
   editType.value = s.type;
+  focusEditor();
 }
 
-function cancelEdit() {
+function cancelEditor() {
+  if (saving.value) return;
+  adding.value = false;
   editingId.value = null;
 }
 
-async function saveEdit(id: string) {
-  if (!editLabel.value.trim() && !editUrl.value.trim()) return;
-  const label = editLabel.value.trim() || editUrl.value.trim();
-  const data: Record<string, unknown> = {
-    label,
-    url: editUrl.value.trim(),
-    type: editType.value,
-  };
+function removeSelected() {
+  if (editingId.value) deleteShortcut(editingId.value);
+  cancelEditor();
+}
 
-  // Auto-fetch favicon for URLs
-  if (editType.value === "url" && editUrl.value.trim()) {
-    const fav = await fetchFavicon(editUrl.value.trim());
-    if (fav) data.favicon = fav;
-  } else if (editType.value === "app" && editUrl.value.trim()) {
-    const icon = await fetchAppIcon(editUrl.value.trim());
-    data.favicon = icon || null;
+async function saveForm() {
+  const url = editUrl.value.trim();
+  if (!url || saving.value) return;
+  saving.value = true;
+  try {
+    const label = editLabel.value.trim() || url;
+    const type = editType.value;
+    const existing = shortcuts.value.find((s) => s.id === editingId.value);
+    const data: Partial<Shortcut> = { label, url, type };
+
+    // Keep the existing icon on a name-only edit, including stored app icons.
+    if (!existing || existing.url !== url || existing.type !== type) {
+      data.favicon = type === "url" ? await fetchFavicon(url) : await fetchAppIcon(url);
+    }
+    if (existing) {
+      updateShortcut(existing.id, data);
+    } else {
+      addShortcut(label, url, type);
+      const added = shortcuts.value[shortcuts.value.length - 1];
+      if (added && data.favicon) updateShortcut(added.id, { favicon: data.favicon });
+    }
+    adding.value = false;
+    editingId.value = null;
+  } finally {
+    saving.value = false;
   }
-
-  updateShortcut(id, data);
-  editingId.value = null;
 }
 
 async function browseFile() {
@@ -326,7 +241,6 @@ async function browseFile() {
   if (path) {
     editUrl.value = path;
     if (!editLabel.value.trim()) {
-      // Auto-fill label from filename
       const parts = path.replace(/\\/g, "/").split("/");
       const filename = parts[parts.length - 1] || "";
       editLabel.value = filename.replace(/\.\w+$/, "");
@@ -339,202 +253,120 @@ async function browseFile() {
 .sc-module {
   display: flex;
   flex-direction: column;
+  gap: 12px;
   padding: 4px 0;
   min-height: 0;
   flex: 1;
 }
+.sc-controls { flex-shrink: 0; }
 .sc-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  flex-shrink: 0;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .sc-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
-.sc-empty {
-  text-align: center;
-  padding: 24px 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-.sc-hint {
-  font-size: 11px;
-  margin-top: 4px;
-}
-.sc-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 4px;
-  background: var(--bg-secondary);
-}
-.sc-row {
+.sc-mode-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  background: var(--bg-card);
+  width: 100%;
+  padding: 7px 9px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  transition: background 0.15s;
-  flex-shrink: 0;
-}
-.sc-row:hover {
   background: var(--bg-secondary);
-}
-.sc-drag-handle {
-  flex-shrink: 0;
-  width: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: grab;
   color: var(--text-secondary);
-  opacity: 0.4;
-  transition: opacity 0.15s;
-}
-.sc-drag-handle:active {
-  cursor: grabbing;
-}
-.sc-row:hover .sc-drag-handle {
-  opacity: 0.8;
-}
-.sc-dragging {
-  opacity: 0.3;
-}
-.sc-drag-over {
-  border-color: var(--accent-blue) !important;
-  box-shadow: 0 0 0 1px var(--accent-blue);
-}
-.sc-icon {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
-  color: var(--text-secondary);
 }
-.sc-favicon {
-  width: 16px;
-  height: 16px;
-  border-radius: 2px;
+.sc-mode-toggle[aria-pressed="true"] { color: var(--text-primary); border-color: var(--accent-blue); }
+.sc-switch { display: flex; align-items: center; width: 26px; height: 16px; padding: 3px; margin-left: auto; border-radius: 10px; background: var(--border-color); box-sizing: border-box; }
+.sc-switch > span { width: 10px; height: 10px; border-radius: 50%; background: var(--text-secondary); }
+.sc-mode-toggle[aria-pressed="true"] .sc-switch { background: var(--accent-blue); }
+.sc-mode-toggle[aria-pressed="true"] .sc-switch > span { transform: translateX(10px); background: var(--bg-primary); }
+.sc-mode-hint { margin: 7px 0 0; font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
+.sc-empty { text-align: center; padding: 24px 0; color: var(--text-secondary); font-size: 13px; }
+.sc-hint { font-size: 11px; margin-top: 4px; }
+.sc-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
 }
-.sc-content {
-  flex: 1;
+.sc-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  cursor: pointer;
-}
-.sc-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent-blue);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sc-label:hover {
-  text-decoration: underline;
-}
-.sc-url-hint {
-  font-size: 10px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sc-actions {
-  display: flex;
-  gap: 2px;
-  flex-shrink: 0;
-}
-.ctrl-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 12px;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 3px;
-}
-.ctrl-btn:hover {
-  color: var(--text-primary);
-}
-.ctrl-del:hover {
-  color: var(--accent-red);
-}
-.sc-edit-form,
-.sc-edit-inline {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
+  min-height: 116px;
+  padding: 18px 10px 12px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  margin-bottom: 6px;
-  width: 100%;
-}
-.sc-input {
-  width: 100%;
-  padding: 4px 8px;
-  font-size: 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: var(--input-bg, var(--bg-primary));
+  border-radius: 10px;
   color: var(--text-primary);
-  outline: none;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.sc-tile:hover { background: var(--bg-secondary); border-color: var(--text-secondary); }
+.sc-edit-mode .sc-tile { border-style: dashed; }
+.sc-tile.sc-selected { border-style: solid; border-color: var(--accent-blue); background: var(--bg-secondary); }
+.sc-tile:focus-visible, .sc-mode-toggle:focus-visible, .ctrl-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.sc-drag-handle, .sc-edit-badge { position: absolute; top: 7px; color: var(--text-secondary); }
+.sc-drag-handle { left: 7px; display: flex; cursor: grab; }
+.sc-edit-badge { right: 7px; }
+.sc-dragging { opacity: 0.3; }
+.sc-drag-over { border-color: var(--accent-blue); box-shadow: inset 0 0 0 1px var(--accent-blue); }
+.sc-icon { flex-shrink: 0; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); }
+.sc-favicon { width: 48px; height: 48px; object-fit: contain; border-radius: 6px; }
+.sc-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  width: 100%;
+  min-height: 32px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.ctrl-btn { background: none; border: none; color: var(--text-secondary); cursor: pointer; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+.ctrl-del:hover { color: var(--accent-red); background: var(--bg-primary); }
+.sc-edit-form {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 100%;
   box-sizing: border-box;
+  flex-shrink: 0;
 }
-.sc-input:focus {
-  border-color: var(--accent-blue);
-}
-.sc-url-row {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-.sc-input-url {
-  flex: 1;
-}
-.sc-select {
-  padding: 3px 6px;
-  font-size: 11px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: var(--input-bg, var(--bg-primary));
-  color: var(--text-primary);
-  outline: none;
-}
-.sc-edit-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-.sc-edit-btns {
-  display: flex;
-  gap: 4px;
-}
-.btn-sm {
-  font-size: 12px;
-  padding: 4px 10px;
-}
+.sc-input { width: 100%; min-width: 0; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--input-bg, var(--bg-primary)); color: var(--text-primary); outline: none; box-sizing: border-box; }
+.sc-input:focus { border-color: var(--accent-blue); }
+.sc-url-row { display: flex; gap: 4px; align-items: center; }
+.sc-input-url { flex: 1; }
+.sc-select { min-width: 0; padding: 4px 6px; font-size: 11px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--input-bg, var(--bg-primary)); color: var(--text-primary); }
+.sc-edit-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.sc-edit-btns { display: flex; align-items: center; gap: 4px; }
+.btn-sm { font-size: 12px; padding: 4px 10px; }
+button:disabled { cursor: default; opacity: 0.5; }
 </style>
