@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { createPinia, setActivePinia } from 'pinia'
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { usePortfolioStore } from '../modules/terminal/app/stores/portfolio.ts'
-import { calculateHoldings, emptyPortfolio, portfolioTotals, validatePortfolio, recordPortfolioSnapshot, portfolioHistory } from '../modules/terminal/app/utils/portfolio.ts'
+import { calculateCash, calculateHoldings, emptyPortfolio, portfolioCashHistory, portfolioTotals, validatePortfolio, recordPortfolioSnapshot, portfolioHistory } from '../modules/terminal/app/utils/portfolio.ts'
 
 const clone = value => JSON.parse(JSON.stringify(value))
 const at = day => `2025-01-${String(day).padStart(2, '0')}T12:00:00.000Z`
@@ -11,6 +11,7 @@ const asset = (id = 'a', extra = {}) => ({ id, symbol: id.toUpperCase(), name: i
 const trade = (id, kind, quantity, price, day, fees = 0) => ({ id, assetId: 'a', kind, quantity, price, date: at(day), fees, notes: '', order: day })
 const doc = trades => ({ ...emptyPortfolio(), assets: [asset()], trades })
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} != ${expected}`)
+const cashEntry = (id, kind, amount, day, extra = {}) => ({ id, kind, amount, date: at(day), notes: '', order: day, ...extra })
 
 test('average cost includes buy fees and partial sales realize cost proportionally', () => {
   const d = doc([trade('open', 'opening', 10, 100, 1), trade('buy', 'buy', 10, 120, 2, 20), trade('sell', 'sell', 5, 150, 3, 5)])
@@ -307,4 +308,146 @@ test('notes survive crypto refresh and a later position correction', async () =>
   await store.load()
   assert.equal(store.document.assets[0].notes, 'Thesis and entry criteria')
   assert.equal(store.holdings[0].quantity, 3)
+})
+
+test('legacy portfolios start with zero cash without changing their trades or gains', async () => {
+  const d = doc([trade('buy', 'buy', 2, 100, 1), trade('sell', 'sell', 1, 150, 2)])
+  delete d.cashEntries
+  const { store, saved } = setup(d)
+  await store.load()
+  assert.equal(store.cash, 0); assert.equal(store.totals.totalGain, 110)
+  assert.equal(await store.saveCashEntry(cashEntry('cash', 'balance', 800, 3)), true)
+  assert.deepEqual(saved().trades, d.trades)
+  assert.equal(store.totals.value, 960); assert.equal(store.totals.totalGain, 110)
+  assert.equal(await store.saveTrade({ ...d.trades[0], price: 110 }), true)
+  assert.equal(store.cash, 800); assert.equal(store.document.trades[0].settlesCash, false)
+  assert.equal(await store.saveTrade({ ...d.trades[0], settlesCash: true }), false)
+  assert.match(store.error, /Insufficient cash/)
+})
+
+test('cash-only portfolios support deposits, withdrawals, absolute corrections and historical balances', () => {
+  const d = { ...emptyPortfolio(), cashEntries: [cashEntry('1', 'deposit', 1000, 1), cashEntry('2', 'withdrawal', 200, 2), cashEntry('3', 'balance', 500, 3), cashEntry('4', 'deposit', 50, 4)] }
+  validatePortfolio(d)
+  assert.equal(calculateCash(d), 550); assert.equal(calculateCash(d, Date.parse(at(2))), 800)
+  assert.deepEqual(portfolioCashHistory(d).map(c => [c.amount, c.balance]), [[1000, 1000], [-200, 800], [-300, 500], [50, 550]])
+  const totals = portfolioTotals([], calculateCash(d))
+  assert.equal(totals.value, 550); assert.equal(totals.totalGain, 0); assert.equal(totals.cost, 0)
+  recordPortfolioSnapshot(d, at(2)); recordPortfolioSnapshot(d, at(4))
+  assert.deepEqual(portfolioHistory(d).map(p => [p.value, p.cost, p.gain]), [[800, 0, 0], [550, 0, 0]])
+})
+
+test('new buys and sells settle gross plus buy fees and net sale proceeds by default', async () => {
+  const { store, saved } = setup(doc([]))
+  await store.load()
+  assert.equal(await store.saveCashEntry(cashEntry('cash', 'deposit', 1000, 1)), true)
+  assert.equal(await store.saveTrade(trade('buy', 'buy', 4, 100, 2, 10)), true)
+  assert.equal(store.cash, 590); assert.equal(store.holdings[0].cost, 410)
+  assert.equal(store.totals.value, 1230); assert.equal(store.totals.totalGain, 230)
+  assert.equal(await store.saveTrade(trade('sell', 'sell', 2, 150, 3, 5)), true)
+  assert.equal(store.cash, 885); assert.equal(store.totals.realized, 90)
+  assert.equal(store.totals.value, 1205); assert.equal(store.totals.totalGain, 205)
+  assert.deepEqual(saved().trades.map(t => t.settlesCash), [true, true])
+  assert.deepEqual(store.cashHistory.map(c => c.balance), [1000, 590, 885])
+  await store.load(); assert.equal(store.cash, 885)
+  assert.equal(await store.saveTrade({ ...store.document.trades[1], price: 200 }), true)
+  assert.equal(store.cash, 985); assert.equal(store.totals.realized, 190)
+  assert.equal(await store.removeTrade('sell'), true)
+  assert.equal(store.cash, 590); assert.equal(store.holdings[0].quantity, 4)
+  assert.equal(await store.removeTrade('buy'), true)
+  assert.equal(store.cash, 1000); assert.equal(store.totals.totalGain, 0)
+})
+
+test('insufficient cash is rejected at the entry date even when a later deposit would cover it', async () => {
+  const d = doc([]); d.cashEntries = [cashEntry('cash', 'deposit', 1000, 3)]
+  const { store, saved, writes } = setup(d)
+  await store.load()
+  assert.equal(await store.saveTrade(trade('buy', 'buy', 1, 100, 2)), false)
+  assert.equal(await store.saveCashEntry(cashEntry('out', 'withdrawal', 1001, 4)), false)
+  assert.equal(writes(), 0); assert.deepEqual(saved(), d); assert.equal(store.cash, 1000)
+})
+
+test('cash edits and deletes preserve prior state if a later buy or withdrawal would overdraw', async () => {
+  const d = doc([{ ...trade('buy', 'buy', 2, 100, 2), settlesCash: true }])
+  d.cashEntries = [cashEntry('cash', 'deposit', 300, 1), cashEntry('out', 'withdrawal', 90, 3)]
+  const { store, saved, writes } = setup(d)
+  await store.load()
+  assert.equal(await store.saveCashEntry({ ...d.cashEntries[0], amount: 200 }), false)
+  assert.equal(await store.removeCashEntry('cash'), false)
+  assert.equal(await store.saveTrade({ ...d.trades[0], price: 151 }), false)
+  assert.equal(writes(), 0); assert.deepEqual(saved(), d); assert.equal(store.cash, 10)
+  assert.equal(await store.saveCashEntry({ ...d.cashEntries[0], amount: 400, notes: 'Transfer corrected' }), true)
+  assert.equal(store.cash, 110)
+  assert.equal(await store.removeCashEntry('out'), true); assert.equal(store.cash, 200)
+  await store.load(); assert.equal(store.cash, 200)
+  assert.equal(store.document.cashEntries[0].notes, 'Transfer corrected')
+})
+
+test('removing a sale or its asset cannot orphan cash already withdrawn', async () => {
+  const d = doc([trade('open', 'opening', 2, 100, 1), { ...trade('sell', 'sell', 1, 150, 2), settlesCash: true }])
+  d.cashEntries = [cashEntry('out', 'withdrawal', 100, 3)]
+  const { store, saved } = setup(d)
+  await store.load()
+  assert.equal(await store.removeTrade('sell'), false); assert.equal(await store.removeAsset('a'), false)
+  assert.deepEqual(saved(), d); assert.equal(store.cash, 50)
+  assert.equal(await store.removeCashEntry('out'), true)
+  assert.equal(await store.removeAsset('a'), true)
+  assert.equal(store.cash, 0); assert.equal(store.document.assets.length, 0)
+})
+
+test('same-timestamp cash and trade entries keep insertion order across edits', async () => {
+  const { store } = setup(doc([]))
+  await store.load()
+  assert.equal(await store.saveCashEntry(cashEntry('z', 'deposit', 200, 1)), true)
+  assert.equal(await store.saveTrade(trade('a', 'buy', 1, 100, 1)), true)
+  assert.equal(await store.saveCashEntry(cashEntry('b', 'withdrawal', 50, 1)), true)
+  assert.deepEqual(store.cashHistory.map(c => c.id), ['z', 'a', 'b'])
+  assert.equal(await store.saveCashEntry({ ...store.document.cashEntries[0], amount: 220 }), true)
+  assert.deepEqual(store.cashHistory.map(c => c.id), ['z', 'a', 'b']); assert.equal(store.cash, 70)
+})
+
+test('opening holdings and direct position corrections leave cash and prior gains intact', async () => {
+  const { store } = setup()
+  await store.load()
+  assert.equal(await store.saveCashEntry(cashEntry('cash', 'balance', 500, 1)), true)
+  assert.equal(await store.saveAsset(asset(), { quantity: 4, price: 100, date: at(1) }), true)
+  assert.equal(await store.saveAsset(asset(), { quantity: 8, price: 100 }), true)
+  assert.equal(store.cash, 500); assert.equal(store.totals.realized, 0)
+  assert.equal(store.totals.totalGain, 480); assert.equal(store.totals.value, 1780)
+})
+
+test('recorded values include cash while cash transfers never appear as gain', () => {
+  const d = doc([{ ...trade('buy', 'buy', 2, 100, 2), settlesCash: true }])
+  d.cashEntries = [cashEntry('cash', 'deposit', 1000, 1), cashEntry('out', 'withdrawal', 100, 3)]
+  for (const day of [1, 2, 3]) recordPortfolioSnapshot(d, at(day))
+  assert.deepEqual(portfolioHistory(d).map(p => [p.value, p.gain]), [[1000, 0], [1120, 120], [1020, 120]])
+  d.cashEntries[0].amount = 2000
+  assert.deepEqual(portfolioHistory(d).map(p => [p.value, p.gain]), [[2000, 0], [2120, 120], [2020, 120]])
+  d.assets[0].manualPrice = null; recordPortfolioSnapshot(d, at(4))
+  assert.equal(portfolioHistory(d).at(-1).value, null)
+  assert.equal(portfolioTotals(calculateHoldings(d), calculateCash(d)).totalGain, null)
+})
+
+test('cash validates zero balances, decimals, corrupt entries and overflow', () => {
+  const d = { ...emptyPortfolio(), cashEntries: [cashEntry('1', 'deposit', .1, 1), cashEntry('2', 'deposit', .2, 2), cashEntry('3', 'withdrawal', .3, 3), cashEntry('4', 'balance', 0, 4)] }
+  validatePortfolio(d); assert.equal(calculateCash(d), 0)
+  for (const extra of [{ amount: -1 }, { amount: NaN }, { amount: Infinity }, { amount: 0 }, { kind: 'other' }, { date: 'bad' }, { date: '2099-01-01' }, { order: -1 }, { notes: 42 }, { notes: 'x'.repeat(2001) }]) {
+    assert.throws(() => validatePortfolio({ ...emptyPortfolio(), cashEntries: [cashEntry('bad', 'deposit', 10, 1, extra)] }))
+  }
+  for (const cashEntries of [null, {}, [null], [cashEntry('same', 'deposit', 1, 1), cashEntry('same', 'deposit', 1, 2)], [cashEntry('1', 'deposit', 1e15, 1), cashEntry('2', 'deposit', 1e15, 2)]]) assert.throws(() => validatePortfolio({ ...emptyPortfolio(), cashEntries }))
+  assert.throws(() => validatePortfolio(doc([{ ...trade('open', 'opening', 1, 100, 1), settlesCash: true }])), /Only buys/)
+  assert.throws(() => validatePortfolio(doc([{ ...trade('buy', 'buy', 1, 100, 1), settlesCash: 'yes' }])), /settlement/)
+})
+
+test('cash changes remain atomic on failed writes and stale revisions', async () => {
+  const d = { ...emptyPortfolio(), cashEntries: [cashEntry('cash', 'balance', 100, 1)] }
+  const failed = setup(d, { failWrite: true })
+  await failed.store.load()
+  assert.equal(await failed.store.saveCashEntry(cashEntry('in', 'deposit', 50, 2)), false)
+  assert.equal(await failed.store.removeCashEntry('cash'), false)
+  assert.deepEqual(failed.saved(), d); assert.equal(failed.store.cash, 100)
+  const stale = setup(d)
+  await stale.store.load()
+  stale.external({ ...d, revision: 'newer', cashEntries: [cashEntry('cash', 'balance', 200, 1)] })
+  assert.equal(await stale.store.saveCashEntry(cashEntry('in', 'deposit', 50, 2), ''), false)
+  assert.equal(stale.store.cash, 200); assert.equal(stale.writes(), 0)
 })

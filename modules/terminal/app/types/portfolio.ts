@@ -19,6 +19,15 @@ export interface PortfolioTrade {
   fees: number
   notes: string
   order: number
+  settlesCash?: boolean
+}
+export interface PortfolioCashEntry {
+  id: string
+  kind: 'deposit' | 'withdrawal' | 'balance'
+  date: string
+  amount: number
+  notes: string
+  order: number
 }
 export interface PortfolioQuote { price: number; checkedAt: string }
 export interface PortfolioSnapshot { at: string; prices: Record<string, number> }
@@ -27,6 +36,7 @@ export interface PortfolioDocument {
   revision: string
   assets: PortfolioAsset[]
   trades: PortfolioTrade[]
+  cashEntries?: PortfolioCashEntry[]
   quotes: Record<string, PortfolioQuote>
   snapshots: PortfolioSnapshot[]
 }
