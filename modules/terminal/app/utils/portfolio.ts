@@ -21,8 +21,9 @@ export function validatePortfolio(value: unknown): asserts value is PortfolioDoc
   }
   const tradeIds = new Set<string>()
   for (const t of doc.trades) {
-    if (!t || !text(t.id) || !t.id || tradeIds.has(t.id) || !ids.has(t.assetId) || !['opening', 'buy', 'sell'].includes(t.kind)
-      || !date(t.date) || !finite(t.quantity) || t.quantity <= 0 || !finite(t.price) || !finite(t.fees)
+    if (!t || !text(t.id) || !t.id || tradeIds.has(t.id) || !ids.has(t.assetId) || !['opening', 'buy', 'sell', 'adjustment'].includes(t.kind)
+      || !date(t.date) || !finite(t.quantity) || (t.quantity === 0 && t.kind !== 'adjustment') || !finite(t.price) || !finite(t.fees)
+      || (t.kind === 'adjustment' && t.fees !== 0)
       || !finite(t.quantity * t.price + t.fees) || !text(t.notes) || t.notes.length > 2000
       || !Number.isSafeInteger(t.order) || t.order < 0) throw new Error('Check the trade asset, date, quantity, price and fees.')
     if (Date.parse(t.date) > Date.now() + 60000) throw new Error('Trade dates cannot be in the future.')
@@ -54,6 +55,10 @@ export function calculateHoldings(doc: PortfolioDocument, prices?: Record<string
       row.cost -= soldCost
       row.quantity -= t.quantity
       if (row.quantity <= tolerance) { row.quantity = 0; row.cost = 0 }
+    } else if (t.kind === 'adjustment') {
+      // A position correction sets the balance; it is not a purchase or sale.
+      row.quantity = t.quantity
+      row.cost = t.quantity * t.price
     } else {
       row.quantity += t.quantity
       row.cost += t.quantity * t.price + t.fees

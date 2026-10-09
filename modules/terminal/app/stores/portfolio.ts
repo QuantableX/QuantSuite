@@ -74,8 +74,9 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
     finally { busy.value = false }
   }
 
-  function saveAsset(asset: PortfolioAsset, opening?: { quantity: number; price: number; date: string }, expected?: string) {
+  function saveAsset(asset: PortfolioAsset, position?: { quantity: number; price: number; date?: string }, expected?: string) {
     return commit((doc) => {
+      if (position && (!Number.isFinite(position.quantity) || position.quantity < 0 || !Number.isFinite(position.price) || position.price < 0)) throw new Error('Enter a non-negative quantity and average cost.')
       const at = doc.assets.findIndex((a) => a.id === asset.id)
       if (at < 0) doc.assets.push(asset)
       else {
@@ -83,10 +84,21 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
         if (previous.symbol !== asset.symbol || previous.marketName !== asset.marketName || previous.source !== asset.source) delete doc.quotes[asset.id]
         doc.assets[at] = asset
       }
-      if (at < 0 && opening && opening.quantity > 0) doc.trades.push({
-        id: id(), assetId: asset.id, kind: 'opening', quantity: opening.quantity, price: opening.price,
-        date: opening.date, fees: 0, notes: 'Opening holding', order: nextOrder(doc),
-      })
+      if (!position) return
+      if (at < 0) {
+        if (position.quantity > 0) doc.trades.push({
+          id: id(), assetId: asset.id, kind: 'opening', quantity: position.quantity, price: position.price,
+          date: position.date ?? new Date().toISOString(), fees: 0, notes: 'Opening holding', order: nextOrder(doc),
+        })
+      } else {
+        const current = calculateHoldings(doc).find((h) => h.asset.id === asset.id)!
+        if (position.quantity === current.quantity && (position.quantity === 0 || position.price === current.averageCost)) return
+        const latest = Math.max(Date.now(), ...doc.trades.filter((t) => t.assetId === asset.id).map((t) => Date.parse(t.date)))
+        doc.trades.push({
+          id: id(), assetId: asset.id, kind: 'adjustment', quantity: position.quantity, price: position.quantity ? position.price : 0,
+          date: new Date(latest).toISOString(), fees: 0, notes: 'Position updated in Edit holding', order: nextOrder(doc),
+        })
+      }
     }, expected)
   }
   function nextOrder(doc: PortfolioDocument) { return Math.max(0, ...doc.trades.map((t) => t.order)) + 1 }

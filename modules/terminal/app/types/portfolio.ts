@@ -11,7 +11,7 @@ export interface PortfolioAsset {
 export interface PortfolioTrade {
   id: string
   assetId: string
-  kind: 'opening' | 'buy' | 'sell'
+  kind: 'opening' | 'buy' | 'sell' | 'adjustment'
   date: string
   quantity: number
   price: number
