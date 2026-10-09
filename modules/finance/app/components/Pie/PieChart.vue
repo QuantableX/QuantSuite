@@ -9,7 +9,6 @@ const props = defineProps<{
   description: string
   totalLabel: string
   emptyText: string
-  selectedId?: string | null
 }>()
 const emit = defineEmits<{ select: [fundId: string] }>()
 const app = useAppStore()
@@ -40,13 +39,12 @@ function select(slice: PieSlice) {
           v-for="slice in chart.segments"
           :key="slice.id"
           class="qf-pie__slice"
-          :class="{ 'is-dim': hovered && hovered !== slice.id, 'is-selected': selectedId && selectedId === slice.fundId }"
+          :class="{ 'is-dim': hovered && hovered !== slice.id }"
           :d="slice.path"
           :fill="slice.color"
           :role="slice.fundId ? 'button' : undefined"
           :tabindex="slice.fundId ? 0 : undefined"
           :aria-label="slice.fundId ? `Open ${label(slice)}` : undefined"
-          :aria-pressed="slice.fundId && selectedId !== undefined ? selectedId === slice.fundId : undefined"
           @pointerenter="hovered = slice.id"
           @pointerleave="hovered = null"
           @focus="hovered = slice.id"
@@ -63,9 +61,8 @@ function select(slice: PieSlice) {
             :is="slice.fundId ? 'button' : 'div'"
             :type="slice.fundId ? 'button' : undefined"
             class="qf-pie__row"
-            :class="{ 'is-active': hovered === slice.id || (selectedId && selectedId === slice.fundId) }"
+            :class="{ 'is-active': hovered === slice.id }"
             :aria-label="slice.fundId ? `Open ${label(slice)}` : undefined"
-            :aria-pressed="slice.fundId && selectedId !== undefined ? selectedId === slice.fundId : undefined"
             @pointerenter="hovered = slice.id"
             @pointerleave="hovered = null"
             @focus="hovered = slice.id"
@@ -95,7 +92,9 @@ function select(slice: PieSlice) {
 .qf-pie__slice { stroke: var(--qf-bg-raised); stroke-width: 1; stroke-linejoin: round; transition: opacity 120ms ease; }
 .qf-pie__slice[role='button'] { cursor: pointer; }
 .qf-pie__slice.is-dim { opacity: .4; }
-.qf-pie__slice.is-selected, .qf-pie__slice:focus-visible { stroke: var(--qf-text); stroke-width: 1.5; }
+/* SVG's native focus outline is a rectangle around the slice's bounds. */
+.qf-pie__slice:focus { outline: none; }
+.qf-pie__slice:focus-visible { stroke: var(--qf-text); stroke-width: 1.5; }
 .qf-pie__legend { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; min-width: 0; }
 .qf-pie__row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; text-align: left; border: 1px solid transparent; border-radius: var(--qf-radius); background: transparent; color: var(--qf-text); }
 button.qf-pie__row { cursor: pointer; }

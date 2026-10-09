@@ -10,6 +10,7 @@ type EditorRequest =
 
 export const useFundsStore = defineStore('finance/funds', () => {
   const funds = ref<Fund[]>([])
+  // No selected fund is the portfolio overview, including on first entry.
   const selectedId = ref<string | null>(null)
   const loading = ref(false)
   const busy = ref(false)
@@ -32,7 +33,7 @@ export const useFundsStore = defineStore('finance/funds', () => {
       const rows = await invoke<Fund[]>('plugin:finance|funds_overview')
       if (revision !== request) return
       funds.value = rows
-      if (!rows.some((f) => f.id === selectedId.value)) selectedId.value = rows[0]?.id ?? null
+      if (!rows.some((f) => f.id === selectedId.value)) selectedId.value = null
       loaded.value = true
       error.value = ''
     } catch (e) {

@@ -134,19 +134,17 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
       <button class="qf-btn" @click="editFund()">New fund</button>
     </QEmptyState>
 
-    <template v-else-if="store.selected">
-      <div class="qfunds-allocation">
+    <div v-else-if="store.loaded && !store.selected" class="qfunds-allocation">
         <FinancePieChart
           :slices="fundSlices"
-          :selected-id="store.selectedId"
-          title="Fund allocation"
-          description="Each fund’s share of your total current value. Select a fund to view its details below."
+          title="Funds overview"
+          description="Each fund’s share of your total current value. Select a fund to open its details."
           total-label="Total current value"
           empty-text="Your funds have no current value yet. Add a deposit or update a value to see the allocation."
           @select="store.selectedId = $event"
         />
-      </div>
-      <section class="qfunds-detail">
+    </div>
+    <section v-else-if="store.selected" class="qfunds-detail">
         <header class="qfunds-section-head">
           <div><h2>{{ store.selected.name }}</h2><p v-if="store.selected.notes">{{ store.selected.notes }}</p></div>
           <div class="qfunds-actions"><button class="qf-btn" :disabled="store.busy" @click="editFund(store.selected)">Edit fund</button><button class="qfunds-text-btn" :disabled="store.busy" @click="askDelete('fund', store.selected.id, store.selected.name)">Delete</button></div>
@@ -184,8 +182,7 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
             </tbody>
           </table></div>
         </section>
-      </section>
-    </template>
+    </section>
 
     <dialog ref="dialog" class="qfunds-dialog" aria-labelledby="fund-dialog-title" @cancel="store.busy && $event.preventDefault()">
       <form @submit.prevent="submit">

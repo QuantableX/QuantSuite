@@ -15,11 +15,12 @@ const money = (cents: number) => formatCents(cents, app.settings.currency, app.s
       New fund
     </button>
 
-    <section class="qff-left__total">
+    <button type="button" class="qff-left__total" :aria-pressed="!store.selected" aria-label="Show funds overview" @click="store.selectedId = null">
       <span class="qff-left__label">Total current value</span>
       <strong>{{ money(store.totals.value) }}</strong>
       <small>Across {{ store.funds.length }} {{ store.funds.length === 1 ? 'fund' : 'funds' }}</small>
-    </section>
+      <small class="qff-left__overview">Overview <span aria-hidden="true">→</span></small>
+    </button>
     <dl class="qff-left__figures">
       <div><dt>Net contributed</dt><dd>{{ money(store.totals.input) }}</dd></div>
       <div><dt>Value change</dt><dd :class="store.totals.gain < 0 ? 'qf-neg' : store.totals.gain > 0 ? 'qf-pos' : ''">{{ money(store.totals.gain) }}</dd></div>
@@ -42,7 +43,11 @@ const money = (cents: number) => formatCents(cents, app.settings.currency, app.s
 <style scoped>
 .qff-left { display: flex; flex-direction: column; gap: 14px; padding: 12px 10px; }
 .qff-left__create { justify-content: center; width: 100%; }
-.qff-left__total { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--qf-border); border-radius: var(--qf-radius-lg); }
+.qff-left__total { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 12px; text-align: left; border: 1px solid var(--qf-border); border-radius: var(--qf-radius-lg); background: transparent; color: var(--qf-text); cursor: pointer; }
+.qff-left__total:hover { background: var(--qf-bg-hover); }
+.qff-left__total[aria-pressed='true'] { background: var(--qf-bg-card); border-color: var(--qf-accent); }
+.qff-left__total:focus-visible { outline: 2px solid var(--qf-accent); outline-offset: 2px; }
+.qff-left__overview { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 5px; }
 .qff-left__label { color: var(--qf-text-muted); font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .qff-left__total strong { font-size: 22px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .qff-left small { font-size: 10px; color: var(--qf-text-muted); }
