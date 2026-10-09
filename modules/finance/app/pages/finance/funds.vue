@@ -168,17 +168,18 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
 
         <section class="qfunds-section">
           <header class="qfunds-section-head"><h3>History</h3><span class="qfunds-hint">{{ store.selected.entries.length }} entries</span></header>
-          <div class="qfunds-table-scroll"><table class="qfunds-history">
+          <div class="qfunds-table-scroll" tabindex="0" role="region" aria-label="Scrollable fund history"><table class="qfunds-history" aria-label="Fund history entries">
+            <colgroup><col style="width: 18%" /><col style="width: 24%" /><col style="width: 28%" /><col style="width: 22%" /><col style="width: 8%" /></colgroup>
             <thead><tr><th>Date</th><th>Entry</th><th>Note</th><th class="qfunds-number">Amount</th><th><span class="qfunds-sr">Actions</span></th></tr></thead>
             <tbody>
               <tr v-for="entry in store.selected.entries" :key="entry.id">
                 <td>{{ displayDate(entry.occurredOn) }}</td>
                 <td>{{ entry.kind === 'valuation' ? 'Value update' : entry.kind === 'deposit' ? 'Deposit' : 'Withdrawal' }}<small v-if="entry.planId">Savings plan</small></td>
                 <td class="qfunds-note">{{ entry.notes || '—' }}</td>
-                <td class="qfunds-number" :class="{ 'qf-pos': entry.kind === 'deposit', 'qf-neg': entry.kind === 'withdrawal' }">{{ entry.kind === 'deposit' ? '+' : entry.kind === 'withdrawal' ? '−' : '' }}{{ money(entry.amountCents) }}</td>
+                <td class="qfunds-number" :title="money(entry.amountCents)" :class="{ 'qf-pos': entry.kind === 'deposit', 'qf-neg': entry.kind === 'withdrawal' }">{{ entry.kind === 'deposit' ? '+' : entry.kind === 'withdrawal' ? '−' : '' }}{{ money(entry.amountCents) }}</td>
                 <td><button class="qfunds-text-btn" :disabled="store.busy" :aria-label="`Delete ${entry.kind} on ${entry.occurredOn}`" @click="askDelete('entry', entry.id, `${entry.kind} · ${money(entry.amountCents)}`)">Delete</button></td>
               </tr>
-              <tr class="qfunds-opening"><td>{{ displayDate(store.selected.openedOn) }}</td><td>Opening balance</td><td>Input {{ money(store.selected.openingCents) }}</td><td class="qfunds-number">{{ money(store.selected.openingValueCents) }}</td><td /></tr>
+              <tr class="qfunds-opening"><td>{{ displayDate(store.selected.openedOn) }}</td><td>Opening balance</td><td class="qfunds-note">Input {{ money(store.selected.openingCents) }}</td><td class="qfunds-number" :title="money(store.selected.openingValueCents)">{{ money(store.selected.openingValueCents) }}</td><td /></tr>
             </tbody>
           </table></div>
         </section>
@@ -221,7 +222,7 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
 </template>
 
 <style scoped>
-.qfunds { height: 100%; overflow: auto; padding: 24px; container-type: inline-size; }
+.qfunds { height: 100%; overflow: auto; scrollbar-gutter: stable; padding: 24px; container-type: inline-size; }
 .qfunds h2, .qfunds h3, .qfunds p { margin: 0; }
 .qfunds h2 { font-size: 20px; font-weight: 600; }
 .qfunds h3 { font-size: 13px; font-weight: 650; }
@@ -245,12 +246,14 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
 .qfunds-text-btn:hover { color: var(--qf-text); }
 .qfunds button:disabled { opacity: .5; cursor: default; }
 .qfunds-table-scroll { overflow-x: auto; margin-top: 12px; }
-.qfunds-history { width: 100%; border-collapse: collapse; font-size: 12px; }
+.qfunds-table-scroll:focus-visible { outline: 1px solid var(--qf-text-muted); outline-offset: -1px; }
+.qfunds-history { width: 100%; min-width: 760px; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
 .qfunds-history th { text-align: left; color: var(--qf-text-muted); font-size: 10px; font-weight: 500; }
 .qfunds-history th, .qfunds-history td { padding: 10px 8px; border-bottom: 1px solid var(--qf-border-subtle); }
+.qfunds-history td { overflow: hidden; text-overflow: ellipsis; }
 .qfunds-history small { display: block; color: var(--qf-text-muted); font-size: 10px; }
 .qfunds-history .qfunds-number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.qfunds-note { max-width: 260px; overflow-wrap: anywhere; }
+.qfunds-note { overflow-wrap: anywhere; }
 .qfunds-opening { color: var(--qf-text-muted); }
 .qfunds-empty { display: flex; flex-direction: column; align-items: center; gap: 16px; max-width: 480px; margin: 0 auto; padding: 80px 12px; text-align: center; color: var(--qf-text-secondary); }
 .qfunds-empty p { font-size: 12px; line-height: 1.7; }
