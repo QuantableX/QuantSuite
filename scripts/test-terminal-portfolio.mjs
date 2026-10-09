@@ -202,3 +202,72 @@ test('browser fallback persists the ledger and refuses storage failures', async 
   assert.match(store.error, /quota exceeded/)
   delete globalThis.localStorage
 })
+
+test('position adjustments set quantity and cost without realizing a trade', () => {
+  const d = doc([trade('open', 'opening', 10, 100, 1), trade('sell', 'sell', 2, 150, 2, 2), trade('fix', 'adjustment', 12, 110, 3), trade('later', 'sell', 3, 160, 4, 1)])
+  validatePortfolio(d)
+  const [h] = calculateHoldings(d)
+  assert.equal(h.quantity, 9); assert.equal(h.cost, 990); assert.equal(h.realized, 247)
+  const before = calculateHoldings(d, undefined, Date.parse(at(2)))[0]
+  assert.equal(before.quantity, 8); assert.equal(before.realized, 98)
+})
+
+test('position corrections affect valuations only from their date and remain editable', () => {
+  const d = doc([trade('open', 'opening', 10, 100, 1), trade('fix', 'adjustment', 4, 120, 3)])
+  recordPortfolioSnapshot(d, at(2)); recordPortfolioSnapshot(d, at(4))
+  assert.deepEqual(portfolioHistory(d).map(p => [p.value, p.cost]), [[1600, 1000], [640, 480]])
+  d.trades[1].quantity = 6
+  assert.deepEqual(portfolioHistory(d).map(p => [p.value, p.cost]), [[1600, 1000], [960, 720]])
+  d.trades.pop()
+  assert.equal(calculateHoldings(d)[0].quantity, 10)
+})
+
+test('zero-quantity adjustments are valid but negative values, fees and later oversells are rejected', () => {
+  validatePortfolio(doc([trade('open', 'opening', 10, 100, 1), trade('fix', 'adjustment', 0, 0, 2)]))
+  for (const entry of [trade('bad', 'buy', 0, 100, 1), trade('bad', 'adjustment', -1, 100, 1), trade('bad', 'adjustment', 1, -1, 1), trade('bad', 'adjustment', 1, 100, 1, 2)]) assert.throws(() => validatePortfolio(doc([entry])))
+  assert.throws(() => validatePortfolio(doc([trade('open', 'opening', 10, 100, 1), trade('fix', 'adjustment', 1, 100, 2), trade('sell', 'sell', 2, 160, 3)])), /exceeds/)
+})
+
+test('Edit holding saves the entire position atomically while preserving prior entries and realized gains', async () => {
+  const d = doc([trade('open', 'opening', 10, 100, 1), trade('sell', 'sell', 2, 150, 2, 2)])
+  const prior = clone(d.trades)
+  const { store, saved } = setup(d)
+  await store.load()
+  assert.equal(await store.saveAsset({ ...asset(), manualPrice: 200 }, { quantity: 12, price: 110 }), true)
+  assert.deepEqual(saved().trades.slice(0, 2), prior)
+  assert.equal(saved().trades[2].kind, 'adjustment')
+  assert.equal(store.holdings[0].quantity, 12); assert.equal(store.holdings[0].cost, 1320)
+  assert.equal(store.totals.realized, 98); assert.equal(store.totals.value, 2400); assert.equal(store.totals.unrealized, 1080)
+  await store.load(); assert.equal(store.holdings[0].quantity, 12)
+  assert.equal(await store.saveAsset({ ...asset(), name: 'Renamed' }, { quantity: 12, price: 110 }), true)
+  assert.equal(store.document.trades.length, 3)
+  assert.equal(await store.saveAsset(asset(), { quantity: 12, price: 90 }), true)
+  assert.equal(store.holdings[0].cost, 1080); assert.equal(store.document.trades.length, 4)
+})
+
+test('direct edits can close and reopen positions without adding realized gains', async () => {
+  const d = doc([trade('open', 'opening', 10, 100, 1), trade('sell', 'sell', 2, 150, 2)])
+  const { store } = setup(d)
+  await store.load()
+  assert.equal(await store.saveAsset(asset(), { quantity: 0, price: 100 }), true)
+  assert.equal(store.totals.count, 0); assert.equal(store.totals.cost, 0); assert.equal(store.totals.realized, 100)
+  assert.equal(await store.saveAsset(asset(), { quantity: 3, price: 120 }), true)
+  assert.equal(store.holdings[0].quantity, 3); assert.equal(store.holdings[0].cost, 360); assert.equal(store.totals.realized, 100)
+})
+
+test('failed position correction leaves both asset metadata and the original ledger intact', async () => {
+  const d = doc([trade('open', 'opening', 2, 100, 1)])
+  const { store, saved } = setup(d, { failWrite: true })
+  await store.load()
+  assert.equal(await store.saveAsset({ ...asset(), name: 'Changed' }, { quantity: 4, price: 90 }), false)
+  assert.deepEqual(saved(), d); assert.deepEqual(clone(store.document), d)
+})
+
+test('invalid direct quantities are rejected and adjustment deletion respects subsequent sales', async () => {
+  const d = doc([trade('open', 'opening', 1, 100, 1), trade('fix', 'adjustment', 4, 100, 2), trade('sell', 'sell', 3, 120, 3)])
+  const { store, writes } = setup(d)
+  await store.load()
+  for (const quantity of [-1, NaN, Infinity]) assert.equal(await store.saveAsset(asset(), { quantity, price: 100 }), false)
+  assert.equal(await store.removeTrade('fix'), false)
+  assert.equal(writes(), 0); assert.equal(store.document.trades.length, 3)
+})

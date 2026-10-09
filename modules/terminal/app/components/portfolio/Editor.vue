@@ -9,6 +9,7 @@ const dialog = ref<HTMLDialogElement | null>(null)
 const error = ref('')
 const revision = store.document.revision
 const asset = store.document.assets.find((a) => a.id === props.assetId)
+const holding = store.holdings.find((h) => h.asset.id === props.assetId)
 const trade = store.document.trades.find((t) => t.id === props.tradeId)
 const localTime = (date: string) => {
   const d = new Date(date)
@@ -22,7 +23,7 @@ const draft = reactive({
   kind: trade?.kind ?? props.side ?? 'buy' as PortfolioTrade['kind'],
   date: localTime(trade?.date ?? new Date().toISOString()), quantity: trade ? String(trade.quantity) : '',
   price: trade ? String(trade.price) : '', fees: trade ? String(trade.fees) : '0', notes: trade?.notes ?? '',
-  openingQuantity: '', openingPrice: '',
+  openingQuantity: holding ? String(holding.quantity) : '', openingPrice: holding ? String(holding.averageCost) : '',
 })
 const marketPage = ref(asset?.marketPage ?? 1)
 const title = computed(() => props.kind === 'asset' ? asset ? 'Edit holding' : 'Add holding' : trade ? 'Edit trade' : 'Add trade')
@@ -60,15 +61,16 @@ async function submit() {
         manualPrice: String(draft.manualPrice).trim() ? number(draft.manualPrice, 'current price') : null,
         updatedAt: new Date().toISOString(),
       }
-      const quantity = asset || !String(draft.openingQuantity).trim() ? 0 : number(draft.openingQuantity, 'opening quantity')
-      saved = await store.saveAsset(next, quantity > 0 ? {
-        quantity, price: number(draft.openingPrice, 'average cost'), date: new Date(draft.date).toISOString(),
+      const quantity = !asset && !String(draft.openingQuantity).trim() ? 0 : number(draft.openingQuantity, 'quantity')
+      saved = await store.saveAsset(next, asset || quantity > 0 ? {
+        quantity, price: quantity > 0 ? number(draft.openingPrice, 'average cost') : 0,
+        date: asset ? undefined : new Date(draft.date).toISOString(),
       } : undefined, revision)
     } else {
       saved = await store.saveTrade({
         id: trade?.id ?? crypto.randomUUID(), assetId: draft.assetId, kind: draft.kind,
-        date: new Date(draft.date).toISOString(), quantity: number(draft.quantity, 'quantity', true),
-        price: number(draft.price, 'price'), fees: number(draft.fees, 'fees'), notes: draft.notes.trim(),
+        date: trade && draft.date === localTime(trade.date) ? trade.date : new Date(draft.date).toISOString(), quantity: number(draft.quantity, 'quantity', draft.kind !== 'adjustment'),
+        price: number(draft.price, 'price'), fees: draft.kind === 'adjustment' ? 0 : number(draft.fees, 'fees'), notes: draft.notes.trim(),
       }, revision)
     }
     if (saved) { emit('close'); void store.refreshPrices() }
@@ -97,15 +99,19 @@ async function submit() {
             <p>This creates an editable opening entry. Leave quantity empty to start with a new purchase. If you add those purchases individually later, adjust the opening entry to avoid counting them twice.</p>
           </fieldset>
         </template>
-        <p v-else>Change quantities and purchase costs through the editable entries in Trade history.</p>
+        <fieldset v-else><legend>Current position</legend>
+          <div class="qp-editor__grid"><label>Current quantity<input v-model="draft.openingQuantity" type="number" min="0" step="any" required /></label><label>Average unit cost (USD)<input v-model="draft.openingPrice" type="number" min="0" step="any" :required="Number(draft.openingQuantity) > 0" /></label></div>
+          <p>Quantity and cost changes are saved as an editable position adjustment. Earlier trades and realized gains stay intact.</p>
+        </fieldset>
       </template>
       <template v-else>
-        <div class="qp-editor__grid"><label>Asset<select v-model="draft.assetId" required><option v-for="a in store.document.assets" :key="a.id" :value="a.id">{{ a.symbol }} · {{ a.name }}</option></select></label><label>Entry type<select v-model="draft.kind"><option value="buy">Buy</option><option value="sell">Sell</option><option value="opening">Opening holding</option></select></label></div>
+        <div class="qp-editor__grid"><label>Asset<select v-model="draft.assetId" required><option v-for="a in store.document.assets" :key="a.id" :value="a.id">{{ a.symbol }} · {{ a.name }}</option></select></label><label>Entry type<select v-model="draft.kind"><option value="buy">Buy</option><option value="sell">Sell</option><option value="opening">Opening holding</option><option value="adjustment">Position adjustment</option></select></label></div>
         <label>Date and time<input v-model="draft.date" type="datetime-local" required /></label>
-        <div class="qp-editor__grid"><label>Quantity<input v-model="draft.quantity" type="number" min="0" step="any" required autofocus /></label><label>Unit price (USD)<input v-model="draft.price" type="number" min="0" step="any" required /></label></div>
-        <label>Fees (USD)<input v-model="draft.fees" type="number" min="0" step="any" required /></label>
+        <div class="qp-editor__grid"><label>{{ draft.kind === 'adjustment' ? 'Position quantity' : 'Quantity' }}<input v-model="draft.quantity" type="number" min="0" step="any" required autofocus /></label><label>{{ draft.kind === 'adjustment' ? 'Average unit cost (USD)' : 'Unit price (USD)' }}<input v-model="draft.price" type="number" min="0" step="any" required /></label></div>
+        <label v-if="draft.kind !== 'adjustment'">Fees (USD)<input v-model="draft.fees" type="number" min="0" step="any" required /></label>
         <label>Notes<textarea v-model="draft.notes" rows="2" maxlength="2000" /></label>
-        <p>Every entry stays editable. Changes recalculate holdings and gains using average cost. Selling more than you held at that time is rejected.</p>
+        <p v-if="draft.kind === 'adjustment'">Sets the whole position's quantity and average cost at this date. Earlier realized gains stay intact; later trades apply to the corrected balance.</p>
+        <p v-else>Every entry stays editable. Changes recalculate holdings and gains using average cost. Selling more than you held at that time is rejected.</p>
       </template>
       <p v-if="error || store.error" class="qp-editor__error" role="alert">{{ error || store.error }}</p>
       <footer><button type="button" :disabled="disabled" @click="emit('close')">Cancel</button><button type="submit" class="qp-editor__save" :disabled="disabled">{{ store.busy ? 'Saving…' : 'Save' }}</button></footer>
