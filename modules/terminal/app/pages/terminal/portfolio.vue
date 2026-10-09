@@ -76,7 +76,7 @@ function historyFor(id: string) { selectedAsset.value = id; view.value = 'histor
           <TerminalPortfolioCharts :holdings="store.holdings" :history="store.history" @select="!locked && (editor = { kind: 'asset', assetId: $event })" />
           <section class="qp-holdings-panel" aria-label="Holdings panel">
           <div class="qp-holdings-head"><h2>Holdings</h2><label class="qp-search"><span class="sr-only">Find a holding</span><input v-model="search" type="search" placeholder="Symbol or name" /></label><label class="qp-checkbox"><input v-model="currentOnly" type="checkbox" /> Current holdings only</label></div>
-          <div class="qp-table-wrap" tabindex="0" role="region" aria-label="Scrollable holdings"><table class="qp-table" aria-label="Portfolio holdings"><thead><tr><th>Asset</th><th>Quantity</th><th>Avg. cost</th><th>Current price</th><th>Value / share</th><th>Unrealized</th><th>Actions</th></tr></thead><tbody>
+          <div class="qp-table-wrap qp-holdings-scroll" tabindex="0" role="region" aria-label="Scrollable holdings"><table class="qp-table qp-holdings-table" aria-label="Portfolio holdings"><colgroup><col style="width: 20%" /><col style="width: 8%" /><col style="width: 12%" /><col style="width: 12%" /><col style="width: 13%" /><col style="width: 13%" /><col style="width: 22%" /></colgroup><thead><tr><th>Asset</th><th>Quantity</th><th>Avg. cost</th><th>Current price</th><th>Value / share</th><th>Unrealized</th><th>Actions</th></tr></thead><tbody>
             <tr v-for="h in rows" :key="h.asset.id"><td><div class="qp-asset"><i :style="{ background: assetColor(h.asset.id) }" /><span><strong>{{ h.asset.symbol }}</strong><small>{{ h.asset.name }}{{ h.quantity === 0 ? ' · Closed / no holding' : '' }}</small><button class="qp-holding-note" :disabled="locked" :aria-label="`Notes for ${h.asset.symbol}`" :title="h.asset.notes || 'Add holding notes'" @click="editor = { kind: 'asset', assetId: h.asset.id, focusNotes: true }">{{ h.asset.notes?.trim() || 'Add notes' }}</button></span></div></td><td>{{ number(h.quantity) }}</td><td>{{ price(h.averageCost) }}</td><td :title="h.asset.source === 'manual' ? displayDate(h.asset.updatedAt) : store.document.quotes[h.asset.id] ? `Checked ${displayDate(store.document.quotes[h.asset.id]!.checkedAt)}` : 'Not priced yet'">{{ price(h.price) }}<small>{{ h.asset.source === 'manual' ? 'Manual' : 'Market snapshot' }}</small></td><td>{{ money(h.value) }}<small>{{ h.value !== null && store.totals.value > 0 ? `${(h.value / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td :class="tone(h.unrealized)">{{ signed(h.unrealized) }}<small>{{ h.unrealized === null ? '—' : percent(h.unrealized, h.cost) }}</small></td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Edit ${h.asset.symbol} holding`" @click="editor = { kind: 'asset', assetId: h.asset.id }">Edit</button><button :disabled="locked" :aria-label="`Trade ${h.asset.symbol}`" @click="editor = { kind: 'trade', assetId: h.asset.id }">Trade</button><button :aria-label="`${h.asset.symbol} trade history`" @click="historyFor(h.asset.id)">History</button><button :disabled="locked" :aria-label="`Delete ${h.asset.symbol} asset`" @click="askDelete('asset', h.asset.id, h.asset.name)">Delete</button></div></td></tr>
             <tr v-if="!rows.length"><td colspan="7" class="qp-no-rows">No matching current holdings. Clear the search or turn off “Current holdings only” to see closed and newly added assets.</td></tr>
           </tbody></table></div>
@@ -130,6 +130,9 @@ function historyFor(id: string) { selectedAsset.value = id; view.value = 'histor
 .qp-table-wrap { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; border-top: 1px solid var(--border); }
 .qp-table-wrap:focus-visible { outline: 1px solid var(--text-secondary); outline-offset: -2px; }
 .qp-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.qp-holdings-scroll { scrollbar-gutter: stable; }
+.qp-holdings-table { table-layout: fixed; min-width: 920px; }
+.qp-holdings-table td { overflow: hidden; text-overflow: ellipsis; }
 .qp-table th, .qp-table td { padding: 12px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
 .qp-table th { position: sticky; top: 0; z-index: 1; font-size: 10px; color: var(--text-secondary); font-weight: 500; background: var(--surface-1); }
 .qp-table th:first-child, .qp-table td:first-child, .qp-table td:last-child { text-align: left; }
@@ -142,6 +145,8 @@ function historyFor(id: string) { selectedAsset.value = id; view.value = 'histor
 .qp-asset small { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .qp-page .qp-holding-note { display: block; max-width: 180px; padding: 0; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 10px; color: var(--text-secondary); background: transparent; border: 0; border-radius: 0; }
 .qp-page .qp-holding-note:hover { color: var(--text-primary); text-decoration: underline; }
+.qp-holdings-table .qp-asset > span { flex: 1; }
+.qp-holdings-table .qp-asset small, .qp-holdings-table .qp-holding-note { max-width: 100%; }
 .qp-row-actions { display: flex; flex-wrap: nowrap; gap: 4px; }
 .qp-row-actions button { padding: 4px 6px; font-size: 10px; background: transparent; border-color: transparent; }
 .qp-table .qp-no-rows { text-align: center; padding: 28px 12px; color: var(--text-secondary); white-space: normal; }
