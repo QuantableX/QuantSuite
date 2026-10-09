@@ -11,6 +11,7 @@
     <nav class="header-nav-links flex items-center gap-1 ml-3" aria-label="Market sections">
       <NuxtLink to="/terminal" class="btn-ghost text-xs">Terminal</NuxtLink>
       <NuxtLink to="/terminal/metrics" class="btn-ghost text-xs">Metrics</NuxtLink>
+      <NuxtLink to="/terminal/portfolio" class="btn-ghost text-xs">Portfolio</NuxtLink>
       <NuxtLink to="/terminal/journal" class="btn-ghost text-xs">Journal</NuxtLink>
       <NuxtLink to="/terminal/dojo" class="btn-ghost text-xs">Dojo</NuxtLink>
     </nav>
