@@ -4,11 +4,13 @@ import { useAppStore } from '#finance/stores/app'
 import { useFundsStore } from '#finance/stores/funds'
 import { formatAmount, formatCents } from '#finance/utils/money'
 import { parseFundCents } from '#finance/utils/fund-money'
+import { fundPieSlices } from '#finance/utils/pie'
 import type { Fund, FundEntryKind, FundPlan } from '#finance/types/funds'
 
 definePageMeta({ layout: 'finance' })
 const app = useAppStore()
 const store = useFundsStore()
+const fundSlices = computed(() => fundPieSlices(store.funds))
 const route = useRoute()
 const router = useRouter()
 const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
@@ -132,7 +134,19 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
       <button class="qf-btn" @click="editFund()">New fund</button>
     </QEmptyState>
 
-    <section v-else-if="store.selected" class="qfunds-detail">
+    <template v-else-if="store.selected">
+      <div class="qfunds-allocation">
+        <FinancePieChart
+          :slices="fundSlices"
+          :selected-id="store.selectedId"
+          title="Fund allocation"
+          description="Each fund’s share of your total current value. Select a fund to view its details below."
+          total-label="Total current value"
+          empty-text="Your funds have no current value yet. Add a deposit or update a value to see the allocation."
+          @select="store.selectedId = $event"
+        />
+      </div>
+      <section class="qfunds-detail">
         <header class="qfunds-section-head">
           <div><h2>{{ store.selected.name }}</h2><p v-if="store.selected.notes">{{ store.selected.notes }}</p></div>
           <div class="qfunds-actions"><button class="qf-btn" :disabled="store.busy" @click="editFund(store.selected)">Edit fund</button><button class="qfunds-text-btn" :disabled="store.busy" @click="askDelete('fund', store.selected.id, store.selected.name)">Delete</button></div>
@@ -170,7 +184,8 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
             </tbody>
           </table></div>
         </section>
-    </section>
+      </section>
+    </template>
 
     <dialog ref="dialog" class="qfunds-dialog" aria-labelledby="fund-dialog-title" @cancel="store.busy && $event.preventDefault()">
       <form @submit.prevent="submit">
@@ -216,6 +231,7 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
 .qfunds-section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
 .qfunds-section-head p { color: var(--qf-text-muted); margin-top: 5px; font-size: 12px; }
 .qfunds-detail { min-width: 0; max-width: 1040px; margin: 0 auto; padding-bottom: 24px; }
+.qfunds-allocation { max-width: 1040px; margin: 0 auto 24px; padding: 20px; border: 1px solid var(--qf-border-subtle); border-radius: var(--qf-radius-lg); background: var(--qf-bg-raised); }
 .qfunds-balance { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 28px 0 22px; }
 .qfunds-balance > span { color: var(--qf-text-secondary); font-size: 12px; }
 .qfunds-balance > strong { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.025em; overflow-wrap: anywhere; }
