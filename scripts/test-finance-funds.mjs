@@ -31,6 +31,7 @@ test('a slower refresh cannot overwrite a newer fund snapshot or selection', asy
   const store = setup(() => (++calls === 1 ? first.promise : second.promise))
   const a = store.load(), b = store.load()
   second.resolve([fund('new')]); await b
+  store.selectedId = 'new'
   first.resolve([fund('old')]); await a
   assert.equal(store.selectedId, 'new')
   assert.deepEqual(store.totals, { value: 15000, input: 10000, gain: 5000 })
@@ -39,6 +40,7 @@ test('a slower refresh cannot overwrite a newer fund snapshot or selection', asy
 test('load errors preserve last known balances and expose the failure', async () => {
   const store = setup(() => [fund('emergency')])
   await store.load()
+  store.selectedId = 'emergency'
   mockIPC(() => { throw new Error('database unavailable') })
   await store.load()
   assert.equal(store.selectedId, 'emergency')
@@ -74,11 +76,40 @@ test('successful writes stay successful when only the subsequent refresh fails',
 test('failed writes keep balances and allow retry', async () => {
   const store = setup(() => [fund('existing')])
   await store.load()
+  store.selectedId = 'existing'
   mockIPC(() => { throw new Error('would overdraw') })
   assert.equal(await store.remove('entry', 'deposit'), false)
   assert.equal(store.selected.currentValueCents, 15000)
   assert.equal(store.busy, false)
   assert.match(store.error, /would overdraw/)
+})
+
+test('the initial overview and deliberate return to it survive fund refreshes', async () => {
+  const store = setup(() => [fund('a'), fund('b')])
+  await store.load()
+  assert.equal(store.selectedId, null)
+  assert.equal(store.selected, null)
+  assert.equal(store.totals.value, 30000)
+  store.selectedId = 'b'
+  await store.load()
+  assert.equal(store.selected.id, 'b')
+  store.selectedId = null
+  await store.load()
+  assert.equal(store.selected, null)
+})
+
+test('deleting the selected fund returns to the overview without selecting another fund', async () => {
+  let rows = [fund('a'), fund('b')]
+  const store = setup((command, args) => {
+    if (command === 'plugin:finance|delete_fund_record') rows = rows.filter((row) => row.id !== args.id)
+    return rows
+  })
+  await store.load()
+  store.selectedId = 'b'
+  assert.equal(await store.remove('fund', 'b'), true)
+  assert.equal(store.selectedId, null)
+  assert.equal(store.selected, null)
+  assert.equal(store.totals.value, 15000)
 })
 
 test('plan refreshes cannot restore an older linked fund balance', async () => {
