@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
+import { useLocalStorage } from '@vueuse/core'
 import type { AppSettings } from '#finance/types'
 
 const defaultSettings: AppSettings = {
@@ -18,6 +19,7 @@ const defaultSettings: AppSettings = {
  */
 export const useAppStore = defineStore('finance/app', () => {
   const settings = ref<AppSettings>({ ...defaultSettings })
+  const flowChartMode = useLocalStorage<'sankey' | 'pie'>('finance.flowChartMode', 'sankey')
 
   const sidebarLeftOpen = computed(() => settings.value.sidebarLeftOpen)
   const sidebarRightOpen = computed(() => settings.value.sidebarRightOpen)
@@ -44,5 +46,5 @@ export const useAppStore = defineStore('finance/app', () => {
     else settings.value.sidebarRightOpen = !settings.value.sidebarRightOpen
   }
 
-  return { settings, sidebarLeftOpen, sidebarRightOpen, loadSettings, saveSettings, toggleSidebar }
+  return { settings, flowChartMode, sidebarLeftOpen, sidebarRightOpen, loadSettings, saveSettings, toggleSidebar }
 })
