@@ -8,6 +8,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ select: [assetId: string] }>()
 const hovered = ref<string | null>(null)
+const mode = ref<'allocation' | 'history'>('allocation')
 const positive = computed(() => props.holdings.filter((h) => h.quantity > 0 && h.value !== null && h.value > 0))
 const total = computed(() => positive.value.reduce((sum, h) => sum + h.value!, 0))
 const slices = computed(() => {
@@ -45,7 +46,8 @@ const series = computed(() => {
 
 <template>
   <div class="qp-charts">
-    <section class="qp-chart" aria-label="Portfolio allocation">
+    <nav class="qp-chart-tabs" aria-label="Portfolio chart"><button :aria-pressed="mode === 'allocation'" @click="mode = 'allocation'">Allocation</button><button :aria-pressed="mode === 'history'" @click="mode = 'history'">Value history</button></nav>
+    <section v-if="mode === 'allocation'" class="qp-chart qp-chart--allocation" aria-label="Portfolio allocation">
       <header><h2>Allocation</h2><span>Current priced holdings</span></header>
       <div v-if="slices.length" class="qp-allocation">
         <svg viewBox="0 0 200 200" role="group" aria-label="Holdings allocation pie chart">
@@ -55,7 +57,7 @@ const series = computed(() => {
       </div>
       <p v-else class="qp-chart__empty">Add a holding and a current price to see its allocation.</p>
     </section>
-    <section class="qp-chart" aria-label="Recorded holdings value">
+    <section v-else class="qp-chart" aria-label="Recorded holdings value">
       <header><h2>Holdings value</h2><span>Recorded daily valuations</span></header>
       <template v-if="history.length">
         <div class="qp-chart__key"><span>Value</span><span>Remaining cost</span><strong>{{ money(history.at(-1)?.value ?? null) }}</strong></div>
@@ -73,28 +75,33 @@ const series = computed(() => {
 </template>
 
 <style scoped>
-.qp-charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
-.qp-chart { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 18px; background: var(--surface-1); }
+.qp-charts { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); container-type: size; container-name: portfolio-chart; }
+.qp-chart-tabs { display: flex; flex-shrink: 0; gap: 4px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.qp-chart-tabs button { padding: 6px 9px; font-size: 11px; border: 0; border-radius: 5px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.qp-chart-tabs button[aria-pressed='true'] { background: var(--surface-2); color: var(--text-primary); }
+.qp-chart { flex: 1; min-height: 0; min-width: 0; padding: 14px; overflow: auto; overscroll-behavior: contain; }
+.qp-chart--allocation { display: flex; flex-direction: column; overflow: hidden; }
+.qp-chart header { flex-shrink: 0; }
 .qp-chart header, .qp-chart__dates, .qp-chart__key { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .qp-chart h2 { font-size: 13px; margin: 0; font-weight: 600; }
 .qp-chart header span, .qp-chart p, .qp-chart__dates, .qp-chart__key, .qp-chart summary { font-size: 11px; color: var(--text-secondary); }
 .qp-chart p { line-height: 1.6; margin: 12px 0 0; }
-.qp-allocation { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
-.qp-allocation svg { flex: 1 1 140px; width: 40%; min-width: 0; max-width: 230px; }
+.qp-allocation { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 14px; }
+.qp-allocation svg { flex: 0 1 auto; height: 45%; width: 100%; min-height: 0; max-width: 280px; max-height: 280px; }
 .qp-slice { stroke: var(--surface-1); stroke-width: 1; cursor: pointer; }
 .qp-slice:focus { outline: none; }
 .qp-slice:focus-visible { stroke: var(--text-primary); stroke-width: 1.5; }
 .qp-slice.is-dim { opacity: .4; }
-.qp-allocation ul { flex: 1 1 150px; list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; }
+.qp-allocation ul { flex: 1; min-height: 0; width: 100%; list-style: none; margin: 0; padding: 0; overflow: auto; overscroll-behavior: contain; }
 .qp-allocation button { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; padding: 8px 4px; border: 0; border-radius: 4px; text-align: left; color: var(--text-primary); background: transparent; cursor: pointer; font-size: 11px; }
 .qp-allocation button:hover { background: var(--surface-2); }
 .qp-allocation i { width: 8px; height: 8px; border-radius: 2px; }
-.qp-allocation small { display: block; font-size: 10px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.qp-allocation small { display: block; font-size: 10px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-allocation strong { text-align: right; font-weight: 500; }
 .qp-chart__key { margin-top: 18px; }
 .qp-chart__key > span:first-child { color: var(--accent); }
 .qp-chart__key strong { margin-left: auto; color: var(--text-primary); font-size: 16px; }
-.qp-history { width: 100%; display: block; margin-top: 10px; overflow: visible; }
+.qp-history { width: 100%; max-height: 200px; display: block; margin-top: 10px; overflow: visible; }
 .qp-history__value { fill: none; stroke: var(--accent); stroke-width: 2; }
 .qp-history__cost { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; }
 .qp-history__dot { fill: var(--accent); }
@@ -104,5 +111,5 @@ const series = computed(() => {
 .qp-history__table { overflow: auto; max-height: 160px; margin-top: 8px; }
 .qp-history__table table { width: 100%; border-collapse: collapse; font-size: 10px; }
 .qp-history__table th, .qp-history__table td { padding: 5px; text-align: right; white-space: nowrap; }
-@container (max-width: 780px) { .qp-charts { grid-template-columns: minmax(0, 1fr); } }
+@container portfolio-chart (max-height: 360px) { .qp-chart { padding: 10px; } .qp-chart--allocation header { display: none; } .qp-allocation { flex-direction: row; gap: 10px; margin-top: 0; } .qp-allocation svg { height: 100%; width: 42%; max-width: 180px; flex-shrink: 0; } .qp-chart-tabs { padding: 6px 8px; } }
 </style>

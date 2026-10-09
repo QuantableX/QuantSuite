@@ -16,6 +16,7 @@ export function validatePortfolio(value: unknown): asserts value is PortfolioDoc
       || !text(a.name) || !a.name.trim() || a.name.length > 150 || !['manual', 'market'].includes(a.source)
       || !text(a.marketName) || !Number.isInteger(a.marketPage) || a.marketPage < 1 || a.marketPage > 100
       || (a.manualPrice !== null && !finite(a.manualPrice)) || !date(a.updatedAt)) throw new Error('Check the asset name, symbol and price.')
+    if (a.notes !== undefined && (!text(a.notes) || a.notes.length > 10000)) throw new Error('Holding notes must be text, up to 10,000 characters.')
     if (a.source === 'market' && !a.marketName) throw new Error('Choose a crypto asset from the market list.')
     ids.add(a.id)
   }
