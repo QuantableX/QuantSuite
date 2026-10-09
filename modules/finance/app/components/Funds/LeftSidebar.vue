@@ -19,7 +19,6 @@ const money = (cents: number) => formatCents(cents, app.settings.currency, app.s
       <span class="qff-left__label">Total current value</span>
       <strong>{{ money(store.totals.value) }}</strong>
       <small>Across {{ store.funds.length }} {{ store.funds.length === 1 ? 'fund' : 'funds' }}</small>
-      <small class="qff-left__overview">Overview <span aria-hidden="true">→</span></small>
     </button>
     <dl class="qff-left__figures">
       <div><dt>Net contributed</dt><dd>{{ money(store.totals.input) }}</dd></div>
@@ -47,7 +46,6 @@ const money = (cents: number) => formatCents(cents, app.settings.currency, app.s
 .qff-left__total:hover { background: var(--qf-bg-hover); }
 .qff-left__total[aria-pressed='true'] { background: var(--qf-bg-card); border-color: var(--qf-accent); }
 .qff-left__total:focus-visible { outline: 2px solid var(--qf-accent); outline-offset: 2px; }
-.qff-left__overview { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 5px; }
 .qff-left__label { color: var(--qf-text-muted); font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .qff-left__total strong { font-size: 22px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .qff-left small { font-size: 10px; color: var(--qf-text-muted); }
