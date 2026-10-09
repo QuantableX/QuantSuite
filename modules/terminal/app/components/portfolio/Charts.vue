@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import type { PortfolioHolding } from '#terminal/types/portfolio'
-import { assetColor, portfolioMoney as money } from '#terminal/utils/portfolio'
+import { assetColor, portfolioCashColor, portfolioMoney as money } from '#terminal/utils/portfolio'
 
 const props = defineProps<{
   holdings: PortfolioHolding[]
+  cash: number
   history: { at: string; value: number | null; cost: number; gain: number | null }[]
 }>()
-const emit = defineEmits<{ select: [assetId: string] }>()
+const emit = defineEmits<{ select: [assetId: string]; cash: [] }>()
 const hovered = ref<string | null>(null)
 const mode = ref<'allocation' | 'history'>('allocation')
-const positive = computed(() => props.holdings.filter((h) => h.quantity > 0 && h.value !== null && h.value > 0))
+const positive = computed(() => [
+  { key: 'cash', assetId: null, symbol: 'Cash', name: 'USD', value: props.cash, color: portfolioCashColor },
+  ...props.holdings.filter((h) => h.quantity > 0).map((h) => ({ key: `asset:${h.asset.id}`, assetId: h.asset.id, symbol: h.asset.symbol, name: h.asset.name, value: h.value, color: assetColor(h.asset.id) })),
+].filter((h) => h.value !== null && h.value > 0))
 const total = computed(() => positive.value.reduce((sum, h) => sum + h.value!, 0))
 const slices = computed(() => {
   let start = 0
@@ -23,7 +27,8 @@ const slices = computed(() => {
     return { ...h, share, path }
   })
 })
-watch(positive, () => { if (!positive.value.some((h) => h.asset.id === hovered.value)) hovered.value = null })
+watch(positive, () => { if (!positive.value.some((h) => h.key === hovered.value)) hovered.value = null })
+function select(assetId: string | null) { if (assetId === null) emit('cash'); else emit('select', assetId) }
 const pct = (share: number) => new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 1 }).format(share)
 const dateLabel = (at: string) => new Date(at).toLocaleDateString()
 const series = computed(() => {
@@ -48,28 +53,28 @@ const series = computed(() => {
   <div class="qp-charts">
     <nav class="qp-chart-tabs" aria-label="Portfolio chart"><button :aria-pressed="mode === 'allocation'" @click="mode = 'allocation'">Allocation</button><button :aria-pressed="mode === 'history'" @click="mode = 'history'">Value history</button></nav>
     <section v-if="mode === 'allocation'" class="qp-chart qp-chart--allocation" aria-label="Portfolio allocation">
-      <header><h2>Allocation</h2><span>Current priced holdings</span></header>
+      <header><h2>Allocation</h2><span>Cash &amp; investments</span></header>
       <div v-if="slices.length" class="qp-allocation">
-        <svg viewBox="0 0 200 200" role="group" aria-label="Holdings allocation pie chart">
-          <path v-for="s in slices" :key="s.asset.id" :d="s.path" :fill="assetColor(s.asset.id)" class="qp-slice" :class="{ 'is-dim': hovered && hovered !== s.asset.id }" role="button" tabindex="0" :aria-label="`Edit ${s.asset.symbol}: ${money(s.value)}, ${pct(s.share)}`" @pointerenter="hovered = s.asset.id" @pointerleave="hovered = null" @focus="hovered = s.asset.id" @blur="hovered = null" @click="emit('select', s.asset.id)" @keydown.enter.prevent="emit('select', s.asset.id)" @keydown.space.prevent="emit('select', s.asset.id)"><title>{{ s.asset.name }} · {{ money(s.value) }} · {{ pct(s.share) }}</title></path>
+        <svg viewBox="0 0 200 200" role="group" aria-label="Portfolio allocation pie chart">
+          <path v-for="s in slices" :key="s.key" :d="s.path" :fill="s.color" class="qp-slice" :class="{ 'is-dim': hovered && hovered !== s.key }" role="button" tabindex="0" :aria-label="`Edit ${s.symbol}: ${money(s.value)}, ${pct(s.share)}`" @pointerenter="hovered = s.key" @pointerleave="hovered = null" @focus="hovered = s.key" @blur="hovered = null" @click="select(s.assetId)" @keydown.enter.prevent="select(s.assetId)" @keydown.space.prevent="select(s.assetId)"><title>{{ s.name }} · {{ money(s.value) }} · {{ pct(s.share) }}</title></path>
         </svg>
-        <ul><li v-for="s in slices" :key="s.asset.id"><button type="button" @click="emit('select', s.asset.id)" @pointerenter="hovered = s.asset.id" @pointerleave="hovered = null"><i :style="{ background: assetColor(s.asset.id) }" /><span>{{ s.asset.symbol }}<small>{{ s.asset.name }}</small></span><strong>{{ pct(s.share) }}<small>{{ money(s.value) }}</small></strong></button></li></ul>
+        <ul><li v-for="s in slices" :key="s.key"><button type="button" @click="select(s.assetId)" @pointerenter="hovered = s.key" @pointerleave="hovered = null"><i :style="{ background: s.color }" /><span>{{ s.symbol }}<small>{{ s.name }}</small></span><strong>{{ pct(s.share) }}<small>{{ money(s.value) }}</small></strong></button></li></ul>
       </div>
-      <p v-else class="qp-chart__empty">Add a holding and a current price to see its allocation.</p>
+      <p v-else class="qp-chart__empty">Add cash or a priced holding to see your allocation.</p>
     </section>
-    <section v-else class="qp-chart" aria-label="Recorded holdings value">
-      <header><h2>Holdings value</h2><span>Recorded daily valuations</span></header>
+    <section v-else class="qp-chart" aria-label="Recorded portfolio value">
+      <header><h2>Portfolio value</h2><span>Recorded daily valuations</span></header>
       <template v-if="history.length">
         <div class="qp-chart__key"><span>Value</span><span>Remaining cost</span><strong>{{ money(history.at(-1)?.value ?? null) }}</strong></div>
-        <svg viewBox="0 0 520 180" class="qp-history" role="img" aria-label="Recorded holdings value and remaining cost over time">
+        <svg viewBox="0 0 520 180" class="qp-history" role="img" aria-label="Recorded portfolio value and remaining investment cost over time">
           <path :d="series.costPath" class="qp-history__cost" /><path :d="series.valuePath" class="qp-history__value" />
           <circle v-for="p in series.points.filter(p => p.y !== null)" :key="p.at" :cx="p.x" :cy="p.y!" r="3" class="qp-history__dot"><title>{{ dateLabel(p.at) }} · Value {{ money(p.value) }} · Cost {{ money(p.cost) }}</title></circle>
         </svg>
         <div class="qp-chart__dates"><span>{{ dateLabel(history[0]!.at) }}</span><span>{{ dateLabel(history.at(-1)!.at) }}</span></div>
-        <p>Starts with your first recorded valuation. Buys and sells change holdings value; gains are shown separately. Missing prices leave gaps.</p>
+        <p>Includes cash and investments. Deposits and withdrawals change portfolio value; gains are shown separately. Missing prices leave gaps.</p>
         <details><summary>Recorded values</summary><div class="qp-history__table"><table><thead><tr><th>Date</th><th>Value</th><th>Cost</th><th>Total gain</th></tr></thead><tbody><tr v-for="p in [...history].reverse()" :key="p.at"><td>{{ dateLabel(p.at) }}</td><td>{{ money(p.value) }}</td><td>{{ money(p.cost) }}</td><td>{{ money(p.gain) }}</td></tr></tbody></table></div></details>
       </template>
-      <p v-else class="qp-chart__empty">Valuations are recorded when you save holdings or refresh market prices.</p>
+      <p v-else class="qp-chart__empty">Valuations are recorded when you save portfolio changes or refresh market prices.</p>
     </section>
   </div>
 </template>

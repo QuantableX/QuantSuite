@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { usePortfolioStore } from '#terminal/stores/portfolio'
-import type { PortfolioTrade } from '#terminal/types/portfolio'
-import { assetColor, portfolioMoney as money, portfolioNumber as number, portfolioPrice as price } from '#terminal/utils/portfolio'
+import type { PortfolioCashEntry, PortfolioTrade } from '#terminal/types/portfolio'
+import { assetColor, portfolioCashColor, portfolioMoney as money, portfolioNumber as number, portfolioPrice as price } from '#terminal/utils/portfolio'
 
 definePageMeta({ layout: 'terminal' })
 const store = usePortfolioStore()
-const view = ref<'holdings' | 'history'>('holdings')
+const view = ref<'holdings' | 'history' | 'cash'>('holdings')
 const currentOnly = ref(true)
 const search = ref('')
-const editor = ref<{ kind: 'asset' | 'trade'; assetId?: string; tradeId?: string; side?: 'buy' | 'sell'; focusNotes?: boolean } | null>(null)
-const deleting = ref<{ kind: 'asset' | 'trade'; id: string; name: string } | null>(null)
+const editor = ref<{ kind: 'asset' | 'trade' | 'cash'; assetId?: string; tradeId?: string; cashEntryId?: string; cashAction?: PortfolioCashEntry['kind']; side?: 'buy' | 'sell'; focusNotes?: boolean } | null>(null)
+const deleting = ref<{ kind: 'asset' | 'trade' | 'cash'; id: string; name: string } | null>(null)
 const deleteDialog = ref<HTMLDialogElement | null>(null)
 const selectedAsset = ref('')
 const selectedKind = ref('')
@@ -21,6 +21,7 @@ const assetName = (id: string) => store.document.assets.find((a) => a.id === id)
 const trades = computed(() => [...store.document.trades]
   .filter((t) => (!selectedAsset.value || t.assetId === selectedAsset.value) && (!selectedKind.value || t.kind === selectedKind.value))
   .sort((a, b) => Date.parse(b.date) - Date.parse(a.date) || b.order - a.order))
+const cashRows = computed(() => [...store.cashHistory].reverse())
 const signed = (value: number | null) => value === null ? '—' : `${value > 0 ? '+' : ''}${money(value)}`
 const tone = (value: number | null) => value === null || value === 0 ? '' : value > 0 ? 'is-up' : 'is-down'
 const percent = (value: number, cost: number) => cost > 0 ? `${value >= 0 ? '+' : ''}${(value / cost * 100).toFixed(2)}%` : '—'
@@ -39,7 +40,7 @@ onMounted(() => { if (inActiveKeepAliveTree()) void start() })
 onActivated(() => void start())
 onDeactivated(stop)
 onBeforeUnmount(stop)
-async function askDelete(kind: 'asset' | 'trade', id: string, name: string) {
+async function askDelete(kind: 'asset' | 'trade' | 'cash', id: string, name: string) {
   store.error = ''
   deleting.value = { kind, id, name }
   await nextTick()
@@ -48,7 +49,7 @@ async function askDelete(kind: 'asset' | 'trade', id: string, name: string) {
 async function remove() {
   if (!deleting.value || store.busy) return
   const target = deleting.value
-  const ok = target.kind === 'asset' ? await store.removeAsset(target.id) : await store.removeTrade(target.id)
+  const ok = target.kind === 'asset' ? await store.removeAsset(target.id) : target.kind === 'cash' ? await store.removeCashEntry(target.id) : await store.removeTrade(target.id)
   if (ok) { deleting.value = null; deleteDialog.value?.close() }
 }
 function historyFor(id: string) { selectedAsset.value = id; view.value = 'history' }
@@ -61,7 +62,7 @@ function historyFor(id: string) { selectedAsset.value = id; view.value = 'histor
     <p v-if="store.loading && !store.loaded" class="qp-empty" role="status">Loading portfolio…</p>
     <template v-else-if="store.loaded">
       <div class="qp-stats">
-        <div><span>{{ store.totals.missing ? 'Priced holdings value' : 'Holdings value' }}</span><strong>{{ money(store.totals.value) }}</strong><small>{{ store.totals.count }} current {{ store.totals.count === 1 ? 'holding' : 'holdings' }}</small></div>
+        <div><span>{{ store.totals.missing ? 'Priced portfolio value' : 'Portfolio value' }}</span><strong>{{ money(store.totals.value) }}</strong><small>{{ money(store.cash) }} cash · {{ store.totals.count }} {{ store.totals.count === 1 ? 'investment' : 'investments' }}</small></div>
         <div><span>Remaining cost</span><strong>{{ money(store.totals.cost) }}</strong><small>Average cost including buy fees</small></div>
         <div><span>Unrealized gain</span><strong :class="tone(store.totals.unrealized)">{{ signed(store.totals.unrealized) }}</strong><small>{{ store.totals.unrealized === null ? 'Current prices missing' : percent(store.totals.unrealized, store.totals.cost) }}</small></div>
         <div><span>Realized gain</span><strong :class="tone(store.totals.realized)">{{ signed(store.totals.realized) }}</strong><small>Closed quantities, after fees</small></div>
@@ -69,31 +70,37 @@ function historyFor(id: string) { selectedAsset.value = id; view.value = 'histor
       </div>
       <p v-if="store.quoteError" class="qp-alert" role="status">{{ store.quoteError }}</p>
       <p v-if="store.totals.missing" class="qp-alert" role="status">{{ store.totals.missing }} holding(s) have no current price. They are excluded from the priced value and pie; total gains stay unavailable until priced.</p>
-      <nav class="qp-tabs" aria-label="Portfolio views"><button :aria-pressed="view === 'holdings'" @click="view = 'holdings'">Current holdings</button><button :aria-pressed="view === 'history'" @click="view = 'history'">Trade history <span>{{ store.document.trades.length }}</span></button></nav>
+      <nav class="qp-tabs" aria-label="Portfolio views"><button :aria-pressed="view === 'holdings'" @click="view = 'holdings'">Current holdings</button><button :aria-pressed="view === 'history'" @click="view = 'history'">Trade history <span>{{ store.document.trades.length }}</span></button><button :aria-pressed="view === 'cash'" @click="view = 'cash'">Cash history</button></nav>
       <template v-if="view === 'holdings'">
-        <div v-if="!store.document.assets.length" class="qp-empty"><h2>Start with your current holdings</h2><p>Add an asset, its quantity and average cost. You can enter older trades later or record new buys and sells.</p><button @click="editor = { kind: 'asset' }">Add your first holding</button></div>
-        <div v-else class="qp-dashboard">
-          <TerminalPortfolioCharts :holdings="store.holdings" :history="store.history" @select="!locked && (editor = { kind: 'asset', assetId: $event })" />
+        <div class="qp-dashboard">
+          <TerminalPortfolioCharts :holdings="store.holdings" :cash="store.cash" :history="store.history" @select="!locked && (editor = { kind: 'asset', assetId: $event })" @cash="!locked && (editor = { kind: 'cash' })" />
           <section class="qp-holdings-panel" aria-label="Holdings panel">
           <div class="qp-holdings-head"><h2>Holdings</h2><label class="qp-search"><span class="sr-only">Find a holding</span><input v-model="search" type="search" placeholder="Symbol or name" /></label><label class="qp-checkbox"><input v-model="currentOnly" type="checkbox" /> Current holdings only</label></div>
           <div class="qp-table-wrap qp-holdings-scroll" tabindex="0" role="region" aria-label="Scrollable holdings"><table class="qp-table qp-holdings-table" aria-label="Portfolio holdings"><colgroup><col style="width: 20%" /><col style="width: 8%" /><col style="width: 12%" /><col style="width: 12%" /><col style="width: 13%" /><col style="width: 13%" /><col style="width: 22%" /></colgroup><thead><tr><th>Asset</th><th>Quantity</th><th>Avg. cost</th><th>Current price</th><th>Value / share</th><th>Unrealized</th><th>Actions</th></tr></thead><tbody>
+            <tr class="qp-cash-row"><td><div class="qp-asset"><i :style="{ background: portfolioCashColor }" /><span><strong>Cash</strong><small>USD · Available</small><button class="qp-holding-note" :disabled="locked" aria-label="Set cash balance" @click="editor = { kind: 'cash', cashAction: 'balance' }">Set balance</button></span></div></td><td>—</td><td>—</td><td>—</td><td>{{ money(store.cash) }}<small>{{ store.totals.value > 0 ? `${(store.cash / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td>—</td><td><div class="qp-row-actions"><button :disabled="locked" aria-label="Deposit cash" @click="editor = { kind: 'cash', cashAction: 'deposit' }">Deposit</button><button :disabled="locked" aria-label="Withdraw cash" @click="editor = { kind: 'cash', cashAction: 'withdrawal' }">Withdraw</button><button aria-label="View cash history" @click="view = 'cash'">History</button></div></td></tr>
             <tr v-for="h in rows" :key="h.asset.id"><td><div class="qp-asset"><i :style="{ background: assetColor(h.asset.id) }" /><span><strong>{{ h.asset.symbol }}</strong><small>{{ h.asset.name }}{{ h.quantity === 0 ? ' · Closed / no holding' : '' }}</small><button class="qp-holding-note" :disabled="locked" :aria-label="`Notes for ${h.asset.symbol}`" :title="h.asset.notes || 'Add holding notes'" @click="editor = { kind: 'asset', assetId: h.asset.id, focusNotes: true }">{{ h.asset.notes?.trim() || 'Add notes' }}</button></span></div></td><td>{{ number(h.quantity) }}</td><td>{{ price(h.averageCost) }}</td><td :title="h.asset.source === 'manual' ? displayDate(h.asset.updatedAt) : store.document.quotes[h.asset.id] ? `Checked ${displayDate(store.document.quotes[h.asset.id]!.checkedAt)}` : 'Not priced yet'">{{ price(h.price) }}<small>{{ h.asset.source === 'manual' ? 'Manual' : 'Market snapshot' }}</small></td><td>{{ money(h.value) }}<small>{{ h.value !== null && store.totals.value > 0 ? `${(h.value / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td :class="tone(h.unrealized)">{{ signed(h.unrealized) }}<small>{{ h.unrealized === null ? '—' : percent(h.unrealized, h.cost) }}</small></td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Edit ${h.asset.symbol} holding`" @click="editor = { kind: 'asset', assetId: h.asset.id }">Edit</button><button :disabled="locked" :aria-label="`Trade ${h.asset.symbol}`" @click="editor = { kind: 'trade', assetId: h.asset.id }">Trade</button><button :aria-label="`${h.asset.symbol} trade history`" @click="historyFor(h.asset.id)">History</button><button :disabled="locked" :aria-label="`Delete ${h.asset.symbol} asset`" @click="askDelete('asset', h.asset.id, h.asset.name)">Delete</button></div></td></tr>
-            <tr v-if="!rows.length"><td colspan="7" class="qp-no-rows">No matching current holdings. Clear the search or turn off “Current holdings only” to see closed and newly added assets.</td></tr>
+            <tr v-if="!rows.length"><td colspan="7" class="qp-no-rows">{{ !store.document.assets.length ? 'Add a holding to start tracking your investments.' : 'No matching investments. Clear the search or turn off “Current holdings only” to see closed and newly added assets.' }}</td></tr>
           </tbody></table></div>
           </section>
         </div>
-        <p v-if="store.document.assets.length" class="qp-caption">USD · Cached crypto quotes and manual prices · Sale proceeds are not automatically added as cash.</p>
       </template>
-      <section v-else class="qp-history-panel" aria-label="Trade history panel">
+      <section v-else-if="view === 'history'" class="qp-history-panel" aria-label="Trade history panel">
         <div class="qp-history-head"><p>Opening balances, trades and position adjustments remain editable. Corrections recalculate all later holdings and gains.</p><div class="qp-actions"><label>Asset<select v-model="selectedAsset"><option value="">All assets</option><option v-for="a in store.document.assets" :key="a.id" :value="a.id">{{ a.symbol }} · {{ a.name }}</option></select></label><label>Entry type<select v-model="selectedKind"><option value="">All entries</option><option value="opening">Opening</option><option value="buy">Buy</option><option value="sell">Sell</option><option value="adjustment">Position adjustment</option></select></label></div></div>
-        <div class="qp-table-wrap" tabindex="0" role="region" aria-label="Scrollable trade history"><table class="qp-table" aria-label="Portfolio trade history"><thead><tr><th>Date</th><th>Asset</th><th>Type</th><th>Quantity</th><th>Price</th><th>Fees</th><th>Net amount</th><th>Notes</th><th>Actions</th></tr></thead><tbody>
-          <tr v-for="t in trades" :key="t.id"><td>{{ displayDate(t.date) }}</td><td>{{ assetName(t.assetId) }}</td><td><span class="qp-kind" :class="t.kind">{{ t.kind }}</span></td><td>{{ number(t.quantity) }}<small v-if="t.kind === 'adjustment'">Position total</small></td><td>{{ price(t.price) }}<small v-if="t.kind === 'adjustment'">Average cost</small></td><td>{{ t.kind === 'adjustment' ? '—' : money(t.fees) }}</td><td>{{ money(tradeValue(t)) }}</td><td class="qp-note">{{ t.notes || '—' }}</td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Edit ${assetName(t.assetId)} ${t.kind}`" @click="editor = { kind: 'trade', tradeId: t.id }">Edit</button><button :disabled="locked" :aria-label="`Delete ${assetName(t.assetId)} ${t.kind}`" @click="askDelete('trade', t.id, `${assetName(t.assetId)} ${t.kind}`)">Delete</button></div></td></tr>
-          <tr v-if="!trades.length"><td colspan="9" class="qp-no-rows">No trades match these filters.</td></tr>
+        <div class="qp-table-wrap" tabindex="0" role="region" aria-label="Scrollable trade history"><table class="qp-table" aria-label="Portfolio trade history"><thead><tr><th>Date</th><th>Asset</th><th>Type</th><th>Quantity</th><th>Price</th><th>Fees</th><th>Net amount</th><th>Cash change</th><th>Notes</th><th>Actions</th></tr></thead><tbody>
+          <tr v-for="t in trades" :key="t.id"><td>{{ displayDate(t.date) }}</td><td>{{ assetName(t.assetId) }}</td><td><span class="qp-kind" :class="t.kind">{{ t.kind }}</span></td><td>{{ number(t.quantity) }}<small v-if="t.kind === 'adjustment'">Position total</small></td><td>{{ price(t.price) }}<small v-if="t.kind === 'adjustment'">Average cost</small></td><td>{{ t.kind === 'adjustment' ? '—' : money(t.fees) }}</td><td>{{ money(tradeValue(t)) }}</td><td>{{ t.settlesCash ? signed((tradeValue(t) ?? 0) * (t.kind === 'buy' ? -1 : 1)) : '—' }}</td><td class="qp-note">{{ t.notes || '—' }}</td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Edit ${assetName(t.assetId)} ${t.kind}`" @click="editor = { kind: 'trade', tradeId: t.id }">Edit</button><button :disabled="locked" :aria-label="`Delete ${assetName(t.assetId)} ${t.kind}`" @click="askDelete('trade', t.id, `${assetName(t.assetId)} ${t.kind}`)">Delete</button></div></td></tr>
+          <tr v-if="!trades.length"><td colspan="10" class="qp-no-rows">No trades match these filters.</td></tr>
+        </tbody></table></div>
+      </section>
+      <section v-else class="qp-history-panel" aria-label="Cash history panel">
+        <div class="qp-history-head"><div><strong>Cash · {{ money(store.cash) }}</strong><p>Deposits, withdrawals and trades in one running balance.</p></div><div class="qp-actions"><button :disabled="locked" @click="editor = { kind: 'cash', cashAction: 'deposit' }">Deposit</button><button :disabled="locked" @click="editor = { kind: 'cash', cashAction: 'withdrawal' }">Withdraw</button><button :disabled="locked" @click="editor = { kind: 'cash', cashAction: 'balance' }">Set balance</button></div></div>
+        <div class="qp-table-wrap qp-cash-scroll" tabindex="0" role="region" aria-label="Scrollable cash history"><table class="qp-table qp-cash-table" aria-label="Portfolio cash history"><colgroup><col style="width: 20%" /><col style="width: 15%" /><col style="width: 14%" /><col style="width: 14%" /><col style="width: 23%" /><col style="width: 14%" /></colgroup><thead><tr><th>Date</th><th>Type</th><th>Cash change</th><th>Balance after</th><th>Notes</th><th>Actions</th></tr></thead><tbody>
+          <tr v-for="c in cashRows" :key="`${c.source}:${c.id}`"><td>{{ displayDate(c.date) }}</td><td><span class="qp-kind">{{ c.kind === 'balance' ? 'Balance set' : c.kind }}{{ c.source === 'trade' ? ` · ${assetName(c.assetId)}` : '' }}</span></td><td :class="tone(c.amount)">{{ signed(c.amount) }}</td><td>{{ money(c.balance) }}</td><td class="qp-note">{{ c.notes || '—' }}</td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Edit cash ${c.kind}`" @click="editor = c.source === 'trade' ? { kind: 'trade', tradeId: c.id } : { kind: 'cash', cashEntryId: c.id }">Edit</button><button :disabled="locked" :aria-label="`Delete cash ${c.kind}`" @click="askDelete(c.source, c.id, c.source === 'trade' ? `${assetName(c.assetId)} ${c.kind}` : `cash ${c.kind}`)">Delete</button></div></td></tr>
+          <tr v-if="!cashRows.length"><td colspan="6" class="qp-no-rows">Set your current cash balance or add a deposit to get started.</td></tr>
         </tbody></table></div>
       </section>
     </template>
     <TerminalPortfolioEditor v-if="editor" v-bind="editor" @close="editor = null" />
-    <dialog ref="deleteDialog" class="qp-delete" aria-labelledby="qp-delete-title" @cancel="store.busy ? $event.preventDefault() : (deleting = null)"><h2 id="qp-delete-title">Delete {{ deleting?.name }}?</h2><p>{{ deleting?.kind === 'asset' ? 'This removes the asset and all of its trade entries. Other holdings stay unchanged.' : 'Holdings and gains will be recalculated. Deletion is rejected if a later sale would exceed the remaining quantity.' }}</p><p v-if="store.error" class="qp-alert" role="alert">{{ store.error }}</p><footer><button :disabled="store.busy" @click="deleting = null; deleteDialog?.close()">Cancel</button><button :disabled="store.busy" @click="remove">Delete</button></footer></dialog>
+    <dialog ref="deleteDialog" class="qp-delete" aria-labelledby="qp-delete-title" @cancel="store.busy ? $event.preventDefault() : (deleting = null)"><h2 id="qp-delete-title">Delete {{ deleting?.name }}?</h2><p>{{ deleting?.kind === 'asset' ? 'This removes the asset and its trades, undoing their cash movements.' : 'This removes the entry and recalculates cash, holdings and gains.' }} Deletion is rejected if a later entry would exceed the available cash or holdings.</p><p v-if="store.error" class="qp-alert" role="alert">{{ store.error }}</p><footer><button :disabled="store.busy" @click="deleting = null; deleteDialog?.close()">Cancel</button><button :disabled="store.busy" @click="remove">Delete</button></footer></dialog>
   </div>
 </template>
 
@@ -130,11 +137,14 @@ function historyFor(id: string) { selectedAsset.value = id; view.value = 'histor
 .qp-table-wrap { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; border-top: 1px solid var(--border); }
 .qp-table-wrap:focus-visible { outline: 1px solid var(--text-secondary); outline-offset: -2px; }
 .qp-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
-.qp-holdings-scroll { scrollbar-gutter: stable; }
+.qp-holdings-scroll, .qp-cash-scroll { scrollbar-gutter: stable; }
 .qp-holdings-table { table-layout: fixed; min-width: 920px; }
-.qp-holdings-table td { overflow: hidden; text-overflow: ellipsis; }
+.qp-cash-table { table-layout: fixed; min-width: 820px; }
+.qp-holdings-table td, .qp-cash-table td { overflow: hidden; text-overflow: ellipsis; }
 .qp-table th, .qp-table td { padding: 12px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
 .qp-table th { position: sticky; top: 0; z-index: 1; font-size: 10px; color: var(--text-secondary); font-weight: 500; background: var(--surface-1); }
+.qp-holdings-table th { height: 40px; box-sizing: border-box; z-index: 2; }
+.qp-cash-row td { position: sticky; top: 40px; z-index: 1; background: var(--surface-1); }
 .qp-table th:first-child, .qp-table td:first-child, .qp-table td:last-child { text-align: left; }
 .qp-table tr:last-child td { border-bottom: 0; }
 .qp-table small { display: block; font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
@@ -157,12 +167,11 @@ function historyFor(id: string) { selectedAsset.value = id; view.value = 'histor
 .qp-empty h2 { font-size: 17px; font-weight: 600; color: var(--text-primary); }
 .qp-empty p { max-width: 490px; margin: 12px auto 20px; font-size: 13px; line-height: 1.7; }
 .qp-alert { flex-shrink: 0; max-height: 56px; overflow: auto; padding: 8px 12px; margin: 0; border-left: 3px solid var(--warning); background: var(--surface-1); color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
-.qp-caption { flex-shrink: 0; font-size: 10px; color: var(--text-secondary); line-height: 1.4; margin: 0; }
 .qp-page .is-up { color: var(--positive); }.qp-page .is-down { color: var(--negative); }
 .qp-delete { width: min(450px, calc(100% - 32px)); padding: 24px; margin: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); color: var(--text-primary); }
 .qp-delete::backdrop { background: #0009; }
 .qp-delete h2 { font-size: 17px; margin: 0 0 12px; }.qp-delete p { font-size: 12px; line-height: 1.6; margin-bottom: 16px; }
 .qp-delete footer { display: flex; justify-content: flex-end; gap: 8px; }
 @container portfolio (max-width: 660px) { .qp-dashboard { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, .8fr) minmax(0, 1.2fr); } .qp-heading p { display: none; } .qp-heading h1 { font-size: 17px; } .qp-heading .qp-actions { gap: 4px; } .qp-heading button { padding: 6px 8px; } }
-@container portfolio (max-height: 620px) { .qp-stats > div { padding: 8px 10px; gap: 3px; } .qp-stats strong { font-size: 17px; } .qp-stats small { display: none; } .qp-heading p, .qp-caption { display: none; } .qp-holdings-head, .qp-history-head { padding: 8px 10px; gap: 8px; } .qp-history-head p { display: none; } }
+@container portfolio (max-height: 620px) { .qp-stats > div { padding: 8px 10px; gap: 3px; } .qp-stats strong { font-size: 17px; } .qp-stats small { display: none; } .qp-heading p { display: none; } .qp-holdings-head, .qp-history-head { padding: 8px 10px; gap: 8px; } .qp-history-head p { display: none; } }
 </style>

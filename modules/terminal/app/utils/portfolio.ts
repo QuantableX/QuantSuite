@@ -1,6 +1,7 @@
 import type { PortfolioDocument, PortfolioHolding } from '../types/portfolio'
 
-export const emptyPortfolio = (): PortfolioDocument => ({ version: 1, revision: '', assets: [], trades: [], quotes: {}, snapshots: [] })
+export const emptyPortfolio = (): PortfolioDocument => ({ version: 1, revision: '', assets: [], trades: [], cashEntries: [], quotes: {}, snapshots: [] })
+export const portfolioCashColor = '#8f9dad'
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1e15
 const date = (value: unknown): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value))
 const text = (value: unknown): value is string => typeof value === 'string'
@@ -28,7 +29,18 @@ export function validatePortfolio(value: unknown): asserts value is PortfolioDoc
       || !finite(t.quantity * t.price + t.fees) || !text(t.notes) || t.notes.length > 2000
       || !Number.isSafeInteger(t.order) || t.order < 0) throw new Error('Check the trade asset, date, quantity, price and fees.')
     if (Date.parse(t.date) > Date.now() + 60000) throw new Error('Trade dates cannot be in the future.')
+    if (t.settlesCash !== undefined && typeof t.settlesCash !== 'boolean') throw new Error('Invalid trade cash settlement.')
+    if (t.settlesCash && t.kind !== 'buy' && t.kind !== 'sell') throw new Error('Only buys and sells can use portfolio cash.')
     tradeIds.add(t.id)
+  }
+  if (doc.cashEntries !== undefined && !Array.isArray(doc.cashEntries)) throw new Error('Invalid saved cash history. Saved data has been preserved.')
+  const cashIds = new Set<string>()
+  for (const c of doc.cashEntries ?? []) {
+    if (!c || !text(c.id) || !c.id || cashIds.has(c.id) || !['deposit', 'withdrawal', 'balance'].includes(c.kind)
+      || !date(c.date) || !finite(c.amount) || (c.kind !== 'balance' && c.amount === 0)
+      || !text(c.notes) || c.notes.length > 2000 || !Number.isSafeInteger(c.order) || c.order < 0) throw new Error('Check the cash entry date, amount and notes.')
+    if (Date.parse(c.date) > Date.now() + 60000) throw new Error('Cash entry dates cannot be in the future.')
+    cashIds.add(c.id)
   }
   for (const q of Object.values(doc.quotes)) {
     if (!q || !finite(q.price) || !date(q.checkedAt)) throw new Error('Invalid saved market quote. Saved data has been preserved.')
@@ -38,6 +50,31 @@ export function validatePortfolio(value: unknown): asserts value is PortfolioDoc
       || !Object.values(s.prices).every(finite)) throw new Error('Invalid saved valuation history. Saved data has been preserved.')
   }
   calculateHoldings(doc)
+  calculateCash(doc)
+}
+
+/** Old trades did not track cash. Only explicitly settled buys/sells affect it. */
+export function portfolioCashHistory(doc: PortfolioDocument, asOf = Infinity) {
+  const events = [
+    ...(doc.cashEntries ?? []).map((c) => ({ ...c, source: 'cash' as const, assetId: '' })),
+    ...doc.trades.filter((t) => t.settlesCash && (t.kind === 'buy' || t.kind === 'sell')).map((t) => ({
+      id: t.id, kind: t.kind, date: t.date, order: t.order, notes: t.notes, source: 'trade' as const, assetId: t.assetId,
+      amount: t.quantity * t.price + (t.kind === 'buy' ? t.fees : -t.fees),
+    })),
+  ].sort((a, b) => Date.parse(a.date) - Date.parse(b.date) || a.order - b.order || a.id.localeCompare(b.id) || a.source.localeCompare(b.source))
+  let balance = 0
+  return events.filter((e) => Date.parse(e.date) <= asOf).map((e) => {
+    const amount = e.kind === 'balance' ? e.amount - balance : e.kind === 'buy' || e.kind === 'withdrawal' ? -e.amount : e.amount
+    const next = e.kind === 'balance' ? e.amount : balance + amount
+    if (!Number.isFinite(next) || Math.abs(next) > 1e15) throw new Error('Cash amounts are too large.')
+    if (next < -1e-8) throw new Error(`Insufficient cash for ${e.kind} on ${e.date.slice(0, 10)}. Add cash before this entry or correct its amount/date.`)
+    balance = Math.max(0, next)
+    return { ...e, amount, balance }
+  })
+}
+
+export function calculateCash(doc: PortfolioDocument, asOf = Infinity) {
+  return portfolioCashHistory(doc, asOf).at(-1)?.balance ?? 0
 }
 
 /** Moving average cost, including buy fees; a sell realizes its allocated cost. */
@@ -74,14 +111,14 @@ export function calculateHoldings(doc: PortfolioDocument, prices?: Record<string
   })
 }
 
-export function portfolioTotals(holdings: PortfolioHolding[]) {
+export function portfolioTotals(holdings: PortfolioHolding[], cash = 0) {
   const current = holdings.filter((h) => h.quantity > 0)
   const missing = current.filter((h) => h.value === null).length
-  const value = current.reduce((sum, h) => sum + (h.value ?? 0), 0)
+  const invested = current.reduce((sum, h) => sum + (h.value ?? 0), 0)
   const cost = current.reduce((sum, h) => sum + h.cost, 0)
   const realized = holdings.reduce((sum, h) => sum + h.realized, 0)
-  const unrealized = missing ? null : value - cost
-  return { value, cost, realized, unrealized, totalGain: unrealized === null ? null : unrealized + realized, missing, count: current.length }
+  const unrealized = missing ? null : invested - cost
+  return { value: invested + cash, invested, cash, cost, realized, unrealized, totalGain: unrealized === null ? null : unrealized + realized, missing, count: current.length }
 }
 
 export function recordPortfolioSnapshot(doc: PortfolioDocument, at = new Date().toISOString()) {
@@ -96,7 +133,7 @@ export function recordPortfolioSnapshot(doc: PortfolioDocument, at = new Date().
 
 export function portfolioHistory(doc: PortfolioDocument) {
   return [...doc.snapshots].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).map((s) => {
-    const totals = portfolioTotals(calculateHoldings(doc, s.prices, Date.parse(s.at)))
+    const totals = portfolioTotals(calculateHoldings(doc, s.prices, Date.parse(s.at)), calculateCash(doc, Date.parse(s.at)))
     return { at: s.at, value: totals.missing ? null : totals.value, cost: totals.cost, gain: totals.totalGain }
   })
 }

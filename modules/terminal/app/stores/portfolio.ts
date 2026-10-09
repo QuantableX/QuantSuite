@@ -1,9 +1,9 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
-import type { PortfolioAsset, PortfolioDocument, PortfolioTrade } from '../types/portfolio'
+import type { PortfolioAsset, PortfolioCashEntry, PortfolioDocument, PortfolioTrade } from '../types/portfolio'
 import type { MarketCapCoin } from './watchlist'
-import { calculateHoldings, emptyPortfolio, portfolioHistory, portfolioTotals, recordPortfolioSnapshot, validatePortfolio } from '../utils/portfolio.ts'
+import { calculateCash, calculateHoldings, emptyPortfolio, portfolioCashHistory, portfolioHistory, portfolioTotals, recordPortfolioSnapshot, validatePortfolio } from '../utils/portfolio.ts'
 
 const storageKey = 'quantterminal-portfolio-v1'
 const native = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -21,7 +21,9 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
   const marketCoins = ref<(MarketCapCoin & { page: number })[]>([])
   const marketLoading = ref(false)
   const holdings = computed(() => calculateHoldings(document.value))
-  const totals = computed(() => portfolioTotals(holdings.value))
+  const cash = computed(() => calculateCash(document.value))
+  const cashHistory = computed(() => portfolioCashHistory(document.value))
+  const totals = computed(() => portfolioTotals(holdings.value, cash.value))
   const history = computed(() => portfolioHistory(document.value))
   let loadingPromise: Promise<void> | null = null
 
@@ -101,14 +103,25 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
       }
     }, expected)
   }
-  function nextOrder(doc: PortfolioDocument) { return Math.max(0, ...doc.trades.map((t) => t.order)) + 1 }
+  function nextOrder(doc: PortfolioDocument) { return Math.max(0, ...doc.trades.map((t) => t.order), ...(doc.cashEntries ?? []).map((c) => c.order)) + 1 }
   function saveTrade(trade: Omit<PortfolioTrade, 'order'>, expected?: string) {
     return commit((doc) => {
       const at = doc.trades.findIndex((t) => t.id === trade.id)
-      if (at < 0) doc.trades.push({ ...trade, order: nextOrder(doc) })
-      else doc.trades[at] = { ...trade, order: doc.trades[at]!.order }
+      const settlesCash = (trade.kind === 'buy' || trade.kind === 'sell')
+        && (trade.settlesCash ?? (at < 0 ? true : doc.trades[at]!.settlesCash === true))
+      if (at < 0) doc.trades.push({ ...trade, settlesCash, order: nextOrder(doc) })
+      else doc.trades[at] = { ...trade, settlesCash, order: doc.trades[at]!.order }
     }, expected)
   }
+  function saveCashEntry(entry: Omit<PortfolioCashEntry, 'order'>, expected?: string) {
+    return commit((doc) => {
+      const entries = doc.cashEntries ??= []
+      const at = entries.findIndex((c) => c.id === entry.id)
+      if (at < 0) entries.push({ ...entry, order: nextOrder(doc) })
+      else entries[at] = { ...entry, order: entries[at]!.order }
+    }, expected)
+  }
+  function removeCashEntry(entryId: string) { return commit((doc) => { doc.cashEntries = (doc.cashEntries ?? []).filter((c) => c.id !== entryId) }) }
   function removeTrade(tradeId: string) { return commit((doc) => { doc.trades = doc.trades.filter((t) => t.id !== tradeId) }) }
   function removeAsset(assetId: string) {
     return commit((doc) => {
@@ -158,5 +171,5 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
   }
 
   return { document, loaded, loading, busy, error, quoteError, refreshing, marketCoins, marketLoading,
-    holdings, totals, history, load, saveAsset, saveTrade, removeTrade, removeAsset, loadMarket, refreshPrices }
+    holdings, cash, cashHistory, totals, history, load, saveAsset, saveTrade, saveCashEntry, removeCashEntry, removeTrade, removeAsset, loadMarket, refreshPrices }
 })
