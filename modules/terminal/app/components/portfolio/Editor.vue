@@ -2,10 +2,11 @@
 import { usePortfolioStore } from '#terminal/stores/portfolio'
 import type { PortfolioAsset, PortfolioTrade } from '#terminal/types/portfolio'
 
-const props = defineProps<{ kind: 'asset' | 'trade'; assetId?: string; tradeId?: string; side?: 'buy' | 'sell' }>()
+const props = defineProps<{ kind: 'asset' | 'trade'; assetId?: string; tradeId?: string; side?: 'buy' | 'sell'; focusNotes?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const store = usePortfolioStore()
 const dialog = ref<HTMLDialogElement | null>(null)
+const notesField = ref<HTMLTextAreaElement | null>(null)
 const error = ref('')
 const revision = store.document.revision
 const asset = store.document.assets.find((a) => a.id === props.assetId)
@@ -24,6 +25,7 @@ const draft = reactive({
   date: localTime(trade?.date ?? new Date().toISOString()), quantity: trade ? String(trade.quantity) : '',
   price: trade ? String(trade.price) : '', fees: trade ? String(trade.fees) : '0', notes: trade?.notes ?? '',
   openingQuantity: holding ? String(holding.quantity) : '', openingPrice: holding ? String(holding.averageCost) : '',
+  holdingNotes: asset?.notes ?? '',
 })
 const marketPage = ref(asset?.marketPage ?? 1)
 const title = computed(() => props.kind === 'asset' ? asset ? 'Edit holding' : 'Add holding' : trade ? 'Edit trade' : 'Add trade')
@@ -32,6 +34,7 @@ const disabled = computed(() => store.busy || store.refreshing)
 onMounted(() => {
   store.error = ''
   dialog.value?.showModal()
+  if (props.focusNotes) notesField.value?.focus()
   if (draft.source === 'market' && props.kind === 'asset') void store.loadMarket(marketPage.value)
 })
 watch(() => draft.source, (source) => { if (source === 'market') void store.loadMarket(marketPage.value) })
@@ -59,7 +62,7 @@ async function submit() {
         id: asset?.id ?? crypto.randomUUID(), name: draft.name.trim(), symbol: draft.symbol.trim().toUpperCase(),
         source: draft.source, marketName: draft.marketName, marketPage: draft.marketPage,
         manualPrice: String(draft.manualPrice).trim() ? number(draft.manualPrice, 'current price') : null,
-        updatedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(), notes: draft.holdingNotes,
       }
       const quantity = !asset && !String(draft.openingQuantity).trim() ? 0 : number(draft.openingQuantity, 'quantity')
       saved = await store.saveAsset(next, asset || quantity > 0 ? {
@@ -103,6 +106,7 @@ async function submit() {
           <div class="qp-editor__grid"><label>Current quantity<input v-model="draft.openingQuantity" type="number" min="0" step="any" required /></label><label>Average unit cost (USD)<input v-model="draft.openingPrice" type="number" min="0" step="any" :required="Number(draft.openingQuantity) > 0" /></label></div>
           <p>Quantity and cost changes are saved as an editable position adjustment. Earlier trades and realized gains stay intact.</p>
         </fieldset>
+        <label>Holding notes<textarea ref="notesField" v-model="draft.holdingNotes" rows="4" maxlength="10000" placeholder="Thesis / theory, entry criteria, risks, exit plan…" /></label>
       </template>
       <template v-else>
         <div class="qp-editor__grid"><label>Asset<select v-model="draft.assetId" required><option v-for="a in store.document.assets" :key="a.id" :value="a.id">{{ a.symbol }} · {{ a.name }}</option></select></label><label>Entry type<select v-model="draft.kind"><option value="buy">Buy</option><option value="sell">Sell</option><option value="opening">Opening holding</option><option value="adjustment">Position adjustment</option></select></label></div>

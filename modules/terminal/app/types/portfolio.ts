@@ -7,6 +7,7 @@ export interface PortfolioAsset {
   marketPage: number
   manualPrice: number | null
   updatedAt: string
+  notes?: string
 }
 export interface PortfolioTrade {
   id: string

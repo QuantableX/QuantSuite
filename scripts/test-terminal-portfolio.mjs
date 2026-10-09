@@ -271,3 +271,40 @@ test('invalid direct quantities are rejected and adjustment deletion respects su
   assert.equal(await store.removeTrade('fix'), false)
   assert.equal(writes(), 0); assert.equal(store.document.trades.length, 3)
 })
+
+test('holding notes are optional for existing portfolios and reject invalid saved text', () => {
+  const d = doc([trade('open', 'opening', 2, 100, 1)])
+  validatePortfolio(d)
+  d.assets[0].notes = 'Thesis: long-term growth\nEntry criteria: support holds\nExit: thesis invalidated'
+  validatePortfolio(d)
+  for (const notes of [null, 3, {}, 'x'.repeat(10001)]) {
+    d.assets[0].notes = notes
+    assert.throws(() => validatePortfolio(d), /Holding notes/)
+  }
+})
+
+test('holding notes persist, can be cleared and do not alter the trade ledger or quantities', async () => {
+  const d = doc([trade('open', 'opening', 2, 100, 1)])
+  const { store, saved } = setup(d)
+  await store.load()
+  const notes = 'Thesis / Theorie\nEntry criteria: hold above support\nRisks: earnings gap'
+  assert.equal(await store.saveAsset({ ...asset(), notes }, { quantity: 2, price: 100 }), true)
+  await store.load()
+  assert.equal(store.document.assets[0].notes, notes)
+  assert.deepEqual(saved().trades, d.trades)
+  assert.equal(store.holdings[0].quantity, 2)
+  assert.equal(await store.saveAsset({ ...store.document.assets[0], notes: '' }), true)
+  await store.load()
+  assert.equal(store.document.assets[0].notes, '')
+})
+
+test('notes survive crypto refresh and a later position correction', async () => {
+  const d = doc([trade('open', 'opening', 2, 100, 1)])
+  d.assets[0] = asset('a', { source: 'market', symbol: 'BTC', marketName: 'Bitcoin', notes: 'Thesis and entry criteria' })
+  const { store } = setup(d, { market: () => [{ symbol: 'BTC', name: 'Bitcoin', price: 500 }] })
+  await store.load(); await store.refreshPrices()
+  assert.equal(await store.saveAsset({ ...store.document.assets[0] }, { quantity: 3, price: 120 }), true)
+  await store.load()
+  assert.equal(store.document.assets[0].notes, 'Thesis and entry criteria')
+  assert.equal(store.holdings[0].quantity, 3)
+})
