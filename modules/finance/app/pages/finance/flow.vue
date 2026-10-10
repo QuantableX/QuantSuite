@@ -30,8 +30,13 @@ const money = (cents: number) => formatCents(cents, app.settings.currency, app.s
         :tone="plan.overspent ? 'down' : undefined"
       />
       <QMetric
+        v-if="plan.savingsRateExcludingLeftover !== null"
+        label="Savings excl. leftover"
+        :value="`${plan.savingsRateExcludingLeftover}%`"
+      />
+      <QMetric
         v-if="plan.summary.savingsRate !== null"
-        label="Savings rate"
+        label="Savings incl. leftover"
         :value="`${plan.summary.savingsRate}%`"
       />
     </div>

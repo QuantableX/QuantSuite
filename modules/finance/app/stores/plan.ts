@@ -47,6 +47,11 @@ export const usePlanStore = defineStore('finance/plan', () => {
   /** True when the plan spends more than it takes in — worth shouting about. */
   const overspent = computed(() => summary.value.leftoverCents < 0)
 
+  const savingsRateExcludingLeftover = computed(() => {
+    const { incomeCents, savingCents } = summary.value
+    return incomeCents > 0 ? Math.round((savingCents / incomeCents) * 100) : null
+  })
+
   async function load() {
     const revision = ++request
     loading.value = true
@@ -140,6 +145,7 @@ export const usePlanStore = defineStore('finance/plan', () => {
     saving,
     expense,
     overspent,
+    savingsRateExcludingLeftover,
     of,
     load,
     add,
