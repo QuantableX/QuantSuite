@@ -1,6 +1,6 @@
 {
   "name": "@quantsuite/ui",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "private": true,
   "type": "module",
   "description": "The suite's shared UI: shell chrome plus the module chrome every module renders (V3).",
@@ -10,7 +10,7 @@
     "./logos": "./src/logos.ts"
   },
   "dependencies": {
-    "@quantsuite/core": "1.0.17",
+    "@quantsuite/core": "1.0.18",
     "lucide-vue-next": "^0.575.0"
   }
 }
