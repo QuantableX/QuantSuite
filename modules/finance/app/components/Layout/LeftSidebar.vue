@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The sidebar: the four numbers the plan produces, stacked.
+ * The sidebar: monthly totals and savings rates, stacked.
  *
  * The leftover is the big one, because it is the figure you actually live by —
  * everything irregular comes out of it.
@@ -55,9 +55,15 @@ function share(cents: number): number {
       </div>
     </section>
 
-    <section v-if="plan.summary.savingsRate !== null" class="qf-ls__rate">
-      <span>Savings rate</span>
-      <strong>{{ plan.summary.savingsRate }}%</strong>
+    <section v-if="plan.summary.savingsRate !== null" class="qf-ls__rates" aria-label="Savings rates">
+      <div class="qf-ls__rate" title="Planned saving as a share of monthly income, excluding leftover money.">
+        <span>Savings excl. leftover</span>
+        <strong class="qf-num">{{ plan.savingsRateExcludingLeftover }}%</strong>
+      </div>
+      <div class="qf-ls__rate" title="Planned saving plus positive leftover money as a share of monthly income.">
+        <span>Savings incl. leftover</span>
+        <strong class="qf-num">{{ plan.summary.savingsRate }}%</strong>
+      </div>
     </section>
   </div>
 </template>
@@ -151,10 +157,17 @@ function share(cents: number): number {
 .qf-ls__fill[data-color='saving'] { --qf-c: var(--qf-flow-saving); }
 .qf-ls__fill[data-color='expense'] { --qf-c: var(--qf-flow-expense); }
 
+.qf-ls__rates {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .qf-ls__rate {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--qf-border-subtle);
   border-radius: var(--qf-radius);
@@ -163,6 +176,7 @@ function share(cents: number): number {
 }
 
 .qf-ls__rate strong {
+  flex-shrink: 0;
   color: var(--qf-text);
   font-size: 15px;
 }
