@@ -265,6 +265,43 @@ test('a delayed quote cannot overwrite a newer manual price edit', async () => {
   assert.equal(store.document.quotes.a, undefined)
 })
 
+test('opening management discards a pending quote without invalidating the editor revision', async () => {
+  const d = doc([trade('open', 'opening', 2, 100, 1)])
+  d.assets[0] = asset('a', { source: 'market', symbol: 'BTC', marketName: 'Bitcoin' })
+  d.quotes.a = { price: 400, checkedAt: at(1) }
+  let finish
+  const { store, writes } = setup(d, { market: () => new Promise(resolve => { finish = resolve }) })
+  await store.load()
+  const refresh = store.refreshPrices(), revision = store.document.revision
+  store.discardPendingPrices()
+  finish([{ symbol: 'BTC', name: 'Bitcoin', price: 500 }])
+  await refresh
+  assert.equal(store.document.revision, revision)
+  assert.equal(store.holdings[0].price, 400); assert.equal(writes(), 0)
+  assert.equal(await store.saveTrade({ ...trade('sell', 'sell', 1, 400, 2), settlesCash: true }, revision), true)
+  assert.equal(store.cash, 400); assert.equal(store.holdings[0].quantity, 1)
+  const resumed = store.refreshPrices()
+  finish([{ symbol: 'BTC', name: 'Bitcoin', price: 550 }])
+  await resumed
+  assert.equal(store.holdings[0].price, 550)
+})
+
+test('a pending market request does not block saving a position or report an abandoned failure', async () => {
+  const d = doc([trade('open', 'opening', 2, 100, 1)])
+  d.assets[0] = asset('a', { source: 'market', symbol: 'BTC', marketName: 'Bitcoin' })
+  let fail
+  const { store } = setup(d, { market: () => new Promise((resolve, reject) => { fail = reject }) })
+  await store.load()
+  const refresh = store.refreshPrices(), revision = store.document.revision
+  store.discardPendingPrices()
+  assert.equal(store.refreshing, true)
+  assert.equal(await store.saveAsset(d.assets[0], { quantity: 3, price: 100 }, revision), true)
+  fail(new Error('offline'))
+  await refresh
+  assert.equal(store.holdings[0].quantity, 3); assert.equal(store.quoteError, '')
+  assert.equal(store.refreshing, false)
+})
+
 test('browser fallback persists the ledger and refuses storage failures', async () => {
   globalThis.window = {}
   const entries = new Map()
