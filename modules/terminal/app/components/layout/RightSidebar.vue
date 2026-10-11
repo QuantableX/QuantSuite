@@ -24,10 +24,12 @@ const {
 const cleanPath = computed(() => route.path.replace(/\/+$/, '') || '/')
 const isTerminal = computed(() => cleanPath.value === '/terminal')
 const isMetrics = computed(() => cleanPath.value === '/terminal/metrics')
+const isPortfolio = computed(() => cleanPath.value === '/terminal/portfolio')
 
 const headerLabel = computed(() => {
   if (isTerminal.value) return 'ORDER BOOK'
   if (isMetrics.value) return 'FILTERS'
+  if (isPortfolio.value) return 'PORTFOLIO'
   return 'WATCHLIST'
 })
 
@@ -219,6 +221,8 @@ function closeMenus() {
           </button>
         </div>
       </template>
+
+      <TerminalPortfolioSidebar v-else-if="isPortfolio" />
 
       <!-- Other pages: Watchlist -->
       <template v-else>

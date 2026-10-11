@@ -76,10 +76,11 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
     finally { busy.value = false }
   }
 
-  function saveAsset(asset: PortfolioAsset, position?: { quantity: number; price: number; date?: string }, expected?: string) {
+  function saveAsset(asset: PortfolioAsset, position?: { quantity: number; price: number; date?: string; kind?: 'opening' | 'buy'; fees?: number }, expected?: string) {
     return commit((doc) => {
       if (position && (!Number.isFinite(position.quantity) || position.quantity < 0 || !Number.isFinite(position.price) || position.price < 0)) throw new Error('Enter a non-negative quantity and average cost.')
       const at = doc.assets.findIndex((a) => a.id === asset.id)
+      if (position?.kind === 'buy' && (at >= 0 || position.quantity <= 0)) throw new Error('A new purchase needs a new asset and a positive quantity. Use Record trade for an existing asset.')
       if (at < 0) doc.assets.push(asset)
       else {
         const previous = doc.assets[at]!
@@ -89,8 +90,9 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
       if (!position) return
       if (at < 0) {
         if (position.quantity > 0) doc.trades.push({
-          id: id(), assetId: asset.id, kind: 'opening', quantity: position.quantity, price: position.price,
-          date: position.date ?? new Date().toISOString(), fees: 0, notes: 'Opening holding', order: nextOrder(doc),
+          id: id(), assetId: asset.id, kind: position.kind ?? 'opening', quantity: position.quantity, price: position.price,
+          date: position.date ?? new Date().toISOString(), fees: position.kind === 'buy' ? position.fees ?? 0 : 0,
+          settlesCash: position.kind === 'buy', notes: position.kind === 'buy' ? '' : 'Opening holding', order: nextOrder(doc),
         })
       } else {
         const current = calculateHoldings(doc).find((h) => h.asset.id === asset.id)!
