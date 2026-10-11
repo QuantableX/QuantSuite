@@ -170,7 +170,7 @@ watch(() => store.document.assets, (assets) => {
 .qp-holdings-table .qp-asset small { max-width: 100%; }
 .qp-row-actions { display: flex; flex-wrap: nowrap; gap: 4px; }
 .qp-row-actions button { padding: 4px 6px; font-size: 10px; background: transparent; border-color: transparent; }
-.qp-holding-row .qp-row-actions button { padding: 6px 12px; font-size: 11px; background: var(--surface-2); border-color: var(--border); }
+.qp-holdings-table .qp-row-actions button { padding: 6px 12px; font-size: 11px; background: var(--surface-2); border-color: var(--border); }
 .qp-table .qp-no-rows { text-align: center; padding: 28px 12px; color: var(--text-secondary); white-space: normal; }
 .qp-kind { text-transform: capitalize; font-size: 10px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; }
 .qp-kind.buy { color: var(--positive); }.qp-kind.sell { color: var(--negative); }
