@@ -56,7 +56,7 @@ const series = computed(() => {
       <header><h2>Allocation</h2><span>Cash &amp; investments</span></header>
       <div v-if="slices.length" class="qp-allocation">
         <svg viewBox="0 0 200 200" role="group" aria-label="Portfolio allocation pie chart">
-          <path v-for="s in slices" :key="s.key" :d="s.path" :fill="s.color" class="qp-slice" :class="{ 'is-dim': hovered && hovered !== s.key }" role="button" tabindex="0" :aria-label="`Edit ${s.symbol}: ${money(s.value)}, ${pct(s.share)}`" @pointerenter="hovered = s.key" @pointerleave="hovered = null" @focus="hovered = s.key" @blur="hovered = null" @click="select(s.assetId)" @keydown.enter.prevent="select(s.assetId)" @keydown.space.prevent="select(s.assetId)"><title>{{ s.name }} · {{ money(s.value) }} · {{ pct(s.share) }}</title></path>
+          <path v-for="s in slices" :key="s.key" :d="s.path" :fill="s.color" class="qp-slice" :class="{ 'is-dim': hovered && hovered !== s.key }" role="button" tabindex="0" :aria-label="`View ${s.symbol}: ${money(s.value)}, ${pct(s.share)}`" @pointerenter="hovered = s.key" @pointerleave="hovered = null" @focus="hovered = s.key" @blur="hovered = null" @click="select(s.assetId)" @keydown.enter.prevent="select(s.assetId)" @keydown.space.prevent="select(s.assetId)"><title>{{ s.name }} · {{ money(s.value) }} · {{ pct(s.share) }}</title></path>
         </svg>
         <ul><li v-for="s in slices" :key="s.key"><button type="button" @click="select(s.assetId)" @pointerenter="hovered = s.key" @pointerleave="hovered = null"><i :style="{ background: s.color }" /><span>{{ s.symbol }}<small>{{ s.name }}</small></span><strong>{{ pct(s.share) }}<small>{{ money(s.value) }}</small></strong></button></li></ul>
       </div>

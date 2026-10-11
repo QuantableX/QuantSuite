@@ -124,6 +124,54 @@ test('write failure leaves saved and displayed data unchanged', async () => {
   assert.match(store.error, /disk full/)
 })
 
+test('a new asset and its cash-funded purchase save atomically and remain editable', async () => {
+  const initial = { ...emptyPortfolio(), cashEntries: [cashEntry('funding', 'deposit', 1000, 1)] }
+  const { store, writes, saved } = setup(initial)
+  await store.load()
+  assert.equal(await store.saveAsset(asset(), { kind: 'buy', quantity: 3, price: 100, fees: 5, date: at(2) }), true)
+  assert.equal(writes(), 1)
+  assert.equal(saved().assets.length, 1)
+  assert.equal(store.cash, 695)
+  assert.equal(store.holdings[0].cost, 305)
+  const purchase = clone(store.document.trades[0])
+  assert.equal(purchase.kind, 'buy'); assert.equal(purchase.settlesCash, true)
+  await store.load()
+  assert.equal(store.holdings[0].quantity, 3)
+  assert.equal(await store.saveTrade({ ...purchase, quantity: 2 }), true)
+  assert.equal(store.cash, 795)
+  assert.equal(await store.removeAsset('a'), true)
+  assert.equal(store.cash, 1000)
+})
+
+test('rejected first purchases never leave an empty asset or alter cash', async () => {
+  const initial = { ...emptyPortfolio(), cashEntries: [cashEntry('funding', 'deposit', 100, 2)] }
+  for (const position of [
+    { quantity: 1, price: 101, date: at(3) },
+    { quantity: 1, price: 100, fees: 1, date: at(3) },
+    { quantity: 1, price: 100, date: at(1) },
+    { quantity: 0, price: 100, date: at(3) },
+    { quantity: 1, price: 90, fees: -1, date: at(3) },
+  ]) {
+    const { store, writes, saved } = setup(initial)
+    await store.load()
+    assert.equal(await store.saveAsset(asset(), { kind: 'buy', ...position }), false)
+    assert.equal(writes(), 0); assert.deepEqual(saved(), initial)
+    assert.equal(store.document.assets.length, 0); assert.equal(store.cash, 100)
+  }
+})
+
+test('first-purchase write failures and duplicate asset IDs preserve the portfolio', async () => {
+  const initial = { ...emptyPortfolio(), cashEntries: [cashEntry('funding', 'deposit', 1000, 1)] }
+  const failed = setup(initial, { failWrite: true })
+  await failed.store.load()
+  assert.equal(await failed.store.saveAsset(asset(), { kind: 'buy', quantity: 1, price: 100, date: at(2) }), false)
+  assert.deepEqual(failed.saved(), initial); assert.equal(failed.store.document.assets.length, 0)
+  const existing = setup({ ...initial, assets: [asset()] })
+  await existing.store.load()
+  assert.equal(await existing.store.saveAsset(asset(), { kind: 'buy', quantity: 1, price: 100, date: at(2) }), false)
+  assert.equal(existing.writes(), 0); assert.equal(existing.store.cash, 1000)
+})
+
 test('invalid deletion keeps original history; asset deletion removes only its own trades', async () => {
   const d = doc([trade('buy', 'buy', 2, 100, 1), trade('sell', 'sell', 1, 110, 2)])
   d.assets.push(asset('b')); d.trades.push({ ...trade('b', 'buy', 2, 30, 1), assetId: 'b' })
