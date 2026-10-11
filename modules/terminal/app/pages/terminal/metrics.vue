@@ -921,7 +921,8 @@ code {
   border-radius: 3px;
 }
 .metric-library {
-  margin-top: 22px;
+  /* Clear the page's bottom padding so the library starts below the initial viewport. */
+  margin-top: max(22px, var(--qss-surface-padding, 24px));
 }
 .library-heading {
   display: flex;
