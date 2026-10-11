@@ -50,14 +50,15 @@ watch(deleting, async (target) => {
   deleteDialog.value?.showModal()
 })
 function addAsset() { editor.value = { kind: 'trade' } }
+function selectSavedHolding(id: string) { selectedHolding.value = store.activeHoldings.some(h => h.asset.id === id) ? id : '' }
 async function remove() {
   if (!deleting.value || store.busy) return
   const target = deleting.value
   const ok = target.kind === 'asset' ? await store.removeAsset(target.id) : target.kind === 'cash' ? await store.removeCashEntry(target.id) : await store.removeTrade(target.id)
   if (ok) { deleting.value = null; deleteDialog.value?.close() }
 }
-watch(() => store.document.assets, (assets) => {
-  if (selectedHolding.value && !assets.some(a => a.id === selectedHolding.value)) selectedHolding.value = ''
+watch(() => store.activeHoldings, (holdings) => {
+  if (selectedHolding.value && !holdings.some(h => h.asset.id === selectedHolding.value)) selectedHolding.value = ''
 })
 </script>
 
@@ -79,14 +80,14 @@ watch(() => store.document.assets, (assets) => {
         <div class="qp-dashboard">
           <TerminalPortfolioCharts :holdings="store.holdings" :cash="store.cash" :history="store.history" @select="selectedHolding = $event" @cash="!locked && (editor = { kind: 'cash' })" />
           <section class="qp-holdings-panel" aria-label="Holdings panel">
-          <div class="qp-holdings-head"><h2>Holdings <span>{{ rows.length }}</span></h2><label class="qp-search"><span class="sr-only">Find a holding</span><input v-model="search" type="search" placeholder="Find a holding…" /></label><label class="qp-checkbox"><input v-model="currentOnly" type="checkbox" /> Current holdings only</label><button class="qp-refresh" :disabled="locked || store.refreshing || !store.document.assets.some(a => a.source === 'market')" :aria-label="store.refreshing ? 'Refreshing prices' : 'Refresh prices'" title="Refresh market prices" @click="store.refreshPrices()"><RotateCw :size="14" /></button></div>
+          <div class="qp-holdings-head"><h2>Holdings <span>{{ rows.length }}</span></h2><label class="qp-search"><span class="sr-only">Find a holding</span><input v-model="search" type="search" placeholder="Find a holding…" /></label><label class="qp-checkbox"><input v-model="currentOnly" type="checkbox" /> Current holdings only</label><button class="qp-refresh" :disabled="locked || store.refreshing || !store.activeHoldings.some(h => h.asset.source === 'market')" :aria-label="store.refreshing ? 'Refreshing prices' : 'Refresh prices'" title="Refresh market prices" @click="store.refreshPrices()"><RotateCw :size="14" /></button></div>
           <div class="qp-table-wrap qp-holdings-scroll" tabindex="0" role="region" aria-label="Scrollable holdings"><table class="qp-table qp-holdings-table" aria-label="Portfolio holdings"><colgroup><col style="width: 20%" /><col style="width: 9%" /><col style="width: 12%" /><col style="width: 12%" /><col style="width: 14%" /><col style="width: 14%" /><col style="width: 19%" /></colgroup><thead><tr><th>Asset</th><th>Quantity</th><th>Avg. cost</th><th>Current price</th><th>Value / share</th><th>Unrealized</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
             <tr class="qp-cash-row"><td><div class="qp-asset"><i :style="{ background: portfolioCashColor }" /><span><strong>Cash</strong><small>USD · Available to invest</small></span></div></td><td>—</td><td>—</td><td>—</td><td>{{ money(store.cash) }}<small>{{ store.totals.value > 0 ? `${(store.cash / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td>—</td><td><div class="qp-row-actions"><button :disabled="locked" aria-label="Manage cash" @click="editor = { kind: 'cash', cashAction: 'balance' }">Manage</button></div></td></tr>
             <tr v-for="h in rows" :key="h.asset.id" class="qp-holding-row" :class="{ 'is-selected': selectedHolding === h.asset.id }" @click="selectedHolding = h.asset.id">
               <td><div class="qp-asset"><i :style="{ background: assetColor(h.asset.id) }" /><span><button class="qp-asset-select" :aria-label="`View ${h.asset.symbol} details`" :aria-pressed="selectedHolding === h.asset.id" @click="selectedHolding = h.asset.id">{{ h.asset.symbol }}</button><small :title="h.asset.name">{{ h.asset.name }}{{ h.quantity === 0 ? ' · Closed' : '' }}</small></span></div></td>
               <td :title="number(h.quantity)">{{ number(h.quantity) }}</td><td :title="price(h.averageCost)">{{ price(h.averageCost) }}</td><td :title="h.asset.source === 'manual' ? displayDate(h.asset.updatedAt) : store.document.quotes[h.asset.id] ? `Checked ${displayDate(store.document.quotes[h.asset.id]!.checkedAt)}` : 'Not priced yet'">{{ price(h.price) }}<small>{{ h.asset.source === 'manual' ? 'Manual' : 'Market' }}</small></td><td :title="money(h.value)">{{ money(h.value) }}<small>{{ h.value !== null && store.totals.value > 0 ? `${(h.value / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td :class="tone(h.unrealized)" :title="signed(h.unrealized)">{{ signed(h.unrealized) }}<small>{{ h.unrealized === null ? '—' : percent(h.unrealized, h.cost) }}</small></td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Manage ${h.asset.symbol}`" @click="editor = { kind: 'trade', assetId: h.asset.id }">Manage</button></div></td>
             </tr>
-            <tr v-if="!rows.length"><td colspan="7" class="qp-no-rows"><template v-if="!store.document.assets.length"><strong>Start with what you own</strong><p>Add your existing investments, then set your available cash.<br />For a new purchase, choose Add asset.</p><button class="qp-primary" :disabled="locked" @click="editor = { kind: 'asset' }">Add your first holding</button><button :disabled="locked" @click="editor = { kind: 'cash', cashAction: 'balance' }">Set available cash</button></template><template v-else><strong>No matching holdings</strong><p>Try another search or include closed positions.</p><button @click="search = ''; currentOnly = false">Show all holdings</button></template></td></tr>
+            <tr v-if="!rows.length"><td colspan="7" class="qp-no-rows"><template v-if="!store.document.assets.length"><strong>Start with what you own</strong><p>Add your existing investments, then set your available cash.<br />For a new purchase, choose Add asset.</p><button class="qp-primary" :disabled="locked" @click="editor = { kind: 'asset' }">Add your first holding</button><button :disabled="locked" @click="editor = { kind: 'cash', cashAction: 'balance' }">Set available cash</button></template><template v-else-if="currentOnly && !search.trim() && !store.activeHoldings.length"><strong>No active holdings</strong><p>Your completed trades remain in history.</p><button class="qp-primary" :disabled="locked" @click="addAsset">Add an asset</button></template><template v-else><strong>No matching holdings</strong><p>Try another search or include closed positions.</p><button @click="search = ''; currentOnly = false">Show all holdings</button></template></td></tr>
           </tbody></table></div>
           </section>
         </div>
@@ -106,8 +107,8 @@ watch(() => store.document.assets, (assets) => {
         </tbody></table></div>
       </section>
     </template>
-    <TerminalPortfolioTradeTicket v-if="editor && manageAsset" :key="JSON.stringify(editor)" :asset-id="editor.assetId" :initial-tab="editor.kind === 'asset' ? 'edit' : editor.side" :focus-notes="editor.focusNotes" @saved="selectedHolding = $event" @close="editor = null" />
-    <TerminalPortfolioEditor v-else-if="editor" :key="JSON.stringify(editor)" v-bind="editor" @saved="selectedHolding = $event" @new-asset="editor = { kind: 'trade', side: 'buy' }" @close="editor = null" />
+    <TerminalPortfolioTradeTicket v-if="editor && manageAsset" :key="JSON.stringify(editor)" :asset-id="editor.assetId" :initial-tab="editor.kind === 'asset' ? 'edit' : editor.side" :focus-notes="editor.focusNotes" @saved="selectSavedHolding" @close="editor = null" />
+    <TerminalPortfolioEditor v-else-if="editor" :key="JSON.stringify(editor)" v-bind="editor" @saved="selectSavedHolding" @new-asset="editor = { kind: 'trade', side: 'buy' }" @close="editor = null" />
     <dialog ref="deleteDialog" class="qp-delete" aria-labelledby="qp-delete-title" @cancel="store.busy ? $event.preventDefault() : (deleting = null)"><h2 id="qp-delete-title">Delete {{ deleting?.name }}?</h2><p>{{ deleting?.kind === 'asset' ? 'This removes the asset and its trades, undoing their cash movements.' : 'This removes the entry and recalculates cash, holdings and gains.' }} Deletion is rejected if a later entry would exceed the available cash or holdings.</p><p v-if="store.error" class="qp-alert" role="alert">{{ store.error }}</p><footer><button :disabled="store.busy" @click="deleting = null; deleteDialog?.close()">Cancel</button><button :disabled="store.busy" @click="remove">Delete</button></footer></dialog>
   </div>
 </template>

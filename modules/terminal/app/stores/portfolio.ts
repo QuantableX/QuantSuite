@@ -21,6 +21,7 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
   const marketCoins = ref<(MarketCapCoin & { page: number })[]>([])
   const marketLoading = ref(false)
   const holdings = computed(() => calculateHoldings(document.value))
+  const activeHoldings = computed(() => holdings.value.filter(h => h.quantity > 0))
   const cash = computed(() => calculateCash(document.value))
   const cashHistory = computed(() => portfolioCashHistory(document.value))
   const totals = computed(() => portfolioTotals(holdings.value, cash.value))
@@ -151,11 +152,11 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
 
   async function refreshPrices() {
     if (!loaded.value || refreshing.value || busy.value || loading.value) return
-    const assets = document.value.assets.filter((a) => a.source === 'market')
+    const assets = activeHoldings.value.map(h => h.asset).filter(a => a.source === 'market')
+    quoteError.value = ''
     if (!assets.length) return
     refreshing.value = true
     const request = ++priceRequest
-    quoteError.value = ''
     const revision = document.value.revision
     const pages = [...new Set(assets.map((a) => a.marketPage))]
     const quotes: PortfolioDocument['quotes'] = {}
@@ -180,5 +181,5 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
   }
 
   return { document, loaded, loading, busy, error, quoteError, refreshing, marketCoins, marketLoading,
-    holdings, cash, cashHistory, totals, history, load, saveAsset, saveTrade, saveCashEntry, removeCashEntry, removeTrade, removeAsset, loadMarket, refreshPrices, discardPendingPrices }
+    holdings, activeHoldings, cash, cashHistory, totals, history, load, saveAsset, saveTrade, saveCashEntry, removeCashEntry, removeTrade, removeAsset, loadMarket, refreshPrices, discardPendingPrices }
 })

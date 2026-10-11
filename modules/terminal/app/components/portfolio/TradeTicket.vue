@@ -43,8 +43,8 @@ const oversell = computed(() => side.value === 'sell' && amount.value && amount.
 const busy = computed(() => store.busy || store.loading)
 const ready = computed(() => selected.value && amount.value && !insufficient.value && !oversell.value && (!manual.value || (symbol.value && draft.name.trim())))
 const matches = (symbol: string, name: string) => `${symbol} ${name}`.toLowerCase().includes(search.value.trim().toLowerCase())
-const existing = computed(() => store.holdings.filter(h => (side.value === 'buy' || h.quantity > 0) && matches(h.asset.symbol, h.asset.name)))
-const marketResults = computed(() => coins.value.filter(c => matches(c.symbol, c.name) && !store.document.assets.some(a => a.source === 'market' && a.symbol === c.symbol && a.marketName === c.name)).slice(0, 12))
+const existing = computed(() => store.activeHoldings.filter(h => matches(h.asset.symbol, h.asset.name)))
+const marketResults = computed(() => coins.value.filter(c => matches(c.symbol, c.name) && !store.activeHoldings.some(h => h.asset.source === 'market' && h.asset.symbol === c.symbol && h.asset.marketName === c.name)).slice(0, 12))
 const entryDate = () => customDate.value ? new Date(draft.date).toISOString() : new Date().toISOString()
 async function loadMore() {
   if (store.marketLoading) return
@@ -135,7 +135,7 @@ onMounted(() => {
         <template v-if="picker">
           <label>Find an asset<input ref="searchField" v-model="search" type="search" placeholder="Name or symbol…" /></label>
           <div class="qp-ticket-results">
-            <h3 v-if="existing.length">Your assets</h3>
+            <h3 v-if="existing.length">Current holdings</h3>
             <button v-for="h in existing" :key="h.asset.id" type="button" :aria-label="`Choose ${h.asset.symbol} holding`" @click="chooseExisting(h.asset.id)"><span><strong>{{ h.asset.symbol }}</strong><small>{{ h.asset.name }}</small></span><small>{{ number(h.quantity) }} held</small></button>
             <h3 v-if="side === 'buy'">Crypto</h3>
             <button v-for="coin in side === 'buy' ? marketResults : []" :key="`${coin.symbol}:${coin.name}`" type="button" :aria-label="`Choose ${coin.name}`" @click="chooseCoin(coin)"><span><strong>{{ coin.symbol }}</strong><small>{{ coin.name }}</small></span><small>{{ money(coin.price) }}</small></button>
