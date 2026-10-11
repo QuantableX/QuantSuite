@@ -1,4 +1,6 @@
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { removeLegacyJournalSamples } from '../utils/journal-migration.ts'
 
 export interface JournalTrade {
   id: string
@@ -69,7 +71,16 @@ export const useJournalStore = defineStore('terminal/journal', () => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       const saved = raw ? JSON.parse(raw) : []
-      trades.value = Array.isArray(saved) ? saved as JournalTrade[] : []
+      const cleaned = Array.isArray(saved) ? removeLegacyJournalSamples(saved) : []
+      trades.value = cleaned as JournalTrade[]
+      if (Array.isArray(saved) && cleaned !== saved) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned))
+        } catch (error) {
+          // Keep real trades visible and retry the cleanup on the next load.
+          console.warn('[terminal/journal] Could not persist sample cleanup:', error)
+        }
+      }
     } catch {
       // Preserve unreadable saved data; never replace it with fabricated trades.
       trades.value = []
