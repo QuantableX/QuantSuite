@@ -225,6 +225,59 @@ test('stale editor revision cannot overwrite a change from another window', asyn
   assert.match(store.error, /another window/)
 })
 
+test('a fully sold position leaves active holdings but keeps history, cash and realized gains', async () => {
+  const d = doc([trade('open', 'opening', 2, 100, 1)])
+  d.assets.push(asset('never-held'))
+  const { store } = setup(d)
+  await store.load()
+  assert.deepEqual(store.activeHoldings.map(h => h.asset.id), ['a'])
+  const sale = trade('sale', 'sell', 1, 150, 2)
+  assert.equal(await store.saveTrade(sale), true)
+  assert.equal(store.activeHoldings[0].quantity, 1)
+  assert.equal(await store.saveTrade({ ...sale, quantity: 2 }), true)
+  assert.deepEqual(store.activeHoldings, [])
+  assert.equal(store.document.assets.length, 2); assert.equal(store.document.trades.length, 2)
+  assert.equal(store.cash, 300); assert.equal(store.totals.realized, 100)
+  await store.load()
+  assert.deepEqual(store.activeHoldings, [])
+  // A correction to the historical sale restores the remaining position.
+  assert.equal(await store.saveTrade(sale), true)
+  assert.equal(store.activeHoldings[0].quantity, 1)
+  assert.equal(store.cash, 150); assert.equal(store.totals.realized, 50)
+})
+
+test('quote polling skips closed positions and resumes if history restores a holding', async () => {
+  const d = doc([trade('open', 'opening', 1, 100, 1), trade('sale', 'sell', 1, 150, 2)])
+  d.assets[0] = asset('a', { source: 'market', symbol: 'BTC', marketName: 'Bitcoin', marketPage: 2 })
+  d.assets.push(asset('b', { source: 'market', symbol: 'ETH', marketName: 'Ethereum', marketPage: 1 }))
+  d.trades.push({ ...trade('open-b', 'opening', 1, 50, 1), assetId: 'b' })
+  d.quotes.a = { price: 150, checkedAt: at(2) }
+  const pages = []
+  const { store } = setup(d, { market: ({ page }) => { pages.push(page); return [{ symbol: 'ETH', name: 'Ethereum', price: 80 }, { symbol: 'BTC', name: 'Bitcoin', price: 200 }] } })
+  await store.load(); await store.refreshPrices()
+  assert.deepEqual(pages, [1]); assert.deepEqual(store.document.quotes.a, d.quotes.a)
+  assert.equal(await store.saveTrade({ ...trade('sell-b', 'sell', 1, 80, 3), assetId: 'b' }), true)
+  store.quoteError = 'Old quote warning'
+  await store.refreshPrices()
+  assert.deepEqual(pages, [1]); assert.equal(store.quoteError, '')
+  assert.equal(await store.removeTrade('sale'), true)
+  await store.refreshPrices()
+  assert.deepEqual(pages, [1, 2]); assert.equal(store.document.quotes.a.price, 200)
+})
+
+test('a new purchase after closing starts a fresh position without changing the old ledger', async () => {
+  const d = doc([trade('open', 'opening', 2, 100, 1), { ...trade('sale', 'sell', 2, 150, 2), settlesCash: true }])
+  d.assets[0].notes = 'Old position thesis'
+  const { store } = setup(d)
+  await store.load()
+  const oldTrades = clone(store.document.trades)
+  assert.equal(await store.saveAsset(asset('new', { symbol: 'A', name: 'a' }), { kind: 'buy', quantity: 1, price: 200, date: at(3) }), true)
+  assert.deepEqual(store.activeHoldings.map(h => h.asset.id), ['new'])
+  assert.deepEqual(store.document.trades.slice(0, 2), oldTrades)
+  assert.equal(store.activeHoldings[0].asset.notes, undefined)
+  assert.equal(store.cash, 100); assert.equal(store.totals.realized, 100)
+})
+
 test('live quotes match both symbol and name; unpriced assets stay unknown', async () => {
   const d = doc([trade('buy', 'buy', 2, 100, 1)])
   d.assets[0] = asset('a', { source: 'market', symbol: 'BTC', marketName: 'Bitcoin' })
