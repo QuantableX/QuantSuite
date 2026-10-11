@@ -4,7 +4,7 @@ import type { PortfolioAsset, PortfolioCashEntry, PortfolioTrade } from '#termin
 import { portfolioMoney as money } from '#terminal/utils/portfolio'
 import type { PortfolioEditor } from '../../composables/usePortfolioPanel'
 
-const props = defineProps<PortfolioEditor>()
+const props = defineProps<PortfolioEditor & { embedded?: boolean }>()
 const emit = defineEmits<{ close: []; saved: [assetId: string]; newAsset: [] }>()
 const store = usePortfolioStore()
 const dialog = ref<HTMLDialogElement | null>(null)
@@ -37,17 +37,17 @@ const draft = reactive({
 })
 const marketPage = ref(asset?.marketPage ?? 1)
 const title = computed(() => props.kind === 'cash' ? cashEntry ? 'Edit cash entry' : draft.cashKind === 'balance' ? 'Set cash balance' : draft.cashKind === 'deposit' ? 'Deposit cash' : 'Withdraw cash' : props.kind === 'asset' ? asset ? 'Edit holding' : 'Add existing holding' : trade ? 'Edit trade' : 'Record trade')
-const disabled = computed(() => store.busy || store.refreshing)
+const disabled = computed(() => store.busy || store.loading)
 const tradeTotal = computed(() => {
   const values = [draft.quantity, draft.price, draft.fees]
   if (values.some(v => !String(v).trim() || !Number.isFinite(Number(v)) || Number(v) < 0)) return null
   return Number(values[0]) * Number(values[1]) + (props.kind === 'trade' && draft.kind === 'sell' ? -1 : 1) * Number(values[2])
 })
 
-onMounted(() => {
+onMounted(async () => {
   store.error = ''
-  dialog.value?.showModal()
-  if (props.focusNotes) notesField.value?.focus()
+  if (!props.embedded) dialog.value?.showModal()
+  if (props.focusNotes) { await nextTick(); notesField.value?.focus() }
   if (draft.source === 'market' && props.kind === 'asset') void store.loadMarket(marketPage.value)
 })
 watch(() => draft.source, (source) => { if (source === 'market') void store.loadMarket(marketPage.value) })
@@ -103,9 +103,9 @@ async function submit() {
 </script>
 
 <template>
-  <dialog ref="dialog" class="qp-editor" aria-labelledby="qp-editor-title" @cancel="disabled ? $event.preventDefault() : emit('close')">
+  <component :is="embedded ? 'section' : 'dialog'" ref="dialog" class="qp-editor" :class="{ 'qp-editor--embedded': embedded }" :aria-labelledby="embedded ? undefined : 'qp-editor-title'" @cancel="disabled ? $event.preventDefault() : emit('close')">
     <form @submit.prevent="submit">
-      <header><h2 id="qp-editor-title">{{ title }}</h2><span>USD</span></header>
+      <header v-if="!embedded"><h2 id="qp-editor-title">{{ title }}</h2><span>USD</span></header>
       <template v-if="kind === 'asset'">
         <button v-if="!asset" class="qp-editor__new" type="button" @click="emit('newAsset')">Making a new purchase? Buy an asset instead</button>
         <label>Pricing<select v-model="draft.source"><option value="manual">Manual price · any asset</option><option value="market">Live crypto · Terminal market feed</option></select></label>
@@ -156,12 +156,14 @@ async function submit() {
       <p v-if="error || store.error" class="qp-editor__error" role="alert">{{ error || store.error }}</p>
       <footer><button type="button" :disabled="disabled" @click="emit('close')">Cancel</button><button type="submit" class="qp-editor__save" :disabled="disabled">{{ store.busy ? 'Saving…' : 'Save' }}</button></footer>
     </form>
-  </dialog>
+  </component>
 </template>
 
 <style scoped>
 .qp-editor { width: min(580px, calc(100% - 32px)); max-height: calc(100% - 40px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: 12px; color: var(--text-primary); background: var(--surface-1); overflow: auto; }
 .qp-editor::backdrop { background: #0009; }
+.qp-editor--embedded { width: 100%; max-height: none; padding: 0; margin: 0; border: 0; border-radius: 0; overflow: visible; }
+.qp-editor.qp-editor--embedded footer { bottom: -22px; }
 .qp-editor form { display: flex; flex-direction: column; gap: 16px; }
 .qp-editor header, .qp-editor footer, .qp-editor__paging { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .qp-editor h2 { font-size: 18px; font-weight: 600; margin: 0; }

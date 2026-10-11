@@ -3,14 +3,15 @@ import { usePortfolioStore } from '#terminal/stores/portfolio'
 import type { PortfolioAsset } from '#terminal/types/portfolio'
 import { calculateCash, calculateHoldings, portfolioTradeAmounts, portfolioMoney as money, portfolioNumber as number } from '#terminal/utils/portfolio'
 
-const props = defineProps<{ assetId?: string; side?: 'buy' | 'sell' }>()
+const props = defineProps<{ assetId?: string; initialTab?: 'buy' | 'sell' | 'edit'; focusNotes?: boolean }>()
 const emit = defineEmits<{ close: []; saved: [assetId: string] }>()
 const store = usePortfolioStore()
 const dialog = ref<HTMLDialogElement | null>(null)
 const amountField = ref<HTMLInputElement | null>(null)
 const searchField = ref<HTMLInputElement | null>(null)
 let revision = store.document.revision
-const side = ref(props.side ?? 'buy')
+const editing = ref(props.initialTab === 'edit')
+const side = ref<'buy' | 'sell'>(props.initialTab === 'sell' ? 'sell' : 'buy')
 const mode = ref<'usd' | 'units'>(side.value === 'sell' ? 'units' : 'usd')
 const assetId = ref(props.assetId ?? '')
 const newAsset = ref<PortfolioAsset | null>(null)
@@ -39,7 +40,7 @@ const cashAfter = computed(() => {
 })
 const insufficient = computed(() => cashAfter.value !== null && cashAfter.value < -1e-8)
 const oversell = computed(() => side.value === 'sell' && amount.value && amount.value.quantity > (holding.value?.quantity ?? 0) * (1 + 1e-10))
-const busy = computed(() => store.busy || store.refreshing || store.loading)
+const busy = computed(() => store.busy || store.loading)
 const ready = computed(() => selected.value && amount.value && !insufficient.value && !oversell.value && (!manual.value || (symbol.value && draft.name.trim())))
 const matches = (symbol: string, name: string) => `${symbol} ${name}`.toLowerCase().includes(search.value.trim().toLowerCase())
 const existing = computed(() => store.holdings.filter(h => (side.value === 'buy' || h.quantity > 0) && matches(h.asset.symbol, h.asset.name)))
@@ -53,7 +54,7 @@ async function loadMore() {
   for (const coin of store.marketCoins) if (!coins.value.some(c => c.symbol === coin.symbol && c.name === coin.name)) coins.value.push(coin)
   marketPage.value = page
 }
-async function focusAmount() { await nextTick(); amountField.value?.focus() }
+async function focusAmount() { await nextTick(); if (!editing.value) amountField.value?.focus() }
 function chooseExisting(id: string) {
   assetId.value = id; newAsset.value = null; manual.value = false; picker.value = false; draft.amount = ''; error.value = ''
   const price = store.holdings.find(h => h.asset.id === id)?.price
@@ -69,7 +70,11 @@ function chooseManual() {
   assetId.value = ''; manual.value = true; picker.value = false; draft.amount = ''; draft.price = ''; draft.symbol = search.value.trim().toUpperCase().slice(0, 30); draft.name = ''; error.value = ''
   newAsset.value = { id: crypto.randomUUID(), symbol: '', name: '', source: 'manual', marketName: '', marketPage: 1, manualPrice: null, updatedAt: new Date().toISOString() }
 }
-function changeSide(value: 'buy' | 'sell') { side.value = value; mode.value = value === 'buy' ? 'usd' : 'units'; draft.amount = ''; funding.value = false; error.value = '' }
+function changeSide(value: 'buy' | 'sell') {
+  if (value !== side.value) { side.value = value; mode.value = value === 'buy' ? 'usd' : 'units'; draft.amount = ''; funding.value = false; error.value = '' }
+  editing.value = false
+  void focusAmount()
+}
 function changeMode(value: 'usd' | 'units') {
   if (value === mode.value) return
   draft.amount = amount.value ? String(value === 'usd' ? amount.value.cash : amount.value.quantity) : ''
@@ -81,7 +86,7 @@ function portion(fraction: number) {
   void focusAmount()
 }
 async function changeAsset() {
-  picker.value = true; search.value = ''; funding.value = false
+  picker.value = true; editing.value = false; search.value = ''; funding.value = false
   await nextTick(); searchField.value?.focus()
   if (!marketPage.value && side.value === 'buy') void loadMore()
 }
@@ -98,7 +103,7 @@ async function addCash() {
   } catch (e) { error.value = String(e) }
 }
 async function submit() {
-  if (busy.value || picker.value || funding.value || !ready.value || !amount.value || !selected.value) return
+  if (busy.value || editing.value || picker.value || funding.value || !ready.value || !amount.value || !selected.value) return
   error.value = ''
   try {
     const date = entryDate(), price = Number(draft.price), fees = Number(draft.fees), notes = draft.notes.trim()
@@ -117,9 +122,15 @@ onMounted(() => {
 </script>
 
 <template>
-  <dialog ref="dialog" class="qp-ticket" aria-labelledby="qp-ticket-title" @cancel="busy ? $event.preventDefault() : emit('close')">
-    <form @submit.prevent="submit">
-      <header><div><h2 id="qp-ticket-title">{{ side === 'buy' ? 'Buy' : 'Sell' }} {{ picker ? 'an asset' : symbol || 'asset' }}</h2><small>{{ picker ? 'Portfolio trade' : manual ? 'New asset' : selected?.name }}</small></div><button v-if="!picker" type="button" :disabled="busy" @click="changeAsset">Change</button></header>
+  <dialog ref="dialog" class="qp-ticket" :class="{ 'qp-ticket--editing': editing }" aria-labelledby="qp-ticket-title" @cancel="busy ? $event.preventDefault() : emit('close')">
+    <header><div><h2 id="qp-ticket-title">{{ picker ? 'Add asset' : `Manage ${symbol || 'asset'}` }}</h2><small>{{ picker ? 'Choose an asset for your portfolio' : manual ? 'New asset' : selected?.name }}</small></div><button v-if="!picker && !props.assetId" type="button" :disabled="busy" @click="changeAsset">Change</button></header>
+    <div v-if="!picker" class="qp-ticket-sides" :class="{ 'qp-ticket-sides--manage': !newAsset }" role="group" aria-label="Manage holding">
+      <button type="button" :disabled="busy" :aria-pressed="!editing && side === 'buy'" @click="changeSide('buy')">Buy</button>
+      <button type="button" :disabled="busy || !!newAsset || !holding?.quantity" :aria-pressed="!editing && side === 'sell'" @click="changeSide('sell')">Sell</button>
+      <button v-if="!newAsset" type="button" :disabled="busy" :aria-pressed="editing" @click="editing = true">Edit holding</button>
+    </div>
+    <TerminalPortfolioEditor v-if="editing && assetId" kind="asset" :asset-id="assetId" :focus-notes="focusNotes" embedded @saved="emit('saved', $event)" @close="emit('close')" />
+    <form v-show="!editing" @submit.prevent="submit">
       <fieldset :disabled="busy">
         <template v-if="picker">
           <label>Find an asset<input ref="searchField" v-model="search" type="search" placeholder="Name or symbol…" /></label>
@@ -135,7 +146,6 @@ onMounted(() => {
         </template>
         <template v-else>
           <div v-if="manual" class="qp-ticket-grid"><label>Symbol<input v-model="draft.symbol" required maxlength="30" placeholder="AAPL" /></label><label>Name<input v-model="draft.name" required maxlength="150" placeholder="Apple" /></label></div>
-          <div class="qp-ticket-sides" aria-label="Trade side"><button type="button" :aria-pressed="side === 'buy'" @click="changeSide('buy')">Buy</button><button type="button" :disabled="!!newAsset || !holding?.quantity" :aria-pressed="side === 'sell'" @click="changeSide('sell')">Sell</button></div>
           <div class="qp-ticket-amount-head"><label for="qp-ticket-amount">{{ mode === 'units' ? 'Quantity' : side === 'buy' ? 'Spend (USD)' : 'Receive (USD)' }}</label><div><button type="button" :aria-pressed="mode === 'usd'" @click="changeMode('usd')">USD</button><button type="button" :aria-pressed="mode === 'units'" @click="changeMode('units')">Units</button></div></div>
           <input id="qp-ticket-amount" ref="amountField" v-model="draft.amount" class="qp-ticket-amount" type="number" min="0" step="any" required placeholder="0" />
           <div class="qp-ticket-portions"><span>{{ side === 'buy' ? `${money(availableCash)} available` : `${number(holding?.quantity ?? 0)} ${symbol} available` }}</span><button v-for="part in [0.25, 0.5, 1]" :key="part" type="button" @click="portion(part)">{{ part === 1 ? side === 'sell' ? 'Sell all' : 'Max' : `${part * 100}%` }}</button></div>
@@ -155,6 +165,10 @@ onMounted(() => {
 
 <style scoped>
 .qp-ticket { width: min(440px, calc(100% - 32px)); max-height: calc(100% - 32px); margin: auto; padding: 22px; border: 1px solid var(--border); border-radius: 12px; color: var(--text-primary); background: var(--surface-1); overflow: auto; }
+.qp-ticket--editing { width: min(580px, calc(100% - 32px)); }
+.qp-ticket > header { margin-bottom: 14px; }
+.qp-ticket > .qp-ticket-sides { margin-bottom: 14px; }
+.qp-ticket .qp-ticket-sides--manage { grid-template-columns: 1fr 1fr 1.4fr; }
 .qp-ticket::backdrop { background: #0009; }.qp-ticket form, .qp-ticket fieldset { display: flex; flex-direction: column; gap: 10px; }.qp-ticket fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .qp-ticket header, .qp-ticket footer, .qp-ticket-amount-head, .qp-ticket-portions, .qp-ticket-preview > div, .qp-ticket-picker-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .qp-ticket h2 { margin: 0; font-size: 19px; font-weight: 600; overflow-wrap: anywhere; }.qp-ticket header > div { min-width: 0; overflow-wrap: anywhere; }.qp-ticket header button { flex-shrink: 0; }

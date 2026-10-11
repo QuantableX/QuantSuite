@@ -9,7 +9,7 @@ import { assetColor, portfolioCashColor, portfolioMoney as money, portfolioNumbe
 definePageMeta({ layout: 'terminal' })
 const store = usePortfolioStore()
 const { view, editor, deleting, selectedHolding, selectedAsset, selectedKind } = usePortfolioPanel()
-const quickTrade = computed(() => editor.value?.kind === 'trade' && !editor.value.tradeId)
+const manageAsset = computed(() => editor.value && ((editor.value.kind === 'trade' && !editor.value.tradeId) || (editor.value.kind === 'asset' && !!editor.value.assetId)))
 const currentOnly = ref(true)
 const search = ref('')
 const deleteDialog = ref<HTMLDialogElement | null>(null)
@@ -26,7 +26,8 @@ const tone = (value: number | null) => value === null || value === 0 ? '' : valu
 const percent = (value: number, cost: number) => cost > 0 ? `${value >= 0 ? '+' : ''}${(value / cost * 100).toFixed(2)}%` : '—'
 const displayDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const tradeValue = (trade: PortfolioTrade) => trade.kind === 'adjustment' ? null : trade.quantity * trade.price + (trade.kind === 'sell' ? -trade.fees : trade.fees)
-const locked = computed(() => !store.loaded || store.busy || store.loading || store.refreshing)
+const locked = computed(() => !store.loaded || store.busy || store.loading)
+watch([editor, deleting], ([edit, removal]) => { if (edit || removal) store.discardPendingPrices() }, { flush: 'sync', immediate: true })
 let timer: ReturnType<typeof setInterval> | undefined
 async function start() {
   if (timer) return
@@ -48,9 +49,7 @@ watch(deleting, async (target) => {
   await nextTick()
   deleteDialog.value?.showModal()
 })
-function recordTrade() {
-  editor.value = { kind: 'trade', assetId: selectedHolding.value || undefined, side: 'buy' }
-}
+function addAsset() { editor.value = { kind: 'trade' } }
 async function remove() {
   if (!deleting.value || store.busy) return
   const target = deleting.value
@@ -64,7 +63,7 @@ watch(() => store.document.assets, (assets) => {
 
 <template>
   <div class="qp-page">
-    <header class="qp-heading"><div><h1>Portfolio</h1><p>Your investments and available cash · USD</p></div><div class="qp-actions"><button :disabled="locked" @click="editor = { kind: 'asset' }">Add existing holding</button><button class="qp-primary" :disabled="locked" @click="recordTrade"><Plus :size="14" />Buy asset</button></div></header>
+    <header class="qp-heading"><div><h1>Portfolio</h1><p>Your investments and available cash · USD</p></div><div class="qp-actions"><button :disabled="locked" @click="editor = { kind: 'asset' }">Add existing holding</button><button class="qp-primary" :disabled="locked" @click="addAsset"><Plus :size="14" />Add asset</button></div></header>
     <div v-if="store.error && !editor && !deleting" class="qp-alert" role="alert">{{ store.error }} <button :disabled="store.busy || store.loading" @click="store.load()">Reload</button></div>
     <p v-if="store.loading && !store.loaded" class="qp-empty" role="status">Loading portfolio…</p>
     <template v-else-if="store.loaded">
@@ -80,14 +79,14 @@ watch(() => store.document.assets, (assets) => {
         <div class="qp-dashboard">
           <TerminalPortfolioCharts :holdings="store.holdings" :cash="store.cash" :history="store.history" @select="selectedHolding = $event" @cash="!locked && (editor = { kind: 'cash' })" />
           <section class="qp-holdings-panel" aria-label="Holdings panel">
-          <div class="qp-holdings-head"><h2>Holdings <span>{{ rows.length }}</span></h2><label class="qp-search"><span class="sr-only">Find a holding</span><input v-model="search" type="search" placeholder="Find a holding…" /></label><label class="qp-checkbox"><input v-model="currentOnly" type="checkbox" /> Current holdings only</label><button class="qp-refresh" :disabled="locked || !store.document.assets.some(a => a.source === 'market')" :aria-label="store.refreshing ? 'Refreshing prices' : 'Refresh prices'" title="Refresh market prices" @click="store.refreshPrices()"><RotateCw :size="14" /></button></div>
+          <div class="qp-holdings-head"><h2>Holdings <span>{{ rows.length }}</span></h2><label class="qp-search"><span class="sr-only">Find a holding</span><input v-model="search" type="search" placeholder="Find a holding…" /></label><label class="qp-checkbox"><input v-model="currentOnly" type="checkbox" /> Current holdings only</label><button class="qp-refresh" :disabled="locked || store.refreshing || !store.document.assets.some(a => a.source === 'market')" :aria-label="store.refreshing ? 'Refreshing prices' : 'Refresh prices'" title="Refresh market prices" @click="store.refreshPrices()"><RotateCw :size="14" /></button></div>
           <div class="qp-table-wrap qp-holdings-scroll" tabindex="0" role="region" aria-label="Scrollable holdings"><table class="qp-table qp-holdings-table" aria-label="Portfolio holdings"><colgroup><col style="width: 20%" /><col style="width: 9%" /><col style="width: 12%" /><col style="width: 12%" /><col style="width: 14%" /><col style="width: 14%" /><col style="width: 19%" /></colgroup><thead><tr><th>Asset</th><th>Quantity</th><th>Avg. cost</th><th>Current price</th><th>Value / share</th><th>Unrealized</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
             <tr class="qp-cash-row"><td><div class="qp-asset"><i :style="{ background: portfolioCashColor }" /><span><strong>Cash</strong><small>USD · Available to invest</small></span></div></td><td>—</td><td>—</td><td>—</td><td>{{ money(store.cash) }}<small>{{ store.totals.value > 0 ? `${(store.cash / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td>—</td><td><div class="qp-row-actions"><button :disabled="locked" aria-label="Manage cash" @click="editor = { kind: 'cash', cashAction: 'balance' }">Manage</button></div></td></tr>
             <tr v-for="h in rows" :key="h.asset.id" class="qp-holding-row" :class="{ 'is-selected': selectedHolding === h.asset.id }" @click="selectedHolding = h.asset.id">
               <td><div class="qp-asset"><i :style="{ background: assetColor(h.asset.id) }" /><span><button class="qp-asset-select" :aria-label="`View ${h.asset.symbol} details`" :aria-pressed="selectedHolding === h.asset.id" @click="selectedHolding = h.asset.id">{{ h.asset.symbol }}</button><small :title="h.asset.name">{{ h.asset.name }}{{ h.quantity === 0 ? ' · Closed' : '' }}</small></span></div></td>
-              <td :title="number(h.quantity)">{{ number(h.quantity) }}</td><td :title="price(h.averageCost)">{{ price(h.averageCost) }}</td><td :title="h.asset.source === 'manual' ? displayDate(h.asset.updatedAt) : store.document.quotes[h.asset.id] ? `Checked ${displayDate(store.document.quotes[h.asset.id]!.checkedAt)}` : 'Not priced yet'">{{ price(h.price) }}<small>{{ h.asset.source === 'manual' ? 'Manual' : 'Market' }}</small></td><td :title="money(h.value)">{{ money(h.value) }}<small>{{ h.value !== null && store.totals.value > 0 ? `${(h.value / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td :class="tone(h.unrealized)" :title="signed(h.unrealized)">{{ signed(h.unrealized) }}<small>{{ h.unrealized === null ? '—' : percent(h.unrealized, h.cost) }}</small></td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Buy ${h.asset.symbol}`" @click="editor = { kind: 'trade', assetId: h.asset.id, side: 'buy' }">Buy</button><button :disabled="locked || !h.quantity" :aria-label="`Sell ${h.asset.symbol}`" @click="editor = { kind: 'trade', assetId: h.asset.id, side: 'sell' }">Sell</button><button :disabled="locked" :aria-label="`Edit ${h.asset.symbol} holding`" @click="editor = { kind: 'asset', assetId: h.asset.id }">Edit</button></div></td>
+              <td :title="number(h.quantity)">{{ number(h.quantity) }}</td><td :title="price(h.averageCost)">{{ price(h.averageCost) }}</td><td :title="h.asset.source === 'manual' ? displayDate(h.asset.updatedAt) : store.document.quotes[h.asset.id] ? `Checked ${displayDate(store.document.quotes[h.asset.id]!.checkedAt)}` : 'Not priced yet'">{{ price(h.price) }}<small>{{ h.asset.source === 'manual' ? 'Manual' : 'Market' }}</small></td><td :title="money(h.value)">{{ money(h.value) }}<small>{{ h.value !== null && store.totals.value > 0 ? `${(h.value / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td :class="tone(h.unrealized)" :title="signed(h.unrealized)">{{ signed(h.unrealized) }}<small>{{ h.unrealized === null ? '—' : percent(h.unrealized, h.cost) }}</small></td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Manage ${h.asset.symbol}`" @click="editor = { kind: 'trade', assetId: h.asset.id }">Manage</button></div></td>
             </tr>
-            <tr v-if="!rows.length"><td colspan="7" class="qp-no-rows"><template v-if="!store.document.assets.length"><strong>Start with what you own</strong><p>Add your existing investments, then set your available cash.<br />For a new purchase, choose Buy asset.</p><button class="qp-primary" :disabled="locked" @click="editor = { kind: 'asset' }">Add your first holding</button><button :disabled="locked" @click="editor = { kind: 'cash', cashAction: 'balance' }">Set available cash</button></template><template v-else><strong>No matching holdings</strong><p>Try another search or include closed positions.</p><button @click="search = ''; currentOnly = false">Show all holdings</button></template></td></tr>
+            <tr v-if="!rows.length"><td colspan="7" class="qp-no-rows"><template v-if="!store.document.assets.length"><strong>Start with what you own</strong><p>Add your existing investments, then set your available cash.<br />For a new purchase, choose Add asset.</p><button class="qp-primary" :disabled="locked" @click="editor = { kind: 'asset' }">Add your first holding</button><button :disabled="locked" @click="editor = { kind: 'cash', cashAction: 'balance' }">Set available cash</button></template><template v-else><strong>No matching holdings</strong><p>Try another search or include closed positions.</p><button @click="search = ''; currentOnly = false">Show all holdings</button></template></td></tr>
           </tbody></table></div>
           </section>
         </div>
@@ -107,7 +106,7 @@ watch(() => store.document.assets, (assets) => {
         </tbody></table></div>
       </section>
     </template>
-    <TerminalPortfolioTradeTicket v-if="editor && quickTrade" :key="JSON.stringify(editor)" :asset-id="editor.assetId" :side="editor.side" @saved="selectedHolding = $event" @close="editor = null" />
+    <TerminalPortfolioTradeTicket v-if="editor && manageAsset" :key="JSON.stringify(editor)" :asset-id="editor.assetId" :initial-tab="editor.kind === 'asset' ? 'edit' : editor.side" :focus-notes="editor.focusNotes" @saved="selectedHolding = $event" @close="editor = null" />
     <TerminalPortfolioEditor v-else-if="editor" :key="JSON.stringify(editor)" v-bind="editor" @saved="selectedHolding = $event" @new-asset="editor = { kind: 'trade', side: 'buy' }" @close="editor = null" />
     <dialog ref="deleteDialog" class="qp-delete" aria-labelledby="qp-delete-title" @cancel="store.busy ? $event.preventDefault() : (deleting = null)"><h2 id="qp-delete-title">Delete {{ deleting?.name }}?</h2><p>{{ deleting?.kind === 'asset' ? 'This removes the asset and its trades, undoing their cash movements.' : 'This removes the entry and recalculates cash, holdings and gains.' }} Deletion is rejected if a later entry would exceed the available cash or holdings.</p><p v-if="store.error" class="qp-alert" role="alert">{{ store.error }}</p><footer><button :disabled="store.busy" @click="deleting = null; deleteDialog?.close()">Cancel</button><button :disabled="store.busy" @click="remove">Delete</button></footer></dialog>
   </div>
@@ -171,7 +170,7 @@ watch(() => store.document.assets, (assets) => {
 .qp-holdings-table .qp-asset small { max-width: 100%; }
 .qp-row-actions { display: flex; flex-wrap: nowrap; gap: 4px; }
 .qp-row-actions button { padding: 4px 6px; font-size: 10px; background: transparent; border-color: transparent; }
-.qp-holding-row .qp-row-actions button:not(:last-child) { padding: 5px 7px; font-size: 11px; background: var(--surface-2); border-color: var(--border); }
+.qp-holding-row .qp-row-actions button { padding: 6px 12px; font-size: 11px; background: var(--surface-2); border-color: var(--border); }
 .qp-table .qp-no-rows { text-align: center; padding: 28px 12px; color: var(--text-secondary); white-space: normal; }
 .qp-kind { text-transform: capitalize; font-size: 10px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; }
 .qp-kind.buy { color: var(--positive); }.qp-kind.sell { color: var(--negative); }

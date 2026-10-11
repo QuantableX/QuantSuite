@@ -26,6 +26,11 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
   const totals = computed(() => portfolioTotals(holdings.value, cash.value))
   const history = computed(() => portfolioHistory(document.value))
   let loadingPromise: Promise<void> | null = null
+  let priceRequest = 0
+
+  // Opening an editor must not wait for the network or let an in-flight quote
+  // change its captured revision. The downloaded response can safely be ignored.
+  function discardPendingPrices() { priceRequest++ }
 
   async function read(): Promise<PortfolioDocument> {
     const raw: unknown = native()
@@ -149,6 +154,7 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
     const assets = document.value.assets.filter((a) => a.source === 'market')
     if (!assets.length) return
     refreshing.value = true
+    const request = ++priceRequest
     quoteError.value = ''
     const revision = document.value.revision
     const pages = [...new Set(assets.map((a) => a.marketPage))]
@@ -157,6 +163,7 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
     try {
       for (const page of pages) {
         const rows = await invoke<MarketCapCoin[]>('plugin:terminal|get_marketcap', { page, provider: 'coingecko' })
+        if (request !== priceRequest) return
         for (const asset of assets.filter((a) => a.marketPage === page)) {
           // Symbol alone is ambiguous (unrelated coins can share a ticker).
           const matches = rows.filter((c) => c.symbol === asset.symbol && c.name === asset.marketName && Number.isFinite(c.price) && c.price > 0)
@@ -165,13 +172,13 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
         }
       }
       // A user edit while quotes were downloading takes precedence.
-      if (document.value.revision !== revision) return
+      if (request !== priceRequest || document.value.revision !== revision) return
       if (Object.keys(quotes).length) await commit((doc) => { Object.assign(doc.quotes, quotes) }, revision)
       if (missing.length) quoteError.value = `No matching quote for ${missing.join(', ')} on its saved market page. Previous quotes are retained; reselect the market asset or enter a manual price.`
-    } catch (e) { quoteError.value = `Market refresh failed. Previous quotes are retained. ${String(e)}` }
+    } catch (e) { if (request === priceRequest) quoteError.value = `Market refresh failed. Previous quotes are retained. ${String(e)}` }
     finally { refreshing.value = false }
   }
 
   return { document, loaded, loading, busy, error, quoteError, refreshing, marketCoins, marketLoading,
-    holdings, cash, cashHistory, totals, history, load, saveAsset, saveTrade, saveCashEntry, removeCashEntry, removeTrade, removeAsset, loadMarket, refreshPrices }
+    holdings, cash, cashHistory, totals, history, load, saveAsset, saveTrade, saveCashEntry, removeCashEntry, removeTrade, removeAsset, loadMarket, refreshPrices, discardPendingPrices }
 })

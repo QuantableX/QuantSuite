@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, ArrowDownLeft, ArrowUpRight, Pencil, Plus, Wallet } from 'lucide-vue-next'
+import { ArrowLeft, Pencil, Plus, Wallet } from 'lucide-vue-next'
 import { usePortfolioStore } from '#terminal/stores/portfolio'
 import { usePortfolioPanel } from '#terminal/composables/usePortfolioPanel'
 import { assetColor, portfolioMoney as money, portfolioNumber as number, portfolioPrice as price } from '#terminal/utils/portfolio'
@@ -7,7 +7,7 @@ import { assetColor, portfolioMoney as money, portfolioNumber as number, portfol
 const store = usePortfolioStore()
 const { selectedHolding, editor, deleting, view, historyFor } = usePortfolioPanel()
 const holding = computed(() => store.holdings.find(h => h.asset.id === selectedHolding.value))
-const locked = computed(() => !store.loaded || store.loading || store.busy || store.refreshing || !!editor.value || !!deleting.value)
+const locked = computed(() => !store.loaded || store.loading || store.busy || !!editor.value || !!deleting.value)
 const recent = computed(() => [
   ...store.document.trades.map(t => ({ id: t.id, source: 'trade' as const, date: t.date, order: t.order, label: `${t.kind === 'adjustment' ? 'Adjusted' : t.kind === 'opening' ? 'Opening' : t.kind === 'buy' ? 'Bought' : 'Sold'} ${store.document.assets.find(a => a.id === t.assetId)?.symbol ?? 'asset'}`, detail: `${number(t.quantity)} units` })),
   ...(store.document.cashEntries ?? []).map(c => ({ id: c.id, source: 'cash' as const, date: c.date, order: c.order, label: c.kind === 'balance' ? 'Cash balance set' : c.kind === 'deposit' ? 'Cash deposited' : 'Cash withdrawn', detail: money(c.amount) })),
@@ -32,8 +32,8 @@ const tone = (value: number | null) => value === null || value === 0 ? '' : valu
       <p class="qp-panel-name">{{ holding.asset.name }}</p>
       <strong class="qp-panel-value">{{ money(holding.value) }}</strong>
       <dl><div><dt>Quantity</dt><dd>{{ number(holding.quantity) }}</dd></div><div><dt>Average cost</dt><dd>{{ price(holding.averageCost) }}</dd></div><div><dt>Current price</dt><dd>{{ price(holding.price) }}</dd></div><div><dt>Unrealized</dt><dd :class="tone(holding.unrealized)">{{ signed(holding.unrealized) }}</dd></div><div><dt>Realized</dt><dd :class="tone(holding.realized)">{{ signed(holding.realized) }}</dd></div></dl>
-      <div class="qp-panel-actions"><button :disabled="locked" @click="editor = { kind: 'trade', assetId: holding.asset.id, side: 'buy' }"><ArrowDownLeft :size="13" />Buy</button><button :disabled="locked || !holding.quantity" @click="editor = { kind: 'trade', assetId: holding.asset.id, side: 'sell' }"><ArrowUpRight :size="13" />Sell</button></div>
-      <div class="qp-panel-links"><button :disabled="locked" @click="editor = { kind: 'asset', assetId: holding.asset.id }">Edit holding</button><button @click="historyFor(holding.asset.id)">Trade history</button></div>
+      <div class="qp-panel-actions"><button :disabled="locked" :aria-label="`Manage ${holding.asset.symbol} holding`" @click="editor = { kind: 'trade', assetId: holding.asset.id }"><Pencil :size="13" />Manage holding</button></div>
+      <div class="qp-panel-links"><button @click="historyFor(holding.asset.id)">Trade history</button></div>
       <div class="qp-panel-note-head"><h3>Holding notes</h3><button :disabled="locked" :aria-label="`Edit ${holding.asset.symbol} notes`" @click="editor = { kind: 'asset', assetId: holding.asset.id, focusNotes: true }"><Pencil :size="12" /></button></div>
       <p class="qp-panel-notes">{{ holding.asset.notes?.trim() || 'Keep your thesis, entry criteria and exit plan here.' }}</p>
       <button class="qp-panel-delete" :disabled="locked" @click="store.error = ''; deleting = { kind: 'asset', id: holding.asset.id, name: holding.asset.name }">Delete asset…</button>
@@ -57,6 +57,7 @@ const tone = (value: number | null) => value === null || value === 0 ? '' : valu
 .qp-panel button:hover { background: var(--surface-3); }
 .qp-panel button:disabled { opacity: .45; cursor: default; }
 .qp-panel-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+.qp-panel-actions > button:only-child { grid-column: 1 / -1; }
 .qp-panel-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px; margin-top: 6px; }
 .qp-panel-links button, .qp-panel .qp-panel-back, .qp-panel-note-head button, .qp-panel .qp-panel-delete { padding: 5px 0; background: transparent; border: 0; color: var(--text-secondary); }
 .qp-panel .qp-panel-back { margin: -4px 0 14px; font-size: 10px; }
