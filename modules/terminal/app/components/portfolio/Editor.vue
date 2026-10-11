@@ -36,11 +36,10 @@ const draft = reactive({
   cashNotes: cashEntry?.notes ?? '',
 })
 const marketPage = ref(asset?.marketPage ?? 1)
-const entryMode = ref<'opening' | 'buy'>(props.initialEntry ?? 'opening')
-const title = computed(() => props.kind === 'cash' ? cashEntry ? 'Edit cash entry' : draft.cashKind === 'balance' ? 'Set cash balance' : draft.cashKind === 'deposit' ? 'Deposit cash' : 'Withdraw cash' : props.kind === 'asset' ? asset ? 'Edit holding' : 'Add holding' : trade ? 'Edit trade' : 'Record trade')
+const title = computed(() => props.kind === 'cash' ? cashEntry ? 'Edit cash entry' : draft.cashKind === 'balance' ? 'Set cash balance' : draft.cashKind === 'deposit' ? 'Deposit cash' : 'Withdraw cash' : props.kind === 'asset' ? asset ? 'Edit holding' : 'Add existing holding' : trade ? 'Edit trade' : 'Record trade')
 const disabled = computed(() => store.busy || store.refreshing)
 const tradeTotal = computed(() => {
-  const values = props.kind === 'asset' ? [draft.openingQuantity, draft.openingPrice, draft.fees] : [draft.quantity, draft.price, draft.fees]
+  const values = [draft.quantity, draft.price, draft.fees]
   if (values.some(v => !String(v).trim() || !Number.isFinite(Number(v)) || Number(v) < 0)) return null
   return Number(values[0]) * Number(values[1]) + (props.kind === 'trade' && draft.kind === 'sell' ? -1 : 1) * Number(values[2])
 })
@@ -79,12 +78,10 @@ async function submit() {
         manualPrice: String(draft.manualPrice).trim() ? number(draft.manualPrice, 'current price') : null,
         updatedAt: new Date().toISOString(), notes: draft.holdingNotes,
       }
-      const purchase = !asset && entryMode.value === 'buy'
-      const quantity = !asset && !purchase && !String(draft.openingQuantity).trim() ? 0 : number(draft.openingQuantity, 'quantity', purchase)
+      const quantity = !asset && !String(draft.openingQuantity).trim() ? 0 : number(draft.openingQuantity, 'quantity')
       saved = await store.saveAsset(next, asset || quantity > 0 ? {
         quantity, price: quantity > 0 ? number(draft.openingPrice, 'average cost') : 0,
         date: asset ? undefined : entryDate,
-        kind: purchase ? 'buy' : 'opening', fees: purchase ? number(draft.fees, 'fees') : 0,
       } : undefined, revision)
       if (saved) emit('saved', next.id)
     } else if (props.kind === 'cash') {
@@ -110,7 +107,7 @@ async function submit() {
     <form @submit.prevent="submit">
       <header><h2 id="qp-editor-title">{{ title }}</h2><span>USD</span></header>
       <template v-if="kind === 'asset'">
-        <div v-if="!asset" class="qp-editor__intent" aria-label="How to add this holding"><button type="button" :aria-pressed="entryMode === 'opening'" @click="entryMode = 'opening'">Already own it<small>Cash stays unchanged</small></button><button type="button" :aria-pressed="entryMode === 'buy'" @click="entryMode = 'buy'">New purchase<small>Pay from portfolio cash</small></button></div>
+        <button v-if="!asset" class="qp-editor__new" type="button" @click="emit('newAsset')">Making a new purchase? Buy an asset instead</button>
         <label>Pricing<select v-model="draft.source"><option value="manual">Manual price · any asset</option><option value="market">Live crypto · Terminal market feed</option></select></label>
         <div v-if="draft.source === 'market'" class="qp-editor__market">
           <label>Crypto asset<select :disabled="store.marketLoading" value="" @change="selectCoin"><option value="" disabled>{{ store.marketLoading ? 'Loading market prices…' : 'Choose an asset' }}</option><option v-for="(coin, index) in store.marketCoins" :key="`${coin.symbol}:${coin.name}`" :value="index">{{ coin.symbol }} · {{ coin.name }}</option></select></label>
@@ -121,12 +118,10 @@ async function submit() {
         <div class="qp-editor__grid"><label>Symbol<input v-model="draft.symbol" required maxlength="30" :readonly="draft.source === 'market'" placeholder="BTC, AAPL, VWCE…" /></label><label>Name<input v-model="draft.name" required maxlength="150" placeholder="Asset name" /></label></div>
         <label v-if="draft.source === 'manual'">Current unit price (USD)<input v-model="draft.manualPrice" type="number" min="0" step="any" placeholder="Leave empty until known" /></label>
         <template v-if="!asset">
-          <fieldset><legend>{{ entryMode === 'buy' ? 'Purchase details' : 'Current holding' }}</legend>
-            <div class="qp-editor__grid"><label>Quantity<input v-model="draft.openingQuantity" type="number" min="0" step="any" :required="entryMode === 'buy'" placeholder="0" /></label><label>{{ entryMode === 'buy' ? 'Unit price (USD)' : 'Average unit cost (USD)' }}<input v-model="draft.openingPrice" type="number" min="0" step="any" :required="Number(draft.openingQuantity) > 0" :placeholder="entryMode === 'buy' ? 'Purchase price' : 'Including purchase fees'" /></label></div>
-            <label v-if="entryMode === 'buy'">Fees (USD)<input v-model="draft.fees" type="number" min="0" step="any" required /></label>
-            <label>{{ entryMode === 'buy' ? 'Purchase date' : 'Held since' }}<input v-model="draft.date" type="datetime-local" required /></label>
-            <template v-if="entryMode === 'buy'"><div class="qp-editor__balance"><span>Total paid from cash</span><strong>{{ money(tradeTotal) }}</strong></div><p>Available cash: {{ money(store.cash) }}. Add a deposit or set your cash balance before recording a purchase.</p></template>
-            <p v-else>Record what you already own at its average cost. Your available cash stays unchanged.</p>
+          <fieldset><legend>Current holding</legend>
+            <div class="qp-editor__grid"><label>Quantity<input v-model="draft.openingQuantity" type="number" min="0" step="any" placeholder="0" /></label><label>Average unit cost (USD)<input v-model="draft.openingPrice" type="number" min="0" step="any" :required="Number(draft.openingQuantity) > 0" placeholder="Including purchase fees" /></label></div>
+            <label>Held since<input v-model="draft.date" type="datetime-local" required /></label>
+            <p>Record what you already own at its average cost. Your available cash stays unchanged.</p>
           </fieldset>
         </template>
         <fieldset v-else><legend>Current position</legend>
@@ -186,10 +181,6 @@ async function submit() {
 .qp-editor__balance strong { font-size: 20px; }
 .qp-editor .qp-editor__check { flex-direction: row; align-items: center; }
 .qp-editor__check input { width: auto; }
-.qp-editor__intent { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.qp-editor__intent button { text-align: left; padding: 12px; }
-.qp-editor__intent button[aria-pressed='true'] { border-color: var(--accent); background: var(--surface-3); }
-.qp-editor__intent small { display: block; margin-top: 5px; color: var(--text-secondary); font-size: 10px; }
 .qp-editor .qp-editor__new { align-self: flex-start; padding: 0; background: transparent; border: 0; font-size: 11px; }
 .qp-editor footer { position: sticky; bottom: -24px; padding: 14px 0; background: var(--surface-1); border-top: 1px solid var(--border); }
 </style>

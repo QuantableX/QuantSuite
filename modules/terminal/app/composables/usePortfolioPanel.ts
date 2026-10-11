@@ -7,7 +7,6 @@ export type PortfolioEditor = {
   cashEntryId?: string
   cashAction?: PortfolioCashEntry['kind']
   side?: 'buy' | 'sell'
-  initialEntry?: 'opening' | 'buy'
   focusNotes?: boolean
 }
 
