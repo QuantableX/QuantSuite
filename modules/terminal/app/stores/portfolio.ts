@@ -76,7 +76,7 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
     finally { busy.value = false }
   }
 
-  function saveAsset(asset: PortfolioAsset, position?: { quantity: number; price: number; date?: string; kind?: 'opening' | 'buy'; fees?: number }, expected?: string) {
+  function saveAsset(asset: PortfolioAsset, position?: { quantity: number; price: number; date?: string; kind?: 'opening' | 'buy'; fees?: number; notes?: string }, expected?: string) {
     return commit((doc) => {
       if (position && (!Number.isFinite(position.quantity) || position.quantity < 0 || !Number.isFinite(position.price) || position.price < 0)) throw new Error('Enter a non-negative quantity and average cost.')
       const at = doc.assets.findIndex((a) => a.id === asset.id)
@@ -92,7 +92,7 @@ export const usePortfolioStore = defineStore('terminal/portfolio', () => {
         if (position.quantity > 0) doc.trades.push({
           id: id(), assetId: asset.id, kind: position.kind ?? 'opening', quantity: position.quantity, price: position.price,
           date: position.date ?? new Date().toISOString(), fees: position.kind === 'buy' ? position.fees ?? 0 : 0,
-          settlesCash: position.kind === 'buy', notes: position.kind === 'buy' ? '' : 'Opening holding', order: nextOrder(doc),
+          settlesCash: position.kind === 'buy', notes: position.kind === 'buy' ? position.notes ?? '' : 'Opening holding', order: nextOrder(doc),
         })
       } else {
         const current = calculateHoldings(doc).find((h) => h.asset.id === asset.id)!

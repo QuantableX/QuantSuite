@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { createPinia, setActivePinia } from 'pinia'
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { usePortfolioStore } from '../modules/terminal/app/stores/portfolio.ts'
-import { calculateCash, calculateHoldings, emptyPortfolio, portfolioCashHistory, portfolioTotals, validatePortfolio, recordPortfolioSnapshot, portfolioHistory } from '../modules/terminal/app/utils/portfolio.ts'
+import { calculateCash, calculateHoldings, emptyPortfolio, portfolioCashHistory, portfolioTotals, validatePortfolio, recordPortfolioSnapshot, portfolioHistory, portfolioTradeAmounts } from '../modules/terminal/app/utils/portfolio.ts'
 
 const clone = value => JSON.parse(JSON.stringify(value))
 const at = day => `2025-01-${String(day).padStart(2, '0')}T12:00:00.000Z`
@@ -12,6 +12,40 @@ const trade = (id, kind, quantity, price, day, fees = 0) => ({ id, assetId: 'a',
 const doc = trades => ({ ...emptyPortfolio(), assets: [asset()], trades })
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} != ${expected}`)
 const cashEntry = (id, kind, amount, day, extra = {}) => ({ id, kind, amount, date: at(day), notes: '', order: day, ...extra })
+
+test('trade ticket USD spend includes buy fees and USD proceeds exclude sell fees', () => {
+  assert.deepEqual(portfolioTradeAmounts('buy', 'usd', 1000, 50, 10), { quantity: 19.8, gross: 990, cash: 1000 })
+  assert.deepEqual(portfolioTradeAmounts('sell', 'usd', 1000, 50, 10), { quantity: 20.2, gross: 1010, cash: 1000 })
+  assert.deepEqual(portfolioTradeAmounts('buy', 'units', 2, 100, 5), { quantity: 2, gross: 200, cash: 205 })
+  assert.deepEqual(portfolioTradeAmounts('sell', 'units', 2, 100, 5), { quantity: 2, gross: 200, cash: 195 })
+})
+
+test('trade ticket rejects invalid conversions while allowing zero-price disposals by units', () => {
+  for (const amount of [0, -1, Infinity, NaN, 1e16]) assert.equal(portfolioTradeAmounts('buy', 'usd', amount, 100, 0), null)
+  for (const price of [-1, Infinity, NaN]) assert.equal(portfolioTradeAmounts('sell', 'units', 1, price, 0), null)
+  for (const fees of [-1, Infinity, NaN]) assert.equal(portfolioTradeAmounts('buy', 'units', 1, 100, fees), null)
+  assert.equal(portfolioTradeAmounts('buy', 'usd', 10, 0, 0), null)
+  assert.equal(portfolioTradeAmounts('buy', 'usd', 10, 100, 10), null)
+  assert.equal(portfolioTradeAmounts('buy', 'usd', 10, 100, 20), null)
+  assert.deepEqual(portfolioTradeAmounts('sell', 'units', 2, 0, 0), { quantity: 2, gross: 0, cash: 0 })
+})
+
+test('Sell all retains full tiny-unit precision and closes a fractional holding without dust', () => {
+  const quantity = 0.000000000123456789
+  const amounts = portfolioTradeAmounts('sell', 'units', quantity, 65000, 0)
+  assert.equal(amounts.quantity, quantity)
+  const d = doc([trade('open', 'opening', quantity, 50000, 1), trade('sale', 'sell', amounts.quantity, 65000, 2)])
+  assert.equal(calculateHoldings(d)[0].quantity, 0)
+})
+
+test('buy Max with fees consumes available cash and saves the same previewed quantity', async () => {
+  const { store } = setup({ ...emptyPortfolio(), cashEntries: [cashEntry('fund', 'deposit', 999.99, 1)] })
+  await store.load()
+  const amounts = portfolioTradeAmounts('buy', 'usd', store.cash, 33.3333, 4.21)
+  assert.equal(await store.saveAsset(asset(), { kind: 'buy', quantity: amounts.quantity, price: 33.3333, fees: 4.21, date: at(2), notes: 'First purchase note' }), true)
+  near(store.cash, 0); near(store.holdings[0].quantity, amounts.quantity)
+  assert.equal(store.document.trades[0].notes, 'First purchase note')
+})
 
 test('average cost includes buy fees and partial sales realize cost proportionally', () => {
   const d = doc([trade('open', 'opening', 10, 100, 1), trade('buy', 'buy', 10, 120, 2, 20), trade('sell', 'sell', 5, 150, 3, 5)])

@@ -9,6 +9,7 @@ import { assetColor, portfolioCashColor, portfolioMoney as money, portfolioNumbe
 definePageMeta({ layout: 'terminal' })
 const store = usePortfolioStore()
 const { view, editor, deleting, selectedHolding, selectedAsset, selectedKind } = usePortfolioPanel()
+const quickTrade = computed(() => editor.value?.kind === 'trade' && !editor.value.tradeId)
 const currentOnly = ref(true)
 const search = ref('')
 const deleteDialog = ref<HTMLDialogElement | null>(null)
@@ -48,7 +49,7 @@ watch(deleting, async (target) => {
   deleteDialog.value?.showModal()
 })
 function recordTrade() {
-  editor.value = store.document.assets.length ? { kind: 'trade', assetId: selectedHolding.value || undefined } : { kind: 'asset', initialEntry: 'buy' }
+  editor.value = { kind: 'trade', assetId: selectedHolding.value || undefined, side: 'buy' }
 }
 async function remove() {
   if (!deleting.value || store.busy) return
@@ -63,7 +64,7 @@ watch(() => store.document.assets, (assets) => {
 
 <template>
   <div class="qp-page">
-    <header class="qp-heading"><div><h1>Portfolio</h1><p>Your investments and available cash · USD</p></div><div class="qp-actions"><button :disabled="locked" @click="recordTrade">Record trade</button><button class="qp-primary" :disabled="locked" @click="editor = { kind: 'asset' }"><Plus :size="14" />Add holding</button></div></header>
+    <header class="qp-heading"><div><h1>Portfolio</h1><p>Your investments and available cash · USD</p></div><div class="qp-actions"><button :disabled="locked" @click="editor = { kind: 'asset' }">Add existing holding</button><button class="qp-primary" :disabled="locked" @click="recordTrade"><Plus :size="14" />Buy asset</button></div></header>
     <div v-if="store.error && !editor && !deleting" class="qp-alert" role="alert">{{ store.error }} <button :disabled="store.busy || store.loading" @click="store.load()">Reload</button></div>
     <p v-if="store.loading && !store.loaded" class="qp-empty" role="status">Loading portfolio…</p>
     <template v-else-if="store.loaded">
@@ -80,13 +81,13 @@ watch(() => store.document.assets, (assets) => {
           <TerminalPortfolioCharts :holdings="store.holdings" :cash="store.cash" :history="store.history" @select="selectedHolding = $event" @cash="!locked && (editor = { kind: 'cash' })" />
           <section class="qp-holdings-panel" aria-label="Holdings panel">
           <div class="qp-holdings-head"><h2>Holdings <span>{{ rows.length }}</span></h2><label class="qp-search"><span class="sr-only">Find a holding</span><input v-model="search" type="search" placeholder="Find a holding…" /></label><label class="qp-checkbox"><input v-model="currentOnly" type="checkbox" /> Current holdings only</label><button class="qp-refresh" :disabled="locked || !store.document.assets.some(a => a.source === 'market')" :aria-label="store.refreshing ? 'Refreshing prices' : 'Refresh prices'" title="Refresh market prices" @click="store.refreshPrices()"><RotateCw :size="14" /></button></div>
-          <div class="qp-table-wrap qp-holdings-scroll" tabindex="0" role="region" aria-label="Scrollable holdings"><table class="qp-table qp-holdings-table" aria-label="Portfolio holdings"><colgroup><col style="width: 22%" /><col style="width: 10%" /><col style="width: 13%" /><col style="width: 13%" /><col style="width: 16%" /><col style="width: 16%" /><col style="width: 10%" /></colgroup><thead><tr><th>Asset</th><th>Quantity</th><th>Avg. cost</th><th>Current price</th><th>Value / share</th><th>Unrealized</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
+          <div class="qp-table-wrap qp-holdings-scroll" tabindex="0" role="region" aria-label="Scrollable holdings"><table class="qp-table qp-holdings-table" aria-label="Portfolio holdings"><colgroup><col style="width: 20%" /><col style="width: 9%" /><col style="width: 12%" /><col style="width: 12%" /><col style="width: 14%" /><col style="width: 14%" /><col style="width: 19%" /></colgroup><thead><tr><th>Asset</th><th>Quantity</th><th>Avg. cost</th><th>Current price</th><th>Value / share</th><th>Unrealized</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
             <tr class="qp-cash-row"><td><div class="qp-asset"><i :style="{ background: portfolioCashColor }" /><span><strong>Cash</strong><small>USD · Available to invest</small></span></div></td><td>—</td><td>—</td><td>—</td><td>{{ money(store.cash) }}<small>{{ store.totals.value > 0 ? `${(store.cash / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td>—</td><td><div class="qp-row-actions"><button :disabled="locked" aria-label="Manage cash" @click="editor = { kind: 'cash', cashAction: 'balance' }">Manage</button></div></td></tr>
             <tr v-for="h in rows" :key="h.asset.id" class="qp-holding-row" :class="{ 'is-selected': selectedHolding === h.asset.id }" @click="selectedHolding = h.asset.id">
               <td><div class="qp-asset"><i :style="{ background: assetColor(h.asset.id) }" /><span><button class="qp-asset-select" :aria-label="`View ${h.asset.symbol} details`" :aria-pressed="selectedHolding === h.asset.id" @click="selectedHolding = h.asset.id">{{ h.asset.symbol }}</button><small :title="h.asset.name">{{ h.asset.name }}{{ h.quantity === 0 ? ' · Closed' : '' }}</small></span></div></td>
-              <td :title="number(h.quantity)">{{ number(h.quantity) }}</td><td :title="price(h.averageCost)">{{ price(h.averageCost) }}</td><td :title="h.asset.source === 'manual' ? displayDate(h.asset.updatedAt) : store.document.quotes[h.asset.id] ? `Checked ${displayDate(store.document.quotes[h.asset.id]!.checkedAt)}` : 'Not priced yet'">{{ price(h.price) }}<small>{{ h.asset.source === 'manual' ? 'Manual' : 'Market' }}</small></td><td :title="money(h.value)">{{ money(h.value) }}<small>{{ h.value !== null && store.totals.value > 0 ? `${(h.value / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td :class="tone(h.unrealized)" :title="signed(h.unrealized)">{{ signed(h.unrealized) }}<small>{{ h.unrealized === null ? '—' : percent(h.unrealized, h.cost) }}</small></td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Edit ${h.asset.symbol} holding`" @click="editor = { kind: 'asset', assetId: h.asset.id }">Edit</button></div></td>
+              <td :title="number(h.quantity)">{{ number(h.quantity) }}</td><td :title="price(h.averageCost)">{{ price(h.averageCost) }}</td><td :title="h.asset.source === 'manual' ? displayDate(h.asset.updatedAt) : store.document.quotes[h.asset.id] ? `Checked ${displayDate(store.document.quotes[h.asset.id]!.checkedAt)}` : 'Not priced yet'">{{ price(h.price) }}<small>{{ h.asset.source === 'manual' ? 'Manual' : 'Market' }}</small></td><td :title="money(h.value)">{{ money(h.value) }}<small>{{ h.value !== null && store.totals.value > 0 ? `${(h.value / store.totals.value * 100).toFixed(1)}%` : '—' }}</small></td><td :class="tone(h.unrealized)" :title="signed(h.unrealized)">{{ signed(h.unrealized) }}<small>{{ h.unrealized === null ? '—' : percent(h.unrealized, h.cost) }}</small></td><td><div class="qp-row-actions"><button :disabled="locked" :aria-label="`Buy ${h.asset.symbol}`" @click="editor = { kind: 'trade', assetId: h.asset.id, side: 'buy' }">Buy</button><button :disabled="locked || !h.quantity" :aria-label="`Sell ${h.asset.symbol}`" @click="editor = { kind: 'trade', assetId: h.asset.id, side: 'sell' }">Sell</button><button :disabled="locked" :aria-label="`Edit ${h.asset.symbol} holding`" @click="editor = { kind: 'asset', assetId: h.asset.id }">Edit</button></div></td>
             </tr>
-            <tr v-if="!rows.length"><td colspan="7" class="qp-no-rows"><template v-if="!store.document.assets.length"><strong>Start with what you own</strong><p>Add your existing investments, then set your available cash.<br />For a new purchase, choose Record trade.</p><button class="qp-primary" :disabled="locked" @click="editor = { kind: 'asset' }">Add your first holding</button><button :disabled="locked" @click="editor = { kind: 'cash', cashAction: 'balance' }">Set available cash</button></template><template v-else><strong>No matching holdings</strong><p>Try another search or include closed positions.</p><button @click="search = ''; currentOnly = false">Show all holdings</button></template></td></tr>
+            <tr v-if="!rows.length"><td colspan="7" class="qp-no-rows"><template v-if="!store.document.assets.length"><strong>Start with what you own</strong><p>Add your existing investments, then set your available cash.<br />For a new purchase, choose Buy asset.</p><button class="qp-primary" :disabled="locked" @click="editor = { kind: 'asset' }">Add your first holding</button><button :disabled="locked" @click="editor = { kind: 'cash', cashAction: 'balance' }">Set available cash</button></template><template v-else><strong>No matching holdings</strong><p>Try another search or include closed positions.</p><button @click="search = ''; currentOnly = false">Show all holdings</button></template></td></tr>
           </tbody></table></div>
           </section>
         </div>
@@ -106,7 +107,8 @@ watch(() => store.document.assets, (assets) => {
         </tbody></table></div>
       </section>
     </template>
-    <TerminalPortfolioEditor v-if="editor" :key="JSON.stringify(editor)" v-bind="editor" @saved="selectedHolding = $event" @new-asset="editor = { kind: 'asset', initialEntry: 'buy' }" @close="editor = null" />
+    <TerminalPortfolioTradeTicket v-if="editor && quickTrade" :key="JSON.stringify(editor)" :asset-id="editor.assetId" :side="editor.side" @saved="selectedHolding = $event" @close="editor = null" />
+    <TerminalPortfolioEditor v-else-if="editor" :key="JSON.stringify(editor)" v-bind="editor" @saved="selectedHolding = $event" @new-asset="editor = { kind: 'trade', side: 'buy' }" @close="editor = null" />
     <dialog ref="deleteDialog" class="qp-delete" aria-labelledby="qp-delete-title" @cancel="store.busy ? $event.preventDefault() : (deleting = null)"><h2 id="qp-delete-title">Delete {{ deleting?.name }}?</h2><p>{{ deleting?.kind === 'asset' ? 'This removes the asset and its trades, undoing their cash movements.' : 'This removes the entry and recalculates cash, holdings and gains.' }} Deletion is rejected if a later entry would exceed the available cash or holdings.</p><p v-if="store.error" class="qp-alert" role="alert">{{ store.error }}</p><footer><button :disabled="store.busy" @click="deleting = null; deleteDialog?.close()">Cancel</button><button :disabled="store.busy" @click="remove">Delete</button></footer></dialog>
   </div>
 </template>
@@ -145,13 +147,18 @@ watch(() => store.document.assets, (assets) => {
 .qp-table-wrap:focus-visible { outline: 1px solid var(--text-secondary); outline-offset: -2px; }
 .qp-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 .qp-holdings-scroll, .qp-cash-scroll { scrollbar-gutter: stable; }
-.qp-holdings-table { table-layout: fixed; min-width: 740px; }
+.qp-holdings-table { table-layout: fixed; min-width: 800px; }
 .qp-cash-table { table-layout: fixed; min-width: 820px; }
 .qp-holdings-table td, .qp-cash-table td { overflow: hidden; text-overflow: ellipsis; }
 .qp-table th, .qp-table td { padding: 12px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
 .qp-table th { position: sticky; top: 0; z-index: 1; font-size: 10px; color: var(--text-secondary); font-weight: 500; background: var(--surface-1); }
 .qp-holdings-table th { height: 40px; box-sizing: border-box; z-index: 2; }
 .qp-cash-row td { position: sticky; top: 40px; z-index: 1; background: var(--surface-1); }
+.qp-holdings-table th { z-index: 4; }
+.qp-holdings-table th:first-child { left: 0; z-index: 5; }.qp-holdings-table th:last-child { right: 0; z-index: 5; }
+.qp-holdings-table td:first-child:not([colspan]), .qp-holdings-table td:last-child:not([colspan]) { position: sticky; z-index: 1; background: var(--surface-1); }
+.qp-holdings-table td:first-child:not([colspan]) { left: 0; }.qp-holdings-table td:last-child:not([colspan]) { right: 0; }
+.qp-cash-row td { z-index: 2; }.qp-holdings-table .qp-cash-row td:first-child, .qp-holdings-table .qp-cash-row td:last-child { z-index: 3; }
 .qp-table th:first-child, .qp-table td:first-child, .qp-table td:last-child { text-align: left; }
 .qp-table tr:last-child td { border-bottom: 0; }
 .qp-table small { display: block; font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
@@ -164,6 +171,7 @@ watch(() => store.document.assets, (assets) => {
 .qp-holdings-table .qp-asset small { max-width: 100%; }
 .qp-row-actions { display: flex; flex-wrap: nowrap; gap: 4px; }
 .qp-row-actions button { padding: 4px 6px; font-size: 10px; background: transparent; border-color: transparent; }
+.qp-holding-row .qp-row-actions button:not(:last-child) { padding: 5px 7px; font-size: 11px; background: var(--surface-2); border-color: var(--border); }
 .qp-table .qp-no-rows { text-align: center; padding: 28px 12px; color: var(--text-secondary); white-space: normal; }
 .qp-kind { text-transform: capitalize; font-size: 10px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; }
 .qp-kind.buy { color: var(--positive); }.qp-kind.sell { color: var(--negative); }
@@ -183,7 +191,7 @@ watch(() => store.document.assets, (assets) => {
 .qp-stats > div:first-child strong { font-size: 25px; }
 .qp-holdings-head h2 span { margin-left: 6px; font-weight: 400; font-size: 11px; color: var(--text-secondary); }
 .qp-page .qp-refresh { display: inline-flex; padding: 6px; background: transparent; }
-.qp-holding-row { cursor: pointer; }.qp-holding-row:hover td { background: var(--surface-2); }.qp-holding-row.is-selected td { background: var(--surface-2); }
+.qp-holding-row { cursor: pointer; }.qp-holdings-table .qp-holding-row:hover td { background: var(--surface-2); }.qp-holdings-table .qp-holding-row.is-selected td { background: var(--surface-2); }
 .qp-holding-row.is-selected td:first-child { box-shadow: inset 2px 0 var(--accent); }
 .qp-page .qp-asset-select { max-width: 100%; overflow: hidden; text-overflow: ellipsis; padding: 0; border: 0; border-radius: 0; background: transparent; font-weight: 600; text-align: left; }
 .qp-no-rows strong { display: block; color: var(--text-primary); font-size: 15px; font-weight: 500; margin: 10px 0; }.qp-no-rows p { line-height: 1.8; margin: 8px 0 18px; font-size: 12px; }.qp-no-rows button { margin: 3px; }

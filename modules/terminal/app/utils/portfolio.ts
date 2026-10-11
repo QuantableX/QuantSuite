@@ -141,6 +141,15 @@ export function portfolioHistory(doc: PortfolioDocument) {
 export const portfolioMoney = (value: number | null) => value === null ? '—' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value)
 export const portfolioNumber = (value: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 10 }).format(value)
 export const portfolioPrice = (value: number | null) => value === null ? '—' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 8 }).format(value)
+/** USD means the total cash paid/received, including fees. Keep full unit precision. */
+export function portfolioTradeAmounts(side: 'buy' | 'sell', mode: 'usd' | 'units', amount: number, price: number, fees: number) {
+  if (![amount, price, fees].every(finite) || amount <= 0 || (mode === 'usd' && price === 0)) return null
+  const quantity = mode === 'units' ? amount : (amount + (side === 'buy' ? -fees : fees)) / price
+  const gross = quantity * price
+  const cash = gross + (side === 'buy' ? fees : -fees)
+  if (!finite(quantity) || quantity <= 0 || !finite(gross + fees) || !Number.isFinite(cash)) return null
+  return { quantity, gross, cash }
+}
 export function assetColor(id: string) {
   let hash = 0
   for (const char of id) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0
