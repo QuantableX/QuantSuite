@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUpRight, Eye, Focus, Link2, Network, Star, X, FilePlus2 } from 'lucide-vue-next'
+import { ArrowUpRight, Focus, Link2, Network, Star, X, FilePlus2 } from 'lucide-vue-next'
 import { useMemoryGraphStore } from '#memory/stores/graph'
 import { useVaultStore } from '#memory/stores/vault'
 import { useAppStore } from '#memory/stores/app'
@@ -24,7 +24,6 @@ function openSelected() {
     <section class="qm-map-controls">
       <h2>Map controls</h2>
       <label class="qm-map-type">Memory type<select v-model="graph.kind" aria-label="Filter graph by type"><option :value="null">All types</option><option v-for="kind in graph.kinds" :key="kind" :value="kind">{{ kind }}</option></select></label>
-      <label class="qm-map-labels"><Eye :size="15" /> Memory labels<input v-model="graph.showLabels" type="checkbox" aria-label="Show memory labels" /></label>
     </section>
 
     <section v-if="graph.selected" class="qm-map-inspector" :style="{ '--node-color': scopeColor(graph.selected.scope) }" aria-label="Selected memory">
@@ -55,7 +54,6 @@ function openSelected() {
 .qm-graph-context h2 { display: flex; align-items: center; gap: 7px; margin: 0 0 15px; color: var(--qm-text); font-size: 13px; font-weight: 600; }
 .qm-graph-context button { cursor: pointer; }.qm-graph-context button:focus-visible, .qm-graph-context input:focus-visible, .qm-graph-context select:focus-visible { outline: 2px solid #b9aaff; outline-offset: 2px; }
 .qm-map-type { display: grid; gap: 7px; font-size: 12px; }.qm-map-type select { width: 100%; border: 1px solid var(--qm-border); border-radius: 6px; padding: 7px; color: var(--qm-text); background: var(--qm-bg); font: inherit; }
-.qm-map-labels { display: flex; align-items: center; gap: 7px; margin-top: 13px; font-size: 12px; cursor: pointer; }.qm-map-labels input { margin-left: auto; accent-color: #ac9bdd; }
 .qm-inspector-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }.qm-inspector-top > span { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12px; }.qm-inspector-top i, .qm-connection i, .qm-map-legend i { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--node-color); }
 .qm-inspector-top button { display: grid; place-items: center; flex-shrink: 0; width: 25px; height: 25px; border: 0; border-radius: 5px; background: transparent; color: var(--qm-text-muted); }.qm-inspector-top button:hover { background: var(--qm-bg-hover); color: var(--qm-text); }
 .qm-inspector-kind { margin: 18px 0 7px; color: var(--node-color); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }.qm-map-inspector h2 { font-size: 18px; line-height: 1.4; overflow-wrap: anywhere; margin-bottom: 12px; }.qm-inspector-preview { margin: 0 0 14px; line-height: 1.7; overflow-wrap: anywhere; }
