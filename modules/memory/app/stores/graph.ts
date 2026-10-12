@@ -9,7 +9,6 @@ export const useMemoryGraphStore = defineStore('memory/graph', () => {
   const selectedId = ref<string | null>(null)
   const connectionsOnly = ref(false)
   const kind = ref<string | null>(null)
-  const showLabels = ref(true)
   const focusRequest = ref(0)
   const scopeFocusRequest = ref(0)
   const scopeToFocus = ref<string | null>(null)
@@ -36,5 +35,5 @@ export const useMemoryGraphStore = defineStore('memory/graph', () => {
     scopeFocusRequest.value++
   }
   return { selectedId, selected, selectedMeta, neighborhood, connected, nodes, edges, scopes, kinds, hubs,
-    connectionsOnly, kind, showLabels, focusRequest, scopeFocusRequest, scopeToFocus, inspect, focusScope }
+    connectionsOnly, kind, focusRequest, scopeFocusRequest, scopeToFocus, inspect, focusScope }
 })

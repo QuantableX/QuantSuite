@@ -13,7 +13,7 @@ const app = useAppStore()
 const router = useRouter()
 const route = useRoute()
 const graph = useMemoryGraphStore()
-const { kind, selectedId, connectionsOnly, showLabels, selected, neighborhood, scopes } = storeToRefs(graph)
+const { kind, selectedId, connectionsOnly, selected, neighborhood, scopes } = storeToRefs(graph)
 const map = ref<{ fit: () => void; reset: () => void; zoomStep: (direction: number) => void; focusNode: (id: string) => void; focusScope: (scope: string) => void } | null>(null)
 const query = ref('')
 const searchOpen = ref(false)
@@ -101,7 +101,7 @@ function reset() { kind.value = null; query.value = ''; select(null); nextTick((
 
 <template>
   <section class="qm-map" aria-label="Your second brain" @keydown.esc="select(null)">
-    <MemoryGraphCanvas ref="map" :nodes="nodes" :edges="edges" :scope-colors="scopeColors" :focus-id="selectedId" :highlight-ids="highlights" :show-labels="showLabels" :label-threshold="0.25" immersive @select="select($event)" @open="openNode" @zoom="zoom = $event" />
+    <MemoryGraphCanvas ref="map" :nodes="nodes" :edges="edges" :scope-colors="scopeColors" :focus-id="selectedId" :highlight-ids="highlights" immersive @select="select($event)" @open="openNode" @zoom="zoom = $event" />
 
     <header class="qm-map-heading">
       <button class="qm-map-back" @click="router.push('/memory')"><ArrowLeft :size="13" /> Back to Vault</button>

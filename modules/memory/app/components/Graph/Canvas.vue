@@ -19,8 +19,14 @@
  * 3. **The simulation never runs on a timer.** A dragged node follows the
  *    pointer by itself; when it is dropped the neighbourhood relaxes in a
  *    short burst of frames and the map is still again.
+ * 4. **Nothing expensive is built per frame.** Halos and cluster glows are
+ *    stamped from gradient sprites rendered once per colour into a
+ *    half-resolution layer, the star field is painted once per size, and map
+ *    edges stay on the GPU's hairline path (≤ 1 device pixel wide) — wider
+ *    strokes made a frame take ~100 ms at 150 % display scaling.
  *
  * Ghost nodes (`missing`) render hollow: link targets no memory answers to.
+ * Immersive maps draw no titles; the compact document map labels its nodes.
  * Compact maps open on click; immersive maps select first and open on double-click.
  * Double-click on empty space fits the graph to the view again.
  */
@@ -69,9 +75,8 @@ const props = withDefaults(
     /** Full-screen constellation treatment; the document mini-map stays compact. */
     immersive?: boolean
     highlightIds?: string[] | null
-    showLabels?: boolean
   }>(),
-  { focusId: null, labelThreshold: 0.5, scopeColors: null, immersive: false, highlightIds: null, showLabels: true }
+  { focusId: null, labelThreshold: 0.5, scopeColors: null, immersive: false, highlightIds: null }
 )
 
 const emit = defineEmits<{
@@ -417,6 +422,80 @@ function stopRelax() {
   relaxFrame = 0
 }
 
+/** Radial-gradient stamps, rendered once per colour and then drawn as
+ *  images: a gradient built per node per frame was half the paint time. */
+const SPRITE_SIZE = 128
+const haloSprites = new Map<string, HTMLCanvasElement>()
+const glowSprites = new Map<string, HTMLCanvasElement>()
+function sprite(cache: Map<string, HTMLCanvasElement>, fill: string, stops: Array<[number, string]>): HTMLCanvasElement {
+  let image = cache.get(fill)
+  if (image) return image
+  image = document.createElement('canvas')
+  image.width = image.height = SPRITE_SIZE
+  const ctx = image.getContext('2d')!
+  const half = SPRITE_SIZE / 2
+  const gradient = ctx.createRadialGradient(half, half, 0, half, half, half)
+  for (const [offset, color] of stops) gradient.addColorStop(offset, color)
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE)
+  cache.set(fill, image)
+  return image
+}
+const haloOf = (fill: string) => sprite(haloSprites, fill, [[0, fill], [0.25, fill + '40'], [1, 'transparent']])
+const glowOf = (fill: string) => sprite(glowSprites, fill, [[0, fill], [1, 'transparent']])
+
+/** Halos and cluster glows are soft, so they are painted at half resolution
+ *  into one layer and stretched onto the map in a single blit. Blended at
+ *  full resolution they were two thirds of a frame without a GPU (RDP). */
+const HAZE_SCALE = 0.5
+let haze: HTMLCanvasElement | null = null
+function hazeLayer(w: number, h: number): CanvasRenderingContext2D {
+  if (!haze) haze = document.createElement('canvas')
+  const width = Math.max(1, Math.ceil(w * HAZE_SCALE))
+  const height = Math.max(1, Math.ceil(h * HAZE_SCALE))
+  if (haze.width !== width || haze.height !== height) {
+    haze.width = width
+    haze.height = height
+  }
+  const ctx = haze.getContext('2d')!
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.globalAlpha = 1
+  ctx.clearRect(0, 0, width, height)
+  ctx.setTransform(scale * HAZE_SCALE, 0, 0, scale * HAZE_SCALE, tx * HAZE_SCALE, ty * HAZE_SCALE)
+  return ctx
+}
+
+/** The static, deterministic star field, painted once per canvas size. */
+let starField: { key: string; image: HTMLCanvasElement } | null = null
+function stars(w: number, h: number, dpr: number): HTMLCanvasElement {
+  const key = `${w}x${h}@${dpr}`
+  if (starField?.key === key) return starField.image
+  const image = document.createElement('canvas')
+  image.width = Math.round(w * dpr)
+  image.height = Math.round(h * dpr)
+  const ctx = image.getContext('2d')!
+  ctx.scale(dpr, dpr)
+  for (let i = 0; i < Math.min(200, w * h / 7000); i++) {
+    const x = ((i * 137.508 + 23) % 997) / 997 * w
+    const y = ((i * i * 71.31 + 131) % 991) / 991 * h
+    ctx.fillStyle = i % 5 === 0 ? '#a99bff' : '#b2c8e5'
+    ctx.globalAlpha = i % 7 === 0 ? 0.35 : 0.13
+    ctx.fillRect(x, y, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1)
+  }
+  starField = { key, image }
+  return image
+}
+
+function byFill(nodes: Iterable<SimNode>): Map<string, SimNode[]> {
+  const groups = new Map<string, SimNode[]>()
+  for (const node of nodes) {
+    const group = groups.get(node.fill)
+    if (group) group.push(node)
+    else groups.set(node.fill, [node])
+  }
+  return groups
+}
+
 function draw() {
   const el = canvas.value
   const ctx = el?.getContext('2d')
@@ -429,34 +508,10 @@ function draw() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, w, h)
-  if (props.immersive) {
-    // Static, deterministic star field. No animation loop while the map is idle.
-    for (let i = 0; i < Math.min(200, w * h / 7000); i++) {
-      const x = ((i * 137.508 + 23) % 997) / 997 * w
-      const y = ((i * i * 71.31 + 131) % 991) / 991 * h
-      ctx.fillStyle = i % 5 === 0 ? '#a99bff' : '#b2c8e5'
-      ctx.globalAlpha = i % 7 === 0 ? 0.35 : 0.13
-      ctx.fillRect(x, y, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1)
-    }
-    ctx.globalAlpha = 1
-  }
+  // Static star field. No animation loop while the map is idle.
+  if (props.immersive) ctx.drawImage(stars(w, h, dpr), 0, 0, w, h)
   ctx.translate(tx, ty)
   ctx.scale(scale, scale)
-
-  if (props.immersive) {
-    for (const [fill, group] of fillGroups) {
-      const x = group.reduce((sum, n) => sum + n.x, 0) / group.length
-      const y = group.reduce((sum, n) => sum + n.y, 0) / group.length
-      const radius = Math.max(120, Math.min(450, 60 * Math.sqrt(group.length)))
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, radius)
-      glow.addColorStop(0, fill)
-      glow.addColorStop(1, 'transparent')
-      ctx.globalAlpha = 0.065
-      ctx.fillStyle = glow
-      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2)
-    }
-    ctx.globalAlpha = 1
-  }
 
   // The world rectangle on screen, with a margin for radii and labels.
   const margin = 80 / scale
@@ -467,7 +522,10 @@ function draw() {
   const visible = (n: SimNode) => n.x >= left && n.x <= right && n.y >= top && n.y <= bottom
 
   // Edges: one path per weight class, three strokes at most. While a node
-  // is hovered the rest recede and its own links light up.
+  // is hovered the rest recede and its own links light up. Map edges are at
+  // most one device pixel wide and carry the rest of their weight as
+  // opacity: a wider anti-aliased stroke leaves the GPU's hairline path, and
+  // across ~1,500 curves that alone cost 80+ ms a frame at 150 % scaling.
   const focus = props.focusId ? simNodes.find((n) => n.id === props.focusId) : null
   const active = hovered ?? (props.immersive ? focus : null)
   const near = active ? neighbours.get(active.id) : null
@@ -478,8 +536,19 @@ function draw() {
     if (props.immersive) ctx.quadraticCurveTo((s.x + t.x) / 2 + (t.y - s.y) * 0.09, (s.y + t.y) / 2 - (t.x - s.x) * 0.09, t.x, t.y)
     else ctx.lineTo(t.x, t.y)
   }
+  const hairline = 0.98 / dpr
+  /** Stroke the current path `width` screen pixels wide at `alpha`. */
+  const strokeEdges = (width: number, alpha: number) => {
+    if (props.immersive && width > hairline) {
+      alpha = Math.min(1, (alpha * width) / hairline)
+      width = hairline
+    }
+    ctx.globalAlpha = alpha
+    ctx.lineWidth = width / scale
+    ctx.stroke()
+  }
   ctx.strokeStyle = props.immersive ? '#8494c6' : colors.edge
-  ctx.globalAlpha = props.immersive ? (active || highlighted ? 0.09 : 0.27) : hovered ? 0.3 : 0.75
+  const edgeAlpha = props.immersive ? (active || highlighted ? 0.09 : 0.27) : hovered ? 0.3 : 0.75
   for (let weight = 1; weight <= 3; weight++) {
     ctx.beginPath()
     let any = false
@@ -493,8 +562,7 @@ function draw() {
       any = true
     }
     if (!any) continue
-    ctx.lineWidth = (props.immersive ? 0.5 + weight * 0.25 : 0.6 + weight * 0.5) / scale
-    ctx.stroke()
+    strokeEdges(props.immersive ? 0.5 + weight * 0.25 : 0.6 + weight * 0.5, edgeAlpha)
   }
   if (active) {
     ctx.beginPath()
@@ -505,40 +573,73 @@ function draw() {
       connect(s, t)
     }
     ctx.strokeStyle = props.immersive ? active.fill : colors.focus
-    ctx.globalAlpha = 0.8
-    ctx.lineWidth = 1.3 / scale
-    ctx.stroke()
+    strokeEdges(1.3, 0.8)
   }
   ctx.globalAlpha = 1
 
   if (props.immersive) {
-    for (const node of simNodes) {
-      if (!visible(node)) continue
-      const bright = emphasized(node)
-      ctx.globalAlpha = bright ? 1 : 0.17
-      if (!node.missing && (simNodes.length <= 700 || node === active || (node.degree >= 4 && scale >= 0.6))) {
-        const halo = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, node.r * 3.7)
-        halo.addColorStop(0, node.fill)
-        halo.addColorStop(0.25, node.fill + '40')
-        halo.addColorStop(1, 'transparent')
-        ctx.fillStyle = halo
+    // Receded nodes first so the emphasised ones sit on top. Cluster glows
+    // and halo stamps go into the haze layer, then come one path per colour
+    // for the cores and ghost rings and one path for the highlights.
+    const lit: SimNode[] = []
+    const dim: SimNode[] = []
+    for (const node of simNodes) if (visible(node)) (emphasized(node) ? lit : dim).push(node)
+    const passes = [[dim, 0.17], [lit, 1]] as const
+    const glow = hazeLayer(w, h)
+    glow.globalAlpha = 0.065
+    for (const [fill, group] of fillGroups) {
+      const x = group.reduce((sum, n) => sum + n.x, 0) / group.length
+      const y = group.reduce((sum, n) => sum + n.y, 0) / group.length
+      const radius = Math.max(120, Math.min(450, 60 * Math.sqrt(group.length)))
+      glow.drawImage(glowOf(fill), x - radius, y - radius, radius * 2, radius * 2)
+    }
+    const haloAll = simNodes.length <= 700
+    for (const [members, alpha] of passes) {
+      glow.globalAlpha = alpha
+      for (const node of members) {
+        if (node.missing || !(haloAll || node === active || (node.degree >= 4 && scale >= 0.6))) continue
+        const radius = node.r * 3.7
+        glow.drawImage(haloOf(node.fill), node.x - radius, node.y - radius, radius * 2, radius * 2)
+      }
+    }
+    ctx.save()
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.drawImage(haze!, 0, 0, haze!.width / HAZE_SCALE, haze!.height / HAZE_SCALE)
+    ctx.restore()
+
+    ctx.lineWidth = 1 / scale
+    for (const [members, alpha] of passes) {
+      if (!members.length) continue
+      ctx.globalAlpha = alpha
+      for (const [fill, group] of byFill(members)) {
         ctx.beginPath()
-        ctx.arc(node.x, node.y, node.r * 3.7, 0, Math.PI * 2)
+        for (const node of group) {
+          if (node.missing) continue
+          ctx.moveTo(node.x + node.r * 0.7, node.y)
+          ctx.arc(node.x, node.y, node.r * 0.7, 0, Math.PI * 2)
+        }
+        ctx.fillStyle = fill
         ctx.fill()
+        if (!group.some((node) => node.missing)) continue
+        ctx.beginPath()
+        for (const node of group) {
+          if (!node.missing) continue
+          ctx.moveTo(node.x + node.r * 0.7, node.y)
+          ctx.arc(node.x, node.y, node.r * 0.7, 0, Math.PI * 2)
+        }
+        ctx.strokeStyle = fill
+        ctx.stroke()
       }
       ctx.beginPath()
-      ctx.arc(node.x, node.y, node.r * 0.7, 0, Math.PI * 2)
-      ctx.fillStyle = node.fill
-      ctx.strokeStyle = node.fill
-      ctx.lineWidth = 1 / scale
-      if (node.missing) ctx.stroke()
-      else {
-        ctx.fill()
-        ctx.beginPath()
-        ctx.arc(node.x - node.r * 0.12, node.y - node.r * 0.12, node.r * 0.24, 0, Math.PI * 2)
-        ctx.fillStyle = '#f2f0ff'
-        ctx.fill()
+      for (const node of members) {
+        if (node.missing) continue
+        const x = node.x - node.r * 0.12
+        const y = node.y - node.r * 0.12
+        ctx.moveTo(x + node.r * 0.24, y)
+        ctx.arc(x, y, node.r * 0.24, 0, Math.PI * 2)
       }
+      ctx.fillStyle = '#f2f0ff'
+      ctx.fill()
     }
     ctx.globalAlpha = 1
   }
@@ -559,14 +660,7 @@ function draw() {
   // Ghosts: hollow, one stroke per tint.
   if (ghosts.length) {
     ctx.lineWidth = 1.2 / scale
-    const byTint = new Map<string, SimNode[]>()
-    for (const node of ghosts) {
-      if (!visible(node)) continue
-      const group = byTint.get(node.fill)
-      if (group) group.push(node)
-      else byTint.set(node.fill, [node])
-    }
-    for (const [tint, group] of byTint) {
+    for (const [tint, group] of byFill(ghosts.filter(visible))) {
       ctx.beginPath()
       for (const node of group) {
         ctx.moveTo(node.x + node.r, node.y)
@@ -588,16 +682,16 @@ function draw() {
     ctx.stroke()
   }
 
-  // Labels: culled to the viewport, faded in with the zoom, and never on
-  // top of each other — hubs claim their space first, the hovered node and
-  // its neighbours always get theirs.
-  if (!props.showLabels) return
+  // Labels (compact maps only — the memory map shows no titles): culled to
+  // the viewport, faded in with the zoom, and never on top of each other —
+  // hubs claim their space first, the hovered node and its neighbours always
+  // get theirs.
+  if (props.immersive) return
   const threshold = props.labelThreshold
   const labelAlpha =
     threshold <= 0 ? 1 : Math.min(1, Math.max(0, (scale - threshold) / 0.3 + 0.25))
-  ctx.fillStyle = props.immersive ? '#ccd0e5' : colors.label
-  const fontSize = props.immersive ? 13 : 11
-  ctx.font = `${fontSize / scale}px sans-serif`
+  ctx.fillStyle = colors.label
+  ctx.font = `${LABEL_SIZE / scale}px sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   const placed = new LabelGrid()
@@ -606,14 +700,8 @@ function draw() {
     const width = labelWidth(ctx, title)
     const sx = node.x * scale + tx
     const sy = (node.y + node.r) * scale + ty + 4
-    if (!placed.claim(sx - width / 2 - 2, sy, width + 4, fontSize + 3)) return
+    if (!placed.claim(sx - width / 2 - 2, sy, width + 4, LABEL_SIZE + 3)) return
     ctx.globalAlpha = alpha
-    if (props.immersive) {
-      ctx.strokeStyle = '#0c0e19'
-      ctx.lineWidth = 3 / scale
-      ctx.lineJoin = 'round'
-      ctx.strokeText(title, node.x, node.y + node.r + 4 / scale)
-    }
     ctx.fillText(title, node.x, node.y + node.r + 4 / scale)
   }
   if (active) {
@@ -631,18 +719,19 @@ function draw() {
   ctx.globalAlpha = 1
 }
 
+/** Label font size in screen pixels. */
+const LABEL_SIZE = 11
+
 /** Width of a title in screen pixels at the base font — measured once per
  *  title; labels keep their screen size across zoom levels. */
 function labelWidth(ctx: CanvasRenderingContext2D, title: string): number {
-  const fontSize = props.immersive ? 13 : 11
-  const key = `${fontSize}:${title}`
-  let width = labelWidths.get(key)
+  let width = labelWidths.get(title)
   if (width === undefined) {
     const font = ctx.font
-    ctx.font = `${fontSize}px sans-serif`
+    ctx.font = `${LABEL_SIZE}px sans-serif`
     width = ctx.measureText(title).width
     ctx.font = font
-    labelWidths.set(key, width)
+    labelWidths.set(title, width)
   }
   return width
 }
@@ -878,7 +967,7 @@ watch(
   }
 )
 watch(
-  () => [props.focusId, props.highlightIds, props.showLabels],
+  () => [props.focusId, props.highlightIds],
   () => scheduleDraw()
 )
 
