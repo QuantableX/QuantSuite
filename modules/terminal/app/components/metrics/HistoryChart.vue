@@ -163,21 +163,51 @@ const selectedBand = computed(() =>
   bandFor(props.title, hoverMetric.value ?? lastMetric.value ?? NaN),
 )
 
+// Both panes plot the same daily calendar, so a bar index (logical position)
+// names the same date in each. Logical ranges can also reach past the last
+// day, which date ranges cannot.
+let calendarStart = 0
+const barOf = (time: number) => Math.round((time - calendarStart) / 86400)
+
+function setRange(range: { from: number; to: number }) {
+  const logical = { from: range.from as Logical, to: range.to as Logical }
+  priceChart?.timeScale().setVisibleLogicalRange(logical)
+  if (!overlay.value) metricChart?.timeScale().setVisibleLogicalRange(logical)
+}
+
 function fit() {
   const latest = Math.max(props.points.at(-1)?.time ?? 0, props.prices.at(-1)?.time ?? 0)
   const earliest =
     props.rangeDays === 0
       ? Math.max(props.points[0]?.time ?? 0, props.prices[0]?.time ?? 0)
       : Math.min(props.points[0]?.time ?? latest, props.prices[0]?.time ?? latest)
-  if (!latest || earliest >= latest) return
-  const range = {
-    from: stamp(
+  if (!latest || earliest >= latest || !calendarStart) return
+  const from = barOf(
       props.rangeDays === 0 ? earliest : Math.max(earliest, latest - (props.rangeDays - 1) * 86400),
     ),
-    to: stamp(latest),
-  }
-  priceChart?.timeScale().setVisibleRange(range)
-  if (!overlay.value) metricChart?.timeScale().setVisibleRange(range)
+    to = barOf(latest)
+  // Leave room after the latest day so it does not sit against the price scale.
+  setRange({ from, to: to + Math.max(3, Math.round((to - from) * 0.04)) })
+}
+
+/** Shift+wheel moves the period along the dates at the same zoom. */
+function pan(event: WheelEvent) {
+  if (!event.shiftKey || !priceChart) return
+  const range = priceChart.timeScale().getVisibleLogicalRange()
+  const delta = event.deltaX || event.deltaY
+  if (!range || !delta) return
+  // Plain wheel stays the chart's zoom; this one must not reach it.
+  event.preventDefault()
+  event.stopPropagation()
+  const span = range.to - range.from
+  const last = barOf(Math.max(props.points.at(-1)?.time ?? 0, props.prices.at(-1)?.time ?? 0))
+  // A wheel notch (100px) moves a tenth of the view; keep half the view on data.
+  let shift = (delta / 100) * span * 0.1
+  shift =
+    shift > 0
+      ? Math.max(0, Math.min(shift, last + span / 2 - range.to))
+      : Math.min(0, Math.max(shift, -span / 2 - range.from))
+  if (shift) setRange({ from: range.from + shift, to: range.to + shift })
 }
 
 function disposeCharts() {
@@ -192,8 +222,8 @@ function disposeCharts() {
 function resize() {
   const width = priceHost.value?.clientWidth
   if (!width) return
-  // Preserve a manually zoomed date range while resizing both synchronized panes.
-  const range = priceChart?.timeScale().getVisibleRange()
+  // Preserve a manually zoomed or panned range while resizing both synchronized panes.
+  const range = priceChart?.timeScale().getVisibleLogicalRange()
   synchronizing = true
   try {
     priceChart?.applyOptions({ width, height: priceHost.value!.clientHeight })
@@ -203,10 +233,7 @@ function resize() {
         height: metricHost.value.clientHeight,
       })
     }
-    if (range) {
-      priceChart?.timeScale().setVisibleRange(range)
-      if (!overlay.value) metricChart?.timeScale().setVisibleRange(range)
-    }
+    if (range) setRange(range)
   } finally {
     synchronizing = false
   }
@@ -217,7 +244,7 @@ async function render(keepRange = false) {
   const lc = await import('lightweight-charts')
   if (disposed || !priceHost.value || !metricHost.value) return
   // Changing the highlight keeps a manually zoomed period instead of refitting.
-  const keptRange = keepRange ? priceChart?.timeScale().getVisibleRange() : null
+  const keptRange = keepRange ? priceChart?.timeScale().getVisibleLogicalRange() : null
   disposeCharts()
   hoverTime.value = null
   hoverPrice.value = null
@@ -278,6 +305,7 @@ async function render(keepRange = false) {
         (_, i) => firstDate + i * 86400,
       )
     : []
+  calendarStart = calendar[0] ?? 0
   // Whitespace reserves dates, but the line renderer otherwise connects across it.
   // A transparent outgoing segment leaves an actual gap between observations.
   const gapStarts = (dates: number[]) =>
@@ -452,17 +480,19 @@ async function render(keepRange = false) {
   }
   priceChart.subscribeCrosshairMove((e) => crosshair(e, true))
   metricChart?.subscribeCrosshairMove((e) => crosshair(e, false))
-  // Sync by dates rather than bar indices: providers have different histories.
+  // Providers have different histories, but both panes plot the one shared
+  // calendar above, so the same bar index is the same date in each — and a
+  // logical range carries the empty space after the latest day across too.
   if (metricChart) {
     for (const [source, target] of [
       [priceChart, metricChart],
       [metricChart, priceChart],
     ] as const) {
-      source.timeScale().subscribeVisibleTimeRangeChange((range) => {
+      source.timeScale().subscribeVisibleLogicalRangeChange((range) => {
         if (synchronizing || overlay.value || !range) return
         synchronizing = true
         try {
-          target.timeScale().setVisibleRange(range)
+          target.timeScale().setVisibleLogicalRange(range)
         } finally {
           synchronizing = false
         }
@@ -472,8 +502,7 @@ async function render(keepRange = false) {
   if (keptRange) {
     synchronizing = true
     try {
-      priceChart.timeScale().setVisibleRange(keptRange)
-      metricChart?.timeScale().setVisibleRange(keptRange)
+      setRange(keptRange)
     } finally {
       synchronizing = false
     }
@@ -594,7 +623,7 @@ onBeforeUnmount(() => {
     <div v-if="chartError" class="chart-error" role="alert">
       Chart unavailable: {{ chartError }}
     </div>
-    <div class="chart-canvas">
+    <div class="chart-canvas" @wheel.capture="pan">
       <div ref="priceHost" class="canvas-host" />
       <span v-if="!prices.length" class="empty-label">No price observations available</span>
     </div>
@@ -609,13 +638,13 @@ onBeforeUnmount(() => {
         ></span
       ><time>{{ dateLabel }} · UTC</time>
     </div>
-    <div v-show="!overlay" class="chart-canvas">
+    <div v-show="!overlay" class="chart-canvas" @wheel.capture="pan">
       <div ref="metricHost" class="canvas-host" />
       <span v-if="!points.length" class="empty-label">No indicator observations available</span>
     </div>
     <div class="chart-footnote">
       <span
-        >Scroll to zoom · Drag to pan ·
+        >Scroll to zoom · Shift+scroll or drag to pan ·
         {{ overlay ? 'Indicator left / price right' : 'Synchronized dates & crosshair' }}</span
       ><a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer"
         >Charts by TradingView</a
