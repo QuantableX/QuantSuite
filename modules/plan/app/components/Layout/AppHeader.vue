@@ -32,6 +32,12 @@ const VIEWS: Array<{ kind: ViewKind; label: string; icon: string; key: string }>
           </svg>
         </button>
         <span class="qp-hd__title">{{ app.title }}</span>
+        <span
+          v-if="app.calendarWeek !== null"
+          class="qp-hd__week"
+          :title="`Calendar week ${app.calendarWeek} (ISO 8601)`"
+          >CW {{ app.calendarWeek }}</span
+        >
       </div>
 
       <div class="qp-hd__views">
@@ -114,6 +120,18 @@ const VIEWS: Array<{ kind: ViewKind; label: string; icon: string; key: string }>
   font-weight: 500;
   letter-spacing: -.03em;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qp-hd__week {
+  flex-shrink: 0;
+  margin-left: 8px;
+  padding: 3px 8px;
+  border: 1px solid var(--qp-border-subtle);
+  border-radius: var(--qp-radius);
+  color: var(--qp-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
