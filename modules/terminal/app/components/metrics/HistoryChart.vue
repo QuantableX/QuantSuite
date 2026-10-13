@@ -112,14 +112,20 @@ function zonePrimitive(runs: [number, number][]): ISeriesPrimitive<Time> {
     drawBackground(target) {
       const scale = chart?.timeScale()
       if (!scale) return
+      // Fractional logical indices map to 0 in this version: use bar centres ± half a bar.
+      const x = (index: number) => scale.logicalToCoordinate(index as Logical)
+      const origin = x(0),
+        next = x(1)
+      if (origin == null || next == null) return
+      const half = (next - origin) / 2
       target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio }) => {
         context.fillStyle = ZONE_COLOR
         for (const [first, last] of runs) {
-          const from = scale.logicalToCoordinate((first - 0.5) as Logical)
-          const to = scale.logicalToCoordinate((last + 0.5) as Logical)
-          if (from == null || to == null) continue
-          const left = Math.round(from * horizontalPixelRatio)
-          const width = Math.max(1, Math.round(to * horizontalPixelRatio) - left)
+          // At least 2px, so a single day stays findable on a multi-year view.
+          const centre = (x(first)! + x(last)!) / 2
+          const span = Math.max(2, x(last)! - x(first)! + 2 * half)
+          const left = Math.round((centre - span / 2) * horizontalPixelRatio)
+          const width = Math.max(1, Math.round(span * horizontalPixelRatio))
           if (left > bitmapSize.width || left + width < 0) continue
           context.fillRect(left, 0, width, bitmapSize.height)
         }
@@ -277,6 +283,9 @@ async function render(keepRange = false) {
   const candleMap = new Map(props.prices.map((row) => [row.time, row.values]))
   const highlight = props.highlight ?? null
   const dimmed = (time: number) => highlight != null && !highlight.matched.has(time)
+  // A point's colour paints its outgoing segment: keep a segment lit when either end
+  // matches, so single-day matches and threshold crossings stay visible.
+  const dimmedSegment = (time: number) => dimmed(time) && dimmed(time + 86400)
   if (candles.value) {
     const series = priceChart.addCandlestickSeries({
       upColor: UP_COLOR,
@@ -326,7 +335,7 @@ async function render(keepRange = false) {
               value: value!,
               color: priceGaps.has(time)
                 ? 'transparent'
-                : dimmed(time)
+                : dimmedSegment(time)
                   ? DIMMED_COLOR
                   : PRICE_COLOR,
             }
@@ -370,7 +379,7 @@ async function render(keepRange = false) {
             value: points.get(time)!,
             color: metricGaps.has(time)
               ? 'transparent'
-              : dimmed(time)
+              : dimmedSegment(time)
                 ? DIMMED_COLOR
                 : METRIC_COLOR,
           }

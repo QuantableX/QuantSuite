@@ -63,11 +63,53 @@ const bandRange = (band: Band) =>
       ? `≥ ${formatValue(band.min, props.unit)}`
       : `${formatValue(band.min, props.unit)} – ${formatValue(band.max, props.unit)}`
 
-function outside(event: PointerEvent) {
-  if (open.value && !root.value?.contains(event.target as Node)) open.value = false
+// The chart clips its overflow and its toolbar wraps on narrow windows, so the
+// popover lives on <body> and is placed against the viewport.
+const trigger = ref<HTMLElement | null>(null)
+const popover = ref<HTMLElement | null>(null)
+const placement = ref<Record<string, string>>({})
+const WIDTH = 300,
+  GAP = 6,
+  MARGIN = 8
+function place() {
+  const rect = trigger.value?.getBoundingClientRect()
+  if (!rect) return
+  const left = Math.max(MARGIN, Math.min(rect.right - WIDTH, window.innerWidth - WIDTH - MARGIN))
+  const below = window.innerHeight - rect.bottom - GAP - MARGIN,
+    above = rect.top - GAP - MARGIN
+  placement.value =
+    below >= 280 || below >= above
+      ? { left: `${left}px`, top: `${rect.bottom + GAP}px`, maxHeight: `${below}px` }
+      : {
+          left: `${left}px`,
+          bottom: `${window.innerHeight - rect.top + GAP}px`,
+          maxHeight: `${above}px`,
+        }
 }
-onMounted(() => document.addEventListener('pointerdown', outside))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
+function toggleOpen() {
+  if (!open.value) place()
+  open.value = !open.value
+}
+const inside = (target: EventTarget | null) =>
+  !!target && (root.value?.contains(target as Node) || popover.value?.contains(target as Node))
+function outside(event: Event) {
+  if (open.value && !inside(event.target)) open.value = false
+}
+function close() {
+  open.value = false
+}
+onMounted(() => {
+  document.addEventListener('pointerdown', outside)
+  window.addEventListener('scroll', outside, true)
+  window.addEventListener('resize', close)
+})
+// The page is kept alive between visits; a <body> popover must not outlive it.
+onDeactivated(close)
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', outside)
+  window.removeEventListener('scroll', outside, true)
+  window.removeEventListener('resize', close)
+})
 </script>
 
 <template>
@@ -90,17 +132,28 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
       >
     </button>
     <button
+      ref="trigger"
       class="highlight-settings"
       :class="{ active: open }"
       :aria-expanded="open"
       aria-haspopup="dialog"
       aria-label="Highlight ranges"
       title="Choose the highlighted range for this indicator"
-      @click="open = !open"
+      @click="toggleOpen"
     >
       <SlidersHorizontal :size="13" />
     </button>
-    <div v-if="open" class="highlight-popover" role="dialog" aria-label="Highlight ranges">
+    <Teleport to="body"
+      ><div
+        v-if="open"
+        ref="popover"
+        data-module="terminal"
+        class="highlight-popover"
+        role="dialog"
+        aria-label="Highlight ranges"
+        :style="placement"
+        @keydown.esc.stop="open = false"
+      >
       <header>
         <strong>Highlight ranges</strong><span>{{ title }}</span>
       </header>
@@ -212,7 +265,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
           Reset to default
         </button>
       </footer>
-    </div>
+    </div></Teleport
+    >
   </div>
 </template>
 
@@ -255,12 +309,10 @@ input:focus-visible {
   color: var(--text-secondary);
 }
 .highlight-popover {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% + 6px);
-  right: 0;
+  /* Above the teleported Focus workspace (z-index 200). */
+  position: fixed;
+  z-index: 300;
   width: 300px;
-  max-height: 360px;
   overflow: auto;
   display: grid;
   gap: 10px;
