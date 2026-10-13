@@ -559,7 +559,10 @@ test('highlight bands and value ranges match exact band edges and open bounds', 
   const rule = highlight.defaultHighlightRule('Fear & Greed Index')
   const bands = highlight.highlightMatches('Fear & Greed Index', rule, points, points)
   assert.ok(bands.ok)
-  assert.deepEqual([...bands.matched], [0, 1, 4, 5].map((i) => origin + i * DAY))
+  assert.deepEqual([...bands.matched.keys()], [0, 1, 4, 5].map((i) => origin + i * DAY))
+  // Extreme fear is the bottom of the F&G bands, Extreme greed the top.
+  assert.deepEqual([...bands.matched.values()], ['lower', 'lower', 'upper', 'upper'])
+  assert.deepEqual(bands.zones, ['upper', 'lower'])
   assert.equal(bands.summary, 'Extreme fear · Extreme greed')
   assert.deepEqual(bands.thresholds, [])
   const below = highlight.highlightMatches(
@@ -571,7 +574,21 @@ test('highlight bands and value ranges match exact band edges and open bounds', 
   assert.equal(below.matched.size, 3)
   assert.equal(below.periodMatches, 0)
   assert.equal(below.periodDays, 3)
-  assert.deepEqual(below.thresholds, [{ value: 25, label: 'Max' }])
+  assert.deepEqual(below.thresholds, [{ value: 25, label: 'Max', zone: 'lower' }])
+  assert.deepEqual(below.zones, ['lower'])
+  const zoneOf = (change) =>
+    highlight.highlightMatches('Fear & Greed Index', { ...rule, ...change }, points, points).zones
+  assert.deepEqual(zoneOf({ mode: 'value', min: 75, max: null }), ['upper'])
+  assert.deepEqual(zoneOf({ mode: 'value', min: 20, max: 80 }), ['single'])
+  // The middle band of an odd list is neither end; 4 bands split two and two.
+  assert.deepEqual(zoneOf({ mode: 'bands', bands: ['Neutral', 'Fear'] }), ['single', 'lower'])
+  const mvrv = highlight.highlightMatches(
+    'MVRV Ratio',
+    { ...rule, bands: ['Moderate valuation', 'Elevated valuation'] },
+    [day(0, 1.5), day(1, 2.5)],
+    [],
+  )
+  assert.deepEqual([...mvrv.matched.values()], ['lower', 'upper'])
   for (const [change, reason] of [
     [{ mode: 'value', min: null, max: null }, /minimum, a maximum/],
     [{ mode: 'value', min: 50, max: 10 }, /above the maximum/],
@@ -592,14 +609,20 @@ test('highlight deviations come from the selected period and apply to the whole 
   const both = highlight.highlightMatches('Hashrate', rule, history, period)
   assert.ok(Math.abs(both.stats.mean - mean) < 1e-12)
   assert.ok(Math.abs(both.stats.deviation - deviation) < 1e-12)
-  assert.deepEqual([...both.matched].map((t) => (t - origin) / DAY), [0, 1, 6, 7])
+  assert.deepEqual([...both.matched.keys()].map((t) => (t - origin) / DAY), [0, 1, 6, 7])
+  assert.deepEqual([...both.matched.values()], ['upper', 'lower', 'upper', 'lower'])
+  assert.deepEqual(both.zones, ['upper', 'lower'])
   assert.equal(both.periodMatches, 2)
   assert.deepEqual(
-    both.thresholds.map((t) => t.label),
-    ['+1.5σ', '−1.5σ'],
+    both.thresholds.map((t) => [t.label, t.zone]),
+    [
+      ['+1.5σ', 'upper'],
+      ['−1.5σ', 'lower'],
+    ],
   )
   const above = highlight.highlightMatches('Hashrate', { ...rule, side: 'above' }, history, period)
-  assert.deepEqual([...above.matched].map((t) => (t - origin) / DAY), [0, 6])
+  assert.deepEqual([...above.matched.keys()].map((t) => (t - origin) / DAY), [0, 6])
+  assert.deepEqual(above.zones, ['upper'])
   assert.equal(above.summary, '+1.5σ')
   assert.match(
     highlight.highlightMatches('Hashrate', rule, history, [day(0, 5), day(1, 5)]).reason,
@@ -607,12 +630,20 @@ test('highlight deviations come from the selected period and apply to the whole 
   )
 })
 
-test('highlight runs join consecutive calendar days only', () => {
+test('highlight runs join consecutive calendar days of the same zone only', () => {
   const calendar = [0, 1, 2, 3, 4, 5, 6].map((i) => origin + i * DAY)
-  const matched = new Set([0, 1, 2, 5].map((i) => origin + i * DAY))
+  const matched = new Map(
+    [
+      [0, 'lower'],
+      [1, 'lower'],
+      [2, 'upper'],
+      [5, 'upper'],
+    ].map(([i, zone]) => [origin + i * DAY, zone]),
+  )
   assert.deepEqual(highlight.highlightRuns(calendar, matched), [
-    [0, 2],
-    [5, 5],
+    [0, 1, 'lower'],
+    [2, 2, 'upper'],
+    [5, 5, 'upper'],
   ])
 })
 
