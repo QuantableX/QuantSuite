@@ -3,6 +3,9 @@ import { Maximize2 } from 'lucide-vue-next'
 import type {
   IChartApi,
   ISeriesApi,
+  ISeriesPrimitive,
+  ISeriesPrimitivePaneRenderer,
+  Logical,
   Time,
   UTCTimestamp,
   MouseEventParams,
@@ -14,6 +17,7 @@ import {
   type Point,
   type HistoryRow,
 } from '#terminal/utils/metrics'
+import { highlightRuns, type HighlightMatch } from '#terminal/utils/metric-highlight'
 
 const props = defineProps<{
   title: string
@@ -24,6 +28,8 @@ const props = defineProps<{
   quote?: string
   priceProvider?: string
   rangeDays: number
+  /** Days outside the match are greyed out on both panes; null shows the plain chart. */
+  highlight?: HighlightMatch | null
 }>()
 const priceHost = ref<HTMLDivElement | null>(null),
   metricHost = ref<HTMLDivElement | null>(null)
@@ -90,6 +96,46 @@ let observer: ResizeObserver | null = null,
   disposed = false,
   synchronizing = false
 const stamp = (time: number) => time as UTCTimestamp
+const PRICE_COLOR = '#e7ad53',
+  METRIC_COLOR = '#70b5e8',
+  UP_COLOR = '#35b6a0',
+  DOWN_COLOR = '#ed7884',
+  DIMMED_COLOR = 'rgba(128, 132, 145, 0.42)',
+  ZONE_COLOR = 'rgba(112, 181, 232, 0.11)',
+  THRESHOLD_COLOR = '#b9a7e6'
+
+/** Tints matching day runs from edge to edge of their bars, behind the series. */
+function zonePrimitive(runs: [number, number][]): ISeriesPrimitive<Time> {
+  let chart: IChartApi | null = null
+  const renderer: ISeriesPrimitivePaneRenderer = {
+    draw() {},
+    drawBackground(target) {
+      const scale = chart?.timeScale()
+      if (!scale) return
+      target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio }) => {
+        context.fillStyle = ZONE_COLOR
+        for (const [first, last] of runs) {
+          const from = scale.logicalToCoordinate((first - 0.5) as Logical)
+          const to = scale.logicalToCoordinate((last + 0.5) as Logical)
+          if (from == null || to == null) continue
+          const left = Math.round(from * horizontalPixelRatio)
+          const width = Math.max(1, Math.round(to * horizontalPixelRatio) - left)
+          if (left > bitmapSize.width || left + width < 0) continue
+          context.fillRect(left, 0, width, bitmapSize.height)
+        }
+      })
+    },
+  }
+  return {
+    attached: (param) => {
+      chart = param.chart as IChartApi
+    },
+    detached: () => {
+      chart = null
+    },
+    paneViews: () => [{ zOrder: () => 'bottom', renderer: () => renderer }],
+  }
+}
 const priceDate = computed(() =>
   props.prices.at(-1)?.time
     ? new Date(props.prices.at(-1)!.time * 1000).toISOString().slice(0, 10)
@@ -156,10 +202,12 @@ function resize() {
   }
 }
 
-async function render() {
+async function render(keepRange = false) {
   if (!priceHost.value || !metricHost.value || disposed) return
   const lc = await import('lightweight-charts')
   if (disposed || !priceHost.value || !metricHost.value) return
+  // Changing the highlight keeps a manually zoomed period instead of refitting.
+  const keptRange = keepRange ? priceChart?.timeScale().getVisibleRange() : null
   disposeCharts()
   hoverTime.value = null
   hoverPrice.value = null
@@ -227,13 +275,15 @@ async function render() {
   const priceGaps = gapStarts(props.prices.map((p) => p.time))
   const metricGaps = gapStarts(props.points.map((p) => p.time))
   const candleMap = new Map(props.prices.map((row) => [row.time, row.values]))
+  const highlight = props.highlight ?? null
+  const dimmed = (time: number) => highlight != null && !highlight.matched.has(time)
   if (candles.value) {
     const series = priceChart.addCandlestickSeries({
-      upColor: '#35b6a0',
-      downColor: '#ed7884',
+      upColor: UP_COLOR,
+      downColor: DOWN_COLOR,
       borderVisible: false,
-      wickUpColor: '#35b6a0',
-      wickDownColor: '#ed7884',
+      wickUpColor: UP_COLOR,
+      wickDownColor: DOWN_COLOR,
       priceLineVisible: false,
       priceFormat: {
         type: 'custom',
@@ -250,6 +300,7 @@ async function render() {
               high: high!,
               low: low!,
               close: close!,
+              ...(dimmed(time) ? { color: DIMMED_COLOR, wickColor: DIMMED_COLOR } : {}),
             }
           : { time: stamp(time) }
       }),
@@ -257,8 +308,8 @@ async function render() {
     priceSeries = series
   } else {
     const series = priceChart.addLineSeries({
-      color: '#e7ad53',
-      crosshairMarkerBackgroundColor: '#e7ad53',
+      color: PRICE_COLOR,
+      crosshairMarkerBackgroundColor: PRICE_COLOR,
       lineWidth: 2,
       priceLineVisible: false,
       priceFormat: {
@@ -273,7 +324,11 @@ async function render() {
           ? {
               time: stamp(time),
               value: value!,
-              color: priceGaps.has(time) ? 'transparent' : '#e7ad53',
+              color: priceGaps.has(time)
+                ? 'transparent'
+                : dimmed(time)
+                  ? DIMMED_COLOR
+                  : PRICE_COLOR,
             }
           : { time: stamp(time) }
       }),
@@ -282,8 +337,8 @@ async function render() {
   }
   const host = metricChart ?? priceChart
   metricSeries = host.addLineSeries({
-    color: '#70b5e8',
-    crosshairMarkerBackgroundColor: '#70b5e8',
+    color: METRIC_COLOR,
+    crosshairMarkerBackgroundColor: METRIC_COLOR,
     lineWidth: 2,
     priceScaleId: overlay.value ? 'left' : 'right',
     priceLineVisible: false,
@@ -313,11 +368,30 @@ async function render() {
         ? {
             time: stamp(time),
             value: points.get(time)!,
-            color: metricGaps.has(time) ? 'transparent' : '#70b5e8',
+            color: metricGaps.has(time)
+              ? 'transparent'
+              : dimmed(time)
+                ? DIMMED_COLOR
+                : METRIC_COLOR,
           }
         : { time: stamp(time) },
     ),
   )
+  if (highlight) {
+    // Both panes share the calendar, so its indices are each pane's logical bar indices.
+    const runs = highlightRuns(calendar, highlight.matched)
+    priceSeries.attachPrimitive(zonePrimitive(runs))
+    if (metricChart) metricSeries.attachPrimitive(zonePrimitive(runs))
+    for (const threshold of highlight.thresholds)
+      metricSeries.createPriceLine({
+        price: threshold.value,
+        color: THRESHOLD_COLOR,
+        lineWidth: 1,
+        lineStyle: lc.LineStyle.LargeDashed,
+        axisLabelVisible: true,
+        title: threshold.label,
+      })
+  }
   const bands = bindings[props.title]?.bands ?? []
   for (const band of bands) {
     if (
@@ -381,16 +455,29 @@ async function render() {
       })
     }
   }
-  fit()
+  if (keptRange) {
+    synchronizing = true
+    try {
+      priceChart.timeScale().setVisibleRange(keptRange)
+      metricChart?.timeScale().setVisibleRange(keptRange)
+    } finally {
+      synchronizing = false
+    }
+  } else fit()
 }
 
-let generation = 0
-async function draw() {
+let generation = 0,
+  refit = false
+async function draw(keepRange = false) {
+  // A new metric or data in the same tick as a highlight change still refits.
+  if (!keepRange) refit = true
   const current = ++generation
   await nextTick()
   if (current !== generation || disposed) return
+  const keep = !refit
+  refit = false
   try {
-    await render()
+    await render(keep)
     chartError.value = null
   } catch (e) {
     chartError.value = e instanceof Error ? e.message : String(e)
@@ -406,7 +493,11 @@ watch(
     logarithmic.value,
     indicatorLogarithmic.value,
   ],
-  draw,
+  () => draw(),
+)
+watch(
+  () => props.highlight,
+  () => draw(true),
 )
 watch(() => props.rangeDays, fit)
 onMounted(() => {
@@ -439,6 +530,7 @@ onBeforeUnmount(() => {
         >
       </div>
       <div class="chart-actions">
+        <slot name="actions" />
         <button
           :class="{ active: candles }"
           :aria-pressed="candles"
