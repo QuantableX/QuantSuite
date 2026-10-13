@@ -17,7 +17,12 @@ import {
   type Point,
   type HistoryRow,
 } from '#terminal/utils/metrics'
-import { highlightRuns, type HighlightMatch } from '#terminal/utils/metric-highlight'
+import {
+  HIGHLIGHT_ZONES,
+  highlightRuns,
+  type HighlightMatch,
+  type HighlightZone,
+} from '#terminal/utils/metric-highlight'
 
 const props = defineProps<{
   title: string
@@ -101,11 +106,10 @@ const PRICE_COLOR = '#e7ad53',
   UP_COLOR = '#35b6a0',
   DOWN_COLOR = '#ed7884',
   DIMMED_COLOR = 'rgba(128, 132, 145, 0.42)',
-  ZONE_COLOR = 'rgba(112, 181, 232, 0.11)',
   THRESHOLD_COLOR = '#b9a7e6'
 
 /** Tints matching day runs from edge to edge of their bars, behind the series. */
-function zonePrimitive(runs: [number, number][]): ISeriesPrimitive<Time> {
+function zonePrimitive(runs: [number, number, HighlightZone][]): ISeriesPrimitive<Time> {
   let chart: IChartApi | null = null
   const renderer: ISeriesPrimitivePaneRenderer = {
     draw() {},
@@ -119,8 +123,8 @@ function zonePrimitive(runs: [number, number][]): ISeriesPrimitive<Time> {
       if (origin == null || next == null) return
       const half = (next - origin) / 2
       target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio }) => {
-        context.fillStyle = ZONE_COLOR
-        for (const [first, last] of runs) {
+        for (const [first, last, zone] of runs) {
+          context.fillStyle = HIGHLIGHT_ZONES[zone].tint
           // At least 2px, so a single day stays findable on a multi-year view.
           const centre = (x(first)! + x(last)!) / 2
           const span = Math.max(2, x(last)! - x(first)! + 2 * half)
@@ -394,7 +398,8 @@ async function render(keepRange = false) {
     for (const threshold of highlight.thresholds)
       metricSeries.createPriceLine({
         price: threshold.value,
-        color: THRESHOLD_COLOR,
+        // Open-ended thresholds share their zone's colour; a closed range stays neutral.
+        color: threshold.zone === 'single' ? THRESHOLD_COLOR : HIGHLIGHT_ZONES[threshold.zone].color,
         lineWidth: 1,
         lineStyle: lc.LineStyle.LargeDashed,
         axisLabelVisible: true,

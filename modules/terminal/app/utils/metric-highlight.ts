@@ -15,11 +15,23 @@ export interface HighlightRule {
 export interface HighlightThreshold {
   value: number
   label: string
+  zone: HighlightZone
 }
+/** Which end of the indicator's range a matching day belongs to. */
+export type HighlightZone = 'upper' | 'lower' | 'single'
+export const HIGHLIGHT_ZONES: Record<HighlightZone, { label: string; color: string; tint: string }> =
+  {
+    upper: { label: 'Upper range', color: '#ed7884', tint: 'rgba(237, 120, 132, 0.14)' },
+    single: { label: 'Range', color: '#70b5e8', tint: 'rgba(112, 181, 232, 0.11)' },
+    lower: { label: 'Lower range', color: '#35b6a0', tint: 'rgba(53, 182, 160, 0.14)' },
+  }
 export type HighlightResult =
   | {
       ok: true
-      matched: Set<number>
+      /** Matching days and the zone each belongs to. */
+      matched: Map<number, HighlightZone>
+      /** Zones the rule can produce, upper first — for the legend. */
+      zones: HighlightZone[]
       thresholds: HighlightThreshold[]
       summary: string
       /** Matching days inside the selected period, and its size. */
@@ -103,24 +115,37 @@ export function highlightMatches(
   period: Point[],
 ): HighlightResult {
   const unit = bindings[title]?.unit ?? ''
-  let test: (value: number) => boolean
+  let test: (value: number) => HighlightZone | null
+  let zones: HighlightZone[]
   let thresholds: HighlightThreshold[] = []
   let summary: string
   let stats: { mean: number; deviation: number } | undefined
   if (rule.mode === 'bands') {
-    const chosen = highlightBands(title).filter((band) => rule.bands.includes(band.label))
+    // Bands below the middle of the metric's list are its lower range, above it the upper.
+    const all = highlightBands(title),
+      middle = (all.length - 1) / 2
+    const chosen = all.flatMap((band, i) =>
+      rule.bands.includes(band.label)
+        ? [{ band, zone: (i < middle ? 'lower' : i > middle ? 'upper' : 'single') as HighlightZone }]
+        : [],
+    )
     if (!chosen.length) return { ok: false, reason: 'Choose at least one range.' }
-    test = (value) => chosen.some((band) => value >= band.min && value < band.max)
-    summary = chosen.map((band) => band.label).join(' · ')
+    test = (value) =>
+      chosen.find(({ band }) => value >= band.min && value < band.max)?.zone ?? null
+    zones = chosen.map(({ zone }) => zone)
+    summary = chosen.map(({ band }) => band.label).join(' · ')
   } else if (rule.mode === 'value') {
     const { min, max } = rule
     if (min == null && max == null) return { ok: false, reason: 'Enter a minimum, a maximum or both.' }
     if (min != null && max != null && min > max)
       return { ok: false, reason: 'The minimum is above the maximum.' }
-    test = (value) => (min == null || value >= min) && (max == null || value <= max)
+    // An open-ended range reads as the top (≥ min) or the bottom (≤ max) of the indicator.
+    const zone: HighlightZone = max == null ? 'upper' : min == null ? 'lower' : 'single'
+    test = (value) => ((min == null || value >= min) && (max == null || value <= max) ? zone : null)
+    zones = [zone]
     thresholds = [
-      ...(min != null ? [{ value: min, label: 'Min' }] : []),
-      ...(max != null ? [{ value: max, label: 'Max' }] : []),
+      ...(min != null ? [{ value: min, label: 'Min', zone }] : []),
+      ...(max != null ? [{ value: max, label: 'Max', zone }] : []),
     ]
     summary =
       min != null && max != null
@@ -140,18 +165,26 @@ export function highlightMatches(
       lower = mean - rule.sigma * deviation
     const above = rule.side !== 'below',
       below = rule.side !== 'above'
-    test = (value) => (above && value >= upper) || (below && value <= lower)
+    test = (value) =>
+      above && value >= upper ? 'upper' : below && value <= lower ? 'lower' : null
+    zones = [...(above ? ['upper' as const] : []), ...(below ? ['lower' as const] : [])]
     const label = sigmaLabel(rule.sigma)
     thresholds = [
-      ...(above ? [{ value: upper, label: `+${label}` }] : []),
-      ...(below ? [{ value: lower, label: `−${label}` }] : []),
+      ...(above ? [{ value: upper, label: `+${label}`, zone: 'upper' as const }] : []),
+      ...(below ? [{ value: lower, label: `−${label}`, zone: 'lower' as const }] : []),
     ]
     summary = `${rule.side === 'both' ? '±' : rule.side === 'above' ? '+' : '−'}${label}`
   }
-  const matched = new Set(points.filter((p) => test(p.value)).map((p) => p.time))
+  const matched = new Map<number, HighlightZone>()
+  for (const point of points) {
+    const zone = test(point.value)
+    if (zone) matched.set(point.time, zone)
+  }
+  const order: HighlightZone[] = ['upper', 'single', 'lower']
   return {
     ok: true,
     matched,
+    zones: order.filter((zone) => zones.includes(zone)),
     thresholds,
     summary,
     periodMatches: period.filter((p) => matched.has(p.time)).length,
@@ -160,14 +193,18 @@ export function highlightMatches(
   }
 }
 
-/** Consecutive matched calendar indices as inclusive [first, last] runs. */
-export function highlightRuns(calendar: number[], matched: Set<number>): [number, number][] {
-  const runs: [number, number][] = []
+/** Consecutive same-zone calendar indices as inclusive [first, last, zone] runs. */
+export function highlightRuns(
+  calendar: number[],
+  matched: Map<number, HighlightZone>,
+): [number, number, HighlightZone][] {
+  const runs: [number, number, HighlightZone][] = []
   calendar.forEach((time, i) => {
-    if (!matched.has(time)) return
+    const zone = matched.get(time)
+    if (!zone) return
     const last = runs.at(-1)
-    if (last && last[1] === i - 1) last[1] = i
-    else runs.push([i, i])
+    if (last && last[1] === i - 1 && last[2] === zone) last[1] = i
+    else runs.push([i, i, zone])
   })
   return runs
 }

@@ -3,6 +3,7 @@ import { Highlighter, SlidersHorizontal } from 'lucide-vue-next'
 import { useMetricsStore } from '#terminal/stores/metrics'
 import { formatValue, type Band } from '#terminal/utils/metrics'
 import {
+  HIGHLIGHT_ZONES,
   defaultHighlightRule,
   highlightBands,
   sameHighlightRule,
@@ -256,6 +257,14 @@ onBeforeUnmount(() => {
         >
       </div>
 
+      <div v-if="result.ok" class="zone-legend" aria-label="Highlight colours">
+        <span v-for="zone in result.zones" :key="zone"
+          ><i :style="{ background: HIGHLIGHT_ZONES[zone].color }" />{{
+            HIGHLIGHT_ZONES[zone].label
+          }}</span
+        >
+      </div>
+
       <footer>
         <span v-if="result.ok"
           ><strong>{{ result.periodMatches }}</strong> of {{ result.periodDays }} days in the
@@ -441,6 +450,23 @@ input[type='number'] {
 .presets {
   display: flex;
   gap: 2px;
+}
+.zone-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+}
+.zone-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.zone-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  opacity: 0.85;
 }
 footer {
   display: flex;
