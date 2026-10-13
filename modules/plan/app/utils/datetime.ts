@@ -46,6 +46,18 @@ export function startOfWeek(date: Date, weekStartsOn = 1): Date {
   return addDays(startOfDay(date), -diff)
 }
 
+/**
+ * ISO 8601 week number (the German "KW"): weeks start on Monday and week 1
+ * holds the year's first Thursday, so Dec 29 2025 is week 1 of 2026.
+ */
+export function isoWeek(date: Date): number {
+  // The Thursday of this ISO week decides its year.
+  const thursday = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 3 - ((date.getDay() + 6) % 7))
+  const firstThursday = new Date(thursday.getFullYear(), 0, 4)
+  firstThursday.setDate(firstThursday.getDate() + 3 - ((firstThursday.getDay() + 6) % 7))
+  return 1 + Math.round((thursday.getTime() - firstThursday.getTime()) / (7 * 86400000))
+}
+
 export function isSameDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import type { AppSettings, ViewKind } from '#plan/types'
-import { addDays, addMonths, startOfDay, startOfWeek } from '#plan/utils/datetime'
+import { addDays, addMonths, isoWeek, startOfDay, startOfWeek } from '#plan/utils/datetime'
 
 const defaultSettings: AppSettings = {
   defaultView: 'week',
@@ -51,6 +51,18 @@ export const useAppStore = defineStore('plan/app', () => {
       default:
         return [start]
     }
+  })
+
+  /**
+   * ISO calendar week shown beside the title in day and week view. A week that
+   * starts on Sunday is named after its Thursday, like the Monday–Sunday week
+   * holding most of its days.
+   */
+  const calendarWeek = computed<number | null>(() => {
+    if (view.value === 'day') return isoWeek(cursor.value)
+    if (view.value !== 'week') return null
+    const first = startOfWeek(cursor.value, settings.value.weekStartsOn)
+    return isoWeek(addDays(first, (4 - first.getDay() + 7) % 7))
   })
 
   /** The window to ask the crate for — a day wider than the grid on each side,
@@ -151,6 +163,7 @@ export const useAppStore = defineStore('plan/app', () => {
     days,
     range,
     title,
+    calendarWeek,
     setView,
     setCursor,
     today,
