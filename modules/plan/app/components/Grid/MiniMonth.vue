@@ -24,13 +24,13 @@ watch(
 )
 
 const label = computed(() =>
-  localCursor.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+  localCursor.value.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
 )
 
 const weekdays = computed(() => {
   const first = startOfWeek(new Date(), app.settings.weekStartsOn)
   return Array.from({ length: 7 }, (_, i) =>
-    addDays(first, i).toLocaleDateString(undefined, { weekday: 'narrow' }),
+    addDays(first, i).toLocaleDateString('en-US', { weekday: 'narrow' }),
   )
 })
 

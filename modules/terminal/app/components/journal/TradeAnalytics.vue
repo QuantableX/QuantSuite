@@ -121,7 +121,7 @@ const emotionAnalysis = computed(() => {
 })
 
 function formatPnl(v: number): string {
-  return (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2)
+  return (v >= 0 ? '+' : '-') + Math.abs(v).toFixed(2) + '$'
 }
 </script>
 
@@ -203,7 +203,7 @@ function formatPnl(v: number): string {
           </div>
           <div class="flex items-center justify-between">
             <span class="text-[11px]" style="color: var(--text-secondary)">Max Drawdown</span>
-            <span class="text-xs font-bold font-mono" style="color: var(--negative)">-${{ store.maxDrawdown.toFixed(2) }}</span>
+            <span class="text-xs font-bold font-mono" style="color: var(--negative)">-{{ store.maxDrawdown.toFixed(2) }}$</span>
           </div>
         </div>
       </div>

@@ -13,7 +13,7 @@ const store = useFundsStore()
 const fundSlices = computed(() => fundPieSlices(store.funds))
 const route = useRoute()
 const router = useRouter()
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 const editable = (cents: number) => formatAmount(cents, app.settings.locale)
 const localToday = () => {
   const d = new Date()

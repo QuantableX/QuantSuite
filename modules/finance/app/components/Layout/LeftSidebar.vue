@@ -12,7 +12,7 @@ import { formatCents } from '#finance/utils/money'
 const app = useAppStore()
 const plan = usePlanStore()
 
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 
 /** How much of the income each block takes, for the little bars. */
 function share(cents: number): number {

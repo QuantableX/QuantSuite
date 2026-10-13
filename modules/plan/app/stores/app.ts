@@ -66,34 +66,25 @@ export const useAppStore = defineStore('plan/app', () => {
     const list = days.value
     switch (view.value) {
       case 'day':
-        return cursor.value.toLocaleDateString(undefined, {
+        return cursor.value.toLocaleDateString('en-US', {
           weekday: 'long',
           day: 'numeric',
           month: 'long',
           year: 'numeric',
         })
       case 'week': {
-        const first = list[0]!
-        const last = list[list.length - 1]!
-        // Inside one month only the bare day number leads. It is built by hand
-        // rather than by dropping `month` from the options: day+year without a
-        // month is not a format Intl has, and it falls back to nonsense like
-        // "2026 (day: 30)".
-        const left =
-          first.getMonth() === last.getMonth()
-            ? String(first.getDate())
-            : first.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-        const right = last.toLocaleDateString(undefined, {
+        // formatRange collapses what both ends share: "Oct 12 – 18, 2026",
+        // "Sep 28 – Oct 4, 2026", "Dec 28, 2026 – Jan 3, 2027".
+        return new Intl.DateTimeFormat('en-US', {
           day: 'numeric',
           month: 'short',
           year: 'numeric',
-        })
-        return `${left} – ${right}`
+        }).formatRange(list[0]!, list[list.length - 1]!)
       }
       case 'month':
-        return cursor.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+        return cursor.value.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
       case 'agenda':
-        return `From ${cursor.value.toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}`
+        return `From ${cursor.value.toLocaleDateString('en-US', { day: 'numeric', month: 'long' })}`
       default:
         return ''
     }

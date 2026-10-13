@@ -9,7 +9,7 @@ export function timeAgo(iso: string | null | undefined): string {
   if (s < 3600) return `${Math.floor(s / 60)}m`
   if (s < 86400) return `${Math.floor(s / 3600)}h`
   if (s < 86400 * 30) return `${Math.floor(s / 86400)}d`
-  return new Date(then).toLocaleDateString()
+  return new Date(then).toLocaleDateString('en-US', { dateStyle: 'medium' })
 }
 
 export function formatCount(n: number): string {

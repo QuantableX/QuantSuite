@@ -130,16 +130,16 @@ function goToPage(page: number) {
 }
 
 function formatPrice(price: number): string {
-  if (price >= 1) return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (price >= 1) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   if (price >= 0.01) return price.toFixed(4)
   return price.toFixed(6)
 }
 
 function formatMarketCap(mc: number): string {
-  if (mc >= 1e12) return `$${(mc / 1e12).toFixed(2)}T`
-  if (mc >= 1e9) return `$${(mc / 1e9).toFixed(2)}B`
-  if (mc >= 1e6) return `$${(mc / 1e6).toFixed(1)}M`
-  return `$${mc.toLocaleString()}`
+  if (mc >= 1e12) return `${(mc / 1e12).toFixed(2)}T$`
+  if (mc >= 1e9) return `${(mc / 1e9).toFixed(2)}B$`
+  if (mc >= 1e6) return `${(mc / 1e6).toFixed(1)}M$`
+  return `${mc.toLocaleString('en-US')}$`
 }
 
 function refreshMarketCap() {
@@ -396,7 +396,7 @@ onBeforeUnmount(() => {
           />
           <span v-if="!props.compact" class="truncate text-[10px]" style="color: var(--text-secondary)">{{ coin.name }}</span>
         </div>
-        <span class="w-16 text-right mr-2 font-mono text-[11px] shrink-0" style="color: var(--text-primary)">${{ formatPrice(coin.price) }}</span>
+        <span class="w-16 text-right mr-2 font-mono text-[11px] shrink-0" style="color: var(--text-primary)">{{ formatPrice(coin.price) }}$</span>
         <span
           class="w-14 text-right font-mono text-[11px] shrink-0"
           :style="{

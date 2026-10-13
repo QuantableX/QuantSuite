@@ -1,11 +1,8 @@
-/** Format a number as currency (USD) */
+import { formatMoney } from '@quantsuite/core/money'
+
+/** Format a number as currency (USD), symbol last: `1,234.50$` */
 export function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value)
+  return formatMoney(value, 'USD', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 /** Format a number as percentage with sign */
@@ -47,8 +44,8 @@ export function formatQuantity(value: number, decimals = 6): string {
 /** Format a price */
 export function formatPrice(value: number): string {
   if (value >= 1000) return formatCurrency(value)
-  if (value >= 1) return `$${value.toFixed(4)}`
-  return `$${value.toFixed(8)}`
+  if (value >= 1) return `${value.toFixed(4)}$`
+  return `${value.toFixed(8)}$`
 }
 
 /** Format an ISO date string to locale short */

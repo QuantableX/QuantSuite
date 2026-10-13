@@ -182,9 +182,10 @@ const lastChecked = computed(() =>
 )
 const checkedLabel = computed(() =>
   lastChecked.value
-    ? new Date(lastChecked.value).toLocaleTimeString([], {
+    ? new Date(lastChecked.value).toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
+        hourCycle: 'h23',
       })
     : 'Not checked',
 )
@@ -439,7 +440,7 @@ onBeforeUnmount(() => {
                 includeEarly ? 'Hide pre-2011 data' : `Include pre-2011 data (${hiddenEarly})`
               }}</button
             ><span v-if="selectedFeed.data"
-              >Fetched {{ new Date(selectedFeed.data.fetchedAt * 1000).toLocaleTimeString() }}</span
+              >Fetched {{ new Date(selectedFeed.data.fetchedAt * 1000).toLocaleTimeString('en-US', { hourCycle: 'h23' }) }}</span
             >
           </div>
           <div v-if="selectedFeed.loading || priceFeed.loading" class="loading-line" role="status">

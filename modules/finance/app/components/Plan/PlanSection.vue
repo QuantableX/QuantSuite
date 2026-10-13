@@ -29,7 +29,7 @@ function openFund(item: Item, action?: string) {
   if (item.fundId) void router.push({ path: '/finance/funds', query: { fund: item.fundId, ...(action ? { action } : {}) } })
 }
 
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 
 const rows = computed(() => plan.of(props.kind))
 

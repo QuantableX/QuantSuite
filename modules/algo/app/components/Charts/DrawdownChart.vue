@@ -46,6 +46,7 @@ function buildChartOptions(width: number) {
   return {
     width,
     height: props.height,
+    localization: { locale: 'en-US' },
     layout: {
       background: { type: ColorType.Solid, color: 'transparent' },
       textColor: '#6e6e7a',

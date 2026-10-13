@@ -760,7 +760,7 @@ export function formatValue(value: number | undefined | null, unit = '', compact
     notation: compact && Math.abs(value) >= 10000 ? 'compact' : 'standard',
     maximumFractionDigits: value !== 0 && Math.abs(value) < 0.01 ? 6 : digits,
   }).format(value)
-  return `${unit === 'USD' ? '$' : ''}${formatted}${unit === '%' ? '%' : ''}`
+  return `${formatted}${unit === 'USD' ? '$' : unit === '%' ? '%' : ''}`
 }
 
 export interface Outcome {

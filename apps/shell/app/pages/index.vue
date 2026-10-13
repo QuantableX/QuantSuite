@@ -150,7 +150,7 @@ function loadCounts() {
   return countRequest
 }
 function count(key: string) {
-  return loading.value ? '…' : (counts.value[key]?.toLocaleString() ?? '—')
+  return loading.value ? '…' : (counts.value[key]?.toLocaleString('en-US') ?? '—')
 }
 const offBus: Array<() => void> = []
 let refreshTimer: ReturnType<typeof setTimeout> | undefined

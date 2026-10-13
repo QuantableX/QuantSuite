@@ -30,7 +30,7 @@ const slices = computed(() => {
 watch(positive, () => { if (!positive.value.some((h) => h.key === hovered.value)) hovered.value = null })
 function select(assetId: string | null) { if (assetId === null) emit('cash'); else emit('select', assetId) }
 const pct = (share: number) => new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 1 }).format(share)
-const dateLabel = (at: string) => new Date(at).toLocaleDateString()
+const dateLabel = (at: string) => new Date(at).toLocaleDateString('en-US', { dateStyle: 'medium' })
 const series = computed(() => {
   const points = props.history
   const values = points.flatMap((p) => p.value === null ? [p.cost] : [p.value, p.cost])

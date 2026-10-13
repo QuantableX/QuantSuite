@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * QuantFinance's own settings — currency, locale and a manual backup.
+ * QuantFinance's own settings — currency and a manual backup. Number format
+ * is the suite's English one, so there is no locale to choose.
  *
  * Accounts and categories went with the ledger, and a plan line carries its
  * own colour, so there is nothing else left to configure.
@@ -8,6 +9,7 @@
 definePageMeta({ layout: 'finance' })
 
 import { invoke } from '@tauri-apps/api/core'
+import { currencySymbol } from '@quantsuite/core/money'
 import { useAppStore } from '#finance/stores/app'
 import { usePlanStore } from '#finance/stores/plan'
 
@@ -15,6 +17,18 @@ const app = useAppStore()
 const plan = usePlanStore()
 const runtimeConfig = useRuntimeConfig()
 const settings = computed(() => app.settings)
+// Amounts read `1,234.56€` / `1,234.56$`. A code saved by the old free-text
+// field stays selectable instead of being silently replaced.
+const currencies = computed(() => {
+  const options = [
+    { code: 'EUR', label: `Euro · 1,234.56${currencySymbol('EUR')}` },
+    { code: 'USD', label: `US dollar · 1,234.56${currencySymbol('USD')}` },
+  ]
+  const saved = settings.value.currency
+  return options.some((option) => option.code === saved)
+    ? options
+    : [...options, { code: saved, label: `${saved} · 1,234.56${currencySymbol(saved)}` }]
+})
 
 const backupPath = ref('')
 const error = ref('')
@@ -46,11 +60,11 @@ async function backup() {
         <div class="qf-set__grid">
           <label>
             <span class="qf-set__label">Currency</span>
-            <input v-model="settings.currency" class="qf-input" maxlength="3" @change="save" />
-          </label>
-          <label>
-            <span class="qf-set__label">Locale</span>
-            <input v-model="settings.locale" class="qf-input" @change="save" />
+            <select v-model="settings.currency" class="qf-select" @change="save">
+              <option v-for="option in currencies" :key="option.code" :value="option.code">
+                {{ option.label }}
+              </option>
+            </select>
           </label>
         </div>
         <p class="qf-set__hint">

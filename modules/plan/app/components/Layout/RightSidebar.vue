@@ -27,7 +27,7 @@ const upcoming = computed(() => {
 
 function when(occ: Occurrence): string {
   const start = occurrenceStart(occ)
-  const day = start.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+  const day = start.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })
   if (occ.isAllDay) return `${day} · all day`
   const from = formatTime(start, app.settings.timeFormat)
   const to = formatTime(occurrenceEnd(occ), app.settings.timeFormat)

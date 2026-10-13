@@ -42,6 +42,7 @@ async function initChart() {
   chart = lc.createChart(containerRef.value, {
     width: containerRef.value.clientWidth,
     height: props.height,
+    localization: { locale: 'en-US' },
     layout: {
       background: { type: lc.ColorType.Solid, color: 'transparent' },
       textColor: '#9a9aa5',

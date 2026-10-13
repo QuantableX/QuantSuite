@@ -62,7 +62,7 @@ const display = computed(() => {
     // as UTC midnight and shows as the day before in negative offsets.
     const [y, m, d] = String(v).split('-').map(Number)
     if (!y || !m || !d) return String(v)
-    return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: y === new Date().getFullYear() ? undefined : 'numeric',

@@ -228,7 +228,7 @@ async function startIndexing(mode: "structural" | "semantic") {
 
 function formatTimestamp(ts: number | null | undefined): string {
   if (!ts) return "never";
-  return new Date(ts * 1000).toLocaleString();
+  return new Date(ts * 1000).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' });
 }
 
 // Watch board selection to load index status and restore saved settings.

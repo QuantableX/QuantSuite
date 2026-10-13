@@ -108,7 +108,7 @@ function onOverlayClick(e: MouseEvent) {
       <div v-if="closeOnly" class="p-4 space-y-4">
         <div class="card p-3">
           <div class="text-xs" style="color: var(--text-secondary)">
-            {{ trade?.pair }} · {{ trade?.side === 'long' ? 'Long' : 'Short' }} · Entry ${{ trade?.entry?.toLocaleString() }}
+            {{ trade?.pair }} · {{ trade?.side === 'long' ? 'Long' : 'Short' }} · Entry {{ trade?.entry?.toLocaleString('en-US') }}$
           </div>
         </div>
         <div>

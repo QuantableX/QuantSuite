@@ -32,7 +32,7 @@ const EMOTION_MAP: Record<string, { emoji: string; label: string }> = {
             {{ trade.strategy }}
           </span>
           <span class="text-[11px]" style="color: var(--text-secondary)">{{ trade.exchange }}</span>
-          <span class="text-[11px] font-mono" style="color: var(--muted)">Fees: ${{ trade.fees.toFixed(2) }}</span>
+          <span class="text-[11px] font-mono" style="color: var(--muted)">Fees: {{ trade.fees.toFixed(2) }}$</span>
           <span v-if="trade.pnlPercent !== null" class="text-[11px] font-mono font-semibold" :style="{ color: trade.pnlPercent >= 0 ? 'var(--positive)' : 'var(--negative)' }">
             {{ trade.pnlPercent >= 0 ? '+' : '' }}{{ trade.pnlPercent.toFixed(2) }}%
           </span>

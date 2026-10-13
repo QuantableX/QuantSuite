@@ -23,7 +23,7 @@ const events = useEventsStore()
 const MAX_CHIPS = 3
 
 const weekdayLabels = computed(() =>
-  app.days.slice(0, 7).map((d) => d.toLocaleDateString(undefined, { weekday: 'short' })),
+  app.days.slice(0, 7).map((d) => d.toLocaleDateString('en-US', { weekday: 'short' })),
 )
 
 function chipsFor(day: Date) {

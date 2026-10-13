@@ -66,7 +66,7 @@ export function snapMinutes(minutes: number, slot: number): number {
 }
 
 export function formatTime(date: Date, format: '24h' | '12h' = '24h'): string {
-  return date.toLocaleTimeString(undefined, {
+  return date.toLocaleTimeString('en-US', {
     hour: format === '24h' ? '2-digit' : 'numeric',
     minute: '2-digit',
     hour12: format === '12h',
@@ -83,7 +83,7 @@ export function formatHour(hour: number, format: '24h' | '12h' = '24h'): string 
 }
 
 export function formatDay(date: Date, opts: Intl.DateTimeFormatOptions = {}): string {
-  return date.toLocaleDateString(undefined, opts)
+  return date.toLocaleDateString('en-US', opts)
 }
 
 /** A local Date at `minutes` past midnight on `day`. */

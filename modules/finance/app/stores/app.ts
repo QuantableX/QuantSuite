@@ -3,9 +3,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { useLocalStorage } from '@vueuse/core'
 import type { AppSettings } from '#finance/types'
 
+// The suite is English-only: amounts always format as en-US, whatever an older
+// install stored (default de-DE; the settings page no longer offers a locale).
+const LOCALE = 'en-US'
 const defaultSettings: AppSettings = {
   currency: 'EUR',
-  locale: 'de-DE',
+  locale: LOCALE,
   sidebarLeftOpen: true,
   sidebarRightOpen: true,
 }
@@ -29,6 +32,7 @@ export const useAppStore = defineStore('finance/app', () => {
       settings.value = {
         ...defaultSettings,
         ...(await invoke<AppSettings>('plugin:finance|get_app_settings')),
+        locale: LOCALE,
       }
     } catch {
       settings.value = { ...defaultSettings }

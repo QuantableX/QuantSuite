@@ -102,7 +102,7 @@ async function connect() {
     if (window.__TAURI_INTERNALS__) {
       const { invoke } = await import('@tauri-apps/api/core')
       report.value = await invoke<ConnectResult[]>('plugin:mcp|connect_clients', { instructionsOnly: false, clientIds })
-      reportAt.value = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      reportAt.value = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     }
   } catch (e) {
     connectError.value = String(e)

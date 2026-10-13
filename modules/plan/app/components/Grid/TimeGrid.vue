@@ -411,7 +411,7 @@ onUnmounted(() => {
     <header class="qp-tg__head" :style="{ gridTemplateColumns: `var(--qp-gutter-w) repeat(${app.days.length}, 1fr)` }">
       <span class="qp-tg__corner" />
       <div v-for="day in app.days" :key="toKey(day)" class="qp-tg__day" :class="{ 'is-today': isToday(day) }">
-        <span class="qp-tg__dow">{{ day.toLocaleDateString(undefined, { weekday: 'short' }) }}</span>
+        <span class="qp-tg__dow">{{ day.toLocaleDateString('en-US', { weekday: 'short' }) }}</span>
         <span class="qp-tg__dom">{{ day.getDate() }}</span>
       </div>
     </header>

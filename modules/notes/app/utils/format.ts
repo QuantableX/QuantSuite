@@ -2,7 +2,7 @@ export function formatDateTime(value?: string | null): string {
   if (!value) return '—'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  return date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' })
 }
 
 export function formatRelative(value?: string | null): string {
@@ -10,7 +10,7 @@ export function formatRelative(value?: string | null): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   const diffMs = date.getTime() - Date.now()
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  const rtf = new Intl.RelativeTimeFormat('en-US', { numeric: 'auto' })
   const abs = Math.abs(diffMs)
   const minutes = Math.round(diffMs / 60000)
   if (abs < 3600000) return rtf.format(minutes, 'minute')

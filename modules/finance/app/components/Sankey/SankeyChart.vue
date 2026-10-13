@@ -98,7 +98,7 @@ function showsLabel(node: LaidOutNode): boolean {
   return node.kind !== 'hub' && node.height >= 13
 }
 
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 </script>
 
 <template>

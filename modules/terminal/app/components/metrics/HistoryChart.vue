@@ -248,7 +248,7 @@ async function render(keepRange = false) {
       lockVisibleTimeRangeOnResize: true,
     },
     crosshair: { mode: lc.CrosshairMode.Normal },
-    localization: { dateFormat: 'yyyy-MM-dd' },
+    localization: { locale: 'en-US', dateFormat: 'yyyy-MM-dd' },
   }
   priceChart = lc.createChart(priceHost.value, {
     ...options,

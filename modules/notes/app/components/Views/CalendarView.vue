@@ -30,7 +30,7 @@ function key(date: Date): string {
 }
 
 const monthLabel = computed(() =>
-  cursor.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+  cursor.value.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
 )
 
 /** Six weeks from the Monday on or before the 1st — a fixed grid, so the

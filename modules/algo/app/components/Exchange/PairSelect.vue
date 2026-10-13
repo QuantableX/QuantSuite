@@ -104,7 +104,7 @@ function onChange(e: Event) {
     </select>
     <p v-if="error" class="pair-select__error">{{ error }}</p>
     <p v-else-if="pairs.length" class="pair-select__meta">
-      {{ pairs.length.toLocaleString() }} pairs listed
+      {{ pairs.length.toLocaleString('en-US') }} pairs listed
       <button type="button" class="pair-select__refresh" @click="load(exchangeId, true)">refresh</button>
     </p>
   </div>

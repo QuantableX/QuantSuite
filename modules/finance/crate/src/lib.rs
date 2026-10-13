@@ -180,7 +180,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             currency: "EUR".into(),
-            locale: "de-DE".into(),
+            locale: "en-US".into(),
             sidebar_left_open: true,
             sidebar_right_open: true,
         }

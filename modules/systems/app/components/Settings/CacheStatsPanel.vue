@@ -58,15 +58,15 @@ useTauriEvent('cache:updated', () => refresh())
 
     <div v-if="stats" class="qs-cache__stats">
       <div class="qs-cache__stat">
-        <span class="qs-cache__num mono">{{ stats.rankings.toLocaleString() }}</span>
+        <span class="qs-cache__num mono">{{ stats.rankings.toLocaleString('en-US') }}</span>
         <span class="qs-cache__lbl">ranking rows</span>
       </div>
       <div class="qs-cache__stat">
-        <span class="qs-cache__num mono">{{ stats.ohlcv.toLocaleString() }}</span>
+        <span class="qs-cache__num mono">{{ stats.ohlcv.toLocaleString('en-US') }}</span>
         <span class="qs-cache__lbl">ohlcv rows</span>
       </div>
       <div class="qs-cache__stat">
-        <span class="qs-cache__num mono">{{ stats.coins.toLocaleString() }}</span>
+        <span class="qs-cache__num mono">{{ stats.coins.toLocaleString('en-US') }}</span>
         <span class="qs-cache__lbl">mapped coins</span>
       </div>
       <div class="qs-cache__stat">

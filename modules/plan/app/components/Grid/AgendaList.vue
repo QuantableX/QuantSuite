@@ -43,7 +43,7 @@ function timeRange(occ: Occurrence, day: Date): string {
       <header class="qp-ag__head" :class="{ 'is-today': isToday(group.day) }">
         <span class="qp-ag__dom">{{ group.day.getDate() }}</span>
         <span class="qp-ag__dow">
-          {{ group.day.toLocaleDateString(undefined, { weekday: 'long', month: 'short' }) }}
+          {{ group.day.toLocaleDateString('en-US', { weekday: 'long', month: 'short' }) }}
         </span>
       </header>
 

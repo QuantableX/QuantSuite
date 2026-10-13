@@ -17,7 +17,7 @@ watch(() => props.slices, (slices) => {
   if (!slices.some((slice) => slice.id === hovered.value)) hovered.value = null
 })
 const chart = computed(() => layoutPie(props.slices))
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 const percent = (cents: number) => new Intl.NumberFormat(app.settings.locale, {
   style: 'percent', maximumFractionDigits: 1,
 }).format(chart.value.total > 0 ? cents / chart.value.total : 0)

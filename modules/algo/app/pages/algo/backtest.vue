@@ -200,7 +200,7 @@ onMounted(async () => {
         >
           <div class="saved-item__name">{{ bt.name }}</div>
           <div class="saved-item__meta text-muted">
-            {{ bt.created_at ? new Date(bt.created_at).toLocaleDateString() : '' }}
+            {{ bt.created_at ? new Date(bt.created_at).toLocaleDateString('en-US', { dateStyle: 'medium' }) : '' }}
           </div>
           <button
             class="saved-item__delete btn btn-sm"
