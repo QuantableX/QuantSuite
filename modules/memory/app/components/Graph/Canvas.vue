@@ -26,7 +26,8 @@
  *    strokes made a frame take ~100 ms at 150 % display scaling.
  *
  * Ghost nodes (`missing`) render hollow: link targets no memory answers to.
- * Immersive maps draw no titles; the compact document map labels its nodes.
+ * Immersive maps name only the hovered memory and its direct links; the
+ * compact document map labels its nodes.
  * Compact maps open on click; immersive maps select first and open on double-click.
  * Double-click on empty space fits the graph to the view again.
  */
@@ -98,7 +99,7 @@ let ghosts: SimNode[] = []
 let neighbours: Map<string, Set<string>> = new Map()
 /** Nodes by falling degree — hubs win when labels compete for space. */
 let labelOrder: SimNode[] = []
-/** Screen-pixel width of a title at the base font, measured once. */
+/** Screen-pixel width of a title per font size, measured once. */
 const labelWidths = new Map<string, number>()
 let resizeObserver: ResizeObserver | null = null
 let laidOut = false
@@ -682,26 +683,33 @@ function draw() {
     ctx.stroke()
   }
 
-  // Labels (compact maps only — the memory map shows no titles): culled to
-  // the viewport, faded in with the zoom, and never on top of each other —
-  // hubs claim their space first, the hovered node and its neighbours always
-  // get theirs.
-  if (props.immersive) return
+  // Labels: culled to the viewport and never on top of each other — the
+  // hovered node and its neighbours claim their space first, then the hubs.
+  // The memory map names only the hovered memory and its direct links; the
+  // compact map fades the rest in with the zoom.
+  if (props.immersive && !hovered) return
   const threshold = props.labelThreshold
   const labelAlpha =
     threshold <= 0 ? 1 : Math.min(1, Math.max(0, (scale - threshold) / 0.3 + 0.25))
-  ctx.fillStyle = colors.label
-  ctx.font = `${LABEL_SIZE / scale}px sans-serif`
+  const fontSize = props.immersive ? IMMERSIVE_LABEL_SIZE : LABEL_SIZE
+  ctx.fillStyle = props.immersive ? '#ccd0e5' : colors.label
+  ctx.font = `${fontSize / scale}px sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   const placed = new LabelGrid()
   const placeLabel = (node: SimNode, alpha: number) => {
     const title = node.title.length > 36 ? node.title.slice(0, 34) + '…' : node.title
-    const width = labelWidth(ctx, title)
+    const width = labelWidth(ctx, title, fontSize)
     const sx = node.x * scale + tx
     const sy = (node.y + node.r) * scale + ty + 4
-    if (!placed.claim(sx - width / 2 - 2, sy, width + 4, LABEL_SIZE + 3)) return
+    if (!placed.claim(sx - width / 2 - 2, sy, width + 4, fontSize + 3)) return
     ctx.globalAlpha = alpha
+    if (props.immersive) {
+      ctx.strokeStyle = '#0c0e19'
+      ctx.lineWidth = 3 / scale
+      ctx.lineJoin = 'round'
+      ctx.strokeText(title, node.x, node.y + node.r + 4 / scale)
+    }
     ctx.fillText(title, node.x, node.y + node.r + 4 / scale)
   }
   if (active) {
@@ -710,7 +718,7 @@ function draw() {
       if (near?.has(node.id) && visible(node)) placeLabel(node, 1)
     }
   }
-  if (scale >= threshold && labelAlpha > 0) {
+  if (!props.immersive && scale >= threshold && labelAlpha > 0) {
     for (const node of labelOrder) {
       if (node === active || near?.has(node.id) || !visible(node)) continue
       placeLabel(node, emphasized(node) ? labelAlpha : labelAlpha * 0.25)
@@ -719,19 +727,21 @@ function draw() {
   ctx.globalAlpha = 1
 }
 
-/** Label font size in screen pixels. */
+/** Label font sizes in screen pixels: compact maps, the memory map. */
 const LABEL_SIZE = 11
+const IMMERSIVE_LABEL_SIZE = 13
 
-/** Width of a title in screen pixels at the base font — measured once per
- *  title; labels keep their screen size across zoom levels. */
-function labelWidth(ctx: CanvasRenderingContext2D, title: string): number {
-  let width = labelWidths.get(title)
+/** Width of a title in screen pixels at the given font size — measured once
+ *  per title and size; labels keep their screen size across zoom levels. */
+function labelWidth(ctx: CanvasRenderingContext2D, title: string, size: number): number {
+  const key = `${size}|${title}`
+  let width = labelWidths.get(key)
   if (width === undefined) {
     const font = ctx.font
-    ctx.font = `${LABEL_SIZE}px sans-serif`
+    ctx.font = `${size}px sans-serif`
     width = ctx.measureText(title).width
     ctx.font = font
-    labelWidths.set(title, width)
+    labelWidths.set(key, width)
   }
   return width
 }
