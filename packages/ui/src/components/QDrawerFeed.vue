@@ -18,7 +18,7 @@ function push(e: QsEvent) {
 }
 
 function timeOf(ts: number) {
-  return new Date(ts).toLocaleTimeString(undefined, { hour12: false })
+  return new Date(ts).toLocaleTimeString('en-US', { hour12: false })
 }
 
 function summarize(e: QsEvent): string {

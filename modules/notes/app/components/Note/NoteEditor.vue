@@ -36,11 +36,12 @@ const saveState = computed(() => (notes.dirty ? 'Saving…' : 'Saved'))
 const updatedLabel = computed(() => {
   const value = note.value?.updatedAt
   if (!value) return ''
-  return new Date(value).toLocaleString(undefined, {
+  return new Date(value).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hourCycle: 'h23',
   })
 })
 

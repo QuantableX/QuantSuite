@@ -54,7 +54,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, true))
 // Kanban timestamps are unix seconds.
 function shortDate(ts?: number | null): string {
   if (!ts) return ''
-  return new Date(ts * 1000).toLocaleDateString(undefined, {
+  return new Date(ts * 1000).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -63,7 +63,7 @@ function shortDate(ts?: number | null): string {
 
 function fullDate(ts?: number | null): string {
   if (!ts) return ''
-  return new Date(ts * 1000).toLocaleString()
+  return new Date(ts * 1000).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'medium', hourCycle: 'h23' })
 }
 
 function statusLabel(card: KanbanCard): string {

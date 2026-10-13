@@ -50,8 +50,8 @@ function timeLabel(millis: number): string {
   const d = new Date(millis)
   const today = new Date()
   const sameDay = d.toDateString() === today.toDateString()
-  const clock = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return sameDay ? clock : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${clock}`
+  const clock = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  return sameDay ? clock : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${clock}`
 }
 
 function sizeLabel(bytes: number): string {
@@ -102,7 +102,7 @@ async function restore(entry: TimelineEntry) {
       <div v-for="(entry, i) in entries" :key="entry.id" class="tl-row">
         <button
           class="tl-main"
-          :title="`Open this snapshot read-only\n${new Date(entry.savedAt).toLocaleString()}`"
+          :title="`Open this snapshot read-only\n${new Date(entry.savedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' })}`"
           @click="openSnapshot(entry)"
         >
           <span class="tl-dot" :class="{ 'is-latest': i === 0 }" />

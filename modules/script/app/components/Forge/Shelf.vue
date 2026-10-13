@@ -59,11 +59,11 @@ function refresh() {
             <td>{{ r.exchange }}</td>
             <td class="mono">{{ r.symbol }}</td>
             <td class="mono">{{ r.timeframe }}</td>
-            <td class="num mono">{{ r.bars.toLocaleString() }}</td>
+            <td class="num mono">{{ r.bars.toLocaleString('en-US') }}</td>
             <td class="mono">{{ r.first ?? '—' }}</td>
             <td class="mono">{{ r.last ?? '—' }}</td>
             <td class="num mono">{{ formatBytes(r.size_bytes) }}</td>
-            <td class="mono muted">{{ new Date(r.modified).toLocaleString() }}</td>
+            <td class="mono muted">{{ new Date(r.modified).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' }) }}</td>
           </tr>
           <tr v-if="!rows.length">
             <td colspan="9" class="muted qsf-empty">No series on the shelf — refresh it to fetch the default shelf (BTC across venues, ETH, XRP, BNB, SOL).</td>

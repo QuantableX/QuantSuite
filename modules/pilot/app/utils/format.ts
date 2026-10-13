@@ -8,7 +8,7 @@ export function timeAgo(ms: number | null | undefined): string {
   if (h < 24) return `${h}h ago`
   const d = Math.round(h / 24)
   if (d < 14) return `${d}d ago`
-  return new Date(ms).toLocaleDateString()
+  return new Date(ms).toLocaleDateString('en-US', { dateStyle: 'medium' })
 }
 
 export function fmtTokens(n: number | null | undefined): string {

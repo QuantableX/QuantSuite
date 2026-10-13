@@ -54,7 +54,7 @@ const filtered = computed(() => {
 })
 
 function formatTime(ts: number): string {
-  return new Date(ts * 1000).toLocaleTimeString()
+  return new Date(ts * 1000).toLocaleTimeString('en-US', { hourCycle: 'h23' })
 }
 
 async function handleClear() {

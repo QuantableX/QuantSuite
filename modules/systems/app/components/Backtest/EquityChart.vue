@@ -34,7 +34,7 @@ const hover = shallowRef<{
   height: number
   rows: { key: string; label: string; color: string; value: number | null }[]
 } | null>(null)
-const equityFormat = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+const equityFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 
 function hoverDate(time: Time): string {
   if (typeof time === 'number') return `${new Date(time * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`
@@ -136,6 +136,7 @@ async function render() {
 
   if (!chart) {
     chart = lc.createChart(container.value, {
+      localization: { locale: 'en-US' },
       layout: {
         background: { type: lc.ColorType.Solid, color: 'transparent' },
         textColor,

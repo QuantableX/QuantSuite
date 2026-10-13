@@ -149,7 +149,7 @@ function relativeTime(ms: number): string {
 }
 
 function clockTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 }
 
 function clientSubline(c: ClientRow | ClientGroup): string {
@@ -168,7 +168,7 @@ function clientTitle(group: ClientGroup): string {
   return group.members.map((c) => {
     const lines = [`${c.name}: ${clientSubline(c)}`]
     if (c.installed_to.length) lines.push(`${c.install_source === 'connect' ? 'Connected via' : 'Found in'}: ${c.installed_to.join(', ')}`)
-    if (c.last_seen && !c.online) lines.push(`Last seen ${new Date(c.last_seen).toLocaleString()}`)
+    if (c.last_seen && !c.online) lines.push(`Last seen ${new Date(c.last_seen).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' })}`)
     return lines.join('\n')
   }).join('\n\n')
 }

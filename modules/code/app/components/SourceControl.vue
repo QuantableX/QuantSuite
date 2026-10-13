@@ -100,7 +100,7 @@ function relTime(unixSeconds: number): string {
   if (s < 3600) return `${Math.floor(s / 60)}m`
   if (s < 86400) return `${Math.floor(s / 3600)}h`
   if (s < 86400 * 30) return `${Math.floor(s / 86400)}d`
-  return new Date(unixSeconds * 1000).toLocaleDateString()
+  return new Date(unixSeconds * 1000).toLocaleDateString('en-US', { dateStyle: 'medium' })
 }
 
 /** First letter of the status, the way the explorer marks its rows. */

@@ -331,7 +331,7 @@ function verdictFor(j: ForgeJob): string {
           <span v-if="jobTrack(job)" class="qsc-tag is-accent">{{ jobTrack(job) }}</span>
           <span v-if="job.request.fast" class="qsc-tag">fast — smoke test</span>
           <span class="muted qsf-job-meta">
-            started {{ new Date(job.started_at).toLocaleTimeString() }} · {{ formatElapsed(job.started_at, job.finished_at) }}
+            started {{ new Date(job.started_at).toLocaleTimeString('en-US', { hourCycle: 'h23' }) }} · {{ formatElapsed(job.started_at, job.finished_at) }}
             <template v-if="doneEvent && typeof doneEvent.elapsed_s === 'number'"> · forge {{ doneEvent.elapsed_s }}s</template>
           </span>
         </div>
@@ -539,7 +539,7 @@ function verdictFor(j: ForgeJob): string {
         </thead>
         <tbody>
           <tr v-for="j in history" :key="j.id" :class="{ 'is-current': job?.id === j.id }">
-            <td class="mono">{{ new Date(j.started_at).toLocaleTimeString() }}</td>
+            <td class="mono">{{ new Date(j.started_at).toLocaleTimeString('en-US', { hourCycle: 'h23' }) }}</td>
             <td>{{ KIND_LABELS[j.kind] ?? j.kind }}<span v-if="j.request.fast" class="muted"> · fast</span></td>
             <td class="mono qsf-history-ind">{{ jobIndicators(j) }}</td>
             <td><span class="qsc-tag" :class="statusClass(j.status)">{{ j.status }}</span></td>

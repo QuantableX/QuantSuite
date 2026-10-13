@@ -56,7 +56,7 @@ async function save(reviewed: boolean) {
     <label>Sources<textarea v-model="sources" rows="3" placeholder="One source or evidence reference per line" /></label>
     <label>Replaced by<select v-model="replacement" aria-label="Replaced by"><option value="">Current memory</option><option v-for="m in candidates" :key="m.id" :value="m.id">{{ m.title }}</option></select></label>
     <label>Conflicting memory IDs<textarea v-model="conflicts" rows="2" placeholder="One ID per line" /></label>
-    <p v-if="doc.meta.quality?.lastVerified">Last verified: {{ new Date(doc.meta.quality.lastVerified).toLocaleString() }}</p>
+    <p v-if="doc.meta.quality?.lastVerified">Last verified: {{ new Date(doc.meta.quality.lastVerified).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' }) }}</p>
     <div class="qm-quality-actions"><button :disabled="busy" @click="save(false)">Save</button><button :disabled="busy" @click="save(true)">Mark reviewed</button><button :disabled="busy" @click="reload">Reload</button></div>
     <p v-if="notice" role="status">{{ notice }}</p>
   </section>

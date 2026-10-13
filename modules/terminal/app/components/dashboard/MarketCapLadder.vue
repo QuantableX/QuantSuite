@@ -130,7 +130,7 @@ function goToPage(page: number) {
 }
 
 function formatPrice(price: number): string {
-  if (price >= 1) return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (price >= 1) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   if (price >= 0.01) return price.toFixed(4)
   return price.toFixed(6)
 }
@@ -139,7 +139,7 @@ function formatMarketCap(mc: number): string {
   if (mc >= 1e12) return `$${(mc / 1e12).toFixed(2)}T`
   if (mc >= 1e9) return `$${(mc / 1e9).toFixed(2)}B`
   if (mc >= 1e6) return `$${(mc / 1e6).toFixed(1)}M`
-  return `$${mc.toLocaleString()}`
+  return `$${mc.toLocaleString('en-US')}`
 }
 
 function refreshMarketCap() {

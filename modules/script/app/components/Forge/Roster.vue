@@ -338,7 +338,7 @@ function scriptOf(ind: IndicatorInfo): string | null {
       <p class="qsf-footer muted">
         {{ scoreTrack === 'all' ? 'Overall shows the weakest measured track; all three must pass for certification. Version chips: S Standard · G general · 1H / 4H / 1D on their own track.' : `Showing the ${scoreTrack} track for every version.` }}
         Certification requires score ≥ 70, permutation p ≤ 0.10 and complete full-run evidence.
-        Historical scores remain labeled references. Registry read {{ new Date(forge.registry.generated_at).toLocaleString() }}.
+        Historical scores remain labeled references. Registry read {{ new Date(forge.registry.generated_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' }) }}.
       </p>
     </template>
   </div>

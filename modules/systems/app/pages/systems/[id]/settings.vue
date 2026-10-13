@@ -59,7 +59,7 @@ async function save() {
   if (!ok) return
   systems.replace(metadata)
   // Inline confirmation next to the button, gone again after a few seconds.
-  savedAt.value = new Date().toLocaleTimeString()
+  savedAt.value = new Date().toLocaleTimeString('en-US', { hourCycle: 'h23' })
   if (savedTimer) clearTimeout(savedTimer)
   savedTimer = setTimeout(() => { savedAt.value = null }, 4000)
 }

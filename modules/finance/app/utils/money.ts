@@ -7,7 +7,7 @@
  * writing `amount / 100` anywhere else, that is the bug.
  */
 
-/** `123456` → `"1.234,56 €"` (locale-dependent). */
+/** `123456` → `"€1,234.56"` in the suite's en-US locale. */
 export function formatCents(cents: number, currency = 'EUR', locale?: string): string {
   return new Intl.NumberFormat(locale, {
     style: 'currency',
@@ -25,7 +25,7 @@ export function formatAmount(cents: number, locale?: string): string {
   }).format(cents / 100)
 }
 
-/** A compact axis/label form: `123456` → `"1.235"`, `12345678` → `"123k"`. */
+/** A compact axis/label form: `123456` → `"1.2K"`, `12345678` → `"123.5K"`. */
 export function formatCompact(cents: number, locale?: string): string {
   const units = Math.round(cents / 100)
   return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(units)

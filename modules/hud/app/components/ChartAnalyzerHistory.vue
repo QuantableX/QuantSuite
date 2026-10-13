@@ -219,9 +219,9 @@ function formatTime(ts: number) {
   const d = new Date(ts);
   const now = new Date();
   const isToday = d.toDateString() === now.toDateString();
-  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const time = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   if (isToday) return time;
-  return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+  return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${time}`;
 }
 
 function phaseClass(r: ChartAnalysisResult) {

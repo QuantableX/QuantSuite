@@ -12,7 +12,7 @@ const recent = computed(() => [
   ...store.document.trades.map(t => ({ id: t.id, source: 'trade' as const, date: t.date, order: t.order, label: `${t.kind === 'adjustment' ? 'Adjusted' : t.kind === 'opening' ? 'Opening' : t.kind === 'buy' ? 'Bought' : 'Sold'} ${store.document.assets.find(a => a.id === t.assetId)?.symbol ?? 'asset'}`, detail: `${number(t.quantity)} units` })),
   ...(store.document.cashEntries ?? []).map(c => ({ id: c.id, source: 'cash' as const, date: c.date, order: c.order, label: c.kind === 'balance' ? 'Cash balance set' : c.kind === 'deposit' ? 'Cash deposited' : 'Cash withdrawn', detail: money(c.amount) })),
 ].sort((a, b) => Date.parse(b.date) - Date.parse(a.date) || b.order - a.order).slice(0, 5))
-const date = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+const date = (value: string) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 const signed = (value: number | null) => value === null ? '—' : `${value > 0 ? '+' : ''}${money(value)}`
 const tone = (value: number | null) => value === null || value === 0 ? '' : value > 0 ? 'is-up' : 'is-down'
 </script>

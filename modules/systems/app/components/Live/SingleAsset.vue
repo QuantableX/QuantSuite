@@ -13,7 +13,7 @@ defineProps<{ result: LiveResult; compact?: boolean }>()
     <div class="qs-single-live__metrics">
       <div><span class="label">Confirmed signal</span><strong class="qs-single-live__signal">{{ result.singleAssetSignal.signal }}</strong></div>
       <div><span class="label">Next position</span><strong>{{ result.best }}</strong></div>
-      <div><span class="label">Last confirmed close</span><strong class="mono">{{ result.singleAssetSignal.close.toLocaleString(undefined, { maximumFractionDigits: 8 }) }} {{ result.singleAsset.pair.split('/')[1] }}</strong></div>
+      <div><span class="label">Last confirmed close</span><strong class="mono">{{ result.singleAssetSignal.close.toLocaleString('en-US', { maximumFractionDigits: 8 }) }} {{ result.singleAsset.pair.split('/')[1] }}</strong></div>
       <div><span class="label">Candle closed at (UTC)</span><strong class="mono">{{ result.singleAssetSignal.closedAt.replace('T', ' ').replace('Z', '') }}</strong></div>
     </div>
     <p class="qs-single-live__note">The confirmed signal applies from the next candle open.</p>

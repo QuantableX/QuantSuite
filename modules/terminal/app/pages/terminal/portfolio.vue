@@ -24,7 +24,7 @@ const cashRows = computed(() => [...store.cashHistory].reverse())
 const signed = (value: number | null) => value === null ? '—' : `${value > 0 ? '+' : ''}${money(value)}`
 const tone = (value: number | null) => value === null || value === 0 ? '' : value > 0 ? 'is-up' : 'is-down'
 const percent = (value: number, cost: number) => cost > 0 ? `${value >= 0 ? '+' : ''}${(value / cost * 100).toFixed(2)}%` : '—'
-const displayDate = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+const displayDate = (value: string) => new Date(value).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' })
 const tradeValue = (trade: PortfolioTrade) => trade.kind === 'adjustment' ? null : trade.quantity * trade.price + (trade.kind === 'sell' ? -trade.fees : trade.fees)
 const locked = computed(() => !store.loaded || store.busy || store.loading)
 watch([editor, deleting], ([edit, removal]) => { if (edit || removal) store.discardPendingPrices() }, { flush: 'sync', immediate: true })

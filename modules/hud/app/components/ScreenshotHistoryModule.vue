@@ -161,12 +161,13 @@ async function openPreview(entry: { path: string }) {
 
 function formatDate(unix: number): string {
   const d = new Date(unix * 1000);
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   });
 }
 </script>

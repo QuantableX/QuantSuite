@@ -352,10 +352,10 @@ function formatPnl(v: number): string {
               </span>
             </span>
             <span class="text-[11px] font-mono" style="color: var(--text-primary)">
-              ${{ trade.entry.toLocaleString() }}
+              ${{ trade.entry.toLocaleString('en-US') }}
             </span>
             <span class="text-[11px] font-mono" style="color: var(--text-primary)">
-              {{ trade.exit ? '$' + trade.exit.toLocaleString() : '—' }}
+              {{ trade.exit ? '$' + trade.exit.toLocaleString('en-US') : '—' }}
             </span>
             <span class="text-[11px] font-mono" style="color: var(--text-secondary)">
               {{ trade.size }}
