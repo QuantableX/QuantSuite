@@ -109,7 +109,7 @@ const hasActiveFilters = computed(() => {
 })
 
 function formatPnl(v: number): string {
-  return (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2)
+  return (v >= 0 ? '+' : '-') + Math.abs(v).toFixed(2) + '$'
 }
 </script>
 
@@ -187,7 +187,7 @@ function formatPnl(v: number): string {
           <TrendingUp class="w-3.5 h-3.5" style="color: var(--muted)" />
         </div>
         <div class="text-lg font-bold font-mono" style="color: var(--positive)">
-          {{ store.bestTrade ? formatPnl(store.bestTrade.pnl ?? 0) : '$0.00' }}
+          {{ store.bestTrade ? formatPnl(store.bestTrade.pnl ?? 0) : '0.00$' }}
         </div>
       </div>
     </div>
@@ -352,10 +352,10 @@ function formatPnl(v: number): string {
               </span>
             </span>
             <span class="text-[11px] font-mono" style="color: var(--text-primary)">
-              ${{ trade.entry.toLocaleString('en-US') }}
+              {{ trade.entry.toLocaleString('en-US') }}$
             </span>
             <span class="text-[11px] font-mono" style="color: var(--text-primary)">
-              {{ trade.exit ? '$' + trade.exit.toLocaleString('en-US') : '—' }}
+              {{ trade.exit ? trade.exit.toLocaleString('en-US') + '$' : '—' }}
             </span>
             <span class="text-[11px] font-mono" style="color: var(--text-secondary)">
               {{ trade.size }}

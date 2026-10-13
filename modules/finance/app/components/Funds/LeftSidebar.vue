@@ -5,7 +5,7 @@ import { formatCents } from '#finance/utils/money'
 
 const app = useAppStore()
 const store = useFundsStore()
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 </script>
 
 <template>

@@ -6,7 +6,7 @@ import type { FundPlan } from '#finance/types/funds'
 
 const app = useAppStore()
 const store = useFundsStore()
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 const displayDate = (date: string) => new Intl.DateTimeFormat(app.settings.locale, { dateStyle: 'medium' }).format(new Date(`${date}T12:00:00`))
 const cadence = (months: number) => ({ 1: 'Monthly', 3: 'Quarterly', 6: 'Half-yearly', 12: 'Yearly' })[months] ?? `${months} months`
 const due = (plan: FundPlan) => plan.isActive && new Date(`${plan.nextOn}T00:00:00`) <= new Date()

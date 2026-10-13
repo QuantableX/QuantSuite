@@ -6,15 +6,11 @@
  * decimal exactly once, at the moment it is displayed. If you find yourself
  * writing `amount / 100` anywhere else, that is the bug.
  */
+import { formatMoney } from '@quantsuite/core/money'
 
-/** `123456` → `"€1,234.56"` in the suite's en-US locale. */
-export function formatCents(cents: number, currency = 'EUR', locale?: string): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100)
+/** `123456` → `"1,234.56€"`: the suite's money format, symbol last. */
+export function formatCents(cents: number, currency = 'EUR'): string {
+  return formatMoney(cents / 100, currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 /** Without the currency symbol — for table columns that carry it in the header. */

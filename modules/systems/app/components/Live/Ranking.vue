@@ -15,10 +15,10 @@ const bestScore = computed(() =>
 
 function fmtCap(cap: number | null): string {
   if (!cap) return '—'
-  if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`
-  if (cap >= 1e9) return `$${(cap / 1e9).toFixed(1)}B`
-  if (cap >= 1e6) return `$${(cap / 1e6).toFixed(1)}M`
-  return `$${cap.toFixed(0)}`
+  if (cap >= 1e12) return `${(cap / 1e12).toFixed(2)}T$`
+  if (cap >= 1e9) return `${(cap / 1e9).toFixed(1)}B$`
+  if (cap >= 1e6) return `${(cap / 1e6).toFixed(1)}M$`
+  return `${cap.toFixed(0)}$`
 }
 </script>
 

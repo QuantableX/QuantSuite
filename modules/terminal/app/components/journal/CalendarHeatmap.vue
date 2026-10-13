@@ -206,7 +206,7 @@ const monthLabels = computed(() => {
         <div class="font-semibold">{{ hoveredDay.date }}</div>
         <div style="color: var(--text-secondary)">{{ hoveredDay.trades }} trade{{ hoveredDay.trades !== 1 ? 's' : '' }}</div>
         <div v-if="hoveredDay.trades > 0" class="font-mono font-semibold" :style="{ color: hoveredDay.pnl >= 0 ? 'var(--positive)' : 'var(--negative)' }">
-          {{ hoveredDay.pnl >= 0 ? '+' : '' }}${{ hoveredDay.pnl.toFixed(2) }}
+          {{ hoveredDay.pnl >= 0 ? '+' : '' }}{{ hoveredDay.pnl.toFixed(2) }}$
         </div>
       </div>
     </Teleport>

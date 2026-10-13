@@ -19,7 +19,7 @@ import { formatAmount, formatCents, parseCents } from '#finance/utils/money'
 const app = useAppStore()
 const plan = usePlanStore()
 
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 
 /** The standalone target currently in edit mode, if any. */
 const editing = ref<string | null>(null)
@@ -43,7 +43,7 @@ function monthLabel(period: string | null): string {
  * The value an amount field shows.
  *
  * Formatted the way the figure above it is, so the same number does not read
- * as `10,00` in the field and `€10.00` two lines up. `parseCents` takes
+ * as `10,00` in the field and `10.00€` two lines up. `parseCents` takes
  * either separator back. Zero stays empty so the placeholder shows.
  */
 function amountText(cents: number): string {

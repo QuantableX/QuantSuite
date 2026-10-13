@@ -136,10 +136,10 @@ function formatPrice(price: number): string {
 }
 
 function formatMarketCap(mc: number): string {
-  if (mc >= 1e12) return `$${(mc / 1e12).toFixed(2)}T`
-  if (mc >= 1e9) return `$${(mc / 1e9).toFixed(2)}B`
-  if (mc >= 1e6) return `$${(mc / 1e6).toFixed(1)}M`
-  return `$${mc.toLocaleString('en-US')}`
+  if (mc >= 1e12) return `${(mc / 1e12).toFixed(2)}T$`
+  if (mc >= 1e9) return `${(mc / 1e9).toFixed(2)}B$`
+  if (mc >= 1e6) return `${(mc / 1e6).toFixed(1)}M$`
+  return `${mc.toLocaleString('en-US')}$`
 }
 
 function refreshMarketCap() {
@@ -396,7 +396,7 @@ onBeforeUnmount(() => {
           />
           <span v-if="!props.compact" class="truncate text-[10px]" style="color: var(--text-secondary)">{{ coin.name }}</span>
         </div>
-        <span class="w-16 text-right mr-2 font-mono text-[11px] shrink-0" style="color: var(--text-primary)">${{ formatPrice(coin.price) }}</span>
+        <span class="w-16 text-right mr-2 font-mono text-[11px] shrink-0" style="color: var(--text-primary)">{{ formatPrice(coin.price) }}$</span>
         <span
           class="w-14 text-right font-mono text-[11px] shrink-0"
           :style="{

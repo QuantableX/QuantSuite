@@ -15,7 +15,7 @@ function openFund(id: string) {
   void router.push({ path: '/finance/funds', query: { fund: id } })
 }
 
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 </script>
 
 <template>

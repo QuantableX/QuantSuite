@@ -22,7 +22,7 @@
     <div class="result-row">
       <span class="result-label">1x Pos Size</span>
       <span class="result-value">{{
-        results ? "$" + formatNumber(results.posSize1x) : "-"
+        results ? formatNumber(results.posSize1x) + "$" : "-"
       }}</span>
       <button
         class="btn btn-icon btn-ghost"
@@ -46,7 +46,7 @@
     <div class="result-row">
       <span class="result-label">{{ leverage }}x Pos Size</span>
       <span class="result-value">{{
-        results ? "$" + formatNumber(results.posSizeLev) : "-"
+        results ? formatNumber(results.posSizeLev) + "$" : "-"
       }}</span>
       <button
         class="btn btn-icon btn-ghost"
@@ -94,7 +94,7 @@
     <div class="result-row">
       <span class="result-label">Net Profit</span>
       <span class="result-value profit">{{
-        results ? "$" + formatNumber(results.netProfit) : "-"
+        results ? formatNumber(results.netProfit) + "$" : "-"
       }}</span>
       <button
         class="btn btn-icon btn-ghost"
@@ -118,7 +118,7 @@
     <div class="result-row">
       <span class="result-label">Net Loss</span>
       <span class="result-value loss">{{
-        results ? "$" + formatNumber(results.netLoss) : "-"
+        results ? formatNumber(results.netLoss) + "$" : "-"
       }}</span>
       <button
         class="btn btn-icon btn-ghost"

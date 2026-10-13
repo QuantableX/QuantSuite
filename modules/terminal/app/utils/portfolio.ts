@@ -1,3 +1,4 @@
+import { formatMoney } from '@quantsuite/core/money'
 import type { PortfolioDocument, PortfolioHolding } from '../types/portfolio'
 
 export const emptyPortfolio = (): PortfolioDocument => ({ version: 1, revision: '', assets: [], trades: [], cashEntries: [], quotes: {}, snapshots: [] })
@@ -138,9 +139,9 @@ export function portfolioHistory(doc: PortfolioDocument) {
   })
 }
 
-export const portfolioMoney = (value: number | null) => value === null ? '—' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(value)
+export const portfolioMoney = (value: number | null) => value === null ? '—' : formatMoney(value, 'USD', { maximumFractionDigits: 2 })
 export const portfolioNumber = (value: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 10 }).format(value)
-export const portfolioPrice = (value: number | null) => value === null ? '—' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 8 }).format(value)
+export const portfolioPrice = (value: number | null) => value === null ? '—' : formatMoney(value, 'USD', { maximumFractionDigits: 8 })
 /** USD means the total cash paid/received, including fees. Keep full unit precision. */
 export function portfolioTradeAmounts(side: 'buy' | 'sell', mode: 'usd' | 'units', amount: number, price: number, fees: number) {
   if (![amount, price, fees].every(finite) || amount <= 0 || (mode === 'usd' && price === 0)) return null

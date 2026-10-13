@@ -23,7 +23,7 @@ import { formatCents } from '#finance/utils/money'
 const app = useAppStore()
 const plan = usePlanStore()
 
-const money = (cents: number) => formatCents(cents, app.settings.currency, app.settings.locale)
+const money = (cents: number) => formatCents(cents, app.settings.currency)
 </script>
 
 <template>

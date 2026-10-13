@@ -20,8 +20,8 @@ export function fmtTokens(n: number | null | undefined): string {
 
 export function fmtCost(usd: number | null | undefined): string {
   if (usd === null || usd === undefined) return '—'
-  if (usd === 0) return '$0.00'
-  return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`
+  if (usd === 0) return '0.00$'
+  return usd < 0.01 ? `${usd.toFixed(4)}$` : `${usd.toFixed(2)}$`
 }
 
 /** The last path segment, for chips and file rows. */
