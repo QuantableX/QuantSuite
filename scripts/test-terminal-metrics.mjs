@@ -535,3 +535,132 @@ test('background worker failures release the job and the next calculation can re
   workers[1].onmessage({ data: { id: data.id, series } })
   assert.equal((await recovered)['MVRV Ratio'][0].value, 2)
 })
+
+const highlight = await import('../modules/terminal/app/utils/metric-highlight.ts')
+const day = (i, value) => ({ time: origin + i * DAY, value })
+
+test('highlight defaults to the outermost named bands, otherwise two deviations', () => {
+  assert.deepEqual(highlight.defaultHighlightRule('Fear & Greed Index').bands, [
+    'Extreme fear',
+    'Extreme greed',
+  ])
+  assert.equal(highlight.defaultHighlightRule('Fear & Greed Index').mode, 'bands')
+  // Two complementary bands would highlight every day.
+  for (const title of ['Mayer Multiple', 'Hashrate']) {
+    const rule = highlight.defaultHighlightRule(title)
+    assert.equal(rule.mode, 'sigma')
+    assert.equal(rule.sigma, 2)
+    assert.equal(rule.side, 'both')
+  }
+})
+
+test('highlight bands and value ranges match exact band edges and open bounds', () => {
+  const points = [10, 24.9, 25, 60, 75, 100].map((v, i) => day(i, v))
+  const rule = highlight.defaultHighlightRule('Fear & Greed Index')
+  const bands = highlight.highlightMatches('Fear & Greed Index', rule, points, points)
+  assert.ok(bands.ok)
+  assert.deepEqual([...bands.matched], [0, 1, 4, 5].map((i) => origin + i * DAY))
+  assert.equal(bands.summary, 'Extreme fear · Extreme greed')
+  assert.deepEqual(bands.thresholds, [])
+  const below = highlight.highlightMatches(
+    'Fear & Greed Index',
+    { ...rule, mode: 'value', min: null, max: 25 },
+    points,
+    points.slice(3),
+  )
+  assert.equal(below.matched.size, 3)
+  assert.equal(below.periodMatches, 0)
+  assert.equal(below.periodDays, 3)
+  assert.deepEqual(below.thresholds, [{ value: 25, label: 'Max' }])
+  for (const [change, reason] of [
+    [{ mode: 'value', min: null, max: null }, /minimum, a maximum/],
+    [{ mode: 'value', min: 50, max: 10 }, /above the maximum/],
+    [{ mode: 'bands', bands: [] }, /at least one/],
+  ])
+    assert.match(
+      highlight.highlightMatches('Fear & Greed Index', { ...rule, ...change }, points, points).reason,
+      reason,
+    )
+})
+
+test('highlight deviations come from the selected period and apply to the whole history', () => {
+  const period = [0, 0, 0, 0, 10, -10].map((v, i) => day(i + 2, v))
+  const history = [day(0, 100), day(1, -100), ...period]
+  const mean = 0,
+    deviation = Math.sqrt(200 / 6)
+  const rule = { ...highlight.defaultHighlightRule('Hashrate'), sigma: 1.5 }
+  const both = highlight.highlightMatches('Hashrate', rule, history, period)
+  assert.ok(Math.abs(both.stats.mean - mean) < 1e-12)
+  assert.ok(Math.abs(both.stats.deviation - deviation) < 1e-12)
+  assert.deepEqual([...both.matched].map((t) => (t - origin) / DAY), [0, 1, 6, 7])
+  assert.equal(both.periodMatches, 2)
+  assert.deepEqual(
+    both.thresholds.map((t) => t.label),
+    ['+1.5σ', '−1.5σ'],
+  )
+  const above = highlight.highlightMatches('Hashrate', { ...rule, side: 'above' }, history, period)
+  assert.deepEqual([...above.matched].map((t) => (t - origin) / DAY), [0, 6])
+  assert.equal(above.summary, '+1.5σ')
+  assert.match(
+    highlight.highlightMatches('Hashrate', rule, history, [day(0, 5), day(1, 5)]).reason,
+    /no variation/,
+  )
+})
+
+test('highlight runs join consecutive calendar days only', () => {
+  const calendar = [0, 1, 2, 3, 4, 5, 6].map((i) => origin + i * DAY)
+  const matched = new Set([0, 1, 2, 5].map((i) => origin + i * DAY))
+  assert.deepEqual(highlight.highlightRuns(calendar, matched), [
+    [0, 2],
+    [5, 5],
+  ])
+})
+
+test('highlight rules are kept per metric, sanitized on load and reset to defaults', () => {
+  const saved = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => saved.get(key) ?? null,
+    setItem: (key, value) => saved.set(key, String(value)),
+  }
+  try {
+    saved.set(
+      highlight.HIGHLIGHT_STORAGE_KEY,
+      JSON.stringify({
+        'Fear & Greed Index': { mode: 'bands', bands: ['Fear', 'Removed band'], sigma: -1 },
+        Hashrate: { mode: 'bands', min: 'x', max: 5, sigma: 3, side: 'above' },
+        'Unknown metric': { mode: 'value' },
+      }),
+    )
+    setActivePinia(createPinia())
+    const store = useMetricsStore()
+    assert.equal(store.highlight, false)
+    assert.deepEqual(Object.keys(store.highlightRules), ['Fear & Greed Index', 'Hashrate'])
+    assert.deepEqual(store.highlightRule('Fear & Greed Index').bands, ['Fear'])
+    assert.equal(store.highlightRule('Fear & Greed Index').sigma, 2)
+    // A metric without named bands cannot keep band mode.
+    assert.equal(store.highlightRule('Hashrate').mode, 'sigma')
+    assert.equal(store.highlightRule('Hashrate').min, null)
+    assert.equal(store.highlightRule('Hashrate').max, 5)
+    assert.equal(store.highlightRule('Hashrate').side, 'above')
+    store.setHighlightRule('MVRV Ratio', {
+      ...store.highlightRule('MVRV Ratio'),
+      mode: 'value',
+      min: 3,
+    })
+    const persisted = JSON.parse(saved.get(highlight.HIGHLIGHT_STORAGE_KEY))
+    assert.equal(persisted['MVRV Ratio'].min, 3)
+    assert.equal(persisted['Fear & Greed Index'].bands[0], 'Fear')
+    store.resetHighlightRule('MVRV Ratio')
+    assert.ok(
+      highlight.sameHighlightRule(
+        store.highlightRule('MVRV Ratio'),
+        highlight.defaultHighlightRule('MVRV Ratio'),
+      ),
+    )
+    assert.equal(JSON.parse(saved.get(highlight.HIGHLIGHT_STORAGE_KEY))['MVRV Ratio'], undefined)
+    saved.set(highlight.HIGHLIGHT_STORAGE_KEY, '{broken')
+    assert.deepEqual(highlight.loadHighlightRules(), {})
+  } finally {
+    delete globalThis.localStorage
+  }
+})

@@ -17,6 +17,8 @@ import { useMetricsStore } from '#terminal/stores/metrics'
 import { bindings, DAY, formatValue, metricTone, type Point } from '#terminal/utils/metrics'
 import HistoryChart from '#terminal/components/metrics/HistoryChart.vue'
 import ScoreContext from '#terminal/components/metrics/ScoreContext.vue'
+import HighlightSettings from '#terminal/components/metrics/HighlightSettings.vue'
+import { highlightMatches } from '#terminal/utils/metric-highlight'
 import CardVisual from '#terminal/components/metrics/CardVisual.vue'
 import { cardReading } from '#terminal/utils/metric-card'
 import { historicalMetrics, calculatedMetrics } from '#terminal/data/historical-metrics'
@@ -132,6 +134,17 @@ const windowStart = computed(() =>
     : windowEnd.value - (store.rangeDays - 1) * DAY,
 )
 const visibleHistory = computed(() => history.value.filter((p) => p.time >= windowStart.value))
+const highlightResult = computed(() =>
+  highlightMatches(
+    store.selectedTitle,
+    store.highlightRule(store.selectedTitle),
+    history.value,
+    visibleHistory.value,
+  ),
+)
+const chartHighlight = computed(() =>
+  store.highlight && highlightResult.value.ok ? highlightResult.value : null,
+)
 const missingDays = computed(() => {
   const points = visibleHistory.value
   return points.length > 1
@@ -448,7 +461,13 @@ onBeforeUnmount(() => {
               :quote="quote"
               :price-provider="priceProvider"
               :range-days="store.rangeDays"
-            /><ScoreContext
+              :highlight="chartHighlight"
+              ><template #actions
+                ><HighlightSettings
+                  :title="store.selectedTitle"
+                  :unit="selectedBinding.unit"
+                  :result="highlightResult" /></template></HistoryChart
+            ><ScoreContext
               v-if="showContext"
               :title="store.selectedTitle"
               :points="visibleHistory"

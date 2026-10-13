@@ -4,6 +4,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { bindings, type FeedSource, type History, type Point } from '#terminal/utils/metrics'
 import { affectedMetrics } from '#terminal/utils/metrics-calculation'
 import { createMetricsProcessor } from '#terminal/utils/metrics-processing'
+import {
+  loadHighlightRules,
+  normalizeHighlightRule,
+  saveHighlightRules,
+  type HighlightRule,
+} from '#terminal/utils/metric-highlight'
 
 export interface FeedState {
   data: History | null
@@ -34,6 +40,19 @@ export const useMetricsStore = defineStore('terminal/metrics', () => {
   const selectedTitle = ref('MVRV Ratio')
   const comparisonAsset = ref('BTC')
   const rangeDays = ref(365)
+  // Off on every launch; the per-metric ranges themselves are kept across launches.
+  const highlight = ref(false)
+  const highlightRules = ref<Record<string, HighlightRule>>(loadHighlightRules())
+  const highlightRule = (title: string) => normalizeHighlightRule(title, highlightRules.value[title])
+  function setHighlightRule(title: string, rule: HighlightRule) {
+    highlightRules.value = { ...highlightRules.value, [title]: normalizeHighlightRule(title, rule) }
+    saveHighlightRules(highlightRules.value)
+  }
+  function resetHighlightRule(title: string) {
+    const { [title]: _, ...rest } = highlightRules.value
+    highlightRules.value = rest
+    saveHighlightRules(rest)
+  }
   const feedKey = (source: FeedSource, asset = 'BTC') =>
     source === 'price' ? `price:${asset}` : source
 
@@ -224,6 +243,11 @@ export const useMetricsStore = defineStore('terminal/metrics', () => {
     selectedTitle,
     comparisonAsset,
     rangeDays,
+    highlight,
+    highlightRules,
+    highlightRule,
+    setHighlightRule,
+    resetHighlightRule,
     series,
     loading,
     canRefresh,
