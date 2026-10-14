@@ -60,5 +60,13 @@ export const useStrategyGroupsStore = defineStore('systems/groups', () => {
     })
   }
   function remove(id: string) { return run(doc => { doc.groups = doc.groups.filter(g => g.id !== id) }) }
-  return { groups, loaded, error, busy, load, saveGroup, toggle, remove }
+  function moveSystem(systemId: string, targetId: string | null) {
+    return run(doc => {
+      const target = doc.groups.find(g => g.id === targetId)
+      if (targetId !== null && !target) throw new Error('This group no longer exists. Reload the groups.')
+      for (const group of doc.groups) group.systemIds = group.systemIds.filter(id => id !== systemId)
+      if (target) target.systemIds.push(systemId)
+    })
+  }
+  return { groups, loaded, error, busy, load, saveGroup, toggle, remove, moveSystem }
 })
