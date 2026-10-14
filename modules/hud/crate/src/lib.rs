@@ -1883,10 +1883,15 @@ pub fn init() -> TauriPlugin<Wry> {
     // hidden (`hud`) came up empty more often than the one shown while
     // loading (`dual-right`). Process-wide, so the main window gets it too;
     // the cost is painting it while something covers it.
+    //
+    // `--lang=en-US`: the suite is English-only. wry sets the environment's
+    // Language to the Windows UI language, which put native date/time pickers,
+    // text-field context menus, validation messages and the default `Intl`
+    // locale into German. Appended after wry's arguments, this value wins.
     #[cfg(target_os = "windows")]
     std::env::set_var(
         "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-        "--use-fake-ui-for-media-stream \
+        "--use-fake-ui-for-media-stream --lang=en-US \
          --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
     );
 
