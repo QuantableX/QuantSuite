@@ -25,7 +25,7 @@
     "test:script": "node --test scripts/test-script-workbench.mjs",
     "check:distribution": "node scripts/check-distribution.mjs",
     "test:distribution": "node --test scripts/test-distribution.mjs",
-    "test:systems": "node --test scripts/test-systems-queue.mjs",
+    "test:systems": "node --test scripts/test-systems-queue.mjs scripts/test-systems-groups.mjs",
     "check:release": "node scripts/check-release.mjs",
     "test:release": "node --test scripts/test-release.mjs"
   },

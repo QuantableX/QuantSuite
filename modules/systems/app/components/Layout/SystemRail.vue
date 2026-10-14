@@ -1,20 +1,26 @@
 <script setup lang="ts">
-/**
- * QuantSystems' left nav — the shared QSidebar (V3). Glyph characters
- * (◈ ◇ ▦) are gone: chrome uses 24×24 stroke-path line icons, the same
- * language as the rail and every other module.
- */
+import { ChevronRight, Folder, FolderOpen, FolderPlus, Plus, MoreHorizontal } from 'lucide-vue-next'
+import { bus } from '@quantsuite/core'
 import { useAppStore } from '#systems/stores/app'
 import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
+import { useStrategyGroupsStore } from '#systems/stores/groups'
 import { useActiveView } from '#systems/composables/useActiveView'
-import { strategyIcon } from '#systems/utils/strategyIcons'
+import { groupSections, GROUPS_SCOPE, GROUPS_KEY, GROUPS_DEV_KEY, type StrategyGroup } from '#systems/utils/strategyGroups'
+import StrategyRailItem from './StrategyRailItem.vue'
+import StrategyGroupEditor from './StrategyGroupEditor.vue'
 
 const app = useAppStore()
 const systems = useSystemsStore()
 const config = useConfigStore()
+const groups = useStrategyGroupsStore()
 const router = useRouter()
 const { systemId } = useActiveView()
+const sections = computed(() => groupSections(groups.groups, systems.systems))
+const editing = ref(false)
+const editedGroup = ref<StrategyGroup | null>(null)
+let unsubscribe: (() => void) | undefined
+const shortcut = (id: string) => systems.systems.findIndex(s => s.id === id)
 
 function select(id: string, status: string) {
   if (status !== 'ready') return
@@ -22,151 +28,88 @@ function select(id: string, status: string) {
   void config.load(id)
   void router.push(`/algo/manual/${id}/${app.viewFor(id)}`)
 }
+function edit(group: StrategyGroup | null) {
+  editedGroup.value = group
+  editing.value = true
+}
+function storageChanged(event: StorageEvent) {
+  if (event.key === GROUPS_DEV_KEY) void groups.load(true)
+}
+onMounted(() => {
+  void groups.load()
+  unsubscribe = bus.on('core.setting.changed', event => {
+    const payload = event.payload as { scope?: string; key?: string }
+    if (payload.scope === GROUPS_SCOPE && payload.key === GROUPS_KEY) void groups.load(true)
+  })
+  window.addEventListener('storage', storageChanged)
+})
+onBeforeUnmount(() => {
+  unsubscribe?.()
+  window.removeEventListener('storage', storageChanged)
+})
+onDeactivated(() => { editing.value = false })
 </script>
 
 <template>
   <QSidebar>
-    <nav class="qs-rail">
-      <span class="qs-rail__label">Strategies</span>
-      <button class="btn" @click="router.push('/algo/manual/new')">+ New strategy</button>
-      <div class="qs-rail__group">
-        <button
-          v-for="(s, i) in systems.systems"
-          :key="s.id"
-          class="qs-rail-btn"
-          :class="{
-            'qs-rail-btn--active': systemId === s.id,
-            'qs-rail-btn--planned': s.status !== 'ready',
-          }"
-          :title="`${s.name}${s.short ? ` (${s.short})` : ''}${i < 9 ? ` — Ctrl+${i + 1}` : ''}`"
-          @click="select(s.id, s.status)"
-        >
-          <component :is="strategyIcon(s).component" class="qs-rail-btn__icon" :size="18" :stroke-width="1.7" aria-hidden="true" />
-          <span class="qs-rail-btn__text">
-            <span v-if="s.short" class="qs-rail-btn__short">{{ s.short }}</span>
-            <span class="qs-rail-btn__name">{{ s.name }}</span>
-          </span>
-          <span v-if="s.status !== 'ready'" class="qs-rail-btn__soon">soon</span>
-          <span class="qs-rail-btn__bar" aria-hidden="true" />
-        </button>
+    <nav class="qs-rail" aria-label="Strategies">
+      <div class="qs-rail__heading">
+        <span>Strategies</span><span class="qs-rail__count">{{ systems.systems.length }}</span>
       </div>
+      <div class="qs-rail__actions">
+        <button class="btn qs-rail__new" @click="router.push('/algo/manual/new')"><Plus :size="14" /> New strategy</button>
+        <button class="qs-rail__icon" title="Create group" aria-label="Create group" :disabled="!groups.loaded || groups.busy" @click="edit(null)"><FolderPlus :size="17" /></button>
+      </div>
+      <div v-if="groups.error && !editing" class="qs-rail__error" role="alert">
+        {{ groups.error }}
+        <button class="btn" :disabled="groups.busy" @click="groups.load(true)">Reload groups</button>
+      </div>
+      <div v-if="sections.ungrouped.length" class="qs-rail__list">
+        <span v-if="groups.groups.length" class="qs-rail__label">Ungrouped</span>
+        <StrategyRailItem v-for="s in sections.ungrouped" :key="s.id" :strategy="s" :active="systemId === s.id" :shortcut="shortcut(s.id)" @select="select(s.id, s.status)" />
+      </div>
+      <section v-for="section in sections.groups" :key="section.group.id" class="qs-rail__section">
+        <div class="qs-rail__group-header" :class="{ 'qs-rail__group-header--active': section.systems.some(s => s.id === systemId) }">
+          <button class="qs-rail__toggle" :aria-expanded="!section.group.collapsed" :aria-controls="`strategy-group-${section.group.id}`" :title="section.group.name" :disabled="groups.busy" @click="groups.toggle(section.group.id)">
+            <ChevronRight class="qs-rail__chevron" :class="{ 'qs-rail__chevron--open': !section.group.collapsed }" :size="13" />
+            <component :is="section.group.collapsed ? Folder : FolderOpen" :size="15" />
+            <span class="qs-rail__group-name">{{ section.group.name }}</span>
+            <span class="qs-rail__count">{{ section.systems.length }}</span>
+          </button>
+          <button class="qs-rail__icon qs-rail__edit" :aria-label="`Edit group ${section.group.name}`" :title="`Edit group ${section.group.name}`" :disabled="groups.busy" @click="edit(section.group)"><MoreHorizontal :size="15" /></button>
+        </div>
+        <div v-show="!section.group.collapsed" :id="`strategy-group-${section.group.id}`" class="qs-rail__members">
+          <StrategyRailItem v-for="s in section.systems" :key="s.id" :strategy="s" :active="systemId === s.id" :shortcut="shortcut(s.id)" @select="select(s.id, s.status)" />
+          <button v-if="!section.systems.length" class="qs-rail__empty" @click="edit(section.group)">Add strategies</button>
+        </div>
+      </section>
     </nav>
+    <StrategyGroupEditor v-if="editing" :group="editedGroup" @close="editing = false" />
   </QSidebar>
 </template>
 
 <style scoped>
-.qs-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 10px;
-}
-
-.qs-rail__label {
-  padding: 0 10px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--qs-text-muted);
-}
-
-.qs-rail__group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.qs-rail-btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 9px 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--qs-text-secondary);
-  cursor: pointer;
-  text-align: left;
-  transition: color 150ms ease, background 150ms ease;
-}
-
-.qs-rail-btn:hover {
-  color: var(--qs-text);
-  background: var(--qs-bg-hover);
-}
-
-.qs-rail-btn__icon {
-  flex-shrink: 0;
-  color: var(--qs-accent);
-}
-
-.qs-rail-btn__text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.qs-rail-btn__short {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--qs-accent);
-}
-
-.qs-rail-btn__name {
-  font-size: 11px;
-  color: var(--qs-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.qs-rail-btn--planned {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.qs-rail-btn__soon {
-  flex-shrink: 0;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--qs-warning);
-}
-
-.qs-rail-btn__bar {
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
-  background: transparent;
-  transition: background 150ms ease;
-}
-
-.qs-rail-btn--active {
-  color: var(--qs-text);
-  background: var(--qs-bg-hover);
-}
-
-.qs-rail-btn--active .qs-rail-btn__short {
-  color: var(--qs-accent);
-}
-
-.qs-rail-btn--active .qs-rail-btn__name {
-  color: var(--qs-text);
-}
-
-.qs-rail-btn--active .qs-rail-btn__bar {
-  background: var(--qs-accent);
-}
+.qs-rail { display: flex; flex-direction: column; gap: 12px; padding: 16px 10px; }
+.qs-rail__heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--qs-text-muted); }
+.qs-rail__count { flex-shrink: 0; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--qs-text-muted); }
+.qs-rail__actions { display: flex; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--qs-border); }
+.qs-rail__new { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 11px; }
+.qs-rail__icon { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--qs-border); border-radius: 6px; background: transparent; color: var(--qs-text-secondary); cursor: pointer; }
+.qs-rail__icon:hover, .qs-rail__toggle:hover { color: var(--qs-text); background: var(--qs-bg-hover); }
+.qs-rail__icon:disabled, .qs-rail__toggle:disabled { cursor: wait; opacity: .6; }
+.qs-rail__list { display: flex; flex-direction: column; gap: 2px; }
+.qs-rail__label { padding: 0 8px 4px; font-size: 10px; color: var(--qs-text-muted); }
+.qs-rail__group-header { display: flex; align-items: center; gap: 2px; border-radius: 6px; }
+.qs-rail__group-header--active { background: var(--qs-bg-hover); }
+.qs-rail__toggle { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; padding: 8px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--qs-text-secondary); cursor: pointer; text-align: left; }
+.qs-rail__toggle > svg { flex-shrink: 0; }
+.qs-rail__group-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
+.qs-rail__chevron { transition: transform 120ms ease; }
+.qs-rail__chevron--open { transform: rotate(90deg); }
+.qs-rail__edit { width: 24px; height: 26px; border-color: transparent; }
+.qs-rail__members { margin: 3px 0 0 10px; padding-left: 5px; border-left: 1px solid var(--qs-border); }
+.qs-rail__empty { width: 100%; padding: 10px 7px; border: 0; background: transparent; color: var(--qs-text-muted); cursor: pointer; text-align: left; font-size: 11px; }
+.qs-rail__empty:hover { color: var(--qs-accent); }
+.qs-rail__error { display: grid; gap: 8px; padding: 8px; color: var(--qs-error); font-size: 11px; overflow-wrap: anywhere; }
+.qs-rail button:focus-visible { outline: 2px solid var(--qs-accent); outline-offset: 2px; }
 </style>
