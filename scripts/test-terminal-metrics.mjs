@@ -607,8 +607,12 @@ test('highlight deviations come from the selected period and apply to the whole 
     deviation = Math.sqrt(200 / 6)
   const rule = { ...highlight.defaultHighlightRule('Hashrate'), sigma: 1.5 }
   const both = highlight.highlightMatches('Hashrate', rule, history, period)
-  assert.ok(Math.abs(both.stats.mean - mean) < 1e-12)
+  // Readings at or below 0 cannot be log-normalized, so Auto stays linear.
+  assert.equal(both.stats.scale, 'linear')
+  assert.equal(both.stats.auto, true)
+  assert.ok(Math.abs(both.stats.centre - mean) < 1e-12)
   assert.ok(Math.abs(both.stats.deviation - deviation) < 1e-12)
+  assert.deepEqual(both.unreachable, [])
   assert.deepEqual([...both.matched.keys()].map((t) => (t - origin) / DAY), [0, 1, 6, 7])
   assert.deepEqual([...both.matched.values()], ['upper', 'lower', 'upper', 'lower'])
   assert.deepEqual(both.zones, ['upper', 'lower'])
@@ -694,4 +698,71 @@ test('highlight rules are kept per metric, sanitized on load and reset to defaul
   } finally {
     delete globalThis.localStorage
   }
+})
+
+// Right-skewed like MVRV: symmetric on ln, never below 0.
+const skewed = [-3, -1, -1, ...Array(14).fill(0), 1, 1, 3].map((z, i) => day(i, Math.exp(0.5 + 0.5 * z)))
+const sigmaRule = (scale, extra = {}) => ({ ...highlight.defaultHighlightRule('Hashrate'), scale, ...extra })
+
+test('highlight normalizes skewed readings on ln so both sides of ±2σ can match', () => {
+  const linear = highlight.highlightMatches('MVRV Ratio', sigmaRule('linear'), skewed, skewed)
+  // The linear −2σ lies below 0: that side can never match, and the result says so.
+  assert.ok(linear.thresholds.find((t) => t.zone === 'lower').value < 0)
+  assert.deepEqual([...linear.matched.values()], ['upper'])
+  assert.deepEqual(linear.unreachable.map((t) => [t.label, t.zone]), [['−2σ', 'lower']])
+
+  const auto = highlight.highlightMatches('MVRV Ratio', sigmaRule('auto'), skewed, skewed)
+  assert.equal(auto.stats.scale, 'log')
+  assert.equal(auto.stats.auto, true)
+  const sd = Math.sqrt(22 / 20) * 0.5
+  assert.ok(Math.abs(auto.stats.centre - Math.exp(0.5)) < 1e-12)
+  assert.ok(Math.abs(auto.stats.deviation - sd) < 1e-12)
+  const [upper, lower] = auto.thresholds
+  assert.ok(Math.abs(upper.value - Math.exp(0.5 + 2 * sd)) < 1e-9)
+  assert.ok(Math.abs(lower.value - Math.exp(0.5 - 2 * sd)) < 1e-9)
+  assert.ok(lower.value > 0)
+  assert.deepEqual(
+    [...auto.matched].map(([t, zone]) => [(t - origin) / DAY, zone]),
+    [[0, 'lower'], [19, 'upper']],
+  )
+  assert.deepEqual(auto.unreachable, [])
+  assert.equal(auto.summary, '±2σ (log)')
+  assert.deepEqual(highlight.highlightMatches('MVRV Ratio', sigmaRule('log'), skewed, skewed).matched, auto.matched)
+})
+
+test('highlight rank scale marks the normal-tail share of extreme days on each side', () => {
+  assert.ok(Math.abs(highlight.normalTail(2) - 0.0227501) < 1e-6)
+  assert.ok(Math.abs(highlight.normalTail(3) - 0.0013499) < 1e-6)
+  assert.ok(Math.abs(highlight.normalTail(-1) - 0.8413447) < 1e-6)
+  const ranked = highlight.highlightMatches('MVRV Ratio', sigmaRule('rank'), skewed, skewed)
+  assert.equal(ranked.stats.scale, 'rank')
+  assert.equal(ranked.stats.auto, false)
+  assert.ok(Math.abs(ranked.stats.deviation - 0.0227501) < 1e-6)
+  assert.ok(Math.abs(ranked.stats.centre - Math.exp(0.5)) < 1e-12)
+  const sorted = skewed.map((p) => p.value).sort((a, b) => a - b)
+  const at = (q) => sorted[Math.floor(q * 19)] + (sorted[Math.floor(q * 19) + 1] - sorted[Math.floor(q * 19)]) * (q * 19 - Math.floor(q * 19))
+  const tail = highlight.normalTail(2)
+  assert.ok(Math.abs(ranked.thresholds[0].value - at(1 - tail)) < 1e-9)
+  assert.ok(Math.abs(ranked.thresholds[1].value - at(tail)) < 1e-9)
+  assert.deepEqual([...ranked.matched.values()], ['lower', 'upper'])
+  // Rank works on readings at or below 0, where log cannot.
+  const signed = [-5, -1, 0, 0, 0, 0, 0, 1, 5].map((v, i) => day(i, v))
+  assert.equal(highlight.highlightMatches('Hashrate', sigmaRule('rank'), signed, signed).matched.size, 2)
+  assert.match(highlight.highlightMatches('Hashrate', sigmaRule('log'), signed, signed).reason, /Log needs readings above 0/)
+})
+
+test('highlight auto keeps linear when ln makes readings less symmetric', () => {
+  // Bounded and even like Fear & Greed: ln would stretch the low end.
+  const even = Array.from({ length: 81 }, (_, i) => day(i, 10 + i))
+  const auto = highlight.highlightMatches('Fear & Greed Index', sigmaRule('auto', { mode: 'sigma' }), even, even)
+  assert.equal(auto.stats.scale, 'linear')
+  assert.equal(auto.stats.auto, true)
+  // Saved rules from before the scale existed read as Auto; unknown values too.
+  assert.equal(highlight.normalizeHighlightRule('MVRV Ratio', { mode: 'sigma', sigma: 2 }).scale, 'auto')
+  assert.equal(highlight.normalizeHighlightRule('MVRV Ratio', { mode: 'sigma', scale: 'cubic' }).scale, 'auto')
+  assert.equal(highlight.normalizeHighlightRule('MVRV Ratio', { mode: 'sigma', scale: 'rank' }).scale, 'rank')
+  assert.equal(
+    highlight.sameHighlightRule(sigmaRule('auto'), sigmaRule('rank')),
+    false,
+  )
 })

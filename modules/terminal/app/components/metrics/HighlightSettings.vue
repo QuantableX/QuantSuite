@@ -10,6 +10,7 @@ import {
   type HighlightMode,
   type HighlightResult,
   type HighlightRule,
+  type HighlightScale,
   type HighlightSide,
 } from '#terminal/utils/metric-highlight'
 
@@ -31,6 +32,35 @@ const modes: { value: HighlightMode; label: string }[] = [
   { value: 'value', label: 'Value' },
   { value: 'sigma', label: 'Std dev' },
 ]
+const scales: { value: HighlightScale; label: string; hint: string }[] = [
+  {
+    value: 'auto',
+    label: 'Auto',
+    hint: 'Log when it makes the readings more symmetric (ratios, prices), otherwise linear',
+  },
+  { value: 'linear', label: 'Linear', hint: 'σ of the readings as they are' },
+  {
+    value: 'log',
+    label: 'Log',
+    hint: 'σ of ln(reading): for ratios and prices that cannot go below 0',
+  },
+  {
+    value: 'rank',
+    label: 'Rank',
+    hint: 'Readings ranked onto a normal curve: ±kσ marks the same share of extreme days on each side',
+  },
+]
+const statsLine = computed(() => {
+  if (!props.result.ok || !props.result.stats) return ''
+  const { scale, auto, centre, deviation } = props.result.stats
+  const prefix = auto ? `Auto → ${scale} · ` : ''
+  if (scale === 'rank')
+    return `${prefix}Median ${formatValue(centre, props.unit)} · beyond ${rule.value.sigma}σ = outer ${(deviation * 100).toFixed(deviation < 0.01 ? 2 : 1)}% of days per side`
+  if (scale === 'log')
+    return `${prefix}Geometric mean ${formatValue(centre, props.unit)} · σ ×${Math.exp(deviation).toFixed(2)} over the selected period`
+  return `${prefix}Mean ${formatValue(centre, props.unit)} · σ ${formatValue(deviation, props.unit)} over the selected period`
+})
+const unreachable = computed(() => (props.result.ok ? props.result.unreachable : []))
 const sides: { value: HighlightSide; label: string }[] = [
   { value: 'both', label: 'Both sides' },
   { value: 'above', label: 'Above' },
@@ -251,10 +281,28 @@ onBeforeUnmount(() => {
             {{ side.label }}
           </button>
         </div>
-        <small v-if="result.ok && result.stats"
-          >Mean {{ formatValue(result.stats.mean, unit) }} · σ
-          {{ formatValue(result.stats.deviation, unit) }} over the selected period</small
-        >
+        <div class="scale-row">
+          <span>Scale</span>
+          <div class="modes" role="radiogroup" aria-label="Scale">
+            <button
+              v-for="scale in scales"
+              :key="scale.value"
+              role="radio"
+              :class="{ active: rule.scale === scale.value }"
+              :aria-checked="rule.scale === scale.value"
+              :title="scale.hint"
+              @click="update({ scale: scale.value })"
+            >
+              {{ scale.label }}
+            </button>
+          </div>
+        </div>
+        <small v-if="statsLine">{{ statsLine }}</small>
+        <p v-for="limit in unreachable" :key="limit.label" class="unreachable">
+          No reading {{ limit.zone === 'lower' ? 'below' : 'above' }} {{ limit.label }} ({{
+            formatValue(limit.value, unit)
+          }}).<template v-if="rule.scale !== 'rank'"> Try Log or Rank.</template>
+        </p>
       </div>
 
       <div v-if="result.ok" class="zone-legend" aria-label="Highlight colours">
@@ -450,6 +498,20 @@ input[type='number'] {
 .presets {
   display: flex;
   gap: 2px;
+}
+.scale-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.unreachable {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
 }
 .zone-legend {
   display: flex;
