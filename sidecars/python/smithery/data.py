@@ -1,6 +1,12 @@
 """Data shelf: ccxt (crypto, paginated), cached as CSV in `Price History/`.
 Files: <EXCHANGE>_<SYMBOL>_<TF>.csv  — see the vault's folder note.
 
+The CSVs stay the forge's own shelf: certification reads exactly them, and
+every series on it (axis_exchange takes all BTC venues), so nothing from
+outside may appear there. Their candles are also mirrored into the suite's
+shared candle archive (`candle_archive.py`), where QuantAlgo backtests on the
+same venue, pair and timeframe read them instead of downloading them again.
+
 Where the shelf, the reports and the docs live (PLAN-QUANTALGO §6):
 `$SMITHERY_VAULT` when set, else the Obsidian vault "Indicator Smithery"
 when it exists on this machine, else a private forge under the suite's
@@ -78,6 +84,120 @@ def _key(exchange: str, symbol: str, tf: str) -> str:
 
 def csv_path(key: str) -> Path:
     return PRICE_DIR / f"{key}.csv"
+
+
+# ---------------------------------------------------------------- shared archive
+
+# Venues and timeframes whose ccxt candles were checked bar for bar against
+# QuantAlgo's own pagers (2026-10-18, 2023-2024 on 14 series: open, high,
+# low, close and volume identical). Not mirrored: OKX "1d" (QuantAlgo's daily
+# bars open at 16:00 UTC, OKX's Hong Kong day; the shelf's at 00:00 UTC),
+# KuCoin (ccxt rounds a few long volume strings one ulp differently) and
+# Bitstamp (no QuantAlgo pager).
+ARCHIVE_VERIFIED = {
+    "binance": {"1d", "4h", "1h"},
+    "bybit": {"1d", "4h", "1h"},
+    "okx": {"4h", "1h"},
+    "coinbase": {"1d"},
+}
+_QUOTES = ("USDT", "USDC", "USD", "EUR", "BTC")
+_STEP_MS = {"1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000}
+
+
+def archive_series(key: str) -> tuple[str, str, str] | None:
+    """(venue, BASE/QUOTE, tf) of a shelf key, or None when the archive must
+    not hold it."""
+    parts = key.split("_")
+    if len(parts) != 3:
+        return None
+    venue, compact, tf = parts[0].lower(), parts[1], parts[2]
+    if tf not in ARCHIVE_VERIFIED.get(venue, ()):
+        return None
+    for quote in _QUOTES:
+        if compact.endswith(quote) and len(compact) > len(quote):
+            return venue, f"{compact[:-len(quote)]}/{quote}", tf
+    return None
+
+
+def _epoch_ms(stamps) -> pd.Series:
+    """UTC timestamps to epoch milliseconds, whatever resolution pandas chose."""
+    index = stamps.index if isinstance(stamps, pd.Series) else None
+    ts = pd.Series(pd.to_datetime(stamps, utc=True), index=index)
+    return (ts - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(milliseconds=1)
+
+
+def _csv_ends(path: Path) -> tuple[int, int] | None:
+    """First and last bar of a shelf CSV in epoch ms, from its first and last
+    lines only."""
+    with path.open("rb") as fh:
+        fh.readline()
+        first = fh.readline()
+        if not first.strip():
+            return None
+        fh.seek(0, os.SEEK_END)
+        fh.seek(max(fh.tell() - 4096, 0))
+        last = [ln for ln in fh.read().split(b"\n") if ln.strip()][-1]
+    ends = _epoch_ms([line.split(b",", 1)[0].decode() for line in (first, last)])
+    return int(ends.iloc[0]), int(ends.iloc[-1])
+
+
+def mirror_to_archive(key: str, archive=None) -> int:
+    """Make the shared archive cover this shelf series. Only the parts of its
+    span that no earlier mirror recorded are read and stored, with an exact
+    float round trip from the CSV. Returns the bars stored; 0 when already
+    covered, not verified for the archive, or missing."""
+    series, path = archive_series(key), csv_path(key)
+    if series is None or not path.exists():
+        return 0
+    from .candle_archive import CandleArchive, covered, missing
+
+    own = archive is None
+    archive = archive if archive is not None else CandleArchive()
+    try:
+        ends = _csv_ends(path)
+        gaps = missing(archive.spans(*series), *ends) if ends else []
+        if not gaps:
+            return 0
+        df = pd.read_csv(path, float_precision="round_trip")
+        ms = _epoch_ms(df["timestamp"])
+        stored = 0
+        for start, end in gaps:
+            part = df[(ms >= start) & (ms <= end)]
+            opens = ms[part.index].tolist()
+            rows = list(zip(opens, *(part[c].astype(float).tolist()
+                                     for c in ("open", "high", "low", "close", "volume"))))
+            first = archive.first_open(*series)
+            spans = covered(start, end, opens, _STEP_MS[series[2]], first is None or first > end)
+            stored += archive.record(*series, rows, spans)
+        return stored
+    finally:
+        if own:
+            archive.close()
+
+
+def mirror_shelf(log=None) -> int:
+    """Mirror every shelf CSV into the shared archive; failures only log —
+    the archive is an optimisation, never a reason for a refresh to fail."""
+    try:
+        from .candle_archive import CandleArchive
+        archive = CandleArchive()
+    except Exception as e:  # noqa: BLE001
+        if log:
+            log(f"  candle archive unavailable ({type(e).__name__}: {e})")
+        return 0
+    stored = 0
+    try:
+        for key in available():
+            try:
+                stored += mirror_to_archive(key, archive)
+            except Exception as e:  # noqa: BLE001
+                if log:
+                    log(f"  {key}: not mirrored to the candle archive ({type(e).__name__}: {str(e)[:120]})")
+    finally:
+        archive.close()
+    if log and stored:
+        log(f"  candle archive: {stored:,} bars mirrored to {archive.path}")
+    return stored
 
 
 def load(key: str) -> pd.DataFrame:
@@ -194,6 +314,7 @@ def refresh(verbose: bool = True, log=None, timeframe: str = "all") -> dict[str,
         if not done:
             results[_key(ex_id, sym, tf)] = "failed on all venues"
 
+    mirror_shelf(log)
     return results
 
 

@@ -3,6 +3,7 @@ cadence (user, 2026-09-23). Candle boundaries, shelf refresh per track,
 evidence per track and bounded Monte Carlo batches on the hourly track."""
 import datetime as dt
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -115,7 +116,7 @@ class HourlyDataTests(unittest.TestCase):
         old = pd.DataFrame(dict(open=100, high=101, low=99, close=100, volume=1), index=index)
         new = old.copy()
         new.index += pd.Timedelta(hours=1)
-        with tempfile.TemporaryDirectory() as folder, patch.object(data, 'PRICE_DIR', Path(folder)):
+        with tempfile.TemporaryDirectory() as folder, patch.object(data, 'PRICE_DIR', Path(folder)),                 patch.dict(os.environ, {'QUANTSUITE_HOME': folder}):
             data._save('BINANCE_BTCUSDT_1h', old)
             data._save('BINANCE_BTCUSDT_4h', old)
             with patch.object(data, 'fetch_ccxt', return_value=new) as fetch:
@@ -125,6 +126,17 @@ class HourlyDataTests(unittest.TestCase):
             self.assertEqual(fetch.call_args_list[0].args[3], '2026-01-01T13:00:00+00:00')
             self.assertEqual(len(data.load('BINANCE_BTCUSDT_1h')), 3)
             self.assertEqual(len(data.load('BINANCE_BTCUSDT_4h')), 2)
+            # Both series also landed in the shared candle archive (in this
+            # test's own suite home, never the real one).
+            from smithery.candle_archive import CandleArchive
+            archive = CandleArchive()
+            try:
+                self.assertTrue(str(archive.path).startswith(folder))
+                count = 'SELECT COUNT(*) FROM candles WHERE venue = ? AND symbol = ? AND tf = ?'
+                self.assertEqual(archive.con.execute(count, ('binance', 'BTC/USDT', '1h')).fetchone()[0], 3)
+                self.assertEqual(archive.con.execute(count, ('binance', 'BTC/USDT', '4h')).fetchone()[0], 2)
+            finally:
+                archive.close()
 
 
 class EvidenceTests(unittest.TestCase):

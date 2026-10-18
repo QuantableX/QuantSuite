@@ -6,9 +6,14 @@
 //!   forming bar is fetched every time and never persisted;
 //! - a stored bar is never overwritten (`INSERT OR IGNORE`), so a later fetch
 //!   window cannot change earlier results;
-//! - `spans` records which open-time ranges were already asked of the venue.
-//!   A bar missing inside a span is a venue gap (maintenance, pre-listing)
-//!   and is not requested again; only ranges outside every span are fetched.
+//! - `spans` records which open-time ranges were already asked of the venue;
+//!   only ranges outside every span are fetched. What a span may cover is
+//!   decided by [`covered`]: the range before a series' first bar
+//!   (pre-listing) and holes shorter than [`HOLE_BARS`] (maintenance) are
+//!   covered and never asked again; a longer hole, or the end of a range the
+//!   venue did not fill, stays open and is asked again on the next run — a
+//!   venue that answers one window empty by mistake (Bybit did, 2026-10-18)
+//!   must not leave a permanent hole.
 //!
 //! Keys are `(venue, symbol, tf)` with the suite's pair spelling
 //! (`BTC/USDT`), not the exchange's.
@@ -41,6 +46,9 @@ CREATE TABLE IF NOT EXISTS spans (
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
 INSERT INTO schema_version (version) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
 ";
+
+/// A run of missing bars at least this long is not trusted as a venue gap.
+pub(crate) const HOLE_BARS: i64 = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Bar {
@@ -125,9 +133,19 @@ impl CandleArchive {
         rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
     }
 
-    /// Store closed bars and mark `[from, to]` as asked, in one transaction:
-    /// a span without its bars would hide them from every later run.
-    fn record(&mut self, key: &Key, bars: &[Bar], from: i64, to: i64) -> Result<(), String> {
+    fn first_open(&self, key: &Key) -> Result<Option<i64>, String> {
+        self.conn
+            .query_row(
+                "SELECT MIN(open_ms) FROM candles WHERE venue = ?1 AND symbol = ?2 AND tf = ?3",
+                params![key.venue, key.symbol, key.tf],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    /// Store closed bars and mark `spans` as asked, in one transaction: a
+    /// span without its bars would hide them from every later run.
+    fn record(&mut self, key: &Key, bars: &[Bar], spans: &[(i64, i64)]) -> Result<(), String> {
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
         {
             let mut insert = tx
@@ -141,6 +159,7 @@ impl CandleArchive {
                     .execute(params![key.venue, key.symbol, key.tf, b.open_ms, b.open, b.high, b.low, b.close, b.volume])
                     .map_err(|e| e.to_string())?;
             }
+            for &(from, to) in spans {
             // Merge with every span it touches or adjoins.
             let mut stmt = tx
                 .prepare(
@@ -167,6 +186,7 @@ impl CandleArchive {
                 params![key.venue, key.symbol, key.tf, lo, hi],
             )
             .map_err(|e| e.to_string())?;
+            }
         }
         tx.commit().map_err(|e| e.to_string())
     }
@@ -220,6 +240,29 @@ pub(crate) fn missing(spans: &[(i64, i64)], from: i64, to: i64) -> Vec<(i64, i64
     gaps
 }
 
+/// The parts of a fetched range `[from, to]` a span may cover, given the
+/// open times the venue returned (sorted, inside the range). `pre_listing`
+/// says no stored bar lies before the range, so an empty start is the time
+/// before the pair existed.
+pub(crate) fn covered(from: i64, to: i64, opens: &[i64], step: i64, pre_listing: bool) -> Vec<(i64, i64)> {
+    let hole = |a: i64, b: i64| (b - a) / step > HOLE_BARS;
+    let (Some(&first), Some(&last)) = (opens.first(), opens.last()) else {
+        return if pre_listing { vec![(from, to)] } else { Vec::new() };
+    };
+    let mut spans = Vec::new();
+    let mut start = if pre_listing || !hole(from - step, first) { from } else { first };
+    for pair in opens.windows(2) {
+        if hole(pair[0], pair[1]) {
+            spans.push((start, pair[0]));
+            start = pair[1];
+        }
+    }
+    // Bars missing after the last one returned stay open: a delisting is
+    // asked again for nothing, a dropped window is filled next time.
+    spans.push((start, if to - last >= step { last } else { to }));
+    spans
+}
+
 /// The window's bars: stored bars plus the ranges no earlier call asked for,
 /// fetched with `fetch(from, to, progress)` and recorded, plus the forming
 /// bar(s), fetched but never stored.
@@ -249,11 +292,15 @@ pub(crate) fn series(
     for &(from, to) in &gaps {
         let span = (to - from + 1) as f64;
         let bars = fetch(from, to, &mut |share| on_progress(((done + share * span) / total).clamp(0.0, 1.0)))?;
-        let closed: Vec<Bar> = bars
+        let mut closed: Vec<Bar> = bars
             .into_iter()
             .filter(|b| b.open_ms >= from && b.open_ms <= to && b.open_ms + step_ms <= now_ms)
             .collect();
-        archive.record(key, &closed, from, to)?;
+        closed.sort_by_key(|b| b.open_ms);
+        closed.dedup_by_key(|b| b.open_ms);
+        let pre_listing = archive.first_open(key)?.map_or(true, |first| first > to);
+        let opens: Vec<i64> = closed.iter().map(|b| b.open_ms).collect();
+        archive.record(key, &closed, &covered(from, to, &opens, step_ms, pre_listing))?;
         stored_now += closed.len();
         done += span;
     }
@@ -379,6 +426,47 @@ mod tests {
         let again = run(&mut archive, &mut venue, 0, 39 * H, 1000 * H);
         assert_eq!(again.bars, first.bars);
         assert_eq!(venue.calls.len(), 1);
+    }
+
+    #[test]
+    fn a_window_the_venue_dropped_once_is_asked_again_and_filled() {
+        let mut archive = CandleArchive::in_memory();
+        let mut venue = Venue::new(0);
+        venue.holes = (30..60).map(|h| h * H).collect();
+        assert_eq!(run(&mut archive, &mut venue, 0, 99 * H, 1000 * H).bars.len(), 70);
+        venue.holes.clear();
+        let healed = run(&mut archive, &mut venue, 0, 99 * H, 1000 * H);
+        assert_eq!(venue.calls.last(), Some(&(29 * H + 1, 60 * H - 1)));
+        assert_eq!(healed.bars.len(), 100);
+        assert_eq!(archive.spans(&KEY).unwrap(), vec![(0, 99 * H)]);
+        run(&mut archive, &mut venue, 0, 99 * H, 1000 * H);
+        assert_eq!(venue.calls.len(), 2);
+    }
+
+    #[test]
+    fn an_unfilled_end_and_an_empty_answer_after_data_stay_open() {
+        let mut archive = CandleArchive::in_memory();
+        let mut venue = Venue::new(0);
+        venue.holes = (80..100).map(|h| h * H).collect();
+        run(&mut archive, &mut venue, 0, 99 * H, 1000 * H);
+        assert_eq!(archive.spans(&KEY).unwrap(), vec![(0, 79 * H)]);
+        // The tail comes back empty once more: still nothing is covered.
+        run(&mut archive, &mut venue, 0, 99 * H, 1000 * H);
+        assert_eq!(archive.spans(&KEY).unwrap(), vec![(0, 79 * H)]);
+        venue.holes.clear();
+        assert_eq!(run(&mut archive, &mut venue, 0, 99 * H, 1000 * H).bars.len(), 100);
+        assert_eq!(archive.spans(&KEY).unwrap(), vec![(0, 99 * H)]);
+    }
+
+    #[test]
+    fn covered_trusts_pre_listing_and_short_holes_only() {
+        let opens = |hours: &[i64]| hours.iter().map(|h| h * H).collect::<Vec<_>>();
+        assert_eq!(covered(0, 99 * H, &opens(&[50, 51, 52]), H, true), vec![(0, 52 * H)]);
+        assert_eq!(covered(0, 99 * H, &opens(&[50, 51, 52]), H, false), vec![(50 * H, 52 * H)]);
+        assert_eq!(covered(0, 9 * H, &opens(&[0, 3, 9]), H, false), vec![(0, 9 * H)]);
+        assert_eq!(covered(0, 99 * H, &opens(&[0, 1, 90, 99]), H, false), vec![(0, H), (90 * H, 99 * H)]);
+        assert_eq!(covered(0, 99 * H, &[], H, true), vec![(0, 99 * H)]);
+        assert_eq!(covered(0, 99 * H, &[], H, false), vec![]);
     }
 
     #[test]

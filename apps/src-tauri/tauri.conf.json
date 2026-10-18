@@ -88,6 +88,7 @@
       "../../sidecars/python/rotation_lab/rpc.py": "sidecars/python/rotation_lab/rpc.py",
       "../../sidecars/python/smithery/__init__.py": "sidecars/python/smithery/__init__.py",
       "../../sidecars/python/smithery/backtest.py": "sidecars/python/smithery/backtest.py",
+      "../../sidecars/python/smithery/candle_archive.py": "sidecars/python/smithery/candle_archive.py",
       "../../sidecars/python/smithery/contract.py": "sidecars/python/smithery/contract.py",
       "../../sidecars/python/smithery/data.py": "sidecars/python/smithery/data.py",
       "../../sidecars/python/smithery/evidence.py": "sidecars/python/smithery/evidence.py",
