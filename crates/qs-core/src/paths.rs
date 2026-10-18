@@ -35,6 +35,14 @@ pub fn module_dir(module: &str) -> PathBuf {
     root().join("modules").join(module)
 }
 
+/// `~/.quantsuite/market-data/candles.sqlite`: the suite's shared archive of
+/// closed exchange candles. It belongs to no single module — every consumer
+/// (QuantAlgo backtests, the forge) reads and fills the same file, so a
+/// closed candle is downloaded once.
+pub fn candle_archive() -> PathBuf {
+    root().join("market-data").join("candles.sqlite")
+}
+
 /// Private workspace data, keyed by the registry's normalized path identity.
 pub fn workspace_dir(folder: &str) -> PathBuf {
     let id = crate::workspaces::workspace_id_for(folder);

@@ -12,6 +12,7 @@ use std::time::Instant;
 use tauri::State;
 use uuid::Uuid;
 use crate::{AppState, BacktestConfig, Balance, ConnectionResult, Exchange, ExchangeConfig};
+use crate::candle_archive::{self, Bar, CandleArchive, Key as ArchiveKey, Window};
 use crate::settings::get_data_dir;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -762,22 +763,129 @@ pub(crate) fn market_candle_json(candle: &PaperMarketCandle, pair: &str) -> Valu
     })
 }
 
-/// The progress-free form the provider tests call.
+/// The provider tests' form: straight from the exchange, no archive.
 #[cfg(test)]
 pub(crate) fn fetch_historical_candles(config: &BacktestConfig) -> Result<Vec<Value>, String> {
-    fetch_historical_candles_with_progress(config, &mut |_| {})
+    let provider = config.exchange.to_lowercase();
+    let start_ms = parse_date_to_utc(&config.start_date, false)?.timestamp_millis();
+    let end_ms = parse_date_to_utc(&config.end_date, true)?.timestamp_millis();
+    let candles = fetch_from_exchange(config, &provider, start_ms, end_ms, &mut |_| {})?;
+    if candles.is_empty() {
+        return Err(no_candles_error(config, &provider));
+    }
+    Ok(candles)
 }
 
-/// [`fetch_historical_candles`] reporting the share of the requested range
-/// fetched so far (0..=1) before every page — a month of 1-minute candles is
-/// over 200 Bybit pages, minutes in which the caller would otherwise be silent.
+fn no_candles_error(config: &BacktestConfig, provider: &str) -> String {
+    format!(
+        "No candle data returned from {} for {} ({}). Check the pair and date range.",
+        provider, config.pair, config.timeframe
+    )
+}
+
+/// A backtest's candles: closed bars from the shared candle archive, only the
+/// ranges it has never asked for fetched from the exchange (and kept), plus
+/// the forming bar. `on_progress` gets the share (0..=1) of the fetched part,
+/// before every page — minutes of paging would otherwise be silent. The
+/// series is the same shape and content a direct fetch returns.
 pub(crate) fn fetch_historical_candles_with_progress(
     config: &BacktestConfig,
     on_progress: &mut dyn FnMut(f64),
 ) -> Result<Vec<Value>, String> {
     let provider = config.exchange.to_lowercase();
-    let start = parse_date_to_utc(&config.start_date, false)?;
-    let end = parse_date_to_utc(&config.end_date, true)?;
+    let start_ms = parse_date_to_utc(&config.start_date, false)?.timestamp_millis();
+    let end_ms = parse_date_to_utc(&config.end_date, true)?.timestamp_millis();
+    let candles = match CandleArchive::open_default() {
+        Ok(mut archive) => {
+            let loaded = archived_candles(&mut archive, config, &provider, start_ms, end_ms, on_progress)?;
+            loaded.bars.iter().map(|bar| bar_json(bar, &provider)).collect()
+        }
+        Err(e) => {
+            // The archive is an optimisation: without it the run still works.
+            log::warn!("[quantalgo] candle archive unavailable, fetching directly: {e}");
+            fetch_from_exchange(config, &provider, start_ms, end_ms, on_progress)?
+        }
+    };
+    if candles.is_empty() {
+        return Err(no_candles_error(config, &provider));
+    }
+    Ok(candles)
+}
+
+fn archived_candles(
+    archive: &mut CandleArchive,
+    config: &BacktestConfig,
+    provider: &str,
+    start_ms: i64,
+    end_ms: i64,
+    on_progress: &mut dyn FnMut(f64),
+) -> Result<candle_archive::Loaded, String> {
+    let symbol = config.pair.trim().to_uppercase();
+    let key = ArchiveKey { venue: provider, symbol: &symbol, tf: &config.timeframe };
+    let window = Window {
+        start_ms,
+        end_ms,
+        step_ms: timeframe_seconds(&config.timeframe) * 1000,
+        now_ms: Utc::now().timestamp_millis(),
+    };
+    candle_archive::series(
+        archive,
+        &key,
+        window,
+        &mut |from, to, progress| {
+            fetch_from_exchange(config, provider, from, to, progress)
+                .map(|candles| candles.iter().filter_map(bar_from_json).collect())
+        },
+        on_progress,
+    )
+}
+
+fn bar_from_json(candle: &Value) -> Option<Bar> {
+    let open_ms = chrono::DateTime::parse_from_rfc3339(candle["time"].as_str()?).ok()?.timestamp_millis();
+    Some(Bar {
+        open_ms,
+        open: candle["open"].as_f64()?,
+        high: candle["high"].as_f64()?,
+        low: candle["low"].as_f64()?,
+        close: candle["close"].as_f64()?,
+        volume: candle["volume"].as_f64()?,
+    })
+}
+
+/// A bar in the JSON shape the provider's own pager produces (KuCoin and
+/// Coinbase go through `market_candle_json`, which adds an empty `pair`).
+fn bar_json(bar: &Bar, provider: &str) -> Value {
+    let candle = PaperMarketCandle {
+        time: candle_time_from_millis(bar.open_ms),
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+        volume: bar.volume,
+    };
+    if matches!(provider, "kucoin" | "coinbase") {
+        return market_candle_json(&candle, "");
+    }
+    serde_json::json!({
+        "time": candle.time,
+        "open": candle.open,
+        "high": candle.high,
+        "low": candle.low,
+        "close": candle.close,
+        "volume": candle.volume,
+    })
+}
+
+/// Page the exchange's public klines for bars opening in `[start_ms, end_ms]`.
+/// An empty answer is not an error here: a range before a listing is empty.
+fn fetch_from_exchange(
+    config: &BacktestConfig,
+    provider: &str,
+    start_ms: i64,
+    end_ms: i64,
+    on_progress: &mut dyn FnMut(f64),
+) -> Result<Vec<Value>, String> {
+    let provider = provider.to_string();
     let symbol = pair_for_exchange(&config.pair, &provider);
     let interval = interval_for_exchange(&config.timeframe, &provider);
     let interval_ms = timeframe_seconds(&config.timeframe) * 1000;
@@ -785,9 +893,7 @@ pub(crate) fn fetch_historical_candles_with_progress(
     let client = http_client(30)?;
 
     let mut all_candles: Vec<Value> = Vec::new();
-    let start_ms = start.timestamp_millis();
     let mut cursor_ms = start_ms;
-    let end_ms = end.timestamp_millis();
     let span_ms = (end_ms - start_ms).max(1) as f64;
     let max_per_page: i64 = match provider.as_str() {
         "binance" => 1000,
@@ -1131,13 +1237,6 @@ pub(crate) fn fetch_historical_candles_with_progress(
         if (fetched as i64) < max_per_page {
             break;
         }
-    }
-
-    if all_candles.is_empty() {
-        return Err(format!(
-            "No candle data returned from {} for {} ({}). Check the pair and date range.",
-            provider, config.pair, config.timeframe
-        ));
     }
 
     // Every provider's page comes out ascending, but the windowed ones repeat
@@ -2178,6 +2277,29 @@ mod tests {
             fetch_historical_candles(&history("kraken", "BTC/USD", "1h", "2026-01-01", "2026-01-06"))
                 .expect_err("kraken must refuse a range older than its 720-bar window");
         assert!(err.contains("720 candles"), "unexpected error: {err}");
+    }
+
+    /// The archive must hand a backtest exactly what a direct fetch returns,
+    /// and a repeat of a closed range must not touch the network at all —
+    /// with Binance's forward pager and Bybit's 200-bar windows alike.
+    #[test]
+    #[ignore = "hits the live Binance and Bybit APIs"]
+    fn live_archive_matches_a_direct_fetch_and_repeats_offline() {
+        for provider in ["binance", "bybit"] {
+            let config = history(provider, "BTC/USDT", "1h", "2024-01-01", "2024-06-30");
+            let direct = fetch_historical_candles(&config).expect("direct history");
+            let start_ms = parse_date_to_utc(&config.start_date, false).unwrap().timestamp_millis();
+            let end_ms = parse_date_to_utc(&config.end_date, true).unwrap().timestamp_millis();
+            let mut archive = CandleArchive::in_memory();
+            for run in 0..2 {
+                let loaded = archived_candles(&mut archive, &config, provider, start_ms, end_ms, &mut |_| {})
+                    .expect("archived history");
+                assert_eq!(loaded.fetched_ranges, if run == 0 { 1 } else { 0 }, "{provider} run {run}");
+                let json: Vec<Value> = loaded.bars.iter().map(|bar| bar_json(bar, provider)).collect();
+                assert_eq!(json.len(), direct.len(), "{provider} run {run}");
+                assert!(json == direct, "{provider} run {run}: archived candles differ from a direct fetch");
+            }
+        }
     }
 
     /// The pair dropdowns are fed from here for every connected exchange;

@@ -15,6 +15,7 @@ mod backtest;
 mod bot;
 mod bots;
 mod broker;
+mod candle_archive;
 mod data;
 mod db;
 mod exchanges;
