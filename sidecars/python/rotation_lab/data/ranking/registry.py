@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import Callable
 
-from ...config import RankingSource
+from ...config import RankingResolution, RankingSource
 from ..cache import Cache, get_default_cache
 from .base import RankedCoin, RankingProvider
 from .cmc_snapshot import CmcSnapshotProvider
@@ -63,6 +63,7 @@ class RankingRegistry:
         exclude_stablecoins: bool = True,
         exclude_wrapped: bool = True,
         exclude_top_n: int = 0,
+        resolution: RankingResolution = RankingResolution.WEEKLY,
     ) -> ResolvedRanking:
         order = self._provider_order(source)
         errors: list[str] = []
@@ -75,6 +76,7 @@ class RankingRegistry:
                     on_date, n,
                     exclude_stablecoins=exclude_stablecoins,
                     exclude_wrapped=exclude_wrapped,
+                    resolution=resolution,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("Provider %s failed for %s: %s", prov.name, on_date, exc)

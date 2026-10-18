@@ -33,6 +33,9 @@ export function defaultRunConfig(systemId?: string): RunConfig {
     endDate: isoToday(),
     liveStartDate: liveToday(),
     rankingSource: 'auto',
+    // New strategies read daily snapshots; loaded configs without the field
+    // stay weekly (see fetchConfig), so LCES keeps its numbers.
+    rankingResolution: 'daily',
     excludeStablecoins: true,
     excludeWrapped: true,
     includeUsd: true,
@@ -81,6 +84,7 @@ export const useConfigStore = defineStore('systems/config', () => {
         // have an indicator object without `trend`
         indicator: { ...defaults.indicator, ...cfg.indicator },
         singleAsset: { ...defaults.singleAsset, ...cfg.singleAsset },
+        rankingResolution: cfg.rankingResolution ?? 'weekly',
       }
       loadedThisSession.add(systemId)
       errors.value[systemId] = null

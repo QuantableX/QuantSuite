@@ -6,7 +6,7 @@ import { liveToday } from '#systems/utils/liveTracking'
 import { useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
 import SystemsSettingsMarketFilterSelect from '#systems/components/Settings/MarketFilterSelect.vue'
 import SystemsSettingsSingleAssetForm from '#systems/components/Settings/SingleAssetForm.vue'
-import type { Cadence, PriceSource, RankingSource, RunConfig, TrendKind } from '#systems/types'
+import type { Cadence, PriceSource, RankingResolution, RankingSource, RunConfig, TrendKind } from '#systems/types'
 
 const props = defineProps<{ systemId: string }>()
 const config = useConfigStore()
@@ -80,6 +80,10 @@ function setTrend(value: TrendKind) {
 
 const cadences: Cadence[] = ['1h', '4h', '12h', 'daily', 'weekly', 'monthly']
 const sources: RankingSource[] = ['auto', 'cmc', 'local']
+const resolutions: { value: RankingResolution; label: string }[] = [
+  { value: 'daily', label: 'Daily (previous day)' },
+  { value: 'weekly', label: 'Weekly (Sunday)' },
+]
 const priceSources: PriceSource[] = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4']
 
 const feePct = computed({
@@ -120,6 +124,12 @@ const slipPct = computed({
           <label class="label">Ranking Source</label>
           <select class="select" :value="cfg.rankingSource" @change="set('rankingSource', ($event.target as HTMLSelectElement).value as RankingSource)">
             <option v-for="s in sources" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="label" title="Which CoinMarketCap ranking decides the coin list and the TOTAL weights on each day">Ranking Snapshots</label>
+          <select class="select" :value="cfg.rankingResolution" @change="set('rankingResolution', ($event.target as HTMLSelectElement).value as RankingResolution)">
+            <option v-for="r in resolutions" :key="r.value" :value="r.value">{{ r.label }}</option>
           </select>
         </div>
       </div>

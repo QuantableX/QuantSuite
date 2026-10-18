@@ -282,7 +282,7 @@ async function toggleEngine() {
   .qs-settings__tabs button[aria-pressed='true'] { color: var(--qs-text); border-bottom-color: var(--qs-accent); }
   .qs-settings__grid { grid-template-columns: minmax(0, 1fr); }
   [data-panel='configuration'] .qs-settings__form { grid-template-areas: 'universe universe' 'window costs'; }
-  [data-panel='configuration'] .qs-settings__form :deep(.qs-form__section--universe .qs-form__grid) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  [data-panel='configuration'] .qs-settings__form :deep(.qs-form__section--universe .qs-form__grid) { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
   [data-panel='configuration'] .qs-settings__form :deep(.qs-form__section--signals) { display: none; }
   [data-panel='signals'] .qs-settings__form { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'signals'; }
   [data-panel='signals'] .qs-settings__form :deep(.qs-form__section:not(.qs-form__section--signals)) { display: none; }

@@ -84,6 +84,19 @@ class RankingSource(str, Enum):
     AUTO = "auto"
 
 
+class RankingResolution(str, Enum):
+    """Which CoinMarketCap snapshot answers a date.
+
+    ``weekly`` is the original behaviour: the Sunday on or before the date.
+    ``daily`` takes the previous calendar day, the newest ranking that is
+    complete before the date's own bar starts (today's never is). A config
+    saved without the field is weekly, so stored systems keep their numbers.
+    """
+
+    WEEKLY = "weekly"
+    DAILY = "daily"
+
+
 SourceKind = Literal["open", "high", "low", "close", "hl2", "hlc3", "ohlc4"]
 
 
@@ -220,6 +233,7 @@ class RunConfig:
     start_date: date = field(default_factory=lambda: date.today() - timedelta(days=365 * 3))
     end_date: date = field(default_factory=date.today)
     ranking_source: RankingSource = RankingSource.AUTO
+    ranking_resolution: RankingResolution = RankingResolution.WEEKLY
     exclude_stablecoins: bool = True
     exclude_wrapped: bool = True
     indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
