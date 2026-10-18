@@ -78,6 +78,7 @@
       "../../sidecars/python/rotation_lab/data/cache.py": "sidecars/python/rotation_lab/data/cache.py",
       "../../sidecars/python/rotation_lab/data/ohlcv.py": "sidecars/python/rotation_lab/data/ohlcv.py",
       "../../sidecars/python/rotation_lab/data/ranking/__init__.py": "sidecars/python/rotation_lab/data/ranking/__init__.py",
+      "../../sidecars/python/rotation_lab/data/ranking/archive.py": "sidecars/python/rotation_lab/data/ranking/archive.py",
       "../../sidecars/python/rotation_lab/data/ranking/base.py": "sidecars/python/rotation_lab/data/ranking/base.py",
       "../../sidecars/python/rotation_lab/data/ranking/cmc_snapshot.py": "sidecars/python/rotation_lab/data/ranking/cmc_snapshot.py",
       "../../sidecars/python/rotation_lab/data/ranking/local_reconstruct.py": "sidecars/python/rotation_lab/data/ranking/local_reconstruct.py",
