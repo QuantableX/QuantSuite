@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from ..config import Cadence, RankingSource
+from ..config import Cadence, RankingResolution, RankingSource
 from ..data.ranking.base import RankedCoin
 from ..data.ranking.registry import RankingRegistry
 
@@ -87,6 +87,16 @@ def cadence_dates(start: dt.date, end: dt.date, cadence: Cadence) -> list[dt.dat
     return sorted(set(out))
 
 
+def daily_snapshot_days(start: dt.date, end: dt.date, cadence: Cadence) -> list[dt.date]:
+    """The CMC days a daily-resolution run over ``[start, end]`` reads."""
+
+    from ..data.ranking.cmc_snapshot import latest_complete_day, snapshot_date
+
+    newest = latest_complete_day()
+    return sorted({min(snapshot_date(d, RankingResolution.DAILY), newest)
+                   for d in cadence_dates(start, end, cadence)})
+
+
 def build_universe_timeline(
     registry: RankingRegistry,
     *,
@@ -98,22 +108,33 @@ def build_universe_timeline(
     exclude_stablecoins: bool = True,
     exclude_wrapped: bool = True,
     exclude_top_n: int = 0,
+    resolution: RankingResolution = RankingResolution.WEEKLY,
     progress=None,
 ) -> UniverseTimeline:
-    """Resolve the top-N at every rotation date."""
+    """Resolve the top-N at every rotation date.
+
+    A day's universe steers bars from that day's 00:00 UTC. Intraday bars
+    close before the day's own snapshot exists, so in weekly mode they read
+    the ranking as of the previous day (a Sunday's bars take the Sunday
+    before); daily snapshots are already the previous day's.
+    """
 
     dates = cadence_dates(start, end, cadence)
+    lag = (dt.timedelta(days=1)
+           if cadence.is_intraday and resolution == RankingResolution.WEEKLY
+           else dt.timedelta(0))
     snapshots: list[UniverseSnapshot] = []
     for idx, d in enumerate(dates):
         if progress:
             progress(idx, len(dates), d)
         try:
             resolved = registry.get_top_n(
-                d, top_n,
+                d - lag, top_n,
                 source=source,
                 exclude_stablecoins=exclude_stablecoins,
                 exclude_wrapped=exclude_wrapped,
                 exclude_top_n=exclude_top_n,
+                resolution=resolution,
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("Universe lookup failed for %s: %s", d, exc)

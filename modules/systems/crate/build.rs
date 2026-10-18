@@ -15,6 +15,7 @@ const COMMANDS: &[&str] = &[
     "browse_universe",
     "cache_stats",
     "clear_cache",
+    "ranking_archive",
     "screenshot_to_clipboard",
 ];
 

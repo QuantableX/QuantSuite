@@ -39,7 +39,7 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-from ..config import IndicatorConfig, RunConfig, TotalBreakoutConfig, TrendKind
+from ..config import IndicatorConfig, RankingResolution, RankingSource, RunConfig, TotalBreakoutConfig, TrendKind
 from ..data.cache import get_default_cache
 from ..data.ohlcv import CoinRef, OhlcvFetcher, confirmed_frame, utc_now
 from ..data.ranking.registry import RankingRegistry
@@ -105,6 +105,20 @@ def _trend_label(indicator: IndicatorConfig) -> str:
     return f"{name} (custom)" if cls is not None and is_custom(indicator, indicator.trend) else name
 
 
+def _require_daily_archive(registry: RankingRegistry, config: RunConfig) -> None:
+    """Refuse a daily-ranking run whose archive gap is the backfill job's
+    work: fetching it here would hold the run for up to an hour."""
+
+    from ..data.ranking.archive import ON_DEMAND_LIMIT, download_minutes, missing_days
+
+    missing = missing_days(registry.cache, daily_snapshot_days(config.start_date, config.end_date, config.cadence))
+    if len(missing) > ON_DEMAND_LIMIT:
+        raise ValueError(
+            f"The daily ranking archive is missing {len(missing)} days between {missing[0]} and "
+            f"{missing[-1]} (about {download_minutes(len(missing), config.min_request_interval)} min to download). "
+            "Build it with Daily ranking archive in Settings, or set Ranking snapshots to Weekly.")
+
+
 def _frames_from(frames: dict[str, pd.DataFrame], start: dt.date) -> dict[str, pd.DataFrame]:
     """Every frame cut to ``start`` — so an indicator sees exactly the history
     it would have fetched on its own and a compared run stays bit-identical
@@ -116,6 +130,7 @@ from .universe import (
     UniverseSnapshot,
     UniverseTimeline,
     build_universe_timeline,
+    daily_snapshot_days,
 )
 
 log = logging.getLogger(__name__)
@@ -307,6 +322,9 @@ class BacktestEngine:
             fetch_start = min(fetch_start, market_start)
 
         _tick("Building the coin list", 0.05)
+        if (config.ranking_resolution == RankingResolution.DAILY
+                and config.ranking_source != RankingSource.LOCAL):
+            _require_daily_archive(self.registry, config)
         universe = build_universe_timeline(
             self.registry,
             start=config.start_date,
@@ -317,6 +335,7 @@ class BacktestEngine:
             exclude_stablecoins=config.exclude_stablecoins,
             exclude_wrapped=config.exclude_wrapped,
             exclude_top_n=config.exclude_top_n,
+            resolution=config.ranking_resolution,
             progress=lambda i, n, d: _tick(f"Coin list {d}", 0.05 + 0.20 * i / max(n, 1)),
         )
 
@@ -346,6 +365,7 @@ class BacktestEngine:
                 exclude_stablecoins=config.exclude_stablecoins,
                 exclude_wrapped=config.exclude_wrapped,
                 exclude_top_n=0,
+                resolution=config.ranking_resolution,
             )
         strategy_symbols = {c.symbol for c in coins}
         fetch_coins = list(coins)

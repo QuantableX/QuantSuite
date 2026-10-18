@@ -21,6 +21,9 @@ export interface AppSettings {
 
 export type Cadence = '1h' | '4h' | '12h' | 'daily' | 'weekly' | 'monthly'
 export type RankingSource = 'cmc' | 'local' | 'auto'
+/** Which CMC snapshot answers a day: the Sunday on or before it, or the
+ *  previous day. Configs saved without the field are weekly. */
+export type RankingResolution = 'weekly' | 'daily'
 export type PriceSource = 'open' | 'high' | 'low' | 'close' | 'hl2' | 'hlc3' | 'ohlc4'
 export type SystemMode = 'rotation' | 'single_asset'
 export interface SingleAssetConfig {
@@ -140,6 +143,7 @@ export interface RunConfig {
   /** Live tracking begins here; its end is always today. */
   liveStartDate: string
   rankingSource: RankingSource
+  rankingResolution: RankingResolution
   excludeStablecoins: boolean
   excludeWrapped: boolean
   includeUsd: boolean
@@ -261,6 +265,27 @@ export interface CacheStats {
   rankings: number
   ohlcv: number
   coins: number
+}
+
+/** The daily CMC ranking archive and its background download. */
+export interface RankingArchiveStatus {
+  running: boolean
+  total: number
+  done: number
+  stored: number
+  failed: number
+  current: string | null
+  error: string | null
+  cancelled: boolean
+  coverage: {
+    start: string
+    end: string
+    days: number
+    totalDays: number
+    missingDays: number
+    firstDay: string | null
+    lastDay: string | null
+  }
 }
 
 export type EngineView = 'settings' | 'live' | 'backtest'

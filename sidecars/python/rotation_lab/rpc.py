@@ -22,6 +22,9 @@ Methods
 ``universe``       → historical top-N for a single date
 ``cache_stats``    → row counts + db size
 ``clear_cache``    → wipe rankings / ohlcv / all
+``ranking_archive_status`` / ``_build`` / ``_cancel``
+                   → the daily CMC ranking archive and its background backfill
+                     (progress as ``ranking_archive`` notifications)
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ from .config import (
     Cadence,
     EmaCrossConfig,
     IndicatorConfig,
+    RankingResolution,
     RankingSource,
     RunConfig,
     default_cache_path,
@@ -180,6 +184,10 @@ def _build_config(raw: dict[str, Any]) -> RunConfig:
         ),
         end_date=_parse_date(raw.get("endDate", raw.get("end_date")), today),
         ranking_source=RankingSource(raw.get("rankingSource", raw.get("ranking_source", "auto"))),
+        # Missing means weekly: configs saved before daily snapshots existed
+        # (LCES among them) keep computing exactly as before.
+        ranking_resolution=RankingResolution(
+            raw.get("rankingResolution", raw.get("ranking_resolution", "weekly"))),
         exclude_stablecoins=bool(raw.get("excludeStablecoins", raw.get("exclude_stablecoins", True))),
         exclude_wrapped=bool(raw.get("excludeWrapped", raw.get("exclude_wrapped", True))),
         indicator=indicator,
@@ -298,6 +306,7 @@ def _method_universe(params: dict[str, Any]) -> dict[str, Any]:
         exclude_stablecoins=cfg.exclude_stablecoins,
         exclude_wrapped=cfg.exclude_wrapped,
         exclude_top_n=cfg.exclude_top_n,
+        resolution=cfg.ranking_resolution,
     )
     return {
         "onDate": on_date.isoformat(),
@@ -378,6 +387,7 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
         exclude_stablecoins=cfg.exclude_stablecoins,
         exclude_wrapped=cfg.exclude_wrapped,
         exclude_top_n=cfg.exclude_top_n,
+        resolution=cfg.ranking_resolution,
     )
     coins = resolved.coins
     if not coins:
@@ -437,6 +447,7 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
                 as_of, cfg.top_n, source=cfg.ranking_source,
                 exclude_stablecoins=cfg.exclude_stablecoins,
                 exclude_wrapped=cfg.exclude_wrapped, exclude_top_n=0,
+                resolution=cfg.ranking_resolution,
             ).coins
         market_frames: dict[str, pd.DataFrame] = {}
         for coin in market_coins:
@@ -661,6 +672,42 @@ def _method_clear_cache(params: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "scope": scope}
 
 
+# ── method: daily ranking archive ────────────────────────────────────────────
+
+
+_ARCHIVE_JOB = None
+
+
+def _archive_job():
+    global _ARCHIVE_JOB
+    if _ARCHIVE_JOB is None:
+        from .data.ranking.archive import DailyArchiveJob
+        from .data.ranking.cmc_snapshot import CmcSnapshotProvider
+
+        _ARCHIVE_JOB = DailyArchiveJob(
+            lambda: CmcSnapshotProvider(get_default_cache()),
+            lambda status: _notify("ranking_archive", status),
+        )
+    return _ARCHIVE_JOB
+
+
+def _method_ranking_archive_status(_params: dict[str, Any]) -> dict[str, Any]:
+    return _archive_job().status(get_default_cache())
+
+
+def _method_ranking_archive_build(params: dict[str, Any]) -> dict[str, Any]:
+    start = params.get("start")
+    end = params.get("end")
+    return _archive_job().start(
+        dt.date.fromisoformat(start) if start else None,
+        dt.date.fromisoformat(end) if end else None,
+    )
+
+
+def _method_ranking_archive_cancel(_params: dict[str, Any]) -> dict[str, Any]:
+    return _archive_job().cancel(get_default_cache())
+
+
 _METHODS = {
     "pair_markets": _method_pair_markets,
     "ping": _method_ping,
@@ -669,6 +716,9 @@ _METHODS = {
     "universe": _method_universe,
     "cache_stats": _method_cache_stats,
     "clear_cache": _method_clear_cache,
+    "ranking_archive_status": _method_ranking_archive_status,
+    "ranking_archive_build": _method_ranking_archive_build,
+    "ranking_archive_cancel": _method_ranking_archive_cancel,
 }
 
 

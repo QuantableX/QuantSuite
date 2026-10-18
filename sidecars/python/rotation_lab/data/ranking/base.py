@@ -11,6 +11,8 @@ import datetime as dt
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from ...config import RankingResolution
+
 
 @dataclass(frozen=True)
 class RankedCoin:
@@ -36,12 +38,14 @@ class RankingProvider(ABC):
         *,
         exclude_stablecoins: bool = True,
         exclude_wrapped: bool = True,
+        resolution: RankingResolution = RankingResolution.WEEKLY,
     ) -> list[RankedCoin]:
         """Return up to ``n`` coins ranked at ``on_date``.
 
         Implementations should consult their local cache first and only
         hit the network when needed. The returned list must be sorted
-        ascending by rank.
+        ascending by rank. ``resolution`` picks between weekly and daily
+        snapshots where a provider has both.
         """
 
     def available_dates(self) -> list[dt.date]:

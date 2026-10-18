@@ -19,6 +19,7 @@ from typing import Callable
 
 import requests
 
+from ...config import RankingResolution
 from ..cache import Cache, RankingRow, get_default_cache
 from ..stablecoins import ExclusionList, build_default_stablecoin_list, build_default_wrapped_list
 from .base import RankedCoin, RankingProvider
@@ -81,7 +82,10 @@ class LocalReconstructProvider(RankingProvider):
         *,
         exclude_stablecoins: bool = True,
         exclude_wrapped: bool = True,
+        resolution: RankingResolution = RankingResolution.WEEKLY,
     ) -> list[RankedCoin]:
+        # Always daily: CoinGecko's caps are stamped 00:00 UTC, the close of
+        # the previous day, so ``resolution`` changes nothing here.
         rows = self.cache.get_ranking(self.name, on_date)
         if not rows and not self._known_uncoverable(on_date):
             self._ensure_built_for(on_date)

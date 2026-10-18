@@ -20,6 +20,7 @@ Default permissions for the QuantSystems module: settings, system configs, the e
 - `allow-browse-universe`
 - `allow-cache-stats`
 - `allow-clear-cache`
+- `allow-ranking-archive`
 - `allow-screenshot-to-clipboard`
 
 ## Permission Table
@@ -313,6 +314,32 @@ Enables the pair_markets command without any pre-configured scope.
 <td>
 
 Denies the pair_markets command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:allow-ranking-archive`
+
+</td>
+<td>
+
+Enables the ranking_archive command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:deny-ranking-archive`
+
+</td>
+<td>
+
+Denies the ranking_archive command without any pre-configured scope.
 
 </td>
 </tr>

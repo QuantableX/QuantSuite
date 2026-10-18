@@ -14,6 +14,11 @@ CMC's **public** internal JSON endpoint, which requires no API key:
 We use that endpoint first and fall back to HTML scraping (legacy
 ``__NEXT_DATA__`` blob then plain ``<table>``) for resilience if CMC
 ever changes the API shape.
+
+The endpoint answers every calendar day, not only Sundays (checked
+2026-10-18: weekday values differ from the surrounding Sundays; today's
+date is empty until the day is over). Weekly resolution reads the
+Sunday on or before a date; daily resolution reads the previous day.
 """
 
 from __future__ import annotations
@@ -22,12 +27,14 @@ import datetime as dt
 import json
 import logging
 import re
+import threading
 import time
 from typing import Iterable
 
 import requests
 from bs4 import BeautifulSoup
 
+from ...config import RankingResolution
 from ..cache import Cache, RankingRow, get_default_cache
 from ..stablecoins import ExclusionList, build_default_stablecoin_list, build_default_wrapped_list
 from .base import RankedCoin, RankingProvider
@@ -72,6 +79,26 @@ def snapshot_for(target: dt.date) -> dt.date:
     return max(sunday, _ARCHIVE_FIRST_SUNDAY)
 
 
+def latest_complete_day(today: dt.date | None = None) -> dt.date:
+    """The newest day CMC has a finished snapshot for: yesterday (UTC)."""
+
+    today = today or dt.datetime.now(dt.timezone.utc).date()
+    return today - dt.timedelta(days=1)
+
+
+def snapshot_date(target: dt.date, resolution: RankingResolution) -> dt.date:
+    """The snapshot that answers ``target`` at the given resolution.
+
+    Daily takes the previous day: its ranking is complete before
+    ``target``'s bar opens, so neither a daily close nor an intraday bar
+    sees a market cap from its own day.
+    """
+
+    if resolution == RankingResolution.DAILY:
+        return max(target - dt.timedelta(days=1), _ARCHIVE_FIRST_SUNDAY)
+    return snapshot_for(target)
+
+
 def iter_snapshot_dates(start: dt.date, end: dt.date) -> Iterable[dt.date]:
     """All Sunday snapshot dates covering ``[start, end]`` (inclusive)."""
 
@@ -90,9 +117,14 @@ class CmcSnapshotScraperError(RuntimeError):
 
 
 class CmcSnapshotProvider(RankingProvider):
-    """Free, weekly-granularity ranking provider scraping CMC."""
+    """Free ranking provider reading CMC's weekly or daily snapshots."""
 
     name = "cmc"
+
+    # One request clock per process: the daily-archive job and a backtest
+    # can fetch at the same time and must not double CMC's request rate.
+    _throttle_lock = threading.Lock()
+    _last_request_ts: float = 0.0
 
     def __init__(
         self,
@@ -108,7 +140,6 @@ class CmcSnapshotProvider(RankingProvider):
         self.timeout = timeout
         self.ttl_seconds = ttl_seconds
         self._session = session or requests.Session()
-        self._last_request_ts: float = 0.0
         self._stable = build_default_stablecoin_list()
         self._wrapped = build_default_wrapped_list()
 
@@ -121,19 +152,45 @@ class CmcSnapshotProvider(RankingProvider):
         *,
         exclude_stablecoins: bool = True,
         exclude_wrapped: bool = True,
+        resolution: RankingResolution = RankingResolution.WEEKLY,
     ) -> list[RankedCoin]:
-        snap = snapshot_for(on_date)
-        rows = self._ensure_snapshot(snap)
+        snap = snapshot_date(on_date, resolution)
+        if resolution == RankingResolution.DAILY:
+            # A local "today" can already be tomorrow in UTC; CMC's newest
+            # finished day is yesterday in UTC.
+            snap = min(snap, latest_complete_day())
+        rows = self._ensure_snapshot(snap, resolution)
         return self._filter_top(rows, n, exclude_stablecoins, exclude_wrapped)
 
     def available_dates(self) -> list[dt.date]:
         return self.cache.ranking_dates(self.name)
 
+    def fetch_day(self, day: dt.date) -> int:
+        """Fetch and store one day's snapshot for the daily archive.
+
+        Never rewrites a stored day; returns the number of rows stored.
+        """
+
+        if self.cache.get_ranking(self.name, day, limit=1):
+            return 0
+        rows = self._fetch_snapshot(day)
+        return self.cache.upsert_ranking(rows)
+
     # ------------------------------------------------------------------ #
 
-    def _ensure_snapshot(self, snap: dt.date) -> list[RankingRow]:
-        # Past snapshots are immutable -> cache forever.
-        is_current = snap >= latest_snapshot_sunday()
+    def _ensure_snapshot(
+        self,
+        snap: dt.date,
+        resolution: RankingResolution = RankingResolution.WEEKLY,
+    ) -> list[RankingRow]:
+        # Past snapshots are immutable -> cache forever. Weekly keeps its
+        # rule (the newest Sunday refreshes once a day); a daily snapshot
+        # is only ever asked for once its day is over, so only yesterday
+        # counts as current.
+        if resolution == RankingResolution.DAILY:
+            is_current = snap >= latest_complete_day()
+        else:
+            is_current = snap >= latest_snapshot_sunday()
         fresh = self.cache.is_ranking_fresh(self.name, snap, self.ttl_seconds)
         if not is_current or fresh:
             cached = self.cache.get_ranking(self.name, snap)
@@ -153,10 +210,12 @@ class CmcSnapshotProvider(RankingProvider):
     # ------------------------------------------------------------------ #
 
     def _throttle(self) -> None:
-        gap = time.monotonic() - self._last_request_ts
-        if gap < self.min_request_interval:
-            time.sleep(self.min_request_interval - gap)
-        self._last_request_ts = time.monotonic()
+        cls = type(self)
+        with cls._throttle_lock:
+            gap = time.monotonic() - cls._last_request_ts
+            if gap < self.min_request_interval:
+                time.sleep(self.min_request_interval - gap)
+            cls._last_request_ts = time.monotonic()
 
     def _http_get(self, url: str, *, params: dict | None = None) -> requests.Response:
         self._throttle()

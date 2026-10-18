@@ -210,7 +210,13 @@ impl PersistedStore {
             icon,
             status: "ready".into(),
         })?;
-        let config = config.unwrap_or_else(|| default_run_config(""));
+        // A new strategy reads daily ranking snapshots; `default_run_config`
+        // also answers for stored systems without a config, which stay weekly.
+        let config = config.unwrap_or_else(|| {
+            let mut config = default_run_config("");
+            config["rankingResolution"] = json!("daily");
+            config
+        });
         if !config.is_object() {
             return Err("Strategy settings must be an object".into());
         }
@@ -648,6 +654,12 @@ fn reader_loop(inner: Arc<EngineInner>, stdout: std::process::ChildStdout, gener
 
         // Notification (has a method, no id) → map to a Tauri event.
         if let Some(method) = value.get("method").and_then(|v| v.as_str()) {
+            // A notification is the engine working for someone — also the
+            // daily ranking archive's background download, which has no
+            // pending request to keep the idle watchdog away.
+            if let Ok(mut t) = inner.last_used.lock() {
+                *t = Instant::now();
+            }
             let params = value.get("params").cloned().unwrap_or(Value::Null);
             match method {
                 "progress" => {
@@ -996,6 +1008,23 @@ async fn clear_cache(
     Ok(result)
 }
 
+/// The daily CMC ranking archive: coverage plus the background download's
+/// state. `action` is `status`, `build` or `cancel`; the download itself runs
+/// in the engine and reports through `engine:ranking_archive` events.
+#[tauri::command]
+async fn ranking_archive(action: String, engine: State<'_, EngineManager>) -> Result<Value, String> {
+    let method = match action.as_str() {
+        "status" => "ranking_archive_status",
+        "build" => "ranking_archive_build",
+        "cancel" => "ranking_archive_cancel",
+        _ => return Err(format!("Unknown ranking archive action: {action}")),
+    };
+    let mgr = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.request(method, json!({}), QUICK_TIMEOUT))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 // ─── Screenshot command ─────────────────────────────────────────────────────
 
 /// Capture the application window and place the PNG on the system clipboard.
@@ -1304,6 +1333,7 @@ pub fn init() -> TauriPlugin<Wry> {
             browse_universe,
             cache_stats,
             clear_cache,
+            ranking_archive,
             screenshot_to_clipboard,
         ]))
         .setup(|app, _api| {
@@ -1454,6 +1484,17 @@ mod tests {
         assert_eq!(restored.systems[0].name, "Any name / 日本語 System");
         assert_eq!(serde_json::to_value(&restored.system_configs).unwrap(), legacy["systemConfigs"]);
         assert_eq!(restored.settings.unwrap().active_system_id, "sces");
+    }
+
+    #[test]
+    fn new_strategies_read_daily_rankings_and_stored_ones_keep_theirs() {
+        let dir = TestDir::new();
+        let store = Store { data_dir: dir.0.clone(), data: Mutex::new(PersistedStore::default()) };
+        let fresh = store.update(|data| data.create_system("New".into(), "".into(), "".into(), None, None)).unwrap();
+        assert_eq!(load_store(&dir.0).unwrap().system_configs[&fresh.id]["rankingResolution"], "daily");
+        // A catalog system without a stored config, like a legacy one, has no
+        // field and therefore stays weekly in the engine.
+        assert!(default_run_config("lces").get("rankingResolution").is_none());
     }
 
     #[test]

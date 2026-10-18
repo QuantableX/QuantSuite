@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-ranking-archive"
+description = "Enables the ranking_archive command without any pre-configured scope."
+commands.allow = ["ranking_archive"]
+
+[[permission]]
+identifier = "deny-ranking-archive"
+description = "Denies the ranking_archive command without any pre-configured scope."
+commands.deny = ["ranking_archive"]

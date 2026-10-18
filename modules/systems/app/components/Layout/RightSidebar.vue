@@ -73,7 +73,7 @@ const liveResult = computed(() => liveState.value.result && matchesMarket(liveSt
       </div>
       <div v-if="cfg.mode !== 'single_asset'" class="qs-context__row">
         <span>Ranking</span>
-        <span class="mono">{{ cfg.rankingSource }}</span>
+        <span class="mono">{{ cfg.rankingSource }} · {{ cfg.rankingResolution }}</span>
       </div>
       <template v-if="cfg.mode === 'single_asset'">
         <div class="qs-context__row"><span>Exchange</span><span>{{ cfg.singleAsset.exchange }}</span></div>

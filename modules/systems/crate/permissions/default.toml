@@ -19,5 +19,6 @@ permissions = [
   "allow-browse-universe",
   "allow-cache-stats",
   "allow-clear-cache",
+  "allow-ranking-archive",
   "allow-screenshot-to-clipboard",
 ]

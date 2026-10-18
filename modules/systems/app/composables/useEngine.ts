@@ -5,6 +5,7 @@ import type {
   CacheStats,
   EngineStatus,
   LiveResult,
+  RankingArchiveStatus,
   RunConfig,
   SystemMeta,
 } from '#systems/types'
@@ -66,5 +67,9 @@ export function useEngine() {
     cacheStats: () => invoke<CacheStats>('plugin:systems|cache_stats'),
     clearCache: (scope: 'rankings' | 'ohlcv' | 'all') =>
       invoke<{ ok: boolean; scope: string }>('plugin:systems|clear_cache', { scope }),
+    // Queued like an evaluation: the engine answers one request at a time,
+    // and a quick call stuck behind a long backtest would time out.
+    rankingArchive: (action: 'status' | 'build' | 'cancel') => runExclusive(() =>
+      invoke<RankingArchiveStatus>('plugin:systems|ranking_archive', { action })),
   }
 }
