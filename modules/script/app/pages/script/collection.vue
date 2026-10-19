@@ -5,23 +5,21 @@
  * browsed, inspected with their five versions and installed with their
  * requirements into your library (plugin:script|collection_*). List on the left, the item on the right; both
  * scroll inside their card, the page never scrolls. Install all installs and
- * updates everything of the selected source in one confirmed step.
+ * updates everything of the selected source with one click — no plan, no
+ * dialog; the module's notice reports the outcome.
  */
 import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { Download, RefreshCw, Settings } from 'lucide-vue-next'
 import { useCatalogStore } from '#script/stores/catalog'
 import { useWorkbenchStore } from '#script/stores/workbench'
 import { shortCommit } from '#script/utils/catalog'
-import type { CollectionCatalogItem } from '#script/types'
 
 definePageMeta({ layout: 'script' })
 
 const store = useCatalogStore()
 const wb = useWorkbenchStore()
 
-/** The items the open Install all dialog was opened for (a snapshot). */
-const installAllOpen = ref<CollectionCatalogItem[] | null>(null)
-const installAllDone = ref<string | null>(null)
+const installingAll = computed(() => store.busy === 'install')
 const installAllTitle = computed(() => {
   const n = store.installAll.length
   if (!n) return 'Everything in this catalog is installed and current'
@@ -29,18 +27,27 @@ const installAllTitle = computed(() => {
   return `${n - updates} new · ${updates} update(s) from ${store.source?.name ?? 'this catalog'}`
 })
 
-watch(() => store.sourceId, () => {
-  installAllDone.value = null
-})
-
-function openInstallAll() {
-  installAllDone.value = null
-  installAllOpen.value = [...store.installAll]
-}
-
-function installAllFinished(message: string) {
-  installAllOpen.value = null
-  installAllDone.value = message
+/**
+ * Installs every missing or outdated item at once. Same-name files are
+ * replaced (overwrite) — their current content stays in the history, so
+ * Restore brings it back. Still all or nothing: the engine checks the staged
+ * library before anything is written.
+ */
+async function installAll() {
+  const keys = store.installAll.map((i) => i.key)
+  if (!keys.length || store.busy) return
+  const source = store.source?.name ?? 'the catalog'
+  try {
+    const outcome = await store.install(keys, true)
+    const created = outcome.written.filter((w) => w.created).length
+    wb.setNotice(
+      `Installed all from ${source}: ${created} new and ${outcome.written.length - created} replaced script(s). Restart a running QuantSystems engine to use them there.`,
+      'ok',
+      8000,
+    )
+  } catch (err) {
+    wb.setNotice(`Install all failed — nothing was written. ${String(err)}`, 'error', 12000)
+  }
   // The tree and the library list the new scripts.
   void wb.loadListing(true)
 }
@@ -89,9 +96,10 @@ onActivated(() => void activate())
           class="qsc-btn is-sm is-primary"
           :disabled="!store.installAll.length || !!store.busy || store.catalogLoading"
           :title="installAllTitle"
-          @click="openInstallAll"
+          @click="installAll"
         >
-          <Download :size="13" /> Install all<span v-if="store.installAll.length" class="mono"> ({{ store.installAll.length }})</span>
+          <template v-if="installingAll"><Download :size="13" class="qsc-pulse" /> Installing…</template>
+          <template v-else><Download :size="13" /> Install all<span v-if="store.installAll.length" class="mono"> ({{ store.installAll.length }})</span></template>
         </button>
         <button class="qsc-icon-btn" aria-label="Collection settings" title="Sources and tokens: Settings → Collection" @click="openSettings">
           <Settings :size="15" />
@@ -114,24 +122,11 @@ onActivated(() => void activate())
       </div>
     </div>
 
-    <div v-if="installAllDone" class="qsc-note is-ok" role="status">
-      <p>{{ installAllDone }}</p>
-      <p class="muted">A running QuantSystems engine loads the indicators at start — restart it to use the new ones there.</p>
-    </div>
-
     <div v-if="store.catalog" class="qst-split">
       <ScriptCollectionList />
       <ScriptCollectionDetail />
     </div>
     <div v-else-if="store.catalogLoading" class="qst-empty qsc-pulse" role="status">Reading the catalog…</div>
-
-    <ScriptCollectionInstallModal
-      v-if="installAllOpen"
-      :all="installAllOpen"
-      mode="install"
-      @close="installAllOpen = null"
-      @done="installAllFinished"
-    />
   </div>
 </template>
 

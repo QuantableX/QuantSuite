@@ -231,6 +231,48 @@
   white-space: nowrap;
 }
 
+/* ── Modals ── the frame of every QuantScript dialog (New script, the
+   Collection's Install / Update / Remove): a centred card over the module's
+   main area, which is the overlay's positioned ancestor. */
+
+[data-module="script"] .qsc-modal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+[data-module="script"] .qsc-modal {
+  width: min(490px, calc(100% - 40px));
+  max-height: calc(100% - 40px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--qss-border);
+  border-radius: var(--qss-radius-lg);
+  background: var(--qss-bg-raised);
+  box-shadow: var(--qss-shadow-lg);
+}
+[data-module="script"] .qsc-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+[data-module="script"] .qsc-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+[data-module="script"] .qsc-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 /* ── Notices ── */
 
 [data-module="script"] .qsc-note {
