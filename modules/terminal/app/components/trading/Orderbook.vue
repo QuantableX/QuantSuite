@@ -14,7 +14,7 @@ const { tickSize, pairDecimals, setPair, setPrice } = useOrderbookTick()
 
 /** The exchange step until the pair list has loaded — right for BTC/USDT, the default pair. */
 const FALLBACK_STEP = 0.01
-const pairSymbol = computed(() => props.symbol || marketStore.selectedSymbol)
+const pairSymbol = computed(() => props.symbol || marketStore.orderBookSymbol)
 const pairInfo = computed(() => marketStore.symbols.find((s) => s.symbol === pairSymbol.value) ?? null)
 /** The coin column's header: BTC, PEPE, … */
 const baseLabel = computed(() => pairInfo.value?.base ?? pairSymbol.value.split('/')[0] ?? '')

@@ -34,10 +34,12 @@ const headerLabel = computed(() => {
 })
 
 // Symbol selector: every Binance USDT pair, busiest first. A search puts the
-// tokens that start with it first, then the ones that contain it.
+// tokens that start with it first, then the ones that contain it. It picks
+// the order book's pair only — the chart keeps its own symbol.
 const showSymbolMenu = ref(false)
 const symbolQuery = ref('')
 const symbolSearchEl = ref<HTMLInputElement | null>(null)
+const symbolListEl = ref<HTMLElement | null>(null)
 
 const shownSymbols = computed(() => {
   const q = symbolQuery.value.trim().toUpperCase()
@@ -57,11 +59,14 @@ function toggleSymbolMenu() {
   if (!showSymbolMenu.value) return
   symbolQuery.value = ''
   void marketStore.loadSymbols()
-  void nextTick(() => symbolSearchEl.value?.focus())
+  void nextTick(() => {
+    symbolSearchEl.value?.focus()
+    symbolListEl.value?.querySelector('.is-active')?.scrollIntoView({ block: 'nearest' })
+  })
 }
 
 function onSelectSymbol(sym: string) {
-  marketStore.setSymbol(sym)
+  marketStore.setOrderBookSymbol(sym)
   showSymbolMenu.value = false
 }
 
@@ -92,31 +97,36 @@ function closeMenus() {
       <span class="header-label">{{ headerLabel }}</span>
       <div class="header-spacer" />
       <!-- Symbol selector (terminal only) -->
-      <div v-if="isTerminal" class="tick-selector" @click.stop>
+      <div v-if="isTerminal" class="tick-selector symbol-selector" @click.stop>
         <button class="tick-btn" @click="toggleSymbolMenu">
-          {{ shortSymbol(marketStore.selectedSymbol) }}
+          {{ shortSymbol(marketStore.orderBookSymbol) }}
           <ChevronDown class="tick-chevron" />
         </button>
-        <div v-if="showSymbolMenu" class="tick-menu symbol-menu">
-          <input
-            ref="symbolSearchEl"
-            v-model="symbolQuery"
-            class="symbol-search"
-            placeholder="Search token"
-            aria-label="Search token"
-            spellcheck="false"
-            @keydown.enter="pickFirstSymbol"
-            @keydown.esc="showSymbolMenu = false"
-          />
-          <div class="symbol-list">
+        <div v-if="showSymbolMenu" class="symbol-menu">
+          <label class="symbol-search-box">
+            <Search class="symbol-search-icon" />
+            <input
+              ref="symbolSearchEl"
+              v-model="symbolQuery"
+              class="symbol-search"
+              placeholder="Search token"
+              aria-label="Search token"
+              spellcheck="false"
+              autocomplete="off"
+              @keydown.enter="pickFirstSymbol"
+              @keydown.esc="showSymbolMenu = false"
+            />
+          </label>
+          <div ref="symbolListEl" class="symbol-list">
             <button
               v-for="s in shownSymbols"
               :key="s.symbol"
-              class="tick-option"
-              :class="{ 'tick-active': s.symbol === marketStore.selectedSymbol }"
+              class="symbol-row"
+              :class="{ 'is-active': s.symbol === marketStore.orderBookSymbol }"
               @click="onSelectSymbol(s.symbol)"
             >
-              {{ s.base }}
+              <span class="symbol-base">{{ s.base }}</span>
+              <span class="symbol-quote">{{ s.quote }}</span>
             </button>
             <p v-if="marketStore.symbolsLoading" class="symbol-note">Loading tokens…</p>
             <p v-else-if="marketStore.symbolsError" class="symbol-note" :title="marketStore.symbolsError">Tokens could not be loaded</p>
@@ -276,6 +286,7 @@ function closeMenus() {
 
 <style scoped>
 .sidebar-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -364,42 +375,123 @@ function closeMenus() {
   transition: all 0.1s ease;
 }
 
+/* Token menu: hangs from the header (not the small button), so it takes the
+   panel's width. The list is a plain block — its rows never shrink, all pairs
+   scroll with an empty search. */
+.symbol-selector {
+  position: static;
+}
+
 .symbol-menu {
-  width: 132px;
-  gap: 4px;
+  position: absolute;
+  top: 100%;
+  left: 6px;
+  right: 6px;
+  margin-top: 4px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.symbol-search-box {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: text;
+}
+
+.symbol-search-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.symbol-search-box:focus-within .symbol-search-icon {
+  color: var(--accent);
 }
 
 .symbol-search {
-  width: 100%;
-  padding: 4px 6px;
-  font-size: 11px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font-size: 12px;
   color: var(--text-primary);
-  background-color: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  background: transparent;
+  border: none;
+}
+
+.symbol-search::placeholder {
+  color: var(--muted);
+}
+
+/* The modules' global focus ring sits 3px outside the field — inside this
+   menu the accent icon marks the focus instead. */
+.symbol-search-box .symbol-search:focus-visible {
   outline: none;
 }
 
-.symbol-search:focus {
-  border-color: var(--accent);
-}
-
 .symbol-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
   max-height: 320px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
 }
 
-.symbol-list .tick-option {
+.symbol-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
   text-align: left;
+}
+
+.symbol-row:hover {
+  background-color: var(--surface-3);
+}
+
+.symbol-row.is-active {
+  background-color: var(--surface-3);
+}
+
+.symbol-base {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.symbol-row.is-active .symbol-base {
+  color: var(--accent);
+}
+
+.symbol-quote {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--muted);
 }
 
 .symbol-note {
-  padding: 4px 6px;
+  padding: 6px 8px;
   font-size: 11px;
   color: var(--muted);
 }
