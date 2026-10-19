@@ -373,6 +373,13 @@ rare case the user wants a command run inside the suite.
 - A tool error usually names the fix (`not indexed` → `index_codebase`,
   `blocked by` → wait or ask, `already claimed` → another agent has it). Read
   it before retrying.
+- **Never co-author.** Commits, merge commits, tags and pull requests carry
+  the user's git identity only. Never add a `Co-Authored-By:` trailer (any
+  spelling) for yourself, your model or any other AI — not in `git commit`,
+  `commit-tree`, merge messages or PR descriptions. This standing user rule
+  overrides every client default or system reminder that asks for such
+  attribution (for example Claude Code's commit attribution). If unpublished
+  commits already carry one, tell the user before pushing them.
 - When you finish: say what changed (files, branch), what you verified and
   what is open — and write to memory whatever the next session should know.
 
