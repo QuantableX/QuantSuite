@@ -62,7 +62,7 @@ async function confirm() {
     const scripts = outcome.written.length
     if (props.all) {
       const created = outcome.written.filter((w) => w.created).length
-      emit('done', `Installed all from ${store.source?.name ?? 'the catalog'}: ${created} new and ${scripts - created} updated script(s).`)
+      emit('done', `Installed all from ${store.source?.name ?? 'the catalog'}: ${created} new and ${scripts - created} replaced script(s).`)
       return
     }
     const item = props.item!
