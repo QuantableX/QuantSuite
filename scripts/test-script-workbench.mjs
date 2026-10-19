@@ -8,7 +8,7 @@ import { nextTick } from 'vue'
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { useWorkbenchStore } from '../modules/script/app/stores/workbench.ts'
 import { decisionLabel, optimizeRowsFor, versionParamDiff, versionSlots, versionWhy } from '../modules/script/app/utils/forge.ts'
-import { DEFAULT_COLLECTION_FILTERS, filterItems, itemState, planSummary, trackVerdict } from '../modules/script/app/utils/catalog.ts'
+import { DEFAULT_COLLECTION_FILTERS, filterItems, installAllItems, itemState, planSummary, trackVerdict } from '../modules/script/app/utils/catalog.ts'
 
 function deferred() {
   let resolve, reject
@@ -426,4 +426,20 @@ test('the Collection lists, filters and badges catalog items and sums up a plan'
   ] }
   assert.deepEqual(planSummary(plan), { create: 1, replace: 0, skip: 1, conflict: 1, dependencies: 1, empty: false })
   assert.equal(planSummary({ ...plan, conflicts: 0, items: [plan.items[0]] }).empty, true)
+})
+test('Install all asks for everything missing or outdated, never a current or too-new package', () => {
+  const local = (over = {}) => ({ installed_version: null, installed_commit: null, update: false, modified: false, present: false, conflict: false, too_new: false, ...over })
+  const item = (key, l) => ({ type: 'indicator', key, name: key, summary: '', tags: [], version: '1.1.0', contract: 2, requires: [], scores: {}, manifest: {}, local: l })
+  const items = [
+    item('fresh', local()),
+    item('outdated', local({ installed_version: '1.0.0', update: true })),
+    item('current', local({ installed_version: '1.1.0' })),
+    item('edited', local({ installed_version: '1.1.0', modified: true })),
+    item('edited_outdated', local({ installed_version: '1.0.0', modified: true, update: true })),
+    item('same_name', local({ conflict: true, present: true })),
+    item('too_new', local({ too_new: true })),
+    { ...item('helper', local()), type: 'library' },
+  ]
+  assert.deepEqual(installAllItems(items).map((i) => i.key), ['fresh', 'outdated', 'edited_outdated', 'same_name', 'helper'])
+  assert.deepEqual(installAllItems(items.filter((i) => ['current', 'edited', 'too_new'].includes(i.key))), [])
 })

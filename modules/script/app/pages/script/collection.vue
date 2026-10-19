@@ -4,16 +4,46 @@
  * QuantScript-Collection-Public, a private repository, or a local checkout),
  * browsed, inspected with their five versions and installed with their
  * requirements into your library (plugin:script|collection_*). List on the left, the item on the right; both
- * scroll inside their card, the page never scrolls.
+ * scroll inside their card, the page never scrolls. Install all installs and
+ * updates everything of the selected source in one confirmed step.
  */
 import { inActiveKeepAliveTree } from '@quantsuite/core'
-import { RefreshCw, Settings } from 'lucide-vue-next'
+import { Download, RefreshCw, Settings } from 'lucide-vue-next'
 import { useCatalogStore } from '#script/stores/catalog'
+import { useWorkbenchStore } from '#script/stores/workbench'
 import { shortCommit } from '#script/utils/catalog'
+import type { CollectionCatalogItem } from '#script/types'
 
 definePageMeta({ layout: 'script' })
 
 const store = useCatalogStore()
+const wb = useWorkbenchStore()
+
+/** The items the open Install all dialog was opened for (a snapshot). */
+const installAllOpen = ref<CollectionCatalogItem[] | null>(null)
+const installAllDone = ref<string | null>(null)
+const installAllTitle = computed(() => {
+  const n = store.installAll.length
+  if (!n) return 'Everything in this catalog is installed and current'
+  const updates = store.installAll.filter((i) => i.local?.installed_version).length
+  return `${n - updates} new · ${updates} update(s) from ${store.source?.name ?? 'this catalog'}`
+})
+
+watch(() => store.sourceId, () => {
+  installAllDone.value = null
+})
+
+function openInstallAll() {
+  installAllDone.value = null
+  installAllOpen.value = [...store.installAll]
+}
+
+function installAllFinished(message: string) {
+  installAllOpen.value = null
+  installAllDone.value = message
+  // The tree and the library list the new scripts.
+  void wb.loadListing(true)
+}
 
 async function activate() {
   if (!store.sources.length && !store.sourcesLoading) await store.loadSources()
@@ -54,6 +84,15 @@ onActivated(() => void activate())
         <button class="qsc-btn is-sm" :disabled="store.catalogLoading || !store.sourceId" title="Read the newest commit of the source" @click="store.loadCatalog(true)">
           <RefreshCw :size="13" /> {{ store.catalogLoading ? 'Reading…' : 'Refresh' }}
         </button>
+        <button
+          v-if="store.catalog"
+          class="qsc-btn is-sm is-primary"
+          :disabled="!store.installAll.length || !!store.busy || store.catalogLoading"
+          :title="installAllTitle"
+          @click="openInstallAll"
+        >
+          <Download :size="13" /> Install all<span v-if="store.installAll.length" class="mono"> ({{ store.installAll.length }})</span>
+        </button>
         <button class="qsc-icon-btn" aria-label="Collection settings" title="Sources and tokens: Settings → Collection" @click="openSettings">
           <Settings :size="15" />
         </button>
@@ -75,11 +114,24 @@ onActivated(() => void activate())
       </div>
     </div>
 
+    <div v-if="installAllDone" class="qsc-note is-ok" role="status">
+      <p>{{ installAllDone }}</p>
+      <p class="muted">A running QuantSystems engine loads the indicators at start — restart it to use the new ones there.</p>
+    </div>
+
     <div v-if="store.catalog" class="qst-split">
       <ScriptCollectionList />
       <ScriptCollectionDetail />
     </div>
     <div v-else-if="store.catalogLoading" class="qst-empty qsc-pulse" role="status">Reading the catalog…</div>
+
+    <ScriptCollectionInstallModal
+      v-if="installAllOpen"
+      :all="installAllOpen"
+      mode="install"
+      @close="installAllOpen = null"
+      @done="installAllFinished"
+    />
   </div>
 </template>
 
