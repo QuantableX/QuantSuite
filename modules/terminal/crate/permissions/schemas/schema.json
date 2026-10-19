@@ -391,6 +391,18 @@
           "markdownDescription": "Denies the get_sentiment command without any pre-configured scope."
         },
         {
+          "description": "Enables the get_symbols command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-symbols",
+          "markdownDescription": "Enables the get_symbols command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_symbols command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-symbols",
+          "markdownDescription": "Denies the get_symbols command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_tickers command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-tickers",
@@ -403,10 +415,10 @@
           "markdownDescription": "Denies the get_tickers command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the terminal module.\n#### This default permission set includes:\n\n- `allow-get-ohlcv`\n- `allow-get-tickers`\n- `allow-get-order-book`\n- `allow-get-screener`\n- `allow-get-correlation`\n- `allow-get-marketcap`\n- `allow-get-daily-change`\n- `allow-get-sentiment`\n- `allow-get-metric-history`",
+          "description": "Default permissions for the terminal module.\n#### This default permission set includes:\n\n- `allow-get-ohlcv`\n- `allow-get-tickers`\n- `allow-get-order-book`\n- `allow-get-symbols`\n- `allow-get-screener`\n- `allow-get-correlation`\n- `allow-get-marketcap`\n- `allow-get-daily-change`\n- `allow-get-sentiment`\n- `allow-get-metric-history`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the terminal module.\n#### This default permission set includes:\n\n- `allow-get-ohlcv`\n- `allow-get-tickers`\n- `allow-get-order-book`\n- `allow-get-screener`\n- `allow-get-correlation`\n- `allow-get-marketcap`\n- `allow-get-daily-change`\n- `allow-get-sentiment`\n- `allow-get-metric-history`"
+          "markdownDescription": "Default permissions for the terminal module.\n#### This default permission set includes:\n\n- `allow-get-ohlcv`\n- `allow-get-tickers`\n- `allow-get-order-book`\n- `allow-get-symbols`\n- `allow-get-screener`\n- `allow-get-correlation`\n- `allow-get-marketcap`\n- `allow-get-daily-change`\n- `allow-get-sentiment`\n- `allow-get-metric-history`"
         }
       ]
     }

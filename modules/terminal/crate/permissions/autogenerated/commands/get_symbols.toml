@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-symbols"
+description = "Enables the get_symbols command without any pre-configured scope."
+commands.allow = ["get_symbols"]
+
+[[permission]]
+identifier = "deny-get-symbols"
+description = "Denies the get_symbols command without any pre-configured scope."
+commands.deny = ["get_symbols"]

@@ -21,6 +21,7 @@ pub fn init() -> TauriPlugin<Wry> {
             get_ohlcv,
             get_tickers,
             get_order_book,
+            get_symbols,
             get_screener,
             get_correlation,
             get_marketcap,
@@ -73,6 +74,13 @@ async fn get_order_book(
     limit: Option<u32>,
 ) -> Result<market::OrderBook, String> {
     market::order_book(symbol.as_deref().unwrap_or("BTC/USDT"), limit.unwrap_or(25)).await
+}
+
+/// Every tradable Binance USDT spot pair with its price step, busiest first —
+/// the order book's symbol menu. Cached for an hour.
+#[tauri::command]
+async fn get_symbols() -> Result<Vec<market::SymbolInfo>, String> {
+    market::symbols().await
 }
 
 #[tauri::command]

@@ -6,6 +6,7 @@ permissions = [
   "allow-get-ohlcv",
   "allow-get-tickers",
   "allow-get-order-book",
+  "allow-get-symbols",
   "allow-get-screener",
   "allow-get-correlation",
   "allow-get-marketcap",

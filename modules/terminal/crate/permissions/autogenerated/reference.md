@@ -7,6 +7,7 @@ Default permissions for the terminal module.
 - `allow-get-ohlcv`
 - `allow-get-tickers`
 - `allow-get-order-book`
+- `allow-get-symbols`
 - `allow-get-screener`
 - `allow-get-correlation`
 - `allow-get-marketcap`
@@ -227,6 +228,32 @@ Enables the get_sentiment command without any pre-configured scope.
 <td>
 
 Denies the get_sentiment command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`terminal:allow-get-symbols`
+
+</td>
+<td>
+
+Enables the get_symbols command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`terminal:deny-get-symbols`
+
+</td>
+<td>
+
+Denies the get_symbols command without any pre-configured scope.
 
 </td>
 </tr>
