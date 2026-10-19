@@ -10,6 +10,16 @@ export interface OHLCVCandle {
   volume: number
 }
 
+/** A pair of the order book's symbol menu (plugin:terminal|get_symbols). */
+export interface SymbolInfo {
+  /** `BTC/USDT` */
+  symbol: string
+  base: string
+  quote: string
+  /** The exchange's price step: 0.01 for BTC, 0.00000001 for PEPE. */
+  tickSize: number
+}
+
 const TIMEFRAME_MAP: Record<string, string> = {
   '1m': '1m',
   '5m': '5m',
@@ -26,6 +36,11 @@ export const useMarketStore = defineStore('terminal/market', () => {
   const timeframe = ref('1D')
   const ohlcv = ref<OHLCVCandle[]>([])
   const ohlcvLoading = ref(false)
+  /** Every tradable Binance USDT pair, busiest first. */
+  const symbols = ref<SymbolInfo[]>([])
+  const symbolsLoading = ref(false)
+  const symbolsError = ref<string | null>(null)
+  const selectedInfo = computed(() => symbols.value.find((s) => s.symbol === selectedSymbol.value) ?? null)
 
   let ohlcvRequest = 0
 
@@ -61,14 +76,33 @@ export const useMarketStore = defineStore('terminal/market', () => {
     selectedSymbol.value = symbol
   }
 
+  /** Read once per session; the backend caches the list for an hour. */
+  async function loadSymbols() {
+    if (symbols.value.length || symbolsLoading.value) return
+    symbolsLoading.value = true
+    symbolsError.value = null
+    try {
+      symbols.value = await invoke<SymbolInfo[]>('plugin:terminal|get_symbols')
+    } catch (error) {
+      symbolsError.value = String(error)
+    } finally {
+      symbolsLoading.value = false
+    }
+  }
+
   return {
     selectedSymbol,
     selectedExchange,
     timeframe,
     ohlcv,
     ohlcvLoading,
+    symbols,
+    symbolsLoading,
+    symbolsError,
+    selectedInfo,
     fetchOHLCV,
     setTimeframe,
     setSymbol,
+    loadSymbols,
   }
 })

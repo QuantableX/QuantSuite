@@ -1,25 +1,24 @@
 <script setup lang="ts">
 import { useMarketStore } from '#terminal/stores/market'
 import { useOrderbookTick } from '#terminal/composables/useOrderbookTick'
+import { formatBookPrice, formatCoins, formatUsd, groupLevels, stepDecimals, type OrderLevel, type RawLevel } from '#terminal/utils/orderbook'
 import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { invoke } from '@tauri-apps/api/core'
-interface OrderLevel {
-  price: number
-  amount: number
-  total: number
-}
-
-interface RawLevel {
-  price: number
-  amount: number
-}
 
 const props = defineProps<{
   symbol?: string
 }>()
 
 const marketStore = useMarketStore()
-const { tickSize } = useOrderbookTick()
+const { tickSize, pairDecimals, setPair, setPrice } = useOrderbookTick()
+
+/** The exchange step until the pair list has loaded — right for BTC/USDT, the default pair. */
+const FALLBACK_STEP = 0.01
+const pairSymbol = computed(() => props.symbol || marketStore.selectedSymbol)
+const pairInfo = computed(() => marketStore.symbols.find((s) => s.symbol === pairSymbol.value) ?? null)
+/** The coin column's header: BTC, PEPE, … */
+const baseLabel = computed(() => pairInfo.value?.base ?? pairSymbol.value.split('/')[0] ?? '')
+const ladderDecimals = computed(() => stepDecimals(tickSize.value))
 
 const rawAsks = ref<RawLevel[]>([])
 const rawBids = ref<RawLevel[]>([])
@@ -58,58 +57,22 @@ function measureLevels() {
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
-function groupLevels(raw: RawLevel[], side: 'ask' | 'bid', anchor: number): OrderLevel[] {
-  if (raw.length === 0 || anchor === 0) return []
-
-  const tick = tickSize.value
-
-  // Aggregate raw orders into tick-sized buckets
-  const grouped = new Map<number, number>()
-  for (const level of raw) {
-    const bucket = side === 'ask'
-      ? Math.ceil(level.price / tick) * tick
-      : Math.floor(level.price / tick) * tick
-    const key = Math.round(bucket * 1e8) / 1e8
-    grouped.set(key, (grouped.get(key) || 0) + level.amount)
-  }
-
-  // Generate a fixed price ladder of as many rows as fit the half,
-  // anchored at the best ask/bid, extending outward
-  const startBucket = side === 'ask'
-    ? Math.round(Math.ceil(anchor / tick) * tick * 1e8) / 1e8
-    : Math.round(Math.floor(anchor / tick) * tick * 1e8) / 1e8
-
-  const levels: { price: number; amount: number }[] = []
-  for (let i = 0; i < displayLevels.value; i++) {
-    const price = side === 'ask'
-      ? Math.round((startBucket + i * tick) * 1e8) / 1e8
-      : Math.round((startBucket - i * tick) * 1e8) / 1e8
-    levels.push({ price, amount: grouped.get(price) || 0 })
-  }
-
-  // Build cumulative totals
-  let cumTotal = 0
-  const result = levels.map(l => {
-    cumTotal += l.amount
-    return { price: l.price, amount: l.amount, total: cumTotal }
-  })
-
-  // Asks display reversed (highest at top, lowest near spread)
-  return side === 'ask' ? result.reverse() : result
-}
-
+// A fixed ladder of as many rows as fit each half, anchored at the best
+// ask/bid; totals are USD, cumulative from the spread outwards.
 function rebuildLevels() {
-  asks.value = groupLevels(rawAsks.value, 'ask', bestAsk.value)
+  asks.value = groupLevels(rawAsks.value, 'ask', bestAsk.value, tickSize.value, displayLevels.value)
   totalAskVol.value = asks.value.length > 0 ? asks.value[0]!.total : 0
 
-  bids.value = groupLevels(rawBids.value, 'bid', bestBid.value)
+  bids.value = groupLevels(rawBids.value, 'bid', bestBid.value, tickSize.value, displayLevels.value)
   totalBidVol.value = bids.value.length > 0 ? bids.value[bids.value.length - 1]!.total : 0
 }
 
 async function fetchOrderbook() {
-  const sym = props.symbol || marketStore.selectedSymbol
+  const sym = pairSymbol.value
   try {
     const data = await invoke<{ asks: RawLevel[]; bids: RawLevel[] }>('plugin:terminal|get_order_book', { symbol: sym, limit: RAW_FETCH_LIMIT })
+    // A reply for the pair the user just left must not land in the new one.
+    if (sym !== pairSymbol.value) return
 
     rawAsks.value = data.asks
     rawBids.value = data.bids
@@ -125,6 +88,7 @@ async function fetchOrderbook() {
       lastPrice.value = mid
       spreadPrice.value = bestAsk.value - bestBid.value
       spreadPercent.value = (spreadPrice.value / mid) * 100
+      setPrice(mid)
     }
 
     rebuildLevels()
@@ -136,7 +100,17 @@ async function fetchOrderbook() {
 const maxTotal = computed(() => {
   const allOrders = [...asks.value, ...bids.value]
   if (allOrders.length === 0) return 1
-  return Math.max(...allOrders.map(o => o.total))
+  return Math.max(...allOrders.map(o => o.total)) || 1
+})
+
+/**
+ * The price column is exactly as wide as the pair's prices (5 characters for
+ * BTC at 10$ steps, 10 for PEPE); the coin, $ and Total $ columns share the
+ * rest. Header and rows read the same width, so the columns line up.
+ */
+const priceChars = computed(() => {
+  const prices = [asks.value[0]?.price, bids.value[bids.value.length - 1]?.price, bestAsk.value]
+  return Math.max(5, ...prices.filter((p): p is number => !!p).map((p) => formatPrice(p).length))
 })
 
 const bidRatio = computed(() => {
@@ -151,21 +125,14 @@ const priceDirection = computed(() => {
   return 'neutral'
 })
 
+/** A ladder price, with the decimals of the chosen step. */
 function formatPrice(price: number): string {
-  if (price >= 1000) return price.toFixed(2)
-  if (price >= 1) return price.toFixed(4)
-  return price.toFixed(6)
+  return formatBookPrice(price, ladderDecimals.value)
 }
 
-function formatAmount(amount: number): string {
-  if (amount >= 100) return amount.toFixed(2)
-  if (amount >= 1) return amount.toFixed(4)
-  return amount.toFixed(6)
-}
-
-function formatVolume(vol: number): string {
-  if (vol >= 1000) return (vol / 1000).toFixed(1) + 'K'
-  return vol.toFixed(2)
+/** The mid price and the spread, with the decimals of the exchange's step. */
+function formatPairPrice(price: number): string {
+  return formatBookPrice(price, pairDecimals.value)
 }
 
 // V3 warm cache: poll only while the module is visible. The start must live
@@ -185,6 +152,8 @@ function startOrderbookPolling() {
 }
 
 onMounted(() => {
+  // The pair list gives the coin's name and price step; it is also the menu's.
+  void marketStore.loadSymbols()
   if (inActiveKeepAliveTree()) startOrderbookPolling()
   if (asksEl.value) {
     resizeObserver = new ResizeObserver(() => measureLevels())
@@ -207,9 +176,24 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
 })
 
-watch(() => props.symbol || marketStore.selectedSymbol, () => {
+// A new pair starts empty at its own step; the step also follows the pair
+// list arriving after the first fetch. The first run only sets the step —
+// polling starts with the module (see above).
+watch([pairSymbol, () => pairInfo.value?.tickSize], ([sym, step], old) => {
+  setPair(sym, step ?? FALLBACK_STEP)
+  const prevSym = old?.[0]
+  if (prevSym === undefined || sym === prevSym) return
+  rawAsks.value = []
+  rawBids.value = []
+  bestAsk.value = 0
+  bestBid.value = 0
+  lastPrice.value = 0
+  prevPrice.value = 0
+  spreadPrice.value = 0
+  spreadPercent.value = 0
+  rebuildLevels()
   fetchOrderbook()
-})
+}, { immediate: true })
 
 // Rebuild when tick size changes
 watch(tickSize, () => {
@@ -218,12 +202,13 @@ watch(tickSize, () => {
 </script>
 
 <template>
-  <div class="orderbook">
-    <!-- Column headers -->
+  <div class="orderbook" :style="{ '--ob-price-chars': priceChars }">
+    <!-- Column headers: coins per level, its USD value, and cumulative USD -->
     <div class="ob-header">
       <span class="ob-col-price">Price</span>
-      <span class="ob-col-amount">Amount</span>
-      <span class="ob-col-total">Total</span>
+      <span class="ob-col-amount" :title="`Amount in ${baseLabel}`">{{ baseLabel }}</span>
+      <span class="ob-col-value" title="Amount in USD">$</span>
+      <span class="ob-col-total" title="Cumulative USD from the spread">Total $</span>
     </div>
 
     <!-- Asks (sells) -->
@@ -238,8 +223,9 @@ watch(tickSize, () => {
           :style="{ width: (order.total / maxTotal * 100) + '%' }"
         />
         <span class="ob-col-price ob-price-ask">{{ formatPrice(order.price) }}</span>
-        <span class="ob-col-amount ob-val">{{ formatAmount(order.amount) }}</span>
-        <span class="ob-col-total ob-val">{{ formatAmount(order.total) }}</span>
+        <span class="ob-col-amount ob-val">{{ formatCoins(order.amount) }}</span>
+        <span class="ob-col-value ob-val">{{ formatUsd(order.value) }}</span>
+        <span class="ob-col-total ob-val">{{ formatUsd(order.total) }}</span>
       </div>
     </div>
 
@@ -253,13 +239,13 @@ watch(tickSize, () => {
             'ob-price-down': priceDirection === 'down',
           }"
         >
-          {{ formatPrice(lastPrice) }}
+          {{ formatPairPrice(lastPrice) }}
           <svg v-if="priceDirection === 'up'" class="ob-arrow" viewBox="0 0 10 6"><path d="M5 0L10 6H0z" fill="currentColor"/></svg>
           <svg v-else-if="priceDirection === 'down'" class="ob-arrow" viewBox="0 0 10 6"><path d="M5 6L0 0h10z" fill="currentColor"/></svg>
         </span>
       </div>
       <div class="ob-spread-info">
-        <span>Spread: {{ formatPrice(spreadPrice) }} ({{ spreadPercent.toFixed(3) }}%)</span>
+        <span>Spread: {{ formatPairPrice(spreadPrice) }} ({{ spreadPercent.toFixed(3) }}%)</span>
       </div>
     </div>
 
@@ -275,8 +261,9 @@ watch(tickSize, () => {
           :style="{ width: (order.total / maxTotal * 100) + '%' }"
         />
         <span class="ob-col-price ob-price-bid">{{ formatPrice(order.price) }}</span>
-        <span class="ob-col-amount ob-val">{{ formatAmount(order.amount) }}</span>
-        <span class="ob-col-total ob-val">{{ formatAmount(order.total) }}</span>
+        <span class="ob-col-amount ob-val">{{ formatCoins(order.amount) }}</span>
+        <span class="ob-col-value ob-val">{{ formatUsd(order.value) }}</span>
+        <span class="ob-col-total ob-val">{{ formatUsd(order.total) }}</span>
       </div>
     </div>
 
@@ -318,20 +305,33 @@ watch(tickSize, () => {
   flex-shrink: 0;
 }
 
-/* Columns */
+/* Columns: the price column fits the pair's prices (JetBrains Mono is
+   0.6em per character at the rows' 11px), the other three share the rest. */
 .ob-col-price {
-  flex: 1.2;
+  flex: 0 0 calc(var(--ob-price-chars, 8) * 6.6px + 3px);
   text-align: left;
+  white-space: nowrap;
 }
 
-.ob-col-amount {
-  flex: 1;
-  text-align: right;
-}
-
+.ob-col-amount,
+.ob-col-value,
 .ob-col-total {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   text-align: right;
+  white-space: nowrap;
+}
+
+/* "Total $" must fit the narrow cells of a 10-digit price like PEPE's. */
+.ob-header .ob-col-amount,
+.ob-header .ob-col-value,
+.ob-header .ob-col-total {
+  letter-spacing: 0;
+}
+
+.ob-header .ob-col-amount {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Asks & Bids containers */

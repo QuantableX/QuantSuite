@@ -263,6 +263,137 @@ pub async fn order_book(symbol: &str, limit: u32) -> Result<OrderBook, String> {
     Ok(OrderBook { asks: take(raw.asks), bids: take(raw.bids) })
 }
 
+/// One pair the order book can show: a Binance spot pair against USDT that
+/// trades, with the exchange's price step.
+#[derive(Debug, Clone, Serialize)]
+pub struct SymbolInfo {
+    /// `BTC/USDT`, the form the frontend speaks.
+    pub symbol: String,
+    pub base: String,
+    pub quote: String,
+    /// PRICE_FILTER's step: 0.01 for BTC, 0.00000001 for PEPE.
+    #[serde(rename = "tickSize")]
+    pub tick_size: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExchangeInfo {
+    symbols: Vec<ExchangeSymbol>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExchangeSymbol {
+    symbol: String,
+    status: String,
+    base_asset: String,
+    quote_asset: String,
+    #[serde(default)]
+    is_spot_trading_allowed: bool,
+    #[serde(default)]
+    filters: Vec<ExchangeFilter>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExchangeFilter {
+    filter_type: String,
+    tick_size: Option<String>,
+}
+
+/// The tradable USDT spot pairs of an exchangeInfo document, busiest first by
+/// 24h quote volume (keyed by Binance symbol); pairs without one follow by name.
+fn usdt_pairs(info: ExchangeInfo, quote_volume: &HashMap<String, f64>) -> Vec<SymbolInfo> {
+    let mut pairs: Vec<(f64, SymbolInfo)> = info
+        .symbols
+        .into_iter()
+        .filter(|s| s.status == "TRADING" && s.is_spot_trading_allowed && s.quote_asset == "USDT")
+        .filter_map(|s| {
+            let tick = s
+                .filters
+                .iter()
+                .find(|f| f.filter_type == "PRICE_FILTER")
+                .and_then(|f| f.tick_size.as_deref())
+                .map(p)
+                .filter(|t| *t > 0.0)?;
+            let volume = quote_volume.get(&s.symbol).copied().unwrap_or(0.0);
+            Some((
+                volume,
+                SymbolInfo {
+                    symbol: format!("{}/{}", s.base_asset, s.quote_asset),
+                    base: s.base_asset,
+                    quote: s.quote_asset,
+                    tick_size: tick,
+                },
+            ))
+        })
+        .collect();
+    pairs.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.base.cmp(&b.1.base)));
+    pairs.into_iter().map(|(_, s)| s).collect()
+}
+
+/// The pair list with the time it was fetched (see [`SymbolSetCache`] for why
+/// it has a name).
+type SymbolsCache = std::sync::Mutex<Option<(std::time::Instant, Vec<SymbolInfo>)>>;
+
+fn symbols_cache() -> &'static SymbolsCache {
+    static CACHE: std::sync::OnceLock<SymbolsCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// Every pair the order book's symbol menu offers, cached for an hour —
+/// exchangeInfo is a ~6 MB document.
+pub async fn symbols() -> Result<Vec<SymbolInfo>, String> {
+    if let Ok(guard) = symbols_cache().lock() {
+        if let Some((at, list)) = guard.as_ref() {
+            if at.elapsed() < SYMBOL_SET_TTL {
+                return Ok(list.clone());
+            }
+        }
+    }
+
+    let info: ExchangeInfo = client()?
+        .get(format!("{BINANCE}/exchangeInfo?symbolStatus=TRADING"))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch the pair list: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Failed to fetch the pair list: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse the pair list: {e}"))?;
+    // The volume only orders the list; without it the menu is alphabetical.
+    let volume = quote_volumes().await.unwrap_or_default();
+    let list = usdt_pairs(info, &volume);
+
+    if let Ok(mut guard) = symbols_cache().lock() {
+        *guard = Some((std::time::Instant::now(), list.clone()));
+    }
+    Ok(list)
+}
+
+/// 24h quote volume of every Binance symbol (`BTCUSDT` → 1.2e9).
+async fn quote_volumes() -> Result<HashMap<String, f64>, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct MiniTicker {
+        symbol: String,
+        quote_volume: String,
+    }
+
+    let rows: Vec<MiniTicker> = client()?
+        .get(format!("{BINANCE}/ticker/24hr?type=MINI"))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch volumes: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Failed to fetch volumes: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse volumes: {e}"))?;
+    Ok(rows.into_iter().map(|r| (r.symbol, p(&r.quote_volume))).collect())
+}
+
 // â”€â”€ Screener â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub const SCREENER_SYMBOLS: &[&str] = &[
@@ -770,6 +901,35 @@ mod tests {
     }
 
     #[test]
+    fn usdt_pairs_keep_tradable_spot_usdt_pairs_busiest_first() {
+        let pair = |symbol: &str, base: &str, quote: &str, status: &str, spot: bool, tick: &str| {
+            format!(
+                r#"{{"symbol":"{symbol}","status":"{status}","baseAsset":"{base}","quoteAsset":"{quote}","isSpotTradingAllowed":{spot},
+                   "filters":[{{"filterType":"LOT_SIZE","stepSize":"0.001"}},{{"filterType":"PRICE_FILTER","minPrice":"0","maxPrice":"0","tickSize":"{tick}"}}]}}"#
+            )
+        };
+        let doc = format!(
+            r#"{{"timezone":"UTC","symbols":[{},{},{},{},{},{}]}}"#,
+            pair("PEPEUSDT", "PEPE", "USDT", "TRADING", true, "0.00000001"),
+            pair("BTCUSDT", "BTC", "USDT", "TRADING", true, "0.01000000"),
+            pair("ETHBTC", "ETH", "BTC", "TRADING", true, "0.00001000"),
+            pair("LUNAUSDT", "LUNA", "USDT", "BREAK", true, "0.0001"),
+            pair("MARGINUSDT", "MARGIN", "USDT", "TRADING", false, "0.0001"),
+            pair("AAVEUSDT", "AAVE", "USDT", "TRADING", true, "0.01"),
+        );
+        let info: ExchangeInfo = serde_json::from_str(&doc).unwrap();
+        let volume = HashMap::from([("BTCUSDT".to_string(), 2.0e9), ("PEPEUSDT".to_string(), 3.0e8)]);
+
+        let pairs = usdt_pairs(info, &volume);
+        let symbols: Vec<&str> = pairs.iter().map(|s| s.symbol.as_str()).collect();
+        assert_eq!(symbols, ["BTC/USDT", "PEPE/USDT", "AAVE/USDT"], "busiest first, then by name; no BTC quote, halted or non-spot pair");
+        assert_eq!(pairs[0].tick_size, 0.01);
+        assert_eq!(pairs[1].tick_size, 1e-8);
+        assert_eq!((pairs[1].base.as_str(), pairs[1].quote.as_str()), ("PEPE", "USDT"));
+        assert_eq!(to_binance_symbol(&pairs[1].symbol), "PEPEUSDT");
+    }
+
+    #[test]
     fn volume_formatting_matches_the_old_route() {
         assert_eq!(format_volume(1.25e9), "1.2B");
         assert_eq!(format_volume(3.5e6), "3.5M");
@@ -838,6 +998,19 @@ mod tests {
         assert_eq!(book.bids.len(), 10);
         assert_eq!(book.asks.len(), 10);
         assert!(book.asks[0].price >= book.bids[0].price, "ask below bid");
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live Binance API"]
+    async fn live_symbols_list_every_usdt_pair_with_its_step() {
+        let pairs = symbols().await.expect("pair list");
+        assert!(pairs.len() > 300, "only {} pairs", pairs.len());
+        assert!(pairs.iter().all(|s| s.quote == "USDT" && s.tick_size > 0.0));
+        let btc = pairs.iter().position(|s| s.symbol == "BTC/USDT").expect("BTC/USDT listed");
+        assert!(btc < 5, "BTC/USDT should be among the busiest, is #{btc}");
+        assert!(pairs.iter().any(|s| s.symbol == "PEPE/USDT" && s.tick_size < 1e-6));
+        let book = order_book("PEPE/USDT", 10).await.expect("PEPE order book");
+        assert!(book.bids[0].price > 0.0 && book.bids[0].price < 0.01);
     }
 
     #[tokio::test]

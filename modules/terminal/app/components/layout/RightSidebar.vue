@@ -33,12 +33,31 @@ const headerLabel = computed(() => {
   return 'WATCHLIST'
 })
 
-// Symbol selector
-const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT', 'AVAX/USDT']
+// Symbol selector: every Binance USDT pair, busiest first. A search puts the
+// tokens that start with it first, then the ones that contain it.
 const showSymbolMenu = ref(false)
+const symbolQuery = ref('')
+const symbolSearchEl = ref<HTMLInputElement | null>(null)
+
+const shownSymbols = computed(() => {
+  const q = symbolQuery.value.trim().toUpperCase()
+  if (!q) return marketStore.symbols
+  const starts = marketStore.symbols.filter((s) => s.base.toUpperCase().startsWith(q))
+  const contains = marketStore.symbols.filter((s) => !s.base.toUpperCase().startsWith(q) && s.base.toUpperCase().includes(q))
+  return [...starts, ...contains]
+})
 
 function shortSymbol(sym: string): string {
   return sym.replace('/USDT', '')
+}
+
+function toggleSymbolMenu() {
+  showSymbolMenu.value = !showSymbolMenu.value
+  showTickMenu.value = false
+  if (!showSymbolMenu.value) return
+  symbolQuery.value = ''
+  void marketStore.loadSymbols()
+  void nextTick(() => symbolSearchEl.value?.focus())
 }
 
 function onSelectSymbol(sym: string) {
@@ -46,12 +65,17 @@ function onSelectSymbol(sym: string) {
   showSymbolMenu.value = false
 }
 
-// Tick size selector (shared with Orderbook via composable)
-const { TICK_OPTIONS, tickIndex, tickSize, selectTick, formatTick } = useOrderbookTick()
+function pickFirstSymbol() {
+  const first = shownSymbols.value[0]
+  if (first) onSelectSymbol(first.symbol)
+}
+
+// Tick size selector (shared with Orderbook via composable); its steps follow the pair.
+const { options: tickOptions, tickSize, selectTick, formatTick } = useOrderbookTick()
 const showTickMenu = ref(false)
 
-function onSelectTick(idx: number) {
-  selectTick(idx)
+function onSelectTick(t: number) {
+  selectTick(t)
   showTickMenu.value = false
 }
 
@@ -69,20 +93,35 @@ function closeMenus() {
       <div class="header-spacer" />
       <!-- Symbol selector (terminal only) -->
       <div v-if="isTerminal" class="tick-selector" @click.stop>
-        <button class="tick-btn" @click="showSymbolMenu = !showSymbolMenu; showTickMenu = false">
+        <button class="tick-btn" @click="toggleSymbolMenu">
           {{ shortSymbol(marketStore.selectedSymbol) }}
           <ChevronDown class="tick-chevron" />
         </button>
-        <div v-if="showSymbolMenu" class="tick-menu">
-          <button
-            v-for="sym in SYMBOLS"
-            :key="sym"
-            class="tick-option"
-            :class="{ 'tick-active': sym === marketStore.selectedSymbol }"
-            @click="onSelectSymbol(sym)"
-          >
-            {{ shortSymbol(sym) }}
-          </button>
+        <div v-if="showSymbolMenu" class="tick-menu symbol-menu">
+          <input
+            ref="symbolSearchEl"
+            v-model="symbolQuery"
+            class="symbol-search"
+            placeholder="Search token"
+            aria-label="Search token"
+            spellcheck="false"
+            @keydown.enter="pickFirstSymbol"
+            @keydown.esc="showSymbolMenu = false"
+          />
+          <div class="symbol-list">
+            <button
+              v-for="s in shownSymbols"
+              :key="s.symbol"
+              class="tick-option"
+              :class="{ 'tick-active': s.symbol === marketStore.selectedSymbol }"
+              @click="onSelectSymbol(s.symbol)"
+            >
+              {{ s.base }}
+            </button>
+            <p v-if="marketStore.symbolsLoading" class="symbol-note">Loading tokens…</p>
+            <p v-else-if="marketStore.symbolsError" class="symbol-note" :title="marketStore.symbolsError">Tokens could not be loaded</p>
+            <p v-else-if="!shownSymbols.length" class="symbol-note">No token matches</p>
+          </div>
         </div>
       </div>
       <!-- Tick selector (terminal only) -->
@@ -93,11 +132,11 @@ function closeMenus() {
         </button>
         <div v-if="showTickMenu" class="tick-menu">
           <button
-            v-for="(t, i) in TICK_OPTIONS"
+            v-for="t in tickOptions"
             :key="t"
             class="tick-option"
-            :class="{ 'tick-active': i === tickIndex }"
-            @click="onSelectTick(i)"
+            :class="{ 'tick-active': t === tickSize }"
+            @click="onSelectTick(t)"
           >
             {{ formatTick(t) }}
           </button>
@@ -247,6 +286,10 @@ function closeMenus() {
 }
 
 .header-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -319,6 +362,46 @@ function closeMenus() {
   text-align: right;
   white-space: nowrap;
   transition: all 0.1s ease;
+}
+
+.symbol-menu {
+  width: 132px;
+  gap: 4px;
+}
+
+.symbol-search {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--text-primary);
+  background-color: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  outline: none;
+}
+
+.symbol-search:focus {
+  border-color: var(--accent);
+}
+
+.symbol-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.symbol-list .tick-option {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.symbol-note {
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .tick-option:hover {
