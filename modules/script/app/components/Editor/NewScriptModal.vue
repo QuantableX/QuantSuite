@@ -119,28 +119,7 @@ function trapFocus(e: KeyboardEvent) {
 </template>
 
 <style scoped>
-.qsc-modal-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
-}
-.qsc-modal {
-  width: min(490px, calc(100% - 40px));
-  max-height: calc(100% - 40px);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 24px;
-  border: 1px solid var(--qss-border);
-  border-radius: var(--qss-radius-lg);
-  background: var(--qss-bg-raised);
-  box-shadow: var(--qss-shadow-lg);
-}
+/* The modal frame (.qsc-modal-overlay / -head / -title / -foot) is shared in assets/css/main.css. */
 .qsc-template-summary { display: flex; gap: 14px; padding: 14px; background: var(--qss-bg); border: 1px solid var(--qss-border); border-radius: 8px; }
 .qsc-template-summary svg { flex-shrink: 0; margin-top: 3px; }
 .qsc-template-summary strong { font-size: 12px; font-weight: 600; }
@@ -150,15 +129,6 @@ function trapFocus(e: KeyboardEvent) {
 .qsc-create-preview { display: flex; align-items: center; justify-content: space-between; gap: 7px; font-size: 10px; color: var(--qss-text-muted); border-top: 1px solid var(--qss-border); padding-top: 15px; }
 .qsc-create-preview .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qsc-field .qsc-input { height: 36px; }
-.qsc-modal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.qsc-modal-title {
-  font-size: 14px;
-  font-weight: 600;
-}
 .qsc-modal-hint {
   font-size: 12px;
   line-height: 1.45;
@@ -182,11 +152,5 @@ function trapFocus(e: KeyboardEvent) {
 }
 .qsc-field-hint.is-bad {
   color: var(--qss-error);
-}
-.qsc-modal-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
 }
 </style>
