@@ -10,7 +10,7 @@ import type {
   CollectionSource,
   CollectionSourceInput,
 } from '#script/types'
-import { DEFAULT_COLLECTION_FILTERS, filterItems, type CollectionFilters } from '#script/utils/catalog'
+import { DEFAULT_COLLECTION_FILTERS, filterItems, installAllItems, type CollectionFilters } from '#script/utils/catalog'
 
 const SOURCE_KEY = 'quantsuite.script.collection.source'
 
@@ -52,6 +52,8 @@ export const useCatalogStore = defineStore('script/catalog', () => {
   const byKey = computed(() => new Map(items.value.map((i) => [i.key, i])))
   const installedCount = computed(() => items.value.filter((i) => i.local?.installed_version).length)
   const updateCount = computed(() => items.value.filter((i) => i.local?.update).length)
+  /** The items "Install all" installs or updates for this source. */
+  const installAll = computed(() => installAllItems(items.value))
 
   async function loadSources() {
     sourcesLoading.value = true
@@ -192,6 +194,7 @@ export const useCatalogStore = defineStore('script/catalog', () => {
     byKey,
     installedCount,
     updateCount,
+    installAll,
     selectedKey,
     detail,
     detailLoading,

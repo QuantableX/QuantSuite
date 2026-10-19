@@ -106,6 +106,15 @@ export function filterItems(items: CollectionCatalogItem[], f: CollectionFilters
     })
 }
 
+/**
+ * What "Install all" asks for: every item not in your library yet and every
+ * installed one with a newer catalog version. Current items stay out — a
+ * modified one is your own edit — and so does a package for a newer engine.
+ */
+export function installAllItems(items: CollectionCatalogItem[]): CollectionCatalogItem[] {
+  return items.filter((i) => !i.local?.too_new && (!i.local?.installed_version || i.local.update))
+}
+
 export interface PlanSummary {
   create: number
   replace: number

@@ -4,14 +4,17 @@
  * shows collection_plan — what is new, what is replaced, which requirements come
  * with it and what conflicts — and a conflict needs the explicit overwrite
  * box. The install itself stages your library and has the engine check it
- * before anything is written.
+ * before anything is written. With `all` (Install all) it plans and installs
+ * every listed item of the source in one go — still all or nothing.
  */
 import { useCatalogStore } from '#script/stores/catalog'
 import { PLAN_ACTION_LABELS, planSummary } from '#script/utils/catalog'
 import type { CollectionCatalogItem, CollectionPlan } from '#script/types'
 
-const props = defineProps<{ item: CollectionCatalogItem; mode: 'install' | 'update' | 'remove' }>()
+const props = defineProps<{ item?: CollectionCatalogItem; all?: CollectionCatalogItem[]; mode: 'install' | 'update' | 'remove' }>()
 const emit = defineEmits<{ close: []; done: [message: string] }>()
+
+const keys = computed(() => (props.all ?? (props.item ? [props.item] : [])).map((i) => i.key))
 
 const store = useCatalogStore()
 const plan = ref<CollectionPlan | null>(null)
@@ -23,7 +26,11 @@ const previousFocus = typeof document !== 'undefined' ? document.activeElement a
 
 const summary = computed(() => (plan.value ? planSummary(plan.value) : null))
 const busy = computed(() => store.busy !== null)
-const title = computed(() => ({ install: `Install ${props.item.name}`, update: `Update ${props.item.name}`, remove: `Remove ${props.item.name}` })[props.mode])
+const title = computed(() => {
+  if (props.all) return `Install all from ${store.source?.name ?? 'the catalog'}`
+  const name = props.item?.name ?? ''
+  return ({ install: `Install ${name}`, update: `Update ${name}`, remove: `Remove ${name}` })[props.mode]
+})
 const canConfirm = computed(() => {
   if (busy.value) return false
   if (props.mode === 'remove') return true
@@ -35,7 +42,7 @@ onMounted(async () => {
   dialog.value?.focus()
   if (props.mode === 'remove') return
   try {
-    plan.value = await store.plan([props.item.key])
+    plan.value = await store.plan(keys.value)
   } catch (err) {
     planError.value = String(err)
   }
@@ -46,14 +53,20 @@ async function confirm() {
   if (!canConfirm.value) return
   error.value = null
   try {
-    if (props.mode === 'remove') {
+    if (props.mode === 'remove' && props.item) {
       const removed = await store.remove(props.item.key)
       emit('done', `Removed ${removed.key} — ${removed.files.length} file(s). The script is kept in the history.`)
       return
     }
-    const outcome = await store.install([props.item.key], overwrite.value)
+    const outcome = await store.install(keys.value, overwrite.value)
     const scripts = outcome.written.length
-    emit('done', `${props.mode === 'update' ? 'Updated' : 'Installed'} ${props.item.name} ${props.item.version}${scripts > 1 ? ` with ${scripts - 1} requirement script(s)` : ''}.`)
+    if (props.all) {
+      const created = outcome.written.filter((w) => w.created).length
+      emit('done', `Installed all from ${store.source?.name ?? 'the catalog'}: ${created} new and ${scripts - created} replaced script(s).`)
+      return
+    }
+    const item = props.item!
+    emit('done', `${props.mode === 'update' ? 'Updated' : 'Installed'} ${item.name} ${item.version}${scripts > 1 ? ` with ${scripts - 1} requirement script(s)` : ''}.`)
   } catch (err) {
     error.value = String(err)
   }
@@ -78,7 +91,7 @@ function close() {
 
       <template v-if="mode === 'remove'">
         <p class="qst-modal-text">
-          Removes <span class="mono">{{ item.key }}.py</span> and its version files from your library. Its last content stays in
+          Removes <span class="mono">{{ item?.key }}.py</span> and its version files from your library. Its last content stays in
           the history, so Restore brings it back. The Collection refuses while another installed indicator requires it.
         </p>
       </template>
@@ -119,7 +132,7 @@ function close() {
       <footer class="qsc-modal-foot">
         <button class="qsc-btn" :disabled="busy" @click="close">Cancel</button>
         <button class="qsc-btn" :class="mode === 'remove' ? 'is-danger' : 'is-primary'" :disabled="!canConfirm" @click="confirm">
-          {{ mode === 'remove' ? 'Remove' : mode === 'update' ? 'Update' : 'Install' }}
+          {{ mode === 'remove' ? 'Remove' : all ? 'Install all' : mode === 'update' ? 'Update' : 'Install' }}
         </button>
       </footer>
     </div>
