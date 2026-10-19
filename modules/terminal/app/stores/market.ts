@@ -31,7 +31,10 @@ const TIMEFRAME_MAP: Record<string, string> = {
 }
 
 export const useMarketStore = defineStore('terminal/market', () => {
+  /** The chart's symbol (the TradingView embed). */
   const selectedSymbol = ref('BTC/USDT')
+  /** The order book's pair — its own pick; it never moves the chart. */
+  const orderBookSymbol = ref('BTC/USDT')
   const selectedExchange = ref('binance')
   const timeframe = ref('1D')
   const ohlcv = ref<OHLCVCandle[]>([])
@@ -76,6 +79,10 @@ export const useMarketStore = defineStore('terminal/market', () => {
     selectedSymbol.value = symbol
   }
 
+  function setOrderBookSymbol(symbol: string) {
+    orderBookSymbol.value = symbol
+  }
+
   /** Read once per session; the backend caches the list for an hour. */
   async function loadSymbols() {
     if (symbols.value.length || symbolsLoading.value) return
@@ -92,6 +99,7 @@ export const useMarketStore = defineStore('terminal/market', () => {
 
   return {
     selectedSymbol,
+    orderBookSymbol,
     selectedExchange,
     timeframe,
     ohlcv,
@@ -103,6 +111,7 @@ export const useMarketStore = defineStore('terminal/market', () => {
     fetchOHLCV,
     setTimeframe,
     setSymbol,
+    setOrderBookSymbol,
     loadSymbols,
   }
 })
