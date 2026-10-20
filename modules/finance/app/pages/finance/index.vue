@@ -30,7 +30,7 @@ const money = (cents: number) => formatCents(cents, app.settings.currency)
   <div class="qf-plan">
     <div class="qf-plan__scroll">
       <div class="qf-plan__sheet">
-        <QPageHeading title="Monthly plan" />
+        <QPageHeading class="qf-plan__heading" title="Monthly plan" />
         <p v-if="plan.error" class="qf-plan__error" role="alert">{{ plan.error }}</p>
         <FinancePlanSection
           kind="income"
@@ -73,6 +73,7 @@ const money = (cents: number) => formatCents(cents, app.settings.currency)
 </template>
 
 <style scoped>
+.qf-plan__sheet .qf-plan__heading { margin-bottom: 0; }
 .qf-plan__error { color: var(--qf-negative); font-size: 12px; }
 .qf-plan {
   height: 100%;
