@@ -50,33 +50,6 @@ function navigateTo(path: string) {
   router.push(path)
 }
 
-// The bot table always has room for three bots, however many there are; a
-// fourth scrolls inside it and the activity log keeps the rest of the page.
-// Measured, because the row height comes from the shell's table density.
-const botsTable = ref<HTMLTableElement | null>(null)
-const botsTableHeight = ref<string>()
-let botsTableObserver: ResizeObserver | null = null
-
-function measureBotsTable() {
-  const table = botsTable.value
-  const rows = table?.tBodies[0]?.rows
-  // Zero while detached by the warm cache — keep the last real height.
-  if (!table?.tHead || !rows?.length || !rows[0]!.offsetHeight) return
-  const unit = rows[0]!.offsetHeight
-  const three = [0, 1, 2].reduce((sum, i) => sum + (rows[i]?.offsetHeight ?? unit), 0)
-  botsTableHeight.value = `${table.tHead.offsetHeight + three}px`
-}
-
-watch(botsTable, (table) => {
-  botsTableObserver?.disconnect()
-  botsTableObserver = null
-  if (!table) return
-  botsTableObserver = new ResizeObserver(measureBotsTable)
-  botsTableObserver.observe(table)
-})
-
-onUnmounted(() => botsTableObserver?.disconnect())
-
 onActivated(() => {
   void botsStore.load()
 })
@@ -84,7 +57,7 @@ onActivated(() => {
 
 <template>
   <div class="dashboard">
-    <QPageHeading title="Trading overview" />
+    <QPageHeading class="dashboard__heading" title="Trading overview" />
     <div class="dashboard__top">
       <!-- Bots at a glance -->
       <div class="card card--bots">
@@ -171,8 +144,8 @@ onActivated(() => {
         </h3>
         <button class="btn btn-sm" @click="navigateTo('/algo/bots')">Manage</button>
       </div>
-      <div v-if="botsStore.list.length" class="bots-table-wrap" :style="{ height: botsTableHeight }">
-        <table ref="botsTable" class="table">
+      <div v-if="botsStore.list.length" class="bots-table-wrap">
+        <table class="table">
           <thead>
             <tr>
               <th>Bot</th>
@@ -210,7 +183,7 @@ onActivated(() => {
           </tbody>
         </table>
       </div>
-      <QEmptyState v-else compact title="No bots yet">
+      <QEmptyState v-else class="dashboard__empty" compact title="No bots yet">
         <button class="btn btn-primary" @click="showCreate = true">New bot</button>
       </QEmptyState>
     </div>
@@ -239,22 +212,26 @@ onActivated(() => {
 </template>
 
 <style scoped>
-/* One screen, no page scroll: the top cards and the three-bot table take what
-   they need, the activity log gets the rest and scrolls inside its card. */
+/* Each content row gets the same share of the available height; lists scroll
+   inside their cards instead of changing the dashboard's proportions. */
 .dashboard {
   height: 100%;
   overflow: hidden;
   padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
+.dashboard .dashboard__heading { margin-bottom: 0; }
+.dashboard .dashboard__empty { flex: 1; min-height: 0; }
+
 .dashboard__top {
-  flex: 0 0 auto;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+  overflow: auto;
 }
 
 .dashboard .card {
@@ -262,17 +239,8 @@ onActivated(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-
-.card--table {
-  flex: 0 0 auto;
-}
-
-/* Beats `.dashboard .card` above: a short window keeps a few log lines and
-   lets the main area scroll instead of squeezing the log to nothing. */
-.dashboard .card--activity {
-  flex: 1 1 0;
-  min-height: 120px;
+  min-width: 0;
+  overflow: auto;
 }
 
 .card__head {
@@ -395,7 +363,8 @@ onActivated(() => {
 
 /* Bot table */
 .bots-table-wrap {
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -499,13 +468,4 @@ onActivated(() => {
   padding: 8px 0;
 }
 
-@media (max-width: 1000px) {
-  .dashboard {
-    overflow-y: auto;
-  }
-
-  .dashboard__top {
-    grid-template-columns: 1fr;
-  }
-}
 </style>
