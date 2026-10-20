@@ -19,6 +19,8 @@ import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
 import { useBacktestStore } from '#systems/stores/backtest'
 import { useLiveStore } from '#systems/stores/live'
+import { useStrategyGroupsStore } from '#systems/stores/groups'
+import { orderSystems } from '#systems/utils/strategyGroups'
 import { useShortcuts, useTauriEvent } from '@quantsuite/core'
 import { useActiveView } from '#systems/composables/useActiveView'
 
@@ -27,6 +29,7 @@ const systems = useSystemsStore()
 const config = useConfigStore()
 const backtest = useBacktestStore()
 const live = useLiveStore()
+const groups = useStrategyGroupsStore()
 const router = useRouter()
 const route = router.currentRoute
 
@@ -64,11 +67,12 @@ function gotoSystem(id: string) {
 // mounted while another module is open, so useShortcuts arms the window
 // listener only between onActivated and onDeactivated — otherwise these would
 // fight the shell's and other modules' bindings on the same keystroke.
+// They follow the user's dragged strategy order (catalog order until then).
 useShortcuts(Array.from({ length: 9 }, (_, i) => ({
   key: String(i + 1),
   ctrl: true,
   handler: (e: KeyboardEvent) => {
-    const target = systems.systems[i]
+    const target = orderSystems(systems.systems, groups.order)[i]
     if (!target) return
     e.preventDefault()
     gotoSystem(target.id)

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
-import { GROUPS_SCOPE, GROUPS_KEY, GROUPS_DEV_KEY, readGroups, editGroup, type StrategyGroup, type StrategyGroupsDocument } from '#systems/utils/strategyGroups'
+import { GROUPS_SCOPE, GROUPS_KEY, GROUPS_DEV_KEY, readGroups, editGroup, placeSystem, type StrategyGroup, type StrategyGroupsDocument } from '#systems/utils/strategyGroups'
 
 function native() { return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window }
 async function read() {
@@ -16,6 +16,7 @@ async function write(value: StrategyGroupsDocument) {
 
 export const useStrategyGroupsStore = defineStore('systems/groups', () => {
   const groups = ref<StrategyGroup[]>([])
+  const order = ref<string[]>([])
   const loaded = ref(false)
   const error = ref<string | null>(null)
   const pending = ref(0)
@@ -30,6 +31,7 @@ export const useStrategyGroupsStore = defineStore('systems/groups', () => {
         const doc = await read()
         if (change) { change(doc); await write(doc) }
         groups.value = doc.groups
+        order.value = doc.order
         loaded.value = true
         error.value = null
         return true
@@ -60,13 +62,9 @@ export const useStrategyGroupsStore = defineStore('systems/groups', () => {
     })
   }
   function remove(id: string) { return run(doc => { doc.groups = doc.groups.filter(g => g.id !== id) }) }
-  function moveSystem(systemId: string, targetId: string | null) {
-    return run(doc => {
-      const target = doc.groups.find(g => g.id === targetId)
-      if (targetId !== null && !target) throw new Error('This group no longer exists. Reload the groups.')
-      for (const group of doc.groups) group.systemIds = group.systemIds.filter(id => id !== systemId)
-      if (target) target.systemIds.push(systemId)
-    })
+  /** `before` null = the end of the target section; `catalog` = every strategy id in catalog order. */
+  function moveSystem(systemId: string, targetId: string | null, before: string | null = null, catalog: string[] = []) {
+    return run(doc => placeSystem(doc, systemId, targetId, before, catalog))
   }
-  return { groups, loaded, error, busy, load, saveGroup, toggle, remove, moveSystem }
+  return { groups, order, loaded, error, busy, load, saveGroup, toggle, remove, moveSystem }
 })
