@@ -25,7 +25,10 @@ const rail = ref<HTMLElement>()
 const draggedId = ref<string | null>(null)
 /** Where the dragged strategy lands: a section (null = ungrouped), before a strategy (null = at the section's end). */
 const drop = ref<{ groupId: string | null; before: string | null } | null>(null)
-let press: { id: string; x: number; y: number; pointerId: number; el: HTMLElement; cancelled: boolean } | null = null
+const draggedGroup = ref<string | null>(null)
+/** Where a dragged folder lands: before that folder, null = after the last one. */
+const groupDrop = ref<{ before: string | null } | null>(null)
+let press: { kind: 'strategy' | 'group'; id: string; x: number; y: number; pointerId: number; el: HTMLElement; cancelled: boolean } | null = null
 let pointer = { x: 0, y: 0 }
 let scrollBox: HTMLElement | undefined
 let frame = 0
@@ -39,6 +42,9 @@ function select(id: string, status: string) {
   void config.load(id)
   void router.push(`/algo/manual/${id}/${app.viewFor(id)}`)
 }
+function toggleGroup(id: string) {
+  if (!suppressClick) void groups.toggle(id)
+}
 function edit(group: StrategyGroup | null) {
   editedGroup.value = group
   editing.value = true
@@ -49,11 +55,13 @@ function storageChanged(event: StorageEvent) {
 // Pointer events, not HTML5 drag and drop: that API broke differently at every step inside WebView2 (see TabStrip.vue).
 function startDrag(event: PointerEvent) {
   if (event.button !== 0 || !event.isPrimary) return
-  const el = (event.target as HTMLElement).closest<HTMLElement>('[data-strategy-id]')
-  const id = el?.dataset.strategyId
-  if (!el || !id || groups.busy || !groups.loaded || systems.byId(id)?.status !== 'ready') return
+  // A folder is dragged by its header (the open/close button), a strategy by its row.
+  const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-group-handle]')
+  const el = handle ?? (event.target as HTMLElement).closest<HTMLElement>('[data-strategy-id]')
+  const id = handle ? handle.dataset.groupHandle : el?.dataset.strategyId
+  if (!el || !id || groups.busy || !groups.loaded || (!handle && systems.byId(id)?.status !== 'ready')) return
   endDrag()
-  press = { id, x: event.clientX, y: event.clientY, pointerId: event.pointerId, el, cancelled: false }
+  press = { kind: handle ? 'group' : 'strategy', id, x: event.clientX, y: event.clientY, pointerId: event.pointerId, el, cancelled: false }
   window.addEventListener('pointermove', moveDrag, { passive: false })
   window.addEventListener('pointerup', finishDrag)
   window.addEventListener('pointercancel', endDrag)
@@ -63,10 +71,11 @@ function startDrag(event: PointerEvent) {
 function moveDrag(event: PointerEvent) {
   if (!press || press.cancelled || event.pointerId !== press.pointerId) return
   pointer = { x: event.clientX, y: event.clientY }
-  if (!draggedId.value) {
+  if (!draggedId.value && !draggedGroup.value) {
     if (Math.hypot(pointer.x - press.x, pointer.y - press.y) < 5) return
     if (groups.busy) return endDrag()
-    draggedId.value = press.id
+    if (press.kind === 'group') draggedGroup.value = press.id
+    else draggedId.value = press.id
     try { press.el.setPointerCapture(press.pointerId) } catch { /* synthetic events carry no pointer to capture */ }
     document.body.style.userSelect = 'none'
     scrollBox = scroller()
@@ -78,22 +87,28 @@ function moveDrag(event: PointerEvent) {
 function finishDrag(event: PointerEvent) {
   if (!press || event.pointerId !== press.pointerId) return
   const id = draggedId.value
-  const dragged = !!id || press.cancelled
-  if (id) { pointer = { x: event.clientX, y: event.clientY }; updateDrop() }
+  const groupId = draggedGroup.value
+  const dragged = !!id || !!groupId || press.cancelled
+  if (id || groupId) { pointer = { x: event.clientX, y: event.clientY }; updateDrop() }
   const target = drop.value
+  const groupTarget = groupDrop.value
   endDrag()
   if (!dragged) return
-  // The click that ends a drag must not open the strategy; cleared after that click has fired.
+  // The click that ends a drag must not open the strategy or toggle the folder; cleared after that click has fired.
   suppressClick = true
   setTimeout(() => { suppressClick = false })
-  if (id && target) void groups.moveSystem(id, target.groupId, target.before, systems.systems.map(s => s.id))
+  const catalog = systems.systems.map(s => s.id)
+  if (id && target) void groups.moveSystem(id, target.groupId, target.before, catalog)
+  if (groupId && groupTarget) void groups.moveGroup(groupId, groupTarget.before, catalog)
 }
 function escapeDrag(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || !press || !draggedId.value) return
+  if (event.key !== 'Escape' || !press || !(draggedId.value || draggedGroup.value)) return
   event.preventDefault()
   press.cancelled = true
   draggedId.value = null
   drop.value = null
+  draggedGroup.value = null
+  groupDrop.value = null
   cancelAnimationFrame(frame)
 }
 function endDrag() {
@@ -101,6 +116,8 @@ function endDrag() {
   press = null
   draggedId.value = null
   drop.value = null
+  draggedGroup.value = null
+  groupDrop.value = null
   cancelAnimationFrame(frame)
   document.body.style.userSelect = ''
   window.removeEventListener('pointermove', moveDrag)
@@ -115,6 +132,7 @@ function sectionSystems(groupId: string | null) {
 }
 /** The section under the pointer and the first visible strategy in it whose middle lies below the pointer. */
 function updateDrop() {
+  if (draggedGroup.value) return updateGroupDrop()
   drop.value = null
   const section = document.elementFromPoint(pointer.x, pointer.y)?.closest<HTMLElement>('[data-drop-group]')
   if (!section || !rail.value?.contains(section) || !draggedId.value) return
@@ -129,6 +147,23 @@ function updateDrop() {
   // Its own slot: nothing would change, so no line.
   if (at >= 0 && (before === draggedId.value || before === (ids[at + 1] ?? null))) return
   drop.value = { groupId, before }
+}
+/** Anywhere over the rail: the first other folder whose middle lies below the pointer. */
+function updateGroupDrop() {
+  groupDrop.value = null
+  const hit = document.elementFromPoint(pointer.x, pointer.y)
+  const moving = draggedGroup.value
+  if (!hit || !rail.value?.contains(hit) || !moving) return
+  const next = [...rail.value.querySelectorAll<HTMLElement>('[data-drop-group]')].find(el => {
+    if (!el.dataset.dropGroup || el.dataset.dropGroup === moving) return false
+    const box = el.getBoundingClientRect()
+    return pointer.y < box.top + box.height / 2
+  })
+  const before = next?.dataset.dropGroup ?? null
+  const ids = groups.groups.map(g => g.id)
+  // Its own slot: nothing would change, so no line.
+  if (before === (ids[ids.indexOf(moving) + 1] ?? null)) return
+  groupDrop.value = { before }
 }
 function scroller() {
   for (let el = rail.value?.parentElement; el; el = el.parentElement) {
@@ -150,6 +185,14 @@ function itemClass(groupId: string | null, id: string, list: SystemMeta[]) {
     'qs-rail__item--dragged': draggedId.value === id,
     'qs-rail__item--before': here?.before === id,
     'qs-rail__item--after': !!here && here.before === null && list.at(-1)?.id === id,
+  }
+}
+function sectionClass(groupId: string, index: number) {
+  return {
+    'qs-rail__drop-target': drop.value?.groupId === groupId,
+    'qs-rail__section--dragged': draggedGroup.value === groupId,
+    'qs-rail__section--before': groupDrop.value?.before === groupId,
+    'qs-rail__section--after': groupDrop.value?.before === null && index === sections.value.groups.length - 1,
   }
 }
 onMounted(() => {
@@ -187,9 +230,9 @@ onDeactivated(() => { editing.value = false; endDrag() })
         <StrategyRailItem v-for="s in sections.ungrouped" :key="s.id" :class="itemClass(null, s.id, sections.ungrouped)" :strategy="s" :active="systemId === s.id" :shortcut="shortcut(s.id)" @select="select(s.id, s.status)" />
         <span v-if="!sections.ungrouped.length" class="qs-rail__drop-hint">Drop here to ungroup</span>
       </div>
-      <section v-for="section in sections.groups" :key="section.group.id" class="qs-rail__section" :class="{ 'qs-rail__drop-target': drop?.groupId === section.group.id }" :data-drop-group="section.group.id" :aria-label="`Group ${section.group.name}`">
+      <section v-for="(section, i) in sections.groups" :key="section.group.id" class="qs-rail__section" :class="sectionClass(section.group.id, i)" :data-drop-group="section.group.id" :aria-label="`Group ${section.group.name}`">
         <div class="qs-rail__group-header" :class="{ 'qs-rail__group-header--active': section.systems.some(s => s.id === systemId) }">
-          <button class="qs-rail__toggle" :aria-expanded="!section.group.collapsed" :aria-controls="`strategy-group-${section.group.id}`" :title="section.group.name" :disabled="groups.busy" @click="groups.toggle(section.group.id)">
+          <button class="qs-rail__toggle" :aria-expanded="!section.group.collapsed" :aria-controls="`strategy-group-${section.group.id}`" :title="section.group.name" :disabled="groups.busy" :data-group-handle="section.group.id" @click="toggleGroup(section.group.id)">
             <ChevronRight class="qs-rail__chevron" :class="{ 'qs-rail__chevron--open': !section.group.collapsed }" :size="13" />
             <component :is="section.group.collapsed ? Folder : FolderOpen" :size="15" />
             <span class="qs-rail__group-name">{{ section.group.name }}</span>
@@ -225,6 +268,11 @@ onDeactivated(() => { editing.value = false; endDrag() })
 .qs-rail__item--before::before, .qs-rail__item--after::after { content: ''; position: absolute; left: 4px; right: 4px; height: 2px; border-radius: 1px; background: var(--qs-accent); pointer-events: none; }
 .qs-rail__item--before::before { top: -2px; }
 .qs-rail__item--after::after { bottom: -2px; }
+.qs-rail__section--dragged { opacity: .45; }
+.qs-rail__section--before, .qs-rail__section--after { position: relative; }
+.qs-rail__section--before::before, .qs-rail__section--after::after { content: ''; position: absolute; left: 4px; right: 4px; height: 2px; border-radius: 1px; background: var(--qs-accent); pointer-events: none; }
+.qs-rail__section--before::before { top: -7px; }
+.qs-rail__section--after::after { bottom: -7px; }
 .qs-rail__drop-hint { padding: 6px 8px; font-size: 10px; color: var(--qs-text-muted); pointer-events: none; }
 .qs-rail__label { padding: 0 8px 4px; font-size: 10px; color: var(--qs-text-muted); }
 .qs-rail__group-header { display: flex; align-items: center; gap: 2px; border-radius: 6px; }

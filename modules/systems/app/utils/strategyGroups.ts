@@ -60,9 +60,7 @@ export function placeSystem(doc: StrategyGroupsDocument, systemId: string, group
   if (groupId !== null && !target) throw new Error('This group no longer exists. Reload the groups.')
   for (const group of doc.groups) group.systemIds = group.systemIds.filter(id => id !== systemId)
   if (target) target.systemIds.push(systemId)
-  const all = [...new Set([...catalog, ...doc.order, systemId])].map(id => ({ id }))
-  const sections = groupSections(doc.groups, all, doc.order)
-  const lists = [sections.ungrouped, ...sections.groups.map(s => s.systems)].map(list => list.map(s => s.id))
+  const lists = sectionIds(doc, [...catalog, systemId])
   const list = lists[target ? doc.groups.indexOf(target) + 1 : 0]!
   const from = list.indexOf(systemId)
   // Dropped right before itself: it stays where it is.
@@ -71,6 +69,23 @@ export function placeSystem(doc: StrategyGroupsDocument, systemId: string, group
   const at = before === null ? -1 : list.indexOf(before)
   list.splice(at < 0 ? list.length : at, 0, systemId)
   doc.order = lists.flat()
+}
+
+/** Moves a folder before another folder, or to the end; Ctrl+1…9 keep following the rail from top to bottom. */
+export function placeGroup(doc: StrategyGroupsDocument, groupId: string, before: string | null, catalog: string[]) {
+  const group = doc.groups.find(g => g.id === groupId)
+  if (!group) throw new Error('This group no longer exists. Reload the groups.')
+  if (before === groupId) return
+  doc.groups.splice(doc.groups.indexOf(group), 1)
+  const at = before === null ? -1 : doc.groups.findIndex(g => g.id === before)
+  doc.groups.splice(at < 0 ? doc.groups.length : at, 0, group)
+  doc.order = sectionIds(doc, catalog).flat()
+}
+
+/** Strategy ids per rail section, top to bottom: ungrouped first, then each folder. */
+function sectionIds(doc: StrategyGroupsDocument, ids: string[]) {
+  const sections = groupSections(doc.groups, [...new Set([...ids, ...doc.order])].map(id => ({ id })), doc.order)
+  return [sections.ungrouped, ...sections.groups.map(s => s.systems)].map(list => list.map(s => s.id))
 }
 
 export function editGroup(doc: StrategyGroupsDocument, id: string, name: string, members: string[], existing: boolean) {
