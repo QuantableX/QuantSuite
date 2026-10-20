@@ -40,11 +40,15 @@ async function installAll() {
   try {
     const outcome = await store.install(keys, true)
     const created = outcome.written.filter((w) => w.created).length
-    wb.setNotice(
-      `Installed all from ${source}: ${created} new and ${outcome.written.length - created} replaced script(s). Restart a running QuantSystems engine to use them there.`,
-      'ok',
-      8000,
-    )
+    const replaced = outcome.written.length - created
+    const parts = [
+      created ? `${created} new` : '',
+      replaced ? `${replaced} replaced` : '',
+      // Identical files that were already there: now recorded as installed.
+      outcome.adopted.length ? `${outcome.adopted.length} already in your library (identical, now recorded)` : '',
+    ].filter(Boolean)
+    const restart = outcome.written.length ? ' Restart a running QuantSystems engine to use them there.' : ''
+    wb.setNotice(`Installed all from ${source}: ${parts.join(', ') || 'nothing to do'}.${restart}`, 'ok', 8000)
   } catch (err) {
     wb.setNotice(`Install all failed — nothing was written. ${String(err)}`, 'error', 12000)
   }

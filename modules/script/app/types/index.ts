@@ -528,7 +528,9 @@ export interface CollectionPlanItem {
   type: 'indicator' | 'library'
   version: string
   installed_version: string | null
-  action: 'create' | 'replace' | 'skip' | 'conflict'
+  /** `adopt`: exactly these files are already in the library without a
+   *  Collection record — installing records them, nothing is written. */
+  action: 'create' | 'replace' | 'skip' | 'adopt' | 'conflict'
   reason: string | null
   /** Chosen by the user; false = pulled in as a requirement. */
   requested: boolean
@@ -545,6 +547,8 @@ export interface CollectionPlan {
 export interface CollectionInstallOutcome {
   plan: CollectionPlan
   written: { key: string; file: string; created: boolean; version: number | null }[]
+  /** Keys recorded as installed without a write (plan action `adopt`). */
+  adopted: string[]
   check: unknown
 }
 
