@@ -139,10 +139,8 @@ function run() {
       </button>
     </header>
 
-    <!-- Reserve this track even when idle: progress never moves the controls
-         or the chart. Run dates and costs already live in the right sidebar. -->
-    <div class="qs-backtest__status">
-      <div v-if="state.isRunning" class="qs-backtest__progress">
+    <div v-if="state.isRunning" class="qs-backtest__status">
+      <div class="qs-backtest__progress">
         <div class="qs-bar" role="progressbar" aria-label="Backtest progress"
           :aria-valuenow="Math.round(state.progressValue * 100)" :aria-valuemin="0" :aria-valuemax="100">
           <div class="qs-bar__fill" :style="{ width: `${Math.round(state.progressValue * 100)}%` }" />

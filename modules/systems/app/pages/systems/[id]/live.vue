@@ -34,25 +34,19 @@ function run() {
   <div v-else class="qs-live">
     <header class="qs-live__head">
       <h1 class="qs-live__title">Live Evaluation</h1>
-      <span class="qs-live__range mono">{{ cfg.liveStartDate }} → Today</span>
 
       <button class="btn btn-primary qs-live__run" :disabled="state.loading" @click="run">
         {{ state.loading ? (live.runningSystemId === systemId ? 'Evaluating…' : 'Queued…') : 'Run Live Eval' }}
       </button>
     </header>
 
-    <!-- Same track as the backtest: reserved even when idle, so progress never
-         moves the header or the panels. -->
-    <div class="qs-live__status">
-      <div v-if="state.loading" class="qs-live__progress">
+    <div v-if="state.loading" class="qs-live__status">
+      <div class="qs-live__progress">
         <div class="qs-bar" role="progressbar" aria-label="Live evaluation progress"
           :aria-valuenow="Math.round(state.progressValue * 100)" :aria-valuemin="0" :aria-valuemax="100">
           <div class="qs-bar__fill" :style="{ width: `${Math.round(state.progressValue * 100)}%` }" />
         </div>
         <span class="qs-live__progress-lbl" :title="state.progressLabel || 'Working…'" role="status">{{ state.progressLabel || 'Working…' }}</span>
-      </div>
-      <div v-else-if="result" class="qs-live__meta mono">
-        {{ tracking?.startDate }} → {{ result.asOf }} · {{ result.provider }} · {{ result.mode === 'single_asset' ? result.singleAsset?.pair : `${result.universe.length} assets` }} · Confirmed candles
       </div>
     </div>
 
@@ -103,17 +97,8 @@ function run() {
   font-weight: 600;
 }
 
-.qs-live__range { font-size: 12px; color: var(--qs-text-muted); }
 .qs-live__notice { flex-shrink: 0; margin: 0; font-size: 12px; color: var(--qs-warning); }
 .qs-live__notice p { margin: 0; }
-
-.qs-live__meta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--qs-text-muted);
-}
 
 .qs-live__status {
   flex: 0 0 26px;
