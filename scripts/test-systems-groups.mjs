@@ -10,7 +10,7 @@ registerHooks({ resolve(specifier, context, next) {
 } })
 Object.assign(globalThis, { ref, computed, window: {} })
 const { useStrategyGroupsStore } = await import('../modules/systems/app/stores/groups.ts')
-const { groupSections } = await import('../modules/systems/app/utils/strategyGroups.ts')
+const { groupSections, orderSystems } = await import('../modules/systems/app/utils/strategyGroups.ts')
 
 function setup(t, initial = null) {
   const disk = { value: initial, writes: 0, failRead: false, failWrite: false }
@@ -143,4 +143,49 @@ test('drag moves into, between and out of collapsed groups without changing coll
   await reloaded.load()
   assert.equal(reloaded.groups[0].collapsed, true)
   assert.ok(groupSections(reloaded.groups, catalog).ungrouped.some(s => s.id === 'one'))
+})
+
+test('dragging reorders within and across sections, persists, and drives Ctrl+1…9', async t => {
+  const { store, disk } = setup(t, { version: 1, groups: [] })
+  const ids = catalog.map(s => s.id)
+  const rail = () => {
+    const s = groupSections(store.groups, catalog, store.order)
+    return [s.ungrouped.map(x => x.id), ...s.groups.map(g => g.systems.map(x => x.id))]
+  }
+  await store.load()
+  assert.deepEqual(store.order, [], 'documents saved before the order existed load with catalog order')
+  assert.deepEqual(rail(), [ids])
+  await store.moveSystem('three', null, 'one', ids)
+  assert.deepEqual(rail(), [['baseline', 'three', 'one', 'two']])
+  await store.moveSystem('baseline', null, null, ids)
+  assert.deepEqual(rail(), [['three', 'one', 'two', 'baseline']])
+  await store.moveSystem('one', null, 'one', ids)
+  await store.moveSystem('one', null, 'two', ids)
+  assert.deepEqual(rail(), [['three', 'one', 'two', 'baseline']], 'dropping into its own slot changes nothing')
+  await store.saveGroup(null, 'Top', ['two', 'baseline'])
+  const top = store.groups[0].id
+  assert.deepEqual(rail(), [['three', 'one'], ['two', 'baseline']])
+  await store.moveSystem('three', top, 'baseline', ids)
+  assert.deepEqual(rail(), [['one'], ['two', 'three', 'baseline']])
+  await store.moveSystem('baseline', top, 'two', ids)
+  assert.deepEqual(rail(), [['one'], ['baseline', 'two', 'three']])
+  await store.moveSystem('two', null, 'one', ids)
+  assert.deepEqual(rail(), [['two', 'one'], ['baseline', 'three']])
+  assert.deepEqual(orderSystems(catalog, store.order).map(s => s.id), ['two', 'one', 'baseline', 'three'], 'shortcuts follow the rail top to bottom')
+  assert.equal(await store.moveSystem('one', 'removed-group', null, ids), false)
+  setActivePinia(createPinia())
+  const reloaded = useStrategyGroupsStore()
+  await reloaded.load()
+  assert.deepEqual(reloaded.order, ['two', 'one', 'baseline', 'three'])
+  assert.deepEqual(disk.value.order, reloaded.order)
+  const added = [...catalog, { id: 'new', name: 'new', short: '', status: 'ready', description: '' }]
+  assert.deepEqual(groupSections(reloaded.groups, added, reloaded.order).ungrouped.map(s => s.id), ['two', 'one', 'new'], 'new strategies join at the end')
+})
+
+test('a malformed saved order is reported and never overwritten', async t => {
+  const { store, disk } = setup(t, { version: 1, groups: [], order: ['one', 'one'] })
+  assert.equal(await store.load(), false)
+  assert.match(store.error, /order is invalid/)
+  assert.equal(await store.moveSystem('two', null, 'one', ['one', 'two']), false)
+  assert.equal(disk.writes, 0)
 })

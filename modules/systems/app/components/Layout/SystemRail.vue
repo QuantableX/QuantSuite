@@ -6,7 +6,8 @@ import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
 import { useStrategyGroupsStore } from '#systems/stores/groups'
 import { useActiveView } from '#systems/composables/useActiveView'
-import { groupSections, GROUPS_SCOPE, GROUPS_KEY, GROUPS_DEV_KEY, type StrategyGroup } from '#systems/utils/strategyGroups'
+import { groupSections, orderSystems, GROUPS_SCOPE, GROUPS_KEY, GROUPS_DEV_KEY, type StrategyGroup } from '#systems/utils/strategyGroups'
+import type { SystemMeta } from '#systems/types'
 import StrategyRailItem from './StrategyRailItem.vue'
 import StrategyGroupEditor from './StrategyGroupEditor.vue'
 
@@ -16,17 +17,24 @@ const config = useConfigStore()
 const groups = useStrategyGroupsStore()
 const router = useRouter()
 const { systemId } = useActiveView()
-const sections = computed(() => groupSections(groups.groups, systems.systems))
+const sections = computed(() => groupSections(groups.groups, systems.systems, groups.order))
+const ordered = computed(() => orderSystems(systems.systems, groups.order))
 const editing = ref(false)
 const editedGroup = ref<StrategyGroup | null>(null)
+const rail = ref<HTMLElement>()
 const draggedId = ref<string | null>(null)
-const dropTarget = ref<string | null | undefined>(undefined)
-const dragType = 'application/x-quantsuite-strategy'
+/** Where the dragged strategy lands: a section (null = ungrouped), before a strategy (null = at the section's end). */
+const drop = ref<{ groupId: string | null; before: string | null } | null>(null)
+let press: { id: string; x: number; y: number; pointerId: number; el: HTMLElement; cancelled: boolean } | null = null
+let pointer = { x: 0, y: 0 }
+let scrollBox: HTMLElement | undefined
+let frame = 0
+let suppressClick = false
 let unsubscribe: (() => void) | undefined
-const shortcut = (id: string) => systems.systems.findIndex(s => s.id === id)
+const shortcut = (id: string) => ordered.value.findIndex(s => s.id === id)
 
 function select(id: string, status: string) {
-  if (status !== 'ready') return
+  if (suppressClick || status !== 'ready') return
   app.setActiveSystem(id)
   void config.load(id)
   void router.push(`/algo/manual/${id}/${app.viewFor(id)}`)
@@ -38,32 +46,111 @@ function edit(group: StrategyGroup | null) {
 function storageChanged(event: StorageEvent) {
   if (event.key === GROUPS_DEV_KEY) void groups.load(true)
 }
-function endDrag() { draggedId.value = null; dropTarget.value = undefined }
-function startDrag(event: DragEvent) {
-  const id = (event.target as HTMLElement).closest<HTMLElement>('[data-strategy-id]')?.dataset.strategyId
-  if (groups.busy || !groups.loaded || !id || !systems.systems.some(s => s.id === id) || !event.dataTransfer) {
-    event.preventDefault()
-    return
-  }
-  draggedId.value = id
-  event.dataTransfer.effectAllowed = 'move'
-  event.dataTransfer.setData(dragType, id)
-}
-function dragOver(event: DragEvent, target: string | null) {
-  if (!draggedId.value || groups.busy || !event.dataTransfer?.types.includes(dragType)) return
-  event.preventDefault()
-  event.dataTransfer.dropEffect = 'move'
-  dropTarget.value = target
-}
-function dragLeave(event: DragEvent) {
-  if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) dropTarget.value = undefined
-}
-function drop(event: DragEvent, target: string | null) {
-  if (!draggedId.value || groups.busy) return
-  event.preventDefault()
-  const id = event.dataTransfer?.getData(dragType)
-  if (id === draggedId.value && systems.systems.some(s => s.id === id)) void groups.moveSystem(id, target)
+// Pointer events, not HTML5 drag and drop: that API broke differently at every step inside WebView2 (see TabStrip.vue).
+function startDrag(event: PointerEvent) {
+  if (event.button !== 0 || !event.isPrimary) return
+  const el = (event.target as HTMLElement).closest<HTMLElement>('[data-strategy-id]')
+  const id = el?.dataset.strategyId
+  if (!el || !id || groups.busy || !groups.loaded || systems.byId(id)?.status !== 'ready') return
   endDrag()
+  press = { id, x: event.clientX, y: event.clientY, pointerId: event.pointerId, el, cancelled: false }
+  window.addEventListener('pointermove', moveDrag, { passive: false })
+  window.addEventListener('pointerup', finishDrag)
+  window.addEventListener('pointercancel', endDrag)
+  window.addEventListener('keydown', escapeDrag)
+  window.addEventListener('blur', endDrag)
+}
+function moveDrag(event: PointerEvent) {
+  if (!press || press.cancelled || event.pointerId !== press.pointerId) return
+  pointer = { x: event.clientX, y: event.clientY }
+  if (!draggedId.value) {
+    if (Math.hypot(pointer.x - press.x, pointer.y - press.y) < 5) return
+    if (groups.busy) return endDrag()
+    draggedId.value = press.id
+    try { press.el.setPointerCapture(press.pointerId) } catch { /* synthetic events carry no pointer to capture */ }
+    document.body.style.userSelect = 'none'
+    scrollBox = scroller()
+    frame = requestAnimationFrame(autoScroll)
+  }
+  event.preventDefault()
+  updateDrop()
+}
+function finishDrag(event: PointerEvent) {
+  if (!press || event.pointerId !== press.pointerId) return
+  const id = draggedId.value
+  const dragged = !!id || press.cancelled
+  if (id) { pointer = { x: event.clientX, y: event.clientY }; updateDrop() }
+  const target = drop.value
+  endDrag()
+  if (!dragged) return
+  // The click that ends a drag must not open the strategy; cleared after that click has fired.
+  suppressClick = true
+  setTimeout(() => { suppressClick = false })
+  if (id && target) void groups.moveSystem(id, target.groupId, target.before, systems.systems.map(s => s.id))
+}
+function escapeDrag(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !press || !draggedId.value) return
+  event.preventDefault()
+  press.cancelled = true
+  draggedId.value = null
+  drop.value = null
+  cancelAnimationFrame(frame)
+}
+function endDrag() {
+  const previous = press
+  press = null
+  draggedId.value = null
+  drop.value = null
+  cancelAnimationFrame(frame)
+  document.body.style.userSelect = ''
+  window.removeEventListener('pointermove', moveDrag)
+  window.removeEventListener('pointerup', finishDrag)
+  window.removeEventListener('pointercancel', endDrag)
+  window.removeEventListener('keydown', escapeDrag)
+  window.removeEventListener('blur', endDrag)
+  if (previous?.el.hasPointerCapture(previous.pointerId)) previous.el.releasePointerCapture(previous.pointerId)
+}
+function sectionSystems(groupId: string | null) {
+  return groupId === null ? sections.value.ungrouped : sections.value.groups.find(s => s.group.id === groupId)?.systems ?? []
+}
+/** The section under the pointer and the first visible strategy in it whose middle lies below the pointer. */
+function updateDrop() {
+  drop.value = null
+  const section = document.elementFromPoint(pointer.x, pointer.y)?.closest<HTMLElement>('[data-drop-group]')
+  if (!section || !rail.value?.contains(section) || !draggedId.value) return
+  const groupId = section.dataset.dropGroup || null
+  const next = [...section.querySelectorAll<HTMLElement>('[data-strategy-id]')].find(el => {
+    const box = el.getBoundingClientRect()
+    return box.height > 0 && pointer.y < box.top + box.height / 2
+  })
+  const before = next?.dataset.strategyId ?? null
+  const ids = sectionSystems(groupId).map(s => s.id)
+  const at = ids.indexOf(draggedId.value)
+  // Its own slot: nothing would change, so no line.
+  if (at >= 0 && (before === draggedId.value || before === (ids[at + 1] ?? null))) return
+  drop.value = { groupId, before }
+}
+function scroller() {
+  for (let el = rail.value?.parentElement; el; el = el.parentElement) {
+    if (/auto|scroll/.test(getComputedStyle(el).overflowY)) return el
+  }
+}
+/** Scrolls the sidebar while the pointer is near its top or bottom edge, so far-away groups stay reachable. */
+function autoScroll() {
+  const rect = scrollBox?.getBoundingClientRect()
+  if (scrollBox && rect && pointer.x >= rect.left && pointer.x <= rect.right) {
+    const step = pointer.y < rect.top + 28 ? -7 : pointer.y > rect.bottom - 28 ? 7 : 0
+    if (step) { scrollBox.scrollTop += step; updateDrop() }
+  }
+  frame = requestAnimationFrame(autoScroll)
+}
+function itemClass(groupId: string | null, id: string, list: SystemMeta[]) {
+  const here = drop.value?.groupId === groupId ? drop.value : null
+  return {
+    'qs-rail__item--dragged': draggedId.value === id,
+    'qs-rail__item--before': here?.before === id,
+    'qs-rail__item--after': !!here && here.before === null && list.at(-1)?.id === id,
+  }
 }
 onMounted(() => {
   void groups.load()
@@ -74,6 +161,7 @@ onMounted(() => {
   window.addEventListener('storage', storageChanged)
 })
 onBeforeUnmount(() => {
+  endDrag()
   unsubscribe?.()
   window.removeEventListener('storage', storageChanged)
 })
@@ -82,7 +170,7 @@ onDeactivated(() => { editing.value = false; endDrag() })
 
 <template>
   <QSidebar>
-    <nav class="qs-rail" :class="{ 'qs-rail--dragging': draggedId }" aria-label="Strategies" @dragstart="startDrag" @dragend="endDrag">
+    <nav ref="rail" class="qs-rail" :class="{ 'qs-rail--dragging': draggedId }" aria-label="Strategies" @pointerdown="startDrag">
       <div class="qs-rail__heading">
         <span>Strategies</span><span class="qs-rail__count">{{ systems.systems.length }}</span>
       </div>
@@ -94,12 +182,12 @@ onDeactivated(() => { editing.value = false; endDrag() })
         {{ groups.error }}
         <button class="btn" :disabled="groups.busy" @click="groups.load(true)">Reload groups</button>
       </div>
-      <div v-if="sections.ungrouped.length || groups.groups.length" class="qs-rail__list" :class="{ 'qs-rail__drop-target': dropTarget === null }" aria-label="Ungrouped strategies" @dragover="dragOver($event, null)" @dragleave="dragLeave" @drop="drop($event, null)">
+      <div v-if="sections.ungrouped.length || groups.groups.length" class="qs-rail__list" :class="{ 'qs-rail__drop-target': drop?.groupId === null }" data-drop-group="" aria-label="Ungrouped strategies">
         <span v-if="groups.groups.length" class="qs-rail__label">Ungrouped</span>
-        <StrategyRailItem v-for="s in sections.ungrouped" :key="s.id" :strategy="s" :active="systemId === s.id" :shortcut="shortcut(s.id)" @select="select(s.id, s.status)" />
+        <StrategyRailItem v-for="s in sections.ungrouped" :key="s.id" :class="itemClass(null, s.id, sections.ungrouped)" :strategy="s" :active="systemId === s.id" :shortcut="shortcut(s.id)" @select="select(s.id, s.status)" />
         <span v-if="!sections.ungrouped.length" class="qs-rail__drop-hint">Drop here to ungroup</span>
       </div>
-      <section v-for="section in sections.groups" :key="section.group.id" class="qs-rail__section" :class="{ 'qs-rail__drop-target': dropTarget === section.group.id }" :aria-label="`Group ${section.group.name}`" @dragover="dragOver($event, section.group.id)" @dragleave="dragLeave" @drop="drop($event, section.group.id)">
+      <section v-for="section in sections.groups" :key="section.group.id" class="qs-rail__section" :class="{ 'qs-rail__drop-target': drop?.groupId === section.group.id }" :data-drop-group="section.group.id" :aria-label="`Group ${section.group.name}`">
         <div class="qs-rail__group-header" :class="{ 'qs-rail__group-header--active': section.systems.some(s => s.id === systemId) }">
           <button class="qs-rail__toggle" :aria-expanded="!section.group.collapsed" :aria-controls="`strategy-group-${section.group.id}`" :title="section.group.name" :disabled="groups.busy" @click="groups.toggle(section.group.id)">
             <ChevronRight class="qs-rail__chevron" :class="{ 'qs-rail__chevron--open': !section.group.collapsed }" :size="13" />
@@ -110,7 +198,7 @@ onDeactivated(() => { editing.value = false; endDrag() })
           <button class="qs-rail__icon qs-rail__edit" :aria-label="`Edit group ${section.group.name}`" :title="`Edit group ${section.group.name}`" :disabled="groups.busy" @click="edit(section.group)"><MoreHorizontal :size="15" /></button>
         </div>
         <div v-show="!section.group.collapsed" :id="`strategy-group-${section.group.id}`" class="qs-rail__members">
-          <StrategyRailItem v-for="s in section.systems" :key="s.id" :strategy="s" :active="systemId === s.id" :shortcut="shortcut(s.id)" @select="select(s.id, s.status)" />
+          <StrategyRailItem v-for="s in section.systems" :key="s.id" :class="itemClass(section.group.id, s.id, section.systems)" :strategy="s" :active="systemId === s.id" :shortcut="shortcut(s.id)" @select="select(s.id, s.status)" />
           <button v-if="!section.systems.length" class="qs-rail__empty" @click="edit(section.group)">Add strategies</button>
         </div>
       </section>
@@ -132,6 +220,11 @@ onDeactivated(() => { editing.value = false; endDrag() })
 .qs-rail__list, .qs-rail__section { border-radius: 6px; }
 .qs-rail--dragging .qs-rail__list, .qs-rail--dragging .qs-rail__section { outline: 1px dashed var(--qs-border); outline-offset: 2px; }
 .qs-rail--dragging .qs-rail__drop-target { outline: 2px solid var(--qs-accent); background: var(--qs-bg-hover); }
+.qs-rail__item--dragged { opacity: .45; }
+.qs-rail__item--before, .qs-rail__item--after { position: relative; }
+.qs-rail__item--before::before, .qs-rail__item--after::after { content: ''; position: absolute; left: 4px; right: 4px; height: 2px; border-radius: 1px; background: var(--qs-accent); pointer-events: none; }
+.qs-rail__item--before::before { top: -2px; }
+.qs-rail__item--after::after { bottom: -2px; }
 .qs-rail__drop-hint { padding: 6px 8px; font-size: 10px; color: var(--qs-text-muted); pointer-events: none; }
 .qs-rail__label { padding: 0 8px 4px; font-size: 10px; color: var(--qs-text-muted); }
 .qs-rail__group-header { display: flex; align-items: center; gap: 2px; border-radius: 6px; }
