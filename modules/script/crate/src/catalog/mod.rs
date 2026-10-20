@@ -4,7 +4,7 @@
 //!
 //! Every file is verified on the way in: the catalog names each manifest's
 //! sha256, each manifest names its files' sha256. An install is planned
-//! first (create / replace / skip / conflict per package), then staged — the
+//! first (create / replace / skip / adopt / conflict per package), then staged — the
 //! current library with the new files written in, verified by the engine
 //! (`quantscript stage-check`) — and only then written. `<library>/collection.json`
 //! remembers what the Collection installed, so an update can tell its own files
@@ -324,7 +324,9 @@ pub struct PlanItem {
     pub kind: String,
     pub version: String,
     pub installed_version: Option<String>,
-    /// `create` | `replace` | `skip` | `conflict`
+    /// `create` | `replace` | `skip` | `adopt` | `conflict` — `adopt`: the
+    /// library already holds exactly these files without a record of the
+    /// Collection; installing records them and writes nothing.
     pub action: String,
     pub reason: Option<String>,
     /// Chosen by the user (false: pulled in as a requirement).
@@ -366,8 +368,12 @@ pub fn plan_package(library: &Path, installed: &Installed, package: &Package, re
         }
     }
     let all_same = files.iter().all(|f| f.action == "same");
-    let (action, reason) = if all_same {
-        ("skip", Some(if record.is_some() { "installed — identical" } else { "already in the library — identical" }.to_string()))
+    let (action, reason) = if all_same && record.is_some() {
+        ("skip", Some("installed — identical".to_string()))
+    } else if all_same {
+        // Exactly these bytes, put there by hand: skipping them left the item
+        // "not installed" forever (Install all kept offering it).
+        ("adopt", Some("already in the library — identical; recorded as installed".to_string()))
     } else if record.is_some() && !modified.is_empty() {
         ("conflict", Some(format!("changed in the library since the Collection installed it: {}", modified.join(", "))))
     } else if record.is_some() {
@@ -437,6 +443,8 @@ pub struct Written {
 pub struct InstallOutcome {
     pub plan: Plan,
     pub written: Vec<Written>,
+    /// Keys recorded as installed without a write (plan action `adopt`).
+    pub adopted: Vec<String>,
     pub check: Option<Value>,
 }
 
@@ -490,35 +498,43 @@ pub fn install(
     if !conflicts.is_empty() && !overwrite {
         return Err(format!("Not installed — conflicts: {}. Confirm overwriting to replace them.", conflicts.join("; ")));
     }
-    let work: Vec<(&PlanItem, &Package)> = plan.items.iter().zip(&packages).filter(|(i, _)| i.action != "skip").collect();
-    if work.is_empty() {
-        return Ok(InstallOutcome { plan, written: Vec::new(), check: None });
+    let work: Vec<(&PlanItem, &Package)> =
+        plan.items.iter().zip(&packages).filter(|(i, _)| i.action != "skip" && i.action != "adopt").collect();
+    let adopt: Vec<&Package> = plan.items.iter().zip(&packages).filter(|(i, _)| i.action == "adopt").map(|(_, p)| p).collect();
+    if work.is_empty() && adopt.is_empty() {
+        return Ok(InstallOutcome { plan, written: Vec::new(), adopted: Vec::new(), check: None });
     }
 
-    // Stage: the library as it is, with the new files written in.
-    let staged = stage_dir();
-    let check = (|| {
-        copy_tree(library, &staged)?;
-        for (item, package) in &work {
-            for (path, bytes) in package.targets() {
-                let target = staged.join(&path);
-                if let Some(parent) = target.parent() {
-                    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    // Stage: the library as it is, with the new files written in. Adopted
+    // packages change no file, so on their own they need no check.
+    let check = if work.is_empty() {
+        None
+    } else {
+        let staged = stage_dir();
+        let check = (|| {
+            copy_tree(library, &staged)?;
+            for (item, package) in &work {
+                for (path, bytes) in package.targets() {
+                    let target = staged.join(&path);
+                    if let Some(parent) = target.parent() {
+                        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                    }
+                    fs::write(&target, bytes).map_err(|e| format!("Stage {path}: {e}"))?;
                 }
-                fs::write(&target, bytes).map_err(|e| format!("Stage {path}: {e}"))?;
+                for file in item.files.iter().filter(|f| f.action == "remove") {
+                    let _ = fs::remove_file(staged.join(&file.path));
+                }
             }
-            for file in item.files.iter().filter(|f| f.action == "remove") {
-                let _ = fs::remove_file(staged.join(&file.path));
-            }
+            let scripts: Vec<String> = work.iter().map(|(_, p)| p.script()).collect();
+            stager.check(&staged, &scripts)
+        })();
+        let _ = fs::remove_dir_all(&staged);
+        let check = check?;
+        if check.get("blocking").and_then(Value::as_bool).unwrap_or(true) {
+            return Err(format!("Not installed — the library would not load with these files: {}", blocking_reason(&check)));
         }
-        let scripts: Vec<String> = work.iter().map(|(_, p)| p.script()).collect();
-        stager.check(&staged, &scripts)
-    })();
-    let _ = fs::remove_dir_all(&staged);
-    let check = check?;
-    if check.get("blocking").and_then(Value::as_bool).unwrap_or(true) {
-        return Err(format!("Not installed — the library would not load with these files: {}", blocking_reason(&check)));
-    }
+        Some(check)
+    };
 
     // Write: requirements first; version files before their script. The
     // history's lock is held for the writes only, not for fetch and check.
@@ -560,21 +576,34 @@ pub fn install(
         for file in item.files.iter().filter(|f| f.action == "remove") {
             let _ = fs::remove_file(library.join(&file.path));
         }
-        installed.items.insert(
-            key.clone(),
-            InstalledItem {
-                source: source.id.clone(),
-                version: package.manifest.version.clone(),
-                commit: commit.to_string(),
-                installed_at: now_iso(),
-                requires: package.manifest.requires.clone(),
-                keys: package.manifest.registers.clone(),
-                files: record_files,
-            },
-        );
+        installed.items.insert(key.clone(), installed_item(source, commit, package, record_files));
         save_installed(library, &installed)?;
     }
-    Ok(InstallOutcome { plan, written, check: Some(check) })
+
+    // Adopt: the files are already there, byte for byte — record them only
+    // (no write, no history entry), so updates and removals know them.
+    let mut adopted = Vec::new();
+    for package in &adopt {
+        let files = package.targets().iter().map(|(path, bytes)| (path.clone(), sha256_hex(bytes))).collect();
+        installed.items.insert(package.manifest.key.clone(), installed_item(source, commit, package, files));
+        adopted.push(package.manifest.key.clone());
+    }
+    if !adopted.is_empty() {
+        save_installed(library, &installed)?;
+    }
+    Ok(InstallOutcome { plan, written, adopted, check })
+}
+
+fn installed_item(source: &Source, commit: &str, package: &Package, files: BTreeMap<String, String>) -> InstalledItem {
+    InstalledItem {
+        source: source.id.clone(),
+        version: package.manifest.version.clone(),
+        commit: commit.to_string(),
+        installed_at: now_iso(),
+        requires: package.manifest.requires.clone(),
+        keys: package.manifest.registers.clone(),
+        files,
+    }
 }
 
 fn blocking_reason(check: &Value) -> String {

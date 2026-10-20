@@ -424,8 +424,15 @@ test('the Collection lists, filters and badges catalog items and sums up a plan'
     { key: 'gamma', action: 'create', requested: false },
     { key: 'beta', action: 'conflict', requested: true },
   ] }
-  assert.deepEqual(planSummary(plan), { create: 1, replace: 0, skip: 1, conflict: 1, dependencies: 1, empty: false })
+  assert.deepEqual(planSummary(plan), { create: 1, replace: 0, skip: 1, adopt: 0, conflict: 1, dependencies: 1, empty: false })
   assert.equal(planSummary({ ...plan, conflicts: 0, items: [plan.items[0]] }).empty, true)
+  // Identical files without a Collection record: adopted (recorded) — an
+  // install still has something to do, and they are no "requirement that comes with it".
+  const adopted = { source: 's', commit: 'c', conflicts: 0, items: [
+    { key: 'helper', action: 'adopt', requested: false },
+    { key: 'gamma', action: 'adopt', requested: true },
+  ] }
+  assert.deepEqual(planSummary(adopted), { create: 0, replace: 0, skip: 0, adopt: 2, conflict: 0, dependencies: 0, empty: false })
 })
 test('Install all asks for everything missing or outdated, never a current or too-new package', () => {
   const local = (over = {}) => ({ installed_version: null, installed_commit: null, update: false, modified: false, present: false, conflict: false, too_new: false, ...over })

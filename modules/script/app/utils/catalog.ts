@@ -119,9 +119,11 @@ export interface PlanSummary {
   create: number
   replace: number
   skip: number
+  /** Already in the library, identical — recorded as installed, not written. */
+  adopt: number
   conflict: number
   dependencies: number
-  /** Nothing would be written. */
+  /** Nothing would be written or recorded. */
   empty: boolean
 }
 
@@ -131,11 +133,12 @@ export function planSummary(plan: CollectionPlan): PlanSummary {
     create: count('create'),
     replace: count('replace'),
     skip: count('skip'),
+    adopt: count('adopt'),
     conflict: count('conflict'),
-    dependencies: plan.items.filter((i) => !i.requested && i.action !== 'skip').length,
+    dependencies: plan.items.filter((i) => !i.requested && i.action !== 'skip' && i.action !== 'adopt').length,
     empty: false,
   }
-  s.empty = s.create + s.replace + s.conflict === 0
+  s.empty = s.create + s.replace + s.adopt + s.conflict === 0
   return s
 }
 
@@ -143,6 +146,7 @@ export const PLAN_ACTION_LABELS: Record<string, string> = {
   create: 'New',
   replace: 'Replaced',
   skip: 'Unchanged',
+  adopt: 'Recorded',
   conflict: 'Conflict',
 }
 

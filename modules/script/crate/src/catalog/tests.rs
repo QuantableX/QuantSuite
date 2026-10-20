@@ -160,21 +160,47 @@ fn an_install_brings_the_requirements_first_and_records_everything() {
 }
 
 #[test]
-fn identical_files_are_skipped_and_nothing_is_rewritten() {
+fn identical_files_are_skipped_or_adopted_and_nothing_is_rewritten() {
     let t = tree("identical");
     let conn = Mutex::new(db());
     run(&t, &conn, &["alpha"], false, &Pass::default()).unwrap();
     let again = run(&t, &conn, &["alpha"], false, &Pass::default()).unwrap();
     assert!(again.plan.items.iter().all(|i| i.action == "skip"), "{:?}", again.plan.items);
-    assert!(again.written.is_empty());
+    assert!(again.written.is_empty() && again.adopted.is_empty());
     assert_eq!(history::latest(&conn.lock().unwrap(), "alpha.py").unwrap().unwrap().version, 1);
 
-    // The same bytes the user put there themselves: skipped too, not a conflict.
+    // The same bytes the user put there themselves: not a conflict, and not
+    // skipped either (it stayed "not installed" forever) — adopted: recorded,
+    // nothing staged, written or versioned.
     let t2 = tree("identical-own");
-    fs::copy(t2.repo.join("libraries/helper_lib/helper_lib.py"), t2.library.join("helper_lib.py")).unwrap();
-    let outcome = run(&t2, &conn, &["helper_lib"], false, &Pass::default()).unwrap();
-    assert_eq!(outcome.plan.items[0].action, "skip");
-    assert_eq!(outcome.plan.items[0].reason.as_deref(), Some("already in the library — identical"));
+    let own = t2.library.join("helper_lib.py");
+    fs::copy(t2.repo.join("libraries/helper_lib/helper_lib.py"), &own).unwrap();
+    let before = fs::metadata(&own).unwrap().modified().unwrap();
+    let conn2 = Mutex::new(db());
+    let stager = Pass::default();
+    let outcome = run(&t2, &conn2, &["helper_lib"], false, &stager).unwrap();
+    assert_eq!(outcome.plan.items[0].action, "adopt");
+    assert_eq!(outcome.plan.items[0].reason.as_deref(), Some("already in the library — identical; recorded as installed"));
+    assert_eq!(outcome.adopted, ["helper_lib"]);
+    assert!(outcome.written.is_empty() && outcome.check.is_none());
+    assert!(stager.0.borrow().is_empty(), "nothing to stage");
+    assert_eq!(fs::metadata(&own).unwrap().modified().unwrap(), before, "not rewritten");
+    assert!(history::latest(&conn2.lock().unwrap(), "helper_lib.py").unwrap().is_none(), "no history entry");
+    assert!(load_installed(&t2.library).unwrap().items["helper_lib"].files.contains_key("helper_lib.py"));
+    let again = run(&t2, &conn2, &["helper_lib"], false, &Pass::default()).unwrap();
+    assert_eq!(again.plan.items[0].action, "skip", "recorded: installed and identical from now on");
+
+    // Mixed: the adopted requirement is only recorded, the requested script
+    // staged, checked and written as before.
+    let t3 = tree("identical-mixed");
+    fs::copy(t3.repo.join("libraries/helper_lib/helper_lib.py"), t3.library.join("helper_lib.py")).unwrap();
+    let conn3 = Mutex::new(db());
+    let stager = Pass::default();
+    let outcome = run(&t3, &conn3, &["alpha"], false, &stager).unwrap();
+    assert_eq!(outcome.plan.items.iter().map(|i| i.action.as_str()).collect::<Vec<_>>(), ["adopt", "create"]);
+    assert_eq!(outcome.adopted, ["helper_lib"]);
+    assert_eq!(stager.0.borrow().as_slice(), [keys(&["alpha.py"])]);
+    assert_eq!(load_installed(&t3.library).unwrap().items.keys().collect::<Vec<_>>(), ["alpha", "helper_lib"]);
 }
 
 #[test]

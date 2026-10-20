@@ -96,7 +96,13 @@ function close() {
           <p class="qst-modal-text">
             <template v-if="summary.empty">Everything is already in your library — nothing to write.</template>
             <template v-else>
-              <span class="mono">{{ summary.create }}</span> new · <span class="mono">{{ summary.replace }}</span> replaced
+              <template v-if="summary.create || summary.replace || !summary.adopt">
+                <span class="mono">{{ summary.create }}</span> new · <span class="mono">{{ summary.replace }}</span> replaced
+              </template>
+              <template v-if="summary.adopt">
+                {{ summary.create || summary.replace ? ' · ' : '' }}<span class="mono">{{ summary.adopt }}</span> already in your
+                library, identical — recorded as installed, nothing is written
+              </template>
               <template v-if="summary.dependencies"> · <span class="mono">{{ summary.dependencies }}</span> requirement(s) come with it</template>
               <template v-if="summary.conflict"> · <span class="mono">{{ summary.conflict }}</span> conflict(s)</template>
             </template>
