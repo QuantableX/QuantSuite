@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
-import { GROUPS_SCOPE, GROUPS_KEY, GROUPS_DEV_KEY, readGroups, editGroup, placeSystem, type StrategyGroup, type StrategyGroupsDocument } from '#systems/utils/strategyGroups'
+import { GROUPS_SCOPE, GROUPS_KEY, GROUPS_DEV_KEY, readGroups, editGroup, placeSystem, placeGroup, type StrategyGroup, type StrategyGroupsDocument } from '#systems/utils/strategyGroups'
 
 function native() { return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window }
 async function read() {
@@ -66,5 +66,9 @@ export const useStrategyGroupsStore = defineStore('systems/groups', () => {
   function moveSystem(systemId: string, targetId: string | null, before: string | null = null, catalog: string[] = []) {
     return run(doc => placeSystem(doc, systemId, targetId, before, catalog))
   }
-  return { groups, order, loaded, error, busy, load, saveGroup, toggle, remove, moveSystem }
+  /** `before` null = after the last folder. */
+  function moveGroup(groupId: string, before: string | null, catalog: string[] = []) {
+    return run(doc => placeGroup(doc, groupId, before, catalog))
+  }
+  return { groups, order, loaded, error, busy, load, saveGroup, toggle, remove, moveSystem, moveGroup }
 })
