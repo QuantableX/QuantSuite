@@ -51,6 +51,9 @@ const engineRunning = computed(() => app.engineStatus.status === 'running')
 const liveState = computed(() => live.stateFor(systemId.value))
 const btState = computed(() => backtest.stateFor(systemId.value))
 const liveResult = computed(() => liveState.value.result && matchesMarket(liveState.value.result, cfg.value) ? liveState.value.result : null)
+// Keep actionable engine notes; the standard candle-close rule is already understood.
+const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking?.notes ?? [] : btState.value.notes)
+  .filter(note => note !== 'Only confirmed candle closes are included in this backtest.'))
 </script>
 
 <template>
@@ -121,10 +124,6 @@ const liveResult = computed(() => liveState.value.result && matchesMarket(liveSt
           {{ liveResult.marketFilter.bullish ? 'bullish' : 'bearish · USD only' }}
         </span>
       </div>
-      <div v-if="cfg.mode !== 'single_asset'" class="qs-legend">
-        <div class="qs-legend__item"><span class="qs-legend__box qs-legend__box--win" />A beats B</div>
-        <div class="qs-legend__item"><span class="qs-legend__box qs-legend__box--lose" />A loses to B</div>
-      </div>
     </section>
 
     <section v-if="view === 'live'" class="qs-context__section">
@@ -133,8 +132,8 @@ const liveResult = computed(() => liveState.value.result && matchesMarket(liveSt
       <div class="qs-context__row"><span>End</span><span>Today (UTC)</span></div>
       <div class="qs-context__row"><span>{{ cfg.mode === 'single_asset' ? 'Timeframe' : 'Cadence' }}</span><span class="mono">{{ effectiveCadence(cfg) }}</span></div>
       <div class="qs-context__row"><span>Fee</span><span class="mono">{{ (cfg.feeRate * 100).toFixed(2) }}%</span></div>
-      <ul v-if="liveResult?.tracking?.notes.length" class="qs-notes">
-        <li v-for="(note, i) in liveResult.tracking.notes" :key="i">{{ note }}</li>
+      <ul v-if="notes.length" class="qs-notes">
+        <li v-for="(note, i) in notes" :key="i">{{ note }}</li>
       </ul>
     </section>
 
@@ -145,10 +144,10 @@ const liveResult = computed(() => liveState.value.result && matchesMarket(liveSt
       <div class="qs-context__row"><span>End</span><span class="mono">{{ cfg.endDate }}</span></div>
       <div class="qs-context__row"><span>{{ cfg.mode === 'single_asset' ? 'Timeframe' : 'Cadence' }}</span><span class="mono">{{ effectiveCadence(cfg) }}</span></div>
       <div class="qs-context__row"><span>Fee</span><span class="mono">{{ (cfg.feeRate * 100).toFixed(2) }}%</span></div>
-      <template v-if="btState.notes.length">
+      <template v-if="notes.length">
         <span class="label" style="margin-top: 14px">Notes</span>
         <ul class="qs-notes">
-          <li v-for="(n, i) in btState.notes" :key="i">{{ n }}</li>
+          <li v-for="(n, i) in notes" :key="i">{{ n }}</li>
         </ul>
       </template>
     </section>
@@ -255,35 +254,6 @@ const liveResult = computed(() => liveState.value.result && matchesMarket(liveSt
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--qs-text);
-}
-
-.qs-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.qs-legend__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--qs-text-secondary);
-}
-
-.qs-legend__box {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-}
-
-.qs-legend__box--win {
-  background: var(--qs-success);
-}
-
-.qs-legend__box--lose {
-  background: color-mix(in srgb, var(--qs-error) 70%, transparent);
 }
 
 .qs-notes {
