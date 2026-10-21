@@ -10,7 +10,7 @@ const marketStore = useMarketStore()
     <!-- `relative`: the chart pins itself with `position: absolute` to survive
          TradingView's injected stylesheet (see TradingChart.vue). -->
     <div class="flex-1 min-h-0 relative">
-      <TerminalChartsTradingChart :symbol="marketStore.selectedSymbol" />
+      <TerminalChartsTradingChart :key="marketStore.chartRevision" :symbol="marketStore.selectedSymbol" />
     </div>
   </div>
 </template>

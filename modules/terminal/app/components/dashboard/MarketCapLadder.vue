@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Star } from 'lucide-vue-next'
 import { useWatchlistStore, type MarketCapCoin } from '#terminal/stores/watchlist'
+import { useMarketStore } from '#terminal/stores/market'
 
 const props = withDefaults(defineProps<{
   compact?: boolean
@@ -17,7 +18,38 @@ const props = withDefaults(defineProps<{
  * change-mode toggle and the refresh cycle are the same for both.
  */
 const watchlist = useWatchlistStore()
+const market = useMarketStore()
+const route = useRoute()
 const isWatchlist = computed(() => watchlist.view === 'watchlist')
+const chartMessage = ref('')
+let chartRequest = 0
+
+async function openChart(coin: MarketCapCoin) {
+  closeMenu()
+  const request = ++chartRequest
+  chartMessage.value = `Opening ${coin.symbol} chart…`
+  await market.loadSymbols()
+  if (request !== chartRequest) return
+
+  if (market.symbolsError) {
+    chartMessage.value = 'Could not load chart markets. Click the asset to retry.'
+    return
+  }
+  const symbol = coin.symbol.trim().toUpperCase()
+  const pair = market.symbols.find((item) => item.base === symbol && item.quote === 'USDT')
+  if (!pair) {
+    chartMessage.value = `No Binance USDT chart is available for ${symbol}.`
+    return
+  }
+  chartMessage.value = ''
+  market.setSymbol(pair.symbol)
+  await navigateTo('/terminal')
+}
+
+watch(() => route.path, () => {
+  chartRequest++
+  chartMessage.value = ''
+})
 
 const mcPage = ref(1)
 const mcCoins = ref<MarketCapCoin[]>([])
@@ -221,6 +253,8 @@ onMounted(() => {
 onActivated(ensureLadderRunning)
 
 onDeactivated(() => {
+  chartRequest++
+  chartMessage.value = ''
   closeMenu()
   if (mcCountdownTimer) {
     clearInterval(mcCountdownTimer)
@@ -229,6 +263,7 @@ onDeactivated(() => {
 })
 
 onBeforeUnmount(() => {
+  chartRequest++
   window.removeEventListener('click', closeMenu)
   window.removeEventListener('blur', closeMenu)
   window.removeEventListener('keydown', onWindowKeydown)
@@ -341,6 +376,10 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
+    <p v-if="chartMessage" class="px-3 py-2 text-[11px] shrink-0" style="color: var(--text-secondary)" role="status">
+      {{ chartMessage }}
+    </p>
+
     <!-- Empty watchlist -->
     <div v-if="isWatchlist && rows.length === 0" class="flex-1 flex flex-col items-center justify-center gap-2 px-4 text-center">
       <Star class="w-5 h-5" style="color: var(--muted)" />
@@ -376,16 +415,20 @@ onBeforeUnmount(() => {
 
     <!-- Coin list -->
     <div v-else class="flex-1 overflow-y-auto" @scroll.passive="closeMenu">
-      <div
+      <button
         v-for="coin in rows"
         :key="isWatchlist ? coin.symbol : `${coin.rank}:${coin.symbol}`"
-        class="coin-row flex items-center px-2 py-1.5 text-xs border-b hover:brightness-110 transition-colors cursor-default"
+        type="button"
+        class="coin-row flex items-center w-full text-left px-2 py-1.5 text-xs border-b hover:brightness-110 transition-colors cursor-pointer"
         :class="{ 'coin-row--menu': menu?.coin.symbol === coin.symbol }"
+        :aria-label="`Open ${coin.name} (${coin.symbol}) chart`"
+        :title="`Open ${coin.symbol} chart`"
         style="border-color: var(--border)"
+        @click="openChart(coin)"
         @contextmenu.prevent="openMenu($event, coin)"
       >
         <span class="w-5 text-left mr-1.5 font-mono text-[10px] shrink-0" style="color: var(--muted)">{{ coin.rank }}</span>
-        <div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
+        <span class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
           <span class="font-semibold whitespace-nowrap" style="color: var(--text-primary)">{{ coin.symbol }}</span>
           <Star
             v-if="watchlist.has(coin.symbol)"
@@ -395,7 +438,7 @@ onBeforeUnmount(() => {
             aria-label="In watchlist"
           />
           <span v-if="!props.compact" class="truncate text-[10px]" style="color: var(--text-secondary)">{{ coin.name }}</span>
-        </div>
+        </span>
         <span class="w-16 text-right mr-2 font-mono text-[11px] shrink-0" style="color: var(--text-primary)">{{ formatPrice(coin.price) }}$</span>
         <span
           class="w-14 text-right font-mono text-[11px] shrink-0"
@@ -407,7 +450,7 @@ onBeforeUnmount(() => {
         >
           {{ changeText(coin) }}
         </span>
-      </div>
+      </button>
     </div>
 
     <Teleport to="body">
