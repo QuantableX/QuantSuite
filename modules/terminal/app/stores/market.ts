@@ -33,6 +33,7 @@ const TIMEFRAME_MAP: Record<string, string> = {
 export const useMarketStore = defineStore('terminal/market', () => {
   /** The chart's symbol (the TradingView embed). */
   const selectedSymbol = ref('BTC/USDT')
+  const chartRevision = ref(0)
   /** The order book's pair — its own pick; it never moves the chart. */
   const orderBookSymbol = ref('BTC/USDT')
   const selectedExchange = ref('binance')
@@ -77,28 +78,35 @@ export const useMarketStore = defineStore('terminal/market', () => {
 
   function setSymbol(symbol: string) {
     selectedSymbol.value = symbol
+    // Re-selecting also restores this chart after a symbol change inside the iframe.
+    chartRevision.value++
   }
 
   function setOrderBookSymbol(symbol: string) {
     orderBookSymbol.value = symbol
   }
 
-  /** Read once per session; the backend caches the list for an hour. */
-  async function loadSymbols() {
-    if (symbols.value.length || symbolsLoading.value) return
+  let symbolsRequest: Promise<void> | null = null
+
+  /** Read once per session; concurrent chart/book requests share the same result. */
+  function loadSymbols(): Promise<void> {
+    if (symbols.value.length) return Promise.resolve()
+    if (symbolsRequest) return symbolsRequest
     symbolsLoading.value = true
     symbolsError.value = null
-    try {
-      symbols.value = await invoke<SymbolInfo[]>('plugin:terminal|get_symbols')
-    } catch (error) {
-      symbolsError.value = String(error)
-    } finally {
-      symbolsLoading.value = false
-    }
+    symbolsRequest = invoke<SymbolInfo[]>('plugin:terminal|get_symbols')
+      .then((data) => { symbols.value = data })
+      .catch((error) => { symbolsError.value = String(error) })
+      .finally(() => {
+        symbolsLoading.value = false
+        symbolsRequest = null
+      })
+    return symbolsRequest
   }
 
   return {
     selectedSymbol,
+    chartRevision,
     orderBookSymbol,
     selectedExchange,
     timeframe,
