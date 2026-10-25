@@ -17,6 +17,7 @@ Default permissions for the algo module.
 - `allow-smithery-report`
 - `allow-smithery-source`
 - `allow-smithery-run`
+- `allow-research-run`
 - `allow-smithery-cancel`
 - `allow-smithery-jobs`
 - `allow-smithery-process-logs`
@@ -950,6 +951,32 @@ Enables the read_strategy_file command without any pre-configured scope.
 <td>
 
 Denies the read_strategy_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-research-run`
+
+</td>
+<td>
+
+Enables the research_run command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-research-run`
+
+</td>
+<td>
+
+Denies the research_run command without any pre-configured scope.
 
 </td>
 </tr>

@@ -354,7 +354,7 @@ export interface SmitheryInfo {
   reports: SmitheryReportMeta[]
 }
 
-export type ForgeKind = 'gauntlet' | 'walkforward' | 'optimize' | 'compare' | 'refresh'
+export type ForgeKind = 'gauntlet' | 'walkforward' | 'optimize' | 'compare' | 'refresh' | 'research'
 
 export interface ForgeRequest {
   kind: ForgeKind

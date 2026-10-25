@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-research-create"
+description = "Enables the research_create command without any pre-configured scope."
+commands.allow = ["research_create"]
+
+[[permission]]
+identifier = "deny-research-create"
+description = "Denies the research_create command without any pre-configured scope."
+commands.deny = ["research_create"]

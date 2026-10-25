@@ -106,7 +106,11 @@
       "../../sidecars/python/smithery/robustness.py": "sidecars/python/smithery/robustness.py",
       "../../sidecars/python/smithery/variants.py": "sidecars/python/smithery/variants.py",
       "../../sidecars/python/smithery/workspace.py": "sidecars/python/smithery/workspace.py",
-      "../../docs/QUANTSCRIPT-FOLDER.txt": "QuantScript/indicators/README.txt"
+      "../../docs/QUANTSCRIPT-FOLDER.txt": "QuantScript/indicators/README.txt",
+      "../../sidecars/python/smithery/lab.py": "sidecars/python/smithery/lab.py",
+      "../../sidecars/python/smithery/lab_compare.py": "sidecars/python/smithery/lab_compare.py",
+      "../../sidecars/python/smithery/lab_install.py": "sidecars/python/smithery/lab_install.py",
+      "../../sidecars/python/smithery/lab_report.py": "sidecars/python/smithery/lab_report.py"
     },
     "icon": [
       "icons/32x32.png",

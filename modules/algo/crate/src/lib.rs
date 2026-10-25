@@ -478,6 +478,7 @@ pub fn init() -> TauriPlugin<Wry> {
             smithery::smithery_report,
             smithery::smithery_source,
             smithery::smithery_run,
+            smithery::research_run,
             smithery::smithery_cancel,
             smithery::smithery_jobs,
             smithery::smithery_process_logs,

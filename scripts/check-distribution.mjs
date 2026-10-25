@@ -52,6 +52,10 @@ for (const name of readdirSync(resolve(pythonRoot, 'codebase_index')).filter(nam
   assert.equal(config.bundle.resources[`../../sidecars/python/codebase_index/${name}`],
     `sidecars/python/codebase_index/${name}`, `Missing code-index runtime resource: ${name}`)
 }
+for (const name of ['lab.py', 'lab_compare.py', 'lab_install.py', 'lab_report.py']) {
+  assert.equal(config.bundle.resources[`../../sidecars/python/smithery/${name}`],
+    `sidecars/python/smithery/${name}`, `Missing research runtime resource: ${name}`)
+}
 for (const name of ['tauri.conf.json', 'tauri.windows.conf.json', 'tauri.dev.conf.json']) {
   const resources = readConfig(name).bundle?.resources
   if (resources) validateResources(resources)

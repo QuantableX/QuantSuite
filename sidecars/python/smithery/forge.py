@@ -526,6 +526,9 @@ def _main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="python -m smithery.forge")
     sub = ap.add_subparsers(dest="command", required=True)
 
+    p = sub.add_parser("research", help="run an isolated private Research draft")
+    p.add_argument("--id", required=True)
+
     sub.add_parser("info", help="vault, shelf, reports and roster as one JSON document")
 
     p = sub.add_parser("source", help="an indicator's module source")
@@ -573,6 +576,9 @@ def _main(argv: list[str]) -> int:
 
     args = ap.parse_args(argv)
     try:
+        if args.command == "research":
+            from .lab import run
+            return run(args.id)
         if args.command == "info":
             print(json.dumps(info()))
             return 0

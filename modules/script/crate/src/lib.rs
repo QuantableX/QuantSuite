@@ -12,6 +12,7 @@
 
 mod catalog;
 mod python;
+mod research;
 mod store;
 
 use python::{PythonCommand, PythonInfo};
@@ -1152,6 +1153,13 @@ pub fn init() -> TauriPlugin<Wry> {
             Ok(())
         })
         .invoke_handler(qs_core::diagnostics::traced(tauri::generate_handler![
+            research::research_context,
+            research::research_list,
+            research::research_create,
+            research::research_candidate,
+            research::research_import,
+            research::research_read,
+            research::research_install,
             list_scripts,
             open_scripts_folder,
             read_script,

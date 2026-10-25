@@ -85,6 +85,102 @@
           "bot_id": { "type": "string", "description": "The bot to stop; omit to stop all." }
         }
       }
+    },
+    {
+      "name": "research_run",
+      "command": "plugin:algo|research_run",
+      "description": "Start a QuantScript research draft as a forge job and return at once. Freezes the engine, the draft's library and the market data, then runs the full native Gauntlet with walk-forward optimization (kind gauntlet) or the native system backtests (kind profit). Poll quantsuite.script.research_read and forge_jobs. One forge job runs at a time.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "run_id": { "type": "string", "description": "The draft from quantsuite.script.research_create." }
+        },
+        "required": ["run_id"]
+      }
+    },
+    {
+      "name": "forge_jobs",
+      "command": "plugin:algo|smithery_jobs",
+      "description": "Forge jobs with status, progress, errors and verdict summaries; detail = a job id returns that job's full event list.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "detail": { "type": "string", "description": "A job id from this list." }
+        }
+      }
+    },
+    {
+      "name": "forge_cancel",
+      "command": "plugin:algo|smithery_cancel",
+      "description": "Cancel the running forge job and its worker processes. A cancelled research run stays visible as interrupted with its partial evidence.",
+      "sideEffects": "write"
+    },
+    {
+      "name": "forge_info",
+      "command": "plugin:algo|smithery_info",
+      "description": "The forge's market data shelf, its saved reports and the certification tracks.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "refresh": { "type": "boolean", "description": "Re-read the vault instead of the cached listing." }
+        }
+      }
+    },
+    {
+      "name": "forge_run",
+      "command": "plugin:algo|smithery_run",
+      "description": "Start a forge job on the active library: gauntlet, optimize, walkforward, compare or refresh (market data). For new indicators use quantsuite.script.research_create and research_run instead. Certification needs the full protocol; fast is a smoke test only.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object",
+            "description": "The job.",
+            "properties": {
+              "kind": { "type": "string", "enum": ["gauntlet", "optimize", "walkforward", "compare", "refresh"] },
+              "indicators": { "type": "array", "items": { "type": "string" }, "description": "Registry keys, or all / certified." },
+              "timeframe": { "type": "string", "enum": ["all", "1h", "4h", "1d"], "description": "Default all." },
+              "fast": { "type": "boolean", "description": "Reduced counts; never certifies." },
+              "resume": { "type": "boolean", "description": "optimize only: skip indicators whose versions are current." },
+              "folds": { "type": "integer" },
+              "seed": { "type": "integer" }
+            },
+            "required": ["kind"]
+          }
+        },
+        "required": ["request"]
+      }
+    },
+    {
+      "name": "list_indicators",
+      "command": "plugin:algo|list_indicators",
+      "description": "Every indicator version QuantAlgo can use, with its per-track and overall Gauntlet verdicts. Refresh after quantsuite.script.research_install.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "refresh": { "type": "boolean", "description": "Re-read the registry instead of the cache." }
+        }
+      }
+    },
+    {
+      "name": "create_strategy_from_indicator",
+      "command": "plugin:algo|create_strategy_from_indicator",
+      "description": "Create a QuantAlgo strategy from an installed indicator version with its tested parameters. Creates no bot and starts nothing.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "indicator": { "type": "string", "description": "The version key, from list_indicators." },
+          "name": { "type": "string", "description": "Optional strategy name." },
+          "params": { "type": "object", "description": "Optional parameter overrides, checked against the indicator's schema." }
+        },
+        "required": ["indicator"]
+      }
     }
   ],
   "migrateFrom": "<data_dir>/quantalgo"

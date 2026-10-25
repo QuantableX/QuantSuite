@@ -1,4 +1,12 @@
 const COMMANDS: &[&str] = &[
+    "research_context",
+    "research_list",
+    "research_create",
+    "research_candidate",
+    "research_import",
+    "research_read",
+    "research_install",
+
     "list_scripts",
     "open_scripts_folder",
     "read_script",

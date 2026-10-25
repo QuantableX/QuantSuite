@@ -4,6 +4,13 @@ Default permissions for the script module.
 
 #### This default permission set includes the following:
 
+- `allow-research-context`
+- `allow-research-list`
+- `allow-research-create`
+- `allow-research-candidate`
+- `allow-research-import`
+- `allow-research-read`
+- `allow-research-install`
 - `allow-list-scripts`
 - `allow-open-scripts-folder`
 - `allow-read-script`
@@ -526,6 +533,188 @@ Enables the read_version command without any pre-configured scope.
 <td>
 
 Denies the read_version command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-research-candidate`
+
+</td>
+<td>
+
+Enables the research_candidate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-research-candidate`
+
+</td>
+<td>
+
+Denies the research_candidate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-research-context`
+
+</td>
+<td>
+
+Enables the research_context command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-research-context`
+
+</td>
+<td>
+
+Denies the research_context command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-research-create`
+
+</td>
+<td>
+
+Enables the research_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-research-create`
+
+</td>
+<td>
+
+Denies the research_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-research-import`
+
+</td>
+<td>
+
+Enables the research_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-research-import`
+
+</td>
+<td>
+
+Denies the research_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-research-install`
+
+</td>
+<td>
+
+Enables the research_install command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-research-install`
+
+</td>
+<td>
+
+Denies the research_install command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-research-list`
+
+</td>
+<td>
+
+Enables the research_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-research-list`
+
+</td>
+<td>
+
+Denies the research_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:allow-research-read`
+
+</td>
+<td>
+
+Enables the research_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`script:deny-research-read`
+
+</td>
+<td>
+
+Denies the research_read command without any pre-configured scope.
 
 </td>
 </tr>

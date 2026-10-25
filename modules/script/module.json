@@ -145,6 +145,105 @@
         },
         "required": ["file"]
       }
+    },
+    {
+      "name": "research_context",
+      "command": "plugin:script|research_context",
+      "description": "Start here when the user asks for new (trend) indicators for the private QuantScript library. Returns the indicator contract, a source template, the full Gauntlet protocol (1h/4h/1d, seed 42, 120 permutations, 200 bootstraps, 100 GARCH paths, four anchored walk-forward folds), the saved QuantAlgo systems, the private storage paths, recent research runs and the step-by-step tool workflow. New scripts are staged in isolated research runs, never written into the active library.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "research_list",
+      "command": "plugin:script|research_list",
+      "description": "Every research run: drafts, running, done, failed or interrupted evaluations, and imported historical reports, newest first.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "research_create",
+      "command": "plugin:script|research_create",
+      "description": "Create a private research draft with its own copy of the active indicator library. kind 'gauntlet' (default) starts empty or with existing base keys; add new scripts with research_candidate. kind 'profit' compares indicator keys inside a saved QuantAlgo system: singles plus aggregates of 2 or more distinct base indicators. No live setting, strategy or bot changes.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object",
+            "description": "The research configuration.",
+            "properties": {
+              "title": { "type": "string", "description": "What is researched, in English — e.g. the user's request." },
+              "kind": { "type": "string", "enum": ["gauntlet", "profit"], "description": "gauntlet = full native Gauntlet and walk-forward optimization; profit = historical system profitability. Default gauntlet." },
+              "indicators": { "type": "array", "items": { "type": "string" }, "description": "Registry keys. gauntlet: existing base keys to evaluate (may be empty; candidates add theirs). profit: the candidate keys." },
+              "config": { "type": "object", "description": "profit only: a saved system's config (research_context lists them) with explicit startDate and endDate before today, feeRate, slippageRate and the baseline indicator." },
+              "sizes": { "type": "array", "items": { "type": "integer", "minimum": 2 }, "description": "profit only: aggregate sizes to test; omit for every size from 2 to the number of distinct bases." },
+              "samples_per_size": { "type": "integer", "minimum": 1, "maximum": 1000, "description": "profit only: seeded candidates per size when a size has more combinations; default 20, at most 5,000 candidates in total." }
+            }
+          }
+        },
+        "required": ["request"]
+      }
+    },
+    {
+      "name": "research_candidate",
+      "command": "plugin:script|research_candidate",
+      "description": "Stage one newly written indicator script in a draft. The full native QuantScript check (syntax, registration, contract, causality and scale-invariance validators) runs first; on failure saved=false with the check details, so fix and resubmit. Existing library scripts cannot be replaced: use a new file name and new keys.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "run_id": { "type": "string", "description": "The draft from research_create." },
+          "file": { "type": "string", "description": "A new script file name, e.g. hull_slope_trend.py — no path." },
+          "content": { "type": "string", "description": "The complete Python source." },
+          "keys": { "type": "array", "items": { "type": "string" }, "description": "Exactly the base registry keys this file registers." }
+        },
+        "required": ["run_id", "file", "content", "keys"]
+      }
+    },
+    {
+      "name": "research_import",
+      "command": "plugin:script|research_import",
+      "description": "Copy a local standalone HTML research report into the private research store so it opens in QuantScript → Forge → Research. Keeps the original bytes and SHA-256, embeds neighboring CSV downloads and parses embedded JSON without running it. Importing the same file twice returns the existing run. Does not rerun or certify anything.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string", "description": "Absolute path of a local .html report." },
+          "title": { "type": "string", "description": "Optional display title; defaults to the report's <title>." }
+        },
+        "required": ["source"]
+      }
+    },
+    {
+      "name": "research_read",
+      "command": "plugin:script|research_read",
+      "description": "Read one research run. results = paged result rows (per-track Gauntlet verdicts and evidence, or system metrics); events = the last 100 progress events; legacy = an imported report's embedded data, paged through one list; html = the full standalone English report page (can be several MB). Rows are compact by default: long series and very wide objects are summarized. Failed and interrupted runs keep their evidence.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "run_id": { "type": "string", "description": "The research run, from research_list." },
+          "section": { "type": "string", "enum": ["results", "events", "legacy", "html"], "description": "Default results." },
+          "offset": { "type": "integer", "minimum": 0, "description": "First row; default 0." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 200, "description": "Rows per page; default 100." },
+          "field": { "type": "string", "description": "legacy only: which list of the imported data to page through; the answer names every field." },
+          "compact": { "type": "boolean", "description": "Default true. false returns full rows, including every equity point." }
+        },
+        "required": ["run_id"]
+      }
+    },
+    {
+      "name": "research_install",
+      "command": "plugin:script|research_install",
+      "description": "Install one tested result from a completed Gauntlet run into the active library: the script, its dependencies, its version files and native reports. Requires certification on the chosen track and unchanged frozen evidence, and refuses to overwrite a differing library file. Afterwards it appears in quantsuite.algo.list_indicators (refresh) and in the QuantAlgo systems; quantsuite.algo.create_strategy_from_indicator makes a strategy. Never starts a bot.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "run_id": { "type": "string", "description": "The completed research run." },
+          "indicator": { "type": "string", "description": "The version key to install, e.g. <key>_opt_1d or the base key." },
+          "timeframe": { "type": "string", "enum": ["1h", "4h", "1d"], "description": "The track it must be certified on." }
+        },
+        "required": ["run_id", "indicator", "timeframe"]
+      }
     }
   ]
 }

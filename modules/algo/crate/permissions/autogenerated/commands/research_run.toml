@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-research-run"
+description = "Enables the research_run command without any pre-configured scope."
+commands.allow = ["research_run"]
+
+[[permission]]
+identifier = "deny-research-run"
+description = "Denies the research_run command without any pre-configured scope."
+commands.deny = ["research_run"]
