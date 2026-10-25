@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-research-install"
+description = "Enables the research_install command without any pre-configured scope."
+commands.allow = ["research_install"]
+
+[[permission]]
+identifier = "deny-research-install"
+description = "Denies the research_install command without any pre-configured scope."
+commands.deny = ["research_install"]

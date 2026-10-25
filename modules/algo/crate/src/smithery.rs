@@ -38,6 +38,8 @@ const MAX_INDICATORS_PER_JOB: usize = 64;
 pub struct ForgeRequest {
     /// `gauntlet` | `walkforward` | `optimize` | `compare` | `refresh`.
     pub kind: String,
+    #[serde(default)]
+    pub research_id: Option<String>,
     /// Registry keys, or `all` / `certified` (gauntlet and walk-forward).
     #[serde(default)]
     pub indicators: Vec<String>,
@@ -205,6 +207,13 @@ fn valid_report_name(name: &str) -> bool {
 fn job_args(request: &ForgeRequest) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = Vec::new();
     match request.kind.as_str() {
+        "research" => {
+            let id = request.research_id.as_deref().ok_or("Research run id required")?;
+            if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+                return Err("Invalid research run id".into());
+            }
+            args.extend(["research".into(), "--id".into(), id.into()]);
+        }
         "gauntlet" | "walkforward" | "compare" => {
             if request.indicators.is_empty() {
                 return Err("Pick at least one indicator.".into());
@@ -583,6 +592,16 @@ pub(crate) async fn smithery_source(indicator: String, app_handle: AppHandle) ->
     .map_err(|e| format!("Source task failed: {e}"))?
 }
 
+/// Start a private QuantScript Research draft as a forge job. Snake_case
+/// arguments: the same call serves the Research page and the
+/// `quantsuite.algo.research_run` agent tool.
+#[tauri::command(rename_all = "snake_case")]
+pub(crate) async fn research_run(run_id: String, app_handle: AppHandle) -> Result<ForgeJob, String> {
+    tauri::async_runtime::spawn_blocking(move || start_job(&app_handle, ForgeRequest {
+        kind: "research".into(), research_id: Some(run_id), ..Default::default()
+    })).await.map_err(|e| e.to_string())?
+}
+
 /// Start a forge job — one at a time.
 #[tauri::command]
 pub(crate) async fn smithery_run(request: ForgeRequest, app_handle: AppHandle) -> Result<ForgeJob, String> {
@@ -668,8 +687,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn research_args_take_only_a_run_id() {
+        let request = |id: Option<&str>| ForgeRequest {
+            kind: "research".into(),
+            research_id: id.map(str::to_string),
+            ..Default::default()
+        };
+        let id = "0123456789abcdef0123456789abcdef";
+        assert_eq!(job_args(&request(Some(id))).unwrap(), vec!["research", "--id", id]);
+        for bad in ["../library", "0123456789ABCDEF0123456789ABCDEF", "0123456789abcdef", "g123456789abcdef0123456789abcdef"] {
+            assert!(job_args(&request(Some(bad))).is_err(), "{bad} must be refused");
+        }
+        assert!(job_args(&request(None)).is_err());
+    }
+
+    #[test]
     fn gauntlet_args_carry_every_option() {
         let args = job_args(&ForgeRequest {
+            research_id: None,
             kind: "gauntlet".into(),
             indicators: vec!["hilbert".into(), "dc".into()],
             fast: true,

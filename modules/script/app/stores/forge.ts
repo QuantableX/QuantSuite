@@ -24,7 +24,7 @@ import type {
 
 const POLL_MS = 1000
 
-export type ForgeTab = 'roster' | 'forge' | 'reports' | 'shelf'
+export type ForgeTab = 'roster' | 'forge' | 'reports' | 'shelf' | 'research'
 
 export const useForgeStore = defineStore('script/forge', () => {
   // ── The roster ──

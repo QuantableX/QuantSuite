@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-research-context"
+description = "Enables the research_context command without any pre-configured scope."
+commands.allow = ["research_context"]
+
+[[permission]]
+identifier = "deny-research-context"
+description = "Denies the research_context command without any pre-configured scope."
+commands.deny = ["research_context"]

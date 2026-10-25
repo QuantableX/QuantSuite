@@ -16,6 +16,7 @@ const COMMANDS: &[&str] = &[
     "smithery_report",
     "smithery_source",
     "smithery_run",
+    "research_run",
     "smithery_cancel",
     "smithery_jobs",
     // `{ limit }` → lines, for the suite's process page.

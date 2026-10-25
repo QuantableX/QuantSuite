@@ -3,6 +3,14 @@
 [default]
 description = "Default permissions for the script module."
 permissions = [
+    "allow-research-context",
+    "allow-research-list",
+    "allow-research-create",
+    "allow-research-candidate",
+    "allow-research-import",
+    "allow-research-read",
+    "allow-research-install",
+
   "allow-list-scripts",
   "allow-open-scripts-folder",
   "allow-read-script",

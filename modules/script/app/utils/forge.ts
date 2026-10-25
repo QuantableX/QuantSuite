@@ -402,4 +402,5 @@ export const KIND_LABELS: Record<string, string> = {
   optimize: 'Optimize timeframes',
   compare: 'Comparison',
   refresh: 'Shelf refresh',
+  research: 'Research',
 }

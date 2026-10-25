@@ -523,6 +523,90 @@
           "markdownDescription": "Denies the read_version command without any pre-configured scope."
         },
         {
+          "description": "Enables the research_candidate command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-research-candidate",
+          "markdownDescription": "Enables the research_candidate command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the research_candidate command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-research-candidate",
+          "markdownDescription": "Denies the research_candidate command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the research_context command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-research-context",
+          "markdownDescription": "Enables the research_context command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the research_context command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-research-context",
+          "markdownDescription": "Denies the research_context command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the research_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-research-create",
+          "markdownDescription": "Enables the research_create command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the research_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-research-create",
+          "markdownDescription": "Denies the research_create command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the research_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-research-import",
+          "markdownDescription": "Enables the research_import command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the research_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-research-import",
+          "markdownDescription": "Denies the research_import command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the research_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-research-install",
+          "markdownDescription": "Enables the research_install command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the research_install command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-research-install",
+          "markdownDescription": "Denies the research_install command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the research_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-research-list",
+          "markdownDescription": "Enables the research_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the research_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-research-list",
+          "markdownDescription": "Denies the research_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the research_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-research-read",
+          "markdownDescription": "Enables the research_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the research_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-research-read",
+          "markdownDescription": "Denies the research_read command without any pre-configured scope."
+        },
+        {
           "description": "Enables the restore_version command without any pre-configured scope.",
           "type": "string",
           "const": "allow-restore-version",
@@ -559,10 +643,10 @@
           "markdownDescription": "Denies the script_python command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-collection-sources`\n- `allow-collection-source-save`\n- `allow-collection-source-delete`\n- `allow-collection-token-set`\n- `allow-collection-token-clear`\n- `allow-collection-catalog`\n- `allow-collection-item`\n- `allow-collection-plan`\n- `allow-collection-install`\n- `allow-collection-remove`",
+          "description": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-research-context`\n- `allow-research-list`\n- `allow-research-create`\n- `allow-research-candidate`\n- `allow-research-import`\n- `allow-research-read`\n- `allow-research-install`\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-collection-sources`\n- `allow-collection-source-save`\n- `allow-collection-source-delete`\n- `allow-collection-token-set`\n- `allow-collection-token-clear`\n- `allow-collection-catalog`\n- `allow-collection-item`\n- `allow-collection-plan`\n- `allow-collection-install`\n- `allow-collection-remove`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-collection-sources`\n- `allow-collection-source-save`\n- `allow-collection-source-delete`\n- `allow-collection-token-set`\n- `allow-collection-token-clear`\n- `allow-collection-catalog`\n- `allow-collection-item`\n- `allow-collection-plan`\n- `allow-collection-install`\n- `allow-collection-remove`"
+          "markdownDescription": "Default permissions for the script module.\n#### This default permission set includes:\n\n- `allow-research-context`\n- `allow-research-list`\n- `allow-research-create`\n- `allow-research-candidate`\n- `allow-research-import`\n- `allow-research-read`\n- `allow-research-install`\n- `allow-list-scripts`\n- `allow-open-scripts-folder`\n- `allow-read-script`\n- `allow-check-script`\n- `allow-save-script`\n- `allow-list-versions`\n- `allow-read-version`\n- `allow-restore-version`\n- `allow-create-script`\n- `allow-delete-script`\n- `allow-lint-script`\n- `allow-script-python`\n- `allow-collection-sources`\n- `allow-collection-source-save`\n- `allow-collection-source-delete`\n- `allow-collection-token-set`\n- `allow-collection-token-clear`\n- `allow-collection-catalog`\n- `allow-collection-item`\n- `allow-collection-plan`\n- `allow-collection-install`\n- `allow-collection-remove`"
         }
       ]
     }

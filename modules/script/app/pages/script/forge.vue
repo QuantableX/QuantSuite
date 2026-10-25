@@ -14,6 +14,7 @@ definePageMeta({ layout: 'script' })
 const forge = useForgeStore()
 
 const tabs: { id: ForgeTab; label: string }[] = [
+  { id: 'research', label: 'Research' },
   { id: 'roster', label: 'Indicators' },
   { id: 'forge', label: 'Run tests' },
   { id: 'reports', label: 'Reports' },
@@ -79,6 +80,7 @@ onUnmounted(() => forge.pause())
       <pre class="qsc-pre">{{ forge.infoError }}</pre>
     </div>
 
+    <ScriptForgeResearch v-if="forge.tab === 'research'" />
     <ScriptForgeRoster v-show="forge.tab === 'roster'" />
     <ScriptForgeJobs v-show="forge.tab === 'forge'" />
     <ScriptForgeReports v-show="forge.tab === 'reports'" />
