@@ -48,6 +48,12 @@ Research tab, and `research_read` returns the results.
   verdict, permutation p-values, five axes, walk-forward, parameters, and the
   native reports it read (their hashes in `report-hashes.json`).
 - Gauntlet research runs (new candidates) render with the same template.
+- `quantsuite.algo.research_profit_overview(system, title?, indicators?,
+  start_date?, end_date?, top?, budget?, sizes?, seed?)` — the most profitable
+  singles and aggregates in a saved system against its current setup:
+  rankings with capital from a chosen start amount, capital curves (log,
+  linear, drawdown), profit against drawdown, annual returns, coverage and
+  method. See "Evidence and comparisons" for the search and verification.
 
 ## Bulk evaluation in a saved system
 
@@ -77,21 +83,25 @@ optimization on 1h, 4h and 1d with seed 42, 120 permutations, 200 bootstraps,
 100 GARCH paths and four anchored walk-forward folds. The worst-track overall
 rule is unchanged. A completed evaluation can contain uncertified candidates.
 
-Profit runs use `kind: "profit"`, candidate keys, and an explicit saved system
-`config` including `startDate`, `endDate` (before today), `feeRate`,
-`slippageRate` and the baseline `indicator`. The native rotation/single-asset
-engine retains its original execution semantics. Ranking answers are frozen
-in memory; all candidates receive identical OHLCV inputs using the longest
-required warm-up. Provider failures stop the comparison, preserving partial
-evidence. Native indicator errors remain visible per candidate.
+Profit runs (`kind: "profit"`) take a saved `system` (name or id) or an explicit
+`config`; dates default to the saved start and yesterday (closed history only).
+Empty `indicators` means every base indicator in its version for the system's
+track (`<key>_opt_1d` for a daily system), else Standard. Ranking answers and
+candles are frozen on first use; every candidate receives identical inputs from
+the longest warm-up. The current system runs natively as the reference line.
 
-Singles are separate. Aggregates allow any 2+ distinct base indicators; variants
-of one base cannot cast duplicate votes. Omit `sizes` to cover every feasible
-size. `samples_per_size` defaults to 20; small spaces are enumerated, larger
-spaces receive seeded finite samples. Runs are capped at 5,000 candidates.
-Coverage is reported by size. This reusable native-engine path does not claim
-the throughput or exhaustive coverage of earlier specialized tournament runs.
-The objective is retrospective final capital, not pristine out-of-sample proof.
+The search is fixed before results are seen (`plan.json`, `seed`): every
+candidate alone, all pairs and triples of distinct base indicators where they
+fit the budget (else seeded samples), seeded samples of every larger size, and
+three local-search rounds around the leaders (add, remove or swap one member).
+`budget` caps the aggregates tested (default 50,000), `sizes` restricts them,
+`top` sets how many aggregates and singles the report shows (one version per
+base among singles). Each base casts at most one vote. Before ranking, the bulk
+evaluator is checked against a native run; afterwards every shown candidate is
+re-run natively and must match bar for bar, or the run fails with its evidence
+kept (`verification.json`). Systems the bulk evaluator cannot express run
+natively within 400 aggregates. The objective is retrospective final capital,
+not out-of-sample proof or a global optimum.
 
 Drafts are editable; evaluated inputs are immutable. Cancellation terminates the
 Forge process tree. A stopped worker is shown as interrupted; its partial files

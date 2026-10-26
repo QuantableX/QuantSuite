@@ -19,6 +19,7 @@ Default permissions for the algo module.
 - `allow-smithery-run`
 - `allow-research-run`
 - `allow-research-gauntlet-overview`
+- `allow-research-profit-overview`
 - `allow-smithery-cancel`
 - `allow-smithery-jobs`
 - `allow-smithery-process-logs`
@@ -978,6 +979,32 @@ Enables the research_gauntlet_overview command without any pre-configured scope.
 <td>
 
 Denies the research_gauntlet_overview command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-research-profit-overview`
+
+</td>
+<td>
+
+Enables the research_profit_overview command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-research-profit-overview`
+
+</td>
+<td>
+
+Denies the research_profit_overview command without any pre-configured scope.
 
 </td>
 </tr>

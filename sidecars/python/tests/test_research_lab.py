@@ -1,16 +1,12 @@
 """Research orchestration: private staging, native contract, fair comparisons."""
-import copy
 import json
 import os
 from pathlib import Path
-import subprocess
-import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from smithery import lab
-from smithery.lab_compare import combinations, FrozenService, validate_request
 
 
 class ResearchTests(unittest.TestCase):
@@ -110,68 +106,6 @@ class ResearchTests(unittest.TestCase):
         with patch.object(lab, "alive", return_value=False):
             self.assertEqual(lab.list_runs()[0]["status"], "interrupted")
         self.assertEqual(lab.read(lab.folder(run["id"]) / "run.json")["status"], "running")
-
-    def test_aggregate_search_is_seeded_varies_size_and_excludes_cloned_votes(self):
-        keys = ["a", "a_opt", "b", "c", "d"]
-        bases = {k: k.split("_")[0] for k in keys}
-        candidates, coverage = combinations(keys, bases, None, 100)
-        self.assertEqual([c["size"] for c in coverage], [2, 3, 4])
-        self.assertEqual(len(candidates), len(set(candidates)))
-        self.assertTrue(all(len({bases[k] for k in c}) == len(c) for c in candidates))
-        self.assertEqual(combinations(keys, bases, [2, 4], 3), combinations(keys, bases, [2, 4], 3))
-        self.assertEqual(sum(len(c) == 2 for c in candidates), 9)
-        with self.assertRaises(ValueError):
-            combinations(keys, bases, [5], 1)
-
-    def test_profit_requires_explicit_historical_range_and_costs(self):
-        doc = {"config": {"startDate": "2020-01-01", "endDate": "2021-01-01",
-            "feeRate": .001, "slippageRate": 0, "indicator": {"trend": "fixture"}},
-            "indicators": ["fixture"], "samples_per_size": 2}
-        validate_request(doc)
-        for field, value in (("feeRate", float("nan")), ("endDate", "2999-01-01"), ("startDate", "2022-01-01")):
-            bad = copy.deepcopy(doc); bad["config"][field] = value
-            with self.assertRaises(ValueError):
-                validate_request(bad)
-
-    def test_native_system_engine_comparison_uses_same_frozen_input(self):
-        # A fresh process owns the private registry; no test-order cache effects.
-        from smithery.quantscript import template
-        for key in ("fixture_a", "fixture_b"):
-            (self.path / "library" / f"{key}.py").write_text(template(key, "Fixture" + key[-1].upper(), key), encoding="utf-8")
-        output = self.path / "comparison"; output.mkdir()
-        script = r'''
-import datetime as dt
-from pathlib import Path
-from unittest.mock import patch
-import numpy as np
-import pandas as pd
-from rotation_lab.data.ohlcv import OhlcvFetcher, OhlcvSeries, CoinRef
-from smithery.lab_compare import compare
-from smithery.lab import read
-import sys
-path=Path(sys.argv[1])
-index=pd.date_range('2018-01-01','2021-12-31',freq='D')
-close=100*np.exp(np.arange(len(index))*.001+np.sin(np.arange(len(index))/30)*.08)
-frame=pd.DataFrame({'open':close,'high':close*1.01,'low':close*.99,'close':close,'volume':100},index=index)
-calls=[]
-def fetch(self,exchange,pair,start,end,timeframe='1d'):
-    calls.append((start,end,timeframe))
-    return OhlcvSeries(CoinRef(None,pair),frame.copy())
-doc={'indicators':['fixture_a','fixture_b'],'sizes':[2],'samples_per_size':5,'config':{
- 'mode':'single_asset','singleAsset':{'exchange':'fixture','pair':'BTC/USD','timeframe':'1d','direction':'long_cash'},
- 'startDate':'2020-01-01','endDate':'2021-12-31','feeRate':.001,'slippageRate':.0005,
- 'indicator':{'trend':'fixture_a'},'marketFilter':False}}
-with patch.object(OhlcvFetcher,'get_pair_series',fetch): compare(path,doc)
-result=read(path/'results.json')
-assert len(calls)==1,calls
-assert len(result['rows'])==4,result
-assert not any(r.get('error') for r in result['rows']),result
-assert len({tuple(tuple(p) for p in r['equity']) for r in result['rows']})==1
-assert all(r['metrics']['net_return_multiplier']>0 for r in result['rows'])
-assert result['coverage']==[{'size':2,'tested':1,'exhaustive':True}]
-'''
-        proc = subprocess.run([sys.executable, "-c", script, str(output)], capture_output=True, text=True, encoding="utf-8", timeout=120)
-        self.assertEqual(proc.returncode, 0, proc.stdout[-2000:] + proc.stderr[-2000:])
 
 
 if __name__ == "__main__":

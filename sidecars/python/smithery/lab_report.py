@@ -26,6 +26,9 @@ def render(run, results):
     if kind in ("gauntlet", "gauntlet_overview"):
         from .lab_report_gauntlet import render as gauntlet
         return gauntlet(run, results)
+    if kind == "profit" and results.get("format") == 2:
+        from .lab_report_profit import render as profit
+        return profit(run, results)
     # Runs written before the report templates keep their original page.
     data = json.dumps({"run": run, **results}, ensure_ascii=True, allow_nan=False).replace("<", "\\u003c")
     return LEGACY_TEMPLATE.replace("__TITLE__", html.escape(run["title"])).replace("__DATA__", data)

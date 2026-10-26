@@ -18,6 +18,7 @@ permissions = [
   "allow-smithery-run",
   "allow-research-run",
   "allow-research-gauntlet-overview",
+  "allow-research-profit-overview",
   "allow-smithery-cancel",
   "allow-smithery-jobs",
   "allow-smithery-process-logs",
