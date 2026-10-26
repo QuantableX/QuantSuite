@@ -58,12 +58,19 @@ class ResearchTests(unittest.TestCase):
 
     def test_generated_report_is_english_offline_and_escapes_data(self):
         from smithery.lab_report import render
-        page = render({"title": "Trend <research>", "status": "done"},
-                      {"kind": "gauntlet", "rows": [{"name": "</script><b>x", "timeframes": {}}]})
-        self.assertIn('<html lang="en">', page)
-        self.assertIn("Trend &lt;research&gt;", page)
-        self.assertNotIn("</script><b>x", page)
-        self.assertNotRegex(page, r"(?i)https?://|[äöüß]")
+        gauntlet = render({"title": "Trend <research>", "status": "done"},
+                          {"kind": "gauntlet", "rows": [{"key": "x", "base_key": "x", "role": "standard",
+                                                         "name": "</script><b>x", "timeframes": {}}]})
+        legacy = render({"title": "Trend <research>", "status": "done"},
+                        {"kind": "profit", "rows": [{"name": "</script><b>x"}]})
+        for page in (gauntlet, legacy):
+            self.assertIn('<html lang="en">', page)
+            self.assertIn("Trend &lt;research&gt;", page)
+            self.assertNotIn("</script><b>x", page)
+            # Offline: no remote resource of any kind (the SVG namespace is a name, not a fetch).
+            self.assertNotRegex(page, r"(?i)(?:src|href|action)\s*=\s*[\"']?(?:https?:)?//|url\(\s*[\"']?(?:https?:)?//|@import|fetch\(|XMLHttpRequest")
+            self.assertNotRegex(page, r"[äöüßÄÖÜ]")
+        self.assertIn("Every indicator on every track", gauntlet)
 
     def test_paths_and_running_lock(self):
         for bad in ("../library", "a" * 31, "F" * 32, "a" * 32 + "/x"):

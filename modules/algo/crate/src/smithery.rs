@@ -602,6 +602,70 @@ pub(crate) async fn research_run(run_id: String, app_handle: AppHandle) -> Resul
     })).await.map_err(|e| e.to_string())?
 }
 
+/// `python -m smithery.lab query` with one JSON request on stdin — the same
+/// private research service the QuantScript module queries.
+fn lab_query(state: &AppState, request: &Value) -> Result<Value, String> {
+    use std::io::Write;
+    let python = python_for(state)?;
+    let mut child = build_python_command(&python)
+        .args(["-m", "smithery.lab", "query"])
+        .env("PYTHONIOENCODING", "utf-8")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Could not run the research service with '{python}': {e}"))?;
+    let input = serde_json::to_vec(request).map_err(|e| e.to_string())?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(&input).map_err(|e| e.to_string())?;
+    }
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    let doc = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .rev()
+        .find_map(|line| serde_json::from_str::<Value>(line.trim()).ok());
+    match doc {
+        Some(value) if output.status.success() => Ok(value),
+        Some(value) => Err(value["error"].as_str().unwrap_or("Research request failed").to_string()),
+        None => Err(format!("Research: {}", String::from_utf8_lossy(&output.stderr).trim())),
+    }
+}
+
+/// Create a research run of `kind` and start it as a forge job, in one call:
+/// the report tools an agent asks for by name. Returns the run and the job.
+fn create_and_start(app: &AppHandle, kind: &str, fields: Value) -> Result<Value, String> {
+    let state = app.state::<AppState>();
+    // Refuse before the library is copied: one forge job runs at a time.
+    if state.smithery.running.lock().map_err(|e| format!("Lock: {e}"))?.is_some() {
+        return Err("A forge job is already running — wait for it to finish or cancel it.".into());
+    }
+    let mut request = serde_json::Map::new();
+    if let Value::Object(fields) = fields {
+        request.extend(fields.into_iter().filter(|(_, v)| !v.is_null()));
+    }
+    request.insert("action".into(), Value::from("create"));
+    request.insert("kind".into(), Value::from(kind));
+    let run = lab_query(&state, &Value::Object(request))?;
+    let id = run["id"].as_str().ok_or("The research service returned no run id")?.to_string();
+    let job = start_job(app, ForgeRequest { kind: "research".into(), research_id: Some(id), ..Default::default() })?;
+    Ok(serde_json::json!({ "run": run, "job": job }))
+}
+
+/// The Gauntlet report of the active library's existing evidence (no re-test).
+/// Snake_case arguments: the `quantsuite.algo.research_gauntlet_overview` tool.
+#[tauri::command(rename_all = "snake_case")]
+pub(crate) async fn research_gauntlet_overview(
+    title: Option<String>,
+    indicators: Option<Vec<String>>,
+    app_handle: AppHandle,
+) -> Result<Value, String> {
+    let fields = serde_json::json!({ "title": title.unwrap_or_else(|| "Gauntlet · All indicators".into()),
+                                     "indicators": indicators.unwrap_or_default() });
+    tauri::async_runtime::spawn_blocking(move || create_and_start(&app_handle, "gauntlet_overview", fields))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Start a forge job — one at a time.
 #[tauri::command]
 pub(crate) async fn smithery_run(request: ForgeRequest, app_handle: AppHandle) -> Result<ForgeJob, String> {

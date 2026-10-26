@@ -34,6 +34,21 @@ QuantScript library and test them through the full Gauntlet.”
    Refresh `quantsuite.algo.list_indicators`, then call
    `quantsuite.algo.create_strategy_from_indicator`. No bot is started.
 
+## Report tools
+
+Each report has one English template (light and dark, offline, evidence
+embedded, CSV export from the page). A report tool creates the research run and
+starts it as a forge job in one call; the run and its report appear in the
+Research tab, and `research_read` returns the results.
+
+- `quantsuite.algo.research_gauntlet_overview(title?, indicators?)` — the
+  Gauntlet report of the library's existing native evidence, compiled from a
+  library snapshot and the vault's reports without re-testing: Standard and
+  selected-per-track verdicts on 1h/4h/1d, the worst track as the overall
+  verdict, permutation p-values, five axes, walk-forward, parameters, and the
+  native reports it read (their hashes in `report-hashes.json`).
+- Gauntlet research runs (new candidates) render with the same template.
+
 Every research command takes snake_case arguments (`run_id`), the same names
 the MCP tools advertise, because the agent broker passes arguments unchanged.
 The suite's normal capability approval gate applies to writes. An MCP tool

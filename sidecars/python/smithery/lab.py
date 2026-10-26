@@ -22,6 +22,9 @@ from pathlib import Path
 
 PROTOCOL = dict(seed=42, perm=120, boot=200, garch=100, folds=4,
                 timeframes=["1h", "4h", "1d"], fast=False)
+# gauntlet: new candidates through the native Gauntlet; gauntlet_overview: the
+# library's existing evidence as one report; profit: a saved system comparison.
+KINDS = ("gauntlet", "gauntlet_overview", "profit")
 
 
 def root() -> Path:
@@ -120,8 +123,8 @@ def keys_checked(keys):
 
 def create(request):
     kind = request.get("kind", "gauntlet")
-    if kind not in ("gauntlet", "profit"):
-        raise ValueError("Research kind must be gauntlet or profit")
+    if kind not in KINDS:
+        raise ValueError("Research kind must be one of: " + ", ".join(KINDS))
     keys = keys_checked(request.get("indicators", []))
     from .workspace import indicators_dir
     path = folder(uuid.uuid4().hex)
@@ -330,21 +333,26 @@ def run(run_id):
     path = folder(run_id)
     with locked(path):
         doc = read(path / "run.json")
-        if doc["status"] != "draft" or not doc["indicators"]:
+        if doc["status"] != "draft" or (not doc["indicators"] and doc["kind"] != "gauntlet_overview"):
             raise ValueError("Choose indicators in a fresh draft before running")
         doc.update(status="running", pid=os.getpid(), started_at=now())
         save(path / "run.json", doc)
     try:
-        emit(path, "progress", message="Freezing engine, private library and market inputs")
-        freeze(path, doc["kind"])
+        # The overview reads existing evidence only: the library snapshot taken
+        # at creation and the vault's reports; nothing to freeze or re-run.
+        frozen = doc["kind"] != "gauntlet_overview"
+        if frozen:
+            emit(path, "progress", message="Freezing engine, private library and market inputs")
+            freeze(path, doc["kind"])
         command = [sys.executable, "-u", "-m", "smithery.lab", "worker", "--path", str(path)]
         # Parent stays in the Forge process tree, so native cancellation kills every child.
         with (path / "worker.stderr.log").open("w", encoding="utf-8") as errors:
-            proc = subprocess.Popen(command, cwd=path / "engine", env=env_for(path, True),
-                                    stdout=subprocess.PIPE, stderr=errors, text=True, encoding="utf-8")
-            for line in proc.stdout:
-                print(line.rstrip(), flush=True)
-            code = proc.wait()
+            with subprocess.Popen(command, cwd=path / "engine" if frozen else Path(__file__).resolve().parents[1],
+                                  env=env_for(path, frozen),
+                                  stdout=subprocess.PIPE, stderr=errors, text=True, encoding="utf-8") as proc:
+                for line in proc.stdout:
+                    print(line.rstrip(), flush=True)
+                code = proc.wait()
         if code:
             raise ValueError((path / "worker.stderr.log").read_text(encoding="utf-8")[-3000:] or f"Research worker exited {code}")
         doc.update(status="done", finished_at=now())
@@ -358,6 +366,8 @@ def run(run_id):
         (path / "report.html").write_text(render(doc, read(path / "results.json")), encoding="utf-8")
         evidence = [path / "results.json", *(path / "vault/Output").glob("*"),
                     *(path / "library/versions").rglob("*.json")]
+        if doc["kind"] == "gauntlet_overview":
+            evidence += list((path / "library").glob("*.py"))
         save(path / "evidence-hashes.json", {str(f.relative_to(path)): digest(f) for f in evidence if f.is_file()})
     return 0 if doc["status"] == "done" else 2
 
@@ -413,6 +423,20 @@ def gauntlet_worker(path, doc):
         raise ValueError(f"Native Forge returned {code}; partial results retained")
 
 
+def gauntlet_overview_worker(path, doc):
+    from .data import OUTPUT_DIR
+    from .lab_gauntlet import overview
+    emit(path, "progress", message="Reading the library snapshot's registry")
+    registry = python_json(path, ["smithery.registry", "--json"])
+    emit(path, "progress", message=f"Compiling native Gauntlet evidence from {OUTPUT_DIR}")
+    results = overview(registry, OUTPUT_DIR, doc["indicators"] or None)
+    results["vault"] = str(OUTPUT_DIR)
+    save(path / "results.json", results)
+    # The reports live in the shared vault: record exactly what was read.
+    save(path / "report-hashes.json", {name: digest(OUTPUT_DIR / (name + ".json")) for name in results["reports"]})
+    emit(path, "progress", message=f"{results['summary']['indicators']} indicators, {results['summary']['reports']} native reports")
+
+
 def context():
     from .workspace import indicators_dir
     from .quantscript import template
@@ -430,6 +454,7 @@ def context():
                 "Call quantsuite.algo.research_run with the run id. Poll research_read and forge_jobs; never call a smoke test certification.",
                 "Read every failure and track verdict. Overall certification requires all three tracks; profits are a separate question.",
                 "For system comparisons create kind=profit with explicit saved system config and candidate keys; sizes accepts any 2+ distinct bases.",
+                "Report tool: quantsuite.algo.research_gauntlet_overview compiles the library's existing Gauntlet evidence (no re-test) into the English Gauntlet report in one call.",
                 "Research runs preserve sources and evidence privately. Use research_install only for selected, track-certified results; then create_strategy_from_indicator.",
                 "Do not start a bot or publish private sources to a public repository. Past inspected history is retrospective, not pristine out-of-sample."],
             "runs": list_runs()[:20]}
@@ -473,6 +498,8 @@ def main():
     doc = read(args.path / "run.json")
     if doc["kind"] == "gauntlet":
         gauntlet_worker(args.path, doc)
+    elif doc["kind"] == "gauntlet_overview":
+        gauntlet_overview_worker(args.path, doc)
     else:
         from .lab_compare import compare
         compare(args.path, doc)
