@@ -133,9 +133,27 @@ systems = {
             'indicator': {'trend': 'k_mid'}},
 }
 out = {}
+def aggregates():
+    from smithery.lab_aggregates import run as compare
+    doc = lab.create({'kind': 'aggregates', 'title': 'Aggregates', 'config': systems['rotation'], 'top': 3, 'budget': 60,
+                      'seed': 3, 'restarts': ['2021-01-01', '2030-01-01'], 'system_name': 'Fixture rotation'})
+    path = lab.folder(doc['id'])
+    compare(path, lab.read(path / 'run.json'))
+    results = lab.read(path / 'results.json')
+    page = render({**doc, 'status': 'done'}, results)
+    return {'reference': results['reference'], 'budget': doc['budget'],
+            'subjects': [(s['code'], s['group'], s['members'], s['verified'].get('passed')) for s in results['subjects']],
+            'stages': [st['stage'] for st in results['coverage']['stages']], 'aggregates': results['coverage']['aggregates'],
+            'best_by_size': [b['size'] for b in results['coverage']['best_by_size']],
+            'restarts': results['restarts'], 'verified': results['coverage']['verified'], 'passed': results['coverage']['verified_passed'],
+            'rows_have_singles': any(r['size'] == 1 for r in results['rows']), 'page': 'The ten most profitable aggregates' in page,
+            'remote': bool(__import__('re').search(r"(?i)(?:src|href)\s*=\s*[\"']?(?:https?:)?//", page))}
 if __name__ == '__main__':
     with patch.object(OhlcvFetcher, 'get_series', get_series), patch.object(OhlcvFetcher, 'get_pair_series', get_pair_series), \
          patch('rotation_lab.backtest.engine.build_universe_timeline', side_effect=timeline):
+        if sys.argv[1:] == ['aggregates']:
+            print(json.dumps(aggregates(), default=str))
+            sys.exit(0)
         for name, config in systems.items():
             doc = lab.create({'kind': 'profit', 'title': f'Profit {name}', 'config': config, 'top': 3, 'budget': 40, 'seed': 5,
                               'system_name': f'Fixture {name}'})
@@ -155,7 +173,8 @@ if __name__ == '__main__':
 
 
 class ProfitRunTests(unittest.TestCase):
-    def test_profit_overview_ranks_verifies_and_renders(self):
+    def run_script(self, *args):
+        """Synthetic rotation and single-asset systems in a fresh home and library."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             library = tmp / "library"
@@ -167,10 +186,13 @@ class ProfitRunTests(unittest.TestCase):
             env = {**os.environ, "QUANTSCRIPT_INDICATORS_DIR": str(library), "QUANTSUITE_HOME": str(tmp / "home"),
                    "ROTATION_LAB_CACHE": str(tmp / "cache.sqlite"), "PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(root),
                    "SMITHERY_WORKERS": "2"}
-            proc = subprocess.run([sys.executable, str(tmp / "check.py")], capture_output=True, text=True,
+            proc = subprocess.run([sys.executable, str(tmp / "check.py"), *args], capture_output=True, text=True,
                                   encoding="utf-8", timeout=900, env=env, cwd=root)
             self.assertEqual(proc.returncode, 0, proc.stdout[-3000:] + proc.stderr[-3000:])
-            report = json.loads(proc.stdout.strip().splitlines()[-1])
+            return json.loads(proc.stdout.strip().splitlines()[-1])
+
+    def test_profit_overview_ranks_verifies_and_renders(self):
+        report = self.run_script()
         for name, r in report.items():
             with self.subTest(name):
                 groups = [s[1] for s in r["subjects"]]
@@ -190,6 +212,25 @@ class ProfitRunTests(unittest.TestCase):
         # Four fixtures, all usable: 4 singles and every one of the 11 aggregates within the budget.
         self.assertEqual(report["rotation"]["coverage"]["by_size"], {"1": 4, "2": 6, "3": 4, "4": 1})
 
+    def test_aggregate_comparison_searches_sizes_verifies_and_restarts(self):
+        r = self.run_script("aggregates")
+        self.assertEqual(r["reference"], ["k_mid", "k_slow"])  # the saved aggregate
+        self.assertEqual(r["budget"], 60)
+        groups = [s[1] for s in r["subjects"]]
+        self.assertEqual(groups[0], "reference")
+        self.assertEqual(groups.count("aggregate"), 3)
+        self.assertTrue(all(s[3] for s in r["subjects"]))
+        self.assertEqual(r["verified"], r["passed"])
+        self.assertEqual(r["stages"][:2], ["Control: the reference", "Reference neighbours"])
+        self.assertIn("Pairs", r["stages"])
+        self.assertLessEqual(r["aggregates"], 60)
+        self.assertEqual(r["best_by_size"], [2, 3, 4])
+        self.assertFalse(r["rows_have_singles"])
+        # Only the restart inside the period runs, natively from a fresh start.
+        self.assertEqual([x["start"] for x in r["restarts"]], ["2021-01-01"])
+        self.assertGreater(r["restarts"][0]["leader"]["net_return_multiplier"], 0)
+        self.assertTrue(r["page"])
+        self.assertFalse(r["remote"])
 
 if __name__ == "__main__":
     unittest.main()

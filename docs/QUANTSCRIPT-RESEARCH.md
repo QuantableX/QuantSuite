@@ -54,6 +54,16 @@ Research tab, and `research_read` returns the results.
   rankings with capital from a chosen start amount, capital curves (log,
   linear, drawdown), profit against drawdown, annual returns, coverage and
   method. See "Evidence and comparisons" for the search and verification.
+- `quantsuite.algo.research_aggregate_comparison(system, title?, reference?,
+  indicators?, start_date?, end_date?, top?, budget?, sizes?, restarts?, seed?)`
+  — a variable-size search against the system's current aggregate (or
+  `reference`): the reference itself, all its add/remove/swap neighbours, two
+  additions to it, all pairs, balanced samples of every size and four
+  local-search rounds (default budget 200,000). The report shows the new leader
+  against the current aggregate (capital and drawdown), the top 10, the best
+  aggregate of every size with its test count, and independent restarts
+  (default 2023-01-01 and 2025-01-01, run natively from a fresh start). The top
+  10 and the best of sizes 2 to 5 are re-run natively.
 
 ## Bulk evaluation in a saved system
 

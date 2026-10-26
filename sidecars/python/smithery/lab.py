@@ -23,8 +23,9 @@ from pathlib import Path
 PROTOCOL = dict(seed=42, perm=120, boot=200, garch=100, folds=4,
                 timeframes=["1h", "4h", "1d"], fast=False)
 # gauntlet: new candidates through the native Gauntlet; gauntlet_overview: the
-# library's existing evidence as one report; profit: a saved system comparison.
-KINDS = ("gauntlet", "gauntlet_overview", "profit")
+# library's existing evidence as one report; profit: the most profitable singles and
+# aggregates in a saved system; aggregates: a variable-size search against its aggregate.
+KINDS = ("gauntlet", "gauntlet_overview", "profit", "aggregates")
 
 
 def root() -> Path:
@@ -133,11 +134,11 @@ def create(request):
         shutil.copytree(indicators_dir(), path / "library", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         doc = dict(id=path.name, title=str(request.get("title") or "Indicator research")[:160], kind=kind,
                    status="draft", created_at=now(), indicators=keys, protocol=PROTOCOL, candidates=[], path=str(path))
-        if kind == "profit":
+        if kind in ("profit", "aggregates"):
             # A saved system by name or id, explicit closed dates; empty indicators = the default set.
             from .lab_compare import validate_request
             from .lab_profit import prepare
-            doc.update(prepare(request))
+            doc.update(prepare(request, {"budget": 200_000} if kind == "aggregates" else None))
             validate_request(doc)
         save(path / "run.json", doc)
         return doc
@@ -457,6 +458,7 @@ def context():
                 "Read every failure and track verdict. Overall certification requires all three tracks; profits are a separate question.",
                 "For system comparisons use kind=profit with system (a saved system's name or id) or an explicit config; dates default to the saved start and yesterday; indicators default to each base's version for the system's track; sizes limits aggregate sizes (2+ distinct bases); budget caps the aggregates tested.",
                 "Report tool: quantsuite.algo.research_gauntlet_overview compiles the library's existing Gauntlet evidence (no re-test) into the English Gauntlet report in one call.",
+                "Report tool: quantsuite.algo.research_aggregate_comparison searches aggregates of any size (2+ distinct bases) against the system's current aggregate, with the top 10, the best of each size and independent later starts, verified natively.",
                 "Report tool: quantsuite.algo.research_profit_overview ranks every candidate alone and aggregates of 2+ distinct bases in a saved system by final capital (bulk evaluation identical to the engine, shown candidates verified natively).",
                 "Research runs preserve sources and evidence privately. Use research_install only for selected, track-certified results; then create_strategy_from_indicator.",
                 "Do not start a bot or publish private sources to a public repository. Past inspected history is retrospective, not pristine out-of-sample."],
@@ -503,6 +505,9 @@ def main():
         gauntlet_worker(args.path, doc)
     elif doc["kind"] == "gauntlet_overview":
         gauntlet_overview_worker(args.path, doc)
+    elif doc["kind"] == "aggregates":
+        from .lab_aggregates import run as aggregates
+        aggregates(args.path, doc)
     else:
         from .lab_profit import run as profit
         profit(args.path, doc)

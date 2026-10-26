@@ -29,6 +29,8 @@ const keys = ref('')
 const sizes = ref('')
 const budget = ref(50000)
 const top = ref(10)
+const reference = ref('')
+watch(kind, value => { budget.value = value === 'aggregates' ? 200000 : 50000 })
 const systems = ref<{ id: string; name: string }[]>([])
 const systemId = ref('')
 const startDate = ref('')
@@ -46,7 +48,7 @@ const chart = computed(() => {
   const low = Math.min(...logged), high = Math.max(...logged)
   return logged.map((v, i) => `${20 + i / (values.length - 1) * 920},${175 - (v - low) / (high - low || 1) * 155}`).join(' ')
 })
-const KIND_LABEL: Record<string, string> = { import: 'Historical report', profit: 'System comparison', gauntlet: 'Gauntlet', gauntlet_overview: 'Gauntlet overview' }
+const KIND_LABEL: Record<string, string> = { import: 'Historical report', profit: 'System comparison', aggregates: 'Aggregate comparison', gauntlet: 'Gauntlet', gauntlet_overview: 'Gauntlet overview' }
 // Gauntlet runs list registry rows; the overview lists report rows (selected version per track).
 const verdict = (row: Row, tf: string) => row.timeframes?.[tf] ?? row.selected?.[tf] ?? null
 const overallOf = (row: Row) => row.certification ?? row.overall?.selected ?? null
@@ -109,10 +111,13 @@ async function startReport(command: string, args: Record<string, unknown>) {
 async function create() {
   await guard(async () => {
     if (kind.value === 'gauntlet_overview') return startReport('plugin:algo|research_gauntlet_overview', {})
-    if (kind.value === 'profit') {
+    if (kind.value === 'profit' || kind.value === 'aggregates') {
       if (!systemId.value) throw new Error('Choose the saved system to compare.')
-      return startReport('plugin:algo|research_profit_overview', { system: systemId.value, start_date: startDate.value, end_date: endDate.value,
-        top: top.value, budget: budget.value, sizes: sizes.value.trim() ? parseKeys(sizes.value).map(Number) : null })
+      const common = { system: systemId.value, start_date: startDate.value, end_date: endDate.value, top: top.value, budget: budget.value,
+        sizes: sizes.value.trim() ? parseKeys(sizes.value).map(Number) : null }
+      return kind.value === 'profit'
+        ? startReport('plugin:algo|research_profit_overview', common)
+        : startReport('plugin:algo|research_aggregate_comparison', { ...common, reference: reference.value.trim() ? parseKeys(reference.value) : null })
     }
     const request = { title: title.value, kind: kind.value, indicators: parseKeys(keys.value) }
     const run = await invoke<Run>('plugin:script|research_create', { request })
@@ -169,16 +174,18 @@ onUnmounted(() => { clearInterval(timer); generation++ })
     <p v-if="notice" class="qsc-note" role="status">{{ notice }}</p>
     <form v-if="showForm" class="research-form" @submit.prevent="create">
       <label>Research title<input v-model="title" required maxlength="160"></label>
-      <label>Evaluation<select v-model="kind"><option value="gauntlet">Full Gauntlet + optimization (new candidates)</option><option value="gauntlet_overview">Gauntlet overview of the library (no re-test)</option><option value="profit">System profitability + aggregates</option></select></label>
-      <label class="wide">Indicator keys<textarea v-model="keys" rows="2" :placeholder="kind === 'gauntlet_overview' ? 'Comma-separated base keys; leave empty for the whole library' : kind === 'profit' ? 'Comma-separated keys; leave empty for every indicator in the version for the system\'s timeframe' : 'Comma-separated keys; leave empty for AI-authored Gauntlet candidates'" /></label>
-      <template v-if="kind === 'profit'">
+      <label>Evaluation<select v-model="kind"><option value="gauntlet">Full Gauntlet + optimization (new candidates)</option><option value="gauntlet_overview">Gauntlet overview of the library (no re-test)</option><option value="profit">System profitability + aggregates</option><option value="aggregates">Aggregate comparison (any size vs. the current aggregate)</option></select></label>
+      <label class="wide">Indicator keys<textarea v-model="keys" rows="2" :placeholder="kind === 'gauntlet_overview' ? 'Comma-separated base keys; leave empty for the whole library' : kind === 'profit' || kind === 'aggregates' ? 'Comma-separated keys; leave empty for every indicator in the version for the system\'s timeframe' : 'Comma-separated keys; leave empty for AI-authored Gauntlet candidates'" /></label>
+      <template v-if="kind === 'profit' || kind === 'aggregates'">
         <label>Saved system<select v-model="systemId" required @change="loadSystem"><option value="" disabled>Select baseline</option><option v-for="system in systems" :key="system.id" :value="system.id">{{ system.name }}</option></select></label>
         <label>Aggregate sizes<input v-model="sizes" placeholder="All sizes from 2 upward"></label>
         <label>Start<input v-model="startDate" type="date" required></label>
         <label>End (before today)<input v-model="endDate" type="date" required></label>
         <label>Aggregates to test<input v-model.number="budget" type="number" min="0" max="5000000" step="1000"></label>
         <label>Shown per group<input v-model.number="top" type="number" min="1" max="50"></label>
-        <p class="muted">Every candidate alone, then aggregates of 2+ different indicators: small sizes in full where they fit, larger ones sampled, then local search around the leaders. The system's universe, market filter and costs stay unchanged; every candidate shown is re-run with the native engine. Large libraries take a while.</p>
+        <label v-if="kind === 'aggregates'" class="wide">Aggregate to beat<input v-model="reference" placeholder="Comma-separated keys; leave empty for the system's own aggregate"></label>
+        <p v-if="kind === 'aggregates'" class="muted">Searches aggregates of any size from two different indicators against the current one: its neighbours, two additions, all pairs, samples of every size and local search. The top 10 and the best small sizes are re-run natively, and the leader is restarted from 2023 and 2025.</p>
+        <p v-else class="muted">Every candidate alone, then aggregates of 2+ different indicators: small sizes in full where they fit, larger ones sampled, then local search around the leaders. The system's universe, market filter and costs stay unchanged; every candidate shown is re-run with the native engine. Large libraries take a while.</p>
       </template>
       <p v-else-if="kind === 'gauntlet_overview'" class="muted">Compiles the existing native Gauntlet evidence of the library: Standard and selected versions on 1h, 4h and 1d, the five axes, walk-forward and parameters. Nothing is re-tested; it runs as a forge job of about a minute.</p>
       <p v-else class="muted">All three tracks · 120 permutations · 200 bootstraps · 100 GARCH paths · four walk-forward folds. Failed candidates remain visible.</p>

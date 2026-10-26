@@ -53,7 +53,7 @@ for (const name of readdirSync(resolve(pythonRoot, 'codebase_index')).filter(nam
     `sidecars/python/codebase_index/${name}`, `Missing code-index runtime resource: ${name}`)
 }
 for (const name of ['lab.py', 'lab_compare.py', 'lab_install.py', 'lab_report.py', 'lab_gauntlet.py', 'lab_report_gauntlet.py', 'lab_fast.py',
-  'lab_search.py', 'lab_profit.py', 'lab_report_profit.py']) {
+  'lab_search.py', 'lab_profit.py', 'lab_report_profit.py', 'lab_aggregates.py', 'lab_report_aggregates.py']) {
   assert.equal(config.bundle.resources[`../../sidecars/python/smithery/${name}`],
     `sidecars/python/smithery/${name}`, `Missing research runtime resource: ${name}`)
 }

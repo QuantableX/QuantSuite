@@ -39,8 +39,9 @@ def resolve_system(ref):
     raise ValueError(f"No saved system named '{ref}'")
 
 
-def prepare(request):
+def prepare(request, defaults=None):
     """The run fields of a system comparison: a resolved config with explicit dates."""
+    defaults = {**DEFAULTS, **(defaults or {})}
     config, system = request.get("config"), request.get("system")
     meta = None
     if system:
@@ -56,8 +57,12 @@ def prepare(request):
     yesterday = (dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=1)).isoformat()
     if str(config.get("endDate") or "") >= yesterday or not config.get("endDate"):
         config["endDate"] = yesterday  # only closed history: the saved end is usually today
-    return {"config": config, "system": meta or {"id": None, "name": request.get("system_name") or "Saved system"},
-            **{k: request.get(k, DEFAULTS[k]) for k in DEFAULTS}, "sizes": request.get("sizes")}
+    fields = {"config": config, "system": meta or {"id": None, "name": request.get("system_name") or "Saved system"},
+              **{k: request.get(k) if request.get(k) is not None else defaults[k] for k in defaults}, "sizes": request.get("sizes")}
+    for extra in ("reference", "restarts"):  # the aggregate comparison's inputs
+        if request.get(extra) is not None:
+            fields[extra] = request[extra]
+    return fields
 
 
 def default_keys(rows, config):
