@@ -1190,6 +1190,79 @@
       }
     },
     {
+      "tool": "quantsuite.algo.research_aggregate_comparison",
+      "module": "algo",
+      "name": "research_aggregate_comparison",
+      "command": "plugin:algo|research_aggregate_comparison",
+      "description": "Report tool 3/3: a variable-size aggregate search in a saved QuantSystems system against its current aggregate (or a given reference). Any size from two distinct base indicators; stages fixed before results (reference neighbours, two additions, pairs, balanced sizes, local search). Report: new leader vs current (capital and drawdown), top 10, best of each size, independent later starts, search coverage. Bulk evaluation identical to the native engine; the top 10 and the best small sizes are re-run natively. Creates a research run and starts it as a forge job; returns the run id at once.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Report title, in English."
+          },
+          "system": {
+            "type": "string",
+            "description": "A saved system's name or id (QuantSystems)."
+          },
+          "config": {
+            "type": "object",
+            "description": "An explicit system config instead of a saved system."
+          },
+          "indicators": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Candidate keys; omit for each base indicator's version for the system's track."
+          },
+          "reference": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The aggregate to beat; omit for the system's own."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD; default the system's start."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD before today; default yesterday."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Aggregates shown (default 10)."
+          },
+          "budget": {
+            "type": "integer",
+            "description": "Aggregates tested at most (default 200000)."
+          },
+          "sizes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Aggregate sizes to test; omit for 2 up to all bases."
+          },
+          "restarts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Later start dates for independent runs (default 2023-01-01, 2025-01-01)."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Search seed (default 42)."
+          }
+        }
+      }
+    },
+    {
       "tool": "quantsuite.algo.forge_jobs",
       "module": "algo",
       "name": "forge_jobs",
