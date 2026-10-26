@@ -383,12 +383,24 @@ class OhlcvFetcher:
         start: dt.date,
         end: dt.date,
     ) -> None:
-        # 1) try the CCXT exchange chain
-        try:
-            rows = self._fetch_ccxt(ref, start, end)
-        except Exception as exc:  # noqa: BLE001
-            log.info("CCXT fetch failed for %s: %s", ref.symbol, exc)
-            rows = []
+        # A coin keeps the exchange its saved candles came from: new days come
+        # from that venue first, the chain only fills days it does not have,
+        # and a saved day is never rewritten. Taking whichever venue spans the
+        # window and replacing every day switched coins between exchanges
+        # whenever a run asked for a longer warm-up.
+        rows: list[OhlcvRow] = []
+        pinned = self._pinned_pair(coin_key_for(ref))
+        if pinned:
+            rows = self._fetch_ccxt_one(*pinned, ref, start, end)
+        if not self._spans(rows, start, end):
+            # 1) try the CCXT exchange chain
+            try:
+                chain = self._fetch_ccxt(ref, start, end)
+            except Exception as exc:  # noqa: BLE001
+                log.info("CCXT fetch failed for %s: %s", ref.symbol, exc)
+                chain = []
+            have = {r.day for r in rows}
+            rows += [r for r in chain if r.day not in have]
 
         if rows:
             # The best exchange's earliest candle is a fact about the coin:
@@ -415,7 +427,23 @@ class OhlcvFetcher:
         # Fetchers return confirmed candles only. A partial close must never
         # become an immutable historical row after the next clock boundary.
         if rows:
-            self.cache.upsert_ohlcv(rows)
+            self.cache.insert_missing_ohlcv(rows)
+
+    def _pinned_pair(self, coin_key: str) -> tuple[str, str] | None:
+        """The exchange and pair of the coin's newest saved candle, if it came from one."""
+        source = self.cache.latest_ohlcv_source(coin_key) or ""
+        kind, _, rest = source.partition(":")
+        name, _, pair = rest.partition(":")
+        return (name, pair) if kind == "ccxt" and name and pair else None
+
+    @staticmethod
+    def _spans(rows: list[OhlcvRow], start: dt.date, end: dt.date) -> bool:
+        """Whether candles cover a window (three days of slack at either end, as the chain uses)."""
+        if not rows:
+            return False
+        days = [r.day for r in rows]
+        return (min(days) <= start + dt.timedelta(days=3)
+                and max(days) >= min(end, dt.date.today()) - dt.timedelta(days=3))
 
     # --------------------------- intraday ------------------------------- #
 
