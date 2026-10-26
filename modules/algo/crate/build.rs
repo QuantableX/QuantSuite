@@ -17,6 +17,8 @@ const COMMANDS: &[&str] = &[
     "smithery_source",
     "smithery_run",
     "research_run",
+    // Report tools: create a research run of one kind and start it at once.
+    "research_gauntlet_overview",
     "smithery_cancel",
     "smithery_jobs",
     // `{ limit }` → lines, for the suite's process page.

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-research-gauntlet-overview"
+description = "Enables the research_gauntlet_overview command without any pre-configured scope."
+commands.allow = ["research_gauntlet_overview"]
+
+[[permission]]
+identifier = "deny-research-gauntlet-overview"
+description = "Denies the research_gauntlet_overview command without any pre-configured scope."
+commands.deny = ["research_gauntlet_overview"]

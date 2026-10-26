@@ -5,7 +5,7 @@ import { useForgeStore } from '#script/stores/forge'
 
 interface Run { id: string; title: string; kind: string; status: string; created_at: string; indicators: string[]; error?: string; config?: Record<string, unknown>; path?: string }
 interface Verdict { score?: number; grade?: string; certified?: boolean; report?: string }
-interface Row { id?: string; key?: string; name: string; role?: string; size?: number; error?: string; members?: string[]; params?: unknown; parameters?: unknown; metrics?: Record<string, number | null>; certification?: Verdict; timeframes?: Record<string, Verdict | null>; equity?: [string, number][] }
+interface Row { id?: string; key?: string; name: string; role?: string; size?: number; error?: string; members?: string[]; params?: unknown; parameters?: unknown; metrics?: Record<string, number | null>; certification?: Verdict; timeframes?: Record<string, Verdict | null>; equity?: [string, number][]; selected?: Record<string, Verdict | null>; overall?: { selected: Verdict } }
 interface Results { run: Run; rows: Row[]; total: number; coverage?: { size: number; tested: number; exhaustive: boolean }[]; validation?: string }
 
 const forge = useForgeStore()
@@ -45,6 +45,10 @@ const chart = computed(() => {
   const low = Math.min(...logged), high = Math.max(...logged)
   return logged.map((v, i) => `${20 + i / (values.length - 1) * 920},${175 - (v - low) / (high - low || 1) * 155}`).join(' ')
 })
+const KIND_LABEL: Record<string, string> = { import: 'Historical report', profit: 'System comparison', gauntlet: 'Gauntlet', gauntlet_overview: 'Gauntlet overview' }
+// Gauntlet runs list registry rows; the overview lists report rows (selected version per track).
+const verdict = (row: Row, tf: string) => row.timeframes?.[tf] ?? row.selected?.[tf] ?? null
+const overallOf = (row: Row) => row.certification ?? row.overall?.selected ?? null
 const format = (value: unknown, digits = 2) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: digits }) : '—'
 const parseKeys = (text: string) => [...new Set(text.split(/[\s,]+/).filter(Boolean))]
 
@@ -60,15 +64,18 @@ async function load() {
   if (token !== generation) return
   result.value = data
   html.value = ''
-  if (data.run.kind === 'import' || showingReport.value) {
+  if (data.run.kind === 'import' || (showingReport.value && data.run.status === 'done')) {
     const report = await invoke<{ html: string }>('plugin:script|research_read', { run_id: id, section: 'html' })
     if (token !== generation) return
     // Opaque sandbox origin, no network or desktop bridge. Preserve the original
     // offline interaction code while denying remote resources and forms.
-    html.value = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">${report.html}`
+    // Generated reports follow the app's dark theme; imported ones ignore it.
+    // (<\/script> keeps the SFC parser from ending this block.)
+    html.value = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'"><script>document.documentElement.dataset.theme='dark'<\/script>${report.html}`
   }
 }
-async function select(id: string) { selected.value = id; showingReport.value = false; offset.value = 0; expanded.value = ''; await guard(load) }
+// A finished run opens on its English report; the results table is one click away.
+async function select(id: string) { selected.value = id; showingReport.value = true; offset.value = 0; expanded.value = ''; await guard(load) }
 async function importReport() {
   const source = await open({ multiple: false, filters: [{ name: 'Research reports', extensions: ['html', 'htm'] }] })
   if (typeof source !== 'string') return
@@ -88,6 +95,12 @@ async function loadSystem() {
 }
 async function create() {
   await guard(async () => {
+    if (kind.value === 'gauntlet_overview') {
+      // One call creates the run and starts it, like the MCP report tool.
+      const started = await invoke<{ run: Run }>('plugin:algo|research_gauntlet_overview', { title: title.value, indicators: parseKeys(keys.value) })
+      await refresh(); selected.value = started.run.id; showForm.value = false; showingReport.value = true; offset.value = 0; await load(); await forge.resume()
+      return
+    }
     if (kind.value === 'profit' && !savedConfig.value) throw new Error('Choose the saved system to compare.')
     const request = { title: title.value, kind: kind.value, indicators: parseKeys(keys.value),
       ...(kind.value === 'profit' ? { config: { ...savedConfig.value, startDate: startDate.value, endDate: endDate.value },
@@ -122,7 +135,7 @@ onMounted(async () => {
   await guard(async () => {
     await refresh()
     systems.value = await invoke('plugin:systems|list_systems')
-    if (runs.value[0]) { selected.value = runs.value[0].id; await load() }
+    if (runs.value[0]) { selected.value = runs.value[0].id; showingReport.value = true; await load() }
   })
   timer = setInterval(async () => {
     if (busy.value || !runs.value.some(r => r.status === 'running')) return
@@ -146,8 +159,8 @@ onUnmounted(() => { clearInterval(timer); generation++ })
     <p v-if="notice" class="qsc-note" role="status">{{ notice }}</p>
     <form v-if="showForm" class="research-form" @submit.prevent="create">
       <label>Research title<input v-model="title" required maxlength="160"></label>
-      <label>Evaluation<select v-model="kind"><option value="gauntlet">Full Gauntlet + optimization</option><option value="profit">System profitability + aggregates</option></select></label>
-      <label class="wide">Indicator keys<textarea v-model="keys" rows="2" placeholder="Comma-separated keys; leave empty for AI-authored Gauntlet candidates" /></label>
+      <label>Evaluation<select v-model="kind"><option value="gauntlet">Full Gauntlet + optimization (new candidates)</option><option value="gauntlet_overview">Gauntlet overview of the library (no re-test)</option><option value="profit">System profitability + aggregates</option></select></label>
+      <label class="wide">Indicator keys<textarea v-model="keys" rows="2" :placeholder="kind === 'gauntlet_overview' ? 'Comma-separated base keys; leave empty for the whole library' : 'Comma-separated keys; leave empty for AI-authored Gauntlet candidates'" /></label>
       <template v-if="kind === 'profit'">
         <label>Saved system<select v-model="systemId" required @change="loadSystem"><option value="" disabled>Select baseline</option><option v-for="system in systems" :key="system.id" :value="system.id">{{ system.name }}</option></select></label>
         <label>Aggregate sizes<input v-model="sizes" placeholder="All sizes from 2 upward"></label>
@@ -156,20 +169,21 @@ onUnmounted(() => { clearInterval(timer); generation++ })
         <label>Samples per size<input v-model.number="samples" type="number" min="1" max="1000"></label>
         <p class="muted">The baseline's fees, slippage, universe and market filter are preserved. Singles are evaluated separately. Larger searches are finite samples.</p>
       </template>
+      <p v-else-if="kind === 'gauntlet_overview'" class="muted">Compiles the existing native Gauntlet evidence of the library: Standard and selected versions on 1h, 4h and 1d, the five axes, walk-forward and parameters. Nothing is re-tested; it runs as a forge job of about a minute.</p>
       <p v-else class="muted">All three tracks · 120 permutations · 200 bootstraps · 100 GARCH paths · four walk-forward folds. Failed candidates remain visible.</p>
-      <button class="qsc-btn is-primary" :disabled="busy">Create private draft</button>
+      <button class="qsc-btn is-primary" :disabled="busy || (kind === 'gauntlet_overview' && forge.isRunning)">{{ kind === 'gauntlet_overview' ? 'Create report' : 'Create private draft' }}</button>
     </form>
     <div class="research-workspace">
       <aside class="research-runs">
         <div class="research-actions"><input v-model="search" aria-label="Find research" placeholder="Find research…"><button class="qsc-btn is-sm" :disabled="busy" @click="guard(refresh)">Refresh</button></div>
         <button v-for="run in filteredRuns" :key="run.id" class="research-run" :class="{ selected: selected === run.id }" :disabled="busy" @click="select(run.id)">
-          <strong>{{ run.title }}</strong><span>{{ run.kind === 'import' ? 'Historical report' : run.kind === 'profit' ? 'System comparison' : 'Gauntlet' }} · {{ run.status }}</span><small>{{ new Date(run.created_at).toLocaleDateString('en-US') }}</small>
+          <strong>{{ run.title }}</strong><span>{{ KIND_LABEL[run.kind] ?? run.kind }} · {{ run.status }}</span><small>{{ new Date(run.created_at).toLocaleDateString('en-US') }}</small>
         </button>
         <p v-if="!runs.length" class="muted">Import an existing report or create a research run. The AI can add new candidates through MCP.</p>
       </aside>
       <div class="research-detail">
         <template v-if="active">
-          <div class="research-heading"><div><h3>{{ active.title }}</h3><p>{{ active.status }} · {{ active.indicators.length }} selected indicators</p></div>
+          <div class="research-heading"><div><h3>{{ active.title }}</h3><p>{{ KIND_LABEL[active.kind] ?? active.kind }} · {{ active.status }} · {{ active.kind === 'gauntlet_overview' && !active.indicators.length ? 'whole library' : `${active.indicators.length} selected indicators` }}</p></div>
             <button v-if="active.kind !== 'import' && active.status === 'done'" class="qsc-btn" :disabled="busy" @click="guard(async () => { showingReport = !showingReport; await load() })">{{ showingReport ? 'Results table' : 'English HTML report' }}</button>
             <button v-if="active.status === 'draft'" class="qsc-btn is-primary" :disabled="busy || forge.isRunning || !active.indicators.length" @click="start">Run evaluation</button>
             <button v-if="active.status === 'running'" class="qsc-btn" :disabled="busy" @click="guard(async () => { await invoke('plugin:algo|smithery_cancel'); await refresh(); await load() })">Cancel evaluation</button>
@@ -186,7 +200,7 @@ onUnmounted(() => { clearInterval(timer); generation++ })
               <tbody><template v-for="row in rows" :key="row.id || row.key"><tr>
                 <td><button class="research-name" @click="expanded = expanded === (row.id || row.key) ? '' : (row.id || row.key || '')">{{ row.name }}</button><small v-if="row.error" class="research-error">{{ row.error }}</small></td>
                 <template v-if="active.kind === 'profit'"><td>{{ row.size || 'Baseline' }}</td><td>{{ format(row.metrics?.net_return_multiplier) }}</td><td>{{ format(row.metrics?.max_drawdown_pct) }}</td><td>{{ format(row.metrics?.sharpe) }}</td></template>
-                <template v-else><td>{{ row.role }}</td><td v-for="tf in ['1h','4h','1d']" :key="tf">{{ format(row.timeframes?.[tf]?.score, 1) }} <span :class="{ pass: row.timeframes?.[tf]?.certified }">{{ row.timeframes?.[tf]?.certified ? 'Pass' : 'Uncertified' }}</span></td><td>{{ row.certification?.certified ? 'Pass' : 'Uncertified' }}</td></template>
+                <template v-else><td>{{ row.role ?? 'Selected per track' }}</td><td v-for="tf in ['1h','4h','1d']" :key="tf">{{ format(verdict(row, tf)?.score, 1) }} <span :class="{ pass: verdict(row, tf)?.certified }">{{ verdict(row, tf)?.certified ? 'Pass' : 'Uncertified' }}</span></td><td>{{ format(overallOf(row)?.score, 1) }} <span :class="{ pass: overallOf(row)?.certified }">{{ overallOf(row)?.certified ? 'Pass' : 'Uncertified' }}</span></td></template>
                 <td><button v-if="active.kind === 'gauntlet'" class="qsc-btn is-sm" :disabled="busy || active.status !== 'done' || !row.timeframes?.[track]?.certified" @click="install(row)">Create strategy</button></td>
               </tr><tr v-if="expanded === (row.id || row.key)"><td :colspan="active.kind === 'profit' ? 6 : 7"><pre>{{ JSON.stringify(row.parameters || row.params || row, null, 2) }}</pre></td></tr></template></tbody></table></div>
             <div class="research-actions"><button class="qsc-btn is-sm" :disabled="busy || offset === 0" @click="page(-50)">Previous</button><span>{{ offset + 1 }}–{{ Math.min(offset + 50, result?.total || 0) }} / {{ result?.total }}</span><button class="qsc-btn is-sm" :disabled="busy || offset + 50 >= (result?.total || 0)" @click="page(50)">Next</button></div>
@@ -217,7 +231,7 @@ onUnmounted(() => { clearInterval(timer); generation++ })
 .research-run strong { font-size: 12px; font-weight: 550; }
 .research-run span, .research-run small { color: var(--qss-text-muted); font-size: 10px; }
 .research-detail { min-width: 0; padding: 18px; display: flex; flex-direction: column; gap: 16px; }
-.research-report { width: 100%; height: 75vh; min-height: 540px; border: 0; border-radius: 6px; background: #101722; }
+.research-report { width: 100%; height: 75vh; min-height: 540px; border: 0; border-radius: 6px; background: #111110; }
 .research-table { overflow: auto; }
 .research table { border-collapse: collapse; width: 100%; font-size: 11px; text-align: left; }
 .research th, .research td { padding: 12px 9px; border-bottom: 1px solid var(--qss-border); }

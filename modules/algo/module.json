@@ -100,6 +100,19 @@
       }
     },
     {
+      "name": "research_gauntlet_overview",
+      "command": "plugin:algo|research_gauntlet_overview",
+      "description": "Report tool 1/3: the Gauntlet report of the active library's existing native evidence, without re-testing. Per indicator: Standard and selected-per-track verdicts on 1h/4h/1d, worst-track overall score, p-values, five axes, walk-forward, parameters, CSV export. Creates a research run and starts it as a forge job; returns the run id at once. Poll quantsuite.script.research_read; the English report shows in QuantScript → Forge → Research.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Report title, in English." },
+          "indicators": { "type": "array", "items": { "type": "string" }, "description": "Base indicator keys to include; omit for the whole library." }
+        }
+      }
+    },
+    {
       "name": "forge_jobs",
       "command": "plugin:algo|smithery_jobs",
       "description": "Forge jobs with status, progress, errors and verdict summaries; detail = a job id returns that job's full event list.",

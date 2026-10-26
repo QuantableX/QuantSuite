@@ -17,6 +17,7 @@ permissions = [
   "allow-smithery-source",
   "allow-smithery-run",
   "allow-research-run",
+  "allow-research-gauntlet-overview",
   "allow-smithery-cancel",
   "allow-smithery-jobs",
   "allow-smithery-process-logs",
