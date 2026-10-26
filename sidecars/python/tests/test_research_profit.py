@@ -67,6 +67,21 @@ class SearchTests(unittest.TestCase):
         self.assertTrue(all(len({self.bases[k] for k in t}) == len(t) for t in found))
         self.assertFalse(any(len(t) < 2 for t in set(s.neighbors(("a", "b")))))
 
+    def test_identical_versions_count_once_and_the_reference_keeps_its_name(self):
+        from types import SimpleNamespace
+        from smithery.lab_profit import distinct_keys
+        row = lambda script, **params: {"script": script, "params": params}
+        registry = {"a": row("a.py", length=20), "a_opt": row("a.py", length=20), "a_opt_1d": row("a.py", length=20),
+                    "b_opt": row("b.py", length=40), "b_opt_1d": row("b.py", length=50),
+                    "c_opt": row("c.py", band=0.1), "c_opt_1d": row("c.py", band=0.1)}
+        config = SimpleNamespace(indicator=SimpleNamespace(params={}))
+        keys, dropped = distinct_keys(list(registry), registry, config, keep=["a_opt"])
+        self.assertEqual(keys, ["a_opt", "b_opt", "b_opt_1d", "c_opt"])
+        self.assertEqual(dropped, {"a": "a_opt", "a_opt_1d": "a_opt", "c_opt_1d": "c_opt"})
+        # A system's own override makes an otherwise identical version a different strategy.
+        config = SimpleNamespace(indicator=SimpleNamespace(params={"c_opt_1d": {"band": 0.3}}))
+        self.assertEqual(distinct_keys(["c_opt", "c_opt_1d"], registry, config), (["c_opt", "c_opt_1d"], {}))
+
     def test_requests_need_closed_history_and_valid_limits(self):
         doc = {"config": {"startDate": "2020-01-01", "endDate": "2021-01-01", "feeRate": .001, "slippageRate": 0,
                           "indicator": {"trend": "fixture"}}, "indicators": [], "top": 10, "budget": 1000}
