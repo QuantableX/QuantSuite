@@ -113,8 +113,9 @@ fit the budget (else seeded samples), seeded samples of every larger size, and
 three local-search rounds around the leaders (add, remove or swap one member).
 `budget` caps the aggregates tested (default 50,000), `sizes` restricts them,
 `top` sets how many aggregates and singles the report shows (one version per
-base among singles). Each base casts at most one vote. Before ranking, the bulk
-evaluator is checked against a native run; afterwards every shown candidate is
+base among singles). Each base casts at most one vote, and versions with the same
+script and settings count once (the reference's or the current system's key is
+kept). Before ranking, the bulk evaluator is checked against a native run; afterwards every shown candidate is
 re-run natively and must match bar for bar, or the run fails with its evidence
 kept (`verification.json`). Systems the bulk evaluator cannot express run
 natively within 400 aggregates. The objective is retrospective final capital,

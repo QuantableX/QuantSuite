@@ -9,6 +9,7 @@ evaluator cannot express run natively within a smaller budget.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import math
 import time
 from dataclasses import asdict, replace
@@ -77,6 +78,26 @@ def default_keys(rows, config):
         version = (row.get("versions") or {}).get(f"optimized_{track}") if track else None
         keys.append(version if version in by_key else row["key"])
     return sorted(keys)
+
+
+def distinct_keys(keys, registry, config, keep=()):
+    """One key per distinct strategy, and which keys were dropped as the same strategy.
+
+    Two versions of a base with the same script and the same settings (after the
+    system's own parameter overrides) are one candidate under two names; for most
+    bases the general and the daily version are identical. Keys in ``keep`` (the
+    reference or the current system) win; otherwise the first key in sorted order."""
+    seen, kept, dropped = {}, [], {}
+    for key in [*dict.fromkeys(keep), *sorted(set(keys) - set(keep))]:
+        row = registry[key]
+        settings = {**(row.get("params") or {}), **(config.indicator.params.get(key) or {})}
+        identity = (row.get("script"), json.dumps(settings, sort_keys=True, default=str))
+        if identity in seen:
+            dropped[key] = seen[identity]
+        else:
+            seen[identity] = key
+            kept.append(key)
+    return sorted(kept), dropped
 
 
 # ------------------------------------------------------------- evaluators
@@ -228,6 +249,8 @@ def run(path, doc):
     missing = sorted(set(keys) - registry.keys())
     if missing:
         raise ValueError(f"Unknown indicators: {missing}")
+    current = tuple(dict.fromkeys(config.indicator.aggregate)) if config.indicator.trend == "aggregate" else (config.indicator.trend,)
+    keys, duplicates = distinct_keys(keys, registry, config, keep=[k for k in current if k in keys])
     bases = {k: registry[k]["base_key"] for k in keys}
     top, budget, seed = doc.get("top") or DEFAULTS["top"], doc.get("budget", DEFAULTS["budget"]), doc.get("seed", DEFAULTS["seed"])
     started = time.monotonic()
@@ -316,7 +339,7 @@ def run(path, doc):
         coverage = {"keys": len(keys), "bases": len(set(bases.values())), "usable": len(usable),
                     "unsupported": dict(sorted(evaluator.failed.items())), "singles": len(search.results(size=1)),
                     "aggregates": search.aggregates, "by_size": search.counts(), "stages": search.stages,
-                    "sizes": plan["sizes"], "budget": budget, "dedupe_bases": True,
+                    "sizes": plan["sizes"], "budget": budget, "dedupe_bases": True, "duplicates": duplicates,
                     "verified": len(verified), "verified_passed": sum(v["passed"] for v in verified),
                     "evaluator": "native" if reason else "bulk", "native_reason": reason,
                     "best_by_size": [{"size": s, "members": list(t), "net_return_multiplier": v[0], "max_drawdown_pct": v[1]}

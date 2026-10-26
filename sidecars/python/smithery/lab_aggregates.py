@@ -12,7 +12,7 @@ from dataclasses import replace
 from itertools import islice
 
 from .lab import emit, save
-from .lab_profit import DEFAULTS, NATIVE_BUDGET, NativeEvaluator, Subjects, default_keys, describe
+from .lab_profit import DEFAULTS, NATIVE_BUDGET, NativeEvaluator, Subjects, default_keys, describe, distinct_keys
 
 RESTARTS = ("2023-01-01", "2025-01-01")
 BUDGET = 200_000
@@ -40,6 +40,7 @@ def run(path, doc):
     unknown = sorted(set(keys) - registry.keys())
     if unknown:
         raise ValueError(f"Unknown indicators: {unknown}")
+    keys, duplicates = distinct_keys(keys, registry, config, keep=reference)
     bases = {k: registry[k]["base_key"] for k in keys}
     if len({bases[k] for k in reference}) != len(reference):
         raise ValueError("The reference casts two votes for one base indicator")
@@ -130,7 +131,7 @@ def run(path, doc):
             restarts.append(row)
         counts = search.counts()
         coverage = {"keys": len(keys), "bases": len(set(bases.values())), "usable": len(usable),
-                    "unsupported": dict(sorted(evaluator.failed.items())), "aggregates": search.aggregates,
+                    "unsupported": dict(sorted(evaluator.failed.items())), "duplicates": duplicates, "aggregates": search.aggregates,
                     "by_size": {s: c for s, c in counts.items() if s >= 2}, "stages": search.stages, "sizes": plan["sizes"],
                     "budget": budget, "verified": len(verified) + 1, "verified_passed": sum(v["passed"] for v in verified) + 1,
                     "evaluator": "native" if reason else "bulk", "native_reason": reason,
