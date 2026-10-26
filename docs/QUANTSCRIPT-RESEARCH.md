@@ -49,6 +49,20 @@ Research tab, and `research_read` returns the results.
   native reports it read (their hashes in `report-hashes.json`).
 - Gauntlet research runs (new candidates) render with the same template.
 
+## Bulk evaluation in a saved system
+
+Large single and aggregate searches use `smithery/lab_fast.py`. The unchanged
+engine runs up to its simulation step once per warm-up group (the fetch start a
+candidate's warm-up implies) and hands over its universe snapshots, candles and
+TOTAL gate. Each candidate's +1/-1/0 vote on every pair is computed once per
+group with the engine's signal code; singles and aggregates (sign of the vote
+sum, previous verdict kept on an even split) are then simulated in bulk with
+the engine's bar loop and float order. `verify` re-runs a candidate natively
+and requires identical holdings on every bar. On the frozen LCES tournament
+data it reproduces the original profit overview's numbers exactly. Systems whose
+market filter follows the candidate's own indicator are not supported; volume
+indicators cannot vote on synthetic coin ratios and are reported, not ranked.
+
 Every research command takes snake_case arguments (`run_id`), the same names
 the MCP tools advertise, because the agent broker passes arguments unchanged.
 The suite's normal capability approval gate applies to writes. An MCP tool

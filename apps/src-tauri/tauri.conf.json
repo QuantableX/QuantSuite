@@ -112,7 +112,8 @@
       "../../sidecars/python/smithery/lab_install.py": "sidecars/python/smithery/lab_install.py",
       "../../sidecars/python/smithery/lab_report.py": "sidecars/python/smithery/lab_report.py",
       "../../sidecars/python/smithery/lab_gauntlet.py": "sidecars/python/smithery/lab_gauntlet.py",
-      "../../sidecars/python/smithery/lab_report_gauntlet.py": "sidecars/python/smithery/lab_report_gauntlet.py"
+      "../../sidecars/python/smithery/lab_report_gauntlet.py": "sidecars/python/smithery/lab_report_gauntlet.py",
+      "../../sidecars/python/smithery/lab_fast.py": "sidecars/python/smithery/lab_fast.py"
     },
     "icon": [
       "icons/32x32.png",
