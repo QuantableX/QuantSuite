@@ -127,6 +127,36 @@ class ResearchTests(unittest.TestCase):
                 with closing(sqlite3.connect(path / "cache.sqlite")) as db:
                     self.assertEqual(db.execute("select pair from candles").fetchall(), [("BTCUSDT",)])
 
+    def test_system_comparisons_add_missing_days_before_copying_the_saved_data(self):
+        from rotation_lab.data.cache import Cache
+        Cache(self.path / "cache.sqlite")._con.close()  # the saved price data (ROTATION_LAB_CACHE)
+        config = {"mode": "rotation", "topN": 3, "startDate": "2020-01-01", "endDate": "2021-06-30", "feeRate": 0.001,
+                  "slippageRate": 0.0, "indicator": {"trend": "ema_cross"}}
+        order, used = [], []
+
+        def engine_run(engine, cfg, **_):
+            used.append((Path(engine.ohlcv.cache.path), cfg.end_date.isoformat()))
+            order.append("update")
+
+        def freeze(path, kind):
+            order.append("freeze")
+            raise RuntimeError("stop after the copy")
+
+        run = lab.create({"kind": "profit", "title": "Update first", "config": config})
+        with patch("rotation_lab.backtest.engine.BacktestEngine.run", engine_run), patch.object(lab, "freeze", freeze):
+            lab.run(run["id"])
+        self.assertEqual(order, ["update", "freeze"])
+        self.assertEqual(used, [(self.path / "cache.sqlite", "2021-06-30")])
+        # Offline: a note, and the comparison goes on with the data as saved.
+        order.clear()
+        run = lab.create({"kind": "profit", "title": "Offline", "config": config})
+        with patch("rotation_lab.backtest.engine.BacktestEngine.run", side_effect=OSError("offline")), \
+                patch.object(lab, "freeze", freeze):
+            lab.run(run["id"])
+        self.assertEqual(order, ["freeze"])
+        messages = [e.get("message", "") for e in lab.details(run["id"], "events")["events"]]
+        self.assertTrue(any("Could not add missing days (offline)" in m for m in messages), messages)
+
     def test_library_overview_pages_carry_only_their_rows_reports(self):
         run = lab.create({})
         path = lab.folder(run["id"])

@@ -101,6 +101,10 @@ Empty `indicators` means every base indicator in its version for the system's
 track (`<key>_opt_1d` for a daily system), else Standard. Profit runs and
 aggregate comparisons use the saved price data only: the copy of QuantSystems'
 price cache taken at the start (daily candles and CoinMarketCap rankings).
+Before the copy, the saved system runs once against that cache, as running it in
+QuantSystems does: missing days up to the comparison's end are added, each coin
+from its own exchange, saved days untouched (offline, the run notes it and uses
+the data as saved).
 Nothing is downloaded and nothing is rewritten; warm-up history before the first
 saved day is simply absent, and the run ends on the last day the saved data
 covers (the report says so). Ranking answers and candles are frozen on first

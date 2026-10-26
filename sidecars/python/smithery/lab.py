@@ -319,6 +319,41 @@ def details(run_id, section="results", offset=0, limit=100, field=None, compact=
             "rows": [compacted(r, 1) for r in rows] if compact else rows}
 
 
+def systems_cache():
+    """The user's saved price data: QuantSystems' price cache."""
+    return Path(os.environ.get("ROTATION_LAB_CACHE", root().parents[1] / "systems/cache/rotation_lab.sqlite"))
+
+
+def update_saved_data(path, doc):
+    """Add the days the system is missing to the saved price data before a comparison copies it.
+
+    The saved system runs once against the saved data with the normal downloader, as
+    running it in QuantSystems does: missing days up to the comparison's end are added,
+    each coin from its own exchange, and saved days stay untouched. Offline, the
+    comparison uses the data as saved."""
+    cache_path = systems_cache()
+    if not cache_path.is_file():
+        return
+    emit(path, "progress", message="Adding missing days to your saved price data")
+    cache = None
+    try:
+        from dataclasses import replace
+        from rotation_lab.backtest.engine import BacktestEngine
+        from rotation_lab.data.cache import Cache
+        from rotation_lab.data.ohlcv import OhlcvFetcher
+        from rotation_lab.data.ranking.registry import RankingRegistry
+        from rotation_lab.rpc import _build_config
+        config = replace(_build_config(doc["config"]), compare_trends=())
+        cache = Cache(cache_path)
+        BacktestEngine(registry=RankingRegistry(cache),
+                       ohlcv=OhlcvFetcher(cache, min_request_interval=config.min_request_interval)).run(config)
+    except Exception as exc:  # noqa: BLE001 - offline or a failing exchange leaves the data as saved
+        emit(path, "progress", message=f"Could not add missing days ({exc}); the comparison uses the saved data as it is")
+    finally:
+        if cache is not None and cache._con is not None:
+            cache._con.close()  # Windows keeps an open database file locked
+
+
 def freeze(path, kind="gauntlet"):
     from .data import PRICE_DIR
     engine = Path(__file__).resolve().parents[1]
@@ -331,7 +366,7 @@ def freeze(path, kind="gauntlet"):
     (path / "vault/Output").mkdir()
     (path / "vault/Docs").mkdir()
     # Only system comparisons read the systems price cache (~200 MB); a Gauntlet uses the shelf.
-    cache = Path(os.environ.get("ROTATION_LAB_CACHE", root().parents[1] / "systems/cache/rotation_lab.sqlite"))
+    cache = systems_cache()
     if kind in SYSTEM_KINDS and cache.is_file():
         # closing(): a sqlite3 `with` only commits, and Windows keeps an open file locked.
         with closing(sqlite3.connect(cache.as_uri() + "?mode=ro", uri=True)) as src, \
@@ -364,6 +399,8 @@ def run(run_id):
         # at creation and the vault's reports; nothing to freeze or re-run.
         frozen = doc["kind"] != "gauntlet_overview"
         if frozen:
+            if doc["kind"] in SYSTEM_KINDS:
+                update_saved_data(path, doc)
             emit(path, "progress", message="Freezing engine, private library and market inputs")
             freeze(path, doc["kind"])
         command = [sys.executable, "-u", "-m", "smithery.lab", "worker", "--path", str(path)]
