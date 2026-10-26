@@ -130,6 +130,8 @@ table.data th button:focus-visible{outline:2px solid var(--accent)}
 details.method{margin-top:12px;font-size:13px;color:var(--ink-2)}
 details.method summary{cursor:pointer;color:var(--ink);font-weight:560}
 details.method p{margin:8px 0}
+tbody.unsupported summary{cursor:pointer}
+tbody.unsupported .key{margin-top:6px}
 pre.evidence{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,"Cascadia Mono",Consolas,monospace;background:var(--surface-2);border-radius:8px;padding:12px;margin:8px 0;max-height:360px;overflow:auto}
 .kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 16px;font-size:13px}
 .kv dt{color:var(--ink-2)}.kv dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
@@ -176,6 +178,10 @@ const signed=(x,d=2)=>fin(x)?(x>0?'+':x<0?'−':'')+num(Math.abs(x),d)+'%':'—'
 const mult=(x,d=2)=>fin(x)?num(x,d)+'×':'—';
 const money=(x,d=2)=>fin(x)?num(x,d)+'€':'—';
 const plural=(n,word,many)=>int(n)+' '+(n===1?word:(many||word+'s'));
+// Candidates that cannot vote, one row per reason (often dozens share one): count, reason, folded keys.
+const unsupported=(map,span)=>{const groups=new Map();
+for(const[k,v]of Object.entries(map||{})){const r=String(v??'').replace(/^(?:error|unsupported):\s*/,'').replace(/^\w*(?:Error|Exception):\s*/,'')||'No reason given';groups.set(r,[...(groups.get(r)||[]),k])}
+return groups.size?'<tbody class="unsupported">'+[...groups].sort((a,b)=>b[1].length-a[1].length).map(([r,keys])=>'<tr><td colspan="'+span+'"><details><summary><b>Not evaluable · '+plural(keys.length,'indicator')+'</b> <span class="muted">'+esc(r)+'</span></summary><div class="key">'+keys.map(esc).join(', ')+'</div></details></td></tr>').join('')+'</tbody>':''};
 const compact=x=>{if(!fin(x))return'—';const a=Math.abs(x);for(const[v,s]of[[1e12,'T'],[1e9,'B'],[1e6,'M'],[1e3,'K']])if(a>=v)return(x/v).toLocaleString('en-US',{maximumFractionDigits:a/v<10?1:0})+s;return x.toLocaleString('en-US',{maximumFractionDigits:a<10?2:0})};
 const $=id=>document.getElementById(id);
 const css=name=>getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -249,7 +255,7 @@ function columns(host,o){
  if(o.marker!=null){const x=m.l+slot*o.marker,right=x>m.l+iw*0.6;svg('line',{x1:x,x2:x,y1:m.t-8,y2:m.t+ih,stroke:css('--ink-2'),'stroke-width':1},root);svg('text',{x:right?x-6:x+6,y:m.t-12,'text-anchor':right?'end':'start'},root).textContent=o.markerLabel||''}
 }
 function onResize(fn){let w=0;const ro=new ResizeObserver(es=>{const nw=Math.round(es[0].contentRect.width);if(nw&&Math.abs(nw-w)>2){w=nw;fn()}});return el=>ro.observe(el)}
-return{esc,fin,num,int,pct,signed,mult,money,plural,compact,$,css,csv,download,sheet,showTip,hideTip,tipRows,svg,lineChart,columns,onResize}
+return{esc,fin,num,int,pct,signed,mult,money,plural,unsupported,compact,$,css,csv,download,sheet,showTip,hideTip,tipRows,svg,lineChart,columns,onResize}
 })();
 '''
 
