@@ -182,7 +182,7 @@ onUnmounted(() => { clearInterval(timer); generation++ })
         <label>Start<input v-model="startDate" type="date" required></label>
         <label>End (before today)<input v-model="endDate" type="date" required></label>
         <label>Aggregates to test<input v-model.number="budget" type="number" min="0" max="5000000" step="1000"></label>
-        <label>Shown per group<input v-model.number="top" type="number" min="1" max="50"></label>
+        <label>{{ kind === 'aggregates' ? 'Aggregates shown' : 'Shown per group' }}<input v-model.number="top" type="number" min="1" max="50"></label>
         <label v-if="kind === 'aggregates'" class="wide">Aggregate to beat<input v-model="reference" placeholder="Comma-separated keys; leave empty for the system's own aggregate"></label>
         <p v-if="kind === 'aggregates'" class="muted">Searches aggregates of any size from two different indicators against the current one: its neighbours, two additions, all pairs, samples of every size and local search. The top 10 and the best small sizes are re-run natively, and the leader is restarted from 2023 and 2025.</p>
         <p v-else class="muted">Every candidate alone, then aggregates of 2+ different indicators: small sizes in full where they fit, larger ones sampled, then local search around the leaders. The system's universe, market filter and costs stay unchanged; every candidate shown is re-run with the native engine. Large libraries take a while.</p>
