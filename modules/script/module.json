@@ -155,7 +155,7 @@
     {
       "name": "research_list",
       "command": "plugin:script|research_list",
-      "description": "Every research run: drafts, running, done, failed or interrupted evaluations, and imported historical reports, newest first.",
+      "description": "Every research run: drafts, running, done, failed or interrupted evaluations, and imported historical reports, newest first. Each run carries report_html (its standalone HTML report's file) and report_ready; give the user report_html for a finished run.",
       "sideEffects": "read"
     },
     {
