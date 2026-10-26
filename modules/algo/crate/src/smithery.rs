@@ -666,6 +666,33 @@ pub(crate) async fn research_gauntlet_overview(
         .map_err(|e| e.to_string())?
 }
 
+/// Report tool 2: the most profitable singles and aggregates in a saved
+/// system, verified natively. Snake_case arguments, as the
+/// `quantsuite.algo.research_profit_overview` tool names them.
+#[tauri::command(rename_all = "snake_case")]
+pub(crate) async fn research_profit_overview(
+    title: Option<String>,
+    system: Option<String>,
+    config: Option<Value>,
+    indicators: Option<Vec<String>>,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    top: Option<u32>,
+    budget: Option<u32>,
+    sizes: Option<Vec<u32>>,
+    seed: Option<u32>,
+    app_handle: AppHandle,
+) -> Result<Value, String> {
+    let fields = serde_json::json!({
+        "title": title.unwrap_or_else(|| "Profit overview".into()), "system": system, "config": config,
+        "indicators": indicators.unwrap_or_default(), "start_date": start_date, "end_date": end_date,
+        "top": top, "budget": budget, "sizes": sizes, "seed": seed,
+    });
+    tauri::async_runtime::spawn_blocking(move || create_and_start(&app_handle, "profit", fields))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Start a forge job — one at a time.
 #[tauri::command]
 pub(crate) async fn smithery_run(request: ForgeRequest, app_handle: AppHandle) -> Result<ForgeJob, String> {

@@ -132,18 +132,19 @@ def create(request):
     try:
         shutil.copytree(indicators_dir(), path / "library", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         doc = dict(id=path.name, title=str(request.get("title") or "Indicator research")[:160], kind=kind,
-                   status="draft", created_at=now(), indicators=keys, protocol=PROTOCOL,
-                   config=request.get("config"), sizes=request.get("sizes"),
-                   samples_per_size=request.get("samples_per_size", 20), candidates=[], path=str(path))
+                   status="draft", created_at=now(), indicators=keys, protocol=PROTOCOL, candidates=[], path=str(path))
         if kind == "profit":
+            # A saved system by name or id, explicit closed dates; empty indicators = the default set.
             from .lab_compare import validate_request
+            from .lab_profit import prepare
+            doc.update(prepare(request))
             validate_request(doc)
         save(path / "run.json", doc)
         return doc
-    except Exception:
+    except Exception as exc:
         # Leave failed preparation visible, retaining the private input copy.
         save(path / "run.json", dict(id=path.name, title="Preparation failed", kind=kind,
-             status="failed", created_at=now(), indicators=keys, error="Invalid research configuration"))
+             status="failed", created_at=now(), indicators=keys, error=str(exc)[:500] or "Invalid research configuration"))
         raise
 
 
@@ -333,7 +334,7 @@ def run(run_id):
     path = folder(run_id)
     with locked(path):
         doc = read(path / "run.json")
-        if doc["status"] != "draft" or (not doc["indicators"] and doc["kind"] != "gauntlet_overview"):
+        if doc["status"] != "draft" or (not doc["indicators"] and doc["kind"] == "gauntlet"):
             raise ValueError("Choose indicators in a fresh draft before running")
         doc.update(status="running", pid=os.getpid(), started_at=now())
         save(path / "run.json", doc)
@@ -365,7 +366,8 @@ def run(run_id):
         from .lab_report import render
         (path / "report.html").write_text(render(doc, read(path / "results.json")), encoding="utf-8")
         evidence = [path / "results.json", *(path / "vault/Output").glob("*"),
-                    *(path / "library/versions").rglob("*.json")]
+                    *(path / "library/versions").rglob("*.json"), *(path / "data").glob("*"),
+                    path / "plan.json", path / "verification.json"]
         if doc["kind"] == "gauntlet_overview":
             evidence += list((path / "library").glob("*.py"))
         save(path / "evidence-hashes.json", {str(f.relative_to(path)): digest(f) for f in evidence if f.is_file()})
@@ -453,8 +455,9 @@ def context():
                 "Submit each new file, full source, and registered keys with research_candidate. Fix failed checks before continuing.",
                 "Call quantsuite.algo.research_run with the run id. Poll research_read and forge_jobs; never call a smoke test certification.",
                 "Read every failure and track verdict. Overall certification requires all three tracks; profits are a separate question.",
-                "For system comparisons create kind=profit with explicit saved system config and candidate keys; sizes accepts any 2+ distinct bases.",
+                "For system comparisons use kind=profit with system (a saved system's name or id) or an explicit config; dates default to the saved start and yesterday; indicators default to each base's version for the system's track; sizes limits aggregate sizes (2+ distinct bases); budget caps the aggregates tested.",
                 "Report tool: quantsuite.algo.research_gauntlet_overview compiles the library's existing Gauntlet evidence (no re-test) into the English Gauntlet report in one call.",
+                "Report tool: quantsuite.algo.research_profit_overview ranks every candidate alone and aggregates of 2+ distinct bases in a saved system by final capital (bulk evaluation identical to the engine, shown candidates verified natively).",
                 "Research runs preserve sources and evidence privately. Use research_install only for selected, track-certified results; then create_strategy_from_indicator.",
                 "Do not start a bot or publish private sources to a public repository. Past inspected history is retrospective, not pristine out-of-sample."],
             "runs": list_runs()[:20]}
@@ -501,8 +504,8 @@ def main():
     elif doc["kind"] == "gauntlet_overview":
         gauntlet_overview_worker(args.path, doc)
     else:
-        from .lab_compare import compare
-        compare(args.path, doc)
+        from .lab_profit import run as profit
+        profit(args.path, doc)
     return 0
 
 

@@ -6,7 +6,8 @@ import { useForgeStore } from '#script/stores/forge'
 interface Run { id: string; title: string; kind: string; status: string; created_at: string; indicators: string[]; error?: string; config?: Record<string, unknown>; path?: string }
 interface Verdict { score?: number; grade?: string; certified?: boolean; report?: string }
 interface Row { id?: string; key?: string; name: string; role?: string; size?: number; error?: string; members?: string[]; params?: unknown; parameters?: unknown; metrics?: Record<string, number | null>; certification?: Verdict; timeframes?: Record<string, Verdict | null>; equity?: [string, number][]; selected?: Record<string, Verdict | null>; overall?: { selected: Verdict } }
-interface Results { run: Run; rows: Row[]; total: number; coverage?: { size: number; tested: number; exhaustive: boolean }[]; validation?: string }
+// coverage: a list per size (first-generation profit runs) or the report's coverage object.
+interface Results { run: Run; rows: Row[]; total: number; coverage?: unknown; validation?: string }
 
 const forge = useForgeStore()
 const runs = ref<Run[]>([])
@@ -26,12 +27,12 @@ const title = ref('Trend indicator research')
 const kind = ref('gauntlet')
 const keys = ref('')
 const sizes = ref('')
-const samples = ref(20)
+const budget = ref(50000)
+const top = ref(10)
 const systems = ref<{ id: string; name: string }[]>([])
 const systemId = ref('')
 const startDate = ref('')
 const endDate = ref('')
-const savedConfig = ref<Record<string, unknown> | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
 let generation = 0
 const active = computed(() => runs.value.find(r => r.id === selected.value))
@@ -49,6 +50,12 @@ const KIND_LABEL: Record<string, string> = { import: 'Historical report', profit
 // Gauntlet runs list registry rows; the overview lists report rows (selected version per track).
 const verdict = (row: Row, tf: string) => row.timeframes?.[tf] ?? row.selected?.[tf] ?? null
 const overallOf = (row: Row) => row.certification ?? row.overall?.selected ?? null
+const coverageRows = computed(() => {
+  const coverage = result.value?.coverage
+  if (Array.isArray(coverage)) return coverage.map((c: { size: number; tested: number; exhaustive: boolean }) => `${c.size} members: ${c.tested} tested · ${c.exhaustive ? 'exhaustive' : 'sampled'}`)
+  const bySize = (coverage as { by_size?: Record<string, number> } | undefined)?.by_size
+  return bySize ? Object.entries(bySize).map(([size, n]) => `${size === '1' ? 'Singles' : `${size} members`}: ${n.toLocaleString('en-US')} tested`) : []
+})
 const format = (value: unknown, digits = 2) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: digits }) : '—'
 const parseKeys = (text: string) => [...new Set(text.split(/[\s,]+/).filter(Boolean))]
 
@@ -88,23 +95,26 @@ async function loadSystem() {
   if (!systemId.value) return
   await guard(async () => {
     const config = await invoke<Record<string, unknown>>('plugin:systems|get_system_config', { systemId: systemId.value })
-    savedConfig.value = config
     startDate.value = String(config.startDate ?? '')
-    endDate.value = String(config.endDate ?? '')
+    // Only closed history is compared: a saved end of today becomes yesterday.
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    endDate.value = String(config.endDate ?? '') >= yesterday ? yesterday : String(config.endDate ?? '')
   })
+}
+// The report tools create the run and start it in one call, like their MCP tools.
+async function startReport(command: string, args: Record<string, unknown>) {
+  const started = await invoke<{ run: Run }>(command, { title: title.value, indicators: parseKeys(keys.value), ...args })
+  await refresh(); selected.value = started.run.id; showForm.value = false; showingReport.value = true; offset.value = 0; await load(); await forge.resume()
 }
 async function create() {
   await guard(async () => {
-    if (kind.value === 'gauntlet_overview') {
-      // One call creates the run and starts it, like the MCP report tool.
-      const started = await invoke<{ run: Run }>('plugin:algo|research_gauntlet_overview', { title: title.value, indicators: parseKeys(keys.value) })
-      await refresh(); selected.value = started.run.id; showForm.value = false; showingReport.value = true; offset.value = 0; await load(); await forge.resume()
-      return
+    if (kind.value === 'gauntlet_overview') return startReport('plugin:algo|research_gauntlet_overview', {})
+    if (kind.value === 'profit') {
+      if (!systemId.value) throw new Error('Choose the saved system to compare.')
+      return startReport('plugin:algo|research_profit_overview', { system: systemId.value, start_date: startDate.value, end_date: endDate.value,
+        top: top.value, budget: budget.value, sizes: sizes.value.trim() ? parseKeys(sizes.value).map(Number) : null })
     }
-    if (kind.value === 'profit' && !savedConfig.value) throw new Error('Choose the saved system to compare.')
-    const request = { title: title.value, kind: kind.value, indicators: parseKeys(keys.value),
-      ...(kind.value === 'profit' ? { config: { ...savedConfig.value, startDate: startDate.value, endDate: endDate.value },
-        sizes: sizes.value.trim() ? parseKeys(sizes.value).map(Number) : null, samples_per_size: samples.value } : {}) }
+    const request = { title: title.value, kind: kind.value, indicators: parseKeys(keys.value) }
     const run = await invoke<Run>('plugin:script|research_create', { request })
     await refresh(); selected.value = run.id; showForm.value = false; offset.value = 0; await load()
   })
@@ -160,18 +170,19 @@ onUnmounted(() => { clearInterval(timer); generation++ })
     <form v-if="showForm" class="research-form" @submit.prevent="create">
       <label>Research title<input v-model="title" required maxlength="160"></label>
       <label>Evaluation<select v-model="kind"><option value="gauntlet">Full Gauntlet + optimization (new candidates)</option><option value="gauntlet_overview">Gauntlet overview of the library (no re-test)</option><option value="profit">System profitability + aggregates</option></select></label>
-      <label class="wide">Indicator keys<textarea v-model="keys" rows="2" :placeholder="kind === 'gauntlet_overview' ? 'Comma-separated base keys; leave empty for the whole library' : 'Comma-separated keys; leave empty for AI-authored Gauntlet candidates'" /></label>
+      <label class="wide">Indicator keys<textarea v-model="keys" rows="2" :placeholder="kind === 'gauntlet_overview' ? 'Comma-separated base keys; leave empty for the whole library' : kind === 'profit' ? 'Comma-separated keys; leave empty for every indicator in the version for the system\'s timeframe' : 'Comma-separated keys; leave empty for AI-authored Gauntlet candidates'" /></label>
       <template v-if="kind === 'profit'">
         <label>Saved system<select v-model="systemId" required @change="loadSystem"><option value="" disabled>Select baseline</option><option v-for="system in systems" :key="system.id" :value="system.id">{{ system.name }}</option></select></label>
         <label>Aggregate sizes<input v-model="sizes" placeholder="All sizes from 2 upward"></label>
         <label>Start<input v-model="startDate" type="date" required></label>
         <label>End (before today)<input v-model="endDate" type="date" required></label>
-        <label>Samples per size<input v-model.number="samples" type="number" min="1" max="1000"></label>
-        <p class="muted">The baseline's fees, slippage, universe and market filter are preserved. Singles are evaluated separately. Larger searches are finite samples.</p>
+        <label>Aggregates to test<input v-model.number="budget" type="number" min="0" max="5000000" step="1000"></label>
+        <label>Shown per group<input v-model.number="top" type="number" min="1" max="50"></label>
+        <p class="muted">Every candidate alone, then aggregates of 2+ different indicators: small sizes in full where they fit, larger ones sampled, then local search around the leaders. The system's universe, market filter and costs stay unchanged; every candidate shown is re-run with the native engine. Large libraries take a while.</p>
       </template>
       <p v-else-if="kind === 'gauntlet_overview'" class="muted">Compiles the existing native Gauntlet evidence of the library: Standard and selected versions on 1h, 4h and 1d, the five axes, walk-forward and parameters. Nothing is re-tested; it runs as a forge job of about a minute.</p>
       <p v-else class="muted">All three tracks · 120 permutations · 200 bootstraps · 100 GARCH paths · four walk-forward folds. Failed candidates remain visible.</p>
-      <button class="qsc-btn is-primary" :disabled="busy || (kind === 'gauntlet_overview' && forge.isRunning)">{{ kind === 'gauntlet_overview' ? 'Create report' : 'Create private draft' }}</button>
+      <button class="qsc-btn is-primary" :disabled="busy || (kind !== 'gauntlet' && forge.isRunning)">{{ kind === 'gauntlet' ? 'Create private draft' : 'Create report' }}</button>
     </form>
     <div class="research-workspace">
       <aside class="research-runs">
@@ -204,7 +215,7 @@ onUnmounted(() => { clearInterval(timer); generation++ })
                 <td><button v-if="active.kind === 'gauntlet'" class="qsc-btn is-sm" :disabled="busy || active.status !== 'done' || !row.timeframes?.[track]?.certified" @click="install(row)">Create strategy</button></td>
               </tr><tr v-if="expanded === (row.id || row.key)"><td :colspan="active.kind === 'profit' ? 6 : 7"><pre>{{ JSON.stringify(row.parameters || row.params || row, null, 2) }}</pre></td></tr></template></tbody></table></div>
             <div class="research-actions"><button class="qsc-btn is-sm" :disabled="busy || offset === 0" @click="page(-50)">Previous</button><span>{{ offset + 1 }}–{{ Math.min(offset + 50, result?.total || 0) }} / {{ result?.total }}</span><button class="qsc-btn is-sm" :disabled="busy || offset + 50 >= (result?.total || 0)" @click="page(50)">Next</button></div>
-            <details v-if="result?.coverage"><summary>Aggregate search coverage</summary><div class="research-coverage"><span v-for="coverage in result.coverage" :key="coverage.size">{{ coverage.size }} members: {{ coverage.tested }} tested · {{ coverage.exhaustive ? 'exhaustive' : 'sampled' }}</span></div></details>
+            <details v-if="coverageRows.length"><summary>Aggregate search coverage</summary><div class="research-coverage"><span v-for="line in coverageRows" :key="line">{{ line }}</span></div></details>
           </template>
         </template>
         <div v-else class="research-empty"><h3>Your research, kept together</h3><p>Select a run to inspect its evidence and comparisons.</p></div>

@@ -113,6 +113,27 @@
       }
     },
     {
+      "name": "research_profit_overview",
+      "command": "plugin:algo|research_profit_overview",
+      "description": "Report tool 2/3: the most profitable single indicators and aggregates (2+ distinct base indicators) in a saved QuantSystems system, ranked by final capital against its current setup. Bulk evaluation identical to the native engine; every shown candidate is re-run natively. Report: rankings, capital curves, profit vs drawdown, annual returns, method. Creates a research run and starts it as a forge job; returns the run id at once. Large libraries take a while (signals per indicator and pair); poll quantsuite.script.research_read and forge_jobs.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Report title, in English." },
+          "system": { "type": "string", "description": "A saved system's name or id (QuantSystems)." },
+          "config": { "type": "object", "description": "An explicit system config instead of a saved system." },
+          "indicators": { "type": "array", "items": { "type": "string" }, "description": "Candidate keys; omit for each base indicator's version for the system's track." },
+          "start_date": { "type": "string", "description": "YYYY-MM-DD; default the system's start." },
+          "end_date": { "type": "string", "description": "YYYY-MM-DD before today; default yesterday." },
+          "top": { "type": "integer", "description": "Aggregates and singles shown, each (default 10)." },
+          "budget": { "type": "integer", "description": "Aggregates tested at most (default 50000)." },
+          "sizes": { "type": "array", "items": { "type": "integer" }, "description": "Aggregate sizes to test; omit for 2 up to all bases." },
+          "seed": { "type": "integer", "description": "Search seed (default 42)." }
+        }
+      }
+    },
+    {
       "name": "forge_jobs",
       "command": "plugin:algo|smithery_jobs",
       "description": "Forge jobs with status, progress, errors and verdict summaries; detail = a job id returns that job's full event list.",
