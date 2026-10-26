@@ -107,6 +107,49 @@ class ResearchTests(unittest.TestCase):
             self.assertEqual(lab.list_runs()[0]["status"], "interrupted")
         self.assertEqual(lab.read(lab.folder(run["id"]) / "run.json")["status"], "running")
 
+    def test_system_runs_freeze_the_systems_cache_and_a_gauntlet_does_not(self):
+        import sqlite3
+        from contextlib import closing
+        shelf = self.path / "shelf"
+        shelf.mkdir()
+        (shelf / "BINANCE_BTCUSDT_1d.csv").write_text("time,open\n", encoding="utf-8")
+        with closing(sqlite3.connect(self.path / "cache.sqlite")) as db, db:
+            db.execute("create table candles (pair text)")
+            db.execute("insert into candles values ('BTCUSDT')")
+        for kind, frozen in (("profit", True), ("aggregates", True), ("gauntlet", False)):
+            path = self.path / "runs" / kind
+            (path / "library").mkdir(parents=True)
+            with patch("smithery.data.PRICE_DIR", shelf):
+                lab.freeze(path, kind)
+            self.assertEqual((path / "cache.sqlite").is_file(), frozen, kind)
+            self.assertEqual("cache.sqlite" in lab.read(path / "inputs.json"), frozen, kind)
+            if frozen:
+                with closing(sqlite3.connect(path / "cache.sqlite")) as db:
+                    self.assertEqual(db.execute("select pair from candles").fetchall(), [("BTCUSDT",)])
+
+    def test_library_overview_pages_carry_only_their_rows_reports(self):
+        run = lab.create({})
+        path = lab.folder(run["id"])
+        track = lambda i, tf: {"report": f"r{i} {tf}", "score": i}
+        rows = [{"key": f"k{i}", "standard": {tf: track(i, tf) for tf in ("1h", "1d")},
+                 "selected": {"4h": track(i, "4h")}, "curve": list(range(80))} for i in range(120)]
+        reports = {f"r{i} {tf}": {"axes": {"asset": i}, "returns": list(range(300))}
+                   for i in range(120) for tf in ("1h", "4h", "1d")}
+        lab.save(path / "results.json", {"kind": "gauntlet_overview", "rows": rows, "reports": reports,
+                                         "summary": {"indicators": 120}, "wide": {f"w{i}": i for i in range(150)}})
+        page = lab.details(run["id"], offset=5, limit=2)
+        self.assertEqual(page["total"], 120)
+        self.assertEqual([r["key"] for r in page["rows"]], ["k5", "k6"])
+        self.assertEqual(sorted(page["reports"]), ["r5 1d", "r5 1h", "r5 4h", "r6 1d", "r6 1h", "r6 4h"])
+        self.assertEqual(page["reports"]["r5 1h"]["returns"], {"omitted_items": 300, "first": 0, "last": 299})
+        self.assertEqual(page["wide"]["omitted_keys"], 150)
+        self.assertEqual(page["summary"], {"indicators": 120})
+        self.assertLess(len(json.dumps(page)), 5000)
+        full = lab.details(run["id"], limit=1, compact=False)
+        self.assertEqual(sorted(full["reports"]), ["r0 1d", "r0 1h", "r0 4h"])
+        self.assertEqual(len(full["reports"]["r0 1h"]["returns"]), 300)
+        self.assertEqual(len(full["rows"][0]["curve"]), 80)
+
 
 if __name__ == "__main__":
     unittest.main()
