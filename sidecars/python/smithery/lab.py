@@ -17,7 +17,7 @@ import sqlite3
 import subprocess
 import sys
 import uuid
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 PROTOCOL = dict(seed=42, perm=120, boot=200, garch=100, folds=4,
@@ -26,6 +26,7 @@ PROTOCOL = dict(seed=42, perm=120, boot=200, garch=100, folds=4,
 # library's existing evidence as one report; profit: the most profitable singles and
 # aggregates in a saved system; aggregates: a variable-size search against its aggregate.
 KINDS = ("gauntlet", "gauntlet_overview", "profit", "aggregates")
+SYSTEM_KINDS = ("profit", "aggregates")  # run inside a saved system: frozen systems cache
 
 
 def root() -> Path:
@@ -134,7 +135,7 @@ def create(request):
         shutil.copytree(indicators_dir(), path / "library", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         doc = dict(id=path.name, title=str(request.get("title") or "Indicator research")[:160], kind=kind,
                    status="draft", created_at=now(), indicators=keys, protocol=PROTOCOL, candidates=[], path=str(path))
-        if kind in ("profit", "aggregates"):
+        if kind in SYSTEM_KINDS:
             # A saved system by name or id, explicit closed dates; empty indicators = the default set.
             from .lab_compare import validate_request
             from .lab_profit import prepare
@@ -270,6 +271,16 @@ def compacted(value, depth=0):
     return value
 
 
+def report_names(value):
+    """Every native report a result row names (the `report` of each of its tracks)."""
+    if isinstance(value, dict):
+        own = {value["report"]} if isinstance(value.get("report"), str) else set()
+        return own.union(*(report_names(v) for v in value.values()))
+    if isinstance(value, list):
+        return set().union(*(report_names(v) for v in value))
+    return set()
+
+
 def details(run_id, section="results", offset=0, limit=100, field=None, compact=True):
     path = folder(run_id)
     doc = summary(path)
@@ -297,7 +308,14 @@ def details(run_id, section="results", offset=0, limit=100, field=None, compact=
         return {"run": doc, "events": [json.loads(s) for s in lines[-100:]]}
     result = read(path / "results.json") if (path / "results.json").exists() else {"rows": []}
     rows = result.get("rows", [])[offset:offset + limit]
-    return {"run": doc, **result, "total": len(result.get("rows", [])),
+    rest = {k: v for k, v in result.items() if k != "rows"}
+    if isinstance(rest.get("reports"), dict):
+        # A library overview holds every native report (megabytes): a page carries its rows' own.
+        names = report_names(rows)
+        rest["reports"] = {k: v for k, v in rest["reports"].items() if k in names}
+    if compact:
+        rest = {k: compacted(v, 1) for k, v in rest.items()}
+    return {"run": doc, **rest, "total": len(result.get("rows", [])),
             "rows": [compacted(r, 1) for r in rows] if compact else rows}
 
 
@@ -314,8 +332,10 @@ def freeze(path, kind="gauntlet"):
     (path / "vault/Docs").mkdir()
     # Only system comparisons read the systems price cache (~200 MB); a Gauntlet uses the shelf.
     cache = Path(os.environ.get("ROTATION_LAB_CACHE", root().parents[1] / "systems/cache/rotation_lab.sqlite"))
-    if kind == "profit" and cache.is_file():
-        with sqlite3.connect(cache.as_uri() + "?mode=ro", uri=True) as src, sqlite3.connect(path / "cache.sqlite") as dst:
+    if kind in SYSTEM_KINDS and cache.is_file():
+        # closing(): a sqlite3 `with` only commits, and Windows keeps an open file locked.
+        with closing(sqlite3.connect(cache.as_uri() + "?mode=ro", uri=True)) as src, \
+                closing(sqlite3.connect(path / "cache.sqlite")) as dst:
             src.backup(dst)
     files = [f for directory in ("engine", "library", "vault/Price History")
              for f in (path / directory).rglob("*") if f.is_file()]

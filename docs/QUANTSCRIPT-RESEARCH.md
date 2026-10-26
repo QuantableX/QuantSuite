@@ -23,8 +23,10 @@ QuantScript library and test them through the full Gauntlet.”
 4. `quantsuite.algo.research_run` starts the draft asynchronously. Poll
    `quantsuite.script.research_read` and `quantsuite.algo.forge_jobs`.
 5. Inspect every track and failure. `research_read(section: "results")` pages
-   with `offset` and `limit`; rows are compact by default (long series and very
-   wide objects are summarized, `compact: false` returns everything).
+   with `offset` and `limit`; rows and the other result fields are compact by
+   default (long series and very wide objects are summarized, `compact: false`
+   returns everything). A library overview's page carries only the native
+   reports its rows name.
    `section: "html"` returns the standalone English report, which can be
    several MB.
 6. Explicitly select a result and use `research_install(run_id, indicator,
