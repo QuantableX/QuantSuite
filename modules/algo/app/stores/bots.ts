@@ -175,7 +175,7 @@ export const useBotsStore = defineStore('algo/bots', () => {
 
   async function start(botId: string): Promise<Bot> {
     try {
-      const bot = await invoke<Bot>('plugin:algo|start_bot', { botId })
+      const bot = await invoke<Bot>('plugin:algo|start_bot', { bot_id: botId })
       lastError.value = null
       await load()
       return bot
@@ -188,7 +188,7 @@ export const useBotsStore = defineStore('algo/bots', () => {
 
   async function stop(botId: string) {
     try {
-      await invoke('plugin:algo|stop_bot', { botId })
+      await invoke('plugin:algo|stop_bot', { bot_id: botId })
       await load()
     } catch (err) {
       console.error('[bots store] Failed to stop bot:', err)

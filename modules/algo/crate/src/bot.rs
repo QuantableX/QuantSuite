@@ -1072,8 +1072,9 @@ fn legacy_draft(
 
 /// Start a bot by id. Without `bot_id` the single-bot era's arguments create
 /// the bot first (the deploy modal until card C lands). Never auto-approved
-/// through MCP: `quantsuite.algo.start_bot` is `external`.
-#[tauri::command]
+/// through MCP: `quantsuite.algo.start_bot` is `external`. Snake_case
+/// arguments: the agent tool passes `bot_id` exactly as its schema names it.
+#[tauri::command(rename_all = "snake_case")]
 pub(crate) async fn start_bot(
     bot_id: Option<String>,
     strategy_id: Option<String>,
@@ -1572,8 +1573,9 @@ pub(crate) fn stop_bot_inner(app_handle: &AppHandle, state: &AppState, bot_id: &
 }
 
 /// Stop a bot by id. Without an id every bot stops (the single-bot era's
-/// call) and the reply is a summary rather than a row.
-#[tauri::command]
+/// call) and the reply is a summary rather than a row. Snake_case arguments,
+/// like `start_bot`: a `botId` from an agent would be ignored and stop them all.
+#[tauri::command(rename_all = "snake_case")]
 pub(crate) async fn stop_bot(bot_id: Option<String>, app_handle: AppHandle) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app_handle.state::<AppState>();
