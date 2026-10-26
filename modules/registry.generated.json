@@ -809,7 +809,7 @@
       "module": "script",
       "name": "research_list",
       "command": "plugin:script|research_list",
-      "description": "Every research run: drafts, running, done, failed or interrupted evaluations, and imported historical reports, newest first.",
+      "description": "Every research run: drafts, running, done, failed or interrupted evaluations, and imported historical reports, newest first. Each run carries report_html (its standalone HTML report's file) and report_ready; give the user report_html for a finished run.",
       "sideEffects": "read"
     },
     {
@@ -1091,7 +1091,7 @@
       "module": "algo",
       "name": "research_run",
       "command": "plugin:algo|research_run",
-      "description": "Start a QuantScript research draft as a forge job and return at once. Freezes the engine, the draft's library and the market data, then runs the full native Gauntlet with walk-forward optimization (kind gauntlet) or the native system backtests (kind profit). Poll quantsuite.script.research_read and forge_jobs. One forge job runs at a time.",
+      "description": "Start a QuantScript research draft as a forge job and return at once. Freezes the engine, the draft's library and the market data, then runs the full native Gauntlet with walk-forward optimization (kind gauntlet) or the native system backtests (kind profit). Poll quantsuite.script.research_read and forge_jobs. One forge job runs at a time. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. The report also opens in QuantScript → Forge → Research.",
       "sideEffects": "write",
       "inputSchema": {
         "type": "object",
@@ -1111,7 +1111,7 @@
       "module": "algo",
       "name": "research_gauntlet_overview",
       "command": "plugin:algo|research_gauntlet_overview",
-      "description": "Report tool 1/3: the Gauntlet report of the active library's existing native evidence, without re-testing. Per indicator: Standard and selected-per-track verdicts on 1h/4h/1d, worst-track overall score, p-values, five axes, walk-forward, parameters, CSV export. Creates a research run and starts it as a forge job; returns the run id at once. Poll quantsuite.script.research_read; the English report shows in QuantScript → Forge → Research.",
+      "description": "Report tool 1/3: the Gauntlet report of the active library's existing native evidence, without re-testing. Per indicator: Standard and selected-per-track verdicts on 1h/4h/1d, worst-track overall score, p-values, five axes, walk-forward, parameters, CSV export. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. Poll quantsuite.script.research_read; the English report also opens in QuantScript → Forge → Research.",
       "sideEffects": "write",
       "inputSchema": {
         "type": "object",
@@ -1135,7 +1135,7 @@
       "module": "algo",
       "name": "research_profit_overview",
       "command": "plugin:algo|research_profit_overview",
-      "description": "Report tool 2/3: the most profitable single indicators and aggregates (2+ distinct base indicators) in a saved QuantSystems system, ranked by final capital against its current setup. Bulk evaluation identical to the native engine; every shown candidate is re-run natively. Report: rankings, capital curves, profit vs drawdown, annual returns, method. Creates a research run and starts it as a forge job; returns the run id at once. Large libraries take a while (signals per indicator and pair); poll quantsuite.script.research_read and forge_jobs.",
+      "description": "Report tool 2/3: the most profitable single indicators and aggregates (2+ distinct base indicators) in a saved QuantSystems system, ranked by final capital against its current setup. Bulk evaluation identical to the native engine; every shown candidate is re-run natively. Report: rankings, capital curves, profit vs drawdown, annual returns, method. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. The report also opens in QuantScript → Forge → Research. Large libraries take a while (signals per indicator and pair); poll quantsuite.script.research_read and forge_jobs.",
       "sideEffects": "write",
       "inputSchema": {
         "type": "object",
@@ -1194,7 +1194,7 @@
       "module": "algo",
       "name": "research_aggregate_comparison",
       "command": "plugin:algo|research_aggregate_comparison",
-      "description": "Report tool 3/3: a variable-size aggregate search in a saved QuantSystems system against its current aggregate (or a given reference). Any size from two distinct base indicators; stages fixed before results (reference neighbours, two additions, pairs, balanced sizes, local search). Report: new leader vs current (capital and drawdown), top 10, best of each size, independent later starts, search coverage. Bulk evaluation identical to the native engine; the top 10 and the best small sizes are re-run natively. Creates a research run and starts it as a forge job; returns the run id at once.",
+      "description": "Report tool 3/3: a variable-size aggregate search in a saved QuantSystems system against its current aggregate (or a given reference). Any size from two distinct base indicators; stages fixed before results (reference neighbours, two additions, pairs, balanced sizes, local search). Report: new leader vs current (capital and drawdown), top 10, best of each size, independent later starts, search coverage. Bulk evaluation identical to the native engine; the top 10 and the best small sizes are re-run natively. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. The report also opens in QuantScript → Forge → Research.",
       "sideEffects": "write",
       "inputSchema": {
         "type": "object",

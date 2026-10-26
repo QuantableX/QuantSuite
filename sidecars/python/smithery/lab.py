@@ -103,7 +103,9 @@ def summary(path):
     doc = read(path / "run.json")
     if doc["status"] == "running" and not alive(doc.get("pid")):
         doc = {**doc, "status": "interrupted", "error": "Worker stopped; partial evidence is preserved."}
-    return doc
+    # The standalone HTML report's file: AI tools hand this path to the user once it is ready.
+    report = path / "report.html"
+    return {**doc, "report_html": str(report), "report_ready": report.is_file()}
 
 
 def list_runs():
@@ -142,7 +144,7 @@ def create(request):
             doc.update(prepare(request, {"budget": 200_000} if kind == "aggregates" else None))
             validate_request(doc)
         save(path / "run.json", doc)
-        return doc
+        return summary(path)
     except Exception as exc:
         # Leave failed preparation visible, retaining the private input copy.
         save(path / "run.json", dict(id=path.name, title="Preparation failed", kind=kind,
@@ -254,7 +256,7 @@ def import_report(source, title=None):
         except ValueError:
             pass
     save(path / "run.json", doc)
-    return doc
+    return summary(path)
 
 
 def compacted(value, depth=0):

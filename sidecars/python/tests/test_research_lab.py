@@ -29,10 +29,17 @@ class ResearchTests(unittest.TestCase):
         run = lab.import_report(str(source))
         self.assertEqual(lab.import_report(str(source))["id"], run["id"])
         self.assertEqual(lab.details(run["id"], "html")["html"], content)
+        # Every run names its standalone HTML report, for AI tools to hand to the user.
+        report = str(lab.folder(run["id"]) / "report.html")
+        self.assertEqual((run["report_html"], run["report_ready"]), (report, True))
+        self.assertEqual(lab.list_runs()[0]["report_html"], report)
+        self.assertTrue(lab.details(run["id"])["run"]["report_ready"])
         legacy = lab.details(run["id"], "legacy")
         self.assertEqual((legacy["field"], legacy["total"], legacy["rows"]), ("subjects", 2, [1, 2]))
         self.assertEqual(source.read_text(encoding="utf-8"), content)
         self.assertEqual(lab.list_runs()[0]["status"], "imported")
+        draft = lab.create({})
+        self.assertEqual((draft["report_html"], draft["report_ready"]), (str(lab.folder(draft["id"]) / "report.html"), False))
 
     def test_large_imported_data_is_paged_and_compacted_for_agents(self):
         payload = {"dates": [f"d{i}" for i in range(300)],
