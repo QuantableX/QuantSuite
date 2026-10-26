@@ -214,7 +214,7 @@ class Subjects:
 
 def run(path, doc):
     from rotation_lab.rpc import _build_config
-    from .lab_compare import frozen_engine, validate_request
+    from .lab_compare import frozen_engine, validate_request, within_saved_data
     from .lab_fast import FastSystem, unsupported_reason
     from .lab_search import Search
     from .registry import describe_all
@@ -232,6 +232,7 @@ def run(path, doc):
     top, budget, seed = doc.get("top") or DEFAULTS["top"], doc.get("budget", DEFAULTS["budget"]), doc.get("seed", DEFAULTS["seed"])
     started = time.monotonic()
     engine = frozen_engine(config, [(k,) for k in keys], path / "data")
+    config = within_saved_data(config, engine, progress)
     reason = unsupported_reason(config)
     progress(f"{len(keys)} candidates from {len(set(bases.values()))} base indicators; "
              + ("native evaluation: " + reason if reason else "building the bulk evaluator"))

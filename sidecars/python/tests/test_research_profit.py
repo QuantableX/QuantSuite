@@ -81,14 +81,10 @@ class SearchTests(unittest.TestCase):
 
 
 SCRIPT = r'''
-import datetime as dt, json, sys
-from dataclasses import dataclass
+import datetime as dt, json, os, sqlite3, sys
 from pathlib import Path
-from unittest.mock import patch
 import numpy as np, pandas as pd
-from rotation_lab.backtest.universe import UniverseSnapshot, UniverseTimeline
-from rotation_lab.data.ohlcv import OhlcvFetcher
-from rotation_lab.data.ranking.base import RankedCoin
+from rotation_lab.data.cache import Cache, OhlcvBar, OhlcvRow, RankingRow
 from smithery import lab
 from smithery.lab_profit import run
 from smithery.lab_report import render
@@ -103,25 +99,26 @@ def frame(seed, start='2018-06-01', end='2021-12-31', drift=.001):
 FRAMES = {'AAA': frame(1), 'BBB': frame(2, drift=.0015), 'CCC': frame(3, drift=-.0005), 'DDD': frame(4), 'FFF': frame(6, drift=.002)}
 ORDERS = [['AAA', 'BBB', 'CCC'], ['BBB', 'AAA', 'DDD'], ['FFF', 'BBB', 'CCC'], ['CCC', 'FFF', 'AAA', 'DDD']]
 
-@dataclass
-class Series:
-    frame: pd.DataFrame
+def save_market():
+    # The saved price data, in the systems cache's own format: daily candles per coin,
+    # weekly CoinMarketCap snapshots (the order changes every five weeks), and the
+    # single-asset pair's candles. Runs read nothing else.
+    cache = Cache(Path(os.environ['ROTATION_LAB_CACHE']))
+    cache.upsert_ohlcv(OhlcvRow(f'sym:{s}', d.date(), *(float(r[c]) for c in ('open', 'high', 'low', 'close', 'volume')),
+                                'ccxt:binance:' + s, False) for s, f in FRAMES.items() for d, r in f.iterrows())
+    f = FRAMES['FFF']
+    cache.upsert_ohlcv_intraday(OhlcvBar('market:x:FFF/USD', '1d', d.to_pydatetime(), *(float(r[c]) for c in ('open', 'high', 'low', 'close', 'volume')),
+                                         'ccxt:x:FFF/USD', False) for d, r in f.iterrows())
+    rows, day = [], dt.date(2018, 6, 3)
+    while day <= dt.date(2021, 12, 26):
+        names = ORDERS[((day - dt.date(2019, 12, 29)).days // 7 // 5) % len(ORDERS)]
+        rows += [RankingRow('cmc', day, i + 1, None, s, s, 1e9 - i, 1.0, dt.datetime(2022, 1, 1)) for i, s in enumerate(names)]
+        day += dt.timedelta(days=7)
+    cache.upsert_ranking(rows)
 
-def get_series(self, ref, start, end, timeframe='1d'):
-    f = FRAMES[ref.symbol]
-    return Series(f.loc[(f.index >= pd.Timestamp(start)) & (f.index <= pd.Timestamp(end))])
-
-def get_pair_series(self, exchange, pair, start, end, timeframe='1d'):
-    return get_series(self, type('R', (), {'symbol': 'FFF'})(), start, end)
-
-def timeline(*args, start, end, **kwargs):
-    snaps, day, k = [], dt.date(2019, 12, 29), 0
-    while day <= end:
-        names = ORDERS[(k // 5) % len(ORDERS)]
-        snaps.append(UniverseSnapshot(on_date=day, provider='test', coins=[RankedCoin(rank=i + 1, cg_id=None, symbol=s, name=s,
-                     market_cap=1e9 - i, price=1.0) for i, s in enumerate(names)]))
-        day += dt.timedelta(days=7); k += 1
-    return UniverseTimeline(snapshots=snaps)
+def candles():
+    with sqlite3.connect(os.environ['ROTATION_LAB_CACHE']) as db:
+        return db.execute('select count(*), sum(close), group_concat(distinct source) from ohlcv').fetchone()
 
 systems = {
  'rotation': {'mode': 'rotation', 'topN': 4, 'startDate': '2020-01-01', 'endDate': '2021-06-30', 'rankingResolution': 'weekly',
@@ -148,26 +145,47 @@ def aggregates():
             'restarts': results['restarts'], 'verified': results['coverage']['verified'], 'passed': results['coverage']['verified_passed'],
             'rows_have_singles': any(r['size'] == 1 for r in results['rows']), 'page': 'The ten most profitable aggregates' in page,
             'remote': bool(__import__('re').search(r"(?i)(?:src|href)\s*=\s*[\"']?(?:https?:)?//", page))}
+def saved():
+    # The requested end lies after the saved data: the comparison ends on the last saved day,
+    # nothing is downloaded, and the saved candles are read, never rewritten.
+    before = candles()
+    doc = lab.create({'kind': 'profit', 'title': 'Saved data only', 'config': {**systems['rotation'], 'endDate': '2022-01-20'},
+                      'top': 2, 'budget': 10, 'seed': 5, 'system_name': 'Fixture rotation'})
+    path = lab.folder(doc['id'])
+    run(path, lab.read(path / 'run.json'))
+    results = lab.read(path / 'results.json')
+    import requests
+    try:
+        requests.get('https://example.com', timeout=1)
+        blocked = ''
+    except RuntimeError as exc:
+        blocked = str(exc)
+    events = [json.loads(l).get('message', '') for l in (path / 'events.jsonl').read_text(encoding='utf-8').splitlines()]
+    return {'end': results['system']['end'], 'last_date': results['dates'][-1], 'unchanged': candles() == before,
+            'blocked': blocked, 'noted': any('saved price data ends on 2021-12-31' in m for m in events)}
+
 if __name__ == '__main__':
-    with patch.object(OhlcvFetcher, 'get_series', get_series), patch.object(OhlcvFetcher, 'get_pair_series', get_pair_series), \
-         patch('rotation_lab.backtest.engine.build_universe_timeline', side_effect=timeline):
-        if sys.argv[1:] == ['aggregates']:
-            print(json.dumps(aggregates(), default=str))
-            sys.exit(0)
-        for name, config in systems.items():
-            doc = lab.create({'kind': 'profit', 'title': f'Profit {name}', 'config': config, 'top': 3, 'budget': 40, 'seed': 5,
-                              'system_name': f'Fixture {name}'})
-            path = lab.folder(doc['id'])
-            run(path, lab.read(path / 'run.json'))
-            results = lab.read(path / 'results.json')
-            page = render({**doc, 'status': 'done'}, results)
-            (path / 'report.html').write_text(page, encoding='utf-8')
-            out[name] = {'subjects': [(s['code'], s['group'], s['members'], s['verified'].get('passed')) for s in results['subjects']],
-                         'coverage': {k: results['coverage'][k] for k in ('keys', 'usable', 'singles', 'aggregates', 'by_size', 'stages', 'unsupported', 'evaluator', 'verified', 'verified_passed')},
-                         'bars': len(results['dates']), 'equity_lengths': sorted({len(s['equity']) for s in results['subjects']}),
-                         'annual_compounds': [abs(np.prod([1 + v / 100 for v in s['annual'].values()]) / s['metrics']['net_return_multiplier'] - 1) for s in results['subjects']],
-                         'end': results['system']['end'], 'plan': (path / 'plan.json').is_file(), 'cube_removed': not (path / 'cube').exists(),
-                         'page': len(page), 'remote': bool(__import__('re').search(r"(?i)(?:src|href)\s*=\s*[\"']?(?:https?:)?//", page))}
+    save_market()
+    if sys.argv[1:] == ['aggregates']:
+        print(json.dumps(aggregates(), default=str))
+        sys.exit(0)
+    if sys.argv[1:] == ['saved']:
+        print(json.dumps(saved(), default=str))
+        sys.exit(0)
+    for name, config in systems.items():
+        doc = lab.create({'kind': 'profit', 'title': f'Profit {name}', 'config': config, 'top': 3, 'budget': 40, 'seed': 5,
+                          'system_name': f'Fixture {name}'})
+        path = lab.folder(doc['id'])
+        run(path, lab.read(path / 'run.json'))
+        results = lab.read(path / 'results.json')
+        page = render({**doc, 'status': 'done'}, results)
+        (path / 'report.html').write_text(page, encoding='utf-8')
+        out[name] = {'subjects': [(s['code'], s['group'], s['members'], s['verified'].get('passed')) for s in results['subjects']],
+                     'coverage': {k: results['coverage'][k] for k in ('keys', 'usable', 'singles', 'aggregates', 'by_size', 'stages', 'unsupported', 'evaluator', 'verified', 'verified_passed')},
+                     'bars': len(results['dates']), 'equity_lengths': sorted({len(s['equity']) for s in results['subjects']}),
+                     'annual_compounds': [abs(np.prod([1 + v / 100 for v in s['annual'].values()]) / s['metrics']['net_return_multiplier'] - 1) for s in results['subjects']],
+                     'end': results['system']['end'], 'plan': (path / 'plan.json').is_file(), 'cube_removed': not (path / 'cube').exists(),
+                     'page': len(page), 'remote': bool(__import__('re').search(r"(?i)(?:src|href)\s*=\s*[\"']?(?:https?:)?//", page))}
     print(json.dumps(out, default=str))
 '''
 
@@ -211,6 +229,13 @@ class ProfitRunTests(unittest.TestCase):
                 self.assertEqual(r["end"], "2021-06-30")
         # Four fixtures, all usable: 4 singles and every one of the 11 aggregates within the budget.
         self.assertEqual(report["rotation"]["coverage"]["by_size"], {"1": 4, "2": 6, "3": 4, "4": 1})
+
+    def test_runs_read_only_the_saved_price_data(self):
+        r = self.run_script("saved")
+        self.assertEqual((r["end"], r["last_date"]), ("2021-12-31", "2021-12-31"))
+        self.assertTrue(r["noted"])
+        self.assertTrue(r["unchanged"])
+        self.assertIn("saved price data only", r["blocked"])
 
     def test_aggregate_comparison_searches_sizes_verifies_and_restarts(self):
         r = self.run_script("aggregates")

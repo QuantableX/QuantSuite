@@ -98,9 +98,14 @@ rule is unchanged. A completed evaluation can contain uncertified candidates.
 Profit runs (`kind: "profit"`) take a saved `system` (name or id) or an explicit
 `config`; dates default to the saved start and yesterday (closed history only).
 Empty `indicators` means every base indicator in its version for the system's
-track (`<key>_opt_1d` for a daily system), else Standard. Ranking answers and
-candles are frozen on first use; every candidate receives identical inputs from
-the longest warm-up. The current system runs natively as the reference line.
+track (`<key>_opt_1d` for a daily system), else Standard. Profit runs and
+aggregate comparisons use the saved price data only: the copy of QuantSystems'
+price cache taken at the start (daily candles and CoinMarketCap rankings).
+Nothing is downloaded and nothing is rewritten; warm-up history before the first
+saved day is simply absent, and the run ends on the last day the saved data
+covers (the report says so). Ranking answers and candles are frozen on first
+use; every candidate receives identical inputs from the longest warm-up. The
+current system runs natively as the reference line.
 
 The search is fixed before results are seen (`plan.json`, `seed`): every
 candidate alone, all pairs and triples of distinct base indicators where they
