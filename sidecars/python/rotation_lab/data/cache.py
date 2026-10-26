@@ -347,6 +347,36 @@ class Cache:
             )
         return len(rows)
 
+    def insert_missing_ohlcv(self, rows: Iterable[OhlcvRow]) -> int:
+        """Store only days not saved yet: a saved candle is never rewritten."""
+        rows = list(rows)
+        if not rows:
+            return 0
+        sql = (
+            "INSERT OR IGNORE INTO ohlcv(coin_key, day, open, high, low, close, "
+            "volume, source, approx) VALUES (?,?,?,?,?,?,?,?,?)"
+        )
+        with self._conn() as con:
+            con.executemany(
+                sql,
+                [
+                    (
+                        r.coin_key, r.day, r.open, r.high, r.low, r.close,
+                        r.volume, r.source, 1 if r.approx else 0,
+                    )
+                    for r in rows
+                ],
+            )
+        return len(rows)
+
+    def latest_ohlcv_source(self, coin_key: str) -> str | None:
+        """Where the coin's newest saved daily candle came from."""
+        with self._conn() as con:
+            row = con.execute(
+                "SELECT source FROM ohlcv WHERE coin_key=? ORDER BY day DESC LIMIT 1", (coin_key,)
+            ).fetchone()
+        return row[0] if row else None
+
     def get_ohlcv_range(
         self,
         coin_key: str,
