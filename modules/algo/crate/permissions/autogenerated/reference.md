@@ -20,6 +20,7 @@ Default permissions for the algo module.
 - `allow-research-run`
 - `allow-research-gauntlet-overview`
 - `allow-research-profit-overview`
+- `allow-research-aggregate-comparison`
 - `allow-smithery-cancel`
 - `allow-smithery-jobs`
 - `allow-smithery-process-logs`
@@ -953,6 +954,32 @@ Enables the read_strategy_file command without any pre-configured scope.
 <td>
 
 Denies the read_strategy_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-research-aggregate-comparison`
+
+</td>
+<td>
+
+Enables the research_aggregate_comparison command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-research-aggregate-comparison`
+
+</td>
+<td>
+
+Denies the research_aggregate_comparison command without any pre-configured scope.
 
 </td>
 </tr>

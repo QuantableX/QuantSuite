@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-research-aggregate-comparison"
+description = "Enables the research_aggregate_comparison command without any pre-configured scope."
+commands.allow = ["research_aggregate_comparison"]
+
+[[permission]]
+identifier = "deny-research-aggregate-comparison"
+description = "Denies the research_aggregate_comparison command without any pre-configured scope."
+commands.deny = ["research_aggregate_comparison"]

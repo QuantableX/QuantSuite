@@ -20,6 +20,7 @@ const COMMANDS: &[&str] = &[
     // Report tools: create a research run of one kind and start it at once.
     "research_gauntlet_overview",
     "research_profit_overview",
+    "research_aggregate_comparison",
     "smithery_cancel",
     "smithery_jobs",
     // `{ limit }` → lines, for the suite's process page.

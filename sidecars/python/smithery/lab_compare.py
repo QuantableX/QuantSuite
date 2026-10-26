@@ -26,6 +26,16 @@ def validate_request(doc):
     sizes = doc.get("sizes")
     if sizes is not None and (not isinstance(sizes, list) or not sizes or any(type(s) is not int or s < 2 for s in sizes)):
         raise ValueError("Aggregate sizes must be whole numbers of at least two")
+    reference = doc.get("reference")
+    if reference is not None and (not isinstance(reference, list) or not reference
+                                  or any(not isinstance(k, str) or not k for k in reference)):
+        raise ValueError("The reference must list indicator keys")
+    restarts = doc.get("restarts")
+    if restarts is not None:
+        if not isinstance(restarts, list) or len(restarts) > 6:
+            raise ValueError("Restarts must be a list of at most six dates")
+        for day in restarts:
+            dt.date.fromisoformat(day)
 
 
 class FrozenService:

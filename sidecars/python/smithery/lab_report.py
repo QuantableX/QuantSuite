@@ -29,6 +29,9 @@ def render(run, results):
     if kind == "profit" and results.get("format") == 2:
         from .lab_report_profit import render as profit
         return profit(run, results)
+    if kind == "aggregates":
+        from .lab_report_aggregates import render as aggregates
+        return aggregates(run, results)
     # Runs written before the report templates keep their original page.
     data = json.dumps({"run": run, **results}, ensure_ascii=True, allow_nan=False).replace("<", "\\u003c")
     return LEGACY_TEMPLATE.replace("__TITLE__", html.escape(run["title"])).replace("__DATA__", data)
