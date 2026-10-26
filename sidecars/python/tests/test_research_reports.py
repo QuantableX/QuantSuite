@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -109,6 +111,27 @@ class GauntletReportTests(unittest.TestCase):
         data = re.search(r"const DATA=(.*?);\n", page, re.S)[1]
         self.assertEqual(json.loads(data)["summary"]["indicators"], 2)
         self.assertNotRegex(payload({"x": "</script>&"}), r"[<>&]")
+
+    @unittest.skipUnless(shutil.which("node"), "needs Node.js to run the report script")
+    def test_not_evaluable_candidates_are_grouped_by_reason(self):
+        from smithery.lab_report import BASE_JS
+        # The shared script touches the page on load; a no-op stand-in is enough for the helper.
+        stub = ("const noop=new Proxy(function(){},{get:(t,p)=>p===Symbol.toPrimitive?()=>'':noop,"
+                "apply:()=>noop,construct:()=>noop});globalThis.document=noop;globalThis.window=noop;"
+                "globalThis.addEventListener=()=>{};")
+        volume = "error: ValueError: Requires finite, nonnegative traded volume; unavailable on synthetic ratios"
+        probe = {"vol_a_opt_1d": volume, "odd<x>": "error: KeyError: missing <column>", "vol_b_opt_1d": volume,
+                 "bvf_opt_1d": "unsupported: BulkVolumeFlow · no traded volume"}
+        script = stub + BASE_JS + f";console.log(Q.unsupported({json.dumps(probe)},3));console.log('|'+Q.unsupported({{}},3)+'|')"
+        out = subprocess.run(["node", "-e", script], capture_output=True, text=True, encoding="utf-8", check=True).stdout
+        rows = re.findall(r"<summary><b>(.*?)</b> <span class=\"muted\">(.*?)</span></summary><div class=\"key\">(.*?)</div>", out)
+        self.assertEqual(rows, [
+            ("Not evaluable · 2 indicators", "Requires finite, nonnegative traded volume; unavailable on synthetic ratios",
+             "vol_a_opt_1d, vol_b_opt_1d"),
+            ("Not evaluable · 1 indicator", "missing &lt;column&gt;", "odd&lt;x&gt;"),
+            ("Not evaluable · 1 indicator", "BulkVolumeFlow · no traded volume", "bvf_opt_1d")])
+        self.assertIn('colspan="3"', out)
+        self.assertTrue(out.rstrip().endswith("||"))
 
     def test_overview_run_compiles_the_snapshot_without_retesting(self):
         from smithery.quantscript import template
