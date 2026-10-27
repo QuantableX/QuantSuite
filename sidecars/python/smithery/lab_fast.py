@@ -72,7 +72,7 @@ def indicator_for(config, members):
 
 def _votes_task(task):
     """One pair of one warm-up group: every eligible key's +1/-1/0 vote."""
-    from rotation_lab.backtest.signals import IndicatorDataUnavailable, _smithery, ratio_frame
+    from rotation_lab.backtest.signals import IndicatorDataUnavailable, member_signal, ratio_frame
     from rotation_lab.config import IndicatorConfig
     group, pair, keys, params, a, b, single = task
     frame = a if single else ratio_frame(a, b)
@@ -81,7 +81,7 @@ def _votes_task(task):
     if len(frame):
         for i, key in enumerate(keys):
             try:
-                signal = np.asarray(_smithery(frame, key, IndicatorConfig(trend=key, params=params)), dtype=float)
+                signal = np.asarray(member_signal(frame, key, IndicatorConfig(trend=key, params=params)), dtype=float)
             except IndicatorDataUnavailable as exc:
                 errors[key] = "unsupported: " + str(exc) + ("" if single or b is None else "; A/B price ratios have no traded volume")
                 continue

@@ -410,7 +410,11 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
             lookback_days = max(bars_needed // bars_per_day + 2, 3)
         else:
             lookback_days = max(bars_needed, 180)
-        return as_of - dt.timedelta(days=lookback_days)
+        if isinstance(indicator, TotalBreakoutConfig) or not warmup_bars(indicator):
+            return as_of - dt.timedelta(days=lookback_days)
+        # A Smithery vote today uses the same history block as a backtest or live replay of today.
+        from .backtest.signals import block_start
+        return block_start(as_of).date() - dt.timedelta(days=lookback_days)
 
     start = history_start(cfg.indicator)
     fetcher = OhlcvFetcher(get_default_cache(), min_request_interval=cfg.min_request_interval)

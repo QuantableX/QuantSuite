@@ -22,6 +22,53 @@ class IndicatorDataUnavailable(ValueError):
     """An indicator cannot evaluate this series with the available inputs."""
 
 
+# A Smithery indicator's vote can depend on all the history it was given: its
+# hysteresis keeps a verdict until the score leaves the band again, and some
+# scores never do, so a verdict committed years earlier (or by a quirk in old
+# candles) could still decide today. Votes are therefore computed on calendar
+# blocks of a year counted from a fixed origin, each block seeing only the
+# indicator's warm-up before it. A vote on a given day is then the same in a
+# backtest from 2020, a live replay from 2023 and today's live signal, and no
+# history older than the warm-up plus one year decides it.
+HISTORY_BLOCK = pd.Timedelta(days=365)
+_BLOCK_ORIGIN = pd.Timestamp("1970-01-01")
+
+
+def block_start(when) -> pd.Timestamp:
+    """The start of the history block that contains ``when``."""
+    when = pd.Timestamp(when)
+    origin = _BLOCK_ORIGIN.tz_localize(when.tz) if when.tz is not None else _BLOCK_ORIGIN
+    return origin + ((when - origin) // HISTORY_BLOCK) * HISTORY_BLOCK
+
+
+def _bar(index: pd.Index) -> pd.Timedelta:
+    steps = pd.Series(index[:200]).diff().dropna()
+    return steps.median() if len(steps) else pd.Timedelta(days=1)
+
+
+def bounded(df: pd.DataFrame, compute, bars: int) -> pd.Series:
+    """``compute(df)``, evaluated block by block with ``bars`` bars of history before each block."""
+    if df.empty or bars <= 0:
+        return compute(df)
+    index = df.index
+    history = _bar(index) * bars
+    start, last, parts = block_start(index[0]), index[-1], []
+    while start <= last:
+        end = start + HISTORY_BLOCK
+        window = df[(index >= start - history) & (index < end)]
+        if (window.index >= start).any():
+            part = compute(window)
+            parts.append(part[part.index >= start])
+        start = end
+    return pd.concat(parts) if parts else compute(df)
+
+
+def member_signal(df: pd.DataFrame, kind: TrendKind, cfg: IndicatorConfig | None = None) -> pd.Series:
+    """A Smithery indicator's +1/-1/0 votes from bounded, fixed history (see ``bounded``)."""
+    from .smithery import WARMUP_BARS
+    return bounded(df, lambda frame: _smithery(frame, kind, cfg), WARMUP_BARS.get(kind, 0))
+
+
 def aggregate_members(cfg: IndicatorConfig) -> list[TrendKind]:
     """The aggregate's members, each once, never the aggregate itself."""
 
@@ -140,7 +187,7 @@ def aggregate_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:
         if kind == "ema_cross":
             votes.append(np.where(_ema_cross(df, cfg).to_numpy() == 1, 1.0, -1.0))
         else:
-            votes.append(_smithery(df, kind, cfg).to_numpy(dtype=float))
+            votes.append(member_signal(df, kind, cfg).to_numpy(dtype=float))
     sigs = np.stack(votes)
     committed = (sigs != 0).sum(axis=0)
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -199,7 +246,7 @@ def direction_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:
     if cfg.trend == "aggregate":
         return aggregate_signal(df, cfg)
     if cfg.trend != "ema_cross":
-        return _smithery(df, cfg.trend, cfg)
+        return member_signal(df, cfg.trend, cfg)
     return _ema_cross(df, cfg) * 2 - 1
 
 
