@@ -144,8 +144,9 @@ def create(request):
             doc.update(prepare(request, {"budget": 200_000} if kind == "aggregates" else None))
             if kind == "aggregates":
                 # The user's saved aggregates of the same kind: always ranked, and searched around.
-                from .lab_profit import saved_aggregates
+                from .lab_profit import earlier_leaders, saved_aggregates
                 doc["seeds"] = saved_aggregates(doc["config"])
+                doc["earlier"] = earlier_leaders(doc["config"])
             validate_request(doc)
         save(path / "run.json", doc)
         return summary(path)

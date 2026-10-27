@@ -102,7 +102,9 @@ general version, the one for the system's track (`<key>_opt_1d` for a daily
 system) and Standard, identical settings merged (the general name is kept).
 Aggregate comparisons also rank the user's saved aggregates that use the same
 evaluation settings, search their neighbours and start local search from them;
-leaders that are already saved are marked "Saved as". Profit runs and
+leaders that are already saved are marked "Saved as". The top 20 aggregates of
+every earlier finished comparison with the same settings are ranked again too,
+so a later run never loses what an earlier one found. Profit runs and
 aggregate comparisons use the saved price data only: the copy of QuantSystems'
 price cache taken at the start (daily candles and CoinMarketCap rankings).
 Before the copy, the saved system runs once against that cache, as running it in
