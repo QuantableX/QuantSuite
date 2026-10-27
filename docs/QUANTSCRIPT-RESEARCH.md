@@ -97,8 +97,12 @@ rule is unchanged. A completed evaluation can contain uncertified candidates.
 
 Profit runs (`kind: "profit"`) take a saved `system` (name or id) or an explicit
 `config`; dates default to the saved start and yesterday (closed history only).
-Empty `indicators` means every base indicator in its version for the system's
-track (`<key>_opt_1d` for a daily system), else Standard. Profit runs and
+Empty `indicators` means every distinct version of every base indicator: the
+general version, the one for the system's track (`<key>_opt_1d` for a daily
+system) and Standard, identical settings merged (the general name is kept).
+Aggregate comparisons also rank the user's saved aggregates that use the same
+evaluation settings, search their neighbours and start local search from them;
+leaders that are already saved are marked "Saved as". Profit runs and
 aggregate comparisons use the saved price data only: the copy of QuantSystems'
 price cache taken at the start (daily candles and CoinMarketCap rankings).
 Before the copy, the saved system runs once against that cache, as running it in

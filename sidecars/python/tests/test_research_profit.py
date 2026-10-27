@@ -82,6 +82,17 @@ class SearchTests(unittest.TestCase):
         config = SimpleNamespace(indicator=SimpleNamespace(params={"c_opt_1d": {"band": 0.3}}))
         self.assertEqual(distinct_keys(["c_opt", "c_opt_1d"], registry, config), (["c_opt", "c_opt_1d"], {}))
 
+    def test_default_candidates_are_every_version_with_the_general_one_first(self):
+        from types import SimpleNamespace
+        from smithery.lab_profit import default_keys
+        versions = lambda b: {"standard": b, "optimized": b + "_opt", "optimized_1h": b + "_opt_1h", "optimized_1d": b + "_opt_1d"}
+        rows = [{"key": k, "role": r, "versions": versions(b) if r == "standard" else None}
+                for b in ("a", "b") for k, r in ((b, "standard"), (b + "_opt", "optimized"), (b + "_opt_1h", "optimized_1h"),
+                                                  (b + "_opt_1d", "optimized_1d"))]
+        rows.append({"key": "c", "role": "standard", "versions": {"standard": "c"}})
+        daily = SimpleNamespace(mode="rotation", cadence=SimpleNamespace(value="daily"))
+        self.assertEqual(default_keys(rows, daily), ["a_opt", "a_opt_1d", "a", "b_opt", "b_opt_1d", "b", "c"])
+
     def test_requests_need_closed_history_and_valid_limits(self):
         doc = {"config": {"startDate": "2020-01-01", "endDate": "2021-01-01", "feeRate": .001, "slippageRate": 0,
                           "indicator": {"trend": "fixture"}}, "indicators": [], "top": 10, "budget": 1000}
@@ -147,13 +158,24 @@ systems = {
 out = {}
 def aggregates():
     from smithery.lab_aggregates import run as compare
+    # The user's saved systems: two aggregates evaluated like the fixture rotation, one with another universe.
+    home = lab.root().parents[1] / 'systems'
+    home.mkdir(parents=True, exist_ok=True)
+    other = {**systems['rotation'], 'topN': 3, 'indicator': {'trend': 'aggregate', 'aggregate': ['k_fast', 'k_slow']}}
+    (home / 'config.json').write_text(json.dumps({
+        'systems': [{'id': 'rot', 'name': 'Fixture rotation'}, {'id': 'trio', 'name': 'Saved trio'}, {'id': 'other', 'name': 'Other universe'}],
+        'systemConfigs': {'rot': systems['rotation'], 'other': other,
+                          'trio': {**systems['rotation'], 'endDate': '2021-03-31',
+                                   'indicator': {'trend': 'aggregate', 'aggregate': ['k_mid2', 'k_fast', 'k_mid']}}}}), encoding='utf-8')
     doc = lab.create({'kind': 'aggregates', 'title': 'Aggregates', 'config': systems['rotation'], 'top': 3, 'budget': 60,
                       'seed': 3, 'restarts': ['2021-01-01', '2030-01-01'], 'system_name': 'Fixture rotation'})
     path = lab.folder(doc['id'])
     compare(path, lab.read(path / 'run.json'))
     results = lab.read(path / 'results.json')
     page = render({**doc, 'status': 'done'}, results)
-    return {'reference': results['reference'], 'budget': doc['budget'],
+    return {'reference': results['reference'], 'budget': doc['budget'], 'seeds': [x['name'] for x in doc['seeds']],
+            'saved_rows': sorted((r['saved_as'], r['members']) for r in results['rows'] if r.get('saved_as')),
+            'saved_subjects': sorted(x['saved_as'] for x in results['subjects'] if x.get('saved_as')),
             'subjects': [(s['code'], s['group'], s['members'], s['verified'].get('passed')) for s in results['subjects']],
             'stages': [st['stage'] for st in results['coverage']['stages']], 'aggregates': results['coverage']['aggregates'],
             'best_by_size': [b['size'] for b in results['coverage']['best_by_size']],
@@ -261,7 +283,12 @@ class ProfitRunTests(unittest.TestCase):
         self.assertEqual(groups.count("aggregate"), 3)
         self.assertTrue(all(s[3] for s in r["subjects"]))
         self.assertEqual(r["verified"], r["passed"])
-        self.assertEqual(r["stages"][:2], ["Control: the reference", "Reference neighbours"])
+        self.assertEqual(r["stages"][:4], ["Control: the reference", "Your saved aggregates",
+                                           "Neighbours of your saved aggregates", "Reference neighbours"])
+        # Saved aggregates with the same settings are ranked as they are (another universe is not).
+        self.assertEqual(r["seeds"], ["Fixture rotation", "Saved trio"])
+        self.assertEqual(r["saved_rows"], [["Fixture rotation", ["k_mid", "k_slow"]], ["Saved trio", ["k_fast", "k_mid", "k_mid2"]]])
+        self.assertIn("Fixture rotation", r["saved_subjects"])
         self.assertIn("Pairs", r["stages"])
         self.assertLessEqual(r["aggregates"], 60)
         self.assertEqual(r["best_by_size"], [2, 3, 4])
