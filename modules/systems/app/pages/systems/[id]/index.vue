@@ -7,7 +7,7 @@ const route = useRoute()
 const app = useAppStore()
 onMounted(() => {
   const id = route.params.id as string
-  navigateTo(`/algo/manual/${id}/${app.viewFor(id)}`, { replace: true })
+  navigateTo(`/algo/manual/${id}/${app.lastView}`, { replace: true })
 })
 </script>
 

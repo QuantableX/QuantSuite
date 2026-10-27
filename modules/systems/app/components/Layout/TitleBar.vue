@@ -42,7 +42,7 @@ function selectSystem(id: string) {
   const target = systems.byId(id)
   if (!target || target.status !== 'ready') return
   app.setActiveSystem(id)
-  void router.push(`/algo/manual/${id}/${app.viewFor(id)}`)
+  void router.push(`/algo/manual/${id}/${app.lastView}`)
 }
 </script>
 

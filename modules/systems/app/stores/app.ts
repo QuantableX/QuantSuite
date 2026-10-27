@@ -15,17 +15,12 @@ export const useAppStore = defineStore('systems/app', () => {
   const settings = ref<AppSettings>({ ...defaultSettings })
   const engineStatus = ref<EngineStatus>({ status: 'stopped', pid: null })
 
-  // Each system keeps its own active view, so switching systems restores the
-  // tab you last had open there instead of carrying the current one over.
-  const viewBySystem = ref<Record<string, EngineView>>({})
+  // One view for every system: switching systems keeps the tab you have open
+  // (Backtest stays Backtest) instead of dropping back to Live.
+  const lastView = ref<EngineView>(DEFAULT_VIEW)
 
-  function rememberView(systemId: string, view: EngineView) {
-    if (!systemId) return
-    viewBySystem.value[systemId] = view
-  }
-
-  function viewFor(systemId: string): EngineView {
-    return viewBySystem.value[systemId] ?? DEFAULT_VIEW
+  function rememberView(view: EngineView) {
+    lastView.value = view
   }
 
   const theme = computed(() => settings.value.theme)
@@ -88,9 +83,8 @@ export const useAppStore = defineStore('systems/app', () => {
   return {
     settings,
     engineStatus,
-    viewBySystem,
+    lastView,
     rememberView,
-    viewFor,
     theme,
     fontSize,
     activeSystemId,
