@@ -60,8 +60,10 @@ Research tab, and `research_read` returns the results.
   indicators?, start_date?, end_date?, top?, budget?, sizes?, restarts?, seed?)`
   — a variable-size search against the system's current aggregate (or
   `reference`): the reference itself, all its add/remove/swap neighbours, two
-  additions to it, all pairs, balanced samples of every size and four
-  local-search rounds (default budget 200,000). The report shows the new leader
+  additions to it, all pairs, growth by size (every one-indicator extension of
+  the best 200 of the size before, while bigger sizes improve), balanced samples
+  and a local search until no single add, remove or swap improves the top 25
+  (default budget 5,000,000). The report shows the new leader
   against the current aggregate (capital and drawdown), the top 10, the best
   aggregate of every size with its test count, and independent restarts
   (default 2023-01-01 and 2025-01-01, run natively from a fresh start). The top

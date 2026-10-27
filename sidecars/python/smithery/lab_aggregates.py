@@ -15,7 +15,7 @@ from .lab import emit, save
 from .lab_profit import DEFAULTS, NATIVE_BUDGET, NativeEvaluator, Subjects, default_keys, describe, distinct_keys
 
 RESTARTS = ("2023-01-01", "2025-01-01")
-BUDGET = 200_000
+BUDGET = 5_000_000
 
 
 def run(path, doc):
@@ -89,8 +89,13 @@ def run(path, doc):
                            "Reference neighbours: add, remove or swap one member (all)",
                            "Two additions to the reference (all if they fit 30% of the budget left, else a seeded sample)",
                            "Pairs (all if they fit 20% of the budget left, else a seeded sample)",
-                           "Balanced samples of every size, more for smaller sizes",
-                           "Local search: neighbours of the leaders and of the best of each size, 4 rounds"],
+                           "Pairs: all of them",
+                           "Growth by size: every one-indicator extension of the best 200 of the size before, from "
+                           "triples on, while bigger sizes still improve (stops after 4 sizes without a better best)",
+                           "Balanced samples of every size, more for smaller sizes (10% of the budget left)",
+                           "Local search until stable: every neighbour (add, remove or swap one member) of the top 25, "
+                           "the best of each size up to 16 and the saved systems, round after round, until a full round "
+                           "leaves the top 25 unchanged (each is then a local optimum for single steps) or the budget ends"],
                 "rule": "Two or more distinct base indicators, no preferred size; each base casts at most one vote.",
                 "restarts": [d for d in (doc.get("restarts") or RESTARTS)],
                 "validation": "Retrospective search on examined history; no claim of out-of-sample performance or a global optimum."}
@@ -112,9 +117,16 @@ def run(path, doc):
             pool = list(islice(two, 2_000_000))
             search.run("Two additions to the reference", ordered(pool, f"{seed}|two")[:cap], cap=cap)
         if allowed(2):
-            search.stage_exhaustive_or_sample("Pairs", 2, 0.2)
-        search.stage_balanced("Balanced sizes", [s for s in range(3, max_size + 1) if allowed(s)], 0.45)
-        search.stage_adaptive("Local search, round", 4, 1.0, extra_seeds=[reference, *(m for m, _ in seeds), *earlier])
+            search.run("Pairs", search.all_of_size(2))
+        if not sizes:
+            # Size by size from the complete pairs: every extension of the best 200 of the size before.
+            search.stage_grow("Growth, size", 3, 200, 4)
+            progress(f"Growth by size done up to {search.grown} members")
+        search.stage_balanced("Balanced sizes", [s for s in range(3, max_size + 1) if allowed(s)], 0.1)
+        search.stage_until_stable("Local search until stable, round", 25,
+                                  extra_seeds=[reference, *(m for m, _ in seeds), *earlier])
+        progress("Local search " + ("stable: no single step improves the top 25" if search.stable
+                                    else f"stopped at the budget after {search.rounds} rounds"))
         progress(f"Search done: {search.aggregates:,} aggregates in {time.monotonic() - started:,.0f} s")
         leaders = search.leaders(top)
         best = search.best_by_size()
@@ -161,6 +173,8 @@ def run(path, doc):
                     "evaluator": "native" if reason else "bulk", "native_reason": reason,
                     "best_by_size": [{"size": s, "tested": counts.get(s, 0), "members": list(t), "net_return_multiplier": v[0],
                                       "max_drawdown_pct": v[1]} for s, (t, v) in best.items()],
+                    "local_search": {"stable": search.stable, "rounds": search.rounds, "top": 25},
+                    "growth": {"beam": 200, "up_to": getattr(search, "grown", None)},
                     "seconds": round(time.monotonic() - started)}
         for item in subjects.items:
             item["saved_as"] = saved_as.get(tuple(sorted(item["members"])))

@@ -141,7 +141,7 @@ def create(request):
             # A saved system by name or id, explicit closed dates; empty indicators = the default set.
             from .lab_compare import validate_request
             from .lab_profit import prepare
-            doc.update(prepare(request, {"budget": 200_000} if kind == "aggregates" else None))
+            doc.update(prepare(request, {"budget": 5_000_000} if kind == "aggregates" else None))
             if kind == "aggregates":
                 # The user's saved aggregates of the same kind: always ranked, and searched around.
                 from .lab_profit import earlier_leaders, saved_aggregates

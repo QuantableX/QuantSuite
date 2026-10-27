@@ -67,10 +67,11 @@ def prepare(request, defaults=None):
 
 
 def default_keys(rows, config):
-    """Per base indicator: its general version, the version for the system's track and Standard.
+    """Per base indicator: its general version and the version for the system's track.
 
-    In that order of preference: distinct_keys merges versions with identical settings and
-    keeps the first, so the general name (the one saved systems use) wins a tie."""
+    Optimized versions only (user, 2026-10-27): Standard joins only for a base that has
+    neither. In that order of preference: distinct_keys merges versions with identical
+    settings and keeps the first, so the general name (the one saved systems use) wins a tie."""
     by_key = {r["key"]: r for r in rows}
     timeframe = config.single_asset.timeframe if config.mode == "single_asset" else config.cadence.value
     track = TRACKS.get(timeframe)
@@ -79,9 +80,9 @@ def default_keys(rows, config):
         if row.get("role") != "standard":
             continue
         versions = row.get("versions") or {}
-        for key in (versions.get("optimized"), versions.get(f"optimized_{track}") if track else None, row["key"]):
-            if key in by_key:
-                keys.append(key)
+        optimized = [k for k in (versions.get("optimized"), versions.get(f"optimized_{track}") if track else None)
+                     if k in by_key]
+        keys += optimized or [row["key"]]
     return list(dict.fromkeys(keys))
 
 
