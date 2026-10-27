@@ -1,6 +1,6 @@
 {
   "name": "quantsuite",
-  "version": "1.0.37",
+  "version": "1.0.38",
   "private": true,
   "description": "One desktop application unifying the Quant modules",
   "workspaces": [
