@@ -1239,7 +1239,7 @@
           },
           "budget": {
             "type": "integer",
-            "description": "Aggregates tested at most (default 200000)."
+            "description": "Aggregates tested at most (default 5000000)."
           },
           "sizes": {
             "type": "array",

@@ -151,6 +151,71 @@ class Search:
             trials += self.sample(s, max(1, int(cap * weights[s] / total)), name)
         return self.run(name, trials, cap=cap)
 
+    def stage_grow(self, name, start=3, beam=200, patience=4, max_size=None):
+        """Grow size by size: every one-indicator extension of the best ``beam`` of the size before.
+
+        Starts at ``start`` (the size before should be complete, e.g. all pairs) and goes on
+        while bigger sizes still improve: it stops after ``patience`` sizes in a row without
+        a better best, at ``max_size`` or at the budget. ``self.grown`` is the last size tested."""
+        tested, best, since, size = [], None, 0, start
+        limit = max_size or len(self.base_names)
+        self.grown = start - 1
+        while size <= limit and self.remaining():
+            parents = [t for t, _ in self.leaders(beam, size=size - 1)]
+            if not parents:
+                break
+            proposals = []
+            for parent in parents:
+                used = {self.bases[k] for k in parent}
+                proposals += [tuple(sorted(parent + (k,))) for k in self.keys if self.bases[k] not in used]
+            done = self.run(f"{name} {size}", ordered(list(dict.fromkeys(proposals)), f"{self.seed}|{name}|{size}"))
+            tested += done
+            self.grown = size
+            top = self.leaders(1, size=size)
+            value = top[0][1][0] if top else None
+            if value is not None and (best is None or value > best):
+                best, since = value, 0
+            else:
+                since += 1
+                if since >= patience:
+                    break
+            size += 1
+        return tested
+
+    def stage_until_stable(self, name, top=25, max_rounds=60, extra_seeds=(), max_seed_size=16):
+        """Local search until the leaders cannot be improved by a single step.
+
+        Each round tests every untested neighbour (add, remove or swap one member) of
+        the top ``top``, the best of each size up to ``max_seed_size`` and
+        ``extra_seeds``. It ends when a round leaves the top ``top`` unchanged after all
+        their neighbours were tested (each is then a local optimum: no single add,
+        remove or swap beats it), when nothing is left to test, or at the budget;
+        ``self.stable`` says which."""
+        tested, expanded = [], set()
+        self.stable, self.rounds = False, 0
+        for r in range(1, max_rounds + 1):
+            before = [t for t, _ in self.leaders(top)]
+            seeds = set(before) | {t for s, (t, _) in self.best_by_size().items() if s <= max_seed_size}
+            seeds |= {tuple(sorted(t)) for t in extra_seeds}
+            seeds -= expanded
+            proposals = list(dict.fromkeys(
+                trial for seed in sorted(seeds) for trial in map(lambda t: tuple(sorted(t)), self.neighbors(seed))
+                if trial not in self.seen))
+            expanded |= seeds
+            if not proposals:
+                self.stable = all(t in expanded for t in before)
+                break
+            self.rounds = r
+            done = self.run(f"{name} {r}", ordered(proposals, f"{self.seed}|{name}|{r}"))
+            tested += done
+            if len(done) < len(proposals):
+                break  # the budget ended inside this round: not every neighbour was tested
+            after = [t for t, _ in self.leaders(top)]
+            if after == before and all(t in expanded for t in after):
+                self.stable = True
+                break
+        return tested
+
     def stage_adaptive(self, name, rounds, share, per_size=None, extra_seeds=()):
         """Local search: neighbours of the leaders and of the best of each size."""
         tested = []

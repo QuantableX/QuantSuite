@@ -91,7 +91,44 @@ class SearchTests(unittest.TestCase):
                                                   (b + "_opt_1d", "optimized_1d"))]
         rows.append({"key": "c", "role": "standard", "versions": {"standard": "c"}})
         daily = SimpleNamespace(mode="rotation", cadence=SimpleNamespace(value="daily"))
-        self.assertEqual(default_keys(rows, daily), ["a_opt", "a_opt_1d", "a", "b_opt", "b_opt_1d", "b", "c"])
+        # Optimized versions only; Standard only for a base without any.
+        self.assertEqual(default_keys(rows, daily), ["a_opt", "a_opt_1d", "b_opt", "b_opt_1d", "c"])
+
+    def test_growth_by_size_extends_the_best_of_each_size_until_bigger_stops_paying(self):
+        target = {"a", "c_opt", "e", "f_opt", "h"}
+        evaluate = lambda trials: [(1.0 + 10 * len(target & set(t)) - 3 * len(set(t) - target), 10.0) for t in trials]
+        search = Search(evaluate, self.keys, self.bases, seed=1, budget=100_000)
+        search.run("Pairs", search.all_of_size(2))
+        search.stage_grow("Growth", 3, 10, 2)
+        self.assertEqual(search.leaders(1)[0][0], tuple(sorted(target)))
+        # Sizes 6 and 7 are worse than 5, so growth stops there (patience 2).
+        self.assertEqual(search.grown, 7)
+        # Every extension of the best 10 triples was tested.
+        for parent, _ in search.leaders(10, size=3):
+            used = {self.bases[k] for k in parent}
+            for k in self.keys:
+                if self.bases[k] not in used:
+                    self.assertIn(tuple(sorted(parent + (k,))), search.seen)
+
+    def test_local_search_keeps_going_until_no_single_step_improves_the_leaders(self):
+        # A hidden best combination of five members that only step-by-step improvement reaches.
+        target = {"a", "c_opt", "e", "f_opt", "h"}
+        evaluate = lambda trials: [(1.0 + 10 * len(target & set(t)) - 3 * len(set(t) - target), 10.0) for t in trials]
+        search = Search(evaluate, self.keys, self.bases, seed=1, budget=100_000)
+        search.run("Pairs", search.all_of_size(2))
+        search.stage_until_stable("Local search", 5)
+        self.assertEqual(search.leaders(1)[0][0], tuple(sorted(target)))
+        self.assertTrue(search.stable)
+        # Every neighbour of every leader was tested: none of them beats the leaders.
+        worst = search.leaders(5)[-1][1][0]
+        for trial, _ in search.leaders(5):
+            for n in search.neighbors(trial):
+                self.assertIn(tuple(sorted(n)), search.seen)
+        # A budget that ends inside a round never claims to be stable.
+        short = Search(evaluate, self.keys, self.bases, seed=1, budget=200)
+        short.run("Pairs", short.all_of_size(2))
+        short.stage_until_stable("Local search", 5)
+        self.assertFalse(short.stable)
 
     def test_requests_need_closed_history_and_valid_limits(self):
         doc = {"config": {"startDate": "2020-01-01", "endDate": "2021-01-01", "feeRate": .001, "slippageRate": 0,

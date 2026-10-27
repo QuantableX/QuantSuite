@@ -149,7 +149,7 @@
           "start_date": { "type": "string", "description": "YYYY-MM-DD; default the system's start." },
           "end_date": { "type": "string", "description": "YYYY-MM-DD before today; default yesterday." },
           "top": { "type": "integer", "description": "Aggregates shown (default 10)." },
-          "budget": { "type": "integer", "description": "Aggregates tested at most (default 200000)." },
+          "budget": { "type": "integer", "description": "Aggregates tested at most (default 5000000)." },
           "sizes": { "type": "array", "items": { "type": "integer" }, "description": "Aggregate sizes to test; omit for 2 up to all bases." },
           "restarts": { "type": "array", "items": { "type": "string" }, "description": "Later start dates for independent runs (default 2023-01-01, 2025-01-01)." },
           "seed": { "type": "integer", "description": "Search seed (default 42)." }
