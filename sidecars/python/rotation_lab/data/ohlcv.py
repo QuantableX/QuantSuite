@@ -68,15 +68,15 @@ _HISTORY_FLOOR_KEY = "ohlcv_first:{key}"
 _BINANCE_QUOTES = ("USDT", "USDC", "USD", "BUSD", "FDUSD", "TUSD", "DAI")
 _QUOTE_RANK = {q: i for i, q in enumerate(_BINANCE_QUOTES)}
 
-# Exchanges tried in order. Binance has the broadest and deepest coverage,
-# but plenty of top-100 coins never list there — and exchange-native tokens
-# essentially only trade on their own venue (BGB on Bitget, KCS on KuCoin,
-# OKB on OKX), which is why the chain has to include the mid-tier venues.
-_EXCHANGE_CHAIN = (
-    "binance", "bybit", "okx", "bitget", "kucoin", "gate", "mexc", "bitfinex", "htx",
-)
+# Exchanges tried in order: Binance first, then the large venues for coins
+# Binance does not list. Never Gate.io or MEXC (user, 2026-10-27): their thin
+# early books produced gaps and prices that differ from the main venues, and
+# indicators carried those quirks for years.
+_EXCHANGE_CHAIN = ("binance", "bybit", "okx", "coinbase", "kucoin")
 
-SINGLE_ASSET_EXCHANGES = ("coinbase", "kraken", *_EXCHANGE_CHAIN)
+# Single Asset systems name their venue explicitly; these are the choices offered.
+SINGLE_ASSET_EXCHANGES = ("coinbase", "kraken", "binance", "bybit", "okx", "bitget", "kucoin", "gate", "mexc",
+                          "bitfinex", "htx")
 
 
 @dataclass(frozen=True)

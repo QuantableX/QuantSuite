@@ -75,6 +75,13 @@ class SavedCandleTests(unittest.TestCase):
         self.assertEqual(self.saved(dt.date(2020, 1, 6), dt.date(2020, 1, 10))[dt.date(2020, 1, 8)],
                          (100.0, "ccxt:binance:AAA/USDT"))
 
+    def test_the_exchange_chain_is_binance_first_and_never_gate_or_mexc(self):
+        from rotation_lab.data.ohlcv import _EXCHANGE_CHAIN
+        self.assertEqual(_EXCHANGE_CHAIN, ("binance", "bybit", "okx", "coinbase", "kucoin"))
+        names = OhlcvFetcher(self.cache, min_request_interval=0)._exchange_names
+        self.assertEqual(names[0], "binance")
+        self.assertFalse({"gate", "mexc"} & set(names))
+
     def test_a_coin_without_saved_candles_still_takes_the_best_exchange(self):
         self.fetch(dt.date(2016, 1, 1), dt.date(2020, 1, 10))
         self.assertEqual(self.saved(dt.date(2016, 1, 1), dt.date(2016, 1, 1))[dt.date(2016, 1, 1)],
