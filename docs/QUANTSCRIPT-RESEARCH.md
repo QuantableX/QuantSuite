@@ -67,7 +67,9 @@ Research tab, and `research_read` returns the results.
   against the current aggregate (capital and drawdown), the top 10, the best
   aggregate of every size with its test count, and independent restarts
   (default 2023-01-01 and 2025-01-01, run natively from a fresh start). The top
-  10 and the best of sizes 2 to 5 are re-run natively.
+  10 and the best of sizes 2 to 5 are re-run natively. Follow-up runs, distinct
+  results and putting the leaders into saved systems:
+  [AGGREGATE-PLAYBOOK.md](AGGREGATE-PLAYBOOK.md).
 
 ## Bulk evaluation in a saved system
 
