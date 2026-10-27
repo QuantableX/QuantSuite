@@ -240,7 +240,10 @@ class SystemCadenceTests(unittest.TestCase):
         self.assertEqual(cadence.bars_per_year, 8760)
         cfg = RunConfig(cadence=cadence, start_date=dt.date(2026, 1, 30), indicator=IndicatorConfig(trend='scale'))
         with patch('rotation_lab.backtest.engine.warmup_bars', return_value=480):
-            self.assertEqual(_fetch_start(cfg), dt.date(2026, 1, 8))   # 480 // 24 + 2 days
+            # 480 // 24 + 2 days before the start of the history block that contains the start date
+            from rotation_lab.backtest.signals import block_start
+            self.assertEqual(_fetch_start(cfg), block_start(cfg.start_date).date() - dt.timedelta(days=22))
+            self.assertLessEqual(_fetch_start(cfg), dt.date(2026, 1, 8))
 
     def test_system_preserves_every_bar_and_requests_hourly_candles(self):
         index = pd.date_range('2026-01-01', periods=120, freq='h')

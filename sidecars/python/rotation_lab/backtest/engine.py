@@ -46,7 +46,7 @@ from ..data.ranking.registry import RankingRegistry
 from ..data.ranking.base import RankedCoin
 from .market import market_gate, market_index
 from .metrics import PerformanceMetrics, compute_metrics
-from .signals import (IndicatorDataUnavailable, aggregate_members, direction_signal, is_custom, pair_signal, trend_signal,
+from .signals import (IndicatorDataUnavailable, aggregate_members, block_start, direction_signal, is_custom, pair_signal, trend_signal,
                       warmup_bars)
 
 
@@ -68,7 +68,9 @@ def _fetch_start(config: RunConfig, trend: TrendKind | None = None) -> dt.date:
         days = bars // per_day + 2
     else:
         days = bars
-    return config.start_date - dt.timedelta(days=days)
+    # Votes come from history blocks (signals.bounded): the warm-up counts from
+    # the start of the block that contains start_date.
+    return block_start(config.start_date).date() - dt.timedelta(days=days)
 
 
 def _trend_kinds(config: RunConfig) -> list[TrendKind]:
