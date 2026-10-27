@@ -67,7 +67,10 @@ def prepare(request, defaults=None):
 
 
 def default_keys(rows, config):
-    """Per base indicator: the version for the system's track, else Standard."""
+    """Per base indicator: its general version, the version for the system's track and Standard.
+
+    In that order of preference: distinct_keys merges versions with identical settings and
+    keeps the first, so the general name (the one saved systems use) wins a tie."""
     by_key = {r["key"]: r for r in rows}
     timeframe = config.single_asset.timeframe if config.mode == "single_asset" else config.cadence.value
     track = TRACKS.get(timeframe)
@@ -75,9 +78,37 @@ def default_keys(rows, config):
     for row in rows:
         if row.get("role") != "standard":
             continue
-        version = (row.get("versions") or {}).get(f"optimized_{track}") if track else None
-        keys.append(version if version in by_key else row["key"])
-    return sorted(keys)
+        versions = row.get("versions") or {}
+        for key in (versions.get("optimized"), versions.get(f"optimized_{track}") if track else None, row["key"]):
+            if key in by_key:
+                keys.append(key)
+    return list(dict.fromkeys(keys))
+
+
+def saved_aggregates(config):
+    """The user's saved aggregates that are evaluated like ``config``: same universe, cadence, filter and costs."""
+    from dataclasses import fields
+    from rotation_lab.rpc import _build_config
+    neutral = {"indicator", "compare_trends", "start_date", "end_date", "live_start_date", "min_request_interval"}
+
+    def evaluation(raw):
+        built = _build_config(raw)
+        return {f.name: getattr(built, f.name) for f in fields(built) if f.name not in neutral}
+
+    target, data, out = evaluation(config), saved_systems(), []
+    names = {s.get("id"): s.get("name") or s.get("id") for s in data.get("systems", [])}
+    for sid, raw in (data.get("systemConfigs") or {}).items():
+        indicator = raw.get("indicator") or {}
+        members = sorted(dict.fromkeys(indicator.get("aggregate") or []))
+        if indicator.get("trend") != "aggregate" or len(members) < 2:
+            continue
+        try:
+            same = evaluation(raw) == target
+        except Exception:  # noqa: BLE001 - an unreadable saved config is simply not a starting point
+            continue
+        if same:
+            out.append({"name": names.get(sid, sid), "members": members})
+    return sorted(out, key=lambda s: s["name"])
 
 
 def distinct_keys(keys, registry, config, keep=()):
@@ -86,9 +117,10 @@ def distinct_keys(keys, registry, config, keep=()):
     Two versions of a base with the same script and the same settings (after the
     system's own parameter overrides) are one candidate under two names; for most
     bases the general and the daily version are identical. Keys in ``keep`` (the
-    reference or the current system) win; otherwise the first key in sorted order."""
+    reference or the current system) win; otherwise the first key in the given order."""
     seen, kept, dropped = {}, [], {}
-    for key in [*dict.fromkeys(keep), *sorted(set(keys) - set(keep))]:
+    keep = list(dict.fromkeys(keep))
+    for key in [*keep, *(k for k in dict.fromkeys(keys) if k not in set(keep))]:
         row = registry[key]
         settings = {**(row.get("params") or {}), **(config.indicator.params.get(key) or {})}
         identity = (row.get("script"), json.dumps(settings, sort_keys=True, default=str))

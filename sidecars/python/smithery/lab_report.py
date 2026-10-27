@@ -120,6 +120,7 @@ table.data th button:focus-visible{outline:2px solid var(--accent)}
 .badge{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:1px 7px;font-size:11.5px;font-weight:600;white-space:nowrap;border:1px solid transparent}
 .badge.pass{color:var(--good-ink);background:color-mix(in srgb,var(--good) 12%,transparent)}
 .badge.fail{color:var(--ink-2);background:var(--surface-2)}
+.badge.note{color:var(--ink-2);background:var(--surface-2);margin-top:4px}
 .badge.warn{color:var(--warn-ink);background:color-mix(in srgb,var(--warn) 16%,transparent)}
 .badge.bad{color:var(--bad-ink);background:color-mix(in srgb,var(--bad) 12%,transparent)}
 .meter{display:inline-block;vertical-align:middle;width:64px;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;margin-right:8px}

@@ -36,11 +36,18 @@ def run(path, doc):
     missing = sorted(set(reference) - registry.keys())
     if missing:
         raise ValueError(f"The reference contains indicators outside the library: {missing}")
-    keys = sorted(set(doc["indicators"] or default_keys(rows, config)) | set(reference))
+    # The user's saved aggregates evaluated like this system: ranked as they are, and searched around.
+    seeds = [(s.get("name") or "", tuple(sorted(dict.fromkeys(s.get("members") or [])))) for s in doc.get("seeds") or []]
+    seeds = [(n, m) for n, m in seeds if len(m) >= 2 and set(m) <= registry.keys()
+             and len({registry[k]["base_key"] for k in m}) == len(m)]
+    seed_keys = [k for _, m in seeds for k in m]
+    keys = list(dict.fromkeys([*(doc["indicators"] or default_keys(rows, config)), *reference, *seed_keys]))
     unknown = sorted(set(keys) - registry.keys())
     if unknown:
         raise ValueError(f"Unknown indicators: {unknown}")
-    keys, duplicates = distinct_keys(keys, registry, config, keep=reference)
+    keys, duplicates = distinct_keys(keys, registry, config, keep=[*reference, *seed_keys])
+    seeds = list({m: n for n, m in ((n, tuple(sorted({duplicates.get(k, k) for k in m}))) for n, m in seeds)}.items())
+    saved_as = {m: n for m, n in seeds}
     bases = {k: registry[k]["base_key"] for k in keys}
     if len({bases[k] for k in reference}) != len(reference):
         raise ValueError("The reference casts two votes for one base indicator")
@@ -68,7 +75,11 @@ def run(path, doc):
         allowed = (lambda s: s in sizes) if sizes else (lambda s: 2 <= s <= max_size)
         plan = {"objective": "historical final capital, any aggregate size", "seed": seed, "budget": budget, "top": top,
                 "reference": list(reference), "candidates": usable, "bases": n_bases, "sizes": sizes or [2, max_size],
-                "stages": ["Control: the reference", "Reference neighbours: add, remove or swap one member (all)",
+                "saved": [{"name": n, "members": list(m)} for m, n in seeds],
+                "stages": ["Control: the reference",
+                           "Your saved aggregates with the same settings (all)",
+                           "Neighbours of your saved aggregates: add, remove or swap one member (all)",
+                           "Reference neighbours: add, remove or swap one member (all)",
                            "Two additions to the reference (all if they fit 30% of the budget left, else a seeded sample)",
                            "Pairs (all if they fit 20% of the budget left, else a seeded sample)",
                            "Balanced samples of every size, more for smaller sizes",
@@ -79,6 +90,10 @@ def run(path, doc):
         save(path / "plan.json", plan)
         search = Search(evaluator.evaluate, usable, {k: bases[k] for k in usable}, seed=seed, budget=budget, progress=progress)
         search.run("Control: the reference", [reference])
+        if seeds:
+            search.run("Your saved aggregates", [m for m, _ in seeds])
+            search.run("Neighbours of your saved aggregates",
+                       [t for m, _ in seeds for t in search.neighbors(m) if allowed(len(t))])
         search.run("Reference neighbours", [t for t in search.neighbors(reference) if allowed(len(t))])
         ref_bases = {bases[k] for k in reference}
         additions = [k for k in usable if bases[k] not in ref_bases]
@@ -90,7 +105,7 @@ def run(path, doc):
         if allowed(2):
             search.stage_exhaustive_or_sample("Pairs", 2, 0.2)
         search.stage_balanced("Balanced sizes", [s for s in range(3, max_size + 1) if allowed(s)], 0.45)
-        search.stage_adaptive("Local search, round", 4, 1.0, extra_seeds=[reference])
+        search.stage_adaptive("Local search, round", 4, 1.0, extra_seeds=[reference, *(m for m, _ in seeds)])
         progress(f"Search done: {search.aggregates:,} aggregates in {time.monotonic() - started:,.0f} s")
         leaders = search.leaders(top)
         best = search.best_by_size()
@@ -138,7 +153,9 @@ def run(path, doc):
                     "best_by_size": [{"size": s, "tested": counts.get(s, 0), "members": list(t), "net_return_multiplier": v[0],
                                       "max_drawdown_pct": v[1]} for s, (t, v) in best.items()],
                     "seconds": round(time.monotonic() - started)}
-        rows_out = [{"id": f"leader-{i}", "name": " + ".join(t), "members": list(t), "size": len(t),
+        for item in subjects.items:
+            item["saved_as"] = saved_as.get(tuple(sorted(item["members"])))
+        rows_out = [{"id": f"leader-{i}", "name": " + ".join(t), "members": list(t), "size": len(t), "saved_as": saved_as.get(t),
                      "metrics": {"net_return_multiplier": v[0], "max_drawdown_pct": v[1]}} for i, (t, v) in enumerate(search.leaders(100))]
         dates = [d.strftime("%Y-%m-%d") if (d.hour, d.minute) == (0, 0) else d.strftime("%Y-%m-%d %H:%M")
                  for d in native.equity_strategy.index]

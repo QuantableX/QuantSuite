@@ -142,6 +142,10 @@ def create(request):
             from .lab_compare import validate_request
             from .lab_profit import prepare
             doc.update(prepare(request, {"budget": 200_000} if kind == "aggregates" else None))
+            if kind == "aggregates":
+                # The user's saved aggregates of the same kind: always ranked, and searched around.
+                from .lab_profit import saved_aggregates
+                doc["seeds"] = saved_aggregates(doc["config"])
             validate_request(doc)
         save(path / "run.json", doc)
         return summary(path)
