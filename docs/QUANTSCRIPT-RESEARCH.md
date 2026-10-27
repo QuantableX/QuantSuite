@@ -89,6 +89,22 @@ The suite's normal capability approval gate applies to writes. An MCP tool
 does not contain a separate language model: the connected AI authors the source,
 and the native service checks, evaluates and stores it.
 
+## Data rules for systems
+
+These hold for QuantSystems backtests, live tracking and both system report tools.
+
+- **Top N:** every saved system ranks daily, from that day's CoinMarketCap
+  snapshot (point in time, no survivorship).
+- **Candles:** Binance first; a coin Binance does not list comes from Bybit, OKX,
+  Coinbase or KuCoin. Never Gate.io or MEXC. A coin keeps the exchange of its
+  saved candles, only missing days are downloaded and a saved day is never
+  rewritten.
+- **Bounded indicator history:** Smithery votes are computed on fixed calendar
+  blocks of a year (from 1970-01-01), each block seeing only the indicator's
+  warm-up before it. A vote on a given day is the same in a backtest, a live
+  replay and today's live signal, and no history older than the warm-up plus a
+  year decides it.
+
 ## Evidence and comparisons
 
 Gauntlet runs snapshot the engine, private library and Forge shelf. They validate
@@ -99,9 +115,10 @@ rule is unchanged. A completed evaluation can contain uncertified candidates.
 
 Profit runs (`kind: "profit"`) take a saved `system` (name or id) or an explicit
 `config`; dates default to the saved start and yesterday (closed history only).
-Empty `indicators` means every distinct version of every base indicator: the
-general version, the one for the system's track (`<key>_opt_1d` for a daily
-system) and Standard, identical settings merged (the general name is kept).
+Empty `indicators` means each base indicator's general version and its version
+for the system's track (`<key>_opt_1d` for a daily system), identical settings
+merged (the general name is kept); Standard only for an indicator without any
+optimized version.
 Aggregate comparisons also rank the user's saved aggregates that use the same
 evaluation settings, search their neighbours and start local search from them;
 leaders that are already saved are marked "Saved as". The top 20 aggregates of
@@ -119,8 +136,8 @@ covers (the report says so). Ranking answers and candles are frozen on first
 use; every candidate receives identical inputs from the longest warm-up. The
 current system runs natively as the reference line.
 
-The search is fixed before results are seen (`plan.json`, `seed`): every
-candidate alone, all pairs and triples of distinct base indicators where they
+The profit overview's search is fixed before results are seen (`plan.json`,
+`seed`): every candidate alone, all pairs and triples of distinct base indicators where they
 fit the budget (else seeded samples), seeded samples of every larger size, and
 three local-search rounds around the leaders (add, remove or swap one member).
 `budget` caps the aggregates tested (default 50,000), `sizes` restricts them,

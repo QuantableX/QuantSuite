@@ -123,7 +123,7 @@
           "title": { "type": "string", "description": "Report title, in English." },
           "system": { "type": "string", "description": "A saved system's name or id (QuantSystems)." },
           "config": { "type": "object", "description": "An explicit system config instead of a saved system." },
-          "indicators": { "type": "array", "items": { "type": "string" }, "description": "Candidate keys; omit for each base indicator's version for the system's track." },
+          "indicators": { "type": "array", "items": { "type": "string" }, "description": "Candidate keys; omit for each indicator's general version and its version for the system's track (1d for a daily system); Standard only for an indicator without any optimized version." },
           "start_date": { "type": "string", "description": "YYYY-MM-DD; default the system's start." },
           "end_date": { "type": "string", "description": "YYYY-MM-DD before today; default yesterday." },
           "top": { "type": "integer", "description": "Aggregates and singles shown, each (default 10)." },
@@ -136,7 +136,7 @@
     {
       "name": "research_aggregate_comparison",
       "command": "plugin:algo|research_aggregate_comparison",
-      "description": "Report tool 3/3: a variable-size aggregate search in a saved QuantSystems system against its current aggregate (or a given reference). Any size from two distinct base indicators; stages fixed before results (reference neighbours, two additions, pairs, balanced sizes, local search). Report: new leader vs current (capital and drawdown), top 10, best of each size, independent later starts, search coverage. Bulk evaluation identical to the native engine; the top 10 and the best small sizes are re-run natively. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. The report also opens in QuantScript → Forge → Research.",
+      "description": "Report tool 3/3: a variable-size aggregate search in a saved QuantSystems system against its current aggregate (or a given reference). Any size from two distinct base indicators; candidates are each indicator's general and 1d (track) version only. Stages fixed before results: the reference, its neighbours and two additions to it, the user's saved systems and the leaders of earlier comparisons with the same settings as starting points, all pairs, growth by size (every one-indicator extension of the best 200 of the size before, while bigger sizes improve), a small random sample, then local search until no single add, remove or swap improves the top 25 or the budget (default 5,000,000) ends; the report says which. Report: new leader vs current (capital and drawdown), top 10, best of each size, independent later starts, search coverage. Bulk evaluation identical to the native engine; the top 10 and the best small sizes are re-run natively. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. The report also opens in QuantScript → Forge → Research.",
       "sideEffects": "write",
       "inputSchema": {
         "type": "object",
@@ -144,7 +144,7 @@
           "title": { "type": "string", "description": "Report title, in English." },
           "system": { "type": "string", "description": "A saved system's name or id (QuantSystems)." },
           "config": { "type": "object", "description": "An explicit system config instead of a saved system." },
-          "indicators": { "type": "array", "items": { "type": "string" }, "description": "Candidate keys; omit for each base indicator's version for the system's track." },
+          "indicators": { "type": "array", "items": { "type": "string" }, "description": "Candidate keys; omit for each indicator's general version and its version for the system's track (1d for a daily system); Standard only for an indicator without any optimized version." },
           "reference": { "type": "array", "items": { "type": "string" }, "description": "The aggregate to beat; omit for the system's own." },
           "start_date": { "type": "string", "description": "YYYY-MM-DD; default the system's start." },
           "end_date": { "type": "string", "description": "YYYY-MM-DD before today; default yesterday." },
