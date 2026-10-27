@@ -171,9 +171,18 @@ def aggregates():
                       'seed': 3, 'restarts': ['2021-01-01', '2030-01-01'], 'system_name': 'Fixture rotation'})
     path = lab.folder(doc['id'])
     compare(path, lab.read(path / 'run.json'))
+    doc = {**lab.read(path / 'run.json'), 'status': 'done'}
+    lab.save(path / 'run.json', doc)
     results = lab.read(path / 'results.json')
     page = render({**doc, 'status': 'done'}, results)
+    # A second comparison with the same settings starts from the first one's leaders and keeps them.
+    again = lab.create({'kind': 'aggregates', 'title': 'Again', 'config': systems['rotation'], 'top': 3, 'budget': 20, 'seed': 9})
+    compare(lab.folder(again['id']), lab.read(lab.folder(again['id']) / 'run.json'))
+    second = lab.read(lab.folder(again['id']) / 'results.json')
+    first_top = [tuple(r['members']) for r in sorted(results['rows'], key=lambda r: -r['metrics']['net_return_multiplier'])[:5]]
     return {'reference': results['reference'], 'budget': doc['budget'], 'seeds': [x['name'] for x in doc['seeds']],
+            'earlier': len(again['earlier']), 'kept': all(m in {tuple(r['members']) for r in second['rows']} for m in first_top),
+            'second_stages': [st['stage'] for st in second['coverage']['stages']],
             'saved_rows': sorted((r['saved_as'], r['members']) for r in results['rows'] if r.get('saved_as')),
             'saved_subjects': sorted(x['saved_as'] for x in results['subjects'] if x.get('saved_as')),
             'subjects': [(s['code'], s['group'], s['members'], s['verified'].get('passed')) for s in results['subjects']],
@@ -289,6 +298,10 @@ class ProfitRunTests(unittest.TestCase):
         self.assertEqual(r["seeds"], ["Fixture rotation", "Saved trio"])
         self.assertEqual(r["saved_rows"], [["Fixture rotation", ["k_mid", "k_slow"]], ["Saved trio", ["k_fast", "k_mid", "k_mid2"]]])
         self.assertIn("Fixture rotation", r["saved_subjects"])
+        # A later comparison keeps every leader found before, even with a smaller budget and another seed.
+        self.assertGreater(r["earlier"], 0)
+        self.assertIn("Leaders of your earlier comparisons", r["second_stages"])
+        self.assertTrue(r["kept"])
         self.assertIn("Pairs", r["stages"])
         self.assertLessEqual(r["aggregates"], 60)
         self.assertEqual(r["best_by_size"], [2, 3, 4])

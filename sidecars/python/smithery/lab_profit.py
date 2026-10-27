@@ -85,16 +85,39 @@ def default_keys(rows, config):
     return list(dict.fromkeys(keys))
 
 
-def saved_aggregates(config):
-    """The user's saved aggregates that are evaluated like ``config``: same universe, cadence, filter and costs."""
+def evaluation(raw):
+    """What decides how a system config evaluates an aggregate: universe, cadence, filter and costs."""
     from dataclasses import fields
     from rotation_lab.rpc import _build_config
     neutral = {"indicator", "compare_trends", "start_date", "end_date", "live_start_date", "min_request_interval"}
+    built = _build_config(raw)
+    return {f.name: getattr(built, f.name) for f in fields(built) if f.name not in neutral}
 
-    def evaluation(raw):
-        built = _build_config(raw)
-        return {f.name: getattr(built, f.name) for f in fields(built) if f.name not in neutral}
 
+def earlier_leaders(config, per_run=20):
+    """The best aggregates of earlier finished comparisons evaluated like ``config``.
+
+    A sampled search can take another path than an earlier one; these keep what
+    was already found in the next ranking."""
+    from .lab import folder, list_runs
+    target, out = evaluation(config), []
+    for run in list_runs():
+        if run.get("kind") not in ("profit", "aggregates") or run.get("status") != "done" or not run.get("config"):
+            continue
+        try:
+            if evaluation(run["config"]) != target:
+                continue
+            rows = read(folder(run["id"]) / "results.json").get("rows") or []
+        except Exception:  # noqa: BLE001 - an unreadable earlier run adds nothing
+            continue
+        rows = sorted((r for r in rows if len(r.get("members") or []) >= 2),
+                      key=lambda r: -((r.get("metrics") or {}).get("net_return_multiplier") or 0))
+        out += [tuple(sorted(r["members"])) for r in rows[:per_run]]
+    return [list(m) for m in dict.fromkeys(out)]
+
+
+def saved_aggregates(config):
+    """The user's saved aggregates that are evaluated like ``config``: same universe, cadence, filter and costs."""
     target, data, out = evaluation(config), saved_systems(), []
     names = {s.get("id"): s.get("name") or s.get("id") for s in data.get("systems", [])}
     for sid, raw in (data.get("systemConfigs") or {}).items():

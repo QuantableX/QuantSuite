@@ -41,13 +41,19 @@ def run(path, doc):
     seeds = [(n, m) for n, m in seeds if len(m) >= 2 and set(m) <= registry.keys()
              and len({registry[k]["base_key"] for k in m}) == len(m)]
     seed_keys = [k for _, m in seeds for k in m]
-    keys = list(dict.fromkeys([*(doc["indicators"] or default_keys(rows, config)), *reference, *seed_keys]))
+    # The best aggregates of earlier comparisons with the same settings: nothing found before is lost.
+    earlier = [tuple(sorted(dict.fromkeys(m))) for m in doc.get("earlier") or []]
+    earlier = [m for m in earlier if len(m) >= 2 and set(m) <= registry.keys()
+               and len({registry[k]["base_key"] for k in m}) == len(m)]
+    keys = list(dict.fromkeys([*(doc["indicators"] or default_keys(rows, config)), *reference, *seed_keys,
+                               *(k for m in earlier for k in m)]))
     unknown = sorted(set(keys) - registry.keys())
     if unknown:
         raise ValueError(f"Unknown indicators: {unknown}")
     keys, duplicates = distinct_keys(keys, registry, config, keep=[*reference, *seed_keys])
     seeds = list({m: n for n, m in ((n, tuple(sorted({duplicates.get(k, k) for k in m}))) for n, m in seeds)}.items())
     saved_as = {m: n for m, n in seeds}
+    earlier = list(dict.fromkeys(tuple(sorted({duplicates.get(k, k) for k in m})) for m in earlier))
     bases = {k: registry[k]["base_key"] for k in keys}
     if len({bases[k] for k in reference}) != len(reference):
         raise ValueError("The reference casts two votes for one base indicator")
@@ -79,6 +85,7 @@ def run(path, doc):
                 "stages": ["Control: the reference",
                            "Your saved aggregates with the same settings (all)",
                            "Neighbours of your saved aggregates: add, remove or swap one member (all)",
+                           "Leaders of your earlier comparisons with the same settings (top 20 of each, all)",
                            "Reference neighbours: add, remove or swap one member (all)",
                            "Two additions to the reference (all if they fit 30% of the budget left, else a seeded sample)",
                            "Pairs (all if they fit 20% of the budget left, else a seeded sample)",
@@ -94,6 +101,8 @@ def run(path, doc):
             search.run("Your saved aggregates", [m for m, _ in seeds])
             search.run("Neighbours of your saved aggregates",
                        [t for m, _ in seeds for t in search.neighbors(m) if allowed(len(t))])
+        if earlier:
+            search.run("Leaders of your earlier comparisons", [m for m in earlier if allowed(len(m))])
         search.run("Reference neighbours", [t for t in search.neighbors(reference) if allowed(len(t))])
         ref_bases = {bases[k] for k in reference}
         additions = [k for k in usable if bases[k] not in ref_bases]
@@ -105,7 +114,7 @@ def run(path, doc):
         if allowed(2):
             search.stage_exhaustive_or_sample("Pairs", 2, 0.2)
         search.stage_balanced("Balanced sizes", [s for s in range(3, max_size + 1) if allowed(s)], 0.45)
-        search.stage_adaptive("Local search, round", 4, 1.0, extra_seeds=[reference, *(m for m, _ in seeds)])
+        search.stage_adaptive("Local search, round", 4, 1.0, extra_seeds=[reference, *(m for m, _ in seeds), *earlier])
         progress(f"Search done: {search.aggregates:,} aggregates in {time.monotonic() - started:,.0f} s")
         leaders = search.leaders(top)
         best = search.best_by_size()
