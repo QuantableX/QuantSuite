@@ -60,7 +60,7 @@ function gotoSystem(id: string) {
   if (!target || target.status !== 'ready') return
   app.setActiveSystem(id)
   void config.load(id)
-  void router.push(`/algo/manual/${id}/${app.viewFor(id)}`)
+  void router.push(`/algo/manual/${id}/${app.lastView}`)
 }
 
 // Ctrl+1 / Ctrl+2 switch systems. Under the V3 warm cache the layout stays
@@ -90,15 +90,20 @@ watch([bootstrapped, () => systems.loaded, () => systems.systems, () => route.va
     return
   }
   const fallback = systems.byId(app.activeSystemId)?.id ?? systems.systems[0]?.id
-  if (fallback) void router.replace(`/algo/manual/${fallback}/${app.viewFor(fallback)}`)
+  if (fallback) void router.replace(`/algo/manual/${fallback}/${app.lastView}`)
   else if (id) void router.replace('/algo/manual')
 }, { immediate: true })
 
-// Remember each system's active view so switching systems restores its own
-// last-open tab rather than carrying the current one across.
+// Remember the open view so switching systems carries it across. Only a view
+// named in the path counts: /algo/manual/:id and /new fall back to 'live' in
+// useActiveView and would otherwise overwrite the tab before redirecting. The
+// warm-cached layout also sees other modules' routes, hence the prefix check.
 watch(
-  [systemId, view],
-  ([id, v]) => app.rememberView(id, v),
+  () => route.value.path,
+  (path) => {
+    if (!path.startsWith('/algo/manual/') || !systemId.value) return
+    if (path.endsWith(`/${view.value}`)) app.rememberView(view.value)
+  },
   { immediate: true },
 )
 </script>

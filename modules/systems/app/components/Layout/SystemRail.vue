@@ -40,7 +40,7 @@ function select(id: string, status: string) {
   if (suppressClick || status !== 'ready') return
   app.setActiveSystem(id)
   void config.load(id)
-  void router.push(`/algo/manual/${id}/${app.viewFor(id)}`)
+  void router.push(`/algo/manual/${id}/${app.lastView}`)
 }
 function toggleGroup(id: string) {
   if (!suppressClick) void groups.toggle(id)
