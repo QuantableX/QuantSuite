@@ -262,8 +262,15 @@ async function toggleEngine() {
   gap: 12px;
 }
 
+/* Cards keep their own height and only the last one fills the column: shared
+   equally, a long member list stretched Data Providers and pushed Local Cache
+   below the window. */
 .qs-settings__side-card {
-  flex: 1;
+  flex: 0 0 auto;
+}
+
+.qs-settings__side-card:last-child {
+  flex: 1 1 auto;
 }
 
 @container manual-settings (max-width: 950px) {

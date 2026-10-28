@@ -87,6 +87,23 @@ class SavedCandleTests(unittest.TestCase):
         self.assertEqual(self.saved(dt.date(2016, 1, 1), dt.date(2016, 1, 1))[dt.date(2016, 1, 1)],
                          (200.0, "ccxt:gate:AAA/USDT"))
 
+    def test_clearing_prices_drops_their_bookkeeping_and_keeps_rankings(self):
+        from rotation_lab import rpc
+        self.cache.upsert_ohlcv([OhlcvRow("sym:AAA", dt.date(2019, 1, 1), 1, 1, 1, 1.0, 1, "ccxt:gate:AAA/USDT", False)])
+        self.cache.set_meta("ohlcv_first:sym:AAA", "2019-01-01")
+        self.cache.set_meta("local_recon_pool", "AAA")
+        with self.cache._conn() as con:
+            con.execute("INSERT INTO rankings(provider, snap_date, rank, symbol, fetched_at) "
+                        "VALUES ('cmc', '2019-01-01', 1, 'AAA', '2019-01-01')")
+        with patch.object(rpc, "get_default_cache", return_value=self.cache):
+            self.assertEqual(rpc._method_clear_cache({"scope": "ohlcv"}), {"ok": True, "scope": "ohlcv"})
+        self.assertEqual(self.saved(dt.date(2019, 1, 1), dt.date(2019, 1, 1)), {})
+        self.assertIsNone(self.cache.get_meta("ohlcv_first:sym:AAA"))
+        self.assertIsNone(self.cache.get_meta("ohlcv_confirmed_v1:1d:sym:AAA"))
+        self.assertEqual(self.cache.get_meta("local_recon_pool"), "AAA")
+        with self.cache._conn() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM rankings").fetchone()[0], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

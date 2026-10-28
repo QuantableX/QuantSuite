@@ -670,6 +670,9 @@ def _method_clear_cache(params: dict[str, Any]) -> dict[str, Any]:
         if scope in ("ohlcv", "all"):
             con.execute("DELETE FROM ohlcv")
             con.execute("DELETE FROM ohlcv_intraday")
+            # The candles' bookkeeping goes with them: a history floor an
+            # earlier exchange reported would otherwise bound the fresh download.
+            con.execute("DELETE FROM meta WHERE key LIKE 'ohlcv_first:%' OR key LIKE 'ohlcv_confirmed_v1:%'")
         if scope == "all":
             con.execute("DELETE FROM coin_map")
             con.execute("DELETE FROM meta")
