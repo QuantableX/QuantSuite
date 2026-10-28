@@ -21,7 +21,9 @@ assert.equal(read('Cargo.toml').match(/\[workspace.package\][\s\S]*?version = "(
 for (const entry of read('Cargo.lock').split('[[package]]').slice(1)) {
   if (!entry.includes('\nsource = ')) assert.equal(entry.match(/version = "([^"]+)"/)[1], entry.includes('name = "tao"') ? '0.35.3' : version, 'Cargo lock workspace version')
 }
-if (process.env.GITHUB_REF_TYPE === 'tag') assert.equal(process.env.GITHUB_REF_NAME, `v${version}`, 'Release tag must match app version')
+// The build workflow names the tag a main push publishes; a run on the tag itself names it too.
+const releaseTag = process.env.RELEASE_TAG || (process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : '')
+if (releaseTag) assert.equal(releaseTag, `v${version}`, 'Release tag must match app version')
 const config = json('apps/src-tauri/tauri.conf.json')
 assert.deepEqual(config.plugins.updater.endpoints, ['https://github.com/QuantableX/QuantSuite/releases/latest/download/latest.json'])
 assert.equal(config.bundle.createUpdaterArtifacts, true)

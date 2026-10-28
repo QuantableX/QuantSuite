@@ -8,7 +8,10 @@ the repository. Publish only the `main` branch and explicit release tags.
 
 The GitHub Actions workflow builds Windows x64 (NSIS and MSI), macOS universal
 (Intel and Apple Silicon), and Linux x64 (AppImage, Debian and RPM). Pull requests
-and main-branch pushes build without release secrets. Only a `v*` tag publishes.
+and main-branch pushes build without release secrets. A main push whose commit
+carries a `v*` tag signs and publishes that release instead. The release builds on
+main and not on the tag because a tag run may restore only the caches of its own
+tag and of main, so each release reuses the Rust cache of the one before.
 Linux builds use Ubuntu 24.04: the screen-capture dependency requires newer
 PipeWire/SPA headers than Ubuntu 22.04 provides. Packages target Ubuntu 24.04+
 or distributions with equivalent or newer system libraries.
@@ -18,13 +21,15 @@ or distributions with equivalent or newer system libraries.
    lockfile with `cargo check --workspace`.
 2. Run `npm run check`, `npm run check:release`, `npm run test:distribution`,
    `npm run test:release` and `npm run build`.
-3. Commit on `main`, push, then create and push the matching tag:
+3. Commit on `main`, create the matching tag, and push both in one command:
 
    ```sh
    git tag v1.0.1
-   git push origin main
-   git push origin v1.0.1
+   git push --atomic origin main v1.0.1
    ```
+
+   A tag pushed after its commit already reached main starts no build; publish
+   it with Run workflow on the tag.
 
 The tag must exactly match the application version. After every platform succeeds,
 the release job collects installers and signatures, generates `latest.json` and
