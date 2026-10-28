@@ -1,10 +1,12 @@
 name: Build QuantSuite
 
 on:
-  # Releases push main and their tag together, so a main push alone would only
-  # repeat the tag run. Run workflow (workflow_dispatch) builds any branch on demand.
+  # Releases push main and their tag together, and the main push builds and
+  # publishes the tag: a tag run may restore only the caches of its own tag and
+  # of main, so tag-triggered builds never found the previous release's Rust
+  # cache. Run workflow (workflow_dispatch) builds any branch or tag on demand.
   push:
-    tags: ['v*']
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -13,20 +15,39 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  # A push to main may carry a release, so it always builds to the end.
+  group: build-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
+      - name: Release tag
+        id: release
+        # The v* tag pushed with this commit, or the tag a manual run started on.
+        run: |
+          tag=
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            refs=$(git ls-remote --tags origin)
+            tag=$(printf '%s\n' "$refs" | awk -v sha="$GITHUB_SHA" '$1 == sha && $2 ~ /^refs\/tags\/v/ && tag == "" { tag = $2 } END { sub(/^refs\/tags\//, "", tag); sub(/\^.*/, "", tag); print tag }')
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+          fi
+          case "$tag" in v*) ;; *) tag= ;; esac
+          echo "Release tag: ${tag:-none}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
       - run: npm run check:release
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
       - run: npm run check:modules && npm run check:css && npm run check:isolation && npm run check:commands
       - run: npm run check:ts && npm run check:components
       - run: npm run test:distribution && npm run test:release
@@ -74,7 +95,7 @@ jobs:
       - name: Check Rust
         run: cargo clippy --workspace --all-targets --locked --keep-going
       - name: Build signed release packages
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: needs.validate.outputs.tag != ''
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -82,7 +103,7 @@ jobs:
           test -n "$TAURI_SIGNING_PRIVATE_KEY" || { echo 'Missing TAURI_SIGNING_PRIVATE_KEY repository secret'; exit 1; }
           npm run tauri:build -- ${{ matrix.args }} -- --locked
       - name: Build CI packages
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: needs.validate.outputs.tag == ''
         run: |
           node -e "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/quantsuite-ci.json', JSON.stringify({bundle:{createUpdaterArtifacts:false}}))"
           npm run tauri:build -- ${{ matrix.args }} --config "$RUNNER_TEMP/quantsuite-ci.json" -- --locked
@@ -105,8 +126,8 @@ jobs:
             target/**/release/bundle/rpm/*.rpm
 
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [validate, build]
+    if: needs.validate.outputs.tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -124,11 +145,12 @@ jobs:
       - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
         # A rebuilt tag replaces the files of its existing release in place.
         run: |
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release/* --clobber
-            gh release edit "$GITHUB_REF_NAME" --latest
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/* --clobber
+            gh release edit "$RELEASE_TAG" --latest
           else
-            gh release create "$GITHUB_REF_NAME" release/* --verify-tag --title "QuantSuite $GITHUB_REF_NAME" --generate-notes --latest
+            gh release create "$RELEASE_TAG" release/* --verify-tag --title "QuantSuite $RELEASE_TAG" --generate-notes --latest
           fi
