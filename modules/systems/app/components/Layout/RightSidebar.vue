@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChevronRight } from 'lucide-vue-next'
 import { useAppStore } from '#systems/stores/app'
 import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
@@ -25,11 +26,11 @@ const trendLabel = computed(() => {
   if (trend === 'aggregate') return aggregateName((ind.aggregate ?? []).length)
   return trend
 })
-// The chips read in the pickers' order, not the stored one: a list keeps the
+// The members read in the pickers' order, not the stored one: a list keeps the
 // order of its last edit, so an aggregate and a comparison of the same
 // indicators could otherwise disagree.
 const { options, compareOptions } = useIndicatorOptions(() => cfg.value)
-/** An aggregate's members, named as chips under its row like Compare's. */
+/** An aggregate's members, listed under its row like Compare's. */
 const trendMembers = computed(() =>
   cfg.value.indicator.trend === 'aggregate' ? sortByOptions(cfg.value.indicator.aggregate ?? [], options.value) : [])
 const compareChips = computed(() => sortByOptions(cfg.value.compareTrends ?? [], compareOptions.value))
@@ -46,6 +47,21 @@ const marketLabel = computed(() => {
   if (ind.trend === 'aggregate') return aggregateName(ind.aggregate.length)
   return ind.trend
 })
+
+type GroupKey = 'trend' | 'compare' | 'market'
+interface Group { key: GroupKey; label: string; value: string; members: string[]; muted: boolean }
+/** Rows with several values: the row counts them, a click lists them one per line. */
+const groups = computed(() => {
+  const rows: Group[] = [{ key: 'trend', label: 'Trend', value: trendLabel.value, members: trendMembers.value, muted: false }]
+  if (view.value !== 'live' && cfg.value.compareTrends?.length) {
+    rows.push({ key: 'compare', label: 'Compare', value: String(cfg.value.compareTrends.length), members: compareChips.value, muted: false })
+  }
+  if (cfg.value.mode !== 'single_asset') {
+    rows.push({ key: 'market', label: 'TOTAL filter', value: marketLabel.value, members: marketMembers.value, muted: !cfg.value.marketFilter })
+  }
+  return rows
+})
+const open = reactive<Record<GroupKey, boolean>>({ trend: false, compare: false, market: false })
 const engineRunning = computed(() => app.engineStatus.status === 'running')
 
 const liveState = computed(() => live.stateFor(systemId.value))
@@ -83,33 +99,22 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
         <div class="qs-context__row"><span>Pair</span><span class="mono">{{ cfg.singleAsset.pair }}</span></div>
         <div class="qs-context__row"><span>Positions</span><span>{{ cfg.singleAsset.direction === 'long_short' ? 'Long/Short' : 'Long/Cash' }}</span></div>
       </template>
-      <div class="qs-context__group">
-        <div class="qs-context__row">
-          <span>Trend</span>
-          <span class="mono">{{ trendLabel }}</span>
+      <div v-for="group in groups" :key="group.key" class="qs-context__group">
+        <button v-if="group.members.length" type="button" class="qs-context__row qs-context__toggle"
+          :aria-expanded="open[group.key]" @click="open[group.key] = !open[group.key]">
+          <span class="qs-context__toggle-label">
+            {{ group.label }}
+            <ChevronRight class="qs-context__chevron" :class="{ 'qs-context__chevron--open': open[group.key] }" :size="12" />
+          </span>
+          <span class="mono qs-context__value" :class="{ 'qs-muted': group.muted }" :title="group.value">{{ group.value }}</span>
+        </button>
+        <div v-else class="qs-context__row">
+          <span>{{ group.label }}</span>
+          <span class="mono qs-context__value" :class="{ 'qs-muted': group.muted }" :title="group.value">{{ group.value }}</span>
         </div>
-        <div v-if="trendMembers.length" class="qs-context__chips">
-          <span v-for="kind in trendMembers" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
-        </div>
-      </div>
-      <div v-if="view !== 'live' && cfg.compareTrends?.length" class="qs-context__group">
-        <div class="qs-context__row">
-          <span>Compare</span>
-          <span class="mono">{{ cfg.compareTrends.length }}</span>
-        </div>
-        <div class="qs-context__chips">
-          <span v-for="kind in compareChips" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
-        </div>
-      </div>
-      <div v-if="cfg.mode !== 'single_asset'" class="qs-context__group">
-        <div class="qs-context__row">
-          <span>TOTAL filter</span>
-          <span class="mono qs-context__compare" :class="cfg.marketFilter ? '' : 'qs-muted'"
-            :title="marketLabel">{{ marketLabel }}</span>
-        </div>
-        <div v-if="marketMembers.length" class="qs-context__chips">
-          <span v-for="kind in marketMembers" :key="kind" class="qs-context__chip mono" :title="kind">{{ kind }}</span>
-        </div>
+        <ul v-if="group.members.length && open[group.key]" class="qs-context__members">
+          <li v-for="kind in group.members" :key="kind" class="mono" :title="kind">{{ kind }}</li>
+        </ul>
       </div>
     </section>
 
@@ -202,34 +207,69 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
   color: var(--qs-text-secondary);
 }
 
-/* A label with several values: the row counts them, chips name them. */
+/* A label with several values: the row counts them, a click lists them. */
 .qs-context__group {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.qs-context__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+.qs-context__toggle {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.qs-context__chip {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 1px 7px;
-  border: 1px solid var(--qs-border-subtle);
-  border-radius: 999px;
-  background: var(--qs-bg-hover);
-  font-size: 11px;
-  line-height: 16px;
+.qs-context__toggle:hover {
   color: var(--qs-text);
 }
 
-.qs-context__compare {
+.qs-context__toggle:focus-visible {
+  outline: 1px solid var(--qs-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.qs-context__toggle-label {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.qs-context__chevron {
+  flex-shrink: 0;
+  color: var(--qs-text-muted);
+  transition: transform 120ms ease;
+}
+
+.qs-context__chevron--open {
+  transform: rotate(90deg);
+}
+
+.qs-context__members {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0 0 0 8px;
+  border-left: 1px solid var(--qs-border-subtle);
+  list-style: none;
+}
+
+.qs-context__members li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 20px;
+  color: var(--qs-text-secondary);
+}
+
+.qs-context__value {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
