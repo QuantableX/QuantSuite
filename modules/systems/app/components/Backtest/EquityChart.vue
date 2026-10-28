@@ -10,6 +10,11 @@ let resizeObserver: ResizeObserver | null = null
 const seriesMap = new Map<string, any>()
 let dataLen = 0
 let disposed = false
+// The fitted view follows the canvas size until the user zooms or pans. A
+// result that lands while the page is off screen is fitted at width 0, which
+// leaves the chart at its minimum bar spacing; resizing alone keeps that
+// spacing and squeezes the curves into the right edge.
+let followFit = true
 
 const logScale = ref(true)
 const autoLock = ref(true)
@@ -165,6 +170,7 @@ async function render() {
       if (chart && container.value && container.value.clientWidth > 0) {
         clearHover()
         chart.applyOptions({ width: container.value.clientWidth, height: container.value.clientHeight })
+        if (followFit) fitPadded()
       }
     })
     resizeObserver.observe(container.value)
@@ -205,12 +211,18 @@ async function render() {
 // and right edges (price axis), instead of letting it touch both edges.
 function fitPadded() {
   if (!chart) return
+  followFit = true
   if (dataLen <= 1) {
     chart.timeScale().fitContent()
     return
   }
   const pad = Math.max(0.5, dataLen * 0.0025)
   chart.timeScale().setVisibleLogicalRange({ from: -pad, to: dataLen - 1 + pad })
+}
+
+/** The user zooms or pans with the wheel or a drag: keep their view on resize. */
+function releaseFit() {
+  followFit = false
 }
 
 function applyScaleOptions() {
@@ -321,7 +333,7 @@ onUnmounted(() => {
       </div>
     </div>
     <div class="qs-chart__plot" @mouseleave="clearHover">
-      <div ref="container" class="qs-chart__canvas" />
+      <div ref="container" class="qs-chart__canvas" @wheel.passive="releaseFit" @pointerdown="releaseFit" />
       <div v-if="hover" class="qs-chart__hover-layer" :style="{ width: `${hover.width}px`, height: `${hover.height}px` }">
         <div ref="tooltip" class="qs-chart__tooltip" :class="`qs-chart__tooltip--${hover.side}`" role="tooltip" @wheel.stop>
           <div class="qs-chart__tooltip-date">{{ hover.date }}</div>
