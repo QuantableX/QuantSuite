@@ -209,14 +209,15 @@ async function addRow() {
 </template>
 
 <style scoped>
-.qf-pl__fund { display: flex; flex-wrap: wrap; gap: 12px; padding: 0 6px 8px 25px; }
+.qf-pl__fund { display: flex; flex-wrap: wrap; gap: 12px; padding: 0 6px 4px 25px; }
+.qf-pl__fund .qf-pl__fund-link { padding-block: 1px; }
 .qf-pl__fund-link { border: 0; background: transparent; padding: 3px 0; color: var(--qf-text-muted); font-size: 11px; cursor: pointer; text-align: left; }
 .qf-pl__fund-link:hover { color: var(--qf-text); }
 .qf-pl__main:focus-within .qf-pl__more, .qf-pl__main:focus-within .qf-pl__del { opacity: 1; }
 .qf-pl {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   container-type: inline-size;
 }
 
@@ -274,8 +275,13 @@ async function addRow() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 6px;
+  padding: 1px 6px;
   border-radius: var(--qf-radius);
+}
+
+/* Row fields are shorter than the form default: a plan is a list first. */
+.qf-pl__main :is(.qf-input, .qf-select) {
+  padding-block: 3px;
 }
 
 .qf-pl__main:hover {
@@ -413,8 +419,7 @@ async function addRow() {
 
 .qf-pl__add {
   align-self: flex-start;
-  margin-top: 2px;
-  padding: 5px 8px;
+  padding: 3px 8px;
   border: none;
   border-radius: var(--qf-radius);
   background: transparent;
