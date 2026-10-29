@@ -15,6 +15,7 @@
  */
 import { Marked, type Tokens } from 'marked'
 import { sanitizeHtml } from '@quantsuite/ui'
+import { parseFileRef } from './files'
 
 let katex: { renderToString: (tex: string, opts: Record<string, unknown>) => string } | null = null
 let katexLoading: Promise<void> | null = null
@@ -186,6 +187,13 @@ marked.use({
         `<button type="button" class="qp-md-copy" data-copy>Copy</button></div>` +
         `<pre><code data-lang="${escapeHtml(lang)}">${code}</code></pre></div>`
       )
+    },
+    /** `src/a.ts:12` in backticks opens in the Files tab (card 13). */
+    codespan(token: Tokens.Codespan) {
+      const ref = parseFileRef(token.text)
+      const text = escapeHtml(token.text)
+      if (!ref) return `<code>${text}</code>`
+      return `<code class="qp-md-file" data-file="${escapeHtml(ref.path)}" data-line="${ref.line ?? ''}" title="Open in the Files tab">${text}</code>`
     },
     link(token: Tokens.Link) {
       const text = this.parser.parseInline(token.tokens)

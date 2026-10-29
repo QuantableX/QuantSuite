@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-files-list"
+description = "Enables the pilot_files_list command without any pre-configured scope."
+commands.allow = ["pilot_files_list"]
+
+[[permission]]
+identifier = "deny-pilot-files-list"
+description = "Denies the pilot_files_list command without any pre-configured scope."
+commands.deny = ["pilot_files_list"]

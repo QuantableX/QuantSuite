@@ -121,7 +121,7 @@ export const qs = {
       shell?: string | null
       cols?: number
       rows?: number
-      owner?: 'console' | 'canvas'
+      owner?: 'console' | 'canvas' | 'pilot-drawer'
     }) =>
       invoke<string>('plugin:console|open_session', {
         request: {

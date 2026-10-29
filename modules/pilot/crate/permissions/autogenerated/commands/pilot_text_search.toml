@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-text-search"
+description = "Enables the pilot_text_search command without any pre-configured scope."
+commands.allow = ["pilot_text_search"]
+
+[[permission]]
+identifier = "deny-pilot-text-search"
+description = "Denies the pilot_text_search command without any pre-configured scope."
+commands.deny = ["pilot_text_search"]

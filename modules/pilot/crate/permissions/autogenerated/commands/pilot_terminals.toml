@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-terminals"
+description = "Enables the pilot_terminals command without any pre-configured scope."
+commands.allow = ["pilot_terminals"]
+
+[[permission]]
+identifier = "deny-pilot-terminals"
+description = "Denies the pilot_terminals command without any pre-configured scope."
+commands.deny = ["pilot_terminals"]

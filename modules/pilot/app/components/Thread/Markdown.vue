@@ -6,12 +6,15 @@
  * never parses per token. Code blocks are coloured once the text stops
  * streaming; KaTeX loads the first time a formula appears. Clicks are
  * delegated: Copy on a code block, external links to the system browser,
- * anything else that looks like a path is copied (the Files tab that opens
- * it arrives with card 13).
+ * file references (`path:line` in backticks, or a link to a path) open in
+ * the Files tab at the line (card 13).
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ensureKatex, hasMath, highlightCode, renderMarkdown } from '#pilot/utils/markdown'
 import { openExternal } from '#pilot/utils/external'
+import { parseFileRef } from '#pilot/utils/files'
+import { usePilotStore } from '#pilot/stores/pilot'
+import { useInspectorStore } from '#pilot/stores/inspector'
 
 const props = withDefaults(defineProps<{ source: string; streaming?: boolean }>(), { streaming: false })
 const emit = defineEmits<{ notice: [text: string] }>()
@@ -75,15 +78,24 @@ async function onClick(e: MouseEvent) {
     }
     return
   }
+  const threadId = usePilotStore().activeId
+  const code = target.closest<HTMLElement>('[data-file]')
+  if (code && threadId && !window.getSelection()?.toString()) {
+    useInspectorStore().openFile(threadId, code.dataset.file ?? '', Number(code.dataset.line) || null)
+    return
+  }
   const link = target.closest<HTMLAnchorElement>('a[href]')
   if (!link) return
   e.preventDefault()
   const href = link.getAttribute('href') ?? ''
   if (/^(https?|mailto):/i.test(href)) {
     void openExternal(href)
-  } else if (href && !href.startsWith('#')) {
-    if (await copyText(decodeURI(href))) emit('notice', `Copied ${decodeURI(href)}`)
+    return
   }
+  if (!href || href.startsWith('#')) return
+  const ref = parseFileRef(decodeURI(href.replace(/^file:\/\/\/?/i, '')))
+  if (ref && threadId) useInspectorStore().openFile(threadId, ref.path, ref.line)
+  else if (await copyText(decodeURI(href))) emit('notice', `Copied ${decodeURI(href)}`)
 }
 </script>
 
@@ -104,6 +116,8 @@ async function onClick(e: MouseEvent) {
 .qp-md :deep(> :first-child) { margin-top: 0; }
 .qp-md :deep(> :last-child) { margin-bottom: 0; }
 .qp-md :deep(p) { margin: 0 0 10px; }
+.qp-md :deep(code.qp-md-file) { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.qp-md :deep(code.qp-md-file:hover) { color: var(--qss-accent, #7aa2f7); }
 .qp-md :deep(h1),
 .qp-md :deep(h2),
 .qp-md :deep(h3),

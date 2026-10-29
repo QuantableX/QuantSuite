@@ -6866,6 +6866,7 @@ dependencies = [
  "dirs 5.0.1",
  "ignore",
  "image 0.25.10",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

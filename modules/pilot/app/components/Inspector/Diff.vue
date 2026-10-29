@@ -12,6 +12,7 @@ import { Columns2, Copy, MessageSquarePlus, RefreshCw, Rows2, WrapText } from 'l
 import { pilot } from '#pilot/utils/invoke'
 import { useInspectorStore, type DiffScope } from '#pilot/stores/inspector'
 import type { DiffList, DiffSides, FileChange } from '#pilot/types'
+import { languageOf } from '#pilot/utils/files'
 
 const props = defineProps<{ threadId: string }>()
 const inspector = useInspectorStore()
@@ -79,12 +80,7 @@ watch(
   }
 )
 
-const LANG: Record<string, string> = {
-  ts: 'typescript', tsx: 'typescript', js: 'javascript', mjs: 'javascript', jsx: 'javascript', vue: 'html', html: 'html',
-  css: 'css', scss: 'scss', json: 'json', md: 'markdown', rs: 'rust', py: 'python', toml: 'ini', yml: 'yaml', yaml: 'yaml',
-  sh: 'shell', ps1: 'powershell', sql: 'sql', go: 'go', java: 'java', cs: 'csharp', cpp: 'cpp', c: 'c', h: 'cpp', xml: 'xml',
-}
-const language = computed(() => LANG[(selected.value ?? '').split('.').pop()?.toLowerCase() ?? ''] ?? 'plaintext')
+const language = computed(() => languageOf(selected.value ?? ''))
 const current = computed<FileChange | null>(() => list.value?.files.find((f) => f.path === selected.value) ?? null)
 const totals = computed(() => (list.value?.files ?? []).reduce((t, f) => ({ a: t.a + f.added, r: t.r + f.removed }), { a: 0, r: 0 }))
 const staged = computed(() => new Set(list.value?.staged ?? []))

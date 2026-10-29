@@ -1,13 +1,17 @@
 /**
  * The inspector: a resizable split inside the main area, beside the
- * conversation (docs/PLAN-QUANTPILOT.md §3). Card 11 brings its Diff tab;
- * Files (13) and Browser (14) join it. Open state, tab and width are a
- * per-device preference.
+ * conversation (docs/PLAN-QUANTPILOT.md §3). Its tabs — Diff (card 11),
+ * Files (card 13), Browser (card 14) — open on demand, close with Ctrl+W
+ * and come back with Ctrl+Shift+T. Open state, tabs and view options are a
+ * per-device preference; the split's width is remembered per thread.
  */
 import { defineStore } from 'pinia'
 
 export type DiffScope = 'turn' | 'uncommitted' | 'branch'
-export type InspectorTab = 'diff'
+export type InspectorTab = 'diff' | 'files' | 'browser'
+
+const TABS: InspectorTab[] = ['diff', 'files', 'browser']
+const DEFAULT_WIDTH = 560
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -28,34 +32,93 @@ function save(key: string, value: unknown) {
 export const useInspectorStore = defineStore('pilot/inspector', {
   state: () => ({
     open: load('pilot.inspector.open', false),
-    tab: 'diff' as InspectorTab,
-    width: load('pilot.inspector.width', 560),
+    /** The open tabs, in order. */
+    tabs: load<InspectorTab[]>('pilot.inspector.tabs', ['diff']).filter((t) => TABS.includes(t)),
+    tab: load<InspectorTab>('pilot.inspector.tab', 'diff'),
+    /** Closed tabs, newest last (Ctrl+Shift+T). */
+    closed: [] as InspectorTab[],
+    /** The split's width per thread. */
+    widths: load<Record<string, number>>('pilot.inspector.widths', {}),
     /** What the Diff tab shows; bumps `nonce` so the same target reopens. */
     target: { scope: 'turn' as DiffScope, turn: null as string | null, path: null as string | null, nonce: 0 },
     sideBySide: load('pilot.diff.split', true),
     wrap: load('pilot.diff.wrap', false),
+    /** The file the Files tab shows, per thread; `nonce` re-reveals the same line. */
+    file: {} as Record<string, { path: string; line: number | null; nonce: number }>,
+    /** Files tab: the tree or the project search beside the viewer. */
+    filesMode: 'tree' as 'tree' | 'search',
+    showTree: load('pilot.files.tree', true),
+    /** Ctrl+P is open. */
+    picker: false,
+    /** Bumped by Ctrl+Shift+F to focus the search field. */
+    searchNonce: 0,
   }),
   actions: {
+    persist() {
+      save('pilot.inspector.open', this.open)
+      save('pilot.inspector.tabs', this.tabs)
+      save('pilot.inspector.tab', this.tab)
+    },
     toggle(open?: boolean) {
       this.open = open ?? !this.open
-      save('pilot.inspector.open', this.open)
+      if (this.open && !this.tabs.length) this.tabs = ['diff']
+      if (this.open && !this.tabs.includes(this.tab)) this.tab = this.tabs[0]
+      this.persist()
     },
-    /** Ctrl+D: the Diff tab in or out. */
+    /** A tab in front, opening it (and the inspector) when needed. */
+    show(tab: InspectorTab) {
+      if (!this.tabs.includes(tab)) this.tabs = TABS.filter((t) => t === tab || this.tabs.includes(t))
+      this.closed = this.closed.filter((t) => t !== tab)
+      this.tab = tab
+      this.open = true
+      this.persist()
+    },
+    /** Ctrl+D and friends: the tab in front, or the inspector closed when it already is. */
     toggleTab(tab: InspectorTab) {
       if (this.open && this.tab === tab) this.toggle(false)
-      else {
-        this.tab = tab
-        this.toggle(true)
-      }
+      else this.show(tab)
+    },
+    /** Ctrl+W: close a tab; the last one closes the inspector. */
+    closeTab(which?: InspectorTab) {
+      const tab = which ?? this.tab
+      if (!this.tabs.includes(tab)) return
+      const i = this.tabs.indexOf(tab)
+      this.tabs = this.tabs.filter((t) => t !== tab)
+      this.closed = [...this.closed.filter((t) => t !== tab), tab]
+      if (!this.tabs.length) this.open = false
+      else if (this.tab === tab) this.tab = this.tabs[Math.min(i, this.tabs.length - 1)]
+      this.persist()
+    },
+    /** Ctrl+Shift+T: the tab closed last comes back. */
+    reopenTab() {
+      const tab = this.closed.at(-1)
+      if (tab) this.show(tab)
     },
     showDiff(scope: DiffScope, turn: string | null = null, path: string | null = null) {
       this.target = { scope, turn, path, nonce: this.target.nonce + 1 }
-      this.tab = 'diff'
-      this.toggle(true)
+      this.show('diff')
     },
-    setWidth(px: number) {
-      this.width = Math.round(px)
-      save('pilot.inspector.width', this.width)
+    /** A file in the Files tab, at a line. */
+    openFile(threadId: string, path: string, line: number | null = null) {
+      this.file[threadId] = { path, line, nonce: (this.file[threadId]?.nonce ?? 0) + 1 }
+      this.filesMode = this.filesMode === 'search' ? 'search' : 'tree'
+      this.show('files')
+    },
+    /** Ctrl+Shift+F: the Files tab with the project search. */
+    showSearch() {
+      this.filesMode = 'search'
+      this.setShowTree(true)
+      this.searchNonce++
+      this.show('files')
+    },
+    widthOf(threadId: string): number {
+      return this.widths[threadId] ?? this.widths['*'] ?? DEFAULT_WIDTH
+    },
+    setWidth(threadId: string, px: number) {
+      const w = Math.round(px)
+      // The last width a thread got is the default for threads without their own.
+      this.widths = { ...this.widths, [threadId]: w, '*': w }
+      save('pilot.inspector.widths', this.widths)
     },
     setView(patch: { sideBySide?: boolean; wrap?: boolean }) {
       if (patch.sideBySide !== undefined) {
@@ -66,6 +129,10 @@ export const useInspectorStore = defineStore('pilot/inspector', {
         this.wrap = patch.wrap
         save('pilot.diff.wrap', patch.wrap)
       }
+    },
+    setShowTree(v: boolean) {
+      this.showTree = v
+      save('pilot.files.tree', v)
     },
   },
 })

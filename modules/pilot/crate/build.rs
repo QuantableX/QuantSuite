@@ -54,6 +54,17 @@ const COMMANDS: &[&str] = &[
     "pilot_pr_create",
     "pilot_links",
     "pilot_pr_refresh",
+    "pilot_files_list",
+    "pilot_file_read",
+    "pilot_file_write",
+    "pilot_file_save_as",
+    "pilot_text_search",
+    "pilot_ports_alive",
+    "pilot_port_owner",
+    "pilot_port_stop",
+    "pilot_terminal_open",
+    "pilot_terminals",
+    "pilot_terminal_close",
 ];
 
 fn main() {

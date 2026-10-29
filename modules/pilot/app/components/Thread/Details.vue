@@ -3,14 +3,21 @@
  * The thread panel (QRightPanel, 220px): the face and one word for what the
  * agent does, then what the conversation does not say at a glance —
  * threads that need you, the model, context fill, cost, tokens, the
- * subscription windows, the files this thread wrote, the last error.
+ * subscription windows, the dev servers it started (card 13: open, stop),
+ * the files this thread wrote (they open in the Files tab), the last error.
  * Sans labels, mono only for numbers (the agent-UI register).
  */
-import { computed } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { inActiveKeepAliveTree, qs } from '@quantsuite/core'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useInspectorStore } from '#pilot/stores/inspector'
+import { serverUrls, useDrawerStore, type DevServer } from '#pilot/stores/drawer'
+import { pilot } from '#pilot/utils/invoke'
+import { openExternal } from '#pilot/utils/external'
 import { basename, dirname, fmtCost, fmtTokens } from '#pilot/utils/format'
 import { formatDuration } from '#pilot/utils/timeline'
+import type { PortOwner } from '#pilot/types'
 
 const props = defineProps<{ threadId: string }>()
 const threads = useThreadStore()
@@ -115,6 +122,71 @@ async function copyPath(p: string) {
     /* clipboard denied */
   }
 }
+
+// ── Dev servers (card 13) ──
+const drawer = useDrawerStore()
+const alive = ref<number[]>([])
+const stopping = ref<{ server: DevServer; owner: PortOwner | null; error: string } | null>(null)
+
+/** What drawer terminals printed, then what the agent's commands printed. */
+const candidates = computed<DevServer[]>(() => {
+  const out = [...(drawer.servers[props.threadId] ?? [])]
+  for (const it of view.value?.items ?? []) {
+    if (it.kind !== 'tool' || typeof it.data.output !== 'string') continue
+    for (const s of serverUrls(it.data.output)) {
+      if (!out.some((x) => x.port === s.port)) out.push({ ...s, ptyId: null, label: String(it.data.title || it.data.name || 'Agent') })
+    }
+  }
+  return out
+})
+const servers = computed(() => candidates.value.filter((s) => alive.value.includes(s.port)))
+
+async function probe() {
+  const ports = candidates.value.map((s) => s.port)
+  alive.value = ports.length ? ((await pilot<number[]>('plugin:pilot|pilot_ports_alive', { ports }).catch(() => [])) ?? []) : []
+}
+let timer: ReturnType<typeof setInterval> | null = null
+function startProbe() {
+  stopProbe()
+  void probe()
+  timer = setInterval(() => candidates.value.length && void probe(), 8000)
+}
+function stopProbe() {
+  if (timer) clearInterval(timer)
+  timer = null
+}
+watch(() => candidates.value.map((s) => s.port).join(','), () => void probe())
+onMounted(() => inActiveKeepAliveTree() && startProbe())
+onActivated(startProbe)
+onDeactivated(stopProbe)
+onBeforeUnmount(stopProbe)
+
+async function askStop(s: DevServer) {
+  if (s.ptyId) {
+    // A drawer terminal's server: Ctrl+C in that terminal.
+    await qs.console.write(s.ptyId, '\x03').catch(() => undefined)
+    setTimeout(() => void probe(), 1200)
+    return
+  }
+  stopping.value = { server: s, owner: null, error: '' }
+  try {
+    stopping.value.owner = (await pilot<PortOwner>('plugin:pilot|pilot_port_owner', { port: s.port })) ?? null
+  } catch (e) {
+    stopping.value.error = String(e)
+  }
+}
+async function confirmStop() {
+  const st = stopping.value
+  if (!st?.owner) return
+  try {
+    await pilot('plugin:pilot|pilot_port_stop', { port: st.server.port, pid: st.owner.pid })
+    stopping.value = null
+    setTimeout(() => void probe(), 800)
+  } catch (e) {
+    st.error = String(e)
+  }
+}
+const inspector = useInspectorStore()
 </script>
 
 <template>
@@ -163,9 +235,28 @@ async function copyPath(p: string) {
       </div>
     </section>
 
+    <section v-if="servers.length" class="qp-block">
+      <h4 class="qp-block-title">Servers</h4>
+      <div v-for="s in servers" :key="s.port" class="qp-srv">
+        <span class="qp-srv-port mono" :title="`${s.url} — from ${s.label}`">:{{ s.port }}</span>
+        <span class="qp-srv-from" :title="s.label">{{ s.label }}</span>
+        <button class="qp-srv-btn" :title="`Open ${s.url}`" @click="openExternal(s.url)">Open</button>
+        <button class="qp-srv-btn" :title="s.ptyId ? 'Ctrl+C in its terminal' : 'End the process that holds the port'" @click="askStop(s)">Stop</button>
+      </div>
+      <div v-if="stopping" class="qp-srv-confirm" role="alertdialog">
+        <template v-if="stopping.error">{{ stopping.error }}</template>
+        <template v-else-if="stopping.owner">End {{ stopping.owner.name }} (PID <span class="mono">{{ stopping.owner.pid }}</span>) and what it started?</template>
+        <template v-else>Looking up the process…</template>
+        <span class="qp-srv-actions">
+          <button class="qp-srv-btn" @click="stopping = null">{{ stopping.error ? 'Close' : 'Keep' }}</button>
+          <button v-if="stopping.owner && !stopping.error" class="qp-srv-btn danger" @click="confirmStop">End it</button>
+        </span>
+      </div>
+    </section>
+
     <section v-if="files.length" class="qp-block qp-files">
       <h4 class="qp-block-title">Files</h4>
-      <button v-for="p in files" :key="p" class="qp-file" :title="`${p} — click to copy the path`" @click="copyPath(p)">
+      <button v-for="p in files" :key="p" class="qp-file" :title="`${p} — click to open, right-click to copy the path`" @click="inspector.openFile(threadId, p)" @contextmenu.prevent="copyPath(p)">
         <span class="qp-file-name">{{ basename(p) }}</span>
         <span class="qp-file-dir">{{ dirname(p) }}</span>
       </button>
@@ -179,6 +270,14 @@ async function copyPath(p: string) {
 </template>
 
 <style scoped>
+.qp-srv { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
+.qp-srv-port { color: var(--qss-success, #34d399); font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11.5px; }
+.qp-srv-from { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--qss-text-muted, #6e6e7a); }
+.qp-srv-btn { padding: 1px 6px; border: 1px solid var(--qss-border-subtle, #35353d); border-radius: 5px; background: transparent; color: var(--qss-text-secondary, #9a9aa5); font: inherit; font-size: 11px; cursor: pointer; }
+.qp-srv-btn:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
+.qp-srv-btn.danger { color: var(--qss-error, #f87171); }
+.qp-srv-confirm { margin-top: 4px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--qss-border, #47474f); background: var(--qss-bg-raised, #1f1f25); font-size: 11.5px; line-height: 1.5; color: var(--qss-text-secondary, #9a9aa5); }
+.qp-srv-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; }
 .qp-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow-y: auto; }
 .qp-hero { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 12px 12px; border-bottom: 1px solid var(--qss-border-subtle, #35353d); }
 .qp-hero-face { width: 92px; }

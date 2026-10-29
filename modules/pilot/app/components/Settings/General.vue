@@ -29,6 +29,7 @@ const draft = reactive<PilotSettings>({
   newThreadWorkspace: 'local',
   worktreePrefix: 'quantpilot/',
   commitStyle: 'repository',
+  actions: {},
 })
 const notice = ref('')
 const busy = ref(false)
@@ -55,6 +56,7 @@ function pull() {
   draft.newThreadWorkspace = s.newThreadWorkspace ?? 'local'
   draft.worktreePrefix = s.worktreePrefix ?? 'quantpilot/'
   draft.commitStyle = s.commitStyle ?? 'repository'
+  draft.actions = JSON.parse(JSON.stringify(s.actions ?? {}))
 }
 onMounted(async () => {
   if (!store.settings) await store.loadSettings()
@@ -78,6 +80,8 @@ async function save() {
       model: { ...draft.model },
       custom: draft.custom.map((c) => ({ ...c })),
       autoSettleDays: Math.max(0, Math.min(365, Math.round(Number(draft.autoSettleDays) || 0))),
+      // Project actions have their own section; this one never overwrites them.
+      actions: store.settings?.actions ?? {},
     })
     notice.value = 'Saved.'
   } catch (e) {

@@ -29,10 +29,13 @@ const current = computed<SettingsSection | null>(() => {
   return pool.find((s) => s.id === selected.value?.id) ?? null
 })
 
-function openFor(id: string | null) {
+function openFor(id: string | null, section: string | null = null) {
   moduleId.value = id
-  // Land on the module's first section when it has any; suite otherwise.
-  if (id && settingsSectionsFor(id).length > 0) {
+  // A named section of the module when asked for one; else its first
+  // section when it has any; suite otherwise.
+  if (id && section && settingsSectionsFor(id).some((s) => s.id === section)) {
+    selected.value = { group: 'module', id: section }
+  } else if (id && settingsSectionsFor(id).length > 0) {
     selected.value = { group: 'module', id: settingsSectionsFor(id)[0]!.id }
   } else if (suiteSections.value.length > 0) {
     selected.value = { group: 'suite', id: suiteSections.value[0]!.id }
@@ -48,7 +51,7 @@ function close() {
 
 function onSettingsEvent(e: Event) {
   const detail = (e as CustomEvent).detail
-  openFor(typeof detail?.module === 'string' ? detail.module : null)
+  openFor(typeof detail?.module === 'string' ? detail.module : null, typeof detail?.section === 'string' ? detail.section : null)
 }
 
 function onKeydown(e: KeyboardEvent) {

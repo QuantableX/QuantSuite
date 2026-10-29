@@ -19,6 +19,7 @@ import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
 import { useInspectorStore } from '#pilot/stores/inspector'
+import { useDrawerStore } from '#pilot/stores/drawer'
 import { chime } from '#pilot/utils/chime'
 import { threadReference } from '#pilot/utils/format'
 import type { PilotEnvelope, ThreadEnvelope } from '#pilot/types'
@@ -29,6 +30,7 @@ const threads = useThreadStore()
 const sidebar = useSidebarStore()
 const git = useGitStore()
 const inspector = useInspectorStore()
+const drawer = useDrawerStore()
 
 useTauriEvent<ThreadEnvelope>('pilot-thread-event', (envelope) => {
   threads.apply(envelope)
@@ -59,6 +61,7 @@ useTauriEvent<PilotEnvelope>('pilot-event', (envelope) => {
 })
 useTauriEvent<{ id: string; data: string }>('console-output', (payload) => {
   store.onOutput(payload.id, payload.data)
+  drawer.onOutput(payload.id, payload.data)
 })
 useTauriEvent<{ id: string; state: string }>('console-session', (payload) => {
   if (payload.state === 'exited') store.ptyExited(payload.id)
@@ -244,6 +247,50 @@ useShortcuts([
       e.preventDefault()
       inspector.toggleTab('diff')
     },
+  },
+  // Card 13: Files tab, file picker, project search, closing and reopening inspector tabs, the terminal drawer.
+  {
+    key: 'F',
+    ctrl: true,
+    shift: true,
+    alt: false,
+    handler: (e) => onActive(e, () => inspector.showSearch()),
+  },
+  {
+    key: 'p',
+    ctrl: true,
+    shift: false,
+    alt: false,
+    handler: (e) => onActive(e, () => (inspector.picker = true)),
+  },
+  {
+    key: 'w',
+    ctrl: true,
+    shift: false,
+    alt: false,
+    handler: (e) => {
+      if (!inspector.open) return
+      e.preventDefault()
+      inspector.closeTab()
+    },
+  },
+  {
+    key: 'T',
+    ctrl: true,
+    shift: true,
+    alt: false,
+    handler: (e) => {
+      if (!inspector.closed.length) return
+      e.preventDefault()
+      inspector.reopenTab()
+    },
+  },
+  {
+    key: 'j',
+    ctrl: true,
+    shift: false,
+    alt: false,
+    handler: (e) => onActive(e, (id) => drawer.toggle(id)),
   },
   // The wildcard-modifier rule: Ctrl+Alt+B and Ctrl+Shift+B before plain Ctrl+B.
   {

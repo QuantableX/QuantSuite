@@ -1,29 +1,39 @@
 <script setup lang="ts">
 /**
- * The inspector split (card 11): a pointer-dragged edge on the left, an
- * icon tab bar, the tab's content. Ctrl+Alt+B toggles it, Ctrl+D the Diff
- * tab. Wide content lives here, never in the 220 px side panels.
+ * The inspector split (cards 11, 13): a pointer-dragged edge on the left
+ * (the width is remembered per thread), closeable tabs — Ctrl+W closes the
+ * one in front, Ctrl+Shift+T brings it back — and the tab's content.
+ * Ctrl+Alt+B toggles the split, Ctrl+D the Diff tab; Ctrl+P and Ctrl+Shift+F
+ * open Files.
+ * Wide content lives here, never in the 220 px side panels.
  */
-import { onBeforeUnmount, ref } from 'vue'
-import { GitCompare, X } from 'lucide-vue-next'
-import { useInspectorStore } from '#pilot/stores/inspector'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { FolderTree, GitCompare, X } from 'lucide-vue-next'
+import { useInspectorStore, type InspectorTab } from '#pilot/stores/inspector'
 
-defineProps<{ threadId: string }>()
+const props = defineProps<{ threadId: string }>()
 const inspector = useInspectorStore()
 const root = ref<HTMLElement | null>(null)
 let drag: { startX: number; startW: number; max: number } | null = null
 
+const META: Record<string, { label: string; icon: unknown; key: string }> = {
+  diff: { label: 'Diff', icon: GitCompare, key: 'Ctrl+D' },
+  files: { label: 'Files', icon: FolderTree, key: 'Ctrl+P picks a file' },
+}
+const tabs = computed(() => inspector.tabs.filter((t) => t in META))
+const closedOnes = computed(() => (Object.keys(META) as InspectorTab[]).filter((t) => !inspector.tabs.includes(t)))
+
 function onDown(e: PointerEvent) {
   if (e.button !== 0) return
   const host = root.value?.parentElement
-  drag = { startX: e.clientX, startW: inspector.width, max: (host?.clientWidth ?? 1200) - 360 }
+  drag = { startX: e.clientX, startW: inspector.widthOf(props.threadId), max: (host?.clientWidth ?? 1200) - 360 }
   ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
   e.preventDefault()
 }
 function onMove(e: PointerEvent) {
   if (!drag) return
   const w = drag.startW + (drag.startX - e.clientX)
-  inspector.setWidth(Math.max(320, Math.min(drag.max, w)))
+  inspector.setWidth(props.threadId, Math.max(320, Math.min(drag.max, w)))
 }
 function onUp() {
   drag = null
@@ -32,16 +42,40 @@ onBeforeUnmount(() => (drag = null))
 </script>
 
 <template>
-  <aside ref="root" class="qp-insp" :style="{ width: `${inspector.width}px` }">
+  <aside ref="root" class="qp-insp" :style="{ width: `${inspector.widthOf(threadId)}px` }">
     <div class="qp-insp-edge" title="Drag to resize" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp" />
     <div class="qp-insp-tabs" role="tablist">
-      <button class="qp-insp-tab" role="tab" :aria-selected="inspector.tab === 'diff'" :class="{ on: inspector.tab === 'diff' }" title="Diff (Ctrl+D)" @click="inspector.tab = 'diff'">
-        <GitCompare :size="14" /> Diff
+      <div
+        v-for="t in tabs"
+        :key="t"
+        class="qp-insp-tab"
+        role="tab"
+        tabindex="0"
+        :aria-selected="inspector.tab === t"
+        :class="{ on: inspector.tab === t }"
+        :title="`${META[t].label} (${META[t].key})`"
+        @click="inspector.show(t)"
+        @keydown.enter="inspector.show(t)"
+        @auxclick.middle.prevent="inspector.closeTab(t)"
+      >
+        <component :is="META[t].icon" :size="14" />
+        <span>{{ META[t].label }}</span>
+        <button class="qp-insp-tab-x" :title="`Close ${META[t].label} (Ctrl+W)`" @click.stop="inspector.closeTab(t)"><X :size="12" /></button>
+      </div>
+      <button
+        v-for="t in closedOnes"
+        :key="`add-${t}`"
+        class="qp-insp-add"
+        :title="`Open ${META[t].label} (${META[t].key})`"
+        @click="inspector.show(t)"
+      >
+        <component :is="META[t].icon" :size="14" />
       </button>
       <button class="qp-insp-close" title="Close the inspector (Ctrl+Alt+B)" @click="inspector.toggle(false)"><X :size="14" /></button>
     </div>
     <div class="qp-insp-body">
       <PilotInspectorDiff v-if="inspector.tab === 'diff'" :thread-id="threadId" />
+      <PilotInspectorFiles v-else-if="inspector.tab === 'files'" :thread-id="threadId" />
     </div>
   </aside>
 </template>
@@ -64,16 +98,23 @@ onBeforeUnmount(() => (drag = null))
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 9px;
-  border: none;
+  padding: 3px 4px 3px 9px;
   border-radius: 6px;
-  background: transparent;
   color: var(--qss-text-secondary, #9a9aa5);
-  font: inherit;
   font-size: 12px;
   cursor: pointer;
+  user-select: none;
+  outline: none;
 }
+.qp-insp-tab:hover { background: var(--qss-bg-hover, #313139); }
+.qp-insp-tab:focus-visible { box-shadow: 0 0 0 1px var(--qss-accent, #7aa2f7); }
 .qp-insp-tab.on { background: var(--qss-bg-card, #292930); color: var(--qss-text, #d4d4d8); }
+.qp-insp-tab-x { display: inline-flex; padding: 2px; border: none; border-radius: 4px; background: transparent; color: var(--qss-text-muted, #6e6e7a); cursor: pointer; opacity: 0; }
+.qp-insp-tab:hover .qp-insp-tab-x,
+.qp-insp-tab.on .qp-insp-tab-x { opacity: 1; }
+.qp-insp-tab-x:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
+.qp-insp-add { display: inline-flex; padding: 4px; border: none; border-radius: 5px; background: transparent; color: var(--qss-text-muted, #6e6e7a); cursor: pointer; }
+.qp-insp-add:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
 .qp-insp-close { margin-left: auto; display: inline-flex; padding: 3px; border: none; border-radius: 5px; background: transparent; color: var(--qss-text-muted, #6e6e7a); cursor: pointer; }
 .qp-insp-close:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
 .qp-insp-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }

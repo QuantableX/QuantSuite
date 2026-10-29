@@ -31,6 +31,8 @@ tokio = { workspace = true }
 ignore = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 base64 = "0.22"
+# Project text search in the Files tab (card 13).
+regex = "1"
 
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
 # The PTYs: one registry with the console, one output channel, one owner rule.
