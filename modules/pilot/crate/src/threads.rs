@@ -14,6 +14,7 @@ use crate::git::{self, BranchInfo, CleanupCheck, RepoInfo};
 use crate::gitops::{self, Generated, GitStatus, Link};
 use crate::files::{self, DirEntry, FileContent, PortOwner, SearchResult};
 use crate::terminals::{self, DrawerTerm, Hook};
+use crate::browser::{self, BrowserState, Listener};
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
 use crate::{adapters, context_of, contexts, lock, mcp_url, now, prompt, providers, shell, PilotState};
@@ -1449,6 +1450,70 @@ pub fn pilot_terminal_close(app: AppHandle, state: State<'_, PilotState>, pty_id
     Ok(())
 }
 
+// ── Browser tab (card 14) ──
+
+#[tauri::command]
+pub async fn pilot_browser_open(app: AppHandle, webview: tauri::Webview, url: String, bounds: browser::Bounds, zoom: Option<f64>) -> Result<browser::Status, String> {
+    browser::guard(&webview)?;
+    let state = app.state::<BrowserState>();
+    let _serial = state.serial().lock().await;
+    browser::open(&app, &webview, &url, bounds, zoom.unwrap_or(1.0))
+}
+
+#[tauri::command]
+pub async fn pilot_browser_bounds(app: AppHandle, webview: tauri::Webview, bounds: browser::Bounds, visible: bool) -> Result<(), String> {
+    browser::guard(&webview)?;
+    let state = app.state::<BrowserState>();
+    let _serial = state.serial().lock().await;
+    browser::set_bounds(&app, &webview, bounds, visible)
+}
+
+#[tauri::command]
+pub async fn pilot_browser_action(app: AppHandle, webview: tauri::Webview, action: String) -> Result<(), String> {
+    browser::guard(&webview)?;
+    browser::action(&app, &action)
+}
+
+#[tauri::command]
+pub async fn pilot_browser_zoom(app: AppHandle, webview: tauri::Webview, zoom: f64) -> Result<f64, String> {
+    browser::guard(&webview)?;
+    browser::zoom(&app, zoom)
+}
+
+#[tauri::command]
+pub async fn pilot_browser_close(app: AppHandle, webview: tauri::Webview) -> Result<(), String> {
+    browser::guard(&webview)?;
+    let state = app.state::<BrowserState>();
+    let _serial = state.serial().lock().await;
+    browser::close(&app)
+}
+
+#[tauri::command]
+pub async fn pilot_browser_pick(app: AppHandle, webview: tauri::Webview, enabled: bool) -> Result<(), String> {
+    browser::guard(&webview)?;
+    browser::pick(app, enabled).await
+}
+
+/// The preview's visible viewport as an image attachment of the thread (5 MiB at most); nothing is sent.
+#[tauri::command]
+pub async fn pilot_browser_capture(app: AppHandle, webview: tauri::Webview, id: String) -> Result<SavedAttachment, String> {
+    browser::guard(&webview)?;
+    let png = browser::capture(&app).await?;
+    let state = app.state::<PilotState>();
+    let saved = save_image(&state, &id, "screenshot", &png)?;
+    if saved.size > 5 * 1024 * 1024 {
+        let _ = std::fs::remove_file(&saved.path);
+        return Err("the screenshot is larger than 5 MiB — make the browser smaller".into());
+    }
+    Ok(saved)
+}
+
+/// Local TCP listeners for the start page — once per open or refresh, never polled.
+#[tauri::command(async)]
+pub fn pilot_listeners() -> Result<Vec<Listener>, String> {
+    browser::listeners()
+}
+
 // ── Composer context (card 9) ──
 
 /// `@` in the composer: files and folders of the thread's checkout.
@@ -1498,9 +1563,13 @@ pub struct SavedAttachment {
 #[tauri::command(async)]
 pub fn pilot_attachment_save_image(state: State<'_, PilotState>, id: String, name: String, data: String) -> Result<SavedAttachment, String> {
     let bytes = context::unb64(&data)?;
-    let img = context::normalize_image(&bytes)?;
-    let stem = safe_name(Path::new(&name).file_stem().and_then(|s| s.to_str()).unwrap_or("image"));
-    let file = attachment_dir(&state, &id)?.join(format!("{stem}-{}.png", &uuid::Uuid::new_v4().to_string()[..8]));
+    save_image(&state, &id, &name, &bytes)
+}
+
+fn save_image(state: &PilotState, id: &str, name: &str, bytes: &[u8]) -> Result<SavedAttachment, String> {
+    let img = context::normalize_image(bytes)?;
+    let stem = safe_name(Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or("image"));
+    let file = attachment_dir(state, id)?.join(format!("{stem}-{}.png", &uuid::Uuid::new_v4().to_string()[..8]));
     std::fs::write(&file, &img.png).map_err(|e| format!("could not save the image: {e}"))?;
     Ok(SavedAttachment {
         kind: "image".into(),

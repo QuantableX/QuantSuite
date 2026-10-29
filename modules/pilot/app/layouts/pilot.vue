@@ -292,6 +292,13 @@ useShortcuts([
     alt: false,
     handler: (e) => onActive(e, (id) => drawer.toggle(id)),
   },
+  {
+    key: 'J',
+    ctrl: true,
+    shift: true,
+    alt: false,
+    handler: (e) => onActive(e, () => inspector.toggleTab('browser')),
+  },
   // The wildcard-modifier rule: Ctrl+Alt+B and Ctrl+Shift+B before plain Ctrl+B.
   {
     key: 'b',

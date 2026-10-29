@@ -213,6 +213,36 @@ export interface PortOwner {
   name: string
 }
 
+// ── Browser tab (card 14) ──
+
+export interface BrowserStatus {
+  url: string
+  title: string
+  loading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+  picking: boolean
+  zoom: number
+}
+
+/** An element picked in the preview — untrusted page content. */
+export interface ElementPick {
+  url: string
+  title: string
+  selector: string
+  tag: string
+  text: string
+  html: string
+  bounds: { x: number; y: number; width: number; height: number }
+}
+
+/** A local TCP listener for the browser's start page. */
+export interface Listener {
+  port: number
+  pid: number
+  process: string
+}
+
 // ── Branch toolbar (card 10) ──
 
 export interface RepoInfo {

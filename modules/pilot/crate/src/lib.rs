@@ -14,6 +14,7 @@
 //! the sink that forwards signals to the webview.
 
 mod adapters;
+mod browser;
 mod checkpoints;
 mod claude;
 mod codex;
@@ -631,6 +632,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 files: context::FileIndex::default(),
                 drawer: terminals::Drawer::default(),
             });
+            app.manage(browser::BrowserState::default());
 
             qs_core::tray::register_entry(
                 app,
@@ -710,6 +712,14 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_terminal_open,
             threads::pilot_terminals,
             threads::pilot_terminal_close,
+            threads::pilot_browser_open,
+            threads::pilot_browser_bounds,
+            threads::pilot_browser_action,
+            threads::pilot_browser_zoom,
+            threads::pilot_browser_close,
+            threads::pilot_browser_pick,
+            threads::pilot_browser_capture,
+            threads::pilot_listeners,
         ]))
         .build()
 }

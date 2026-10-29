@@ -70,6 +70,14 @@ Default permissions for the pilot module.
 - `allow-pilot-terminal-open`
 - `allow-pilot-terminals`
 - `allow-pilot-terminal-close`
+- `allow-pilot-browser-open`
+- `allow-pilot-browser-bounds`
+- `allow-pilot-browser-action`
+- `allow-pilot-browser-zoom`
+- `allow-pilot-browser-close`
+- `allow-pilot-browser-pick`
+- `allow-pilot-browser-capture`
+- `allow-pilot-listeners`
 
 ## Permission Table
 
@@ -154,6 +162,188 @@ Enables the pilot_attachment_save_text command without any pre-configured scope.
 <td>
 
 Denies the pilot_attachment_save_text command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-action`
+
+</td>
+<td>
+
+Enables the pilot_browser_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-action`
+
+</td>
+<td>
+
+Denies the pilot_browser_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-bounds`
+
+</td>
+<td>
+
+Enables the pilot_browser_bounds command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-bounds`
+
+</td>
+<td>
+
+Denies the pilot_browser_bounds command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-capture`
+
+</td>
+<td>
+
+Enables the pilot_browser_capture command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-capture`
+
+</td>
+<td>
+
+Denies the pilot_browser_capture command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-close`
+
+</td>
+<td>
+
+Enables the pilot_browser_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-close`
+
+</td>
+<td>
+
+Denies the pilot_browser_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-open`
+
+</td>
+<td>
+
+Enables the pilot_browser_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-open`
+
+</td>
+<td>
+
+Denies the pilot_browser_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-pick`
+
+</td>
+<td>
+
+Enables the pilot_browser_pick command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-pick`
+
+</td>
+<td>
+
+Denies the pilot_browser_pick command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-zoom`
+
+</td>
+<td>
+
+Enables the pilot_browser_zoom command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-zoom`
+
+</td>
+<td>
+
+Denies the pilot_browser_zoom command without any pre-configured scope.
 
 </td>
 </tr>
@@ -674,6 +864,32 @@ Enables the pilot_links command without any pre-configured scope.
 <td>
 
 Denies the pilot_links command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-listeners`
+
+</td>
+<td>
+
+Enables the pilot_listeners command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-listeners`
+
+</td>
+<td>
+
+Denies the pilot_listeners command without any pre-configured scope.
 
 </td>
 </tr>

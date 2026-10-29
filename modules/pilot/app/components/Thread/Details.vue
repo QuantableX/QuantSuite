@@ -14,7 +14,6 @@ import { usePilotStore } from '#pilot/stores/pilot'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { serverUrls, useDrawerStore, type DevServer } from '#pilot/stores/drawer'
 import { pilot } from '#pilot/utils/invoke'
-import { openExternal } from '#pilot/utils/external'
 import { basename, dirname, fmtCost, fmtTokens } from '#pilot/utils/format'
 import { formatDuration } from '#pilot/utils/timeline'
 import type { PortOwner } from '#pilot/types'
@@ -240,7 +239,7 @@ const inspector = useInspectorStore()
       <div v-for="s in servers" :key="s.port" class="qp-srv">
         <span class="qp-srv-port mono" :title="`${s.url} — from ${s.label}`">:{{ s.port }}</span>
         <span class="qp-srv-from" :title="s.label">{{ s.label }}</span>
-        <button class="qp-srv-btn" :title="`Open ${s.url}`" @click="openExternal(s.url)">Open</button>
+        <button class="qp-srv-btn" :title="`Open ${s.url} in the Browser tab`" @click="inspector.openBrowser(threadId, s.url)">Open</button>
         <button class="qp-srv-btn" :title="s.ptyId ? 'Ctrl+C in its terminal' : 'End the process that holds the port'" @click="askStop(s)">Stop</button>
       </div>
       <div v-if="stopping" class="qp-srv-confirm" role="alertdialog">

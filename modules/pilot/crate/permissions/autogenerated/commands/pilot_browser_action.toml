@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-browser-action"
+description = "Enables the pilot_browser_action command without any pre-configured scope."
+commands.allow = ["pilot_browser_action"]
+
+[[permission]]
+identifier = "deny-pilot-browser-action"
+description = "Denies the pilot_browser_action command without any pre-configured scope."
+commands.deny = ["pilot_browser_action"]
