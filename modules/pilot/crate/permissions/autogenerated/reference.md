@@ -16,6 +16,13 @@ Default permissions for the pilot module.
 - `allow-pilot-session-delete`
 - `allow-pilot-session-update`
 - `allow-pilot-runtime-state`
+- `allow-pilot-thread-create`
+- `allow-pilot-thread-snapshot`
+- `allow-pilot-thread-send`
+- `allow-pilot-thread-answer`
+- `allow-pilot-thread-interrupt`
+- `allow-pilot-thread-update`
+- `allow-pilot-provider-catalog`
 
 ## Permission Table
 
@@ -48,6 +55,32 @@ Enables the pilot_contexts command without any pre-configured scope.
 <td>
 
 Denies the pilot_contexts command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-provider-catalog`
+
+</td>
+<td>
+
+Enables the pilot_provider_catalog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-provider-catalog`
+
+</td>
+<td>
+
+Denies the pilot_provider_catalog command without any pre-configured scope.
 
 </td>
 </tr>
@@ -334,6 +367,162 @@ Enables the pilot_status command without any pre-configured scope.
 <td>
 
 Denies the pilot_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-answer`
+
+</td>
+<td>
+
+Enables the pilot_thread_answer command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-answer`
+
+</td>
+<td>
+
+Denies the pilot_thread_answer command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-create`
+
+</td>
+<td>
+
+Enables the pilot_thread_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-create`
+
+</td>
+<td>
+
+Denies the pilot_thread_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-interrupt`
+
+</td>
+<td>
+
+Enables the pilot_thread_interrupt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-interrupt`
+
+</td>
+<td>
+
+Denies the pilot_thread_interrupt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-send`
+
+</td>
+<td>
+
+Enables the pilot_thread_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-send`
+
+</td>
+<td>
+
+Denies the pilot_thread_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-snapshot`
+
+</td>
+<td>
+
+Enables the pilot_thread_snapshot command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-snapshot`
+
+</td>
+<td>
+
+Denies the pilot_thread_snapshot command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-update`
+
+</td>
+<td>
+
+Enables the pilot_thread_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-update`
+
+</td>
+<td>
+
+Denies the pilot_thread_update command without any pre-configured scope.
 
 </td>
 </tr>

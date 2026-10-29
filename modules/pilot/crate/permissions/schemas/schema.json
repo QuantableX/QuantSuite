@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the pilot_contexts command without any pre-configured scope."
         },
         {
+          "description": "Enables the pilot_provider_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-provider-catalog",
+          "markdownDescription": "Enables the pilot_provider_catalog command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_provider_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-provider-catalog",
+          "markdownDescription": "Denies the pilot_provider_catalog command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pilot_runtime_state command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pilot-runtime-state",
@@ -439,6 +451,78 @@
           "markdownDescription": "Denies the pilot_status command without any pre-configured scope."
         },
         {
+          "description": "Enables the pilot_thread_answer command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-thread-answer",
+          "markdownDescription": "Enables the pilot_thread_answer command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_thread_answer command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-thread-answer",
+          "markdownDescription": "Denies the pilot_thread_answer command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_thread_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-thread-create",
+          "markdownDescription": "Enables the pilot_thread_create command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_thread_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-thread-create",
+          "markdownDescription": "Denies the pilot_thread_create command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_thread_interrupt command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-thread-interrupt",
+          "markdownDescription": "Enables the pilot_thread_interrupt command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_thread_interrupt command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-thread-interrupt",
+          "markdownDescription": "Denies the pilot_thread_interrupt command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_thread_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-thread-send",
+          "markdownDescription": "Enables the pilot_thread_send command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_thread_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-thread-send",
+          "markdownDescription": "Denies the pilot_thread_send command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_thread_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-thread-snapshot",
+          "markdownDescription": "Enables the pilot_thread_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_thread_snapshot command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-thread-snapshot",
+          "markdownDescription": "Denies the pilot_thread_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_thread_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-thread-update",
+          "markdownDescription": "Enables the pilot_thread_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_thread_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-thread-update",
+          "markdownDescription": "Denies the pilot_thread_update command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pilot_worktree_diff command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pilot-worktree-diff",
@@ -499,10 +583,10 @@
           "markdownDescription": "Denies the pilot_worktree_status command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`",
+          "description": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`"
+          "markdownDescription": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`"
         }
       ]
     }

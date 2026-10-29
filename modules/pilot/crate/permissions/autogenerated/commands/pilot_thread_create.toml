@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-thread-create"
+description = "Enables the pilot_thread_create command without any pre-configured scope."
+commands.allow = ["pilot_thread_create"]
+
+[[permission]]
+identifier = "deny-pilot-thread-create"
+description = "Denies the pilot_thread_create command without any pre-configured scope."
+commands.deny = ["pilot_thread_create"]

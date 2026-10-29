@@ -15,4 +15,11 @@ permissions = [
   "allow-pilot-session-delete",
   "allow-pilot-session-update",
   "allow-pilot-runtime-state",
+  "allow-pilot-thread-create",
+  "allow-pilot-thread-snapshot",
+  "allow-pilot-thread-send",
+  "allow-pilot-thread-answer",
+  "allow-pilot-thread-interrupt",
+  "allow-pilot-thread-update",
+  "allow-pilot-provider-catalog",
 ]

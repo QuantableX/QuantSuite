@@ -417,6 +417,13 @@ mod tests {
             input_tokens: 0,
             output_tokens: 0,
             last_error: None,
+            kind: "terminal".into(),
+            effort: String::new(),
+            title_source: "auto".into(),
+            state: "idle".into(),
+            context_tokens: None,
+            context_window: None,
+            last_activity_at: 0,
         }
     }
 

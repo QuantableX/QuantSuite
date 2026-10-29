@@ -14,14 +14,19 @@
 //! the sink that forwards signals to the webview.
 
 mod adapters;
+mod claude;
 mod contexts;
 mod db;
+mod driver;
+mod events;
 mod prompt;
 mod providers;
 mod relay;
+mod runtime;
 mod settings;
 mod shell;
 mod signals;
+mod threads;
 mod watch;
 
 use adapters::{LaunchInput, SessionFiles};
@@ -60,6 +65,8 @@ pub struct PilotState {
     relay_port: u16,
     live: Mutex<HashMap<String, Live>>,
     sink: Sink,
+    /// V3: the provider processes behind chat threads.
+    runtime: Arc<runtime::Runtime>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -234,6 +241,13 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
         input_tokens: 0,
         output_tokens: 0,
         last_error: None,
+        kind: "terminal".into(),
+        effort: String::new(),
+        title_source: "auto".into(),
+        state: "idle".into(),
+        context_tokens: None,
+        context_window: None,
+        last_activity_at: stamp,
     };
     state.db.insert_session(&meta).map_err(|e| e.to_string())?;
     Ok(meta)
@@ -444,6 +458,7 @@ fn pilot_session_stop(app: AppHandle, state: State<'_, PilotState>, id: String) 
 #[tauri::command(async)]
 fn pilot_session_delete(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<(), String> {
     stop_live(&app, &state, &id);
+    state.runtime.stop(&id);
     state.db.delete_session(&id).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_dir_all(shell::session_dir(&state.data_dir, &id));
     Ok(())
@@ -533,6 +548,30 @@ pub fn init() -> TauriPlugin<Wry> {
                 }
             };
 
+            let thread_sink: runtime::EventSink = {
+                let app = app.clone();
+                Arc::new(move |thread_id: &str, seq: u64, event: &events::ThreadEvent| {
+                    let _ = app.emit(events::EVENT_NAME, events::Envelope { thread_id, seq, event });
+                    if let events::ThreadEvent::Turn { status, .. } = event {
+                        if status == "completed" {
+                            let _ = qs_core::bus::publish(
+                                &app,
+                                qs_core::bus::Event::new(
+                                    "pilot.turn.completed",
+                                    "pilot",
+                                    json!({ "sessionId": thread_id, "threadId": thread_id }),
+                                ),
+                            );
+                        }
+                    }
+                })
+            };
+            let runtime = runtime::Runtime::new(db.clone(), thread_sink);
+            {
+                let runtime = runtime.clone();
+                qs_core::shutdown::on_shutdown(app, "pilot", Box::new(move || runtime.stop_all()));
+            }
+
             app.manage(PilotState {
                 data_dir,
                 db,
@@ -540,6 +579,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 relay_port,
                 live: Mutex::new(HashMap::new()),
                 sink,
+                runtime,
             });
 
             qs_core::tray::register_entry(
@@ -566,6 +606,13 @@ pub fn init() -> TauriPlugin<Wry> {
             pilot_session_delete,
             pilot_session_update,
             pilot_runtime_state,
+            threads::pilot_thread_create,
+            threads::pilot_thread_snapshot,
+            threads::pilot_thread_send,
+            threads::pilot_thread_answer,
+            threads::pilot_thread_interrupt,
+            threads::pilot_thread_update,
+            threads::pilot_provider_catalog,
         ]))
         .build()
 }
