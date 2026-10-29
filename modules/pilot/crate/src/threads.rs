@@ -4,7 +4,7 @@
 //! `claude.rs`.
 
 use crate::claude::{self, ClaudeDriver, LaunchOptions, SessionRef};
-use crate::db::{QueueItem, ThreadMeta};
+use crate::db::{Arrangement, QueueItem, ThreadMeta};
 use crate::driver::{Answer, Catalog, ImageInput, TurnInput, TurnStatus};
 use crate::events::{Item, ThreadEvent};
 use crate::runtime::{self, LaunchPlan};
@@ -66,6 +66,11 @@ pub fn pilot_thread_create(app: AppHandle, state: State<'_, PilotState>, req: Cr
         context_tokens: None,
         context_window: None,
         last_activity_at: stamp,
+        pinned: false,
+        sort_key: stamp as f64,
+        settled_at: None,
+        snoozed_until: None,
+        auto_settle: true,
     };
     state.db.insert_session(&meta).map_err(|e| e.to_string())?;
     Ok(meta)
@@ -131,13 +136,48 @@ pub struct ImageArg {
     base64: String,
 }
 
-/// The first line of the first prompt, cut at a word near [`TITLE_MAX`].
+/// Openers a title does without ("Please can you fix …" → "Fix …").
+const FILLER: [&str; 18] = [
+    "please", "pls", "hey", "hi", "hello", "ok", "okay", "so", "can you", "could you", "would you", "will you",
+    "i want you to", "i need you to", "i'd like you to", "bitte", "kannst du", "könntest du",
+];
+
+/// The local cleanup of a first-prompt title: filler openers go, the first
+/// letter is upper case.
+fn tidy_title(line: &str) -> String {
+    let mut rest = line.trim();
+    loop {
+        let lower = rest.to_lowercase();
+        let Some(word) = FILLER.iter().find(|w| {
+            lower.starts_with(*w) && lower.get(w.len()..).and_then(|t| t.chars().next()).is_some_and(|c| c == ' ' || c == ',' || c == '!')
+        }) else {
+            break;
+        };
+        // Lower-casing can change byte lengths; such a line keeps its opener.
+        let Some(next) = rest.get(word.len()..).map(|t| t.trim_start_matches([' ', ',', '!'])) else {
+            break;
+        };
+        if next.is_empty() {
+            break;
+        }
+        rest = next;
+    }
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+/// The first line of the first prompt, tidied and cut at a word near [`TITLE_MAX`].
 pub fn title_from_prompt(text: &str) -> String {
-    let line = text
+    let first = text
         .lines()
         .map(|l| l.trim_start_matches(['#', '>', '-', '*', ' ']).trim())
         .find(|l| !l.is_empty())
         .unwrap_or_default();
+    let tidy = tidy_title(first);
+    let line = tidy.as_str();
     if line.chars().count() <= TITLE_MAX {
         return line.to_string();
     }
@@ -517,6 +557,67 @@ pub fn pilot_thread_update(
     Ok(after)
 }
 
+// ── The sidebar (card 7) ──
+
+/// Pin, reorder, settle, un-settle, snooze or wake a thread.
+#[tauri::command(async)]
+pub fn pilot_thread_arrange(state: State<'_, PilotState>, id: String, arrangement: Arrangement) -> Result<ThreadMeta, String> {
+    state.db.arrange(&id, &arrangement).map_err(|e| e.to_string())?;
+    state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or_else(|| "unknown thread".into())
+}
+
+/// A clean title from the model's answer: one line, no quotes or closing
+/// period, cut at a word near [`TITLE_MAX`].
+pub fn clean_title(raw: &str) -> String {
+    let line = raw.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default();
+    let line = line.trim_start_matches("Title:").trim().trim_matches(['"', '\'', '`', '*']).trim_end_matches('.').trim();
+    title_from_prompt(line)
+}
+
+/// A fresh title from the conversation, written by a short, separate Claude
+/// Code run (haiku, no session, no hooks, no MCP) — T3 Code's Regenerate
+/// title. It replaces any earlier title.
+#[tauri::command(async)]
+pub fn pilot_thread_regenerate_title(state: State<'_, PilotState>, id: String) -> Result<String, String> {
+    let (first, last) = state.db.title_material(&id).map_err(|e| e.to_string())?;
+    if first.trim().is_empty() {
+        return Err("nothing to name yet — send a message first".into());
+    }
+    let clip = |s: &str, n: usize| s.chars().take(n).collect::<String>();
+    let prompt = format!(
+        "Write a short title, at most six words, for this conversation. No quotes, no closing period.\n\n\
+         The user asked:\n{}\n\nThe latest answer:\n{}\n\nReply with the title only.",
+        clip(&first, 2000),
+        clip(&last, 1500)
+    );
+    let settings = lock(&state.settings).clone();
+    let adapter = adapters::find(&settings, "claude").ok_or("Claude Code is not a known adapter")?;
+    let exe = providers::resolve(&adapter, &settings).ok_or("Claude Code was not found")?;
+    let mut cmd = providers::base_cmd(Path::new(&exe.program));
+    cmd.args(&exe.prefix).args([
+        "-p",
+        &prompt,
+        "--model",
+        "haiku",
+        "--output-format",
+        "text",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--settings",
+        r#"{"disableAllHooks":true}"#,
+    ]);
+    cmd.current_dir(std::env::temp_dir());
+    let (ok, out, err) = providers::run_capture_split(cmd, std::time::Duration::from_secs(60))?;
+    let title = clean_title(&out);
+    if !ok || title.is_empty() {
+        let why = err.lines().chain(out.lines()).map(str::trim).rfind(|l| !l.is_empty()).unwrap_or_default();
+        return Err(format!("no title came back{}", if why.is_empty() { String::new() } else { format!(": {why}") }));
+    }
+    state.db.set_title_regenerated(&id, &title).map_err(|e| e.to_string())?;
+    state.runtime.emit(&id, ThreadEvent::Title { title: title.clone() });
+    Ok(title)
+}
+
 /// Models, efforts and commands the installed CLI reports — from a live
 /// thread's handshake or a short discovery run, cached for five minutes.
 #[tauri::command(async)]
@@ -555,5 +656,16 @@ mod tests {
         assert!(t.chars().count() <= TITLE_MAX + 1);
         assert!(!t.contains("  "));
         assert_eq!(title_from_prompt("   "), "");
+        assert_eq!(title_from_prompt("hey, can you fix the login bug?"), "Fix the login bug?");
+        assert_eq!(title_from_prompt("Bitte kannst du die Tabelle sortieren"), "Die Tabelle sortieren");
+        assert_eq!(title_from_prompt("please"), "Please", "a lone filler word stays");
+        assert_eq!(title_from_prompt("solve x"), "Solve x", "only whole filler words go");
+    }
+
+    #[test]
+    fn regenerated_titles_are_cleaned() {
+        assert_eq!(clean_title("\"Lazy settings sections.\"\n"), "Lazy settings sections");
+        assert_eq!(clean_title("Title: Fix the login bug"), "Fix the login bug");
+        assert_eq!(clean_title("\n\n**Provider page plan**"), "Provider page plan");
     }
 }

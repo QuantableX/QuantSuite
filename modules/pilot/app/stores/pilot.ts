@@ -13,6 +13,7 @@ import { navigateTo } from '#app'
 import { bus } from '@quantsuite/core'
 import { pilot } from '#pilot/utils/invoke'
 import { useThreadStore } from '#pilot/stores/thread'
+import { useSidebarStore } from '#pilot/stores/sidebar'
 import { providerLabel } from '#pilot/utils/format'
 import { scanBells, type BellScanState } from '#pilot/utils/bell'
 import type {
@@ -246,6 +247,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
     /** Switch to a thread. Its conversation loads; nothing starts until a message is sent. */
     async openSession(id: string) {
       this.activeId = id
+      useSidebarStore().markRead(id)
       await useThreadStore().open(id)
     },
 

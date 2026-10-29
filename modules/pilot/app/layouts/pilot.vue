@@ -16,12 +16,15 @@ import { inActiveKeepAliveTree, setModuleAttention, useShortcuts, useTauriEvent 
 import { useAppStore } from '#pilot/stores/app'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
+import { useSidebarStore } from '#pilot/stores/sidebar'
 import { chime } from '#pilot/utils/chime'
+import { threadReference } from '#pilot/utils/format'
 import type { PilotEnvelope, ThreadEnvelope } from '#pilot/types'
 
 const app = useAppStore()
 const store = usePilotStore()
 const threads = useThreadStore()
+const sidebar = useSidebarStore()
 
 useTauriEvent<ThreadEnvelope>('pilot-thread-event', (envelope) => {
   threads.apply(envelope)
@@ -69,7 +72,120 @@ onActivated(() => {
   }
 })
 
+/** Typing in a field keeps its own Ctrl+Z, F2 and friends. */
+function inEditable(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null
+  return Boolean(el?.closest('input, textarea, select, [contenteditable="true"], .xterm'))
+}
+function onActive(e: KeyboardEvent, run: (id: string) => unknown) {
+  const id = store.activeId
+  if (!id) return
+  e.preventDefault()
+  void run(id)
+}
+const digit = (n: number) => ({
+  key: String(n),
+  ctrl: true,
+  shift: false,
+  alt: false,
+  handler: (e: KeyboardEvent) => {
+    e.preventDefault()
+    void sidebar.openNth(n - 1)
+  },
+})
+const step = (key: string, dir: 1 | -1) => ({
+  key,
+  ctrl: true,
+  shift: true,
+  handler: (e: KeyboardEvent) => {
+    e.preventDefault()
+    void sidebar.step(dir)
+  },
+})
+
 useShortcuts([
+  // The sidebar's keys (card 7; docs/PLAN-QUANTPILOT.md §7). Explicit
+  // shift/alt keep Ctrl+N clear of the suite's Ctrl+Shift+N (notes).
+  {
+    key: 'n',
+    ctrl: true,
+    shift: false,
+    alt: true,
+    handler: (e) => {
+      e.preventDefault()
+      void sidebar.newThread({ noProject: true })
+    },
+  },
+  {
+    key: 'n',
+    ctrl: true,
+    shift: false,
+    alt: false,
+    handler: (e) => {
+      e.preventDefault()
+      void sidebar.newThread()
+    },
+  },
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(digit),
+  // Ctrl+Shift+[ reports "{" on US layouts.
+  step('{', -1),
+  step('[', -1),
+  step('}', 1),
+  step(']', 1),
+  {
+    key: 'S',
+    ctrl: true,
+    shift: true,
+    alt: false,
+    handler: (e) =>
+      onActive(e, (id) => {
+        const t = store.sessions.find((s) => s.id === id)
+        return t?.settledAt ? sidebar.unsettle(id) : sidebar.settle(id)
+      }),
+  },
+  {
+    key: 'P',
+    ctrl: true,
+    shift: true,
+    alt: false,
+    handler: (e) =>
+      onActive(e, (id) => {
+        const t = store.sessions.find((s) => s.id === id)
+        return t?.pinned ? sidebar.unpin(id) : sidebar.pin(id)
+      }),
+  },
+  {
+    key: 'C',
+    ctrl: true,
+    shift: true,
+    alt: false,
+    handler: (e) =>
+      onActive(e, (id) => {
+        const t = store.sessions.find((s) => s.id === id)
+        if (t) return navigator.clipboard.writeText(threadReference(t)).catch(() => undefined)
+      }),
+  },
+  {
+    key: 'z',
+    ctrl: true,
+    shift: false,
+    alt: false,
+    handler: (e) => {
+      if (inEditable(e) || !sidebar.latestUndo) return
+      e.preventDefault()
+      void sidebar.undoLatest()
+    },
+  },
+  {
+    key: 'F2',
+    handler: (e) => {
+      if (inEditable(e)) return
+      onActive(e, (id) => {
+        if (!app.sidebarLeftOpen) app.toggleSidebar('left')
+        sidebar.renaming = id
+      })
+    },
+  },
   // The wildcard-modifier rule: Ctrl+Shift+B must come before plain Ctrl+B.
   {
     key: 'B',
@@ -108,6 +224,7 @@ useShortcuts([
       </QSidebar>
       <main class="qp-main">
         <slot />
+        <PilotLayoutUndoToast />
       </main>
       <QRightPanel :model-value="app.sidebarRightOpen" storage-key="pilot.right">
         <PilotLayoutRightSidebar />

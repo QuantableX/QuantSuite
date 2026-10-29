@@ -36,6 +36,16 @@ export interface SessionMeta {
   contextTokens: number | null
   contextWindow: number | null
   lastActivityAt: number
+  /** Kept above the active threads. */
+  pinned: boolean
+  /** The user's order in Pinned and Active: larger is higher. */
+  sortKey: number
+  /** On the Settled shelf since then. */
+  settledAt: number | null
+  /** On the Snoozed shelf until then, unless it needs you first. */
+  snoozedUntil: number | null
+  /** `false` keeps it out of automatic settlement. */
+  autoSettle: boolean
 }
 
 export interface SessionDetail {
@@ -115,6 +125,10 @@ export interface PilotSettings {
   notify: 'off' | 'unfocused' | 'always'
   /** A short sound when a thread starts waiting on you. */
   notifySound: boolean
+  /** Settle a thread nobody touched for this many days (0 = never). */
+  autoSettleDays: number
+  /** Fold running threads into the sidebar's Working section. */
+  workingSection: boolean
 }
 
 export type SendShortcut = 'enter' | 'modEnterMultiline' | 'modEnter'

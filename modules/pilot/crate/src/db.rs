@@ -15,7 +15,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// 3: threads, timeline, turns (card 2). 4: the follow-up queue (card 4).
-pub const SCHEMA_VERSION: i64 = 4;
+/// 5: pin, order, settle, snooze (card 7).
+pub const SCHEMA_VERSION: i64 = 5;
 
 /// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -61,9 +62,38 @@ pub struct ThreadMeta {
     pub context_window: Option<i64>,
     /// The last time the agent answered or the user sent something.
     pub last_activity_at: i64,
+    /// Kept above the active threads (card 7).
+    pub pinned: bool,
+    /// The user's order inside Pinned and Active: larger is higher. New
+    /// threads take the current time, so they land on top.
+    pub sort_key: f64,
+    /// Out of the active list since then (manually or after inactivity).
+    pub settled_at: Option<i64>,
+    /// Hidden until then, unless it needs the user first.
+    pub snoozed_until: Option<i64>,
+    /// `false` keeps the thread out of automatic settlement (its menu).
+    pub auto_settle: bool,
 }
 
 pub type SessionMeta = ThreadMeta;
+
+/// What the sidebar changes on a thread; `None` leaves a field as it is.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Arrangement {
+    pub pinned: Option<bool>,
+    pub sort_key: Option<f64>,
+    pub settled: Option<bool>,
+    /// `Some(None)` wakes the thread.
+    #[serde(default, deserialize_with = "some_option")]
+    pub snoozed_until: Option<Option<i64>>,
+    pub auto_settle: Option<bool>,
+}
+
+/// `null` in JSON is a value here ("wake"), not an absent field.
+fn some_option<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<i64>>, D::Error> {
+    Option::<i64>::deserialize(d).map(Some)
+}
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -71,7 +101,7 @@ pub struct Database {
 
 const THREAD_COLS: &str = "id, provider, provider_session_id, title, context_id, context_name, cwd, model, mode, \
     created_at, updated_at, cost_usd, input_tokens, output_tokens, last_error, kind, effort, title_source, state, \
-    context_tokens, context_window, last_activity_at";
+    context_tokens, context_window, last_activity_at, pinned, sort_key, settled_at, snoozed_until, auto_settle";
 
 fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
     Ok(ThreadMeta {
@@ -97,6 +127,11 @@ fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
         context_tokens: r.get(19)?,
         context_window: r.get(20)?,
         last_activity_at: r.get(21)?,
+        pinned: r.get::<_, i64>(22)? != 0,
+        sort_key: r.get(23)?,
+        settled_at: r.get(24)?,
+        snoozed_until: r.get(25)?,
+        auto_settle: r.get::<_, i64>(26)? != 0,
     })
 }
 
@@ -158,8 +193,25 @@ const THREADS_TABLE: &str = "CREATE TABLE IF NOT EXISTS threads (
     context_tokens INTEGER,
     context_window INTEGER,
     last_activity_at INTEGER NOT NULL DEFAULT 0,
-    queue_held INTEGER NOT NULL DEFAULT 0
+    queue_held INTEGER NOT NULL DEFAULT 0,
+    pinned INTEGER NOT NULL DEFAULT 0,
+    sort_key REAL NOT NULL DEFAULT 0,
+    settled_at INTEGER,
+    snoozed_until INTEGER,
+    auto_settle INTEGER NOT NULL DEFAULT 1,
+    unsettled_at INTEGER
 )";
+
+/// Columns the sidebar (card 7, schema v5) adds to an older `threads` table.
+const V5_COLUMNS: [(&str, &str); 6] = [
+    ("pinned", "pinned INTEGER NOT NULL DEFAULT 0"),
+    ("sort_key", "sort_key REAL NOT NULL DEFAULT 0"),
+    ("settled_at", "settled_at INTEGER"),
+    ("snoozed_until", "snoozed_until INTEGER"),
+    ("auto_settle", "auto_settle INTEGER NOT NULL DEFAULT 1"),
+    // Set by Un-settle: no automatic settlement until the user writes again.
+    ("unsettled_at", "unsettled_at INTEGER"),
+];
 
 const QUEUE_TABLE: &str = "
     CREATE TABLE IF NOT EXISTS queue (
@@ -245,6 +297,17 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         tx.execute_batch("ALTER TABLE threads ADD COLUMN queue_held INTEGER NOT NULL DEFAULT 0;")?;
     }
     tx.execute_batch(QUEUE_TABLE)?;
+    let mut added_order = false;
+    for (name, col) in V5_COLUMNS {
+        if !column_exists(&tx, "threads", name)? {
+            tx.execute_batch(&format!("ALTER TABLE threads ADD COLUMN {col};"))?;
+            added_order |= name == "sort_key";
+        }
+    }
+    if added_order {
+        // Until the user drags, the order is the order of activity.
+        tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;
+    }
     // V1's transcript copy and key-value table, gone since V2.
     tx.execute_batch("DROP TABLE IF EXISTS items; DROP TABLE IF EXISTS kv;")?;
     tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
@@ -310,7 +373,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO threads ({THREAD_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, \
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)"
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)"
             ),
             params![
                 m.id,
@@ -334,10 +397,123 @@ impl Database {
                 m.state,
                 m.context_tokens,
                 m.context_window,
-                m.last_activity_at
+                m.last_activity_at,
+                m.pinned as i64,
+                m.sort_key,
+                m.settled_at,
+                m.snoozed_until,
+                m.auto_settle as i64
             ],
         )?;
         Ok(())
+    }
+
+    /// Pin, order, settle, snooze (card 7). Settling unpins (T3 Code);
+    /// un-settling puts the thread back on top of the active list and keeps
+    /// it from settling again until the user writes in it.
+    pub fn arrange(&self, id: &str, a: &Arrangement) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        if let Some(p) = a.pinned {
+            conn.execute("UPDATE threads SET pinned = ?2 WHERE id = ?1", params![id, p as i64])?;
+        }
+        if let Some(k) = a.sort_key {
+            conn.execute("UPDATE threads SET sort_key = ?2 WHERE id = ?1", params![id, k])?;
+        }
+        match a.settled {
+            Some(true) => {
+                conn.execute("UPDATE threads SET settled_at = ?2, pinned = 0 WHERE id = ?1", params![id, now()])?;
+            }
+            // A drop or an undo names the spot; a plain Un-settle goes on top.
+            Some(false) if a.sort_key.is_some() => {
+                conn.execute("UPDATE threads SET settled_at = NULL, unsettled_at = ?2 WHERE id = ?1", params![id, now()])?;
+            }
+            Some(false) => {
+                conn.execute(
+                    "UPDATE threads SET settled_at = NULL, unsettled_at = ?2,
+                        sort_key = (SELECT COALESCE(MAX(sort_key), 0) + 1 FROM threads) WHERE id = ?1",
+                    params![id, now()],
+                )?;
+            }
+            None => {}
+        }
+        if let Some(s) = a.snoozed_until {
+            conn.execute("UPDATE threads SET snoozed_until = ?2 WHERE id = ?1", params![id, s])?;
+        }
+        if let Some(on) = a.auto_settle {
+            conn.execute("UPDATE threads SET auto_settle = ?2 WHERE id = ?1", params![id, on as i64])?;
+        }
+        Ok(())
+    }
+
+    /// Settle threads nobody touched for `days` (0 = never). Threads that
+    /// run, wait on the user or have queued follow-ups stay, and so do those
+    /// with auto-settle off or un-settled since the user last wrote. Pinning
+    /// does not prevent it; settling unpins (T3 Code).
+    pub fn auto_settle(&self, days: u32, busy: &[String]) -> rusqlite::Result<Vec<String>> {
+        if days == 0 {
+            return Ok(Vec::new());
+        }
+        let cutoff = now() - i64::from(days) * 24 * 3600 * 1000;
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id FROM threads WHERE settled_at IS NULL AND kind = 'chat' AND auto_settle = 1
+                AND unsettled_at IS NULL AND MAX(last_activity_at, created_at) < ?1 AND state != 'waiting'
+                AND id NOT IN (SELECT thread_id FROM queue)",
+        )?;
+        let ids: Vec<String> = stmt
+            .query_map(params![cutoff], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?
+            .into_iter()
+            .filter(|id| !busy.contains(id))
+            .collect();
+        for id in &ids {
+            conn.execute("UPDATE threads SET settled_at = ?2, pinned = 0 WHERE id = ?1", params![id, now()])?;
+        }
+        Ok(ids)
+    }
+
+    /// The user wrote in the thread: it is live work again — out of the
+    /// settled and snoozed shelves, and under the usual settle rules.
+    pub fn resume(&self, id: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE threads SET settled_at = NULL, snoozed_until = NULL, unsettled_at = NULL WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    /// A regenerated title replaces any earlier one, the user's included.
+    pub fn set_title_regenerated(&self, id: &str, title: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE threads SET title = ?2, title_source = 'auto', updated_at = ?3 WHERE id = ?1",
+            params![id, title, now()],
+        )?;
+        Ok(())
+    }
+
+    /// The first thing the user asked and the latest answer — for a title.
+    pub fn title_material(&self, id: &str) -> rusqlite::Result<(String, String)> {
+        let conn = self.lock();
+        let first: Option<String> = conn
+            .query_row(
+                "SELECT json_extract(data, '$.text') FROM timeline WHERE thread_id = ?1 AND kind = 'user' ORDER BY seq LIMIT 1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        let last: Option<String> = conn
+            .query_row(
+                "SELECT json_extract(data, '$.text') FROM timeline WHERE thread_id = ?1 AND kind = 'assistant'
+                    AND parent IS NULL ORDER BY seq DESC LIMIT 1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok((first.unwrap_or_default(), last.unwrap_or_default()))
     }
 
     pub fn set_provider_session(&self, id: &str, provider_session_id: &str) -> rusqlite::Result<()> {
@@ -769,6 +945,11 @@ mod tests {
             context_tokens: None,
             context_window: None,
             last_activity_at: 1,
+            pinned: false,
+            sort_key: 1.0,
+            settled_at: None,
+            snoozed_until: None,
+            auto_settle: true,
         }
     }
 
@@ -879,6 +1060,97 @@ mod tests {
         assert!(db.queue("t1").unwrap().is_empty());
         drop(db);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn arranging_pins_settles_and_snoozes() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_session(&thread("t1")).unwrap();
+        db.insert_session(&ThreadMeta { sort_key: 7.0, ..thread("t2") }).unwrap();
+        db.arrange("t1", &Arrangement { pinned: Some(true), sort_key: Some(3.5), ..Default::default() }).unwrap();
+        let t = db.get_session("t1").unwrap().unwrap();
+        assert!(t.pinned);
+        assert_eq!(t.sort_key, 3.5);
+        db.arrange("t1", &Arrangement { settled: Some(true), ..Default::default() }).unwrap();
+        let t = db.get_session("t1").unwrap().unwrap();
+        assert!(t.settled_at.is_some() && !t.pinned, "settling unpins");
+        db.arrange("t1", &Arrangement { settled: Some(false), ..Default::default() }).unwrap();
+        let t = db.get_session("t1").unwrap().unwrap();
+        assert!(t.settled_at.is_none());
+        assert_eq!(t.sort_key, 8.0, "back on top of the active list");
+        db.arrange("t1", &Arrangement { settled: Some(true), ..Default::default() }).unwrap();
+        db.arrange("t1", &Arrangement { settled: Some(false), sort_key: Some(2.5), ..Default::default() }).unwrap();
+        assert_eq!(db.get_session("t1").unwrap().unwrap().sort_key, 2.5, "a drop keeps its spot");
+        let snooze: Arrangement = serde_json::from_value(json!({ "snoozedUntil": 99 })).unwrap();
+        db.arrange("t1", &snooze).unwrap();
+        assert_eq!(db.get_session("t1").unwrap().unwrap().snoozed_until, Some(99));
+        let wake: Arrangement = serde_json::from_value(json!({ "snoozedUntil": null })).unwrap();
+        assert_eq!(wake.snoozed_until, Some(None));
+        db.arrange("t1", &wake).unwrap();
+        assert_eq!(db.get_session("t1").unwrap().unwrap().snoozed_until, None);
+        let untouched: Arrangement = serde_json::from_value(json!({ "pinned": false })).unwrap();
+        assert_eq!(untouched.snoozed_until, None, "an absent field changes nothing");
+        db.arrange("t1", &Arrangement { auto_settle: Some(false), ..Default::default() }).unwrap();
+        assert!(!db.get_session("t1").unwrap().unwrap().auto_settle);
+    }
+
+    #[test]
+    fn auto_settle_skips_waiting_queued_running_and_opted_out() {
+        let db = Database::open_in_memory().unwrap();
+        let fresh = now();
+        for (id, auto_settle, state, activity) in [
+            ("old", true, "idle", 1),
+            ("off", false, "idle", 1),
+            ("waiting", true, "waiting", 1),
+            ("queued", true, "idle", 1),
+            ("running", true, "idle", 1),
+            ("fresh", true, "idle", fresh),
+        ] {
+            let meta = ThreadMeta { auto_settle, state: state.into(), last_activity_at: activity, created_at: activity, ..thread(id) };
+            db.insert_session(&meta).unwrap();
+        }
+        db.insert_session(&ThreadMeta { pinned: true, ..thread("pinned") }).unwrap();
+        db.insert_session(&ThreadMeta { kind: "terminal".into(), ..thread("term") }).unwrap();
+        db.queue_add("queued", "later").unwrap();
+        assert!(db.auto_settle(0, &[]).unwrap().is_empty(), "0 days = never");
+        let mut settled = db.auto_settle(3, &["running".to_string()]).unwrap();
+        settled.sort();
+        assert_eq!(settled, vec!["old".to_string(), "pinned".to_string()], "pinning does not prevent it");
+        assert!(!db.get_session("pinned").unwrap().unwrap().pinned, "settling unpins");
+        assert!(db.auto_settle(3, &[]).unwrap().contains(&"running".to_string()), "settles once it stopped");
+        // Un-settled by hand: stays until the user writes again.
+        db.arrange("old", &Arrangement { settled: Some(false), ..Default::default() }).unwrap();
+        assert!(db.auto_settle(3, &[]).unwrap().is_empty());
+        db.resume("old").unwrap();
+        assert_eq!(db.auto_settle(3, &[]).unwrap(), vec!["old".to_string()], "the usual rules again after a message");
+        db.arrange("fresh", &Arrangement { snoozed_until: Some(Some(fresh + 1000)), ..Default::default() }).unwrap();
+        db.resume("fresh").unwrap();
+        assert_eq!(db.get_session("fresh").unwrap().unwrap().snoozed_until, None, "a message wakes it");
+    }
+
+    #[test]
+    fn regenerated_titles_replace_the_users() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_session(&thread("t1")).unwrap();
+        db.set_title_from("t1", "Mine", "user").unwrap();
+        for (seq, kind, text) in [(1, ItemKind::User, "Fix the login"), (2, ItemKind::Assistant, "Done, it works")] {
+            db.upsert_item(&Item {
+                id: format!("i{seq}"),
+                thread_id: "t1".into(),
+                turn_id: "u1".into(),
+                seq,
+                kind,
+                parent: None,
+                data: json!({ "text": text }),
+                created_at: seq,
+                updated_at: seq,
+            })
+            .unwrap();
+        }
+        assert_eq!(db.title_material("t1").unwrap(), ("Fix the login".to_string(), "Done, it works".to_string()));
+        db.set_title_regenerated("t1", "Login fix").unwrap();
+        let t = db.get_session("t1").unwrap().unwrap();
+        assert_eq!((t.title.as_str(), t.title_source.as_str()), ("Login fix", "auto"));
     }
 
     #[test]

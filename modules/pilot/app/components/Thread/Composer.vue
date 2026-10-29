@@ -118,13 +118,18 @@ function syncScroll() {
   if (mirror.value && box.value) mirror.value.scrollTop = box.value.scrollTop
 }
 watch(text, () => void nextTick(grow))
+/** Opening a thread focuses the box — unless the keyboard is browsing the sidebar (T3 Code: F2 and the menu still act on the row). */
+function focusOnOpen() {
+  if (document.activeElement?.closest('.qp-side-list')) return
+  box.value?.focus()
+}
 watch(
   () => props.threadId,
   () => {
     recall.value = null
     void nextTick(() => {
       grow()
-      box.value?.focus()
+      focusOnOpen()
     })
   }
 )
@@ -428,6 +433,34 @@ async function onPaste(e: ClipboardEvent) {
   if (path) pasted.value = [...pasted.value, { path, size: bytes }]
 }
 
+// ── Files dropped on the thread's sidebar row ──
+const TEXT_FILE_BYTES = 4 * 1024 * 1024
+async function attachDropped(files: File[]) {
+  const skipped: string[] = []
+  for (const f of files) {
+    const text = f.size <= TEXT_FILE_BYTES ? await f.text().catch(() => null) : null
+    // A NUL byte or an image/PDF type means binary: not something a text chip can carry.
+    if (text === null || text.includes('\u0000') || /^(image|audio|video)\/|pdf|zip/.test(f.type)) {
+      skipped.push(f.name)
+      continue
+    }
+    const path = await threads.savePastedText(props.threadId, text, f.name)
+    if (path) pasted.value = [...pasted.value, { path, size: f.size }]
+  }
+  if (skipped.length) {
+    const v = threads.ensure(props.threadId)
+    v.error = `Only text files can be attached so far — skipped ${skipped.join(', ')}.`
+  }
+  void nextTick(() => box.value?.focus())
+}
+watch(
+  () => threads.incoming[props.threadId]?.length ?? 0,
+  (n) => {
+    if (n) void attachDropped(threads.takeIncoming(props.threadId))
+  },
+  { immediate: true }
+)
+
 function removePasted(path: string) {
   pasted.value = pasted.value.filter((p) => p.path !== path)
 }
@@ -445,7 +478,7 @@ onMounted(() => {
   window.addEventListener('blur', onBlurWindow)
   void nextTick(() => {
     grow()
-    box.value?.focus()
+    focusOnOpen()
   })
 })
 onBeforeUnmount(() => {
