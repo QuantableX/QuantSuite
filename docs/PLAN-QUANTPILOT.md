@@ -179,7 +179,7 @@ second and at every message end, so the persisted history is the truth.
 | `threads` | V2's `sessions` renamed, plus `kind` (`chat` / `terminal`), `effort`, `title_source` (`auto` / `user`), `state`, `context_tokens`, `context_window`, `last_activity_at` | 2 |
 | `timeline` | the items above: id, thread, turn, seq, kind, parent, data (JSON), timestamps | 2 |
 | `turns` | one row per user message: status, start, end, duration, cost, error | 2 |
-| `queue` | queued follow-ups in order, with attachments | 4 |
+| `queue` (+ `threads.queue_held`) | queued follow-ups in order (schema v4); a completed turn sends the next one, a stopped, failed or limited turn — or an app restart — holds the queue until Resume or the next sent message | 4 |
 | `checkpoints`, `turn_changes` | hidden git refs per turn, attributed changed files and saved patches | 11 |
 | `attachments` | images and documents stored under the pilot data dir, never inside the project | 9 |
 | `links` | kanban card, PR, issue, parent thread | 12, 21 |
@@ -234,6 +234,12 @@ Discovery runs `initialize` only, with `--no-session-persistence
   `plan` item. Hook and SDK-MCP callbacks are answered with an error.
 - `result.total_cost_usd` is cumulative per process: a turn's cost is the
   difference to the previous result.
+- **Steering works**: a user message written to stdin while a turn runs
+  joins that turn — one `result`, and the agent answers "per your mid-turn
+  message" (verified 2026-10-29). With `--replay-user-messages` the CLI
+  echoes each accepted message with `isReplay: true`. Follow-ups therefore
+  have two meanings (card 4): **Queue** keeps the message in `pilot.db`
+  until the turn ends, **Steer** writes it into the running turn now.
 - Context % = the latest main-agent message's input + cache read + cache
   creation + output tokens, over the window from the result. Subagent and
   cumulative billing totals are excluded.

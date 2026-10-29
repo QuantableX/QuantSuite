@@ -57,6 +57,12 @@ pub struct Settings {
     /// Workspace sessions also get the general vault as a readable directory.
     pub include_general_vault: bool,
     pub custom: Vec<CustomAdapter>,
+    /// The composer's send key: `enter` (Enter sends), `modEnterMultiline`
+    /// (Ctrl+Enter once the message has several lines), `modEnter` (always Ctrl+Enter).
+    pub send_shortcut: String,
+    /// What a message sent while the agent works does: `queue` (waits for the
+    /// turn to end) or `steer` (goes into the running turn).
+    pub follow_up: String,
 }
 
 impl Default for Settings {
@@ -71,6 +77,8 @@ impl Default for Settings {
             attach_quantmcp: true,
             include_general_vault: true,
             custom: Vec::new(),
+            send_shortcut: "enter".into(),
+            follow_up: "queue".into(),
         }
     }
 }
@@ -101,6 +109,12 @@ impl Settings {
         }
         if !valid_mode(&self.default_mode) {
             self.default_mode = "full".into();
+        }
+        if !matches!(self.send_shortcut.as_str(), "enter" | "modEnterMultiline" | "modEnter") {
+            self.send_shortcut = "enter".into();
+        }
+        if !matches!(self.follow_up.as_str(), "queue" | "steer") {
+            self.follow_up = "queue".into();
         }
         self.shell = self.shell.trim().to_string();
         self.effort = self.effort.trim().to_string();

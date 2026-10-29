@@ -5,7 +5,7 @@
  * stay visible (plans, errors, notices).
  */
 import { computed } from 'vue'
-import { AlertTriangle, Info } from 'lucide-vue-next'
+import { AlertTriangle, CornerDownRight, Info } from 'lucide-vue-next'
 import type { TurnBlock } from '#pilot/utils/timeline'
 
 const props = defineProps<{
@@ -49,6 +49,12 @@ async function copyUser() {
         </div>
         <PilotThreadRequest v-for="r in block.requests" :key="r.id" :item="r" />
       </template>
+      <div v-else-if="o.kind === 'user'" class="qp-user is-steer" :data-item-id="o.id">
+        <div class="qp-user-bubble">
+          <div class="qp-user-att"><CornerDownRight :size="11" /> Sent while the agent worked</div>
+          <PilotThreadMarkdown :source="String(o.data.text ?? '')" @notice="(t: string) => emit('notice', t)" />
+        </div>
+      </div>
       <div v-else-if="o.kind === 'error'" class="qp-error" :data-item-id="o.id">
         <AlertTriangle :size="14" />
         <span class="qp-error-text">{{ o.data.text }}</span>
@@ -73,7 +79,9 @@ async function copyUser() {
   border: 1px solid var(--qss-border-subtle, #35353d);
 }
 .qp-user-bubble :deep(.qp-md) { font-size: 13.5px; }
-.qp-user-att { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); margin-bottom: 4px; }
+.qp-user-att { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); margin-bottom: 4px; }
+.qp-user.is-steer { margin: 4px 0 10px; }
+.qp-user.is-steer .qp-user-bubble { border-style: dashed; }
 .qp-user-copy {
   opacity: 0;
   border: none;

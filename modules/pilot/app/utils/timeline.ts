@@ -160,7 +160,8 @@ export function groupTurns(items: ThreadItem[]): TurnBlock[] {
     rest.forEach((it, i) => {
       if (i === answerIndex) return
       if (isPending(it)) requests.push(it)
-      else if (it.kind === 'plan' || it.kind === 'error' || it.kind === 'notice') (answer && i < answerIndex ? before : outside).push(it)
+      // Plans, errors, notices and messages steered into the turn stay in view, in order.
+      else if (it.kind === 'plan' || it.kind === 'error' || it.kind === 'notice' || it.kind === 'user') (answer && i < answerIndex ? before : outside).push(it)
       else if (it.kind === 'assistant' && !it.parent && !String(it.data.text ?? '').trim()) return
       else folded.push(it)
     })

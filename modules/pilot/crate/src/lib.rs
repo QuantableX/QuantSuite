@@ -568,6 +568,12 @@ pub fn init() -> TauriPlugin<Wry> {
             };
             let runtime = runtime::Runtime::new(db.clone(), thread_sink);
             {
+                let app = app.clone();
+                runtime.set_turn_end_hook(Arc::new(move |thread_id: &str, status: driver::TurnStatus| {
+                    threads::after_turn(&app, thread_id, status);
+                }));
+            }
+            {
                 let runtime = runtime.clone();
                 qs_core::shutdown::on_shutdown(app, "pilot", Box::new(move || runtime.stop_all()));
             }
@@ -613,6 +619,14 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_thread_interrupt,
             threads::pilot_thread_update,
             threads::pilot_provider_catalog,
+            threads::pilot_queue_list,
+            threads::pilot_queue_add,
+            threads::pilot_queue_update,
+            threads::pilot_queue_remove,
+            threads::pilot_queue_send_now,
+            threads::pilot_queue_resume,
+            threads::pilot_thread_steer,
+            threads::pilot_attachment_save_text,
         ]))
         .build()
 }

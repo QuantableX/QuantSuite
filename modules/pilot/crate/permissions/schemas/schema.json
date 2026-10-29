@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the pilot_attachment_save_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-attachment-save-text",
+          "markdownDescription": "Enables the pilot_attachment_save_text command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_attachment_save_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-attachment-save-text",
+          "markdownDescription": "Denies the pilot_attachment_save_text command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pilot_contexts command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pilot-contexts",
@@ -317,6 +329,78 @@
           "type": "string",
           "const": "deny-pilot-provider-catalog",
           "markdownDescription": "Denies the pilot_provider_catalog command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_queue_add command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-queue-add",
+          "markdownDescription": "Enables the pilot_queue_add command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_queue_add command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-queue-add",
+          "markdownDescription": "Denies the pilot_queue_add command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_queue_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-queue-list",
+          "markdownDescription": "Enables the pilot_queue_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_queue_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-queue-list",
+          "markdownDescription": "Denies the pilot_queue_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_queue_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-queue-remove",
+          "markdownDescription": "Enables the pilot_queue_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_queue_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-queue-remove",
+          "markdownDescription": "Denies the pilot_queue_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_queue_resume command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-queue-resume",
+          "markdownDescription": "Enables the pilot_queue_resume command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_queue_resume command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-queue-resume",
+          "markdownDescription": "Denies the pilot_queue_resume command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_queue_send_now command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-queue-send-now",
+          "markdownDescription": "Enables the pilot_queue_send_now command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_queue_send_now command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-queue-send-now",
+          "markdownDescription": "Denies the pilot_queue_send_now command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_queue_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-queue-update",
+          "markdownDescription": "Enables the pilot_queue_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_queue_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-queue-update",
+          "markdownDescription": "Denies the pilot_queue_update command without any pre-configured scope."
         },
         {
           "description": "Enables the pilot_runtime_state command without any pre-configured scope.",
@@ -511,6 +595,18 @@
           "markdownDescription": "Denies the pilot_thread_snapshot command without any pre-configured scope."
         },
         {
+          "description": "Enables the pilot_thread_steer command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-thread-steer",
+          "markdownDescription": "Enables the pilot_thread_steer command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_thread_steer command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-thread-steer",
+          "markdownDescription": "Denies the pilot_thread_steer command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pilot_thread_update command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pilot-thread-update",
@@ -583,10 +679,10 @@
           "markdownDescription": "Denies the pilot_worktree_status command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`",
+          "description": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`"
+          "markdownDescription": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`"
         }
       ]
     }

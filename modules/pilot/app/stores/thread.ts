@@ -14,7 +14,19 @@
 import { defineStore } from 'pinia'
 import { pilot } from '#pilot/utils/invoke'
 import { usePilotStore } from '#pilot/stores/pilot'
-import type { Answer, ProviderCatalog, RateWindow, SessionMeta, ThreadEnvelope, ThreadEvent, ThreadItem, ThreadSnapshot, ThreadState } from '#pilot/types'
+import type {
+  Answer,
+  ProviderCatalog,
+  QueueItem,
+  QueueState,
+  RateWindow,
+  SessionMeta,
+  ThreadEnvelope,
+  ThreadEvent,
+  ThreadItem,
+  ThreadSnapshot,
+  ThreadState,
+} from '#pilot/types'
 
 export interface TurnInfo {
   status: 'started' | 'completed' | 'failed' | 'interrupted' | 'limited'
@@ -54,6 +66,14 @@ export interface ThreadView {
   error: string | null
   /** Bumps when a turn completes — the face goes ^^. */
   cheer: number
+  /** Follow-ups waiting for the running turn, in order. */
+  queue: QueueItem[]
+  /** After a stop, a failure or a restart the queue waits for Resume. */
+  queueHeld: boolean
+  /** The provider takes messages mid-turn. */
+  canSteer: boolean
+  /** The queued message open in the composer for editing. */
+  editingQueued: string | null
 }
 
 function freshView(id: string): ThreadView {
@@ -75,6 +95,10 @@ function freshView(id: string): ThreadView {
     model: null,
     error: null,
     cheer: 0,
+    queue: [],
+    queueHeld: false,
+    canSteer: false,
+    editingQueued: null,
   }
 }
 
@@ -167,6 +191,9 @@ export const useThreadStore = defineStore('pilot/thread', {
           inputTokens: snap.thread.inputTokens,
           outputTokens: snap.thread.outputTokens,
         }
+        view.queue = snap.queue?.items ?? []
+        view.queueHeld = snap.queue?.held ?? false
+        view.canSteer = snap.canSteer ?? false
         view.loaded = true
         usePilotStore().upsertSession(snap.thread)
         const pending = view.pending
@@ -258,6 +285,92 @@ export const useThreadStore = defineStore('pilot/thread', {
         case 'title':
           usePilotStore().patchSession(view.id, { title: ev.title })
           break
+        case 'queue':
+          view.queue = ev.items
+          view.queueHeld = ev.held
+          break
+      }
+    },
+
+    applyQueue(id: string, q: QueueState | null) {
+      if (!q) return
+      const view = this.ensure(id)
+      view.queue = q.items
+      view.queueHeld = q.held
+    },
+
+    /** A follow-up for after the running turn (sent at once when nothing runs). */
+    async queueAdd(id: string, text: string): Promise<boolean> {
+      const view = this.ensure(id)
+      view.error = null
+      try {
+        this.applyQueue(id, await pilot<QueueState>('plugin:pilot|pilot_queue_add', { id, text }))
+        return true
+      } catch (e) {
+        view.error = String(e)
+        return false
+      }
+    },
+
+    /** A message into the running turn (starts a turn when nothing runs). */
+    async steer(id: string, text: string): Promise<boolean> {
+      const view = this.ensure(id)
+      view.error = null
+      try {
+        await pilot('plugin:pilot|pilot_thread_steer', { id, text })
+        return true
+      } catch (e) {
+        view.error = String(e)
+        return false
+      }
+    },
+
+    /** Open a queued message in the composer (null ends the edit). */
+    editQueued(id: string, itemId: string | null) {
+      this.ensure(id).editingQueued = itemId
+    },
+
+    async queueUpdate(id: string, itemId: string, text: string): Promise<boolean> {
+      try {
+        await pilot('plugin:pilot|pilot_queue_update', { itemId, text })
+        return true
+      } catch (e) {
+        this.ensure(id).error = String(e)
+        return false
+      }
+    },
+
+    async queueRemove(id: string, itemId: string) {
+      try {
+        await pilot('plugin:pilot|pilot_queue_remove', { itemId })
+      } catch (e) {
+        this.ensure(id).error = String(e)
+      }
+    },
+
+    async queueSendNow(id: string, itemId: string) {
+      try {
+        await pilot('plugin:pilot|pilot_queue_send_now', { itemId })
+      } catch (e) {
+        this.ensure(id).error = String(e)
+      }
+    },
+
+    async queueResume(id: string) {
+      try {
+        await pilot('plugin:pilot|pilot_queue_resume', { id })
+      } catch (e) {
+        this.ensure(id).error = String(e)
+      }
+    },
+
+    /** Save a large paste as a file next to the thread; returns its path. */
+    async savePastedText(id: string, text: string): Promise<string | null> {
+      try {
+        return await pilot<string>('plugin:pilot|pilot_attachment_save_text', { id, name: 'pasted-text', text })
+      } catch (e) {
+        this.ensure(id).error = String(e)
+        return null
       }
     },
 

@@ -14,7 +14,20 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i64 = 3;
+/// 3: threads, timeline, turns (card 2). 4: the follow-up queue (card 4).
+pub const SCHEMA_VERSION: i64 = 4;
+
+/// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueItem {
+    pub id: String,
+    pub thread_id: String,
+    pub position: i64,
+    pub text: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -144,8 +157,31 @@ const THREADS_TABLE: &str = "CREATE TABLE IF NOT EXISTS threads (
     state TEXT NOT NULL DEFAULT 'idle',
     context_tokens INTEGER,
     context_window INTEGER,
-    last_activity_at INTEGER NOT NULL DEFAULT 0
+    last_activity_at INTEGER NOT NULL DEFAULT 0,
+    queue_held INTEGER NOT NULL DEFAULT 0
 )";
+
+const QUEUE_TABLE: &str = "
+    CREATE TABLE IF NOT EXISTS queue (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS queue_thread ON queue (thread_id, position);";
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
+    for n in names {
+        if n? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 
 /// Columns V3 adds to a V2 `sessions` table, with their defaults for V2 rows.
 const V3_COLUMNS: [&str; 7] = [
@@ -205,6 +241,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     tx.execute_batch(THREADS_TABLE)?;
     tx.execute_batch(TIMELINE_TABLES)?;
+    if !column_exists(&tx, "threads", "queue_held")? {
+        tx.execute_batch("ALTER TABLE threads ADD COLUMN queue_held INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    tx.execute_batch(QUEUE_TABLE)?;
     // V1's transcript copy and key-value table, gone since V2.
     tx.execute_batch("DROP TABLE IF EXISTS items; DROP TABLE IF EXISTS kv;")?;
     tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
@@ -245,7 +285,8 @@ impl Database {
              UPDATE timeline SET data = json_set(data, '$.streaming', json('false'))
                 WHERE kind IN ('assistant', 'reasoning') AND json_extract(data, '$.streaming') = 1;
              UPDATE turns SET status = 'interrupted' WHERE status = 'started';
-             UPDATE threads SET state = 'interrupted' WHERE state IN ('running', 'waiting', 'starting');",
+             UPDATE threads SET state = 'interrupted' WHERE state IN ('running', 'waiting', 'starting');
+             UPDATE threads SET queue_held = 1 WHERE id IN (SELECT thread_id FROM queue);",
         )
     }
 
@@ -426,6 +467,7 @@ impl Database {
         let conn = self.lock();
         conn.execute("DELETE FROM timeline WHERE thread_id = ?1", params![id])?;
         conn.execute("DELETE FROM turns WHERE thread_id = ?1", params![id])?;
+        conn.execute("DELETE FROM queue WHERE thread_id = ?1", params![id])?;
         conn.execute("DELETE FROM threads WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -501,6 +543,112 @@ impl Database {
             }
         }
         Ok(changed)
+    }
+
+    // ── Queue ──
+
+    pub fn queue(&self, thread_id: &str) -> rusqlite::Result<Vec<QueueItem>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, thread_id, position, text, created_at, updated_at FROM queue
+                WHERE thread_id = ?1 ORDER BY position, created_at",
+        )?;
+        let rows = stmt.query_map(params![thread_id], |r| {
+            Ok(QueueItem {
+                id: r.get(0)?,
+                thread_id: r.get(1)?,
+                position: r.get(2)?,
+                text: r.get(3)?,
+                created_at: r.get(4)?,
+                updated_at: r.get(5)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn queue_add(&self, thread_id: &str, text: &str) -> rusqlite::Result<QueueItem> {
+        let conn = self.lock();
+        let position: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE thread_id = ?1",
+            params![thread_id],
+            |r| r.get(0),
+        )?;
+        let t = now();
+        let item = QueueItem {
+            id: uuid::Uuid::new_v4().to_string(),
+            thread_id: thread_id.to_string(),
+            position,
+            text: text.to_string(),
+            created_at: t,
+            updated_at: t,
+        };
+        conn.execute(
+            "INSERT INTO queue (id, thread_id, position, text, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![item.id, item.thread_id, item.position, item.text, item.created_at, item.updated_at],
+        )?;
+        Ok(item)
+    }
+
+    /// The thread the item belongs to, or `None` when it is gone (already sent).
+    pub fn queue_thread(&self, item_id: &str) -> rusqlite::Result<Option<String>> {
+        let conn = self.lock();
+        conn.query_row("SELECT thread_id FROM queue WHERE id = ?1", params![item_id], |r| r.get(0))
+            .optional()
+    }
+
+    pub fn queue_update(&self, item_id: &str, text: &str) -> rusqlite::Result<bool> {
+        let conn = self.lock();
+        let n = conn.execute("UPDATE queue SET text = ?2, updated_at = ?3 WHERE id = ?1", params![item_id, text, now()])?;
+        Ok(n > 0)
+    }
+
+    /// Remove and return one item — the one that is about to be sent.
+    pub fn queue_take(&self, item_id: &str) -> rusqlite::Result<Option<QueueItem>> {
+        let conn = self.lock();
+        let item = conn
+            .query_row(
+                "SELECT id, thread_id, position, text, created_at, updated_at FROM queue WHERE id = ?1",
+                params![item_id],
+                |r| {
+                    Ok(QueueItem {
+                        id: r.get(0)?,
+                        thread_id: r.get(1)?,
+                        position: r.get(2)?,
+                        text: r.get(3)?,
+                        created_at: r.get(4)?,
+                        updated_at: r.get(5)?,
+                    })
+                },
+            )
+            .optional()?;
+        if item.is_some() {
+            conn.execute("DELETE FROM queue WHERE id = ?1", params![item_id])?;
+        }
+        Ok(item)
+    }
+
+    /// Put an item before every other one of its thread (a send that failed goes back first).
+    pub fn queue_reorder_first(&self, item_id: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE queue SET position = (SELECT COALESCE(MIN(q.position), 1) - 1 FROM queue q
+                WHERE q.thread_id = queue.thread_id) WHERE id = ?1",
+            params![item_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn queue_held(&self, thread_id: &str) -> rusqlite::Result<bool> {
+        let conn = self.lock();
+        conn.query_row("SELECT queue_held FROM threads WHERE id = ?1", params![thread_id], |r| r.get::<_, i64>(0))
+            .optional()
+            .map(|v| v.unwrap_or(0) != 0)
+    }
+
+    pub fn set_queue_held(&self, thread_id: &str, held: bool) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET queue_held = ?2 WHERE id = ?1", params![thread_id, held as i64])?;
+        Ok(())
     }
 
     // ── Turns ──
@@ -667,6 +815,33 @@ mod tests {
         db.set_context("t1", None, Some(200_000)).unwrap();
         let t = db.get_session("t1").unwrap().unwrap();
         assert_eq!((t.context_tokens, t.context_window), (Some(1200), Some(200_000)));
+    }
+
+    #[test]
+    fn the_queue_keeps_order_and_holds_after_a_restart() {
+        let dir = std::env::temp_dir().join(format!("qp-queue-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pilot.db");
+        let (a, b) = {
+            let db = Database::open(&path).unwrap();
+            db.insert_session(&thread("t1")).unwrap();
+            let a = db.queue_add("t1", "first").unwrap();
+            let b = db.queue_add("t1", "second").unwrap();
+            assert!(db.queue_update(&b.id, "second, edited").unwrap());
+            assert_eq!(db.queue("t1").unwrap().iter().map(|q| q.text.as_str()).collect::<Vec<_>>(), vec!["first", "second, edited"]);
+            assert!(!db.queue_held("t1").unwrap());
+            (a, b)
+        };
+        let db = Database::open(&path).unwrap();
+        assert!(db.queue_held("t1").unwrap(), "a queue that survived a restart waits for Resume");
+        assert_eq!(db.queue_thread(&a.id).unwrap().as_deref(), Some("t1"));
+        assert_eq!(db.queue_take(&a.id).unwrap().unwrap().text, "first");
+        assert!(db.queue_take(&a.id).unwrap().is_none(), "taken once");
+        assert_eq!(db.queue("t1").unwrap()[0].id, b.id);
+        db.delete_session("t1").unwrap();
+        assert!(db.queue("t1").unwrap().is_empty());
+        drop(db);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

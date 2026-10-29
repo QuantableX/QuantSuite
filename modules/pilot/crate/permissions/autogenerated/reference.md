@@ -23,6 +23,14 @@ Default permissions for the pilot module.
 - `allow-pilot-thread-interrupt`
 - `allow-pilot-thread-update`
 - `allow-pilot-provider-catalog`
+- `allow-pilot-queue-list`
+- `allow-pilot-queue-add`
+- `allow-pilot-queue-update`
+- `allow-pilot-queue-remove`
+- `allow-pilot-queue-send-now`
+- `allow-pilot-queue-resume`
+- `allow-pilot-thread-steer`
+- `allow-pilot-attachment-save-text`
 
 ## Permission Table
 
@@ -32,6 +40,32 @@ Default permissions for the pilot module.
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`pilot:allow-pilot-attachment-save-text`
+
+</td>
+<td>
+
+Enables the pilot_attachment_save_text command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-attachment-save-text`
+
+</td>
+<td>
+
+Denies the pilot_attachment_save_text command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -81,6 +115,162 @@ Enables the pilot_provider_catalog command without any pre-configured scope.
 <td>
 
 Denies the pilot_provider_catalog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-queue-add`
+
+</td>
+<td>
+
+Enables the pilot_queue_add command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-queue-add`
+
+</td>
+<td>
+
+Denies the pilot_queue_add command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-queue-list`
+
+</td>
+<td>
+
+Enables the pilot_queue_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-queue-list`
+
+</td>
+<td>
+
+Denies the pilot_queue_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-queue-remove`
+
+</td>
+<td>
+
+Enables the pilot_queue_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-queue-remove`
+
+</td>
+<td>
+
+Denies the pilot_queue_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-queue-resume`
+
+</td>
+<td>
+
+Enables the pilot_queue_resume command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-queue-resume`
+
+</td>
+<td>
+
+Denies the pilot_queue_resume command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-queue-send-now`
+
+</td>
+<td>
+
+Enables the pilot_queue_send_now command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-queue-send-now`
+
+</td>
+<td>
+
+Denies the pilot_queue_send_now command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-queue-update`
+
+</td>
+<td>
+
+Enables the pilot_queue_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-queue-update`
+
+</td>
+<td>
+
+Denies the pilot_queue_update command without any pre-configured scope.
 
 </td>
 </tr>
@@ -497,6 +687,32 @@ Enables the pilot_thread_snapshot command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_snapshot command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-steer`
+
+</td>
+<td>
+
+Enables the pilot_thread_steer command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-steer`
+
+</td>
+<td>
+
+Denies the pilot_thread_steer command without any pre-configured scope.
 
 </td>
 </tr>

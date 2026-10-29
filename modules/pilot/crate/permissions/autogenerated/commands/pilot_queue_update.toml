@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-queue-update"
+description = "Enables the pilot_queue_update command without any pre-configured scope."
+commands.allow = ["pilot_queue_update"]
+
+[[permission]]
+identifier = "deny-pilot-queue-update"
+description = "Denies the pilot_queue_update command without any pre-configured scope."
+commands.deny = ["pilot_queue_update"]

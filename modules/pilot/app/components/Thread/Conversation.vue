@@ -60,7 +60,9 @@ const faceState = computed(() => {
       </p>
       <p v-else class="qp-hero-text">{{ thread?.cwd }}</p>
     </div>
-    <PilotThreadTimeline v-else :thread-id="threadId" @notice="showNotice" />
+    <PilotThreadTimeline v-else :thread-id="threadId" @notice="showNotice">
+      <template #after><PilotThreadQueue :thread-id="threadId" /></template>
+    </PilotThreadTimeline>
 
     <div class="qp-conv-foot">
       <div v-if="view?.error" class="qp-conv-banner is-error">

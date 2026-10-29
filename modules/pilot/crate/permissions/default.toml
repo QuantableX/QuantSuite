@@ -22,4 +22,12 @@ permissions = [
   "allow-pilot-thread-interrupt",
   "allow-pilot-thread-update",
   "allow-pilot-provider-catalog",
+  "allow-pilot-queue-list",
+  "allow-pilot-queue-add",
+  "allow-pilot-queue-update",
+  "allow-pilot-queue-remove",
+  "allow-pilot-queue-send-now",
+  "allow-pilot-queue-resume",
+  "allow-pilot-thread-steer",
+  "allow-pilot-attachment-save-text",
 ]

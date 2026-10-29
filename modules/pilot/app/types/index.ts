@@ -107,7 +107,14 @@ export interface PilotSettings {
   attachQuantmcp: boolean
   includeGeneralVault: boolean
   custom: CustomAdapter[]
+  /** `enter` | `modEnterMultiline` | `modEnter` */
+  sendShortcut: SendShortcut
+  /** What a message sent while the agent works does. */
+  followUp: FollowUp
 }
+
+export type SendShortcut = 'enter' | 'modEnterMultiline' | 'modEnter'
+export type FollowUp = 'queue' | 'steer'
 
 // ── Signals (crate/src/signals.rs) ──
 
@@ -209,6 +216,22 @@ export type ThreadEvent =
   | { type: 'usage'; contextTokens: number | null; contextWindow: number | null; costUsd: number | null; inputTokens: number | null; outputTokens: number | null }
   | { type: 'rateLimit'; windows: RateWindow[] }
   | { type: 'title'; title: string }
+  | { type: 'queue'; items: QueueItem[]; held: boolean }
+
+/** A follow-up waiting for the running turn (card 4). */
+export interface QueueItem {
+  id: string
+  threadId: string
+  position: number
+  text: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface QueueState {
+  items: QueueItem[]
+  held: boolean
+}
 
 export interface ThreadEnvelope {
   threadId: string
@@ -223,6 +246,8 @@ export interface ThreadSnapshot {
   hasMore: boolean
   turnId: string | null
   processAlive: boolean
+  queue: QueueState
+  canSteer: boolean
 }
 
 export type Answer =
