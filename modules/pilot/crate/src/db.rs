@@ -15,8 +15,9 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// 3: threads, timeline, turns (card 2). 4: the follow-up queue (card 4).
-/// 5: pin, order, settle, snooze (card 7).
-pub const SCHEMA_VERSION: i64 = 7;
+/// 5: pin, order, settle, snooze (card 7). 6: workspace (card 10).
+/// 7: checkpoints and turn changes (card 11). 8: links (card 12).
+pub const SCHEMA_VERSION: i64 = 8;
 
 /// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -247,6 +248,20 @@ const CHANGE_TABLES: &str = "
         PRIMARY KEY (turn_id, path)
     );";
 
+/// What a thread links to (card 12: pull requests; card 21 adds board cards).
+const LINK_TABLE: &str = "
+    CREATE TABLE IF NOT EXISTS links (
+        thread_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        url TEXT NOT NULL,
+        number INTEGER NOT NULL DEFAULT 0,
+        title TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT 'open',
+        checked_at INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (thread_id, url)
+    );";
+
 /// Columns the branch toolbar (card 10, schema v6) adds.
 const V6_COLUMNS: [(&str, &str); 4] = [
     ("workspace_mode", "workspace_mode TEXT NOT NULL DEFAULT 'local'"),
@@ -363,6 +378,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         }
     }
     tx.execute_batch(CHANGE_TABLES)?;
+    tx.execute_batch(LINK_TABLE)?;
     if !column_exists(&tx, "turns", "provider_ref")? {
         tx.execute_batch("ALTER TABLE turns ADD COLUMN provider_ref TEXT;")?;
     }
@@ -741,6 +757,7 @@ impl Database {
         conn.execute("DELETE FROM checkpoints WHERE thread_id = ?1", params![id])?;
         conn.execute("DELETE FROM turns WHERE thread_id = ?1", params![id])?;
         conn.execute("DELETE FROM queue WHERE thread_id = ?1", params![id])?;
+        conn.execute("DELETE FROM links WHERE thread_id = ?1", params![id])?;
         conn.execute("DELETE FROM threads WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -839,6 +856,44 @@ impl Database {
         let conn = self.lock();
         conn.execute("UPDATE threads SET provider_session_id = NULL WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    // ── Links (card 12) ──
+
+    /// Add a link, or refresh its title and state when the thread has it already.
+    pub fn add_link(&self, l: &crate::gitops::Link) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO links (thread_id, kind, url, number, title, state, checked_at, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT (thread_id, url) DO UPDATE SET
+                title = CASE WHEN excluded.title = '' THEN links.title ELSE excluded.title END,
+                state = excluded.state, checked_at = excluded.checked_at",
+            params![l.thread_id, l.kind, l.url, l.number, l.title, l.state, l.checked_at, l.created_at],
+        )?;
+        Ok(())
+    }
+
+    /// One thread's links, or every thread's.
+    pub fn links(&self, thread_id: Option<&str>) -> rusqlite::Result<Vec<crate::gitops::Link>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT thread_id, kind, url, number, title, state, checked_at, created_at FROM links
+                WHERE ?1 IS NULL OR thread_id = ?1 ORDER BY created_at",
+        )?;
+        let rows = stmt.query_map(params![thread_id], |r| {
+            Ok(crate::gitops::Link {
+                thread_id: r.get(0)?,
+                kind: r.get(1)?,
+                url: r.get(2)?,
+                number: r.get(3)?,
+                title: r.get(4)?,
+                state: r.get(5)?,
+                checked_at: r.get(6)?,
+                created_at: r.get(7)?,
+            })
+        })?;
+        rows.collect()
     }
 
     /// What the next launch rewinds to (JSON), or nothing.
@@ -1175,6 +1230,33 @@ mod tests {
             branch: String::new(),
             worktree_path: None,
         }
+    }
+
+    #[test]
+    fn links_are_kept_once_and_refreshed() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_session(&thread("t1")).unwrap();
+        let mut l = crate::gitops::Link {
+            thread_id: "t1".into(),
+            kind: "pr".into(),
+            url: "https://github.com/o/r/pull/45".into(),
+            number: 45,
+            title: "Faster sidebar".into(),
+            state: "open".into(),
+            checked_at: 5,
+            created_at: 5,
+        };
+        db.add_link(&l).unwrap();
+        l.state = "merged".into();
+        l.title = String::new();
+        l.checked_at = 9;
+        db.add_link(&l).unwrap();
+        let all = db.links(None).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!((all[0].state.as_str(), all[0].title.as_str(), all[0].checked_at), ("merged", "Faster sidebar", 9));
+        assert_eq!(db.links(Some("other")).unwrap().len(), 0);
+        db.delete_session("t1").unwrap();
+        assert!(db.links(None).unwrap().is_empty());
     }
 
     #[test]

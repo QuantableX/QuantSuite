@@ -139,6 +139,8 @@ export interface PilotSettings {
   newThreadWorkspace: 'local' | 'worktree'
   /** The start of a worktree thread's branch name. */
   worktreePrefix: string
+  /** Generated commit messages follow the repository's recent subjects, or a standard form. */
+  commitStyle: 'repository' | 'standard'
 }
 
 // ── Branch toolbar (card 10) ──
@@ -148,6 +150,51 @@ export interface RepoInfo {
   branch: string
   defaultBranch: string
   dirty: number
+}
+
+/** What a thread's checkout can commit, push, pull or merge (card 12). */
+export interface GitStatus {
+  /** Empty on a detached HEAD. */
+  branch: string
+  defaultBranch: string
+  /** What Merge and a pull request target. */
+  base: string
+  upstream: string | null
+  ahead: number
+  behind: number
+  aheadOfBase: number
+  files: FileChange[]
+  remote: string | null
+  /** owner/repo when the remote is on GitHub. */
+  github: string | null
+  /** Why pull requests are unavailable; null = available. */
+  prBlocked: string | null
+  worktree: boolean
+  /** Commits the next push or merge carries that credit an AI. */
+  aiCredits: string[]
+}
+
+export interface GitGenerated {
+  title: string
+  body: string
+}
+
+export interface GitDone {
+  message: string
+  /** Half done: committed, but the push failed. */
+  error: string | null
+}
+
+/** A pull request (or later a board card) linked to a thread. */
+export interface ThreadLink {
+  threadId: string
+  kind: 'pr'
+  url: string
+  number: number
+  title: string
+  state: 'open' | 'draft' | 'closed' | 'merged'
+  checkedAt: number
+  createdAt: number
 }
 
 export interface GitInfo {

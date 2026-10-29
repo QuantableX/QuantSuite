@@ -11,6 +11,7 @@
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ensureKatex, hasMath, highlightCode, renderMarkdown } from '#pilot/utils/markdown'
+import { openExternal } from '#pilot/utils/external'
 
 const props = withDefaults(defineProps<{ source: string; streaming?: boolean }>(), { streaming: false })
 const emit = defineEmits<{ notice: [text: string] }>()
@@ -61,14 +62,6 @@ async function copyText(text: string) {
   }
 }
 
-async function openExternal(url: string) {
-  try {
-    const { open } = await import('@tauri-apps/plugin-shell')
-    await open(url)
-  } catch {
-    window.open(url, '_blank', 'noopener')
-  }
-}
 
 async function onClick(e: MouseEvent) {
   const target = e.target as HTMLElement

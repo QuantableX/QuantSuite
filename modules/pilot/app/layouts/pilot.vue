@@ -17,6 +17,7 @@ import { useAppStore } from '#pilot/stores/app'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { useGitStore } from '#pilot/stores/git'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { chime } from '#pilot/utils/chime'
 import { threadReference } from '#pilot/utils/format'
@@ -26,10 +27,13 @@ const app = useAppStore()
 const store = usePilotStore()
 const threads = useThreadStore()
 const sidebar = useSidebarStore()
+const git = useGitStore()
 const inspector = useInspectorStore()
 
 useTauriEvent<ThreadEnvelope>('pilot-thread-event', (envelope) => {
   threads.apply(envelope)
+  // An agent's `gh pr create` links the pull request at turn end (card 12).
+  if (envelope.event.type === 'turn' && envelope.event.status !== 'started') void git.loadLinks()
 })
 // A "needs you" toast was clicked (crate/src/notify.rs).
 useTauriEvent<{ threadId: string }>('pilot-open-thread', (payload) => {
@@ -63,8 +67,10 @@ useTauriEvent<{ id: string; state: string }>('console-session', (payload) => {
 onMounted(() => {
   if (!inActiveKeepAliveTree()) return
   void store.load()
+  void git.loadLinks()
 })
 onActivated(() => {
+  void git.loadLinks()
   if (store.loaded) {
     void store.refreshSessions()
     void store.refreshContexts()

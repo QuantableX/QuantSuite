@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-links"
+description = "Enables the pilot_links command without any pre-configured scope."
+commands.allow = ["pilot_links"]
+
+[[permission]]
+identifier = "deny-pilot-links"
+description = "Denies the pilot_links command without any pre-configured scope."
+commands.deny = ["pilot_links"]

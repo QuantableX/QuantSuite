@@ -230,13 +230,25 @@ pub fn run_capture(cmd: Command, timeout: Duration) -> Result<(bool, String), St
 
 /// [`run_capture`] with stdout and stderr apart — for an answer that must
 /// not pick up a hook's or a plugin's notice.
-pub fn run_capture_split(mut cmd: Command, timeout: Duration) -> Result<(bool, String, String), String> {
+pub fn run_capture_split(cmd: Command, timeout: Duration) -> Result<(bool, String, String), String> {
+    run_with_input(cmd, None, timeout)
+}
+
+/// [`run_capture_split`] with `input` written to stdin — for a prompt too
+/// long for the Windows command line (32,767 characters).
+pub fn run_with_input(mut cmd: Command, input: Option<String>, timeout: Duration) -> Result<(bool, String, String), String> {
     let mut child = cmd
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| e.to_string())?;
+    if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let _ = stdin.write_all(text.as_bytes());
+        });
+    }
     let mut out = child.stdout.take();
     let mut err = child.stderr.take();
     let t_out = std::thread::spawn(move || {

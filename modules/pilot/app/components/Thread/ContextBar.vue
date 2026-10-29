@@ -27,6 +27,7 @@ const started = computed(() => Boolean(info.value?.started))
 const isWorktree = computed(() => info.value?.mode === 'worktree')
 const draftWorktree = computed(() => isWorktree.value && !thread.value?.worktreePath)
 const project = computed(() => thread.value?.contextName ?? '')
+const prs = computed(() => (git.links[props.threadId] ?? []).filter((l) => l.kind === 'pr'))
 const picker = ref<'branch' | 'base' | null>(null)
 const message = ref('')
 
@@ -129,6 +130,7 @@ const baseLabel = computed(() => info.value?.baseBranch || repo.value?.branch ||
         <PilotThreadBranchPicker v-if="picker === 'branch'" :thread-id="threadId" mode="switch" :current="branchLabel" @pick="onPick" @close="picker = null" />
       </span>
     </template>
+    <PilotGitPrChip v-for="l in prs" :key="l.url" :link="l" compact />
     <span v-if="message" class="qp-cb-msg" role="status">{{ message }}</span>
     <button class="qp-cb-copy" title="Copy the checkout's path" @click="copyPath"><Copy :size="12" /></button>
   </div>

@@ -2,14 +2,18 @@
 /**
  * Header center: the open session's title (click to rename), its context,
  * the agent running in its terminal (or "terminal"), the model it reported,
- * the permission mode the wrappers pass on, and End while the terminal
- * lives. The chrome (logo cap, selector, settings) is QModuleHeader's.
+ * the permission mode the wrappers pass on, its pull requests, the git
+ * actions (card 12), and End while the terminal lives. The chrome (logo
+ * cap, selector, settings) is QModuleHeader's.
  */
 import { computed, nextTick, ref } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useGitStore } from '#pilot/stores/git'
 import { modeLabel } from '#pilot/utils/format'
 
 const store = usePilotStore()
+const git = useGitStore()
+const prs = computed(() => (session.value ? (git.links[session.value.id] ?? []).filter((l) => l.kind === 'pr') : []))
 const session = computed(() => store.active)
 const live = computed(() => store.activeLive)
 
@@ -54,7 +58,9 @@ async function end() {
         <span class="qp-head-chip is-provider" :title="live.display || undefined">{{ store.adapterLabel(session.provider) }}</span>
         <span v-if="model" class="qp-head-chip" :title="`Model: ${model}`">{{ model }}</span>
         <span class="qp-head-chip" title="Permission mode">{{ modeLabel(session.mode) }}</span>
+        <PilotGitPrChip v-for="l in prs" :key="l.url" :link="l" />
         <div class="qp-header-spacer" />
+        <PilotGitActions :thread-id="session.id" />
         <button
           v-if="!store.terminalShown[session.id]"
           class="qp-btn qp-btn-sm"

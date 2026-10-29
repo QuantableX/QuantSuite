@@ -415,6 +415,42 @@
           "markdownDescription": "Denies the pilot_git_checkout command without any pre-configured scope."
         },
         {
+          "description": "Enables the pilot_git_commit command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-git-commit",
+          "markdownDescription": "Enables the pilot_git_commit command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_git_commit command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-git-commit",
+          "markdownDescription": "Denies the pilot_git_commit command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_git_discard_all command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-git-discard-all",
+          "markdownDescription": "Enables the pilot_git_discard_all command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_git_discard_all command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-git-discard-all",
+          "markdownDescription": "Denies the pilot_git_discard_all command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_git_generate command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-git-generate",
+          "markdownDescription": "Enables the pilot_git_generate command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_git_generate command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-git-generate",
+          "markdownDescription": "Denies the pilot_git_generate command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pilot_git_info command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pilot-git-info",
@@ -425,6 +461,90 @@
           "type": "string",
           "const": "deny-pilot-git-info",
           "markdownDescription": "Denies the pilot_git_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_git_merge command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-git-merge",
+          "markdownDescription": "Enables the pilot_git_merge command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_git_merge command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-git-merge",
+          "markdownDescription": "Denies the pilot_git_merge command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_git_pull command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-git-pull",
+          "markdownDescription": "Enables the pilot_git_pull command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_git_pull command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-git-pull",
+          "markdownDescription": "Denies the pilot_git_pull command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_git_push command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-git-push",
+          "markdownDescription": "Enables the pilot_git_push command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_git_push command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-git-push",
+          "markdownDescription": "Denies the pilot_git_push command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_git_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-git-status",
+          "markdownDescription": "Enables the pilot_git_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_git_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-git-status",
+          "markdownDescription": "Denies the pilot_git_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_links command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-links",
+          "markdownDescription": "Enables the pilot_links command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_links command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-links",
+          "markdownDescription": "Denies the pilot_links command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_pr_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-pr-create",
+          "markdownDescription": "Enables the pilot_pr_create command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_pr_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-pr-create",
+          "markdownDescription": "Denies the pilot_pr_create command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_pr_refresh command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-pr-refresh",
+          "markdownDescription": "Enables the pilot_pr_refresh command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_pr_refresh command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-pr-refresh",
+          "markdownDescription": "Denies the pilot_pr_refresh command without any pre-configured scope."
         },
         {
           "description": "Enables the pilot_provider_catalog command without any pre-configured scope.",
@@ -895,10 +1015,10 @@
           "markdownDescription": "Denies the pilot_worktree_status command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`\n- `allow-pilot-thread-arrange`\n- `allow-pilot-files-search`\n- `allow-pilot-attachment-save-image`\n- `allow-pilot-attachment-save-file`\n- `allow-pilot-skills`\n- `allow-pilot-diff-list`\n- `allow-pilot-diff-file`\n- `allow-pilot-diff-action`\n- `allow-pilot-thread-revert`\n- `allow-pilot-git-info`\n- `allow-pilot-git-branches`\n- `allow-pilot-git-checkout`\n- `allow-pilot-thread-set-workspace`\n- `allow-pilot-worktree-previous`\n- `allow-pilot-worktree-check`\n- `allow-pilot-worktree-remove`\n- `allow-pilot-worktree-recreate`\n- `allow-pilot-thread-regenerate-title`",
+          "description": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`\n- `allow-pilot-thread-arrange`\n- `allow-pilot-files-search`\n- `allow-pilot-attachment-save-image`\n- `allow-pilot-attachment-save-file`\n- `allow-pilot-skills`\n- `allow-pilot-diff-list`\n- `allow-pilot-diff-file`\n- `allow-pilot-diff-action`\n- `allow-pilot-thread-revert`\n- `allow-pilot-git-info`\n- `allow-pilot-git-branches`\n- `allow-pilot-git-checkout`\n- `allow-pilot-thread-set-workspace`\n- `allow-pilot-worktree-previous`\n- `allow-pilot-worktree-check`\n- `allow-pilot-worktree-remove`\n- `allow-pilot-worktree-recreate`\n- `allow-pilot-thread-regenerate-title`\n- `allow-pilot-git-status`\n- `allow-pilot-git-generate`\n- `allow-pilot-git-commit`\n- `allow-pilot-git-push`\n- `allow-pilot-git-pull`\n- `allow-pilot-git-merge`\n- `allow-pilot-git-discard-all`\n- `allow-pilot-pr-create`\n- `allow-pilot-links`\n- `allow-pilot-pr-refresh`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`\n- `allow-pilot-thread-arrange`\n- `allow-pilot-files-search`\n- `allow-pilot-attachment-save-image`\n- `allow-pilot-attachment-save-file`\n- `allow-pilot-skills`\n- `allow-pilot-diff-list`\n- `allow-pilot-diff-file`\n- `allow-pilot-diff-action`\n- `allow-pilot-thread-revert`\n- `allow-pilot-git-info`\n- `allow-pilot-git-branches`\n- `allow-pilot-git-checkout`\n- `allow-pilot-thread-set-workspace`\n- `allow-pilot-worktree-previous`\n- `allow-pilot-worktree-check`\n- `allow-pilot-worktree-remove`\n- `allow-pilot-worktree-recreate`\n- `allow-pilot-thread-regenerate-title`"
+          "markdownDescription": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`\n- `allow-pilot-thread-arrange`\n- `allow-pilot-files-search`\n- `allow-pilot-attachment-save-image`\n- `allow-pilot-attachment-save-file`\n- `allow-pilot-skills`\n- `allow-pilot-diff-list`\n- `allow-pilot-diff-file`\n- `allow-pilot-diff-action`\n- `allow-pilot-thread-revert`\n- `allow-pilot-git-info`\n- `allow-pilot-git-branches`\n- `allow-pilot-git-checkout`\n- `allow-pilot-thread-set-workspace`\n- `allow-pilot-worktree-previous`\n- `allow-pilot-worktree-check`\n- `allow-pilot-worktree-remove`\n- `allow-pilot-worktree-recreate`\n- `allow-pilot-thread-regenerate-title`\n- `allow-pilot-git-status`\n- `allow-pilot-git-generate`\n- `allow-pilot-git-commit`\n- `allow-pilot-git-push`\n- `allow-pilot-git-pull`\n- `allow-pilot-git-merge`\n- `allow-pilot-git-discard-all`\n- `allow-pilot-pr-create`\n- `allow-pilot-links`\n- `allow-pilot-pr-refresh`"
         }
       ]
     }
