@@ -12,10 +12,11 @@
  * Loading follows the warm-cache rule (V3): on mount only inside an active
  * KeepAlive tree, again on activation.
  */
-import { inActiveKeepAliveTree, useShortcuts, useTauriEvent } from '@quantsuite/core'
+import { inActiveKeepAliveTree, setModuleAttention, useShortcuts, useTauriEvent } from '@quantsuite/core'
 import { useAppStore } from '#pilot/stores/app'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
+import { chime } from '#pilot/utils/chime'
 import type { PilotEnvelope, ThreadEnvelope } from '#pilot/types'
 
 const app = useAppStore()
@@ -25,6 +26,25 @@ const threads = useThreadStore()
 useTauriEvent<ThreadEnvelope>('pilot-thread-event', (envelope) => {
   threads.apply(envelope)
 })
+// A "needs you" toast was clicked (crate/src/notify.rs).
+useTauriEvent<{ threadId: string }>('pilot-open-thread', (payload) => {
+  void navigateTo('/pilot')
+  void store.openSession(payload.threadId)
+})
+
+/** Threads waiting on the user: the rail's badge, and the optional sound. */
+const waitingCount = computed(
+  () =>
+    store.sessions.filter((s) => {
+      const v = threads.views[s.id]
+      return (v?.loaded ? v.state : s.state) === 'waiting'
+    }).length
+)
+watch(waitingCount, (n, old) => {
+  setModuleAttention('pilot', n)
+  if (n > (old ?? 0) && store.settings?.notifySound) chime()
+})
+onUnmounted(() => setModuleAttention('pilot', 0))
 useTauriEvent<PilotEnvelope>('pilot-event', (envelope) => {
   store.applyEvent(envelope.sessionId, envelope.event)
 })

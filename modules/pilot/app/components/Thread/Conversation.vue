@@ -23,6 +23,7 @@ watch(
   { immediate: true }
 )
 
+const composer = ref<{ focus: () => void } | null>(null)
 const notice = ref('')
 let noticeTimer: ReturnType<typeof setTimeout> | null = null
 function showNotice(text: string) {
@@ -70,7 +71,8 @@ const faceState = computed(() => {
         <button class="qp-link" @click="view.error = null">Dismiss</button>
       </div>
       <div v-if="notice" class="qp-conv-banner is-notice">{{ notice }}</div>
-      <PilotThreadComposer :thread-id="threadId" />
+      <PilotThreadApprovals :thread-id="threadId" @done="composer?.focus()" />
+      <PilotThreadComposer ref="composer" :thread-id="threadId" />
     </div>
   </div>
 </template>

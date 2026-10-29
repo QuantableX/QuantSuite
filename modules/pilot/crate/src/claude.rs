@@ -810,7 +810,12 @@ impl Driver for ClaudeDriver {
         let response = match (pending.kind, answer) {
             (_, Answer::Deny { message }) => {
                 let m = message.as_deref().map(str::trim).filter(|m| !m.is_empty());
-                deny(m.unwrap_or("The user declined this."))
+                // Said as the user's own words: a bare text reads to the
+                // agent like a tool error it may distrust (live test 2026-10-29).
+                match m {
+                    Some(m) => deny(&format!("The user declined this and replied: {m}")),
+                    None => deny("The user declined this."),
+                }
             }
             (RequestKind::Question, Answer::Answers { answers }) => {
                 let mut input = pending.input.clone();
@@ -957,7 +962,7 @@ mod tests {
         assert_eq!(v["type"], "control_response");
         assert_eq!(v["response"]["request_id"], req.request_id.as_str());
         assert_eq!(v["response"]["response"]["behavior"], "deny");
-        assert_eq!(v["response"]["response"]["message"], "not now");
+        assert_eq!(v["response"]["response"]["message"], "The user declined this and replied: not now");
         assert!(d.answer(&req.request_id, &Answer::Allow).is_err(), "answered once");
     }
 
@@ -988,6 +993,11 @@ mod tests {
         answers.insert("Which?".into(), json!("B"));
         let v: Value = serde_json::from_str(&d.answer("q1", &Answer::Answers { answers }).unwrap()[0]).unwrap();
         assert_eq!(v["response"]["response"]["updatedInput"]["answers"]["Which?"], "B");
+
+        d.on_line(&q.replace("q1", "q2"));
+        let v: Value = serde_json::from_str(&d.answer("q2", &Answer::Dismiss).unwrap()[0]).unwrap();
+        assert_eq!(v["response"]["response"]["behavior"], "deny", "a dismissal answers nothing");
+        assert!(v["response"]["response"]["message"].as_str().unwrap().contains("dismissed"));
 
         let p = r#"{"type":"control_request","request_id":"p1","request":{"subtype":"can_use_tool","tool_name":"ExitPlanMode","input":{"plan":"1. do it"}}}"#;
         let out = d.on_line(p);

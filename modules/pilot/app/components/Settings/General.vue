@@ -22,6 +22,8 @@ const draft = reactive<PilotSettings>({
   custom: [],
   sendShortcut: 'enter',
   followUp: 'queue',
+  notify: 'unfocused',
+  notifySound: false,
 })
 const notice = ref('')
 const busy = ref(false)
@@ -41,6 +43,8 @@ function pull() {
   draft.custom = s.custom.map((c) => ({ ...c }))
   draft.sendShortcut = s.sendShortcut ?? 'enter'
   draft.followUp = s.followUp ?? 'queue'
+  draft.notify = s.notify ?? 'unfocused'
+  draft.notifySound = s.notifySound ?? false
 }
 onMounted(async () => {
   if (!store.settings) await store.loadSettings()
@@ -182,6 +186,22 @@ const signalsLabel = (s: string | null) =>
         </select>
       </label>
     </div>
+
+    <h3 class="qp-settings-title">When a thread needs you</h3>
+    <div class="qp-settings-grid">
+      <label class="qp-settings-field">
+        <span>Windows notification <em>(click it to open the thread)</em></span>
+        <select v-model="draft.notify" class="qp-input">
+          <option value="unfocused">Only while QuantSuite is in the background</option>
+          <option value="always">Always</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+    </div>
+    <label class="qp-settings-check">
+      <input v-model="draft.notifySound" type="checkbox" />
+      <span>Play a short sound</span>
+    </label>
 
     <h3 class="qp-settings-title">The suite as context</h3>
     <label class="qp-settings-check">

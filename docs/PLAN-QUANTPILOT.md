@@ -232,6 +232,9 @@ Discovery runs `initialize` only, with `--no-session-persistence
   the tool), or deny with the user's message. AskUserQuestion becomes a
   `question` item (answers go back in `updatedInput.answers`); ExitPlanMode a
   `plan` item. Hook and SDK-MCP callbacks are answered with an error.
+  A deny with the user's reply is sent as "The user declined this and
+  replied: …" — a bare text reads to the agent like a tool error, which it
+  may distrust and ignore (live test, card 6).
 - `result.total_cost_usd` is cumulative per process: a turn's cost is the
   difference to the previous result.
 - **Steering works**: a user message written to stdin while a turn runs
