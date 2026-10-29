@@ -165,7 +165,16 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+/** A chip (FSI label PDI, utils/mentions.ts) as a pill — same characters, so the caret stays aligned. */
+const CHIP_RE = /(\u2068[^\u2069]*\u2069)/g
+
 function inline(line: string): string {
+  if (line.includes('\u2068')) {
+    return line
+      .split(CHIP_RE)
+      .map((p, i) => (i % 2 === 1 ? `<span class="qp-hl-chip">${esc(p)}</span>` : inline(p)))
+      .join('')
+  }
   // Inline code first: nothing inside it is styled.
   const parts = line.split(/(`[^`\n]+`)/g)
   return parts

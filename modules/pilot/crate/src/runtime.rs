@@ -806,7 +806,7 @@ impl Runtime {
             cost_usd: None,
             error: None,
         });
-        proj.user_message(&input.text, attachments);
+        proj.user_message(input.display.as_deref().unwrap_or(&input.text), attachments);
         let _ = self.db.touch(thread_id);
         let _ = self.db.resume(thread_id);
         proj.emit(ThreadEvent::Turn {
@@ -923,7 +923,7 @@ impl Runtime {
             driver.user_message(&input)
         };
         run.write(&lines)?;
-        lock(&run.proj).steer_message(&input.text);
+        lock(&run.proj).steer_message(input.display.as_deref().unwrap_or(&input.text));
         let _ = self.db.touch(thread_id);
         let _ = self.db.resume(thread_id);
         Ok(())
@@ -1375,7 +1375,7 @@ mod tests {
                 driver: Box::new(ClaudeDriver::new()),
             }
         };
-        let first = TurnInput { text: "Remember the token PAPAYA-7. Reply with OK only.".into(), images: Vec::new() };
+        let first = TurnInput { text: "Remember the token PAPAYA-7. Reply with OK only.".into(), ..Default::default() };
         rt.send("t1", first, json!([]), || Ok(plan(SessionRef::New(sid.clone()))), "live").unwrap();
         let t = wait_for_turn(&db, &rt, "t1", true);
         assert_eq!(t.status, "completed", "first turn: {:?}", t.error);
@@ -1386,7 +1386,7 @@ mod tests {
         while rt.process_alive("t1") && start.elapsed() < Duration::from_secs(10) {
             std::thread::sleep(Duration::from_millis(50));
         }
-        let second = TurnInput { text: "What token did I ask you to remember? Reply with the token only.".into(), images: Vec::new() };
+        let second = TurnInput { text: "What token did I ask you to remember? Reply with the token only.".into(), ..Default::default() };
         rt.send("t1", second, json!([]), || Ok(plan(SessionRef::Resume(sid.clone()))), "live").unwrap();
         let t = wait_for_turn(&db, &rt, "t1", true);
         assert_eq!(t.status, "completed", "second turn: {:?}", t.error);
@@ -1455,13 +1455,13 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(200));
             }
         };
-        let first = TurnInput { text: "Create a file named a.txt containing exactly HI using your Write tool. Then reply DONE.".into(), images: Vec::new() };
+        let first = TurnInput { text: "Create a file named a.txt containing exactly HI using your Write tool. Then reply DONE.".into(), ..Default::default() };
         rt.send("t1", first, json!([]), || Ok(plan(SessionRef::New(sid.clone()))), "live").unwrap();
         let t = answer_all(Answer::Allow);
         assert_eq!(t.status, "completed", "{:?}", t.error);
         assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap_or_default().trim(), "HI", "the allowed write ran");
 
-        let second = TurnInput { text: "Create a file named c.txt containing HI using your Write tool.".into(), images: Vec::new() };
+        let second = TurnInput { text: "Create a file named c.txt containing HI using your Write tool.".into(), ..Default::default() };
         rt.send("t1", second, json!([]), || Ok(plan(SessionRef::Resume(sid.clone()))), "live").unwrap();
         let t = answer_all(Answer::Deny { message: Some("No new files. Reply with the single word MANGO instead.".into()) });
         assert_eq!(t.status, "completed", "{:?}", t.error);
@@ -1469,6 +1469,60 @@ mod tests {
         let answer = db.items("t1", None, 100).unwrap().into_iter().rev().find(|i| i.kind == ItemKind::Assistant).unwrap();
         println!("answer after deny: {}", answer.data["text"]);
         assert!(answer.data["text"].as_str().unwrap().contains("MANGO"), "the agent read the reason");
+        rt.stop_all();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Live, opt-in (card 9): a real Claude Code turn gets a normalized
+    /// image and reads an `@`-mentioned file itself.
+    #[test]
+    #[ignore = "live: one small Claude Code turn with an image (costs a few cents)"]
+    fn live_claude_sees_an_image_and_reads_a_mention() {
+        use crate::claude::{launch_args, LaunchOptions, SessionRef};
+        use crate::driver::ImageInput;
+        let claude = crate::providers::which("claude").expect("claude on PATH").to_string_lossy().into_owned();
+        let dir = std::env::temp_dir().join(format!("qp-live-img-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("notes.txt"), "The token is KIWI-3.\n").unwrap();
+        let red = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(96, 96, image::Rgb([220, 30, 30])));
+        let mut raw = std::io::Cursor::new(Vec::new());
+        red.write_to(&mut raw, image::ImageFormat::Jpeg).unwrap();
+        let png = crate::context::normalize_image(&raw.into_inner()).unwrap().png;
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        thread(&db, "t1");
+        let (sink, _) = sink();
+        let rt = Runtime::new(db.clone(), sink);
+        let cwd = dir.to_string_lossy().into_owned();
+        let args = launch_args(&LaunchOptions {
+            session: SessionRef::New(uuid::Uuid::new_v4().to_string()),
+            model: "haiku".into(),
+            effort: String::new(),
+            mode: "full".into(),
+            mcp_config: None,
+            append_prompt_file: None,
+            add_dirs: Vec::new(),
+        });
+        let input = TurnInput {
+            text: "Read @notes.txt and tell me the token in it, then the main colour of the attached image. Reply exactly as: TOKEN COLOUR".into(),
+            images: vec![ImageInput { media_type: "image/png".into(), base64: crate::context::b64(&png), path: None }],
+            ..Default::default()
+        };
+        let plan = LaunchPlan {
+            key: "live".into(),
+            program: claude,
+            args,
+            cwd: cwd.clone(),
+            env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+            driver: Box::new(ClaudeDriver::new()),
+        };
+        rt.send("t1", input, json!([]), || Ok(plan), "live").unwrap();
+        let t = wait_for_turn(&db, &rt, "t1", false);
+        assert_eq!(t.status, "completed", "{:?}", t.error);
+        let answer = db.items("t1", None, 100).unwrap().into_iter().rev().find(|i| i.kind == ItemKind::Assistant).expect("an answer");
+        let text = answer.data["text"].as_str().unwrap().to_lowercase();
+        println!("answer: {text}");
+        assert!(text.contains("kiwi-3"), "read the mentioned file");
+        assert!(text.contains("red"), "saw the image");
         rt.stop_all();
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -1510,7 +1564,7 @@ mod tests {
             env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
             driver: Box::new(CodexDriver::new(CodexOptions { cwd: cwd.clone(), resume, mode: "ask".into(), ..Default::default() })),
         };
-        let first = TurnInput { text: "Remember the token PAPAYA-9. Reply with OK only.".into(), images: Vec::new() };
+        let first = TurnInput { text: "Remember the token PAPAYA-9. Reply with OK only.".into(), ..Default::default() };
         rt.send("t1", first, json!([]), || Ok(plan(None)), "live").unwrap();
         let t = wait_for_turn(&db, &rt, "t1", true);
         assert_eq!(t.status, "completed", "first turn: {:?}", t.error);
@@ -1521,7 +1575,7 @@ mod tests {
         while rt.process_alive("t1") && start.elapsed() < Duration::from_secs(10) {
             std::thread::sleep(Duration::from_millis(50));
         }
-        let second = TurnInput { text: "What token did I ask you to remember? Reply with the token only.".into(), images: Vec::new() };
+        let second = TurnInput { text: "What token did I ask you to remember? Reply with the token only.".into(), ..Default::default() };
         rt.send("t1", second, json!([]), || Ok(plan(Some(codex_thread.clone()))), "live").unwrap();
         let t = wait_for_turn(&db, &rt, "t1", true);
         assert_eq!(t.status, "completed", "second turn: {:?}", t.error);
@@ -1529,7 +1583,7 @@ mod tests {
         println!("answer: {}", answer.data["text"]);
         assert!(answer.data["text"].as_str().unwrap().contains("PAPAYA-9"));
 
-        let third = TurnInput { text: "Run the shell command `echo hi > c.txt` in the current folder, then reply DONE.".into(), images: Vec::new() };
+        let third = TurnInput { text: "Run the shell command `echo hi > c.txt` in the current folder, then reply DONE.".into(), ..Default::default() };
         rt.send("t1", third, json!([]), || Ok(plan(Some(codex_thread.clone()))), "live").unwrap();
         let t = wait_for_turn(&db, &rt, "t1", true);
         println!("third turn: {} {:?}", t.status, t.error);
@@ -1593,7 +1647,7 @@ mod tests {
         let turn = rt
             .send(
                 "t1",
-                TurnInput { text: "hi".into(), images: Vec::new() },
+                TurnInput { text: "hi".into(), ..Default::default() },
                 json!([]),
                 || {
                     Ok(LaunchPlan {
@@ -1621,7 +1675,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(lock(&ended).as_slice(), &[("t1".to_string(), TurnStatus::Completed)], "the owner hears about the end once");
-        assert!(rt.steer("t1", TurnInput { text: "more".into(), images: Vec::new() }).is_err(), "nothing runs to steer into");
+        assert!(rt.steer("t1", TurnInput { text: "more".into(), ..Default::default() }).is_err(), "nothing runs to steer into");
         assert!(rt.send("t1", TurnInput::default(), json!([]), || Err("no CLI here".into()), "other").is_err());
         let items = db.items("t1", None, 100).unwrap();
         assert_eq!(items.last().unwrap().data["text"], "no CLI here", "a failed start is visible");

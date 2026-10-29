@@ -6861,8 +6861,11 @@ name = "tauri-plugin-pilot"
 version = "1.0.41"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "chrono",
  "dirs 5.0.1",
+ "ignore",
+ "image 0.25.10",
  "rusqlite",
  "serde",
  "serde_json",

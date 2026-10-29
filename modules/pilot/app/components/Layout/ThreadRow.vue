@@ -112,6 +112,8 @@ function onDrop(e: DragEvent) {
   fileOver.value = false
   if (!hasFiles(e)) return
   e.preventDefault()
+  // The row takes them: the module's own drop target must not as well.
+  e.stopPropagation()
   const files = Array.from(e.dataTransfer?.files ?? [])
   if (files.length) emit('files', files)
 }

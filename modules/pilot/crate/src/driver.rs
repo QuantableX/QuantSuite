@@ -106,7 +106,7 @@ pub struct Catalog {
     pub commands: Vec<CommandInfo>,
     /// Skills the CLI offers (`$name` in the composer, card 9).
     #[serde(default)]
-    pub skills: Vec<CommandInfo>,
+    pub skills: Vec<crate::context::SkillInfo>,
 }
 
 /// An image for a user message, already normalized to PNG by the caller.
@@ -114,6 +114,15 @@ pub struct Catalog {
 pub struct ImageInput {
     pub media_type: String,
     pub base64: String,
+    /// The saved copy, for providers that read images from disk (Codex `localImage`).
+    pub path: Option<String>,
+}
+
+/// A skill picked with `$` (Codex takes it as its own input item).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SkillRef {
+    pub name: String,
+    pub path: String,
 }
 
 /// What a driver tells the runtime. Keys (`key`, `call_id`) are the
@@ -160,8 +169,12 @@ pub enum Emit {
 /// What a turn is started with.
 #[derive(Debug, Clone, Default)]
 pub struct TurnInput {
+    /// What the provider gets: chips and documents already expanded.
     pub text: String,
     pub images: Vec<ImageInput>,
+    /// What the timeline shows when it differs (the typed text with its chips).
+    pub display: Option<String>,
+    pub skills: Vec<SkillRef>,
 }
 
 /// How a tool call is shown: a category for grouping ("Ran 3 commands") and

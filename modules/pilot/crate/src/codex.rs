@@ -27,8 +27,9 @@
 //! - Subagents run in child threads (`collabAgentToolCall.receiverThreadIds`);
 //!   their items nest under the call, their turns never end ours.
 
+use crate::context::SkillInfo;
 use crate::driver::{
-    Answer, Catalog, CommandInfo, Driver, Emit, ImageInput, ModelInfo, Request, RequestKind, ToolInfo, TurnInput, TurnStatus,
+    Answer, Catalog, Driver, Emit, ImageInput, ModelInfo, Request, RequestKind, ToolInfo, TurnInput, TurnStatus,
 };
 use crate::events::RateWindow;
 use serde_json::{json, Map, Value};
@@ -149,7 +150,7 @@ pub struct CodexDriver {
     cancelled: bool,
     version: Option<String>,
     models: Option<Vec<ModelInfo>>,
-    skills: Option<Vec<CommandInfo>>,
+    skills: Option<Vec<SkillInfo>>,
     catalog_sent: bool,
 }
 
@@ -272,9 +273,13 @@ impl CodexDriver {
         let mut items: Vec<Value> = input
             .images
             .iter()
-            .map(|ImageInput { media_type, base64 }| json!({ "type": "image", "url": format!("data:{media_type};base64,{base64}") }))
+            .map(|ImageInput { media_type, base64, path }| match path {
+                Some(p) => json!({ "type": "localImage", "path": p }),
+                None => json!({ "type": "image", "url": format!("data:{media_type};base64,{base64}") }),
+            })
             .collect();
         items.push(json!({ "type": "text", "text": input.text, "text_elements": [] }));
+        items.extend(input.skills.iter().map(|s| json!({ "type": "skill", "name": s.name, "path": s.path })));
         Value::Array(items)
     }
 
@@ -414,10 +419,11 @@ impl CodexDriver {
                             .iter()
                             .flat_map(|e| e.get("skills").and_then(Value::as_array).cloned().unwrap_or_default())
                             .filter(|k| k.get("enabled").and_then(Value::as_bool).unwrap_or(true))
-                            .map(|k| CommandInfo {
+                            .map(|k| SkillInfo {
                                 name: s(&k, "name").unwrap_or_default().to_string(),
                                 description: s(&k, "shortDescription").or_else(|| s(&k, "description")).unwrap_or_default().to_string(),
-                                argument_hint: String::new(),
+                                source: s(&k, "scope").unwrap_or("codex").to_string(),
+                                path: s(&k, "path").unwrap_or_default().to_string(),
                             })
                             .collect()
                     })
@@ -1205,7 +1211,7 @@ mod tests {
         let init = parse(&d.handshake()[0]);
         assert_eq!(init["method"], "initialize");
         assert_eq!(init["params"]["capabilities"]["optOutNotificationMethods"][0], "turn/diff/updated");
-        assert!(d.user_message(&TurnInput { text: "hi".into(), images: vec![] }).is_empty(), "waits for the thread");
+        assert!(d.user_message(&TurnInput { text: "hi".into(), ..Default::default() }).is_empty(), "waits for the thread");
         let out = feed(&mut d, &[json!({ "id": 1, "result": { "userAgent": "quantpilot/0.165.0 (Windows)", "platformOs": "windows" } })]);
         let w = writes(&out);
         assert_eq!(w[0]["method"], "initialized");
@@ -1297,7 +1303,7 @@ mod tests {
             "the user echo is skipped; a resumed thread counts only this call"
         );
         // The next message starts a new turn on the same thread.
-        let next = parse(&d.user_message(&TurnInput { text: "again".into(), images: vec![] })[0]);
+        let next = parse(&d.user_message(&TurnInput { text: "again".into(), ..Default::default() })[0]);
         assert_eq!(next["method"], "turn/start");
     }
 
@@ -1443,7 +1449,7 @@ mod tests {
     #[test]
     fn steering_and_live_settings() {
         let mut d = started();
-        let steer = parse(&d.user_message(&TurnInput { text: "also docs".into(), images: vec![] })[0]);
+        let steer = parse(&d.user_message(&TurnInput { text: "also docs".into(), ..Default::default() })[0]);
         assert_eq!(steer["method"], "turn/steer");
         assert_eq!(steer["params"]["expectedTurnId"], "tu-1");
         let full = parse(&d.set_mode("full").unwrap());
@@ -1467,7 +1473,7 @@ mod tests {
     fn a_failed_resume_starts_fresh() {
         let mut d = CodexDriver::new(CodexOptions { resume: Some("gone".into()), mode: "full".into(), ..Default::default() });
         d.handshake();
-        d.user_message(&TurnInput { text: "hi".into(), images: vec![] });
+        d.user_message(&TurnInput { text: "hi".into(), ..Default::default() });
         let out = feed(&mut d, &[json!({ "id": 1, "result": { "userAgent": "x/1.0" } })]);
         let resume = writes(&out).into_iter().find(|m| m["method"] == "thread/resume").unwrap();
         assert_eq!(resume["params"]["threadId"], "gone");

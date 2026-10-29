@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-attachment-save-file"
+description = "Enables the pilot_attachment_save_file command without any pre-configured scope."
+commands.allow = ["pilot_attachment_save_file"]
+
+[[permission]]
+identifier = "deny-pilot-attachment-save-file"
+description = "Denies the pilot_attachment_save_file command without any pre-configured scope."
+commands.deny = ["pilot_attachment_save_file"]

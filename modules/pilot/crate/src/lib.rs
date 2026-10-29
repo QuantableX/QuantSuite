@@ -16,6 +16,7 @@
 mod adapters;
 mod claude;
 mod codex;
+mod context;
 mod contexts;
 mod db;
 mod driver;
@@ -69,6 +70,8 @@ pub struct PilotState {
     sink: Sink,
     /// V3: the provider processes behind chat threads.
     runtime: Arc<runtime::Runtime>,
+    /// `@` search: one index per checkout (card 9).
+    files: context::FileIndex,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -608,6 +611,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 live: Mutex::new(HashMap::new()),
                 sink,
                 runtime,
+                files: context::FileIndex::default(),
             });
 
             qs_core::tray::register_entry(
@@ -650,6 +654,10 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_thread_steer,
             threads::pilot_attachment_save_text,
             threads::pilot_thread_arrange,
+            threads::pilot_files_search,
+            threads::pilot_attachment_save_image,
+            threads::pilot_attachment_save_file,
+            threads::pilot_skills,
             threads::pilot_thread_regenerate_title,
         ]))
         .build()

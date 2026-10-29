@@ -744,7 +744,7 @@ impl Driver for ClaudeDriver {
             let mut parts: Vec<Value> = input
                 .images
                 .iter()
-                .map(|ImageInput { media_type, base64 }| {
+                .map(|ImageInput { media_type, base64, .. }| {
                     json!({ "type": "image", "source": { "type": "base64", "media_type": media_type, "data": base64 } })
                 })
                 .collect();

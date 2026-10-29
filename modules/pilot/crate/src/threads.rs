@@ -6,7 +6,8 @@
 use crate::claude::{self, ClaudeDriver, LaunchOptions, SessionRef};
 use crate::codex::{self, CodexDriver, CodexOptions};
 use crate::db::{Arrangement, QueueItem, ThreadMeta};
-use crate::driver::{Answer, Catalog, ImageInput, TurnInput, TurnStatus};
+use crate::context::{self, Attachment, Chip, FileHit, SkillInfo};
+use crate::driver::{Answer, Catalog, ImageInput, SkillRef, TurnInput, TurnStatus};
 use crate::events::{Item, ThreadEvent};
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
@@ -320,30 +321,88 @@ fn codex_plan(app: &AppHandle, meta: &ThreadMeta, settings: &Settings) -> Result
     })
 }
 
+/// An attachment from the composer: saved by `pilot_attachment_*` first.
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentArg {
+    kind: String,
+    name: String,
+    path: String,
+    /// The shelf's thumbnail, kept with the sent message (images).
+    thumb: Option<String>,
+}
+
+/// The message as the provider gets it (chips and documents expanded,
+/// images read from their saved copies) and what the timeline keeps: the
+/// typed text with its chips, the attachments with thumbnails.
+fn prepare(provider: &str, text: String, images: Vec<ImageInput>, chips: Vec<Chip>, attachments: Vec<AttachmentArg>) -> Result<(TurnInput, Value), String> {
+    if attachments.len() > context::MAX_ATTACHMENTS {
+        return Err(format!("a message can carry up to {} attachments", context::MAX_ATTACHMENTS));
+    }
+    let mut images = images;
+    let mut shown = Vec::new();
+    for a in &attachments {
+        if a.kind == "image" {
+            let bytes = std::fs::read(&a.path).map_err(|e| format!("{} could not be read: {e}", a.name))?;
+            images.push(ImageInput { media_type: "image/png".into(), base64: context::b64(&bytes), path: Some(a.path.clone()) });
+        }
+        let thumb = a.thumb.clone().filter(|t| t.len() < 96 * 1024);
+        shown.push(json!({ "kind": a.kind, "name": a.name, "path": a.path, "thumb": thumb, "mediaType": (a.kind == "image").then_some("image/png") }));
+    }
+    for c in &chips {
+        let content: String = c.content.chars().take(4000).collect();
+        shown.push(json!({ "kind": "chip", "chipKind": c.kind, "label": c.label, "content": content, "path": c.path }));
+    }
+    let files: Vec<Attachment> = attachments.iter().map(|a| Attachment { kind: a.kind.clone(), name: a.name.clone(), path: a.path.clone() }).collect();
+    let read = |p: &str| std::fs::read(p).ok();
+    let tree = |p: &str| context::folder_tree(Path::new(p));
+    let composed = context::compose(&text, &chips, &files, provider, &read, &tree);
+    let skills = chips
+        .iter()
+        .filter(|c| c.kind == "skill")
+        .filter_map(|c| c.path.clone().map(|path| SkillRef { name: c.content.clone(), path }))
+        .collect();
+    let display = (composed != text).then_some(text);
+    if composed.trim().is_empty() && images.is_empty() {
+        return Err("nothing to send".into());
+    }
+    Ok((TurnInput { text: composed, images, display, skills }, Value::Array(shown)))
+}
+
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn pilot_thread_send(
     app: AppHandle,
     state: State<'_, PilotState>,
     id: String,
     text: String,
     images: Option<Vec<ImageArg>>,
+    chips: Option<Vec<Chip>>,
+    attachments: Option<Vec<AttachmentArg>>,
 ) -> Result<String, String> {
     let images: Vec<ImageInput> = images
         .unwrap_or_default()
         .into_iter()
-        .map(|i| ImageInput { media_type: i.media_type, base64: i.base64 })
+        .map(|i| ImageInput { media_type: i.media_type, base64: i.base64, path: None })
         .collect();
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let (input, shown) = prepare(&meta.provider, text, images, chips.unwrap_or_default(), attachments.unwrap_or_default())?;
     // A new message resumes a held queue: it runs after this turn.
     if state.db.queue_held(&id).unwrap_or(false) {
         let _ = state.db.set_queue_held(&id, false);
         emit_queue(&state, &id);
     }
-    start_turn(&app, &state, &id, text, images)
+    start_input(&app, &state, &id, input, shown)
+}
+
+/// Start a turn on a thread with plain text — a dequeued follow-up, an answer.
+fn start_turn(app: &AppHandle, state: &PilotState, id: &str, text: String, images: Vec<ImageInput>) -> Result<String, String> {
+    start_input(app, state, id, TurnInput { text, images, ..Default::default() }, json!([]))
 }
 
 /// Start a turn on a thread — the composer's send, a dequeued follow-up.
-fn start_turn(app: &AppHandle, state: &PilotState, id: &str, text: String, images: Vec<ImageInput>) -> Result<String, String> {
-    if text.trim().is_empty() && images.is_empty() {
+fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, shown: Value) -> Result<String, String> {
+    if input.text.trim().is_empty() && input.images.is_empty() {
         return Err("nothing to send".into());
     }
     let mut meta = state.db.get_session(id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
@@ -359,15 +418,20 @@ fn start_turn(app: &AppHandle, state: &PilotState, id: &str, text: String, image
         meta.provider = provider;
     }
     if meta.title.trim().is_empty() {
-        let title = title_from_prompt(&text);
+        let typed = input.display.as_deref().unwrap_or(&input.text).replace([context::CHIP_OPEN, context::CHIP_CLOSE], "");
+        let title = title_from_prompt(&typed);
         if !title.is_empty() && state.db.set_title_from(&id, &title, "auto").unwrap_or(false) {
             state.runtime.emit(&id, ThreadEvent::Title { title });
         }
     }
     let settings = lock(&state.settings).clone();
     let key = plan_key(&meta, &settings);
-    let input = TurnInput { text, images };
-    let attachments = json!(input.images.iter().map(|i| json!({ "kind": "image", "mediaType": i.media_type })).collect::<Vec<_>>());
+    // Images sent without a saved copy (pasted base64) still show up as images.
+    let attachments = if shown.as_array().is_some_and(|a| !a.is_empty()) {
+        shown
+    } else {
+        json!(input.images.iter().map(|i| json!({ "kind": "image", "mediaType": i.media_type })).collect::<Vec<_>>())
+    };
     let provider = meta.provider.clone();
     state.runtime.send(
         &id,
@@ -450,7 +514,25 @@ pub fn pilot_queue_list(state: State<'_, PilotState>, id: String) -> QueueState 
 /// Queue a follow-up. With no turn running it is sent at once instead —
 /// the turn may have ended between the click and this call.
 #[tauri::command(async)]
-pub fn pilot_queue_add(app: AppHandle, state: State<'_, PilotState>, id: String, text: String) -> Result<QueueState, String> {
+pub fn pilot_queue_add(
+    app: AppHandle,
+    state: State<'_, PilotState>,
+    id: String,
+    text: String,
+    chips: Option<Vec<Chip>>,
+    attachments: Option<Vec<AttachmentArg>>,
+) -> Result<QueueState, String> {
+    let (chips, attachments) = (chips.unwrap_or_default(), attachments.unwrap_or_default());
+    if attachments.iter().any(|a| a.kind == "image") {
+        return Err("images go with a message sent now — send it after this turn or steer it in".into());
+    }
+    // A queued message is plain text: its chips and documents are expanded now.
+    let text = if chips.is_empty() && attachments.is_empty() {
+        text
+    } else {
+        let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+        prepare(&meta.provider, text, Vec::new(), chips, attachments)?.0.text
+    };
     if text.trim().is_empty() {
         return Err("nothing to queue".into());
     }
@@ -498,7 +580,7 @@ pub fn pilot_queue_send_now(app: AppHandle, state: State<'_, PilotState>, item_i
     let item = state.db.queue_take(&item_id).map_err(|e| e.to_string())?.ok_or("this message was already sent")?;
     emit_queue(&state, &thread_id);
     let result = if state.runtime.active_turn(&thread_id).is_some() {
-        state.runtime.steer(&thread_id, TurnInput { text: item.text.clone(), images: Vec::new() })
+        state.runtime.steer(&thread_id, TurnInput { text: item.text.clone(), ..Default::default() })
     } else {
         start_turn(&app, &state, &thread_id, item.text.clone(), Vec::new()).map(|_| ())
     };
@@ -525,14 +607,127 @@ pub fn pilot_queue_resume(app: AppHandle, state: State<'_, PilotState>, id: Stri
 
 /// A message into the running turn. With nothing running it starts a turn.
 #[tauri::command(async)]
-pub fn pilot_thread_steer(app: AppHandle, state: State<'_, PilotState>, id: String, text: String) -> Result<(), String> {
-    if text.trim().is_empty() {
-        return Err("nothing to send".into());
-    }
+pub fn pilot_thread_steer(
+    app: AppHandle,
+    state: State<'_, PilotState>,
+    id: String,
+    text: String,
+    chips: Option<Vec<Chip>>,
+    attachments: Option<Vec<AttachmentArg>>,
+) -> Result<(), String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let (input, shown) = prepare(&meta.provider, text, Vec::new(), chips.unwrap_or_default(), attachments.unwrap_or_default())?;
     if state.runtime.active_turn(&id).is_some() {
-        return state.runtime.steer(&id, TurnInput { text, images: Vec::new() });
+        return state.runtime.steer(&id, input);
     }
-    start_turn(&app, &state, &id, text, Vec::new()).map(|_| ())
+    start_input(&app, &state, &id, input, shown).map(|_| ())
+}
+
+// ── Composer context (card 9) ──
+
+/// `@` in the composer: files and folders of the thread's checkout.
+#[tauri::command(async)]
+pub fn pilot_files_search(state: State<'_, PilotState>, id: String, query: String) -> Result<Vec<FileHit>, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let root = PathBuf::from(&meta.cwd);
+    if !root.is_dir() {
+        return Err(format!("{} is not there any more", meta.cwd));
+    }
+    Ok(state.files.search(&root, &query))
+}
+
+fn attachment_dir(state: &PilotState, id: &str) -> Result<PathBuf, String> {
+    let dir = state.data_dir.join("attachments").join(id);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("attachments folder: {e}"))?;
+    Ok(dir)
+}
+
+fn safe_name(name: &str) -> String {
+    let safe: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+        .collect::<String>()
+        .trim_matches(['-', '.'])
+        .chars()
+        .take(60)
+        .collect();
+    if safe.is_empty() { "file".into() } else { safe }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedAttachment {
+    kind: String,
+    name: String,
+    path: String,
+    size: u64,
+    width: Option<u32>,
+    height: Option<u32>,
+    /// A PNG data URL for the shelf.
+    thumb: Option<String>,
+}
+
+/// An image pasted, dropped or picked: normalized to a PNG (longest side
+/// 2048 px) next to the thread, never inside the project.
+#[tauri::command(async)]
+pub fn pilot_attachment_save_image(state: State<'_, PilotState>, id: String, name: String, data: String) -> Result<SavedAttachment, String> {
+    let bytes = context::unb64(&data)?;
+    let img = context::normalize_image(&bytes)?;
+    let stem = safe_name(Path::new(&name).file_stem().and_then(|s| s.to_str()).unwrap_or("image"));
+    let file = attachment_dir(&state, &id)?.join(format!("{stem}-{}.png", &uuid::Uuid::new_v4().to_string()[..8]));
+    std::fs::write(&file, &img.png).map_err(|e| format!("could not save the image: {e}"))?;
+    Ok(SavedAttachment {
+        kind: "image".into(),
+        name: format!("{stem}.png"),
+        path: file.to_string_lossy().into_owned(),
+        size: img.png.len() as u64,
+        width: Some(img.width),
+        height: Some(img.height),
+        thumb: Some(format!("data:image/png;base64,{}", context::b64(&img.thumb))),
+    })
+}
+
+/// A file dropped or picked: copied next to the thread, so the message
+/// keeps what was attached even when the original changes.
+#[tauri::command(async)]
+pub fn pilot_attachment_save_file(state: State<'_, PilotState>, id: String, name: String, data: Option<String>, path: Option<String>) -> Result<SavedAttachment, String> {
+    let bytes = match (data, path.as_deref()) {
+        (Some(d), _) => context::unb64(&d)?,
+        (None, Some(p)) => {
+            let meta = std::fs::metadata(p).map_err(|e| format!("{name} could not be read: {e}"))?;
+            if meta.is_dir() {
+                // Folders stay where they are: the message carries their tree.
+                return Ok(SavedAttachment { kind: "folder".into(), name, path: p.to_string(), size: 0, width: None, height: None, thumb: None });
+            }
+            if meta.len() > 50 * 1024 * 1024 {
+                return Err(format!("{name} is larger than 50 MiB"));
+            }
+            std::fs::read(p).map_err(|e| format!("{name} could not be read: {e}"))?
+        }
+        (None, None) => return Err("nothing to attach".into()),
+    };
+    if image::guess_format(&bytes).is_ok_and(|f| matches!(f, image::ImageFormat::Png | image::ImageFormat::Jpeg | image::ImageFormat::WebP)) {
+        return pilot_attachment_save_image(state, id, name, context::b64(&bytes));
+    }
+    let file = attachment_dir(&state, &id)?.join(format!("{}-{}", &uuid::Uuid::new_v4().to_string()[..8], safe_name(&name)));
+    std::fs::write(&file, &bytes).map_err(|e| format!("could not save {name}: {e}"))?;
+    Ok(SavedAttachment { kind: "file".into(), name, path: file.to_string_lossy().into_owned(), size: bytes.len() as u64, width: None, height: None, thumb: None })
+}
+
+/// `$` in the composer: the provider's skills — Codex's from its
+/// catalog, Claude Code's from the user's, the project's and the plugins' folders.
+#[tauri::command(async)]
+pub fn pilot_skills(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<Vec<SkillInfo>, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    if meta.provider == "codex" {
+        let catalog = match state.runtime.cached_catalog("codex") {
+            Some(c) => c,
+            None => pilot_provider_catalog(app, state.clone(), "codex".into(), None)?,
+        };
+        return Ok(catalog.skills);
+    }
+    let home = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).or_else(|| dirs::home_dir().map(|h| h.join(".claude"))).ok_or("no home folder")?;
+    Ok(context::claude_skills(&home, Path::new(&meta.cwd)))
 }
 
 /// A large paste becomes a file the agent reads on demand (T3 Code: 32 KiB

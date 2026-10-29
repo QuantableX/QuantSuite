@@ -294,4 +294,53 @@ export interface ProviderCatalog {
   version: string | null
   models: ModelInfo[]
   commands: CommandInfo[]
+  skills?: SkillInfo[]
+}
+
+// ── Composer context (card 9) ──
+
+export interface SkillInfo {
+  name: string
+  description: string
+  /** `user`, `project`, a plugin's name, or Codex's scope. */
+  source: string
+  path: string
+}
+
+export interface FileHit {
+  /** Relative to the checkout; folders end with `/`. */
+  path: string
+  dir: boolean
+  /** What `@` inserts: `@path`, quoted with spaces. */
+  insert: string
+}
+
+/** A chip in the composer's text: what its label stands for. */
+export interface ContextChip {
+  /** `file` | `thread` | `skill` | `terminal` | `comment` | `element` | `image` */
+  kind: string
+  label: string
+  /** What the agent gets (a skill: its name). */
+  content: string
+  path?: string | null
+}
+
+/** An attachment saved next to the thread, waiting in the composer. */
+export interface ComposerAttachment {
+  /** Local id while it uploads. */
+  key: string
+  kind: 'image' | 'file' | 'folder'
+  name: string
+  path: string
+  size: number
+  thumb?: string | null
+  /** Still being saved, or why it failed. */
+  pending?: boolean
+  error?: string | null
+}
+
+/** What a message carries besides its text. */
+export interface MessageExtras {
+  chips?: ContextChip[]
+  attachments?: { kind: string; name: string; path: string; thumb?: string | null }[]
 }

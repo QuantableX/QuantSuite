@@ -28,6 +28,9 @@ import type {
   ThreadItem,
   ThreadSnapshot,
   ThreadState,
+  FileHit,
+  MessageExtras,
+  SkillInfo,
 } from '#pilot/types'
 
 export interface TurnInfo {
@@ -43,6 +46,17 @@ export interface ThreadUsage {
   costUsd: number | null
   inputTokens: number | null
   outputTokens: number | null
+}
+
+/** A saved attachment (crate `SavedAttachment`). */
+export interface SavedAttachment {
+  kind: 'image' | 'file' | 'folder'
+  name: string
+  path: string
+  size: number
+  width: number | null
+  height: number | null
+  thumb: string | null
 }
 
 export interface ThreadView {
@@ -152,6 +166,9 @@ export const useThreadStore = defineStore('pilot/thread', {
     catalogs: {} as Record<string, ProviderCatalog>,
     /** Files dropped on a sidebar row, waiting for that thread's composer. */
     incoming: {} as Record<string, File[]>,
+    skillCache: {} as Record<string, SkillInfo[]>,
+    /** Files are being dragged over the window: the composer lights up. */
+    fileDrag: false,
   }),
 
   getters: {
@@ -335,12 +352,12 @@ export const useThreadStore = defineStore('pilot/thread', {
     },
 
     /** A follow-up for after the running turn (sent at once when nothing runs). */
-    async queueAdd(id: string, text: string): Promise<boolean> {
+    async queueAdd(id: string, text: string, extras: MessageExtras = {}): Promise<boolean> {
       const view = this.ensure(id)
       view.error = null
       try {
         const wasRunning = Boolean(view.turnId)
-        this.applyQueue(id, await pilot<QueueState>('plugin:pilot|pilot_queue_add', { id, text }))
+        this.applyQueue(id, await pilot<QueueState>('plugin:pilot|pilot_queue_add', { id, text, ...extras }))
         if (!wasRunning) this.wrote(id)
         return true
       } catch (e) {
@@ -350,11 +367,11 @@ export const useThreadStore = defineStore('pilot/thread', {
     },
 
     /** A message into the running turn (starts a turn when nothing runs). */
-    async steer(id: string, text: string): Promise<boolean> {
+    async steer(id: string, text: string, extras: MessageExtras = {}): Promise<boolean> {
       const view = this.ensure(id)
       view.error = null
       try {
-        await pilot('plugin:pilot|pilot_thread_steer', { id, text })
+        await pilot('plugin:pilot|pilot_thread_steer', { id, text, ...extras })
         this.wrote(id)
         return true
       } catch (e) {
@@ -423,11 +440,11 @@ export const useThreadStore = defineStore('pilot/thread', {
       }
     },
 
-    async send(id: string, text: string): Promise<boolean> {
+    async send(id: string, text: string, extras: MessageExtras = {}): Promise<boolean> {
       const view = this.ensure(id)
       view.error = null
       try {
-        await pilot<string>('plugin:pilot|pilot_thread_send', { id, text })
+        await pilot<string>('plugin:pilot|pilot_thread_send', { id, text, ...extras })
         this.wrote(id)
         return true
       } catch (e) {
@@ -468,6 +485,37 @@ export const useThreadStore = defineStore('pilot/thread', {
 
     forget(id: string) {
       delete this.views[id]
+    },
+
+    // ── Composer context (card 9) ──
+
+    /** `@`: files and folders of the thread's checkout. */
+    async searchFiles(id: string, query: string): Promise<FileHit[]> {
+      try {
+        return (await pilot<FileHit[]>('plugin:pilot|pilot_files_search', { id, query })) ?? []
+      } catch {
+        return []
+      }
+    },
+
+    /** `$`: the thread's provider skills (asked once per thread and session). */
+    async skills(id: string, refresh = false): Promise<SkillInfo[]> {
+      if (!refresh && this.skillCache[id]) return this.skillCache[id]
+      try {
+        const list = (await pilot<SkillInfo[]>('plugin:pilot|pilot_skills', { id })) ?? []
+        this.skillCache[id] = list
+        return list
+      } catch {
+        return []
+      }
+    },
+
+    async saveImage(id: string, name: string, data: string) {
+      return pilot<SavedAttachment>('plugin:pilot|pilot_attachment_save_image', { id, name, data })
+    },
+
+    async saveFile(id: string, name: string, source: { data?: string; path?: string }) {
+      return pilot<SavedAttachment>('plugin:pilot|pilot_attachment_save_file', { id, name, data: source.data ?? null, path: source.path ?? null })
     },
   },
 })
