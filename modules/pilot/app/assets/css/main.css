@@ -64,3 +64,13 @@
 }
 [data-module="pilot"] .qp-link:hover { color: var(--qss-text, #d4d4d8); }
 [data-module="pilot"] .qp-link:disabled { opacity: 0.5; cursor: default; }
+
+/* Find in thread (CSS Custom Highlight API, Timeline.vue). */
+[data-module="pilot"] ::highlight(qp-find) {
+  background-color: color-mix(in srgb, var(--qss-warning, #d29a3f) 35%, transparent);
+  color: inherit;
+}
+[data-module="pilot"] ::highlight(qp-find-current) {
+  background-color: var(--qss-warning, #d29a3f);
+  color: var(--qss-bg, #18181e);
+}

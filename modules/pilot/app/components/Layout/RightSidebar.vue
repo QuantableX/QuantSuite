@@ -80,6 +80,8 @@ const agentName = computed(() => (session.value ? store.adapterLabel(session.val
 </script>
 
 <template>
+  <PilotThreadDetails v-if="session && !store.terminalShown[session.id]" :thread-id="session.id" />
+  <template v-else>
   <div class="qp-panel">
     <div class="qp-hero">
       <div class="qp-hero-face">
@@ -150,6 +152,7 @@ const agentName = computed(() => (session.value ? store.adapterLabel(session.val
       {{ brokerQueue.length }} suite tool call{{ brokerQueue.length === 1 ? '' : 's' }} waiting in the drawer's Agent tab.
     </div>
   </div>
+  </template>
 </template>
 
 <style scoped>

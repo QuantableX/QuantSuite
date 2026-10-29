@@ -5,7 +5,8 @@
  * Three Tauri events feed the store here, deliberately not keep-alive
  * gated: a session keeps running while another module is in front, and
  * the face and the sidebar dots must be right when you come back.
- *   `pilot-event`     — signals (hooks, tailed session files)
+ *   `pilot-thread-event` — V3 threads: timeline items, deltas, turns, state
+ *   `pilot-event`     — V2 signals (hooks, tailed session files)
  *   `console-output`  — the pilot PTYs' bytes, for activity and the bell
  *   `console-session` — a PTY exited
  * Loading follows the warm-cache rule (V3): on mount only inside an active
@@ -14,11 +15,16 @@
 import { inActiveKeepAliveTree, useShortcuts, useTauriEvent } from '@quantsuite/core'
 import { useAppStore } from '#pilot/stores/app'
 import { usePilotStore } from '#pilot/stores/pilot'
-import type { PilotEnvelope } from '#pilot/types'
+import { useThreadStore } from '#pilot/stores/thread'
+import type { PilotEnvelope, ThreadEnvelope } from '#pilot/types'
 
 const app = useAppStore()
 const store = usePilotStore()
+const threads = useThreadStore()
 
+useTauriEvent<ThreadEnvelope>('pilot-thread-event', (envelope) => {
+  threads.apply(envelope)
+})
 useTauriEvent<PilotEnvelope>('pilot-event', (envelope) => {
   store.applyEvent(envelope.sessionId, envelope.event)
 })
