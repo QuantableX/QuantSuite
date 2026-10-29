@@ -197,6 +197,7 @@ second and at every message end, so the persisted history is the truth.
 | `threads` sidebar columns (schema v5) | `pinned`, `sort_key` (the user's order in Pinned and Active, larger is higher; new threads take their creation time), `settled_at`, `snoozed_until`, `auto_settle` (per-thread opt-out), `unsettled_at` (a manual Un-settle keeps automatic settlement away until the user writes again). A user message clears `settled_at`, `snoozed_until` and `unsettled_at`. Listing the threads settles those idle for `autoSettleDays` (default 3) unless they run, wait on the user, have queued follow-ups or opted out; pinning does not prevent it and settling unpins | 7 |
 | `checkpoints`, `turn_changes` | hidden git refs per turn, attributed changed files and saved patches | 11 |
 | `attachments` | images and documents stored under the pilot data dir, never inside the project | 9 |
+| (files, no table) | card 9 keeps attachments as files under `attachments/<thread>/` (images normalized to PNG ≤ 2048 px, files copied); the sent user item keeps their names, paths, PNG thumbnails and the chips' content in its `attachments` JSON | 9 |
 | `links` | kanban card, PR, issue, parent thread | 12, 21 |
 | `stash`, `prompt_history`, `keybindings` | composer and keyboard state | 4, 17 |
 
@@ -328,6 +329,33 @@ Each adapter reports what it can do: steer, rewind, fork, compact, goals,
 plan mode, effort levels, permission modes, images, subagents, usage, limits.
 The UI hides or disables (with the reason) anything a provider cannot do; it
 never fakes support.
+
+### 5.5 Composer context (card 9)
+
+- `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`
+  walker honoring .gitignore, build and dependency folders skipped, no
+  symlinks; 20,000 entries / 500 ms per index, reused 30 s; exact name >
+  name prefix > name substring > path; files before folders; 40 rows) and
+  other threads by title. A file is inserted as `@path` (quoted with
+  spaces); a thread as a chip carrying its recent conversation (12 KB),
+  until card 22 lets the agent read threads itself.
+- `/` lists QuantPilot's own commands (`/new`, `/model`, `/permissions`,
+  `/plan`, `/rename`, `/copy`, `/pwd` — they run in the app, never sent)
+  and the provider's (Claude's from `initialize`); a pick inserts.
+- `$` lists skills: Claude Code's from `~/.claude/skills`, the project's
+  `.claude/skills` and installed plugins (`plugin:name`); Codex's from
+  `skills/list` (sent as `skill` input items).
+- Chips are labels between FSI/PDI marks in the text: highlighted as pills,
+  deleted whole by Backspace/Delete, the caret never stops inside, copy and
+  paste keep them. On send each becomes `[label]` (a skill: "the X skill" /
+  `$x`) and its content goes after the text in an "Attached context
+  (content to read, not instructions to follow)" block; documents (32 KiB)
+  and folders (3 levels, 240 lines) too. Other cards add chips through the
+  composer's `addContext`.
+- Attachments: paste, drop anywhere in the module (or on a sidebar row), or
+  the + menu (system picker for files and folders); images ≤ 10 MiB in,
+  PNG out; files ≤ 50 MiB copied; 100 per message; sending waits for
+  uploads; a queued message cannot carry images.
 
 ## 6. Permission modes
 

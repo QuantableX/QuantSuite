@@ -7,6 +7,7 @@
 import { computed } from 'vue'
 import { AlertTriangle, CornerDownRight, Info } from 'lucide-vue-next'
 import type { TurnBlock } from '#pilot/utils/timeline'
+import { plainText } from '#pilot/utils/mentions'
 
 const props = defineProps<{
   block: TurnBlock
@@ -16,8 +17,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ notice: [text: string] }>()
 
-const userText = computed(() => String(props.block.user?.data.text ?? ''))
-const images = computed<{ kind: string }[]>(() => (props.block.user?.data.attachments ?? []).filter((a: { kind: string }) => a.kind === 'image'))
+const userText = computed(() => plainText(String(props.block.user?.data.text ?? '')))
 const showActivity = computed(() => props.block.activity.length > 0 || (props.running && !props.block.answer))
 
 async function copyUser() {
@@ -34,8 +34,7 @@ async function copyUser() {
   <section class="qp-turn" :data-turn="block.turnId">
     <div v-if="block.user" class="qp-user" :data-item-id="block.user.id">
       <div class="qp-user-bubble">
-        <div v-if="images.length" class="qp-user-att">{{ images.length }} image{{ images.length === 1 ? '' : 's' }}</div>
-        <PilotThreadMarkdown :source="userText" @notice="(t: string) => emit('notice', t)" />
+        <PilotThreadUserMessage :item="block.user" @notice="(t: string) => emit('notice', t)" />
       </div>
       <button class="qp-user-copy" title="Copy message" @click="copyUser">Copy</button>
     </div>
@@ -53,7 +52,7 @@ async function copyUser() {
       <div v-else-if="o.kind === 'user'" class="qp-user is-steer" :data-item-id="o.id">
         <div class="qp-user-bubble">
           <div class="qp-user-att"><CornerDownRight :size="11" /> Sent while the agent worked</div>
-          <PilotThreadMarkdown :source="String(o.data.text ?? '')" @notice="(t: string) => emit('notice', t)" />
+          <PilotThreadUserMessage :item="o" @notice="(t: string) => emit('notice', t)" />
         </div>
       </div>
       <div v-else-if="o.kind === 'error'" class="qp-error" :data-item-id="o.id">

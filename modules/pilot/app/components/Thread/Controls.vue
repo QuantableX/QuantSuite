@@ -160,8 +160,19 @@ function onDocDown(e: MouseEvent) {
   if (!open.value) return
   if (root.value && !root.value.contains(e.target as Node)) open.value = null
 }
-onMounted(() => document.addEventListener('mousedown', onDocDown))
-onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown))
+/** `/model` and `/permissions` in the composer open these pickers. */
+function onOpenControl(e: Event) {
+  const d = (e as CustomEvent<{ threadId: string; which: Exclude<Open, null> }>).detail
+  if (d?.threadId === props.threadId && open.value !== d.which) void toggle(d.which)
+}
+onMounted(() => {
+  document.addEventListener('mousedown', onDocDown)
+  window.addEventListener('qp-open-control', onOpenControl)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onDocDown)
+  window.removeEventListener('qp-open-control', onOpenControl)
+})
 
 useShortcuts([
   { key: 'm', ctrl: true, shift: true, handler: (e) => { e.preventDefault(); void toggle('model') } },

@@ -27,6 +27,10 @@ const COMMANDS: &[&str] = &[
     "pilot_thread_steer",
     "pilot_attachment_save_text",
     "pilot_thread_arrange",
+    "pilot_files_search",
+    "pilot_attachment_save_image",
+    "pilot_attachment_save_file",
+    "pilot_skills",
     "pilot_thread_regenerate_title",
 ];
 

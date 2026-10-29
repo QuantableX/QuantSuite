@@ -295,6 +295,30 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the pilot_attachment_save_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-attachment-save-file",
+          "markdownDescription": "Enables the pilot_attachment_save_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_attachment_save_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-attachment-save-file",
+          "markdownDescription": "Denies the pilot_attachment_save_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_attachment_save_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-attachment-save-image",
+          "markdownDescription": "Enables the pilot_attachment_save_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_attachment_save_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-attachment-save-image",
+          "markdownDescription": "Denies the pilot_attachment_save_image command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pilot_attachment_save_text command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pilot-attachment-save-text",
@@ -317,6 +341,18 @@
           "type": "string",
           "const": "deny-pilot-contexts",
           "markdownDescription": "Denies the pilot_contexts command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pilot_files_search command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-files-search",
+          "markdownDescription": "Enables the pilot_files_search command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_files_search command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-files-search",
+          "markdownDescription": "Denies the pilot_files_search command without any pre-configured scope."
         },
         {
           "description": "Enables the pilot_provider_catalog command without any pre-configured scope.",
@@ -523,6 +559,18 @@
           "markdownDescription": "Denies the pilot_settings_set command without any pre-configured scope."
         },
         {
+          "description": "Enables the pilot_skills command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pilot-skills",
+          "markdownDescription": "Enables the pilot_skills command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pilot_skills command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pilot-skills",
+          "markdownDescription": "Denies the pilot_skills command without any pre-configured scope."
+        },
+        {
           "description": "Enables the pilot_status command without any pre-configured scope.",
           "type": "string",
           "const": "allow-pilot-status",
@@ -703,10 +751,10 @@
           "markdownDescription": "Denies the pilot_worktree_status command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`\n- `allow-pilot-thread-arrange`\n- `allow-pilot-thread-regenerate-title`",
+          "description": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`\n- `allow-pilot-thread-arrange`\n- `allow-pilot-files-search`\n- `allow-pilot-attachment-save-image`\n- `allow-pilot-attachment-save-file`\n- `allow-pilot-skills`\n- `allow-pilot-thread-regenerate-title`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`\n- `allow-pilot-thread-arrange`\n- `allow-pilot-thread-regenerate-title`"
+          "markdownDescription": "Default permissions for the pilot module.\n#### This default permission set includes:\n\n- `allow-pilot-status`\n- `allow-pilot-contexts`\n- `allow-pilot-settings-get`\n- `allow-pilot-settings-set`\n- `allow-pilot-sessions-list`\n- `allow-pilot-session-create`\n- `allow-pilot-session-open`\n- `allow-pilot-session-launch`\n- `allow-pilot-session-stop`\n- `allow-pilot-session-delete`\n- `allow-pilot-session-update`\n- `allow-pilot-runtime-state`\n- `allow-pilot-thread-create`\n- `allow-pilot-thread-snapshot`\n- `allow-pilot-thread-send`\n- `allow-pilot-thread-answer`\n- `allow-pilot-thread-interrupt`\n- `allow-pilot-thread-update`\n- `allow-pilot-provider-catalog`\n- `allow-pilot-queue-list`\n- `allow-pilot-queue-add`\n- `allow-pilot-queue-update`\n- `allow-pilot-queue-remove`\n- `allow-pilot-queue-send-now`\n- `allow-pilot-queue-resume`\n- `allow-pilot-thread-steer`\n- `allow-pilot-attachment-save-text`\n- `allow-pilot-thread-arrange`\n- `allow-pilot-files-search`\n- `allow-pilot-attachment-save-image`\n- `allow-pilot-attachment-save-file`\n- `allow-pilot-skills`\n- `allow-pilot-thread-regenerate-title`"
         }
       ]
     }

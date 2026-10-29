@@ -103,6 +103,28 @@ const step = (key: string, dir: 1 | -1) => ({
   },
 })
 
+// ── Files from Explorer anywhere in the module go to the open thread's composer (card 9) ──
+function carriesFiles(e: DragEvent) {
+  return Array.from(e.dataTransfer?.types ?? []).includes('Files')
+}
+function onFileDrag(e: DragEvent) {
+  if (!carriesFiles(e) || !store.activeId) return
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  threads.fileDrag = true
+}
+function onFileLeave(e: DragEvent) {
+  // Leaving the module, not just moving between its children.
+  if (!e.relatedTarget || !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) threads.fileDrag = false
+}
+function onFileDrop(e: DragEvent) {
+  threads.fileDrag = false
+  if (!carriesFiles(e) || !store.activeId) return
+  e.preventDefault()
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (files.length) threads.dropFiles(store.activeId, files)
+}
+
 useShortcuts([
   // The sidebar's keys (card 7; docs/PLAN-QUANTPILOT.md §7). Explicit
   // shift/alt keep Ctrl+N clear of the suite's Ctrl+Shift+N (notes).
@@ -216,7 +238,7 @@ useShortcuts([
 </script>
 
 <template>
-  <div class="qp-shell">
+  <div class="qp-shell" @dragenter="onFileDrag" @dragover="onFileDrag" @dragleave="onFileLeave" @drop="onFileDrop">
     <PilotLayoutAppHeader />
     <div class="qp-body">
       <QSidebar :model-value="app.sidebarLeftOpen" resizable storage-key="pilot.left">

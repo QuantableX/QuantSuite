@@ -14,13 +14,36 @@
  *   Alt+Up edits the newest queued message, Ctrl+S stashes or restores.
  * - A paste of 32 KiB or more becomes a file the agent reads on demand
  *   (Ctrl+Shift+V keeps it inline). 120,000 characters at most.
- * - Drafts, pasted files and stashes live in this device's storage.
+ * - Context (card 9): `@` files of the checkout and other threads, `/`
+ *   commands (QuantPilot's own run here, the agent's are sent), `$`
+ *   skills; chips sit in the text and delete like one character;
+ *   attachments (paste, drop anywhere, the + menu) wait on a shelf and
+ *   must finish saving before the message can go.
+ * - Drafts, pasted files, attachments, chips and stashes live in this
+ *   device's storage.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowUp, Ban, CornerDownRight, FileText, ListPlus, Play, Square, X } from 'lucide-vue-next'
+import { ArrowUp, Ban, CornerDownRight, FileText, Folder, ListPlus, Loader2, Paperclip, Play, Plus, Square, X } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useSidebarStore } from '#pilot/stores/sidebar'
 import { caretLine } from '#pilot/utils/caret'
+import { pilot } from '#pilot/utils/invoke'
+import {
+  appCommand,
+  chipNextTo,
+  chipsIn,
+  chipToken,
+  commandRows,
+  outsideChip,
+  plainText,
+  replaceTrigger,
+  triggerAt,
+  uniqueLabel,
+  type Trigger,
+} from '#pilot/utils/mentions'
+import type { MenuRow } from '#pilot/components/Thread/MentionMenu.vue'
+import type { ComposerAttachment, ContextChip, SessionMeta, ThreadSnapshot } from '#pilot/types'
 import {
   enterAction,
   highlight,
@@ -73,6 +96,10 @@ function save(key: string, value: unknown) {
 }
 
 const drafts = useState<Record<string, string>>('pilot-drafts', () => load('pilot.drafts.v1', {}))
+/** Attachments waiting per thread (saved ones only are kept across restarts). */
+const attachState = useState<Record<string, ComposerAttachment[]>>('pilot-attach', () => load('pilot.attach.v1', {}))
+/** Per thread: chip label → what it stands for. */
+const chipState = useState<Record<string, Record<string, ContextChip>>>('pilot-chips', () => load('pilot.chips.v1', {}))
 const pastes = useState<Record<string, Pasted[]>>('pilot-pastes', () => load('pilot.pasted.v1', {}))
 const stashes = useState<Stash[]>('pilot-stash', () => load('pilot.stash.v1', []))
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -81,8 +108,29 @@ function persistSoon() {
   saveTimer = setTimeout(() => {
     save('pilot.drafts.v1', drafts.value)
     save('pilot.pasted.v1', pastes.value)
+    persistContext()
   }, 300)
 }
+
+function persistContext() {
+  const ready: Record<string, ComposerAttachment[]> = {}
+  for (const [id, list] of Object.entries(attachState.value)) {
+    const kept = list.filter((a) => !a.pending && !a.error)
+    if (kept.length) ready[id] = kept
+  }
+  save('pilot.attach.v1', ready)
+  save('pilot.chips.v1', chipState.value)
+}
+
+const attachments = computed<ComposerAttachment[]>({
+  get: () => attachState.value[props.threadId] ?? [],
+  set: (v) => {
+    if (v.length) attachState.value[props.threadId] = v
+    else delete attachState.value[props.threadId]
+    persistSoon()
+  },
+})
+const chipMap = computed(() => chipState.value[props.threadId] ?? {})
 
 const text = computed({
   get: () => drafts.value[props.threadId] ?? '',
@@ -169,7 +217,62 @@ function compose(): string {
   return [text.value.trimEnd(), ...refs].filter(Boolean).join('\n\n')
 }
 
-const hasContent = computed(() => text.value.trim().length > 0 || pasted.value.length > 0)
+const hasContent = computed(() => text.value.trim().length > 0 || pasted.value.length > 0 || attachments.value.length > 0)
+const uploading = computed(() => attachments.value.some((a) => a.pending))
+
+/** The chips still in the text and the attachments that saved — what goes with the message. */
+function extras() {
+  // Plain copies: what goes over IPC is data, not reactive state.
+  const chips = chipsIn(text.value)
+    .map((label) => chipMap.value[label])
+    .filter((c): c is ContextChip => Boolean(c))
+    .map((c) => ({ kind: c.kind, label: c.label, content: c.content, path: c.path ?? null }))
+  const files = attachments.value.filter((a) => !a.pending && !a.error).map((a) => ({ kind: a.kind, name: a.name, path: a.path, thumb: a.thumb ?? null }))
+  return { chips, attachments: files }
+}
+
+/** QuantPilot's own `/` commands run here instead of being sent. */
+async function runAppCommand(name: string, arg: string): Promise<boolean> {
+  const id = props.threadId
+  switch (name) {
+    case 'new':
+      await useSidebarStore().newThread({ contextId: thread.value?.contextId })
+      return true
+    case 'model':
+    case 'permissions':
+      window.dispatchEvent(new CustomEvent('qp-open-control', { detail: { threadId: id, which: name === 'model' ? 'model' : 'mode' } }))
+      return true
+    case 'plan':
+      return store.update(id, { mode: 'plan' })
+    case 'rename':
+      if (!arg) {
+        showNote('Add the new title: /rename <title>')
+        return false
+      }
+      return store.update(id, { title: arg })
+    case 'copy': {
+      const last = [...(view.value?.items ?? [])].reverse().find((i) => i.kind === 'assistant' && String(i.data.text ?? '').trim())
+      if (!last) {
+        showNote('Nothing to copy yet.')
+        return false
+      }
+      await navigator.clipboard.writeText(String(last.data.text)).catch(() => undefined)
+      showNote('Copied the latest answer.')
+      return true
+    }
+    case 'pwd':
+      showNote(thread.value?.cwd ?? '')
+      return true
+  }
+  return false
+}
+const note = ref('')
+let noteTimer: ReturnType<typeof setTimeout> | null = null
+function showNote(text: string) {
+  note.value = text
+  if (noteTimer) clearTimeout(noteTimer)
+  noteTimer = setTimeout(() => (note.value = ''), 5000)
+}
 /** The first approval waiting — a sent reply declines it. */
 const pendingApproval = computed(() => threads.pending(props.threadId).find((i) => i.kind === 'approval') ?? null)
 
@@ -196,21 +299,34 @@ async function perform(action: KeyAction) {
     if (first) await threads.queueSendNow(id, first.id)
     return
   }
-  if (!hasContent.value || tooLong.value) return
+  if (!hasContent.value || tooLong.value || uploading.value) return
+  const command = !pasted.value.length && !attachments.value.length ? appCommand(text.value) : null
+  if (command) {
+    if (await runAppCommand(command.name, command.arg)) {
+      text.value = ''
+      menu.value = null
+    }
+    return
+  }
   const message = compose()
+  const more = extras()
   busy.value = true
   let ok = false
   if (pendingApproval.value && action !== 'sendNewThread') {
     // A reply while a request waits declines it, with the reply as the reason (T3 Code).
-    await threads.answer(id, String(pendingApproval.value.data.requestId), { decision: 'deny', message })
+    await threads.answer(id, String(pendingApproval.value.data.requestId), { decision: 'deny', message: plainText(message) })
     ok = !view.value?.error
-  } else if (action === 'queue') ok = await threads.queueAdd(id, message)
-  else if (action === 'steer') ok = await threads.steer(id, message)
-  else ok = await threads.send(id, message)
+  } else if (action === 'queue') ok = await threads.queueAdd(id, message, more)
+  else if (action === 'steer') ok = await threads.steer(id, message, more)
+  else ok = await threads.send(id, message, more)
   busy.value = false
   if (!ok) return
   text.value = ''
   pasted.value = []
+  attachments.value = []
+  delete chipState.value[id]
+  persistSoon()
+  menu.value = null
   recall.value = null
   if (action === 'sendNewThread' && thread.value) {
     await store.createThread({ contextId: thread.value.contextId, mode: thread.value.mode })
@@ -347,6 +463,17 @@ function onKey(e: KeyboardEvent) {
   const el = box.value
   if (!el || e.isComposing) return
   const mod = e.ctrlKey || e.metaKey
+  if (menu.value && menuKey(e)) return
+  if ((e.key === 'Backspace' || e.key === 'Delete') && !mod && el.selectionStart === el.selectionEnd) {
+    const range = chipNextTo(el.value, el.selectionStart, e.key === 'Backspace' ? -1 : 1)
+    if (range) {
+      e.preventDefault()
+      el.setSelectionRange(range[0], range[1])
+      document.execCommand('delete')
+      onInput()
+      return
+    }
+  }
   if (e.key === 'Enter') {
     if (editing.value && !e.shiftKey) {
       e.preventDefault()
@@ -421,9 +548,273 @@ function onInput() {
   text.value = el.value
   // Typing over a recalled prompt makes it a normal draft.
   if (recall.value && el.value !== recall.value.text) recall.value = null
+  updateMenu()
 }
 
+/** A click or arrow into a chip lands beside it; the menu follows the caret. */
+function onCaret(e: Event) {
+  const el = box.value
+  if (!el) return
+  if (el.selectionStart === el.selectionEnd) {
+    const back = e instanceof KeyboardEvent && (e.key === 'ArrowLeft' || e.key === 'Home')
+    const at = outsideChip(el.value, el.selectionStart, back ? -1 : 1)
+    if (at !== el.selectionStart) el.setSelectionRange(at, at)
+  }
+  if (e instanceof KeyboardEvent && ['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key) && menu.value) return
+  updateMenu()
+}
+
+// ── The @ / / / $ menu ──
+interface Pick {
+  row: MenuRow
+  run: () => void | Promise<void>
+}
+const menu = ref<{ trigger: Trigger; picks: Pick[]; active: number; loading: boolean } | null>(null)
+const menuRows = computed(() => menu.value?.picks.map((p) => p.row) ?? [])
+const MENU_TITLES = { '@': 'Files, folders and threads', '/': 'Commands', $: 'Skills' } as const
+let menuSeq = 0
+let menuTimer: ReturnType<typeof setTimeout> | null = null
+
+function updateMenu() {
+  const el = box.value
+  const t = el && el.selectionStart === el.selectionEnd ? triggerAt(el.value, el.selectionStart) : null
+  if (!t) {
+    menu.value = null
+    return
+  }
+  const same = menu.value && menu.value.trigger.kind === t.kind && menu.value.trigger.start === t.start
+  menu.value = { trigger: t, picks: same ? menu.value!.picks : [], active: same ? menu.value!.active : 0, loading: true }
+  if (menuTimer) clearTimeout(menuTimer)
+  const seq = ++menuSeq
+  menuTimer = setTimeout(async () => {
+    const picks = await picksFor(t)
+    // A newer keystroke asked again: this answer is stale.
+    if (seq !== menuSeq || !menu.value) return
+    menu.value = { trigger: t, picks, active: Math.min(menu.value.active, Math.max(0, picks.length - 1)), loading: false }
+  }, t.kind === '@' ? 90 : 0)
+}
+
+function basename(p: string) {
+  const parts = p.replace(/\/$/, '').split('/')
+  return parts[parts.length - 1] + (p.endsWith('/') ? '/' : '')
+}
+
+async function picksFor(t: Trigger): Promise<Pick[]> {
+  const id = props.threadId
+  const q = t.query.toLowerCase()
+  if (t.kind === '@') {
+    const hits = await threads.searchFiles(id, t.query)
+    const others: Pick[] = store.sessions
+      .filter((s) => s.id !== id && s.kind === 'chat' && s.title && (!q || s.title.toLowerCase().includes(q)))
+      .slice(0, 6)
+      .map((s) => ({
+        row: { key: `t:${s.id}`, label: s.title, detail: `Thread · ${s.contextName}`, icon: 'thread', badge: 'Thread' },
+        run: () => insertThread(t, s),
+      }))
+    // 40 rows at most, and matching threads always get theirs.
+    const files: Pick[] = hits.slice(0, 40 - others.length).map((h) => ({
+      row: { key: `f:${h.path}`, label: basename(h.path), detail: h.path, icon: h.dir ? 'folder' : 'file' },
+      run: () => insertText(t, h.insert),
+    }))
+    return [...files, ...others]
+  }
+  if (t.kind === '/') {
+    const provider = thread.value?.provider || 'claude'
+    const catalog = await threads.catalog(provider)
+    return commandRows(catalog?.commands ?? [], t.query).map((c) => ({
+      row: {
+        key: `c:${c.source}:${c.name}`,
+        label: `/${c.name}${c.argumentHint ? ' ' + c.argumentHint : ''}`,
+        detail: c.description,
+        icon: 'command',
+        badge: c.source === 'app' ? 'QuantPilot' : store.adapterLabel(provider),
+      },
+      run: () => insertText(t, `/${c.name}`),
+    }))
+  }
+  const skills = await threads.skills(id)
+  return skills
+    .filter((k) => !q || k.name.toLowerCase().includes(q) || k.description.toLowerCase().includes(q))
+    .slice(0, 40)
+    .map((k) => ({
+      row: { key: `s:${k.name}`, label: `$${k.name}`, detail: k.description, icon: 'skill', badge: k.source },
+      run: () => insertChip(t, { kind: 'skill', label: `$${k.name}`, content: k.name, path: k.path || null }),
+    }))
+}
+
+function menuKey(e: KeyboardEvent): boolean {
+  const m = menu.value
+  if (!m) return false
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    e.stopPropagation()
+    menu.value = null
+    return true
+  }
+  if (!m.picks.length) return false
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    const n = m.picks.length
+    m.active = (m.active + (e.key === 'ArrowDown' ? 1 : -1) + n) % n
+    return true
+  }
+  if ((e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) || e.key === 'Tab') {
+    e.preventDefault()
+    void pickMenu(m.active)
+    return true
+  }
+  return false
+}
+
+async function pickMenu(i: number) {
+  const pick = menu.value?.picks[i]
+  menu.value = null
+  if (pick) await pick.run()
+  void nextTick(() => box.value?.focus())
+}
+
+/** Replace the trigger with text through the browser's own editing, so Ctrl+Z undoes it. */
+function insertText(t: Trigger, insert: string) {
+  const el = box.value
+  if (!el) return
+  const caret = el.selectionStart
+  const next = replaceTrigger(el.value, t, caret, insert)
+  el.setSelectionRange(t.start, caret)
+  document.execCommand('insertText', false, next.text.slice(t.start, next.caret))
+  onInput()
+  menu.value = null
+}
+
+function insertChip(t: Trigger | null, chip: ContextChip) {
+  const el = box.value
+  if (!el) return
+  const label = uniqueLabel(chip.label, el.value)
+  chipState.value[props.threadId] = { ...chipMap.value, [label]: { ...chip, label } }
+  persistSoon()
+  if (t) insertText(t, chipToken(label))
+  else {
+    document.execCommand('insertText', false, chipToken(label) + ' ')
+    onInput()
+  }
+}
+
+/** Another thread as context: its recent conversation, so the agent can read it now. */
+async function insertThread(t: Trigger, other: SessionMeta) {
+  let transcript = ''
+  try {
+    const snap = await pilot<ThreadSnapshot>('plugin:pilot|pilot_thread_snapshot', { id: other.id, limit: 60 })
+    const lines = (snap?.items ?? [])
+      .filter((i) => (i.kind === 'user' || i.kind === 'assistant') && !i.parent && String(i.data.text ?? '').trim())
+      .map((i) => `${i.kind === 'user' ? 'User' : 'Agent'}: ${plainText(String(i.data.text)).trim()}`)
+    transcript = lines.join('\n\n')
+    if (transcript.length > 12_000) transcript = '…' + transcript.slice(-12_000)
+  } catch {
+    transcript = ''
+  }
+  insertChip(t, {
+    kind: 'thread',
+    label: other.title,
+    content: `QuantPilot thread "${other.title}" (${other.contextName}), recent conversation:\n\n${transcript || '(no messages yet)'}`,
+    path: null,
+  })
+}
+
+/** Another card (terminal excerpt, diff comment, element) adds context at the caret. */
+function addContext(chip: ContextChip) {
+  box.value?.focus()
+  insertChip(null, chip)
+}
+
+// ── Attachments ──
+const IMAGE_TYPES = /^image\/(png|jpeg|webp)$/
+const MAX_ATTACHMENTS = 100
+
+function readData(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(file)
+  })
+}
+
+function patchAttachment(key: string, patch: Partial<ComposerAttachment>) {
+  attachments.value = attachments.value.map((a) => (a.key === key ? { ...a, ...patch } : a))
+}
+
+async function addFiles(files: File[]) {
+  const room = MAX_ATTACHMENTS - attachments.value.length
+  if (files.length > room) showNote(`A message can carry up to ${MAX_ATTACHMENTS} attachments.`)
+  for (const f of files.slice(0, Math.max(0, room))) {
+    const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const image = IMAGE_TYPES.test(f.type)
+    const limit = image ? 10 : 50
+    if (f.size > limit * 1024 * 1024) {
+      attachments.value = [...attachments.value, { key, kind: image ? 'image' : 'file', name: f.name, path: '', size: f.size, error: `Larger than ${limit} MiB` }]
+      continue
+    }
+    attachments.value = [...attachments.value, { key, kind: image ? 'image' : 'file', name: f.name, path: '', size: f.size, pending: true }]
+    try {
+      const data = await readData(f)
+      const saved = image ? await threads.saveImage(props.threadId, f.name, data) : await threads.saveFile(props.threadId, f.name, { data })
+      if (!saved) throw new Error('not saved')
+      patchAttachment(key, { kind: saved.kind, name: saved.name, path: saved.path, size: saved.size, thumb: saved.thumb, pending: false })
+    } catch (e) {
+      patchAttachment(key, { pending: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  void nextTick(() => box.value?.focus())
+}
+
+/** The + menu: files and images, or a folder, through the system picker. */
+const plusOpen = ref(false)
+async function pickFromDisk(directory: boolean) {
+  plusOpen.value = false
+  let picked: string | string[] | null = null
+  try {
+    const dialog = await import('@tauri-apps/plugin-dialog')
+    picked = await dialog.open({ multiple: !directory, directory, title: directory ? 'Attach a folder' : 'Attach images and files' })
+  } catch {
+    showNote('The file picker is not available here.')
+    return
+  }
+  const paths = picked === null ? [] : Array.isArray(picked) ? picked : [picked]
+  for (const path of paths) {
+    const name = path.split(/[\\/]/).pop() || path
+    const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    attachments.value = [...attachments.value, { key, kind: directory ? 'folder' : 'file', name, path, size: 0, pending: true }]
+    try {
+      const saved = await threads.saveFile(props.threadId, name, { path })
+      if (!saved) throw new Error('not saved')
+      patchAttachment(key, { kind: saved.kind, name: saved.name, path: saved.path, size: saved.size, thumb: saved.thumb, pending: false })
+    } catch (e) {
+      patchAttachment(key, { pending: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+}
+
+function removeAttachment(key: string) {
+  attachments.value = attachments.value.filter((a) => a.key !== key)
+}
+
+function onDrop(e: DragEvent) {
+  threads.fileDrag = false
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (!files.length) return
+  e.preventDefault()
+  e.stopPropagation()
+  void addFiles(files)
+}
+
+defineExpose({ focus, addContext })
+
 async function onPaste(e: ClipboardEvent) {
+  const images = Array.from(e.clipboardData?.files ?? []).filter((f) => IMAGE_TYPES.test(f.type))
+  if (images.length) {
+    e.preventDefault()
+    void addFiles(images)
+    return
+  }
   const pastedText = e.clipboardData?.getData('text/plain') ?? ''
   if (!pastedText || keepPasteInline) return
   const bytes = new TextEncoder().encode(pastedText).length
@@ -433,30 +824,11 @@ async function onPaste(e: ClipboardEvent) {
   if (path) pasted.value = [...pasted.value, { path, size: bytes }]
 }
 
-// ── Files dropped on the thread's sidebar row ──
-const TEXT_FILE_BYTES = 4 * 1024 * 1024
-async function attachDropped(files: File[]) {
-  const skipped: string[] = []
-  for (const f of files) {
-    const text = f.size <= TEXT_FILE_BYTES ? await f.text().catch(() => null) : null
-    // A NUL byte or an image/PDF type means binary: not something a text chip can carry.
-    if (text === null || text.includes('\u0000') || /^(image|audio|video)\/|pdf|zip/.test(f.type)) {
-      skipped.push(f.name)
-      continue
-    }
-    const path = await threads.savePastedText(props.threadId, text, f.name)
-    if (path) pasted.value = [...pasted.value, { path, size: f.size }]
-  }
-  if (skipped.length) {
-    const v = threads.ensure(props.threadId)
-    v.error = `Only text files can be attached so far — skipped ${skipped.join(', ')}.`
-  }
-  void nextTick(() => box.value?.focus())
-}
+// ── Files dropped on a sidebar row or anywhere on the window ──
 watch(
   () => threads.incoming[props.threadId]?.length ?? 0,
   (n) => {
-    if (n) void attachDropped(threads.takeIncoming(props.threadId))
+    if (n) void addFiles(threads.takeIncoming(props.threadId))
   },
   { immediate: true }
 )
@@ -521,7 +893,7 @@ const placeholder = computed(() => {
 function focus() {
   box.value?.focus()
 }
-defineExpose({ focus })
+
 </script>
 
 <template>
@@ -537,10 +909,48 @@ defineExpose({ focus })
       </div>
     </div>
 
-    <div class="qp-composer-box" :class="{ editing: !!editing, over: tooLong }" @click="focus">
+    <PilotThreadMentionMenu
+      v-if="menu"
+      :rows="menuRows"
+      :active="menu.active"
+      :loading="menu.loading"
+      :title="MENU_TITLES[menu.trigger.kind]"
+      :empty="menu.trigger.kind === '@' ? 'No file or thread matches' : menu.trigger.kind === '$' ? 'No skills found' : 'No command matches'"
+      @hover="(i: number) => menu && (menu.active = i)"
+      @pick="pickMenu"
+    />
+    <div v-if="note" class="qp-c-note" role="status">{{ note }}</div>
+
+    <div
+      class="qp-composer-box"
+      :class="{ editing: !!editing, over: tooLong, 'file-over': threads.fileDrag }"
+      @click="focus"
+      @dragover.prevent
+      @drop="onDrop"
+    >
       <div v-if="editing" class="qp-c-editbar">
         <span>Editing a queued message</span>
         <button class="qp-link" @click.stop="cancelEdit">Cancel</button>
+      </div>
+      <div v-if="attachments.length" class="qp-c-shelf">
+        <div
+          v-for="a in attachments"
+          :key="a.key"
+          class="qp-c-att"
+          :class="{ image: a.kind === 'image' && a.thumb, failed: !!a.error }"
+          :title="a.error ?? a.path"
+        >
+          <img v-if="a.kind === 'image' && a.thumb" :src="a.thumb" :alt="a.name" class="qp-c-att-thumb" />
+          <template v-else>
+            <Loader2 v-if="a.pending" class="qp-c-spin" :size="12" />
+            <Folder v-else-if="a.kind === 'folder'" :size="12" />
+            <FileText v-else :size="12" />
+            <span class="qp-c-att-name">{{ a.name }}</span>
+            <span v-if="a.size && !a.error" class="qp-c-att-size">{{ sizeLabel(a.size) }}</span>
+            <span v-if="a.error" class="qp-c-att-err">{{ a.error }}</span>
+          </template>
+          <button class="qp-c-att-x" :title="`Remove ${a.name}`" @click.stop="removeAttachment(a.key)"><X :size="11" /></button>
+        </div>
       </div>
       <div v-if="pasted.length" class="qp-c-chips">
         <span v-for="p in pasted" :key="p.path" class="qp-c-chip" :title="p.path">
@@ -561,11 +971,23 @@ defineExpose({ focus })
           :placeholder="placeholder"
           @input="onInput"
           @keydown="onKey"
+          @keyup="onCaret"
+          @click="onCaret"
           @paste="onPaste"
+          @blur="menu = null"
           @scroll="syncScroll"
         />
       </div>
       <div class="qp-composer-row">
+        <span class="qp-c-plus-anchor">
+          <button class="qp-c-plus" title="Attach images, files or a folder — or paste and drop them" @click.stop="plusOpen = !plusOpen">
+            <Plus :size="14" />
+          </button>
+          <div v-if="plusOpen" class="qp-c-plus-menu" role="menu" @click.stop>
+            <button class="qp-c-plus-row" role="menuitem" @click="pickFromDisk(false)"><Paperclip :size="13" /> Images and files…</button>
+            <button class="qp-c-plus-row" role="menuitem" @click="pickFromDisk(true)"><Folder :size="13" /> Folder…</button>
+          </div>
+        </span>
         <PilotThreadControls :thread-id="threadId" @done="focus" />
         <span v-if="counter" class="qp-c-count" :class="{ over: tooLong }">{{ counter }}</span>
         <button
@@ -596,6 +1018,92 @@ defineExpose({ focus })
 </template>
 
 <style scoped>
+.qp-composer-box.file-over { border-color: var(--qss-accent, #7aa2f7); box-shadow: 0 0 0 1px var(--qss-accent, #7aa2f7); }
+.qp-c-mirror :deep(.qp-hl-chip) {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--qss-accent, #7aa2f7) 20%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--qss-accent, #7aa2f7) 45%, transparent);
+  color: var(--qss-text, #d4d4d8);
+}
+.qp-c-note { margin: 0 0 6px; padding: 5px 10px; border-radius: 6px; background: var(--qss-bg-raised, #1f1f25); font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
+.qp-c-shelf { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 0; }
+.qp-c-att {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 240px;
+  height: 26px;
+  padding: 0 22px 0 8px;
+  border: 1px solid var(--qss-border, #47474f);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--qss-text, #d4d4d8);
+}
+.qp-c-att.image { height: 52px; padding: 0; overflow: hidden; }
+.qp-c-att.failed { border-color: var(--qss-error, #f87171); }
+.qp-c-att-thumb { height: 52px; max-width: 120px; object-fit: cover; display: block; }
+.qp-c-att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-c-att-size { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 10.5px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-c-att-err { font-size: 11px; color: var(--qss-error, #f87171); white-space: nowrap; }
+.qp-c-att-x {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--qss-bg, #18181e) 80%, transparent);
+  color: var(--qss-text-secondary, #9a9aa5);
+  cursor: pointer;
+}
+.qp-c-att-x:hover { color: var(--qss-text, #d4d4d8); }
+.qp-c-spin { animation: qp-c-spin 900ms linear infinite; }
+@keyframes qp-c-spin { to { transform: rotate(360deg); } }
+.qp-c-plus-anchor { position: relative; display: inline-flex; }
+.qp-c-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--qss-text-secondary, #9a9aa5);
+  cursor: pointer;
+}
+.qp-c-plus:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
+.qp-c-plus-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--qss-border, #47474f);
+  border-radius: 8px;
+  background: var(--qss-bg-raised, #1f1f25);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+.qp-c-plus-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--qss-text, #d4d4d8);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.qp-c-plus-row:hover { background: var(--qss-bg-hover, #313139); }
 .qp-composer { position: relative; flex-shrink: 0; padding: 4px 24px 14px; }
 .qp-composer-box {
   max-width: 780px;

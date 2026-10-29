@@ -26,6 +26,12 @@ dirs = { workspace = true }
 axum = "0.8"
 tokio = { workspace = true }
 
+# Composer context (card 9): `@` file search that honors .gitignore, images
+# normalized to PNG, attachments sent as base64.
+ignore = "0.4"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+base64 = "0.22"
+
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
 # The PTYs: one registry with the console, one output channel, one owner rule.
 tauri-plugin-console = { path = "../../console/crate" }
