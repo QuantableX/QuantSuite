@@ -19,6 +19,7 @@ mod contexts;
 mod db;
 mod driver;
 mod events;
+mod notify;
 mod prompt;
 mod providers;
 mod relay;
@@ -552,6 +553,16 @@ pub fn init() -> TauriPlugin<Wry> {
                 let app = app.clone();
                 Arc::new(move |thread_id: &str, seq: u64, event: &events::ThreadEvent| {
                     let _ = app.emit(events::EVENT_NAME, events::Envelope { thread_id, seq, event });
+                    if let events::ThreadEvent::State { state, .. } = event {
+                        if state == "waiting" {
+                            if let Some(pilot) = app.try_state::<PilotState>() {
+                                let mode = lock(&pilot.settings).notify.clone();
+                                let title = pilot.db.get_session(thread_id).ok().flatten().map(|t| t.title).unwrap_or_default();
+                                let detail = pilot.db.pending_request_line(thread_id).unwrap_or_else(|| "Waiting for you".into());
+                                notify::needs_you(&app, &mode, thread_id, &title, &detail);
+                            }
+                        }
+                    }
                     if let events::ThreadEvent::Turn { status, .. } = event {
                         if status == "completed" {
                             let _ = qs_core::bus::publish(

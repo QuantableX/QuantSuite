@@ -160,6 +160,16 @@ export const useThreadStore = defineStore('pilot/thread', {
         .filter((v) => v.state === 'waiting')
         .map((v) => v.id)
     },
+    /** A thread's pending approvals, questions and plans, oldest first. */
+    pending(state): (id: string | null) => ThreadItem[] {
+      return (id) => {
+        const v = id ? state.views[id] : null
+        if (!v) return []
+        return v.items.filter(
+          (i) => (i.kind === 'approval' || i.kind === 'question' || i.kind === 'plan') && i.data.status === 'pending'
+        )
+      }
+    },
   },
 
   actions: {

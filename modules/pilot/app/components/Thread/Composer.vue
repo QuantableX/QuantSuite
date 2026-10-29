@@ -17,7 +17,7 @@
  * - Drafts, pasted files and stashes live in this device's storage.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowUp, CornerDownRight, FileText, ListPlus, Play, Square, X } from 'lucide-vue-next'
+import { ArrowUp, Ban, CornerDownRight, FileText, ListPlus, Play, Square, X } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { caretLine } from '#pilot/utils/caret'
@@ -165,6 +165,8 @@ function compose(): string {
 }
 
 const hasContent = computed(() => text.value.trim().length > 0 || pasted.value.length > 0)
+/** The first approval waiting — a sent reply declines it. */
+const pendingApproval = computed(() => threads.pending(props.threadId).find((i) => i.kind === 'approval') ?? null)
 
 /** What the button (and the send key) does right now. */
 const buttonAction = computed<KeyAction>(() =>
@@ -193,7 +195,11 @@ async function perform(action: KeyAction) {
   const message = compose()
   busy.value = true
   let ok = false
-  if (action === 'queue') ok = await threads.queueAdd(id, message)
+  if (pendingApproval.value && action !== 'sendNewThread') {
+    // A reply while a request waits declines it, with the reply as the reason (T3 Code).
+    await threads.answer(id, String(pendingApproval.value.data.requestId), { decision: 'deny', message })
+    ok = !view.value?.error
+  } else if (action === 'queue') ok = await threads.queueAdd(id, message)
   else if (action === 'steer') ok = await threads.steer(id, message)
   else ok = await threads.send(id, message)
   busy.value = false
@@ -455,6 +461,7 @@ onBeforeUnmount(() => {
 
 const primary = computed(() => {
   if (editing.value) return { kind: 'save', title: 'Save the queued message (Enter)', disabled: false }
+  if (pendingApproval.value && hasContent.value) return { kind: 'decline', title: 'Decline the request with this reply', disabled: busy.value || tooLong.value }
   if (running.value && !hasContent.value) return { kind: 'stop', title: 'Interrupt the agent', disabled: false }
   if (!running.value && !hasContent.value && view.value?.queueHeld && view.value.queue.length) {
     return { kind: 'resume', title: 'Resume the queue', disabled: false }
@@ -472,6 +479,7 @@ const primary = computed(() => {
 
 const placeholder = computed(() => {
   if (editing.value) return 'Edit the queued message — Enter saves, Escape cancels'
+  if (pendingApproval.value) return 'Write why to decline the request above, or answer it there'
   if (running.value) return followUp.value === 'steer' && view.value?.canSteer ? 'Steer the running turn…' : 'Queue a follow-up…'
   if (view.value?.queueHeld && view.value.queue.length) return 'The queue is on hold — Resume, or write a new message'
   return 'Ask anything, or describe a task'
@@ -543,6 +551,7 @@ defineExpose({ focus })
           @click.stop="primary.kind === 'save' ? saveEdit() : clickPrimary()"
         >
           <Square v-if="primary.kind === 'stop'" :size="12" fill="currentColor" />
+          <Ban v-else-if="primary.kind === 'decline'" :size="14" />
           <Play v-else-if="primary.kind === 'resume'" :size="13" fill="currentColor" />
           <ListPlus v-else-if="primary.kind === 'queue'" :size="15" />
           <CornerDownRight v-else-if="primary.kind === 'steer'" :size="15" />
@@ -666,6 +675,7 @@ defineExpose({ focus })
 .qp-composer-send:disabled { opacity: 0.3; cursor: default; }
 .qp-composer-send:active:not(:disabled) { transform: scale(0.94); }
 .qp-composer-send.is-stop { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); border: 1px solid var(--qss-border, #47474f); }
+.qp-composer-send.is-decline { background: var(--qss-error, #f87171); color: var(--qss-bg, #18181e); }
 .qp-composer-send.is-queue,
 .qp-composer-send.is-steer { background: var(--qss-accent, #7aa2f7); color: var(--qss-bg, #18181e); }
 

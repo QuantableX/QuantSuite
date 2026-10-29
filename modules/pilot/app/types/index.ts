@@ -111,6 +111,10 @@ export interface PilotSettings {
   sendShortcut: SendShortcut
   /** What a message sent while the agent works does. */
   followUp: FollowUp
+  /** A Windows toast when a thread needs you. */
+  notify: 'off' | 'unfocused' | 'always'
+  /** A short sound when a thread starts waiting on you. */
+  notifySound: boolean
 }
 
 export type SendShortcut = 'enter' | 'modEnterMultiline' | 'modEnter'

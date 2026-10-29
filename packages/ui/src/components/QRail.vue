@@ -10,7 +10,7 @@
  * button stays as the in-module path.
  */
 import { ref } from 'vue'
-import { modulesForApp } from '@quantsuite/core'
+import { moduleAttention, modulesForApp } from '@quantsuite/core'
 import type { AppInfo } from '@quantsuite/core'
 import { logoFor } from '../logos'
 import QAppIcon from './QAppIcon.vue'
@@ -45,6 +45,11 @@ function dropFocus() {
   if (el instanceof HTMLElement) el.blur()
 }
 
+/** "Needs you" per app: the sum of its modules' counts (core attention.ts). */
+function appAttention(appId: string): number {
+  return modulesForApp(appId).reduce((sum, m) => sum + (moduleAttention[m.id] ?? 0), 0)
+}
+
 function pickApp(appId: string) {
   suppressed.value = appId
   dropFocus()
@@ -76,6 +81,7 @@ function pickModule(appId: string, moduleId: string) {
         @click="pickApp(a.id)"
       >
         <QAppIcon :app-id="a.id" :size="18" />
+        <span v-if="appAttention(a.id)" class="qss-rail-attention" :aria-label="`${appAttention(a.id)} waiting for you`">{{ appAttention(a.id) }}</span>
       </button>
 
       <!-- Module flyout: slides out of the icon's right edge, centred on it. -->
@@ -94,6 +100,7 @@ function pickModule(appId: string, moduleId: string) {
             <img v-if="logoFor(m.id)" :src="logoFor(m.id)" :alt="m.title" class="qss-rail-flyout-logo" />
             <span v-else>{{ m.title }}</span>
             <span v-if="m.status === 'stub'" class="qss-rail-flyout-soon">soon</span>
+            <span v-if="moduleAttention[m.id]" class="qss-rail-flyout-attention">{{ moduleAttention[m.id] }} waiting</span>
           </button>
         </div>
       </div>
@@ -140,6 +147,29 @@ function pickModule(appId: string, moduleId: string) {
 }
 
 /* Full rail width, symmetric gutters — the hit area is the whole strip. */
+/* "Needs you": an agent waits on the user somewhere in this app. */
+.qss-rail-attention {
+  position: absolute;
+  top: 5px;
+  right: 9px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--qss-warning, #d29a3f);
+  color: var(--qss-bg, #18181e);
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+.qss-rail-flyout-attention {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--qss-warning, #d29a3f);
+}
 .qss-rail-btn {
   position: relative;
   flex-shrink: 0; /* the column must scroll conceptually, never crush */

@@ -1382,6 +1382,76 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Live, opt-in: Supervised with a forced ask rule. An allowed Write runs;
+    /// a denied one sends the reason to the agent, which acts on it.
+    #[test]
+    #[ignore = "live: two small Claude Code turns with approvals (costs a few cents)"]
+    fn live_claude_approvals() {
+        use crate::claude::{launch_args, LaunchOptions, SessionRef};
+        let claude = crate::providers::which("claude").expect("claude on PATH").to_string_lossy().into_owned();
+        let dir = std::env::temp_dir().join(format!("qp-live-ap-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        thread(&db, "t1");
+        let (sink, _) = sink();
+        let rt = Runtime::new(db.clone(), sink);
+        let sid = uuid::Uuid::new_v4().to_string();
+        let cwd = dir.to_string_lossy().into_owned();
+        let plan = |session: SessionRef| {
+            let mut args = launch_args(&LaunchOptions {
+                session,
+                model: "haiku".into(),
+                effort: String::new(),
+                mode: "ask".into(),
+                mcp_config: None,
+                append_prompt_file: None,
+                add_dirs: Vec::new(),
+            });
+            args.extend(["--settings".into(), r#"{"permissions":{"ask":["Write","Bash"]}}"#.into()]);
+            LaunchPlan {
+                key: "live".into(),
+                program: claude.clone(),
+                args,
+                cwd: cwd.clone(),
+                env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+                driver: Box::new(ClaudeDriver::new()),
+            }
+        };
+        let answer_all = |answer: Answer| {
+            let start = Instant::now();
+            loop {
+                if let Some(t) = db.last_turn("t1").unwrap() {
+                    if t.status != "started" {
+                        return t;
+                    }
+                }
+                for item in db.items("t1", None, 50).unwrap() {
+                    if item.kind == ItemKind::Approval && item.data["status"] == "pending" {
+                        let _ = rt.answer("t1", item.data["requestId"].as_str().unwrap(), &answer);
+                    }
+                }
+                assert!(start.elapsed() < Duration::from_secs(180), "the live turn did not finish");
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        };
+        let first = TurnInput { text: "Create a file named a.txt containing exactly HI using your Write tool. Then reply DONE.".into(), images: Vec::new() };
+        rt.send("t1", first, json!([]), || Ok(plan(SessionRef::New(sid.clone()))), "live").unwrap();
+        let t = answer_all(Answer::Allow);
+        assert_eq!(t.status, "completed", "{:?}", t.error);
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap_or_default().trim(), "HI", "the allowed write ran");
+
+        let second = TurnInput { text: "Create a file named c.txt containing HI using your Write tool.".into(), images: Vec::new() };
+        rt.send("t1", second, json!([]), || Ok(plan(SessionRef::Resume(sid.clone()))), "live").unwrap();
+        let t = answer_all(Answer::Deny { message: Some("No new files. Reply with the single word MANGO instead.".into()) });
+        assert_eq!(t.status, "completed", "{:?}", t.error);
+        assert!(!dir.join("c.txt").exists(), "the denied write did not run");
+        let answer = db.items("t1", None, 100).unwrap().into_iter().rev().find(|i| i.kind == ItemKind::Assistant).unwrap();
+        println!("answer after deny: {}", answer.data["text"]);
+        assert!(answer.data["text"].as_str().unwrap().contains("MANGO"), "the agent read the reason");
+        rt.stop_all();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     /// Live, opt-in, no inference: the installed Claude Code reports its catalog.
     #[test]
     #[ignore = "live: starts the installed Claude Code for its initialize handshake only"]

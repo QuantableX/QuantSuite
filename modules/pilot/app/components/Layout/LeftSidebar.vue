@@ -117,6 +117,7 @@ async function remove(s: SessionMeta) {
             <span class="qp-row-title">{{ s.title || 'New thread' }}</span>
             <span class="qp-row-sub">{{ store.adapterLabel(s.provider || 'claude') }} · {{ timeAgo(s.lastActivityAt || s.updatedAt) }}</span>
           </span>
+          <span v-if="threads.pending(s.id).length" class="qp-row-pill" :title="`${threads.pending(s.id).length} waiting for you`">{{ threads.pending(s.id).length }}</span>
           <span class="qp-row-x" title="Delete thread" @click.stop="remove(s)">×</span>
         </button>
       </section>
@@ -192,6 +193,20 @@ async function remove(s: SessionMeta) {
 .qp-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .qp-row-title { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-row-sub { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-row-pill {
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--qss-warning, #d29a3f);
+  color: var(--qss-bg, #18181e);
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
 .qp-row-x { color: var(--qss-text-muted, #6e6e7a); font-size: 14px; line-height: 1; padding: 0 2px; opacity: 0; }
 .qp-row:hover .qp-row-x { opacity: 1; }
 .qp-row-x:hover { color: var(--qss-error, #f87171); }

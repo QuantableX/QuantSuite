@@ -47,7 +47,8 @@ async function copyUser() {
         <div v-if="block.answer" class="qp-answer" :data-item-id="block.answer.id">
           <PilotThreadMarkdown :source="String(block.answer.data.text ?? '')" :streaming="Boolean(block.answer.data.streaming)" @notice="(t: string) => emit('notice', t)" />
         </div>
-        <PilotThreadRequest v-for="r in block.requests" :key="r.id" :item="r" />
+        <!-- Pending approvals and questions wait in the bar above the box (Approvals.vue). -->
+        <PilotThreadPlanCard v-for="r in block.requests.filter((x) => x.kind === 'plan')" :key="r.id" :item="r" @notice="(t: string) => emit('notice', t)" />
       </template>
       <div v-else-if="o.kind === 'user'" class="qp-user is-steer" :data-item-id="o.id">
         <div class="qp-user-bubble">

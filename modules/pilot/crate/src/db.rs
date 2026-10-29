@@ -545,6 +545,42 @@ impl Database {
         Ok(changed)
     }
 
+    /// One line for what the thread waits on — the newest pending request.
+    pub fn pending_request_line(&self, thread_id: &str) -> Option<String> {
+        let item = {
+            let conn = self.lock();
+            conn.query_row(
+                &format!(
+                    "SELECT {ITEM_COLS} FROM timeline WHERE thread_id = ?1 AND kind IN ('approval', 'question', 'plan')
+                        AND json_extract(data, '$.status') = 'pending' ORDER BY seq DESC LIMIT 1"
+                ),
+                params![thread_id],
+                row_item,
+            )
+            .optional()
+            .ok()
+            .flatten()?
+        };
+        let d = &item.data;
+        let s = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        Some(match item.kind {
+            ItemKind::Approval => {
+                let tool = Some(s("toolName")).filter(|t| !t.is_empty()).unwrap_or_else(|| "a tool call".into());
+                let title = s("title");
+                if title.is_empty() || title == tool {
+                    format!("Allow {tool}?")
+                } else {
+                    format!("Allow {tool}: {}?", title.chars().take(120).collect::<String>())
+                }
+            }
+            ItemKind::Question => {
+                let q = d["questions"][0]["question"].as_str().unwrap_or("A question for you");
+                format!("Question: {}", q.chars().take(140).collect::<String>())
+            }
+            _ => "A plan is ready for your review".to_string(),
+        })
+    }
+
     // ── Queue ──
 
     pub fn queue(&self, thread_id: &str) -> rusqlite::Result<Vec<QueueItem>> {
@@ -792,6 +828,7 @@ mod tests {
         assert_eq!(page.iter().map(|i| i.seq).collect::<Vec<_>>(), vec![4, 5]);
         let older = db.items("t1", Some(4), 10).unwrap();
         assert_eq!(older.len(), 3);
+        assert_eq!(db.pending_request_line("t1").as_deref(), Some("Allow a tool call?"), "an approval without tool data still reads");
         let expired = db.expire_pending("t1").unwrap();
         assert_eq!(expired.len(), 1);
         assert_eq!(db.get_item("i5").unwrap().unwrap().data["status"], "expired");

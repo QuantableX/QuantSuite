@@ -63,6 +63,11 @@ pub struct Settings {
     /// What a message sent while the agent works does: `queue` (waits for the
     /// turn to end) or `steer` (goes into the running turn).
     pub follow_up: String,
+    /// A Windows toast when a thread needs you: `off`, `unfocused` (only
+    /// while the suite is in the background) or `always`.
+    pub notify: String,
+    /// A short sound when a thread starts waiting on you.
+    pub notify_sound: bool,
 }
 
 impl Default for Settings {
@@ -79,6 +84,8 @@ impl Default for Settings {
             custom: Vec::new(),
             send_shortcut: "enter".into(),
             follow_up: "queue".into(),
+            notify: "unfocused".into(),
+            notify_sound: false,
         }
     }
 }
@@ -112,6 +119,9 @@ impl Settings {
         }
         if !matches!(self.send_shortcut.as_str(), "enter" | "modEnterMultiline" | "modEnter") {
             self.send_shortcut = "enter".into();
+        }
+        if !matches!(self.notify.as_str(), "off" | "unfocused" | "always") {
+            self.notify = "unfocused".into();
         }
         if !matches!(self.follow_up.as_str(), "queue" | "steer") {
             self.follow_up = "queue".into();
