@@ -469,8 +469,10 @@ pub fn pilot_thread_interrupt(state: State<'_, PilotState>, id: String) -> Resul
     state.runtime.interrupt(&id)
 }
 
-/// A rename always wins over automatic titles; model, effort and mode
-/// apply from the next turn (a running turn keeps what it started with).
+/// A rename always wins over automatic titles. A new mode or model goes
+/// straight into the thread's live process when its CLI can switch (Claude
+/// Code can, even mid-turn); otherwise — and for effort — it applies from
+/// the next turn, which then starts a fresh process.
 #[tauri::command(async)]
 pub fn pilot_thread_update(
     state: State<'_, PilotState>,
@@ -480,10 +482,12 @@ pub fn pilot_thread_update(
     effort: Option<String>,
     mode: Option<String>,
 ) -> Result<ThreadMeta, String> {
-    let running = state.runtime.active_turn(&id).is_some();
-    if running && (model.is_some() || effort.is_some() || mode.is_some()) {
-        return Err("stop the running turn before changing the model, effort or permissions".into());
+    if let Some(m) = mode.as_deref() {
+        if !settings::valid_mode(m) {
+            return Err(format!("unknown permission mode '{m}'"));
+        }
     }
+    let before = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
     if let Some(t) = title.as_deref().map(str::trim) {
         if !t.is_empty() {
             state.db.set_title_from(&id, t, "user").map_err(|e| e.to_string())?;
@@ -497,12 +501,20 @@ pub fn pilot_thread_update(
         state.db.set_effort(&id, e.trim()).map_err(|e| e.to_string())?;
     }
     if let Some(m) = mode.as_deref() {
-        if !settings::valid_mode(m) {
-            return Err(format!("unknown permission mode '{m}'"));
-        }
         state.db.set_mode(&id, m).map_err(|e| e.to_string())?;
     }
-    state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or_else(|| "unknown thread".into())
+    let after = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let new_mode = mode.as_deref().filter(|m| *m != before.mode);
+    let new_model = model.as_deref().map(str::trim).filter(|m| *m != before.model.trim());
+    // Effort cannot switch live: a process started with the old one must not
+    // count as started with the new key.
+    let effort_changed = effort.as_deref().map(str::trim).is_some_and(|e| e != before.effort.trim());
+    if (new_mode.is_some() || new_model.is_some()) && !effort_changed {
+        let settings = lock(&state.settings).clone();
+        let model_value = new_model.map(|_| effective_model(&after, &settings));
+        state.runtime.reconfigure(&id, &plan_key(&after, &settings), new_mode, model_value.as_deref());
+    }
+    Ok(after)
 }
 
 /// Models, efforts and commands the installed CLI reports — from a live

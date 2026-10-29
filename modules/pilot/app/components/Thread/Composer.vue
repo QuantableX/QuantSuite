@@ -20,7 +20,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowUp, CornerDownRight, FileText, ListPlus, Play, Square, X } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
-import { modeLabel } from '#pilot/utils/format'
 import { caretLine } from '#pilot/utils/caret'
 import {
   enterAction,
@@ -526,11 +525,7 @@ defineExpose({ focus })
         />
       </div>
       <div class="qp-composer-row">
-        <span class="qp-composer-meta">
-          <span>{{ store.adapterLabel(thread?.provider || 'claude') }}</span>
-          <span v-if="thread?.model">· {{ thread.model }}</span>
-          <span>· {{ modeLabel(thread?.mode ?? 'full') }}</span>
-        </span>
+        <PilotThreadControls :thread-id="threadId" @done="focus" />
         <span v-if="counter" class="qp-c-count" :class="{ over: tooLong }">{{ counter }}</span>
         <button
           v-if="stashes.length && !editing"
@@ -642,7 +637,6 @@ defineExpose({ focus })
 .qp-c-mirror :deep(.qp-hl-token) { color: var(--qss-accent, #7aa2f7); }
 
 .qp-composer-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-.qp-composer-meta { flex: 1; display: flex; gap: 4px; font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .qp-c-count { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-c-count.over { color: var(--qss-error, #f87171); }
 .qp-c-stash {

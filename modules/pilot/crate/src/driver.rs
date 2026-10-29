@@ -186,6 +186,19 @@ pub trait Driver: Send {
     /// Lines that ask the CLI to stop the running turn.
     fn interrupt(&mut self) -> Vec<String>;
 
+    /// A line that switches the running process to another permission mode
+    /// (`ask` | `edits` | `auto` | `plan` | `full`); `None` when the CLI
+    /// cannot — the next turn then starts a fresh process with the mode.
+    fn set_mode(&mut self, _mode: &str) -> Option<String> {
+        None
+    }
+
+    /// A line that switches the running process to another model; `None`
+    /// when the CLI cannot.
+    fn set_model(&mut self, _model: &str) -> Option<String> {
+        None
+    }
+
     /// Whether a user message written while a turn runs joins that turn
     /// (steering). Claude Code does: verified 2026-10-29, one `result` and
     /// the agent answers "per your mid-turn message".
