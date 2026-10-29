@@ -20,14 +20,14 @@ const hasCurve = computed(() => props.result.strategies?.some(run => run.equityS
 </template>
 
 <style scoped>
-/* Both evaluation views share the backtest's 344px details row. The chart
-   receives the remaining space; small windows scroll inside the cards. */
+/* Both views share a flexible details row. Reserve room for all eight metric
+   rows and the horizontal scrollbar; the chart takes the remaining height. */
 .qs-results { container: result-panels / inline-size; display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 12px; }
-.qs-results__chart { flex: 1 1 0; min-height: 230px; }
-.qs-results__grid { flex: 0 1 344px; min-height: 180px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.qs-results__chart { flex: 1 1 0; min-height: clamp(180px, calc(100% - 272px), 230px); }
+.qs-results__grid { flex: 0 1 344px; min-height: 260px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .qs-results__grid > * { min-width: 0; min-height: 0; overflow: auto; }
 .qs-results__empty { display: flex; align-items: center; justify-content: center; padding: 20px; font-size: 13px; color: var(--qs-text-muted); }
 @container result-panels (max-width: 620px) {
-  .qs-results__grid { grid-template-columns: 1fr; grid-template-rows: repeat(2, minmax(0, 1fr)); flex: 0 0 660px; }
+  .qs-results__grid { grid-template-columns: 1fr; grid-template-rows: repeat(2, minmax(260px, 1fr)); flex: 0 0 660px; }
 }
 </style>
