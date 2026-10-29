@@ -370,3 +370,20 @@ test('the pickers show one row per base indicator with its versions; the values 
   assert.deepEqual(sortByOptions(['dmi', 'dcl_opt'], daily), sortByOptions(['dcl_opt', 'dmi'], daily))
   assert.deepEqual(stored, ['dmi', 'nope', 'dcl_fast', 'dcl_opt'], 'the stored list is left as it is')
 })
+
+
+test('chart log coordinates retain real equity values, including losses and zero', async () => {
+  const { toEquityLog, fromEquityLog } = await import('../modules/systems/app/utils/equityScale.ts')
+  const values = [-1e6, -1, -0.000001, 0, 0.000001, 0.01, 1, 13.57, 32588.62, 1e12]
+  const coordinates = values.map(toEquityLog)
+  assert.ok(coordinates.every(Number.isFinite))
+  assert.equal(coordinates[3], 0)
+  for (let i = 1; i < coordinates.length; i++) assert.ok(coordinates[i] > coordinates[i - 1])
+  for (const value of values) {
+    assert.ok(Math.abs(fromEquityLog(toEquityLog(value)) - value) <= Math.max(1, Math.abs(value)) * 1e-12)
+  }
+  // Equal multiplicative growth occupies equal plot distance, across the
+  // five orders of magnitude in the reported backtest.
+  const steps = [1, 10, 100, 1000, 10000, 100000].map(toEquityLog)
+  for (let i = 1; i < steps.length; i++) assert.ok(Math.abs(steps[i] - steps[i - 1] - 1) < 0.0001)
+})

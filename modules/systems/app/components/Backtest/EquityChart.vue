@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BacktestResult, EquityPoint } from '#systems/types'
 import type { MouseEventParams, Time } from 'lightweight-charts'
+import { toEquityLog, fromEquityLog } from '#systems/utils/equityScale'
 
 const props = defineProps<{ result: BacktestResult }>()
 
@@ -10,6 +11,7 @@ let resizeObserver: ResizeObserver | null = null
 const seriesMap = new Map<string, any>()
 let dataLen = 0
 let disposed = false
+let scaleFitFrame = 0
 // The fitted view follows the canvas size until the user zooms or pans. A
 // result that lands while the page is off screen is fitted at width 0, which
 // leaves the chart at its minimum bar spacing; resizing alone keeps that
@@ -18,7 +20,6 @@ let followFit = true
 
 const logScale = ref(true)
 const autoLock = ref(true)
-const priceScaleMode = { normal: 0, log: 1 }
 
 interface SeriesDef {
   key: string
@@ -62,7 +63,7 @@ function onCrosshairMove(event: MouseEventParams<Time>) {
   }
   const rows = legend.value.filter(item => item.visible).map(item => {
     const data = event.seriesData.get(seriesMap.get(item.key))
-    const value = data && 'value' in data && typeof data.value === 'number' && Number.isFinite(data.value) ? data.value : null
+    const value = data && 'value' in data && typeof data.value === 'number' && Number.isFinite(data.value) ? (logScale.value ? fromEquityLog(data.value) : data.value) : null
     return { key: item.key, label: item.label, color: item.color, value }
   })
   // Read the series' actual value at this x coordinate, never a y-pixel
@@ -131,10 +132,6 @@ async function render() {
   if (!container.value) return
   const lc = await import('lightweight-charts')
   if (disposed || !container.value) return
-  if (lc.PriceScaleMode) {
-    priceScaleMode.normal = lc.PriceScaleMode.Normal
-    priceScaleMode.log = lc.PriceScaleMode.Logarithmic
-  }
   const css = getComputedStyle(document.documentElement)
   const textColor = css.getPropertyValue('--qs-text-secondary').trim() || '#9a9aa5'
   const gridColor = css.getPropertyValue('--qs-border').trim() || '#47474f'
@@ -153,7 +150,8 @@ async function render() {
       },
       rightPriceScale: {
         borderColor: gridColor,
-        mode: logScale.value ? priceScaleMode.log : priceScaleMode.normal,
+        mode: lc.PriceScaleMode.Normal,
+        entireTextOnly: true,
         autoScale: autoLock.value,
       },
       // The default minimum of half a pixel per bar cannot show a run of
@@ -198,11 +196,11 @@ async function render() {
       lastValueVisible: false,
       visible: def.visible,
     })
-    series.setData(def.data)
     seriesMap.set(def.key, series)
   }
 
   chart.applyOptions({ width: container.value.clientWidth, height: container.value.clientHeight })
+  updateSeriesScale()
   applyScaleOptions()
   fitPadded()
 }
@@ -225,17 +223,32 @@ function releaseFit() {
   followFit = false
 }
 
-function applyScaleOptions() {
+function updateSeriesScale() {
   if (!chart) return
-  chart.priceScale('right').applyOptions({
-    mode: logScale.value ? priceScaleMode.log : priceScaleMode.normal,
-    autoScale: autoLock.value,
-  })
+  // LWC 4's native log tick builder can skip the rest of the axis on short
+  // plots spanning several orders of magnitude. Use evenly spaced log
+  // coordinates with the normal tick builder and format back to real equity.
+  // This changes only the chart's coordinates, never the result or metrics.
+  clearHover()
+  for (const def of buildDefs()) {
+    const series = seriesMap.get(def.key)
+    series.applyOptions({
+      priceFormat: logScale.value
+        ? { type: 'custom', minMove: 0.01, formatter: (value: number) => fromEquityLog(value).toFixed(2) }
+        : { type: 'price', minMove: 0.01, precision: 2 },
+    })
+    series.setData(logScale.value ? def.data.map(point => ({ ...point, value: toEquityLog(point.value) })) : def.data)
+  }
+}
+
+function applyScaleOptions() {
+  chart?.priceScale('right').applyOptions({ autoScale: autoLock.value })
 }
 
 function toggleLog() {
   logScale.value = !logScale.value
-  applyScaleOptions()
+  updateSeriesScale()
+  fitPriceScale()
 }
 
 function toggleAutoLock() {
@@ -247,10 +260,18 @@ function toggleAutoLock() {
 function fit() {
   if (!chart) return
   fitPadded()
+  fitPriceScale()
+}
+
+function fitPriceScale() {
+  if (!chart) return
   chart.priceScale('right').applyOptions({ autoScale: true })
   if (!autoLock.value) {
     // a one-shot fit shouldn't permanently re-enable autoscale unless locked
-    chart.priceScale('right').applyOptions({ autoScale: false })
+    cancelAnimationFrame(scaleFitFrame)
+    scaleFitFrame = requestAnimationFrame(() => {
+      if (!autoLock.value) chart?.priceScale('right').applyOptions({ autoScale: false })
+    })
   }
 }
 
@@ -269,6 +290,7 @@ onDeactivated(clearHover)
 
 onUnmounted(() => {
   disposed = true
+  cancelAnimationFrame(scaleFitFrame)
   clearHover()
   resizeObserver?.disconnect()
   resizeObserver = null
@@ -486,23 +508,21 @@ onUnmounted(() => {
   border-radius: 2px;
 }
 
-/* Grows into whatever height the page hands the card; the ResizeObserver in
-   render() keeps the chart canvas in sync. The floor stays below the page's
-   own minimum for the card, so a short window never pushes the plot out of
-   its card and over the tiles below. */
+/* Keep the imperative canvas out of flex sizing so an earlier, taller render
+   cannot hold the plot open after the surrounding panel shrinks. */
 .qs-chart__plot {
   position: relative;
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
-  min-height: 180px;
+  min-height: 0;
 }
 
 .qs-chart__canvas {
-  width: 100%;
-  flex: 1 1 auto;
+  position: absolute;
+  inset: 0;
   min-width: 0;
-  min-height: 180px;
+  min-height: 0;
   /* The chart canvas is sized imperatively; clip it so a frame rendered at the
      old width can never push the page into a horizontal scroll. */
   overflow: hidden;

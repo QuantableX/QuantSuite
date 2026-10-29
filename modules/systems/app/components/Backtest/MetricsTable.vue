@@ -76,9 +76,7 @@ function onTableWheel(event: WheelEvent) {
 
   const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? container.clientWidth : 1
   const nextScroll = Math.max(0, Math.min(maxScroll, container.scrollLeft + event.deltaY * unit))
-  // Let the page scroll normally when the table has reached either edge.
-  if (nextScroll === container.scrollLeft) return
-
+  // Keep wheel gestures inside the horizontal table, including at its edges.
   event.preventDefault()
   container.scrollLeft = nextScroll
 }
@@ -138,28 +136,38 @@ function tone(value: number | null | undefined, kind?: Tone): string {
 
 <style scoped>
 .qs-metrics {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   padding: 12px 14px;
 }
 
 .qs-metrics__title {
+  flex-shrink: 0;
   margin: 0 0 10px;
   font-size: 13px;
   font-weight: 600;
 }
 
 .qs-metrics__scroll {
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
 }
 
 .qs-metrics__table {
   width: 100%;
+  height: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  line-height: 20px;
 }
 
 .qs-metrics__col,
 .qs-metrics__rowlabel {
-  padding: 6px 10px;
+  padding: 0 10px;
   text-align: right;
   color: var(--qs-text-secondary);
   font-weight: 600;
@@ -196,7 +204,7 @@ function tone(value: number | null | undefined, kind?: Tone): string {
 }
 
 .qs-metrics__val {
-  padding: 6px 10px;
+  padding: 0 10px;
   text-align: right;
   color: var(--qs-text-secondary);
   border-top: 1px solid var(--qs-border-subtle);
