@@ -31,6 +31,8 @@ Default permissions for the pilot module.
 - `allow-pilot-queue-resume`
 - `allow-pilot-thread-steer`
 - `allow-pilot-attachment-save-text`
+- `allow-pilot-thread-arrange`
+- `allow-pilot-thread-regenerate-title`
 
 ## Permission Table
 
@@ -590,6 +592,32 @@ Denies the pilot_thread_answer command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-thread-arrange`
+
+</td>
+<td>
+
+Enables the pilot_thread_arrange command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-arrange`
+
+</td>
+<td>
+
+Denies the pilot_thread_arrange command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-thread-create`
 
 </td>
@@ -635,6 +663,32 @@ Enables the pilot_thread_interrupt command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_interrupt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-regenerate-title`
+
+</td>
+<td>
+
+Enables the pilot_thread_regenerate_title command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-regenerate-title`
+
+</td>
+<td>
+
+Denies the pilot_thread_regenerate_title command without any pre-configured scope.
 
 </td>
 </tr>

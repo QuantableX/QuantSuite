@@ -24,6 +24,8 @@ const draft = reactive<PilotSettings>({
   followUp: 'queue',
   notify: 'unfocused',
   notifySound: false,
+  autoSettleDays: 3,
+  workingSection: true,
 })
 const notice = ref('')
 const busy = ref(false)
@@ -45,6 +47,8 @@ function pull() {
   draft.followUp = s.followUp ?? 'queue'
   draft.notify = s.notify ?? 'unfocused'
   draft.notifySound = s.notifySound ?? false
+  draft.autoSettleDays = s.autoSettleDays ?? 3
+  draft.workingSection = s.workingSection ?? true
 }
 onMounted(async () => {
   if (!store.settings) await store.loadSettings()
@@ -67,6 +71,7 @@ async function save() {
       exe: { ...draft.exe },
       model: { ...draft.model },
       custom: draft.custom.map((c) => ({ ...c })),
+      autoSettleDays: Math.max(0, Math.min(365, Math.round(Number(draft.autoSettleDays) || 0))),
     })
     notice.value = 'Saved.'
   } catch (e) {
@@ -201,6 +206,18 @@ const signalsLabel = (s: string | null) =>
     <label class="qp-settings-check">
       <input v-model="draft.notifySound" type="checkbox" />
       <span>Play a short sound</span>
+    </label>
+
+    <h3 class="qp-settings-title">Threads</h3>
+    <div class="qp-settings-grid">
+      <label class="qp-settings-field">
+        <span>Settle inactive threads after <em>(days; 0 = never)</em></span>
+        <input v-model.number="draft.autoSettleDays" class="qp-input" type="number" min="0" max="365" step="1" />
+      </label>
+    </div>
+    <label class="qp-settings-check">
+      <input v-model="draft.workingSection" type="checkbox" />
+      <span>Fold working threads into a Working section <em>(they come back on top when they finish, fail or need you)</em></span>
     </label>
 
     <h3 class="qp-settings-title">The suite as context</h3>

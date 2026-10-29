@@ -206,6 +206,11 @@ fn pilot_settings_set(state: State<'_, PilotState>, settings: Settings) -> Resul
 
 #[tauri::command(async)]
 fn pilot_sessions_list(state: State<'_, PilotState>) -> Result<Vec<SessionMeta>, String> {
+    // Threads nobody touched for the configured days move to Settled (card 7).
+    let days = lock(&state.settings).auto_settle_days;
+    if let Err(e) = state.db.auto_settle(days, &state.runtime.busy_threads()) {
+        eprintln!("pilot: auto-settle failed: {e}");
+    }
     state.db.list_sessions().map_err(|e| e.to_string())
 }
 
@@ -249,6 +254,11 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
         context_tokens: None,
         context_window: None,
         last_activity_at: stamp,
+        pinned: false,
+        sort_key: stamp as f64,
+        settled_at: None,
+        snoozed_until: None,
+        auto_settle: true,
     };
     state.db.insert_session(&meta).map_err(|e| e.to_string())?;
     Ok(meta)
@@ -638,6 +648,8 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_queue_resume,
             threads::pilot_thread_steer,
             threads::pilot_attachment_save_text,
+            threads::pilot_thread_arrange,
+            threads::pilot_thread_regenerate_title,
         ]))
         .build()
 }

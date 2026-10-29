@@ -224,7 +224,13 @@ fn launchable(path: PathBuf) -> Launchable {
 }
 
 /// One bounded command run, stdout and stderr as one text.
-pub fn run_capture(mut cmd: Command, timeout: Duration) -> Result<(bool, String), String> {
+pub fn run_capture(cmd: Command, timeout: Duration) -> Result<(bool, String), String> {
+    run_capture_split(cmd, timeout).map(|(ok, out, err)| (ok, format!("{out}{err}")))
+}
+
+/// [`run_capture`] with stdout and stderr apart — for an answer that must
+/// not pick up a hook's or a plugin's notice.
+pub fn run_capture_split(mut cmd: Command, timeout: Duration) -> Result<(bool, String, String), String> {
     let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -262,9 +268,9 @@ pub fn run_capture(mut cmd: Command, timeout: Duration) -> Result<(bool, String)
     };
     let stdout = t_out.join().unwrap_or_default();
     let stderr = t_err.join().unwrap_or_default();
-    let text = format!("{}{}", String::from_utf8_lossy(&stdout), String::from_utf8_lossy(&stderr));
+    let (out, err) = (String::from_utf8_lossy(&stdout).into_owned(), String::from_utf8_lossy(&stderr).into_owned());
     match status {
-        Some(s) => Ok((s.success(), text)),
+        Some(s) => Ok((s.success(), out, err)),
         None => Err(format!("timed out after {}s", timeout.as_secs())),
     }
 }

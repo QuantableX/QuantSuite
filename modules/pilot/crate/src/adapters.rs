@@ -424,6 +424,11 @@ mod tests {
             context_tokens: None,
             context_window: None,
             last_activity_at: 0,
+            pinned: false,
+            sort_key: 0.0,
+            settled_at: None,
+            snoozed_until: None,
+            auto_settle: true,
         }
     }
 

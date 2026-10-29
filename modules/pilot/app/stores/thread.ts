@@ -11,9 +11,11 @@
  * Views stay in memory while the module lives, so switching threads is
  * instant and a running thread keeps streaming in the background.
  */
+import { markRaw } from 'vue'
 import { defineStore } from 'pinia'
 import { pilot } from '#pilot/utils/invoke'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useSidebarStore } from '#pilot/stores/sidebar'
 import type {
   Answer,
   ProviderCatalog,
@@ -148,6 +150,8 @@ export const useThreadStore = defineStore('pilot/thread', {
   state: () => ({
     views: {} as Record<string, ThreadView>,
     catalogs: {} as Record<string, ProviderCatalog>,
+    /** Files dropped on a sidebar row, waiting for that thread's composer. */
+    incoming: {} as Record<string, File[]>,
   }),
 
   getters: {
@@ -233,16 +237,37 @@ export const useThreadStore = defineStore('pilot/thread', {
       }
     },
 
-    /** One live envelope. */
+    /**
+     * One live envelope. A thread nobody opened yet only keeps its row
+     * current (state, title, activity) — its snapshot will have the rest;
+     * envelopes are buffered only while that snapshot loads.
+     */
     apply(env: ThreadEnvelope) {
       const view = this.ensure(env.threadId)
+      const sidebar = useSidebarStore()
+      const before = sidebar.statusOf(env.threadId)
       if (!view.loaded) {
-        view.pending.push(env)
-        return
+        if (view.loading) view.pending.push(env)
+        this.patchRow(env.threadId, env.event)
+      } else if (env.seq > view.seq) {
+        view.seq = env.seq
+        this.applyEvent(view, env.event)
+        this.patchRow(env.threadId, env.event)
       }
-      if (env.seq <= view.seq) return
-      view.seq = env.seq
-      this.applyEvent(view, env.event)
+      sidebar.statusChanged(env.threadId, before, sidebar.statusOf(env.threadId))
+    },
+
+    /** The saved row follows the live thread, so the sidebar sorts and labels it right. */
+    patchRow(id: string, ev: ThreadEvent) {
+      const store = usePilotStore()
+      if (ev.type === 'state') store.patchSession(id, { state: ev.state })
+      else if (ev.type === 'title') store.patchSession(id, { title: ev.title })
+      else if (ev.type === 'turn' && ev.status !== 'started') store.patchSession(id, { lastActivityAt: Date.now() })
+    },
+
+    /** The user wrote: the thread leaves the Settled and Snoozed shelves (the crate does the same). */
+    wrote(id: string) {
+      usePilotStore().patchSession(id, { settledAt: null, snoozedUntil: null, lastActivityAt: Date.now() })
     },
 
     applyEvent(view: ThreadView, ev: ThreadEvent) {
@@ -314,7 +339,9 @@ export const useThreadStore = defineStore('pilot/thread', {
       const view = this.ensure(id)
       view.error = null
       try {
+        const wasRunning = Boolean(view.turnId)
         this.applyQueue(id, await pilot<QueueState>('plugin:pilot|pilot_queue_add', { id, text }))
+        if (!wasRunning) this.wrote(id)
         return true
       } catch (e) {
         view.error = String(e)
@@ -328,6 +355,7 @@ export const useThreadStore = defineStore('pilot/thread', {
       view.error = null
       try {
         await pilot('plugin:pilot|pilot_thread_steer', { id, text })
+        this.wrote(id)
         return true
       } catch (e) {
         view.error = String(e)
@@ -374,10 +402,21 @@ export const useThreadStore = defineStore('pilot/thread', {
       }
     },
 
-    /** Save a large paste as a file next to the thread; returns its path. */
-    async savePastedText(id: string, text: string): Promise<string | null> {
+    /** Files from Explorer dropped on the thread's sidebar row. */
+    dropFiles(id: string, files: File[]) {
+      this.incoming[id] = [...(this.incoming[id] ?? []), ...files.map((f) => markRaw(f))]
+    },
+
+    takeIncoming(id: string): File[] {
+      const files = this.incoming[id] ?? []
+      delete this.incoming[id]
+      return files
+    },
+
+    /** Save a large paste (or a dropped text file) as a file next to the thread; returns its path. */
+    async savePastedText(id: string, text: string, name = 'pasted-text'): Promise<string | null> {
       try {
-        return await pilot<string>('plugin:pilot|pilot_attachment_save_text', { id, name: 'pasted-text', text })
+        return await pilot<string>('plugin:pilot|pilot_attachment_save_text', { id, name, text })
       } catch (e) {
         this.ensure(id).error = String(e)
         return null
@@ -389,6 +428,7 @@ export const useThreadStore = defineStore('pilot/thread', {
       view.error = null
       try {
         await pilot<string>('plugin:pilot|pilot_thread_send', { id, text })
+        this.wrote(id)
         return true
       } catch (e) {
         view.error = String(e)

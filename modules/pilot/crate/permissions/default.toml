@@ -30,4 +30,6 @@ permissions = [
   "allow-pilot-queue-resume",
   "allow-pilot-thread-steer",
   "allow-pilot-attachment-save-text",
+  "allow-pilot-thread-arrange",
+  "allow-pilot-thread-regenerate-title",
 ]

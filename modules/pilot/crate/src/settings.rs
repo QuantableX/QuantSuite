@@ -68,6 +68,11 @@ pub struct Settings {
     pub notify: String,
     /// A short sound when a thread starts waiting on you.
     pub notify_sound: bool,
+    /// Settle a thread nobody touched for this many days (0 = never).
+    pub auto_settle_days: u32,
+    /// Fold running threads into the sidebar's Working section; they come
+    /// back on top of the active list when they finish or need you.
+    pub working_section: bool,
 }
 
 impl Default for Settings {
@@ -86,6 +91,8 @@ impl Default for Settings {
             follow_up: "queue".into(),
             notify: "unfocused".into(),
             notify_sound: false,
+            auto_settle_days: 3,
+            working_section: true,
         }
     }
 }

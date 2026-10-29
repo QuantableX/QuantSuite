@@ -67,3 +67,11 @@ export function modeLabel(m: string): string {
       return 'Supervised'
   }
 }
+
+/**
+ * What "Copy thread reference" puts on the clipboard: a link that names the
+ * thread, for a composer chip (card 9) or the agent tools (card 22).
+ */
+export function threadReference(t: { id: string; title: string }): string {
+  return `quantpilot://thread/${t.id}${t.title ? `?title=${encodeURIComponent(t.title)}` : ''}`
+}

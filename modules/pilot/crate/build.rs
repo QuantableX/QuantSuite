@@ -26,6 +26,8 @@ const COMMANDS: &[&str] = &[
     "pilot_queue_resume",
     "pilot_thread_steer",
     "pilot_attachment_save_text",
+    "pilot_thread_arrange",
+    "pilot_thread_regenerate_title",
 ];
 
 fn main() {

@@ -101,6 +101,20 @@ inside its own pane.
   browser) goes into the inspector split inside the main area.
 - Ctrl+B toggles the sidebar, Ctrl+Shift+B the thread panel, Ctrl+Alt+B the
   inspector, Ctrl+J the terminal drawer.
+- The sidebar (card 7; rules in `app/utils/sidebar.ts`, T3 Code's
+  `thread-sidebar.md`): Pinned and Active keep the user's order; with the
+  Working fold on (default), running threads leave Active and come back on
+  top when they finish, fail or need you; a snoozed thread stays hidden
+  unless it needs you (failing or needing you wakes it for good). Pointer
+  drag reorders, pins, settles (onto the Settled header), un-settles and
+  wakes; rows slide with transforms only, the dragged slot empties, the
+  Pinned / Active boundary is an overlay, Escape cancels. The hover action
+  dragged across rows settles / un-settles / wakes the range. Unpin, settle,
+  snooze and delete show a 5 s Undo toast (Ctrl+Z outside fields); a delete
+  runs after the window closes. Explorer files dropped on a row open the
+  thread and attach (text files as file chips until card 9). Titles come
+  from the first prompt (filler openers dropped), a manual rename wins, and
+  "Regenerate title" asks a separate `claude -p --model haiku` run.
 - The Board view (card 21) fills the main area without the thread sidebar.
   Usage (card 18) and Settings are pages inside QuantPilot, never OS windows.
 
@@ -172,7 +186,7 @@ thread's projector is held so no event falls in between — and drops live
 events with a lower or equal seq. Streaming text is persisted at least once a
 second and at every message end, so the persisted history is the truth.
 
-### 4.3 Storage (`pilot.db`, schema v3)
+### 4.3 Storage (`pilot.db`, schema v5)
 
 | Table | Holds | Card |
 | --- | --- | --- |
@@ -180,6 +194,7 @@ second and at every message end, so the persisted history is the truth.
 | `timeline` | the items above: id, thread, turn, seq, kind, parent, data (JSON), timestamps | 2 |
 | `turns` | one row per user message: status, start, end, duration, cost, error | 2 |
 | `queue` (+ `threads.queue_held`) | queued follow-ups in order (schema v4); a completed turn sends the next one, a stopped, failed or limited turn — or an app restart — holds the queue until Resume or the next sent message | 4 |
+| `threads` sidebar columns (schema v5) | `pinned`, `sort_key` (the user's order in Pinned and Active, larger is higher; new threads take their creation time), `settled_at`, `snoozed_until`, `auto_settle` (per-thread opt-out), `unsettled_at` (a manual Un-settle keeps automatic settlement away until the user writes again). A user message clears `settled_at`, `snoozed_until` and `unsettled_at`. Listing the threads settles those idle for `autoSettleDays` (default 3) unless they run, wait on the user, have queued follow-ups or opted out; pinning does not prevent it and settling unpins | 7 |
 | `checkpoints`, `turn_changes` | hidden git refs per turn, attributed changed files and saved patches | 11 |
 | `attachments` | images and documents stored under the pilot data dir, never inside the project | 9 |
 | `links` | kanban card, PR, issue, parent thread | 12, 21 |
@@ -327,7 +342,7 @@ in `layouts/pilot.vue`; they keep their meaning. No Vim mode or Vim keys.
 | Ctrl+Shift+[ / ] | Previous / next thread |
 | Ctrl+[ / ] | Back / forward |
 | Ctrl+Shift+S / Ctrl+Shift+P | Settle / pin thread |
-| Ctrl+Shift+C | Copy thread reference (PR link when linked) |
+| Ctrl+Shift+C | Copy thread reference (PR link when linked; otherwise `quantpilot://thread/<id>?title=…`) |
 | Ctrl+Z | Undo the last sidebar action (5 s toast) outside editable fields |
 | Ctrl+W / Ctrl+Shift+T | Close inspector tab / reopen the last closed one |
 | F2 | Rename the focused thread |

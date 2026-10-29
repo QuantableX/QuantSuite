@@ -689,6 +689,11 @@ impl Runtime {
         self.run(thread_id).and_then(|r| lock(&r.turn).clone())
     }
 
+    /// Threads with a turn running right now.
+    pub fn busy_threads(&self) -> Vec<String> {
+        lock(&self.runs).values().filter(|r| r.turn_active()).map(|r| r.thread_id.clone()).collect()
+    }
+
     pub fn process_alive(&self, thread_id: &str) -> bool {
         self.run(thread_id).is_some()
     }
@@ -794,6 +799,7 @@ impl Runtime {
         });
         proj.user_message(&input.text, attachments);
         let _ = self.db.touch(thread_id);
+        let _ = self.db.resume(thread_id);
         proj.emit(ThreadEvent::Turn {
             turn_id: turn_id.to_string(),
             status: "started".into(),
@@ -910,6 +916,7 @@ impl Runtime {
         run.write(&lines)?;
         lock(&run.proj).steer_message(&input.text);
         let _ = self.db.touch(thread_id);
+        let _ = self.db.resume(thread_id);
         Ok(())
     }
 
@@ -1185,6 +1192,11 @@ mod tests {
             context_tokens: None,
             context_window: None,
             last_activity_at: 1,
+            pinned: false,
+            sort_key: 1.0,
+            settled_at: None,
+            snoozed_until: None,
+            auto_settle: true,
         })
         .unwrap();
     }
