@@ -55,6 +55,9 @@ pub struct CodexOptions {
     pub mcp_url: Option<String>,
     /// Extra writable roots in the workspace-write sandbox (the general vault).
     pub writable_roots: Vec<String>,
+    /// Rewind: drop this turn and every later one from the thread before
+    /// the next turn (`thread/revert`, card 11).
+    pub revert_before: Option<String>,
 }
 
 /// The `codex` arguments after the executable.
@@ -93,6 +96,7 @@ enum Call {
     Skills,
     RateLimits,
     Settings,
+    Revert,
 }
 
 #[derive(Debug, Clone)]
@@ -455,7 +459,12 @@ impl CodexDriver {
                     return out;
                 };
                 self.thread = Some(id.clone());
-                out.push(Emit::Bound { session_id: id, model: s(&result, "model").map(str::to_string) });
+                out.push(Emit::Bound { session_id: id.clone(), model: s(&result, "model").map(str::to_string) });
+                if let Some(before) = self.opts.revert_before.take() {
+                    // The turn starts once the history is cut back.
+                    out.push(Emit::Write(self.request(Call::Revert, "thread/revert", json!({ "threadId": id, "beforeTurnId": before }))));
+                    return out;
+                }
                 if let Some(input) = (!self.queued.is_empty()).then(|| self.queued.remove(0)) {
                     out.push(Emit::Write(self.turn_start(&input)));
                 }
@@ -482,6 +491,14 @@ impl CodexDriver {
             Call::TurnSteer => {
                 if let Some(e) = error {
                     out.push(Emit::Notice { text: format!("Codex did not take the message into the running turn: {e}") });
+                }
+            }
+            Call::Revert => {
+                if let Some(e) = error {
+                    out.push(Emit::Notice { text: format!("Codex could not rewind the conversation: {e}") });
+                }
+                if let Some(input) = (!self.queued.is_empty()).then(|| self.queued.remove(0)) {
+                    out.push(Emit::Write(self.turn_start(&input)));
                 }
             }
             Call::Interrupt | Call::Settings => {
@@ -712,6 +729,7 @@ impl CodexDriver {
             "turn/started" if !child => {
                 if let Some(t) = params.get("turn").and_then(|t| s(t, "id")) {
                     self.turn = Some(t.to_string());
+                    out.push(Emit::TurnRef { id: t.to_string() });
                 }
             }
             "turn/completed" if !child => {
@@ -1293,6 +1311,7 @@ mod tests {
         assert_eq!(
             out,
             vec![
+                Emit::TurnRef { id: "tu-1".into() },
                 Emit::MessageStart { key: "m1".into(), phase: Some("commentary".into()), parent: None },
                 Emit::TextDelta { key: "m1".into(), text: "Look".into() },
                 Emit::TextDelta { key: "m1".into(), text: "ing.".into() },

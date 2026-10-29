@@ -1,21 +1,33 @@
 <script setup lang="ts">
 /**
  * One turn of the conversation: the user's message, the "Worked for …"
- * fold, the answer, then whatever needs the user (requests) and what must
- * stay visible (plans, errors, notices).
+ * fold, the answer, the files it changed, then whatever needs the user
+ * (requests) and what must stay visible (plans, errors, notices). "Edit
+ * from here" rewinds the thread to before this message (card 11).
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { AlertTriangle, CornerDownRight, Info } from 'lucide-vue-next'
 import type { TurnBlock } from '#pilot/utils/timeline'
 import { plainText } from '#pilot/utils/mentions'
+import { pilot } from '#pilot/utils/invoke'
+import { usePilotStore } from '#pilot/stores/pilot'
+import { useThreadStore } from '#pilot/stores/thread'
 
 const props = defineProps<{
   block: TurnBlock
+  threadId: string
   running: boolean
+  /** No turn runs in the thread: the message can be edited from. */
+  idle: boolean
   elapsed: number
   cost: number | null
 }>()
 const emit = defineEmits<{ notice: [text: string] }>()
+const store = usePilotStore()
+const threads = useThreadStore()
+const editing = ref(false)
+const reverting = ref(false)
+const worktree = computed(() => Boolean(store.sessions.find((s) => s.id === props.threadId)?.worktreePath))
 
 const userText = computed(() => plainText(String(props.block.user?.data.text ?? '')))
 const showActivity = computed(() => props.block.activity.length > 0 || (props.running && !props.block.answer))
@@ -28,6 +40,24 @@ async function copyUser() {
     /* clipboard denied — nothing to do */
   }
 }
+
+/** The message and everything after leave the thread; its text goes back into the box. */
+async function revert(files: boolean) {
+  const item = props.block.user
+  if (!item || reverting.value) return
+  reverting.value = true
+  try {
+    const r = await pilot<{ prompt: string; attachments: Record<string, any>[]; files: string[] }>('plugin:pilot|pilot_thread_revert', { id: props.threadId, itemId: item.id, files })
+    editing.value = false
+    await threads.open(props.threadId, true)
+    window.dispatchEvent(new CustomEvent('qp-composer-set', { detail: { threadId: props.threadId, text: r?.prompt ?? '', attachments: r?.attachments ?? [] } }))
+    emit('notice', files && r?.files.length ? `Rewound — ${r.files.length} file${r.files.length === 1 ? '' : 's'} restored` : 'Rewound — edit the message and send it again')
+  } catch (e) {
+    emit('notice', String(e))
+  } finally {
+    reverting.value = false
+  }
+}
 </script>
 
 <template>
@@ -36,7 +66,18 @@ async function copyUser() {
       <div class="qp-user-bubble">
         <PilotThreadUserMessage :item="block.user" @notice="(t: string) => emit('notice', t)" />
       </div>
-      <button class="qp-user-copy" title="Copy message" @click="copyUser">Copy</button>
+      <div class="qp-user-tools" :class="{ on: editing }">
+        <button v-if="idle" class="qp-user-copy" title="Rewind the thread to before this message and edit it" @click="editing = !editing">Edit from here</button>
+        <button class="qp-user-copy" title="Copy message" @click="copyUser">Copy</button>
+      </div>
+      <div v-if="editing" class="qp-rewind" role="dialog" aria-label="Edit from here">
+        <div class="qp-rewind-text">This message and everything after it leave the thread. The agent picks up from before it, and the message comes back into the box.</div>
+        <div class="qp-rewind-actions">
+          <button class="qp-rewind-btn" @click="editing = false">Cancel</button>
+          <button v-if="worktree" class="qp-rewind-btn" :disabled="reverting" title="Also put the worktree's files back to how they were before this message" @click="revert(true)">Rewind with files</button>
+          <button class="qp-rewind-btn primary" :disabled="reverting" @click="revert(false)">Rewind</button>
+        </div>
+      </div>
     </div>
 
     <PilotThreadActivity v-if="showActivity" :block="block" :running="running" :elapsed="elapsed" @notice="(t: string) => emit('notice', t)" />
@@ -46,6 +87,7 @@ async function copyUser() {
         <div v-if="block.answer" class="qp-answer" :data-item-id="block.answer.id">
           <PilotThreadMarkdown :source="String(block.answer.data.text ?? '')" :streaming="Boolean(block.answer.data.streaming)" @notice="(t: string) => emit('notice', t)" />
         </div>
+        <PilotThreadChanges v-if="block.changes" :item="block.changes" />
         <!-- Pending approvals and questions wait in the bar above the box (Approvals.vue). -->
         <PilotThreadPlanCard v-for="r in block.requests.filter((x) => x.kind === 'plan')" :key="r.id" :item="r" @notice="(t: string) => emit('notice', t)" />
       </template>
@@ -92,8 +134,33 @@ async function copyUser() {
   border-radius: 5px;
   cursor: pointer;
 }
+.qp-user-tools { display: flex; gap: 2px; }
 .qp-user:hover .qp-user-copy,
+.qp-user-tools.on .qp-user-copy,
 .qp-user-copy:focus-visible { opacity: 1; }
+.qp-rewind {
+  max-width: min(86%, 640px);
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--qss-border, #47474f);
+  background: var(--qss-bg-raised, #1f1f25);
+  font-size: 12px;
+}
+.qp-rewind-text { color: var(--qss-text-secondary, #9a9aa5); line-height: 1.5; }
+.qp-rewind-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.qp-rewind-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--qss-border, #47474f);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--qss-text, #d4d4d8);
+  font: inherit;
+  cursor: pointer;
+}
+.qp-rewind-btn:hover:not(:disabled) { background: var(--qss-bg-hover, #313139); }
+.qp-rewind-btn.primary { background: var(--qss-accent, #7aa2f7); border-color: transparent; color: var(--qss-bg, #18181e); }
+.qp-rewind-btn:disabled { opacity: 0.5; cursor: default; }
 .qp-user-copy:hover { color: var(--qss-text, #d4d4d8); background: var(--qss-bg-hover, #313139); }
 .qp-answer { padding: 0 2px; }
 .qp-error {

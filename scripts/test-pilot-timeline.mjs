@@ -77,6 +77,21 @@ test('a plan before the answer reads before it', () => {
   assert.deepEqual(b.outside.map((o) => o.kind), ['notice'])
 })
 
+test('the turn changes card stays under the answer, never in the fold (card 11)', () => {
+  seq = 0
+  const items = [
+    item('user', { text: 'edit' }),
+    tool('edit'),
+    item('assistant', { text: 'Edited.' }),
+    item('changes', { files: [{ path: 'a.ts', status: 'M', added: 2, removed: 1, binary: false }], added: 2, removed: 1 }),
+  ]
+  const [b] = groupTurns(items)
+  assert.equal(b.answer.data.text, 'Edited.', 'the changes card does not become the answer')
+  assert.equal(b.changes?.data.added, 2)
+  assert.ok(!b.activity.some((e) => e.kind !== 'tools' && e.item.kind === 'changes'))
+  assert.ok(!b.outside.some((o) => o.kind === 'changes'))
+})
+
 test('a message steered into the turn stays visible in order', () => {
   seq = 0
   const items = [

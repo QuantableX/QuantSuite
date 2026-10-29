@@ -39,6 +39,8 @@ export interface TurnBlock {
   requests: ThreadItem[]
   /** Plans, errors and notices after the answer (all of them when there is none). */
   outside: ThreadItem[]
+  /** What the turn changed in the checkout (card 11). */
+  changes: ThreadItem | null
   startedAt: number
   updatedAt: number
 }
@@ -157,8 +159,13 @@ export function groupTurns(items: ThreadItem[]): TurnBlock[] {
     const before: ThreadItem[] = []
     const outside: ThreadItem[] = []
     const folded: ThreadItem[] = []
+    let changes: ThreadItem | null = null
     rest.forEach((it, i) => {
       if (i === answerIndex) return
+      if (it.kind === 'changes') {
+        changes = it
+        return
+      }
       if (isPending(it)) requests.push(it)
       // Plans, errors, notices and messages steered into the turn stay in view, in order.
       else if (it.kind === 'plan' || it.kind === 'error' || it.kind === 'notice' || it.kind === 'user') (answer && i < answerIndex ? before : outside).push(it)
@@ -176,6 +183,7 @@ export function groupTurns(items: ThreadItem[]): TurnBlock[] {
       answer,
       requests,
       outside,
+      changes,
       startedAt: all[0].createdAt,
       updatedAt: all.reduce((m, i) => Math.max(m, i.updatedAt), 0),
     }

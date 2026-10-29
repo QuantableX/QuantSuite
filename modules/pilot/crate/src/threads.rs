@@ -3,18 +3,20 @@
 //! a thread. The process work itself is `runtime.rs`; the protocol is
 //! `claude.rs`.
 
+use crate::checkpoints::{self, FileChange};
 use crate::claude::{self, ClaudeDriver, LaunchOptions, SessionRef};
 use crate::codex::{self, CodexDriver, CodexOptions};
 use crate::db::{Arrangement, QueueItem, ThreadMeta};
 use crate::context::{self, Attachment, Chip, FileHit, SkillInfo};
 use crate::driver::{Answer, Catalog, ImageInput, SkillRef, TurnInput, TurnStatus};
-use crate::events::{Item, ThreadEvent};
+use crate::events::{Item, ItemKind, ThreadEvent};
 use crate::git::{self, BranchInfo, CleanupCheck, RepoInfo};
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
 use crate::{adapters, context_of, contexts, lock, mcp_url, now, prompt, providers, shell, PilotState};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
 
@@ -265,10 +267,14 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
     let mcp = settings.attach_quantmcp.then(mcp_url);
     let system = prompt::system_append(&ctx, &general, mcp.as_deref());
     let (context_file, mcp_file) = write_thread_files(&shell::session_dir(&state.data_dir, &meta.id), &system, mcp.as_deref())?;
+    let rewind = pending_rewind(state, &meta.id);
     let session = match meta.provider_session_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         Some(id) => SessionRef::Resume(id.to_string()),
+        // A rewind to before the first message starts a session of its own.
+        None if rewind.is_some() => SessionRef::New(uuid::Uuid::new_v4().to_string()),
         None => SessionRef::New(meta.id.clone()),
     };
+    let resume_at = rewind.and_then(|r| r.get("at").and_then(Value::as_str).map(str::to_string));
     let add_dirs = if ctx.kind != "general" && settings.include_general_vault {
         vec![general.to_string_lossy().into_owned()]
     } else {
@@ -283,6 +289,7 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
         mcp_config: mcp_file,
         append_prompt_file: Some(context_file),
         add_dirs,
+        resume_at,
     }));
     Ok(LaunchPlan {
         key: plan_key(meta, settings),
@@ -300,7 +307,7 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
 /// Codex runs `codex app-server`; the thread starts (or resumes) inside the
 /// protocol, with the suite's context as developer instructions and
 /// QuantMCP as a per-run config override.
-fn codex_plan(app: &AppHandle, meta: &ThreadMeta, settings: &Settings) -> Result<LaunchPlan, String> {
+fn codex_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: &Settings) -> Result<LaunchPlan, String> {
     let adapter = adapters::find(settings, "codex").ok_or("Codex is not a known adapter")?;
     let exe = providers::resolve(&adapter, settings).ok_or("Codex was not found. Install it, then sign in with `codex login`.")?;
     let ctx = context_of(meta);
@@ -326,6 +333,7 @@ fn codex_plan(app: &AppHandle, meta: &ThreadMeta, settings: &Settings) -> Result
         instructions,
         mcp_url: mcp,
         writable_roots,
+        revert_before: pending_rewind(state, &meta.id).and_then(|r| r.get("before").and_then(Value::as_str).map(str::to_string)),
     });
     Ok(LaunchPlan {
         key: plan_key(meta, settings),
@@ -454,17 +462,84 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
     } else {
         json!(input.images.iter().map(|i| json!({ "kind": "image", "mediaType": i.media_type })).collect::<Vec<_>>())
     };
+    // The checkout before the turn: what its changes and a revert compare to (card 11).
+    let root = checkpoints::repo_root(Path::new(&meta.cwd));
+    let before = root.as_ref().and_then(|r| checkpoints::snapshot(r).ok());
+    let rewinding = pending_rewind(state, &id).is_some();
     let provider = meta.provider.clone();
-    state.runtime.send(
+    let started = state.runtime.send(
         &id,
         input,
         attachments,
         || match provider.as_str() {
-            "codex" => codex_plan(app, &meta, &settings),
+            "codex" => codex_plan(app, state, &meta, &settings),
             _ => claude_plan(app, state, &meta, &settings),
         },
         &key,
-    )
+    )?;
+    if let (Some(root), Some(before)) = (root, before) {
+        let root_s = root.to_string_lossy().into_owned();
+        if checkpoints::keep(&root, &id, &started, "before", &before).is_ok() {
+            let _ = state.db.set_checkpoint(&started, &id, &root_s, &before);
+        }
+    }
+    if rewinding {
+        let _ = state.db.set_rewind(&id, None);
+    }
+    Ok(started)
+}
+
+/// The rewind the next launch applies (`{"provider", "at" | "before"}`).
+fn pending_rewind(state: &PilotState, id: &str) -> Option<Value> {
+    state.db.rewind(id).ok().flatten().and_then(|r| serde_json::from_str(&r).ok())
+}
+
+/// After a turn: snapshot the checkout again and keep what the turn's own
+/// tools wrote as its changes, with a "changes" item under the answer.
+fn record_changes(state: &PilotState, thread_id: &str) {
+    let Some(turn) = state.db.turn_refs(thread_id).ok().and_then(|t| t.last().map(|x| x.0.clone())) else {
+        return;
+    };
+    let Ok(Some((root, before, after))) = state.db.checkpoint(&turn) else {
+        return;
+    };
+    if after.is_some() {
+        return;
+    }
+    let root = PathBuf::from(root);
+    let Ok(after) = checkpoints::snapshot(&root) else {
+        return;
+    };
+    if checkpoints::keep(&root, thread_id, &turn, "after", &after).is_err() {
+        return;
+    }
+    let _ = state.db.finish_checkpoint(&turn, &after);
+    let cwd = state.db.get_session(thread_id).ok().flatten().map(|m| m.cwd).unwrap_or_default();
+    let mut paths: Vec<String> = state
+        .db
+        .turn_files(&turn)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|p| checkpoints::relative(&root, Path::new(&cwd), p))
+        .collect();
+    paths.sort();
+    paths.dedup();
+    if paths.is_empty() {
+        return;
+    }
+    let Ok(changed) = checkpoints::changes(&root, &before, &after, &paths) else {
+        return;
+    };
+    if changed.is_empty() {
+        return;
+    }
+    let mut patches: Vec<String> = changed.iter().map(|c| checkpoints::patch(&root, &before, &after, &c.path)).collect();
+    checkpoints::within_budget(&mut patches);
+    let rows: Vec<(FileChange, String)> = changed.iter().cloned().zip(patches).collect();
+    let _ = state.db.save_changes(&turn, thread_id, &rows);
+    let added: i64 = changed.iter().map(|c| c.added).sum();
+    let removed: i64 = changed.iter().map(|c| c.removed).sum();
+    state.runtime.append_item(thread_id, &turn, ItemKind::Changes, json!({ "files": changed, "added": added, "removed": removed }));
 }
 
 // ── Follow-ups: queue and steer (card 4) ──
@@ -494,6 +569,7 @@ pub fn after_turn(app: &AppHandle, thread_id: &str, status: TurnStatus) {
     let Some(state) = app.try_state::<PilotState>() else {
         return;
     };
+    record_changes(&state, thread_id);
     let queue = state.db.queue(thread_id).unwrap_or_default();
     if queue.is_empty() {
         return;
@@ -848,6 +924,194 @@ pub fn pilot_worktree_recreate(state: State<'_, PilotState>, id: String) -> Resu
     state.runtime.stop(&id);
     state.db.set_workspace(&id, "worktree", &wt.base, &wt.branch, Some(&wt.path), Some(&wt.path)).map_err(|e| e.to_string())?;
     state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or_else(|| "unknown thread".into())
+}
+
+// ── Diff inspector and revert (card 11) ──
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffList {
+    files: Vec<FileChange>,
+    /// Files staged in the user's index (Uncommitted).
+    staged: Vec<String>,
+    /// What the scope compares: commit ids or labels, for the header.
+    from: String,
+    to: String,
+    /// The thread's turns that have changes, newest first: `(turn id, label)`.
+    turns: Vec<(String, String)>,
+}
+
+/// "Turn 3 · Make it friendlier": the turn's number and the start of its prompt.
+fn turn_label(n: usize, prompt: &str) -> String {
+    let plain: String = prompt.chars().filter(|c| *c != context::CHIP_OPEN && *c != context::CHIP_CLOSE).collect();
+    let line = plain.split_whitespace().collect::<Vec<_>>().join(" ");
+    if line.is_empty() {
+        return format!("Turn {n}");
+    }
+    let short: String = line.chars().take(48).collect();
+    let more = if line.chars().count() > 48 { "…" } else { "" };
+    format!("Turn {n} · {short}{more}")
+}
+
+fn repo_of(meta: &ThreadMeta) -> Result<PathBuf, String> {
+    checkpoints::repo_root(Path::new(&meta.cwd)).ok_or_else(|| "this thread's folder is not a git repository".into())
+}
+
+/// The files of a scope: `turn` (a turn's own changes), `uncommitted`
+/// (working tree against HEAD, untracked included) or `branch` (HEAD
+/// against its merge base with the base branch).
+#[tauri::command(async)]
+pub fn pilot_diff_list(state: State<'_, PilotState>, id: String, scope: String, turn: Option<String>) -> Result<DiffList, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let root = repo_of(&meta)?;
+    let mut prompts: HashMap<String, String> = HashMap::new();
+    for i in state.db.items(&id, None, 2000).unwrap_or_default() {
+        if i.kind == ItemKind::User && i.data.get("steer").is_none() {
+            prompts.entry(i.turn_id.clone()).or_insert_with(|| i.data["text"].as_str().unwrap_or_default().to_string());
+        }
+    }
+    let turns = state
+        .db
+        .turn_refs(&id)
+        .unwrap_or_default()
+        .into_iter()
+        .enumerate()
+        .filter(|(_, (t, _))| state.db.turn_changes(t).map(|c| !c.is_empty()).unwrap_or(false))
+        .map(|(n, (t, _))| {
+            let label = turn_label(n + 1, prompts.get(&t).map(String::as_str).unwrap_or_default());
+            (t, label)
+        })
+        .rev()
+        .collect::<Vec<_>>();
+    match scope.as_str() {
+        "turn" => {
+            let turn = turn.or_else(|| turns.first().map(|t| t.0.clone())).ok_or("no turn has changed files yet")?;
+            let (_, before, after) = state.db.checkpoint(&turn).map_err(|e| e.to_string())?.ok_or("this turn has no checkpoint")?;
+            Ok(DiffList { files: state.db.turn_changes(&turn).map_err(|e| e.to_string())?, staged: Vec::new(), from: before, to: after.unwrap_or_default(), turns })
+        }
+        "uncommitted" => {
+            let now = checkpoints::snapshot(&root)?;
+            let files = checkpoints::changes(&root, "HEAD", &now, &[])?;
+            Ok(DiffList { files, staged: checkpoints::staged(&root), from: "HEAD".into(), to: "working tree".into(), turns })
+        }
+        "branch" => {
+            let base = if meta.base_branch.trim().is_empty() { qs_mod_mcp::worktree::default_branch(&root) } else { meta.base_branch.clone() };
+            let from = checkpoints::merge_base(&root, &base).ok_or_else(|| format!("no common history with {base}"))?;
+            let files = checkpoints::changes(&root, &from, "HEAD", &[])?;
+            Ok(DiffList { files, staged: Vec::new(), from, to: "HEAD".into(), turns })
+        }
+        other => Err(format!("unknown diff scope '{other}'")),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffSides {
+    original: String,
+    modified: String,
+}
+
+/// Both sides of one file for the diff editor.
+#[tauri::command(async)]
+pub fn pilot_diff_file(state: State<'_, PilotState>, id: String, from: String, to: String, path: String) -> Result<DiffSides, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let root = repo_of(&meta)?;
+    let original = checkpoints::show(&root, &from, &path);
+    let modified = if to == "working tree" { checkpoints::working(&root, &path) } else { checkpoints::show(&root, &to, &path) };
+    Ok(DiffSides { original, modified })
+}
+
+/// Stage, unstage or discard one file (Uncommitted). Discard is asked for in the app first.
+#[tauri::command(async)]
+pub fn pilot_diff_action(state: State<'_, PilotState>, id: String, path: String, action: String) -> Result<(), String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let root = repo_of(&meta)?;
+    match action.as_str() {
+        "stage" => checkpoints::stage(&root, &path, true),
+        "unstage" => checkpoints::stage(&root, &path, false),
+        "discard" => {
+            if state.runtime.active_turn(&id).is_some() {
+                return Err("the agent is working — discard when it is done".into());
+            }
+            checkpoints::discard(&root, &path)
+        }
+        other => Err(format!("unknown action '{other}'")),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reverted {
+    /// The prompt of the turn reverted from, back in the composer.
+    prompt: String,
+    /// Its chips and attachments, as the timeline kept them.
+    attachments: Value,
+    files: Vec<String>,
+}
+
+/// "Edit from here": the turn of `item_id` and every later one leave the
+/// thread; the provider resumes before it (Claude: at the previous turn's
+/// last message, forked; Codex: `thread/revert`). With `files`, the
+/// checkout goes back to the turn's checkpoint — only in a worktree
+/// thread, and never while another live thread works in the same folder.
+/// A provider that cannot rewind is refused before anything changes.
+#[tauri::command(async)]
+pub fn pilot_thread_revert(state: State<'_, PilotState>, id: String, item_id: String, files: bool) -> Result<Reverted, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    if state.runtime.active_turn(&id).is_some() {
+        return Err("stop the agent first — it is still working".into());
+    }
+    let item = state.db.get_item(&item_id).map_err(|e| e.to_string())?.ok_or("this message is gone")?;
+    let turns = state.db.turn_refs(&id).map_err(|e| e.to_string())?;
+    let at = turns.iter().position(|(t, _)| *t == item.turn_id).ok_or("this message has no turn to rewind")?;
+    let rewind = match meta.provider.as_str() {
+        "claude" | "" => {
+            if at == 0 {
+                json!({ "provider": "claude", "at": null })
+            } else {
+                let prev = turns[at - 1].1.clone().ok_or("Claude Code did not report where to resume before this message")?;
+                json!({ "provider": "claude", "at": prev })
+            }
+        }
+        "codex" => {
+            let this = turns[at].1.clone().ok_or("Codex did not report this turn's id — it cannot rewind to it")?;
+            json!({ "provider": "codex", "before": this })
+        }
+        other => return Err(format!("{other} cannot rewind a conversation")),
+    };
+    let mut restored = Vec::new();
+    if files {
+        if meta.worktree_path.is_none() {
+            return Err("Files are reverted only in a worktree thread — the project's own checkout keeps them.".into());
+        }
+        let shared = state
+            .db
+            .list_sessions()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .any(|t| t.id != id && t.cwd == meta.cwd && state.runtime.active_turn(&t.id).is_some());
+        if shared {
+            return Err("another thread is working in this folder — files stay as they are".into());
+        }
+        let (root, before, _) = state.db.checkpoint(&item.turn_id).map_err(|e| e.to_string())?.ok_or("this turn has no checkpoint to go back to")?;
+        restored = checkpoints::restore(Path::new(&root), &before, &[])?;
+    }
+    let first = state
+        .db
+        .items(&id, None, 2000)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|i| i.turn_id == item.turn_id && i.kind == ItemKind::User);
+    let prompt = first.as_ref().and_then(|i| i.data["text"].as_str().map(str::to_string)).unwrap_or_default();
+    let attachments = first.map(|i| i.data["attachments"].clone()).filter(Value::is_array).unwrap_or_else(|| json!([]));
+    state.runtime.stop(&id);
+    let dropped: Vec<String> = turns[at..].iter().map(|(t, _)| t.clone()).collect();
+    state.db.drop_turns_from(&id, &dropped).map_err(|e| e.to_string())?;
+    if rewind["provider"] == "claude" && at == 0 {
+        let _ = state.db.clear_provider_session(&id);
+    }
+    state.db.set_rewind(&id, Some(&rewind.to_string())).map_err(|e| e.to_string())?;
+    Ok(Reverted { prompt, attachments, files: restored })
 }
 
 // ── Composer context (card 9) ──
@@ -1213,6 +1477,15 @@ mod tests {
         assert_eq!(title_from_prompt("Bitte kannst du die Tabelle sortieren"), "Die Tabelle sortieren");
         assert_eq!(title_from_prompt("please"), "Please", "a lone filler word stays");
         assert_eq!(title_from_prompt("solve x"), "Solve x", "only whole filler words go");
+    }
+
+    #[test]
+    fn turn_labels_read_as_number_and_prompt() {
+        assert_eq!(turn_label(3, "Make it\n  friendlier"), "Turn 3 · Make it friendlier");
+        assert_eq!(turn_label(1, "Use \u{2068}README.md\u{2069} here"), "Turn 1 · Use README.md here");
+        assert_eq!(turn_label(2, "  "), "Turn 2");
+        let long = turn_label(4, &"word ".repeat(30));
+        assert!(long.ends_with('…') && long.chars().count() == "Turn 4 · ".chars().count() + 49);
     }
 
     #[test]

@@ -778,6 +778,32 @@ function addContext(chip: ContextChip) {
   insertChip(null, chip)
 }
 
+/** "Edit from here" put a sent message back: its text, chips and attachments (card 11). */
+function onComposerSet(e: Event) {
+  const d = (e as CustomEvent<{ threadId: string; text: string; attachments?: Record<string, any>[] }>).detail
+  if (d?.threadId !== props.threadId) return
+  const kept = Array.isArray(d.attachments) ? d.attachments : []
+  const chips: Record<string, ContextChip> = {}
+  for (const a of kept.filter((x) => x.kind === 'chip' && x.label)) {
+    chips[a.label] = { kind: String(a.chipKind ?? 'file'), label: String(a.label), content: String(a.content ?? ''), path: a.path ?? null }
+  }
+  chipState.value[props.threadId] = chips
+  attachments.value = kept
+    .filter((x) => x.kind === 'image' || x.kind === 'file' || x.kind === 'folder')
+    .map((x) => ({ key: crypto.randomUUID(), kind: x.kind, name: String(x.name ?? ''), path: String(x.path ?? ''), size: 0, thumb: x.thumb ?? null }))
+  text.value = d.text
+  void nextTick(() => {
+    grow()
+    const el = box.value
+    el?.focus()
+    el?.setSelectionRange(el.value.length, el.value.length)
+  })
+}
+function onAddContext(e: Event) {
+  const d = (e as CustomEvent<{ threadId: string; chip: ContextChip }>).detail
+  if (d?.threadId === props.threadId && d.chip) addContext(d.chip)
+}
+
 // ── Attachments ──
 const IMAGE_TYPES = /^image\/(png|jpeg|webp)$/
 const MAX_ATTACHMENTS = 100
@@ -901,6 +927,8 @@ onMounted(() => {
   window.addEventListener('keydown', onModifier)
   window.addEventListener('keyup', onModifier)
   window.addEventListener('blur', onBlurWindow)
+  window.addEventListener('qp-composer-set', onComposerSet)
+  window.addEventListener('qp-add-context', onAddContext)
   void nextTick(() => {
     grow()
     focusOnOpen()
@@ -910,6 +938,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onModifier)
   window.removeEventListener('keyup', onModifier)
   window.removeEventListener('blur', onBlurWindow)
+  window.removeEventListener('qp-composer-set', onComposerSet)
+  window.removeEventListener('qp-add-context', onAddContext)
   if (saveTimer) {
     clearTimeout(saveTimer)
     save('pilot.drafts.v1', drafts.value)

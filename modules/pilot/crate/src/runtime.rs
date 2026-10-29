@@ -155,8 +155,20 @@ impl Projector {
         item
     }
 
+    /// A finished item for a given turn, saved and sent (turn changes, card 11).
+    pub fn append(&mut self, turn_id: &str, kind: ItemKind, data: Value) -> Item {
+        self.next_seq = self.next_seq.max(self.db.next_seq(&self.thread_id).unwrap_or(1));
+        let mut item = self.new_item(kind, None, data);
+        item.turn_id = turn_id.to_string();
+        self.publish(item.clone(), false);
+        self.flush();
+        item
+    }
+
     pub fn begin_turn(&mut self, turn_id: &str) {
         self.flush();
+        // Items can be added from outside a run (turn changes): never reuse a seq.
+        self.next_seq = self.next_seq.max(self.db.next_seq(&self.thread_id).unwrap_or(1));
         self.turn_id = turn_id.to_string();
         self.keys.clear();
         self.live.clear();
@@ -331,7 +343,16 @@ impl Projector {
                 }
                 self.republish_tool(&call_id);
             }
+            Emit::TurnRef { id } => {
+                if !self.turn_id.is_empty() {
+                    let _ = self.db.set_provider_ref(&self.turn_id, &id);
+                }
+            }
             Emit::FileChanged { path, call_id } => {
+                // What the turn's tools wrote: its changes are these files (card 11).
+                if !self.turn_id.is_empty() {
+                    let _ = self.db.add_turn_file(&self.turn_id, &path);
+                }
                 // The tool has usually finished already, so its row is no
                 // longer live: update the saved one.
                 if let Some(id) = self.tools.get(&call_id).cloned() {
@@ -688,6 +709,15 @@ impl Runtime {
         });
         *lock(&rt.me) = Arc::downgrade(&rt);
         rt
+    }
+
+    /// Add a finished item to a thread's timeline — through its live
+    /// projector when a process runs, so sequence numbers never collide.
+    pub fn append_item(&self, thread_id: &str, turn_id: &str, kind: ItemKind, data: Value) -> Item {
+        match self.run(thread_id) {
+            Some(run) => lock(&run.proj).append(turn_id, kind, data),
+            None => Projector::new(self.db.clone(), self.sink.clone(), self.seqs.clone(), thread_id).append(turn_id, kind, data),
+        }
     }
 
     fn run(&self, thread_id: &str) -> Option<Arc<Run>> {
@@ -1368,6 +1398,7 @@ mod tests {
                 mcp_config: None,
                 append_prompt_file: None,
                 add_dirs: Vec::new(),
+                resume_at: None,
             });
             args.extend(["--settings".into(), r#"{"permissions":{"ask":["Bash","Write","Edit"]}}"#.into()]);
             LaunchPlan {
@@ -1431,6 +1462,7 @@ mod tests {
                 mcp_config: None,
                 append_prompt_file: None,
                 add_dirs: Vec::new(),
+                resume_at: None,
             });
             args.extend(["--settings".into(), r#"{"permissions":{"ask":["Write","Bash"]}}"#.into()]);
             LaunchPlan {
@@ -1505,6 +1537,7 @@ mod tests {
             mcp_config: None,
             append_prompt_file: None,
             add_dirs: Vec::new(),
+            resume_at: None,
         });
         let input = TurnInput {
             text: "Read @notes.txt and tell me the token in it, then the main colour of the attached image. Reply exactly as: TOKEN COLOUR".into(),
@@ -1527,6 +1560,64 @@ mod tests {
         println!("answer: {text}");
         assert!(text.contains("kiwi-3"), "read the mentioned file");
         assert!(text.contains("red"), "saw the image");
+        rt.stop_all();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Live, opt-in (card 11): rewinding resumes at the previous turn's last
+    /// message, forked — what came after is forgotten.
+    #[test]
+    #[ignore = "live: three tiny Claude Code turns (costs a few cents)"]
+    fn live_claude_rewinds_before_a_turn() {
+        use crate::claude::{launch_args, LaunchOptions, SessionRef};
+        let claude = crate::providers::which("claude").expect("claude on PATH").to_string_lossy().into_owned();
+        let dir = std::env::temp_dir().join(format!("qp-live-rw-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        thread(&db, "t1");
+        let (sink, _) = sink();
+        let rt = Runtime::new(db.clone(), sink);
+        let sid = uuid::Uuid::new_v4().to_string();
+        let cwd = dir.to_string_lossy().into_owned();
+        let plan = |session: SessionRef, resume_at: Option<String>| LaunchPlan {
+            key: "live".into(),
+            program: claude.clone(),
+            args: launch_args(&LaunchOptions {
+                session,
+                model: "haiku".into(),
+                effort: String::new(),
+                mode: "full".into(),
+                mcp_config: None,
+                append_prompt_file: None,
+                add_dirs: Vec::new(),
+                resume_at,
+            }),
+            cwd: cwd.clone(),
+            env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+            driver: Box::new(ClaudeDriver::new()),
+        };
+        let turn = |text: &str, session: SessionRef, at: Option<String>| {
+            rt.stop("t1");
+            let start = Instant::now();
+            while rt.process_alive("t1") && start.elapsed() < Duration::from_secs(10) {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            rt.send("t1", TurnInput { text: text.into(), ..Default::default() }, json!([]), || Ok(plan(session, at)), "live").unwrap();
+            let t = wait_for_turn(&db, &rt, "t1", true);
+            assert_eq!(t.status, "completed", "{text}: {:?}", t.error);
+        };
+        turn("Remember the token ALPHA-1. Reply with OK only.", SessionRef::New(sid.clone()), None);
+        turn("Also remember the token BETA-2. Reply with OK only.", SessionRef::Resume(sid.clone()), None);
+        let refs = db.turn_refs("t1").unwrap();
+        let first = refs[0].1.clone().expect("the first turn's last message uuid");
+        turn("List every token I asked you to remember. Reply with the tokens only.", SessionRef::Resume(sid.clone()), Some(first));
+        let answer = db.items("t1", None, 100).unwrap().into_iter().rev().find(|i| i.kind == ItemKind::Assistant).expect("an answer");
+        let text = answer.data["text"].as_str().unwrap().to_string();
+        println!("after rewind: {text}");
+        assert!(text.contains("ALPHA-1"), "kept what came before");
+        assert!(!text.contains("BETA-2"), "forgot what came after");
+        let forked = db.get_session("t1").unwrap().unwrap().provider_session_id.unwrap();
+        assert_ne!(forked, sid, "a fork gets its own session");
         rt.stop_all();
         let _ = std::fs::remove_dir_all(dir);
     }

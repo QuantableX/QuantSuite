@@ -8,10 +8,12 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useInspectorStore } from '#pilot/stores/inspector'
 
 definePageMeta({ layout: 'pilot' })
 
 const store = usePilotStore()
+const inspector = useInspectorStore()
 const session = computed(() => store.active)
 const live = computed(() => store.activeLive)
 const stage = ref<HTMLElement | null>(null)
@@ -59,7 +61,10 @@ function restart() {
 <template>
   <div class="qp-page">
     <template v-if="session">
-      <PilotThreadConversation v-if="!terminal" :thread-id="session.id" />
+      <div v-if="!terminal" class="qp-split">
+        <PilotThreadConversation :thread-id="session.id" />
+        <PilotInspectorPanel v-if="inspector.open" :thread-id="session.id" />
+      </div>
 
       <div v-show="terminal" class="qp-term">
         <div class="qp-term-bar">
@@ -125,6 +130,8 @@ function restart() {
 
 <style scoped>
 .qp-page { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.qp-split { flex: 1; min-height: 0; display: flex; min-width: 0; }
+.qp-split > :first-child { flex: 1; min-width: 0; }
 .qp-term { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .qp-term-bar {
   flex-shrink: 0;

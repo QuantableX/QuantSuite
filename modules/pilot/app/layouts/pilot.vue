@@ -17,6 +17,7 @@ import { useAppStore } from '#pilot/stores/app'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { useInspectorStore } from '#pilot/stores/inspector'
 import { chime } from '#pilot/utils/chime'
 import { threadReference } from '#pilot/utils/format'
 import type { PilotEnvelope, ThreadEnvelope } from '#pilot/types'
@@ -25,6 +26,7 @@ const app = useAppStore()
 const store = usePilotStore()
 const threads = useThreadStore()
 const sidebar = useSidebarStore()
+const inspector = useInspectorStore()
 
 useTauriEvent<ThreadEnvelope>('pilot-thread-event', (envelope) => {
   threads.apply(envelope)
@@ -224,7 +226,30 @@ useShortcuts([
       })
     },
   },
-  // The wildcard-modifier rule: Ctrl+Shift+B must come before plain Ctrl+B.
+  // The inspector (card 11): Ctrl+D its Diff tab, Ctrl+Alt+B the split.
+  {
+    key: 'd',
+    ctrl: true,
+    shift: false,
+    alt: false,
+    handler: (e) => {
+      // In the terminal Ctrl+D is end-of-input.
+      if (!store.activeId || (e.target instanceof Element && e.target.closest('.xterm'))) return
+      e.preventDefault()
+      inspector.toggleTab('diff')
+    },
+  },
+  // The wildcard-modifier rule: Ctrl+Alt+B and Ctrl+Shift+B before plain Ctrl+B.
+  {
+    key: 'b',
+    ctrl: true,
+    shift: false,
+    alt: true,
+    handler: (e) => {
+      e.preventDefault()
+      inspector.toggle()
+    },
+  },
   {
     key: 'B',
     ctrl: true,
