@@ -165,7 +165,6 @@ onMounted(() => void nextTick(() => search.value?.focus()))
 .qp-mp {
   display: flex;
   width: 520px;
-  max-width: calc(100vw - 48px);
   height: 340px;
   border-radius: 12px;
   border: 1px solid var(--qss-border, #47474f);

@@ -64,7 +64,10 @@ const modelLabel = computed(() => {
 })
 
 const efforts = computed(() => (catalog.value ? effortsFor(catalog.value.models, thread.value?.model ?? '') : null))
-const effortLabel = computed(() => thread.value?.effort || 'Default')
+const effortLabel = computed(() => {
+  const e = thread.value?.effort || ''
+  return e ? e.charAt(0).toUpperCase() + e.slice(1) : 'Default'
+})
 const effortOptions = computed<MenuOption[]>(() => [
   { id: '', label: 'Default', description: "The CLI's own setting" },
   ...(efforts.value ?? []).map((e) => ({ id: e, label: e.charAt(0).toUpperCase() + e.slice(1) })),

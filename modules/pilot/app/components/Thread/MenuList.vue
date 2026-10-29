@@ -96,9 +96,10 @@ onMounted(() => void nextTick(() => list.value?.focus()))
 
 <style scoped>
 .qp-menu {
+  width: max-content;
   min-width: 220px;
-  max-width: 340px;
-  max-height: 360px;
+  max-width: 380px;
+  max-height: 440px;
   overflow-y: auto;
   padding: 4px;
   border-radius: 10px;
@@ -135,7 +136,7 @@ onMounted(() => void nextTick(() => list.value?.focus()))
 .qp-menu-check { width: 16px; flex-shrink: 0; display: inline-flex; justify-content: center; padding-top: 1px; color: var(--qss-accent, #7aa2f7); }
 .qp-menu-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .qp-menu-label { font-size: 12.5px; }
-.qp-menu-desc { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); line-height: 1.4; }
+.qp-menu-desc { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); line-height: 1.4; max-width: 300px; }
 .qp-menu-key { flex-shrink: 0; font-size: 10.5px; color: var(--qss-text-muted, #6e6e7a); padding-top: 2px; opacity: 0; }
 .qp-menu-row.active .qp-menu-key { opacity: 1; }
 </style>
