@@ -799,6 +799,18 @@ function onComposerSet(e: Event) {
     el?.setSelectionRange(el.value.length, el.value.length)
   })
 }
+/** A saved attachment from elsewhere — the browser's screenshot (card 14), at most four per message. */
+function onAddAttachment(e: Event) {
+  const d = (e as CustomEvent<{ threadId: string; attachment: Record<string, any> }>).detail
+  if (d?.threadId !== props.threadId || !d.attachment?.path) return
+  const shots = attachments.value.filter((a) => a.name.startsWith('screenshot')).length
+  if (shots >= 4) {
+    showNote('A message can carry four browser screenshots.')
+    return
+  }
+  const a = d.attachment
+  attachments.value = [...attachments.value, { key: crypto.randomUUID(), kind: 'image', name: String(a.name), path: String(a.path), size: Number(a.size) || 0, thumb: a.thumb ?? null }]
+}
 function onAddContext(e: Event) {
   const d = (e as CustomEvent<{ threadId: string; chip: ContextChip }>).detail
   if (d?.threadId === props.threadId && d.chip) addContext(d.chip)
@@ -929,6 +941,7 @@ onMounted(() => {
   window.addEventListener('blur', onBlurWindow)
   window.addEventListener('qp-composer-set', onComposerSet)
   window.addEventListener('qp-add-context', onAddContext)
+  window.addEventListener('qp-add-attachment', onAddAttachment)
   void nextTick(() => {
     grow()
     focusOnOpen()
@@ -940,6 +953,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('blur', onBlurWindow)
   window.removeEventListener('qp-composer-set', onComposerSet)
   window.removeEventListener('qp-add-context', onAddContext)
+  window.removeEventListener('qp-add-attachment', onAddAttachment)
   if (saveTimer) {
     clearTimeout(saveTimer)
     save('pilot.drafts.v1', drafts.value)

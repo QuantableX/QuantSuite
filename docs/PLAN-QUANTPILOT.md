@@ -456,8 +456,44 @@ never fakes support.
   answers (checked every 8 s while there are candidates). Stop sends
   Ctrl+C to a drawer terminal; for an agent's server it names the process
   holding the port (netstat + tasklist) and ends that tree only after the
-  user confirms, and only if the port still belongs to that pid. Open goes
-  to the system browser until card 14's Browser tab.
+  user confirms, and only if the port still belongs to that pid. Open
+  shows it in the Browser tab (card 14).
+
+### 5.10 Browser tab (card 14)
+
+- One native child webview (`pilot-browser`, `crate/src/browser.rs`) in
+  the main window, made on the first navigation and closed with the tab —
+  incognito, no devtools, downloads and new windows refused. Only the
+  `main` webview may call the browser commands, and the guest never loads
+  the app's own origin (in dev `localhost:1420`, which the capabilities
+  would treat as local): `normalize_url` refuses it and `on_navigation`
+  blocks it, along with anything but http(s) without credentials.
+- A native view is always above the app's page, so the tab hides it
+  whenever a modal is open (`aria-modal`, settings, palette, our veils) or
+  a menu, listbox, dialog or open bottom drawer overlaps its area; another
+  inspector tab, a closed inspector or another module hide it too. Its
+  bounds follow the tab body (ResizeObserver, window resize, DOM changes;
+  one update per frame, only when changed).
+- Toolbar: back/forward (WebView2 history), reload/stop, start page,
+  address (URL, host → https, `localhost:3000` → http, bare port →
+  `http://localhost:port`; Ctrl+L), zoom (Ctrl+= / Ctrl+- / Ctrl+0,
+  remembered), pick an element, screenshot, open in the system browser.
+  Ctrl+R reloads while the tab is in front. The last page is kept per
+  thread; Ctrl+Shift+J toggles the tab.
+- Start page: the thread's detected servers, then the machine's TCP
+  listeners above port 1024 with process names (`netstat -ano` +
+  `tasklist`), asked on open and Refresh only.
+- Element picker: a page script (`browser_picker.js`) highlights on hover
+  and takes the next click; the result waits in a page global the crate
+  reads every 250 ms only while armed (one minute at most), then checks it
+  (http(s) origin, finite bounds) and bounds it — selector, tag, visible
+  text (no form values, editable or hidden text), a markup summary with
+  safe attributes only, sanitized again in Rust (no script/style bodies,
+  handlers, values, `javascript:`). It becomes an "element" chip labelled
+  as untrusted page content.
+- Screenshot: WebView2 CapturePreview of the visible viewport → the same
+  PNG normalization as pasted images, saved in the thread's attachments
+  (5 MiB at most, four per message); capturing sends nothing.
 
 ### 5.5 Composer context (card 9)
 

@@ -52,6 +52,11 @@ export const useInspectorStore = defineStore('pilot/inspector', {
     picker: false,
     /** Bumped by Ctrl+Shift+F to focus the search field. */
     searchNonce: 0,
+    /** The Browser tab's page per thread (card 14); empty = the start page. */
+    browserUrl: load<Record<string, string>>('pilot.browser.urls', {}),
+    browserZoom: load('pilot.browser.zoom', 1),
+    /** Bumped when something opens a page (a server's Open). */
+    browserNonce: 0,
   }),
   actions: {
     persist() {
@@ -110,6 +115,23 @@ export const useInspectorStore = defineStore('pilot/inspector', {
       this.setShowTree(true)
       this.searchNonce++
       this.show('files')
+    },
+    /** A page in the Browser tab of a thread. */
+    openBrowser(threadId: string, url: string) {
+      this.setBrowserUrl(threadId, url)
+      this.browserNonce++
+      this.show('browser')
+    },
+    setBrowserUrl(threadId: string, url: string) {
+      const next = { ...this.browserUrl }
+      if (url) next[threadId] = url
+      else delete next[threadId]
+      this.browserUrl = next
+      save('pilot.browser.urls', next)
+    },
+    setBrowserZoom(z: number) {
+      this.browserZoom = z
+      save('pilot.browser.zoom', z)
     },
     widthOf(threadId: string): number {
       return this.widths[threadId] ?? this.widths['*'] ?? DEFAULT_WIDTH

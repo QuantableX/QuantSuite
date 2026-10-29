@@ -44,6 +44,10 @@ tauri-plugin-mcp = { path = "../../mcp/crate" }
 # tauri-plugin-notification uses on Windows, without its JS package.
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.8"
+# The Browser tab (card 14): history and viewport capture through WebView2,
+# the versions tauri's own wry already uses.
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage"] }
 
 [lints.rust]
 warnings = "deny"

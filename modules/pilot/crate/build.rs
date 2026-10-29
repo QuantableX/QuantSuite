@@ -65,6 +65,14 @@ const COMMANDS: &[&str] = &[
     "pilot_terminal_open",
     "pilot_terminals",
     "pilot_terminal_close",
+    "pilot_browser_open",
+    "pilot_browser_bounds",
+    "pilot_browser_action",
+    "pilot_browser_zoom",
+    "pilot_browser_close",
+    "pilot_browser_pick",
+    "pilot_browser_capture",
+    "pilot_listeners",
 ];
 
 fn main() {

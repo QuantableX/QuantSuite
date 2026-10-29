@@ -7,8 +7,9 @@
  * open Files.
  * Wide content lives here, never in the 220 px side panels.
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
-import { FolderTree, GitCompare, X } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { FolderTree, GitCompare, Globe, X } from 'lucide-vue-next'
+import { pilot } from '#pilot/utils/invoke'
 import { useInspectorStore, type InspectorTab } from '#pilot/stores/inspector'
 
 const props = defineProps<{ threadId: string }>()
@@ -19,6 +20,7 @@ let drag: { startX: number; startW: number; max: number } | null = null
 const META: Record<string, { label: string; icon: unknown; key: string }> = {
   diff: { label: 'Diff', icon: GitCompare, key: 'Ctrl+D' },
   files: { label: 'Files', icon: FolderTree, key: 'Ctrl+P picks a file' },
+  browser: { label: 'Browser', icon: Globe, key: 'Ctrl+Shift+J' },
 }
 const tabs = computed(() => inspector.tabs.filter((t) => t in META))
 const closedOnes = computed(() => (Object.keys(META) as InspectorTab[]).filter((t) => !inspector.tabs.includes(t)))
@@ -39,6 +41,14 @@ function onUp() {
   drag = null
 }
 onBeforeUnmount(() => (drag = null))
+
+// The Browser tab closed: its webview goes, and the page's session with it.
+watch(
+  () => inspector.tabs.includes('browser'),
+  (open, was) => {
+    if (was && !open) void pilot('plugin:pilot|pilot_browser_close').catch(() => undefined)
+  }
+)
 </script>
 
 <template>
@@ -76,6 +86,7 @@ onBeforeUnmount(() => (drag = null))
     <div class="qp-insp-body">
       <PilotInspectorDiff v-if="inspector.tab === 'diff'" :thread-id="threadId" />
       <PilotInspectorFiles v-else-if="inspector.tab === 'files'" :thread-id="threadId" />
+      <PilotInspectorBrowser v-else-if="inspector.tab === 'browser'" :thread-id="threadId" />
     </div>
   </aside>
 </template>

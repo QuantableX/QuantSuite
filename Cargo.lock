@@ -6878,6 +6878,8 @@ dependencies = [
  "tauri-winrt-notification",
  "tokio",
  "uuid",
+ "webview2-com",
+ "windows 0.61.3",
 ]
 
 [[package]]

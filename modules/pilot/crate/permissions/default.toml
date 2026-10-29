@@ -69,4 +69,12 @@ permissions = [
   "allow-pilot-terminal-open",
   "allow-pilot-terminals",
   "allow-pilot-terminal-close",
+  "allow-pilot-browser-open",
+  "allow-pilot-browser-bounds",
+  "allow-pilot-browser-action",
+  "allow-pilot-browser-zoom",
+  "allow-pilot-browser-close",
+  "allow-pilot-browser-pick",
+  "allow-pilot-browser-capture",
+  "allow-pilot-listeners",
 ]
