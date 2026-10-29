@@ -75,8 +75,11 @@ impl Default for Settings {
     }
 }
 
+/// `ask` (Supervised), `edits` (Accept edits), `auto`, `plan`, `full` (Full
+/// access) — docs/PLAN-QUANTPILOT.md §6. V2's terminal wrappers know the
+/// first, third and fifth and treat the others as `ask`.
 pub fn valid_mode(mode: &str) -> bool {
-    matches!(mode, "ask" | "auto" | "full")
+    matches!(mode, "ask" | "edits" | "auto" | "plan" | "full")
 }
 
 fn slug(id: &str) -> String {

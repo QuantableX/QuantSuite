@@ -112,10 +112,12 @@ inside its own pane.
   one user message and everything the agent does in response. A run is one
   provider process serving one or more native turns (a Codex goal can chain
   several).
-- **One process per active turn** (PandaCode's model). When the turn
-  completes, stdin closes and the process exits; the next turn resumes the
-  saved session id. Codex goals keep their connection open while the goal is
-  active.
+- **One process per active thread, kept warm briefly.** A turn needs a
+  process; after the turn it stays up for follow-ups — at most two idle
+  processes, each for ten minutes (PandaCode's pre-start rule) — then stdin
+  closes and the CLI exits. The next turn resumes the saved session id. A
+  changed model, effort, mode or QuantMCP setting starts a fresh process.
+  Codex goals keep their connection open while the goal is active.
 - **Stop** sends the provider's interrupt (Claude control `interrupt`,
   Codex `turn/interrupt`, ACP `session/cancel`), then kills the process group
   after a short grace period. Closing the app stops every group.
@@ -129,52 +131,68 @@ inside its own pane.
 
 ### 4.2 Adapters and the event vocabulary
 
-Every provider sits behind one adapter trait. Provider-specific code lives
-only in the adapter; the store, the UI and the MCP tools see normalized
-events. Each event carries `threadId`, `turnId`, a per-thread monotonically
-increasing `seq` and a timestamp.
+Every provider sits behind one adapter trait (`crate/src/driver.rs`).
+Provider-specific code lives only in the driver; the store, the UI and the
+MCP tools see normalized events. A driver turns stdout lines into `Emit`s
+(message start/delta/done, reasoning, tool start/input/result, file changed,
+request, todos, usage, rate limit, notice, turn end); the runtime's projector
+turns those into timeline **items** and envelopes.
 
-| Event | Payload (summary) |
+The wire format (`crate/src/events.rs`) is deliberately small: the timeline
+is a list of items upserted whole when they change, plus deltas for
+streaming text. Each envelope carries `threadId`, a per-thread monotonically
+increasing `seq` and one event:
+
+| Event | Payload |
 | --- | --- |
-| `session.bound` | provider, provider session id, model, capabilities |
-| `turn.started` / `turn.completed` / `turn.failed` / `turn.interrupted` / `turn.limited` | duration, error text, reset time for limits |
-| `message.start` / `message.delta` / `message.done` | message id, phase (commentary or final), text |
-| `reasoning.delta` | message id, text |
-| `tool.started` / `tool.updated` / `tool.completed` | call id, name, category, bounded input/output, exit code, status |
-| `file.changed` | path, kind (write, edit, delete), call id |
-| `approval.requested` / `approval.resolved` | request id, kind (command, file, tool, fetch), detail, options, asking agent |
-| `question.requested` / `question.resolved` | question id, questions with option ids, multi-select flag |
-| `plan.proposed` | markdown |
-| `todo.updated` | items with status |
-| `goal.updated` | objective, state, tokens, elapsed |
-| `subagent.updated` | id, parent id, name, prompt, status, response preview, tools |
-| `usage` | context tokens, context window, cost, input/output tokens |
-| `rate_limit` | windows with % used and reset times |
-| `title` | suggested title |
-| `notice` / `error` | text |
+| `item` | one timeline item, created or replaced |
+| `delta` | `itemId`, text appended to a streaming assistant or reasoning item |
+| `turn` | `turnId`, status `started` / `completed` / `failed` / `interrupted` / `limited`, duration, cost, error |
+| `state` | `idle` / `running` / `waiting` / `error` / `interrupted` / `limited` |
+| `session` | provider, provider session id, model |
+| `usage` | context tokens, context window, thread totals (cost, input, output tokens) |
+| `rateLimit` | windows with % used, reset time, status |
+| `title` | the thread's new title |
 
-Events are emitted on the Tauri event `pilot-thread-event`. The webview
-resyncs with `pilot_thread_snapshot(threadId, sinceSeq)` after a reload or
-when the module returns from KeepAlive. Live events are bounded; the
-persisted history is the truth.
+Item kinds and their `data`: `user` (text, attachments), `assistant` (text,
+phase, streaming), `reasoning` (text, estimated tokens, streaming), `tool`
+(call id, name, category, title, bounded input/output, status `running` /
+`completed` / `failed` / `denied` / `interrupted`, path for edits),
+`approval` (request id, tool, category, title, input, status `pending` /
+`allowed` / `allowedSession` / `denied` / `expired`, reply), `question`
+(request id, questions, status, answers), `plan` (request id, plan, status
+`pending` / `approved` / `rejected` / `expired`), `todo` (todos), `notice` and
+`error` (text). A subagent's items carry `parent` = the tool call that
+started it. Goals and the subagent panel extend this in card 16.
+
+Envelopes ride the Tauri event `pilot-thread-event`. The webview loads with
+`pilot_thread_snapshot(id, beforeSeq?, limit?)` — the newest 100 items (or
+the page before `beforeSeq`) and the `seq` they reflect, read while the
+thread's projector is held so no event falls in between — and drops live
+events with a lower or equal seq. Streaming text is persisted at least once a
+second and at every message end, so the persisted history is the truth.
 
 ### 4.3 Storage (`pilot.db`, schema v3)
 
-| Table | Holds |
-| --- | --- |
-| `threads` | id, workspace id (or none), title + title source, provider, provider session id, model, effort, mode, checkout path, branch, worktree flag, pin/order, section state (active, settled, snoozed-until), timestamps, last error |
-| `messages` | user and assistant messages with phase, provider label, attachments refs |
-| `turn_items` | tool calls, reasoning, notices per turn, with bounded previews |
-| `approvals`, `questions` | pending and resolved requests (survive restart) |
-| `queue` | queued follow-ups in order, with attachments |
-| `checkpoints` | hidden git refs per turn (card 11) |
-| `turn_changes` | attributed changed files and saved patches |
-| `attachments` | images and documents stored under the pilot data dir, never inside the project |
-| `links` | kanban card, PR, issue, parent thread |
-| `stash`, `prompt_history`, `keybindings` | composer and keyboard state |
+| Table | Holds | Card |
+| --- | --- | --- |
+| `threads` | V2's `sessions` renamed, plus `kind` (`chat` / `terminal`), `effort`, `title_source` (`auto` / `user`), `state`, `context_tokens`, `context_window`, `last_activity_at` | 2 |
+| `timeline` | the items above: id, thread, turn, seq, kind, parent, data (JSON), timestamps | 2 |
+| `turns` | one row per user message: status, start, end, duration, cost, error | 2 |
+| `queue` | queued follow-ups in order, with attachments | 4 |
+| `checkpoints`, `turn_changes` | hidden git refs per turn, attributed changed files and saved patches | 11 |
+| `attachments` | images and documents stored under the pilot data dir, never inside the project | 9 |
+| `links` | kanban card, PR, issue, parent thread | 12, 21 |
+| `stash`, `prompt_history`, `keybindings` | composer and keyboard state | 4, 17 |
 
-The V2 `sessions` rows migrate once into `threads`, keeping the provider
-session id so old Claude/Codex conversations stay resumable.
+Later cards add their tables and columns as new schema versions
+(`PRAGMA user_version`). On open, whatever was live when the app ended is
+settled: pending requests expire, running tools and started turns become
+interrupted.
+
+The V2 `sessions` rows migrate in place into `threads` (`kind = 'terminal'`),
+keeping the provider session id: a Claude row continues as a chat on its
+first message (`claude --resume` works across the TUI and stream-json).
 
 ## 5. Providers
 
@@ -182,17 +200,24 @@ session id so old Claude/Codex conversations stay resumable.
 
 ```
 claude -p --input-format stream-json --output-format stream-json --verbose
-       --include-partial-messages --permission-prompts host
+       --include-partial-messages --permission-prompt-tool stdio
+       --session-id <thread id> | --resume <session id>
        --permission-mode <mode> [--model <id>] [--effort <level>]
-       [--resume <session-id>] --mcp-config <quantmcp.json>
+       [--mcp-config <quantmcp.json>] [--add-dir <general vault>]
+       --append-system-prompt-file <context.txt>
 ```
 
-Verified flags on the installed **Claude Code 2.1.312**: `--permission-mode`
-accepts `acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk` and
-`plan`; `--permission-prompts host` sends permission prompts to the host
-(the stream-json control channel) and `none` denies them. Older builds used
-`--permission-prompt-tool stdio`; the adapter checks `claude --help` once and
-picks the supported form. `--fork-session` forks on resume.
+Verified on the installed **Claude Code 2.1.312** with recorded turns
+(`crate/tests/fixtures/`): `--permission-mode` accepts `acceptEdits`,
+`auto`, `bypassPermissions`, `manual`, `dontAsk` and `plan`, and still takes
+`default` (= manual). Permission prompts reach the host **only with
+`--permission-prompt-tool stdio`**: with `--permission-prompts host` alone a
+prompt is denied as "not granted yet". A new thread starts with
+`--session-id <thread id>`, later turns `--resume` it. `--fork-session` forks
+on resume. The user's own Claude settings still apply — with `Write` and
+`Bash` in their allow list, Supervised asks for nothing those rules allow.
+Discovery runs `initialize` only, with `--no-session-persistence
+--strict-mcp-config --settings {"disableAllHooks":true}` (0.7 s, no inference).
 
 - Wait for the `initialize` response: models (`value`, `displayName`,
   `description`, `resolvedModel`), slash commands, `supportedEffortLevels`.
@@ -201,10 +226,14 @@ picks the supported form. `--fork-session` forks on resume.
   appends a missing suffix, never a duplicate.
 - `tool_use` and `tool_result` join by id. `parent_tool_use_id` routes a
   subagent's frames to that child.
-- `can_use_tool` becomes `approval.requested`; the reply is allow, allow for
-  the session (permission update), or deny with the user's message.
-  AskUserQuestion becomes `question.requested`; ExitPlanMode becomes
-  `plan.proposed`.
+- `can_use_tool` becomes an `approval` item; the reply is allow
+  (`updatedInput` = the original input), allow for the session
+  (`updatedPermissions`: the request's suggestions, else a session rule for
+  the tool), or deny with the user's message. AskUserQuestion becomes a
+  `question` item (answers go back in `updatedInput.answers`); ExitPlanMode a
+  `plan` item. Hook and SDK-MCP callbacks are answered with an error.
+- `result.total_cost_usd` is cumulative per process: a turn's cost is the
+  difference to the previous result.
 - Context % = the latest main-agent message's input + cache read + cache
   creation + output tokens, over the window from the result. Subagent and
   cumulative billing totals are excluded.

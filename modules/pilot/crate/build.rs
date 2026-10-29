@@ -11,6 +11,13 @@ const COMMANDS: &[&str] = &[
     "pilot_session_delete",
     "pilot_session_update",
     "pilot_runtime_state",
+    "pilot_thread_create",
+    "pilot_thread_snapshot",
+    "pilot_thread_send",
+    "pilot_thread_answer",
+    "pilot_thread_interrupt",
+    "pilot_thread_update",
+    "pilot_provider_catalog",
 ];
 
 fn main() {
