@@ -11,6 +11,7 @@ use crate::context::{self, Attachment, Chip, FileHit, SkillInfo};
 use crate::driver::{Answer, Catalog, ImageInput, SkillRef, TurnInput, TurnStatus};
 use crate::events::{Item, ItemKind, ThreadEvent};
 use crate::git::{self, BranchInfo, CleanupCheck, RepoInfo};
+use crate::gitops::{self, Generated, GitStatus, Link};
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
 use crate::{adapters, context_of, contexts, lock, mcp_url, now, prompt, providers, shell, PilotState};
@@ -570,6 +571,7 @@ pub fn after_turn(app: &AppHandle, thread_id: &str, status: TurnStatus) {
         return;
     };
     record_changes(&state, thread_id);
+    link_agent_prs(&state, thread_id);
     let queue = state.db.queue(thread_id).unwrap_or_default();
     if queue.is_empty() {
         return;
@@ -1112,6 +1114,233 @@ pub fn pilot_thread_revert(state: State<'_, PilotState>, id: String, item_id: St
     }
     state.db.set_rewind(&id, Some(&rewind.to_string())).map_err(|e| e.to_string())?;
     Ok(Reverted { prompt, attachments, files: restored })
+}
+
+// ── Git actions (card 12) ──
+
+/// A thread whose checkout git can act on.
+fn git_thread(state: &PilotState, id: &str) -> Result<(ThreadMeta, PathBuf), String> {
+    let meta = state.db.get_session(id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    if meta.worktree_path.as_deref().is_some_and(|p| !Path::new(p).is_dir()) {
+        return Err("this thread's worktree is missing".into());
+    }
+    let cwd = PathBuf::from(&meta.cwd);
+    Ok((meta, cwd))
+}
+
+/// Nothing changes a checkout under a working agent — this thread's, or another live thread's in the same folder.
+fn checkout_idle(state: &PilotState, id: &str, folder: &str) -> Result<(), String> {
+    if state.runtime.active_turn(id).is_some() {
+        return Err("the agent is working — wait for it to finish, or stop it".into());
+    }
+    let norm = |p: &str| p.replace('\\', "/").trim_end_matches('/').to_lowercase();
+    let busy = state
+        .db
+        .list_sessions()
+        .unwrap_or_default()
+        .into_iter()
+        .any(|t| t.id != id && norm(&t.cwd) == norm(folder) && state.runtime.active_turn(&t.id).is_some());
+    if busy {
+        return Err("another thread is working in this folder — try again when it is done".into());
+    }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn pilot_git_status(state: State<'_, PilotState>, id: String) -> Result<GitStatus, String> {
+    let (meta, cwd) = git_thread(&state, &id)?;
+    gitops::status(&cwd, &meta.base_branch, meta.worktree_path.is_some())
+}
+
+/// The CLI that writes a message: the thread's own provider when it can, else the other one.
+fn helper_exe(state: &PilotState, provider: &str) -> Result<(String, Vec<String>, String), String> {
+    let settings = lock(&state.settings).clone();
+    let order = if provider == "codex" { ["codex", "claude"] } else { ["claude", "codex"] };
+    for p in order {
+        if let Some(exe) = adapters::find(&settings, p).and_then(|a| providers::resolve(&a, &settings)) {
+            return Ok((exe.program, exe.prefix, p.to_string()));
+        }
+    }
+    Err("writing a message needs Claude Code or Codex".into())
+}
+
+/// A commit message (`kind` = `commit`, of the selected files) or a pull
+/// request's title and description (`pr`, against `base`), written by a
+/// short helper run; never with AI credits.
+#[tauri::command(async)]
+pub fn pilot_git_generate(state: State<'_, PilotState>, id: String, kind: String, files: Option<Vec<String>>, base: Option<String>) -> Result<Generated, String> {
+    let (meta, cwd) = git_thread(&state, &id)?;
+    let style = lock(&state.settings).commit_style.clone();
+    let (prompt, key) = if kind == "pr" {
+        let base = match base.filter(|b| !b.trim().is_empty()) {
+            Some(b) => b,
+            None => gitops::status(&cwd, &meta.base_branch, meta.worktree_path.is_some())?.base,
+        };
+        let (first, last) = state.db.title_material(&id).unwrap_or_default();
+        let clip = |s: &str, n: usize| s.chars().take(n).collect::<String>();
+        let thread = format!("The user asked:\n{}\n\nThe latest answer:\n{}", clip(&first, 3000), clip(&last, 3000));
+        (gitops::pr_request(&cwd, &base, &thread)?, "title")
+    } else {
+        (gitops::commit_request(&cwd, &style, files.as_deref())?, "subject")
+    };
+    let (program, prefix, provider) = helper_exe(&state, &meta.provider)?;
+    let model = if provider == meta.provider { meta.model.clone() } else { String::new() };
+    let raw = gitops::helper_run(Path::new(&program), &prefix, &provider, &model, &prompt)?;
+    let g = gitops::parse_generated(&raw, key);
+    if g.title.is_empty() {
+        return Err("the answer had no subject — try again, or write it yourself".into());
+    }
+    Ok(g)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDone {
+    message: String,
+    /// The action half-succeeded: committed, but the push failed.
+    error: Option<String>,
+}
+
+fn done(message: String) -> GitDone {
+    GitDone { message, error: None }
+}
+
+#[tauri::command(async)]
+pub fn pilot_git_commit(state: State<'_, PilotState>, id: String, message: String, files: Option<Vec<String>>, push: Option<bool>) -> Result<GitDone, String> {
+    let (meta, cwd) = git_thread(&state, &id)?;
+    checkout_idle(&state, &id, &meta.cwd)?;
+    let sha = gitops::commit(&cwd, &message, files.as_deref())?;
+    let committed = format!("Committed {sha}.");
+    if !push.unwrap_or(false) {
+        return Ok(done(committed));
+    }
+    let pushed = gitops::status(&cwd, &meta.base_branch, meta.worktree_path.is_some()).and_then(|st| {
+        let remote = st.remote.ok_or("this repository has no remote to push to")?;
+        gitops::push(&cwd, &remote, &st.branch, st.upstream.is_none())
+    });
+    Ok(match pushed {
+        Ok(m) => done(format!("{committed} {m}")),
+        Err(e) => GitDone { message: committed, error: Some(format!("The push failed: {e}")) },
+    })
+}
+
+#[tauri::command(async)]
+pub fn pilot_git_push(state: State<'_, PilotState>, id: String) -> Result<GitDone, String> {
+    let (meta, cwd) = git_thread(&state, &id)?;
+    let st = gitops::status(&cwd, &meta.base_branch, meta.worktree_path.is_some())?;
+    let remote = st.remote.ok_or("this repository has no remote to push to")?;
+    gitops::push(&cwd, &remote, &st.branch, st.upstream.is_none()).map(done)
+}
+
+#[tauri::command(async)]
+pub fn pilot_git_pull(state: State<'_, PilotState>, id: String) -> Result<GitDone, String> {
+    let (meta, cwd) = git_thread(&state, &id)?;
+    checkout_idle(&state, &id, &meta.cwd)?;
+    gitops::pull(&cwd).map(done)
+}
+
+/// Merge a worktree thread's branch into its base in the project's checkout.
+#[tauri::command(async)]
+pub fn pilot_git_merge(state: State<'_, PilotState>, id: String) -> Result<GitDone, String> {
+    let (meta, path, root) = worktree_of(&state, &id)?;
+    checkout_idle(&state, &id, &meta.cwd)?;
+    // The merge writes into the project's own checkout.
+    checkout_idle(&state, &id, &root)?;
+    let wt = Path::new(&path);
+    let branch = qs_mod_mcp::worktree::current_branch(wt).unwrap_or_else(|_| meta.branch.clone());
+    let base = if meta.base_branch.trim().is_empty() { qs_mod_mcp::worktree::default_branch(Path::new(&root)) } else { meta.base_branch.clone() };
+    gitops::merge_into_base(&root, &path, &branch, &base).map(done)
+}
+
+#[tauri::command(async)]
+pub fn pilot_git_discard_all(state: State<'_, PilotState>, id: String) -> Result<(), String> {
+    let (meta, cwd) = git_thread(&state, &id)?;
+    checkout_idle(&state, &id, &meta.cwd)?;
+    gitops::discard_all(&cwd)
+}
+
+/// Push when needed, open the pull request with `gh`, link it to the thread.
+#[tauri::command(async)]
+pub fn pilot_pr_create(state: State<'_, PilotState>, id: String, base: String, title: String, body: String, draft: Option<bool>) -> Result<Link, String> {
+    let (meta, cwd) = git_thread(&state, &id)?;
+    checkout_idle(&state, &id, &meta.cwd)?;
+    let st = gitops::status(&cwd, &meta.base_branch, meta.worktree_path.is_some())?;
+    if st.github.is_none() {
+        return Err("pull requests need a GitHub remote".into());
+    }
+    if let Some(why) = st.pr_blocked {
+        return Err(why);
+    }
+    if st.branch.is_empty() || st.branch == base {
+        return Err(format!("work on a branch other than {base} to open a pull request"));
+    }
+    if !st.files.is_empty() {
+        return Err("commit or discard the changed files first".into());
+    }
+    let remote = st.remote.ok_or("this repository has no remote to push to")?;
+    if st.upstream.is_none() || st.ahead > 0 {
+        gitops::push(&cwd, &remote, &st.branch, st.upstream.is_none())?;
+    }
+    let draft = draft.unwrap_or(false);
+    let (url, number) = gitops::pr_create(&cwd, &base, &title, &body, draft)?;
+    let t = now();
+    let link = Link {
+        thread_id: id,
+        kind: "pr".into(),
+        url,
+        number,
+        title: gitops::strip_ai_credits(title.trim()),
+        state: if draft { "draft" } else { "open" }.into(),
+        checked_at: t,
+        created_at: t,
+    };
+    state.db.add_link(&link).map_err(|e| e.to_string())?;
+    Ok(link)
+}
+
+/// Every thread's links (the sidebar), or one thread's.
+#[tauri::command(async)]
+pub fn pilot_links(state: State<'_, PilotState>, id: Option<String>) -> Result<Vec<Link>, String> {
+    state.db.links(id.as_deref()).map_err(|e| e.to_string())
+}
+
+/// A thread's pull requests from GitHub: open ones at most every five
+/// minutes, all of them when forced.
+#[tauri::command(async)]
+pub fn pilot_pr_refresh(state: State<'_, PilotState>, id: String, force: Option<bool>) -> Result<Vec<Link>, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let force = force.unwrap_or(false);
+    let t = now();
+    for mut l in state.db.links(Some(&id)).map_err(|e| e.to_string())? {
+        let live = matches!(l.state.as_str(), "open" | "draft");
+        if l.kind != "pr" || !(force || (live && t - l.checked_at > 5 * 60 * 1000)) {
+            continue;
+        }
+        if let Ok((title, st)) = gitops::pr_view(Path::new(&meta.cwd), &l.url) {
+            l.title = title;
+            l.state = st;
+            l.checked_at = t;
+            let _ = state.db.add_link(&l);
+        }
+    }
+    state.db.links(Some(&id)).map_err(|e| e.to_string())
+}
+
+/// A pull request the agent opened with `gh pr create` in this turn joins the thread's links.
+fn link_agent_prs(state: &PilotState, thread_id: &str) {
+    let Some(turn) = state.db.turn_refs(thread_id).ok().and_then(|t| t.last().map(|x| x.0.clone())) else {
+        return;
+    };
+    let t = now();
+    for item in state.db.items(thread_id, None, 400).unwrap_or_default() {
+        if item.turn_id != turn || item.kind != ItemKind::Tool || !item.data["input"].as_str().unwrap_or_default().contains("gh pr create") {
+            continue;
+        }
+        for (url, number) in gitops::pr_urls(item.data["output"].as_str().unwrap_or_default()) {
+            let link = Link { thread_id: thread_id.into(), kind: "pr".into(), url, number, title: String::new(), state: "open".into(), checked_at: 0, created_at: t };
+            let _ = state.db.add_link(&link);
+        }
+    }
 }
 
 // ── Composer context (card 9) ──

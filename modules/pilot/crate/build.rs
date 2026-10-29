@@ -44,6 +44,16 @@ const COMMANDS: &[&str] = &[
     "pilot_worktree_remove",
     "pilot_worktree_recreate",
     "pilot_thread_regenerate_title",
+    "pilot_git_status",
+    "pilot_git_generate",
+    "pilot_git_commit",
+    "pilot_git_push",
+    "pilot_git_pull",
+    "pilot_git_merge",
+    "pilot_git_discard_all",
+    "pilot_pr_create",
+    "pilot_links",
+    "pilot_pr_refresh",
 ];
 
 fn main() {

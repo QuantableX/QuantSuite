@@ -49,6 +49,16 @@ Default permissions for the pilot module.
 - `allow-pilot-worktree-remove`
 - `allow-pilot-worktree-recreate`
 - `allow-pilot-thread-regenerate-title`
+- `allow-pilot-git-status`
+- `allow-pilot-git-generate`
+- `allow-pilot-git-commit`
+- `allow-pilot-git-push`
+- `allow-pilot-git-pull`
+- `allow-pilot-git-merge`
+- `allow-pilot-git-discard-all`
+- `allow-pilot-pr-create`
+- `allow-pilot-links`
+- `allow-pilot-pr-refresh`
 
 ## Permission Table
 
@@ -322,6 +332,84 @@ Denies the pilot_git_checkout command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-git-commit`
+
+</td>
+<td>
+
+Enables the pilot_git_commit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-commit`
+
+</td>
+<td>
+
+Denies the pilot_git_commit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-git-discard-all`
+
+</td>
+<td>
+
+Enables the pilot_git_discard_all command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-discard-all`
+
+</td>
+<td>
+
+Denies the pilot_git_discard_all command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-git-generate`
+
+</td>
+<td>
+
+Enables the pilot_git_generate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-generate`
+
+</td>
+<td>
+
+Denies the pilot_git_generate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-git-info`
 
 </td>
@@ -341,6 +429,188 @@ Enables the pilot_git_info command without any pre-configured scope.
 <td>
 
 Denies the pilot_git_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-git-merge`
+
+</td>
+<td>
+
+Enables the pilot_git_merge command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-merge`
+
+</td>
+<td>
+
+Denies the pilot_git_merge command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-git-pull`
+
+</td>
+<td>
+
+Enables the pilot_git_pull command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-pull`
+
+</td>
+<td>
+
+Denies the pilot_git_pull command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-git-push`
+
+</td>
+<td>
+
+Enables the pilot_git_push command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-push`
+
+</td>
+<td>
+
+Denies the pilot_git_push command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-git-status`
+
+</td>
+<td>
+
+Enables the pilot_git_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-status`
+
+</td>
+<td>
+
+Denies the pilot_git_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-links`
+
+</td>
+<td>
+
+Enables the pilot_links command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-links`
+
+</td>
+<td>
+
+Denies the pilot_links command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-pr-create`
+
+</td>
+<td>
+
+Enables the pilot_pr_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-pr-create`
+
+</td>
+<td>
+
+Denies the pilot_pr_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-pr-refresh`
+
+</td>
+<td>
+
+Enables the pilot_pr_refresh command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-pr-refresh`
+
+</td>
+<td>
+
+Denies the pilot_pr_refresh command without any pre-configured scope.
 
 </td>
 </tr>

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-git-discard-all"
+description = "Enables the pilot_git_discard_all command without any pre-configured scope."
+commands.allow = ["pilot_git_discard_all"]
+
+[[permission]]
+identifier = "deny-pilot-git-discard-all"
+description = "Denies the pilot_git_discard_all command without any pre-configured scope."
+commands.deny = ["pilot_git_discard_all"]

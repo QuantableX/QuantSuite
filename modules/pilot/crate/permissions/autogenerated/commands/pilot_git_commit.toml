@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-git-commit"
+description = "Enables the pilot_git_commit command without any pre-configured scope."
+commands.allow = ["pilot_git_commit"]
+
+[[permission]]
+identifier = "deny-pilot-git-commit"
+description = "Denies the pilot_git_commit command without any pre-configured scope."
+commands.deny = ["pilot_git_commit"]

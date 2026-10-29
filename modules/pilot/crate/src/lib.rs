@@ -23,6 +23,7 @@ mod db;
 mod driver;
 mod events;
 mod git;
+mod gitops;
 mod notify;
 mod prompt;
 mod providers;
@@ -681,6 +682,16 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_worktree_remove,
             threads::pilot_worktree_recreate,
             threads::pilot_thread_regenerate_title,
+            threads::pilot_git_status,
+            threads::pilot_git_generate,
+            threads::pilot_git_commit,
+            threads::pilot_git_push,
+            threads::pilot_git_pull,
+            threads::pilot_git_merge,
+            threads::pilot_git_discard_all,
+            threads::pilot_pr_create,
+            threads::pilot_links,
+            threads::pilot_pr_refresh,
         ]))
         .build()
 }

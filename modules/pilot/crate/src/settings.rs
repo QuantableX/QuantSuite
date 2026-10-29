@@ -77,6 +77,9 @@ pub struct Settings {
     pub new_thread_workspace: String,
     /// The start of a worktree thread's branch name.
     pub worktree_prefix: String,
+    /// Generated commit messages: `repository` (the project's recent
+    /// subjects and commit instructions) or `standard` (card 12).
+    pub commit_style: String,
 }
 
 impl Default for Settings {
@@ -99,6 +102,7 @@ impl Default for Settings {
             working_section: true,
             new_thread_workspace: "local".into(),
             worktree_prefix: "quantpilot/".into(),
+            commit_style: "repository".into(),
         }
     }
 }
@@ -140,6 +144,9 @@ impl Settings {
             self.new_thread_workspace = "local".into();
         }
         self.worktree_prefix = self.worktree_prefix.trim().to_string();
+        if !matches!(self.commit_style.as_str(), "repository" | "standard") {
+            self.commit_style = "repository".into();
+        }
         if !matches!(self.follow_up.as_str(), "queue" | "steer") {
             self.follow_up = "queue".into();
         }

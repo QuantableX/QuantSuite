@@ -28,6 +28,7 @@ const draft = reactive<PilotSettings>({
   workingSection: true,
   newThreadWorkspace: 'local',
   worktreePrefix: 'quantpilot/',
+  commitStyle: 'repository',
 })
 const notice = ref('')
 const busy = ref(false)
@@ -53,6 +54,7 @@ function pull() {
   draft.workingSection = s.workingSection ?? true
   draft.newThreadWorkspace = s.newThreadWorkspace ?? 'local'
   draft.worktreePrefix = s.worktreePrefix ?? 'quantpilot/'
+  draft.commitStyle = s.commitStyle ?? 'repository'
 }
 onMounted(async () => {
   if (!store.settings) await store.loadSettings()
@@ -230,6 +232,15 @@ const signalsLabel = (s: string | null) =>
       <label class="qp-settings-field">
         <span>Worktree branch prefix</span>
         <input v-model="draft.worktreePrefix" class="qp-input" spellcheck="false" placeholder="quantpilot/" />
+      </label>
+    </div>
+    <div class="qp-settings-grid">
+      <label class="qp-settings-field">
+        <span>Generated commit messages <em>(never with AI co-author or "generated with" lines)</em></span>
+        <select v-model="draft.commitStyle" class="qp-input">
+          <option value="repository">Repository conventions — recent subjects and commit instructions</option>
+          <option value="standard">Standard — imperative subject, short bullets</option>
+        </select>
       </label>
     </div>
     <label class="qp-settings-check">

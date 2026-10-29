@@ -10,6 +10,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { Archive, ArchiveRestore, Ellipsis, LoaderCircle, Pin, Sunrise } from 'lucide-vue-next'
 import { timeAgo } from '#pilot/utils/format'
 import { wakeLabel, type RowStatus, type Section } from '#pilot/utils/sidebar'
+import { useGitStore } from '#pilot/stores/git'
+import { openPr } from '#pilot/utils/gitActions'
 import type { SessionMeta } from '#pilot/types'
 
 const props = defineProps<{
@@ -30,6 +32,10 @@ const props = defineProps<{
   inRange: boolean
   now: number
 }>()
+
+const git = useGitStore()
+/** The thread's open pull request, else its latest one. */
+const pr = computed(() => openPr(git.links[props.thread.id]) ?? (git.links[props.thread.id] ?? []).at(-1) ?? null)
 
 const emit = defineEmits<{
   open: []
@@ -169,6 +175,7 @@ function openMenuFromButton(e: MouseEvent) {
       <span class="qp-row-sub">
         <Pin v-if="section === 'pinned'" class="qp-row-pin" :size="10" />
         <span class="qp-row-sub-text">{{ sub }}</span>
+        <PilotGitPrChip v-if="pr" :link="pr" compact />
         <span v-if="status === 'limited'" class="qp-row-flag warn">Limited</span>
         <span v-else-if="status === 'error'" class="qp-row-flag err">Failed</span>
       </span>

@@ -198,7 +198,7 @@ second and at every message end, so the persisted history is the truth.
 | `checkpoints`, `turn_files`, `turn_changes` (schema v7) | per turn: the before/after snapshot commits (also kept as `refs/quantpilot/checkpoints/<thread>/<turn>-before|after`), the paths the agent's tools reported, and the attributed changes with their patches (2 MiB per turn). `turns.provider_ref` holds the provider's id for the turn (Claude: the last top-level assistant uuid; Codex: the turn id); `threads.rewind` the pending "Edit from here" for the next launch | 11 |
 | `attachments` | images and documents stored under the pilot data dir, never inside the project | 9 |
 | (files, no table) | card 9 keeps attachments as files under `attachments/<thread>/` (images normalized to PNG ≤ 2048 px, files copied); the sent user item keeps their names, paths, PNG thumbnails and the chips' content in its `attachments` JSON | 9 |
-| `links` | kanban card, PR, issue, parent thread | 12, 21 |
+| `links` (schema v8) | a thread's pull requests (card 12): url, number, title, state (`open` / `draft` / `closed` / `merged`), when GitHub was last asked; card 21 adds board cards | 12, 21 |
 | `stash`, `prompt_history`, `keybindings` | composer and keyboard state | 4, 17 |
 
 Later cards add their tables and columns as new schema versions
@@ -383,6 +383,43 @@ never fakes support.
   "Rewind with files" also restores the checkout to the turn's before
   checkpoint — only in a worktree thread, and refused while another live
   thread works in the same folder.
+
+### 5.8 Git actions and pull requests (card 12)
+
+- The thread header carries the git control (`components/Git/Actions.vue`,
+  logic in `utils/gitActions.ts`): one button for the next sensible step —
+  Commit (& push with a remote), Pull when behind, Push & create PR on a
+  GitHub branch, Merge into the base in a clean worktree thread, Push — and
+  a menu with every action; unavailable ones say why. A repository without
+  a remote shows local actions only; outside git the control is absent.
+- Commit dialog: the branch, the changed files (untick to leave out —
+  committed with `--pathspec-from-file`, so other staged files stay out),
+  the message. Generate runs as the dialog opens: a short helper run of the
+  thread's own provider (Claude: `-p --model haiku --tools "" --no-session-
+  persistence --strict-mcp-config`, Codex: `exec --ephemeral -s read-only
+  -c model_reasoning_effort=low`), prompt on stdin, the selection's stat
+  and patch, and — style "Repository conventions" (Settings) — the last 15
+  subjects plus the commit lines of AGENTS.md / AGENT.md / CLAUDE.md.
+- No message from the suite carries an AI's co-author or "generated with"
+  line: generated text is cleaned, a typed message loses them too
+  (`gitops::strip_ai_credits`; human co-authors stay), and commits that
+  already carry one are listed in the menu and the merge confirmation,
+  never rewritten.
+- Merge into the base is QuantMCP's own `--no-ff` merge
+  (`qs_mod_mcp::worktree::merge`, no cleanup — settling cleans up): refused
+  with uncommitted changes or while an agent works in the worktree or the
+  project checkout; a conflict aborts and names the files.
+- Pull is `--ff-only`; Discard all is `reset --hard` + `clean -fd` (ignored
+  files stay), both refused while an agent works in the folder.
+- Pull requests need a GitHub remote and a signed-in `gh` (checked at most
+  every five minutes): the dialog writes title and description from the
+  commits, the diff and the thread; creating pushes first when needed,
+  runs `gh pr create --body-file`, and links the PR. An agent's own
+  `gh pr create` in a turn links it at turn end. Chips (`PR #45 · open`)
+  sit in the header, the sidebar row and the context bar; open ones refresh
+  on focus at most every five minutes. Issues ("Closes #n") come with card 23.
+- Every git/gh call: argv only, null stdin, prompts off, 30 s (local) or
+  120 s (hooks, network) timeouts, output capped at 64 KiB.
 
 ### 5.5 Composer context (card 9)
 
