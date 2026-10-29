@@ -520,7 +520,8 @@ fn pretty(v: &Value) -> String {
 struct Run {
     thread_id: String,
     provider: &'static str,
-    key: String,
+    /// What the process was started with; a live switch updates it.
+    key: Mutex<String>,
     pid: u32,
     child: Mutex<Option<Child>>,
     stdin: Mutex<Option<ChildStdin>>,
@@ -736,7 +737,7 @@ impl Runtime {
             return Err("the agent is still working on this thread".into());
         }
         let turn_id = uuid::Uuid::new_v4().to_string();
-        let reuse = self.run(thread_id).filter(|r| r.key == key && lock(&r.stdin).is_some());
+        let reuse = self.run(thread_id).filter(|r| *lock(&r.key) == key && lock(&r.stdin).is_some());
         let (run, fresh) = match reuse {
             Some(run) => (run, false),
             None => {
@@ -813,7 +814,7 @@ impl Runtime {
         let run = Arc::new(Run {
             thread_id: thread_id.to_string(),
             provider,
-            key: plan.key,
+            key: Mutex::new(plan.key),
             pid,
             child: Mutex::new(Some(child)),
             stdin: Mutex::new(Some(stdin)),
@@ -854,6 +855,36 @@ impl Runtime {
         run.write(&lines)?;
         lock(&run.proj).resolve(request_id, answer);
         Ok(())
+    }
+
+    /// Apply a new mode and/or model to the thread's live process, running
+    /// or warm. `true` when the process took every change — it then counts
+    /// as started with `key`; otherwise the next turn starts a fresh one.
+    pub fn reconfigure(&self, thread_id: &str, key: &str, mode: Option<&str>, model: Option<&str>) -> bool {
+        let Some(run) = self.run(thread_id) else {
+            return false;
+        };
+        let mut lines = Vec::new();
+        {
+            let mut driver = lock(&run.driver);
+            if let Some(m) = mode {
+                match driver.set_mode(m) {
+                    Some(l) => lines.push(l),
+                    None => return false,
+                }
+            }
+            if let Some(m) = model {
+                match driver.set_model(m) {
+                    Some(l) => lines.push(l),
+                    None => return false,
+                }
+            }
+        }
+        if lines.is_empty() || run.write(&lines).is_err() {
+            return false;
+        }
+        *lock(&run.key) = key.to_string();
+        true
     }
 
     /// Whether a message can go into the thread's running turn right now.

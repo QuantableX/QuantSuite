@@ -32,17 +32,25 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 /// The thread's permission mode, stored as these strings.
-pub fn permission_args(mode: &str) -> Vec<String> {
-    let native = match mode {
+/// Claude Code's own name for a QuantPilot mode.
+pub fn native_mode(mode: &str) -> &'static str {
+    match mode {
         "edits" => "acceptEdits",
         "auto" => "auto",
         "plan" => "plan",
         "full" => "bypassPermissions",
         _ => "default",
-    };
-    let mut args = vec!["--permission-mode".to_string(), native.to_string()];
+    }
+}
+
+/// `--allow-dangerously-skip-permissions` only makes Full access available
+/// to a live mode switch (`set_permission_mode`); the mode itself decides.
+pub fn permission_args(mode: &str) -> Vec<String> {
+    let mut args = vec!["--permission-mode".to_string(), native_mode(mode).to_string()];
     if mode == "full" {
         args.push("--dangerously-skip-permissions".into());
+    } else {
+        args.push("--allow-dangerously-skip-permissions".into());
     }
     args
 }
@@ -181,6 +189,8 @@ fn i64_field(v: &Value, k: &str) -> i64 {
 pub struct ClaudeDriver {
     next_request: u64,
     init_request: Option<String>,
+    /// Live switches waiting for their answer: request id → what was asked.
+    switches: HashMap<String, &'static str>,
     blocks: HashMap<(String, i64), Block>,
     /// Message ids whose whole-block `assistant` frames were seen without
     /// streaming (subagents, older builds): a counter keeps their keys apart.
@@ -207,6 +217,7 @@ impl ClaudeDriver {
         Self {
             next_request: 0,
             init_request: None,
+            switches: HashMap::new(),
             blocks: HashMap::new(),
             unstreamed: HashMap::new(),
             tools: HashMap::new(),
@@ -755,6 +766,20 @@ impl Driver for ClaudeDriver {
                     let err = str_field(&resp, "error").unwrap_or("initialize failed").to_string();
                     return vec![Emit::Notice { text: format!("Claude Code: {err}") }];
                 }
+                if let Some(what) = self.switches.remove(rid) {
+                    if str_field(&resp, "subtype") == Some("success") {
+                        // set_model answers with the resolved model id.
+                        if what == "model" {
+                            let model = resp.get("response").and_then(|r| str_field(r, "model")).map(str::to_string);
+                            if model.is_some() {
+                                self.main_model = model;
+                            }
+                        }
+                        return Vec::new();
+                    }
+                    let err = str_field(&resp, "error").unwrap_or("refused").to_string();
+                    return vec![Emit::Notice { text: format!("Could not switch the {what}: {err}") }];
+                }
                 Vec::new()
             }
             Some("control_request") => self.on_control_request(&msg),
@@ -823,6 +848,23 @@ impl Driver for ClaudeDriver {
 
     fn can_steer(&self) -> bool {
         true
+    }
+
+    /// Verified 2026-10-29: `set_permission_mode` answers `{ mode }`, an
+    /// unknown mode is an error naming the valid ones.
+    fn set_mode(&mut self, mode: &str) -> Option<String> {
+        let (id, line) = self.control_request("mode", json!({ "subtype": "set_permission_mode", "mode": native_mode(mode) }));
+        self.switches.insert(id, "permission mode");
+        Some(line)
+    }
+
+    /// Verified 2026-10-29: `set_model` answers with the resolved model id
+    /// (`sonnet` → `claude-sonnet-5-5`). `default` goes back to the CLI's own.
+    fn set_model(&mut self, model: &str) -> Option<String> {
+        let target = if model.trim().is_empty() { "default" } else { model.trim() };
+        let (id, line) = self.control_request("model", json!({ "subtype": "set_model", "model": target }));
+        self.switches.insert(id, "model");
+        Some(line)
     }
 
     fn interrupt(&mut self) -> Vec<String> {
@@ -1023,8 +1065,35 @@ mod tests {
         assert!(j.contains("--resume abc"));
         assert!(j.contains("--permission-mode default"));
         assert!(!j.contains("--model") && !j.contains("--effort"));
-        assert_eq!(permission_args("edits"), vec!["--permission-mode", "acceptEdits"]);
-        assert_eq!(permission_args("plan"), vec!["--permission-mode", "plan"]);
+        assert_eq!(permission_args("edits"), vec!["--permission-mode", "acceptEdits", "--allow-dangerously-skip-permissions"]);
+        assert_eq!(permission_args("plan"), vec!["--permission-mode", "plan", "--allow-dangerously-skip-permissions"]);
+    }
+
+    #[test]
+    fn live_switches_encode_and_report_refusals() {
+        let mut d = ClaudeDriver::new();
+        let line = d.set_mode("edits").unwrap();
+        let v: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["request"]["subtype"], "set_permission_mode");
+        assert_eq!(v["request"]["mode"], "acceptEdits");
+        let rid = v["request_id"].as_str().unwrap().to_string();
+        let ok = format!(r#"{{"type":"control_response","response":{{"subtype":"success","request_id":"{rid}","response":{{"mode":"acceptEdits"}}}}}}"#);
+        assert!(d.on_line(&ok).is_empty(), "a success is silent");
+
+        let line = d.set_model("sonnet").unwrap();
+        let v: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["request"]["model"], "sonnet");
+        let rid = v["request_id"].as_str().unwrap().to_string();
+        let ok = format!(r#"{{"type":"control_response","response":{{"subtype":"success","request_id":"{rid}","response":{{"model":"claude-sonnet-5-5"}}}}}}"#);
+        d.on_line(&ok);
+        assert_eq!(d.main_model.as_deref(), Some("claude-sonnet-5-5"), "the resolved model drives the context window");
+        assert_eq!(serde_json::from_str::<Value>(&d.set_model("").unwrap()).unwrap()["request"]["model"], "default");
+
+        let line = d.set_mode("full").unwrap();
+        let rid = serde_json::from_str::<Value>(&line).unwrap()["request_id"].as_str().unwrap().to_string();
+        let err = format!(r#"{{"type":"control_response","response":{{"subtype":"error","request_id":"{rid}","error":"not allowed"}}}}"#);
+        let out = d.on_line(&err);
+        assert!(matches!(&out[0], Emit::Notice { text } if text.contains("permission mode") && text.contains("not allowed")));
     }
 
     #[test]

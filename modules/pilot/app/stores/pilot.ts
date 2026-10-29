@@ -202,11 +202,12 @@ export const usePilotStore = defineStore('pilot/pilot', {
       if (s) this.settings = s
     },
 
-    async saveSettings(patch: Partial<PilotSettings>) {
+    /** `quiet` skips the CLI status probe — for remembering a picker choice. */
+    async saveSettings(patch: Partial<PilotSettings>, opts: { quiet?: boolean } = {}) {
       const next = { ...(this.settings ?? {}), ...patch } as PilotSettings
       const saved = await pilot<PilotSettings>('plugin:pilot|pilot_settings_set', { settings: next })
       if (saved) this.settings = saved
-      void this.refreshStatus()
+      if (!opts.quiet) void this.refreshStatus()
       return saved
     },
 
