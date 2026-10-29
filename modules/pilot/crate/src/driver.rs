@@ -55,6 +55,11 @@ pub struct Request {
     pub input: Value,
     /// A subagent's request carries its parent tool call.
     pub parent: Option<String>,
+    /// The provider offers "allow for this session" for this request.
+    pub allow_session: bool,
+    /// Answered by a new user message instead of a protocol reply (Codex
+    /// async questions): it stays pending after the turn and the process end.
+    pub by_message: bool,
 }
 
 /// The user's reply to a [`Request`].
@@ -99,6 +104,9 @@ pub struct Catalog {
     pub version: Option<String>,
     pub models: Vec<ModelInfo>,
     pub commands: Vec<CommandInfo>,
+    /// Skills the CLI offers (`$name` in the composer, card 9).
+    #[serde(default)]
+    pub skills: Vec<CommandInfo>,
 }
 
 /// An image for a user message, already normalized to PNG by the caller.

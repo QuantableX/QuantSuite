@@ -44,7 +44,9 @@ const emit = defineEmits<{
 
 const title = computed(() => props.thread.title || 'New thread')
 const isDraft = computed(() => props.thread.kind === 'chat' && !props.thread.providerSessionId && !props.thread.title)
-const mark = computed(() => (props.providerLabel || '?').trim().charAt(0).toUpperCase())
+/** Two agents can share an initial (Claude Code, Codex): short marks keep them apart. */
+const MARKS: Record<string, string> = { claude: 'Cl', codex: 'Cx', opencode: 'Oc', gemini: 'G', pi: 'π', omp: 'om' }
+const mark = computed(() => MARKS[props.thread.provider || 'claude'] ?? (props.providerLabel || '?').trim().charAt(0).toUpperCase())
 
 const sub = computed(() => {
   const parts: string[] = []
@@ -145,7 +147,7 @@ function openMenuFromButton(e: MouseEvent) {
     @dragleave="fileOver = false"
     @drop="onDrop"
   >
-    <span class="qp-row-mark" :data-status="status" :title="providerLabel">
+    <span class="qp-row-mark" :data-status="status" :data-provider="thread.provider || 'claude'" :title="providerLabel">
       <LoaderCircle v-if="status === 'working'" class="qp-spin" :size="13" />
       <template v-else>{{ mark }}</template>
     </span>
@@ -227,9 +229,12 @@ function openMenuFromButton(e: MouseEvent) {
   background: var(--qss-bg-raised, #1f1f25);
   border: 1px solid var(--qss-border-subtle, #35353d);
   color: var(--qss-text-secondary, #9a9aa5);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: -0.02em;
 }
+.qp-row-mark[data-provider='claude'] { color: #d97757; }
+.qp-row-mark[data-provider='codex'] { color: var(--qss-text, #d4d4d8); }
 .qp-row-mark[data-status='working'] { color: var(--qss-success, #34d399); border-color: transparent; background: transparent; }
 .qp-row-mark[data-status='error'] { color: var(--qss-error, #f87171); }
 .qp-row-mark[data-status='limited'],

@@ -275,6 +275,44 @@ answered with a new user message), `model/list`, `skills/list`,
 `thread/goal/*`. Child-thread notifications are filtered so a subagent never
 completes the parent turn.
 
+Shipped with card 8 (`crate/src/codex.rs`, fixture
+`tests/fixtures/codex_approval_turn.jsonl`, ignored live tests
+`live_codex_*`):
+- One `codex app-server` per active thread; the thread opens inside the
+  protocol (`thread/start`, or `thread/resume` by the saved id — a failed
+  resume says so and starts fresh). The suite's context goes in as
+  `developerInstructions`, QuantMCP as the per-run override
+  `config["mcp_servers.QuantMCP"]` (same name as the Connect snippet, so a
+  configured QuantMCP is updated, not doubled); the user's `config.toml` is
+  never written.
+- Model, effort and the mode's policy go with every `turn/start`; a live
+  mode or model change is `thread/settings/update`. A message during a turn
+  is `turn/steer` with `expectedTurnId`.
+- `commandExecution` (the parsed `commandActions`, not the PowerShell
+  wrapper, is the title; read/list/search actions show as read/search),
+  `fileChange`, `mcpToolCall`, `dynamicToolCall`, `webSearch`, `imageView`
+  and `collabAgentToolCall` become tool rows; agent messages keep their
+  phase; empty reasoning items stay out; `turn/plan/updated` is the task
+  list; `contextCompaction` is a notice.
+- Approvals: command (`availableDecisions` decide whether "Allow for this
+  session" is shown; without `decline` a denial is `cancel`, which ends the
+  turn — the timeline says so), file change (with its diff), permission
+  escalation (turn or session scope), MCP tool calls
+  (`mcpServer/elicitation/request` with an empty form; `persist: session`
+  for the session grant), MCP forms as questions, URL elicitations declined.
+- Questions: `item/tool/requestUserInput` answered by question id;
+  async questions (agent messages with `delivery: "async"`) are saved with
+  `byMessage`, survive the turn, the process and restarts, and are answered
+  by a new user message ("question → answer" lines).
+- Usage: `last.totalTokens` is the context in use, `total` deltas count
+  tokens (a resumed thread counts from its first new call); the 5-hour and
+  weekly windows come from `account/rateLimits/*`. A usage or rate limit ends
+  the turn as Limited.
+- The catalog (`model/list` with a synthetic "Default", `skills/list`) comes
+  from a short discovery run or a live thread. Another agent can take a
+  thread only before its first message; carrying a conversation over is
+  card 15.
+
 ### 5.3 ACP and Pi (card 20)
 
 A generic ACP v1 client (initialize, `session/new`, `session/load` or resume
@@ -300,10 +338,10 @@ another policy.
 
 | QuantPilot mode | What the agent may do | Claude Code 2.1.312 | Codex | ACP / Pi |
 | --- | --- | --- | --- | --- |
-| **Supervised** | Asks before commands and file changes | `--permission-mode manual` | `workspace-write` sandbox, approval `on-request` | the agent's manual/default mode |
-| **Accept edits** | Edits files freely, asks for the rest | `acceptEdits` | as Supervised, edit escalations approved | the agent's accept-edits mode where offered |
-| **Auto** | The provider's own reviewer approves routine actions | `auto` | agent-reviewed approvals | not offered unless the agent has a reviewer |
-| **Plan** | Reads, searches and plans; no edits | `plan` | `read-only` sandbox | the agent's plan mode |
+| **Supervised** | Asks before commands and file changes | `--permission-mode manual` | `readOnly` sandbox, approval `untrusted` (T3 Code's mapping) | the agent's manual/default mode |
+| **Accept edits** | Edits files freely, asks for the rest | `acceptEdits` | `workspaceWrite` sandbox, approval `on-request` | the agent's accept-edits mode where offered |
+| **Auto** | The provider's own reviewer approves routine actions | `auto` | as Accept edits, reviewer `auto_review` | not offered unless the agent has a reviewer |
+| **Plan** | Reads, searches and plans; no edits | `plan` | `readOnly` sandbox, approval `on-request` | the agent's plan mode |
 | **Full access** | Commands and edits without prompts | `bypassPermissions` | `danger-full-access`, approval `never` | the agent's unattended mode; remaining requests answered "once", never as a standing grant |
 
 Organization policies and the agent's own deny rules still apply in every

@@ -357,6 +357,7 @@ impl Projector {
                                 "title": ti.title,
                                 "input": bounded(&pretty(&r.input), INPUT_PREVIEW),
                                 "callId": r.call_id,
+                                "allowSession": r.allow_session,
                                 "status": "pending",
                             }),
                         )
@@ -366,6 +367,7 @@ impl Projector {
                         json!({
                             "requestId": r.request_id,
                             "questions": r.input.get("questions").cloned().unwrap_or(json!([])),
+                            "byMessage": r.by_message,
                             "status": "pending",
                         }),
                     ),
@@ -435,10 +437,13 @@ impl Projector {
             self.publish(item, false);
         }
         self.flush();
-        if let Some(err) = error.as_deref().filter(|e| !e.trim().is_empty()) {
-            self.notice(ItemKind::Error, err);
-        } else if status == TurnStatus::Interrupted {
-            self.notice(ItemKind::Notice, "You stopped the agent.");
+        let reason = error.as_deref().filter(|e| !e.trim().is_empty());
+        match (status, reason) {
+            // Why a turn was cut short is news, not a failure.
+            (TurnStatus::Interrupted, Some(why)) => self.notice(ItemKind::Notice, why),
+            (TurnStatus::Interrupted, None) => self.notice(ItemKind::Notice, "You stopped the agent."),
+            (_, Some(err)) => self.notice(ItemKind::Error, err),
+            _ => {}
         }
         if !self.turn_id.is_empty() {
             let _ = self.db.finish_turn(&self.turn_id, status.as_str(), duration_ms, cost_usd, error.as_deref());
@@ -452,7 +457,11 @@ impl Projector {
             cost_usd,
             error,
         });
+        // A question answered by the next message (Codex async questions)
+        // still waits on the user after the turn.
+        let asks = status == TurnStatus::Completed && self.db.pending_request_line(&self.thread_id).is_some();
         let state = match status {
+            TurnStatus::Completed if asks => "waiting",
             TurnStatus::Completed => "idle",
             TurnStatus::Failed => "error",
             TurnStatus::Interrupted => "interrupted",
@@ -1475,6 +1484,74 @@ mod tests {
         let c = discover(&claude, &crate::claude::discovery_args(), &cwd, &env, Box::new(ClaudeDriver::new())).unwrap();
         println!("catalog in {:?}: {} models, {} commands, version {:?}", started.elapsed(), c.models.len(), c.commands.len(), c.version);
         assert!(!c.models.is_empty());
+    }
+
+    /// Live, opt-in: `cargo test -p tauri-plugin-pilot -- --ignored live_codex --nocapture`.
+    /// Supervised Codex in a temporary folder: a turn, a fresh process that
+    /// resumes the thread and must remember the token, then a write the user
+    /// denies — the file must not appear.
+    #[test]
+    #[ignore = "live: three small Codex turns (uses the signed-in Codex plan)"]
+    fn live_codex_remembers_and_respects_denials() {
+        use crate::codex::{launch_args, CodexDriver, CodexOptions};
+        let codex = crate::providers::which("codex").expect("codex on PATH").to_string_lossy().into_owned();
+        let dir = std::env::temp_dir().join(format!("qp-live-codex-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        thread(&db, "t1");
+        let (sink, _) = sink();
+        let rt = Runtime::new(db.clone(), sink);
+        let cwd = dir.to_string_lossy().into_owned();
+        let plan = |resume: Option<String>| LaunchPlan {
+            key: "live".into(),
+            program: codex.clone(),
+            args: launch_args(),
+            cwd: cwd.clone(),
+            env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+            driver: Box::new(CodexDriver::new(CodexOptions { cwd: cwd.clone(), resume, mode: "ask".into(), ..Default::default() })),
+        };
+        let first = TurnInput { text: "Remember the token PAPAYA-9. Reply with OK only.".into(), images: Vec::new() };
+        rt.send("t1", first, json!([]), || Ok(plan(None)), "live").unwrap();
+        let t = wait_for_turn(&db, &rt, "t1", true);
+        assert_eq!(t.status, "completed", "first turn: {:?}", t.error);
+        let codex_thread = db.get_session("t1").unwrap().unwrap().provider_session_id.expect("the Codex thread id is saved");
+
+        rt.stop("t1");
+        let start = Instant::now();
+        while rt.process_alive("t1") && start.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let second = TurnInput { text: "What token did I ask you to remember? Reply with the token only.".into(), images: Vec::new() };
+        rt.send("t1", second, json!([]), || Ok(plan(Some(codex_thread.clone()))), "live").unwrap();
+        let t = wait_for_turn(&db, &rt, "t1", true);
+        assert_eq!(t.status, "completed", "second turn: {:?}", t.error);
+        let answer = db.items("t1", None, 100).unwrap().into_iter().rev().find(|i| i.kind == ItemKind::Assistant).expect("an answer");
+        println!("answer: {}", answer.data["text"]);
+        assert!(answer.data["text"].as_str().unwrap().contains("PAPAYA-9"));
+
+        let third = TurnInput { text: "Run the shell command `echo hi > c.txt` in the current folder, then reply DONE.".into(), images: Vec::new() };
+        rt.send("t1", third, json!([]), || Ok(plan(Some(codex_thread.clone()))), "live").unwrap();
+        let t = wait_for_turn(&db, &rt, "t1", true);
+        println!("third turn: {} {:?}", t.status, t.error);
+        let asked = db.items("t1", None, 200).unwrap().into_iter().filter(|i| i.kind == ItemKind::Approval).count();
+        assert!(asked > 0, "Supervised asked before running the command");
+        assert!(!dir.join("c.txt").exists(), "the denied command did not run");
+        rt.stop_all();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Live, opt-in, no inference: the installed Codex reports models and skills.
+    #[test]
+    #[ignore = "live: starts the installed Codex app-server for its catalog only"]
+    fn live_codex_catalog() {
+        let codex = crate::providers::which("codex").expect("codex on PATH").to_string_lossy().into_owned();
+        let env = vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())];
+        let cwd = std::env::temp_dir().to_string_lossy().into_owned();
+        let started = Instant::now();
+        let driver = Box::new(crate::codex::CodexDriver::discovery(&cwd));
+        let c = discover(&codex, &crate::codex::launch_args(), &cwd, &env, driver).unwrap();
+        println!("catalog in {:?}: {} models, {} skills, version {:?}", started.elapsed(), c.models.len(), c.skills.len(), c.version);
+        assert!(c.models.len() > 1 && c.models[0].id == "default");
     }
 
     /// The stand-in CLI for the test below: this test binary, run again with

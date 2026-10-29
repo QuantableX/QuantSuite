@@ -167,7 +167,14 @@ function showPlan() {
       <pre v-if="expanded[a.id]" class="qp-ap-pre">{{ a.data.input }}</pre>
       <div class="qp-ap-actions">
         <button class="qp-btn qp-btn-primary qp-btn-sm" :disabled="busy === a.id" @click="answer(a, { decision: 'allow' })">Allow</button>
-        <button class="qp-btn qp-btn-sm" :disabled="busy === a.id" @click="answer(a, { decision: 'allowSession' })">Allow for this session</button>
+        <button
+          v-if="a.data.allowSession !== false"
+          class="qp-btn qp-btn-sm"
+          :disabled="busy === a.id"
+          @click="answer(a, { decision: 'allowSession' })"
+        >
+          Allow for this session
+        </button>
         <button class="qp-btn qp-btn-sm qp-ap-deny" :disabled="busy === a.id" @click="answer(a, { decision: 'deny' })">Deny</button>
         <span v-if="i === 0" class="qp-ap-hint">or write why in the box below to decline with feedback</span>
       </div>
@@ -181,6 +188,7 @@ function showPlan() {
         <span class="qp-ap-q-tag">{{ current.header || 'Question' }}</span>
         <span v-if="questions.length > 1" class="qp-ap-q-step">{{ step + 1 }} of {{ questions.length }}</span>
       </div>
+      <div v-if="question.data.byMessage" class="qp-ap-q-note">The agent asked this for later — your answer goes out as your next message.</div>
       <div class="qp-ap-q-text">{{ current.question }}</div>
       <div class="qp-ap-q-options">
         <button
@@ -265,6 +273,7 @@ function showPlan() {
 .qp-ap-all { display: flex; justify-content: flex-end; }
 .qp-ap-q-head { display: flex; align-items: center; justify-content: space-between; }
 .qp-ap-q-tag { font-size: 11.5px; font-weight: 600; color: var(--qss-warning, #d29a3f); }
+.qp-ap-q-note { margin-top: 4px; font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-ap-q-step { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-ap-q-text { font-size: 13px; color: var(--qss-text, #d4d4d8); }
 .qp-ap-q-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }

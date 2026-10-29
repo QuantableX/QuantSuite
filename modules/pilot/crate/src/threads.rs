@@ -4,6 +4,7 @@
 //! `claude.rs`.
 
 use crate::claude::{self, ClaudeDriver, LaunchOptions, SessionRef};
+use crate::codex::{self, CodexDriver, CodexOptions};
 use crate::db::{Arrangement, QueueItem, ThreadMeta};
 use crate::driver::{Answer, Catalog, ImageInput, TurnInput, TurnStatus};
 use crate::events::{Item, ThreadEvent};
@@ -11,12 +12,12 @@ use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
 use crate::{adapters, context_of, contexts, lock, mcp_url, now, prompt, providers, shell, PilotState};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
 
 /// The providers a chat thread can run today.
-const CHAT_PROVIDERS: [&str; 1] = ["claude"];
+const CHAT_PROVIDERS: [&str; 2] = ["claude", "codex"];
 
 const PAGE: i64 = 100;
 const TITLE_MAX: usize = 60;
@@ -125,6 +126,7 @@ fn thread_can_steer(meta: &ThreadMeta) -> bool {
     use crate::driver::Driver;
     match meta.provider.as_str() {
         "claude" | "" => ClaudeDriver::new().can_steer(),
+        "codex" => CodexDriver::new(CodexOptions::default()).can_steer(),
         _ => false,
     }
 }
@@ -275,6 +277,49 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
     })
 }
 
+/// Codex runs `codex app-server`; the thread starts (or resumes) inside the
+/// protocol, with the suite's context as developer instructions and
+/// QuantMCP as a per-run config override.
+fn codex_plan(app: &AppHandle, meta: &ThreadMeta, settings: &Settings) -> Result<LaunchPlan, String> {
+    let adapter = adapters::find(settings, "codex").ok_or("Codex is not a known adapter")?;
+    let exe = providers::resolve(&adapter, settings).ok_or("Codex was not found. Install it, then sign in with `codex login`.")?;
+    let ctx = context_of(meta);
+    if ctx.kind == "general" {
+        std::fs::create_dir_all(&ctx.path).map_err(|e| format!("general vault: {e}"))?;
+    }
+    let general = contexts::general_vault(app);
+    let mcp = settings.attach_quantmcp.then(mcp_url);
+    let instructions = prompt::system_append(&ctx, &general, mcp.as_deref());
+    let writable_roots = if ctx.kind != "general" && settings.include_general_vault {
+        vec![general.to_string_lossy().into_owned()]
+    } else {
+        Vec::new()
+    };
+    let mut args = exe.prefix.clone();
+    args.extend(codex::launch_args());
+    let driver = CodexDriver::new(CodexOptions {
+        cwd: meta.cwd.clone(),
+        resume: meta.provider_session_id.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
+        model: effective_model(meta, settings),
+        effort: effective_effort(meta, settings),
+        mode: meta.mode.clone(),
+        instructions,
+        mcp_url: mcp,
+        writable_roots,
+    });
+    Ok(LaunchPlan {
+        key: plan_key(meta, settings),
+        program: exe.program,
+        args,
+        cwd: meta.cwd.clone(),
+        env: vec![
+            ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
+            ("QS_PILOT_THREAD".into(), meta.id.clone()),
+        ],
+        driver: Box::new(driver),
+    })
+}
+
 #[tauri::command(async)]
 pub fn pilot_thread_send(
     app: AppHandle,
@@ -323,7 +368,17 @@ fn start_turn(app: &AppHandle, state: &PilotState, id: &str, text: String, image
     let key = plan_key(&meta, &settings);
     let input = TurnInput { text, images };
     let attachments = json!(input.images.iter().map(|i| json!({ "kind": "image", "mediaType": i.media_type })).collect::<Vec<_>>());
-    state.runtime.send(&id, input, attachments, || claude_plan(app, state, &meta, &settings), &key)
+    let provider = meta.provider.clone();
+    state.runtime.send(
+        &id,
+        input,
+        attachments,
+        || match provider.as_str() {
+            "codex" => codex_plan(app, &meta, &settings),
+            _ => claude_plan(app, state, &meta, &settings),
+        },
+        &key,
+    )
 }
 
 // ── Follow-ups: queue and steer (card 4) ──
@@ -500,8 +555,52 @@ pub fn pilot_attachment_save_text(state: State<'_, PilotState>, id: String, name
 }
 
 #[tauri::command(async)]
-pub fn pilot_thread_answer(state: State<'_, PilotState>, id: String, request_id: String, answer: Answer) -> Result<(), String> {
+pub fn pilot_thread_answer(app: AppHandle, state: State<'_, PilotState>, id: String, request_id: String, answer: Answer) -> Result<(), String> {
+    // A question the agent asked for later (Codex async questions) is
+    // answered by the next user message, not by a protocol reply.
+    if let Some(item) = state.db.request_item(&id, &request_id).map_err(|e| e.to_string())? {
+        if item.data["byMessage"].as_bool().unwrap_or(false) {
+            return answer_by_message(&app, &state, &id, item, &answer);
+        }
+    }
     state.runtime.answer(&id, &request_id, &answer)
+}
+
+/// The answers as a message — one `question → answer` line each.
+pub fn answers_text(questions: &Value, answers: &serde_json::Map<String, Value>) -> String {
+    questions
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|q| {
+            let question = q["question"].as_str()?;
+            let answer = answers.get(question).and_then(Value::as_str).filter(|a| !a.trim().is_empty())?;
+            Some(format!("{question} → {answer}"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn answer_by_message(app: &AppHandle, state: &PilotState, id: &str, mut item: Item, answer: &Answer) -> Result<(), String> {
+    if item.data["status"] != "pending" {
+        return Err("this question was already answered".into());
+    }
+    let text = match answer {
+        Answer::Answers { answers } => {
+            item.data["reply"] = Value::Object(answers.clone());
+            answers_text(&item.data["questions"], answers)
+        }
+        _ => String::new(),
+    };
+    item.data["status"] = if text.is_empty() { "dismissed" } else { "answered" }.into();
+    item.updated_at = now();
+    state.db.upsert_item(&item).map_err(|e| e.to_string())?;
+    state.runtime.emit(id, ThreadEvent::Item { item });
+    if text.is_empty() {
+        // Dismissed: nothing goes to the agent.
+        return Ok(());
+    }
+    start_turn(app, state, id, text, Vec::new()).map(|_| ())
 }
 
 #[tauri::command(async)]
@@ -511,13 +610,17 @@ pub fn pilot_thread_interrupt(state: State<'_, PilotState>, id: String) -> Resul
 
 /// A rename always wins over automatic titles. A new mode or model goes
 /// straight into the thread's live process when its CLI can switch (Claude
-/// Code can, even mid-turn); otherwise — and for effort — it applies from
-/// the next turn, which then starts a fresh process.
+/// Code and Codex can); otherwise — and for effort — it applies from the
+/// next turn, which then starts a fresh process. Another agent can take a
+/// thread only before its first message: carrying a conversation over is
+/// card 15's handoff.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn pilot_thread_update(
     state: State<'_, PilotState>,
     id: String,
     title: Option<String>,
+    provider: Option<String>,
     model: Option<String>,
     effort: Option<String>,
     mode: Option<String>,
@@ -527,7 +630,25 @@ pub fn pilot_thread_update(
             return Err(format!("unknown permission mode '{m}'"));
         }
     }
-    let before = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let mut before = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    if let Some(p) = provider.as_deref().map(str::trim).filter(|p| !p.is_empty() && *p != before.provider) {
+        if !CHAT_PROVIDERS.contains(&p) {
+            return Err(format!("'{p}' cannot run a chat thread yet"));
+        }
+        let started = before.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty());
+        if started || state.runtime.active_turn(&id).is_some() {
+            let settings = lock(&state.settings).clone();
+            let label = |a: &str| adapters::find(&settings, a).map(|x| x.label.to_string()).unwrap_or_else(|| a.to_string());
+            return Err(format!(
+                "This conversation runs on {}. Start a new thread to work with {}.",
+                label(&before.provider),
+                label(p)
+            ));
+        }
+        state.runtime.stop(&id);
+        state.db.set_provider(&id, p).map_err(|e| e.to_string())?;
+        before.provider = p.to_string();
+    }
     if let Some(t) = title.as_deref().map(str::trim) {
         if !t.is_empty() {
             state.db.set_title_from(&id, t, "user").map_err(|e| e.to_string())?;
@@ -627,17 +748,27 @@ pub fn pilot_provider_catalog(app: AppHandle, state: State<'_, PilotState>, prov
             return Ok(c);
         }
     }
+    let settings = lock(&state.settings).clone();
+    let cwd = contexts::general_vault(&app);
+    let _ = std::fs::create_dir_all(&cwd);
+    let env = vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())];
+    if provider == "codex" {
+        let adapter = adapters::find(&settings, "codex").ok_or("Codex is not a known adapter")?;
+        let exe = providers::resolve(&adapter, &settings).ok_or("Codex was not found")?;
+        let mut args = exe.prefix.clone();
+        args.extend(codex::launch_args());
+        let driver = Box::new(CodexDriver::discovery(&cwd.to_string_lossy()));
+        let catalog = runtime::discover(&exe.program, &args, &cwd.to_string_lossy(), &env, driver)?;
+        state.runtime.store_catalog(catalog.clone());
+        return Ok(catalog);
+    }
     if provider != "claude" {
         return Err(format!("no catalog for '{provider}' yet"));
     }
-    let settings = lock(&state.settings).clone();
     let adapter = adapters::find(&settings, "claude").ok_or("Claude Code is not a known adapter")?;
     let exe = providers::resolve(&adapter, &settings).ok_or("Claude Code was not found")?;
     let mut args = exe.prefix.clone();
     args.extend(claude::discovery_args());
-    let cwd = contexts::general_vault(&app);
-    let _ = std::fs::create_dir_all(&cwd);
-    let env = vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())];
     let catalog = runtime::discover(&exe.program, &args, &cwd.to_string_lossy(), &env, Box::new(ClaudeDriver::new()))?;
     state.runtime.store_catalog(catalog.clone());
     Ok(catalog)
@@ -660,6 +791,15 @@ mod tests {
         assert_eq!(title_from_prompt("Bitte kannst du die Tabelle sortieren"), "Die Tabelle sortieren");
         assert_eq!(title_from_prompt("please"), "Please", "a lone filler word stays");
         assert_eq!(title_from_prompt("solve x"), "Solve x", "only whole filler words go");
+    }
+
+    #[test]
+    fn async_answers_become_one_message() {
+        let questions = json!([{ "question": "Keep the old API?" }, { "question": "Which name?" }, { "question": "Skipped?" }]);
+        let mut answers = serde_json::Map::new();
+        answers.insert("Keep the old API?".into(), json!("No"));
+        answers.insert("Which name?".into(), json!("fetch_all"));
+        assert_eq!(answers_text(&questions, &answers), "Keep the old API? → No\nWhich name? → fetch_all");
     }
 
     #[test]

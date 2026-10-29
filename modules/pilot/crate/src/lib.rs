@@ -15,6 +15,7 @@
 
 mod adapters;
 mod claude;
+mod codex;
 mod contexts;
 mod db;
 mod driver;
