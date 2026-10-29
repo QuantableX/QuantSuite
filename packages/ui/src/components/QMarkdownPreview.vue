@@ -13,6 +13,7 @@
  * surface without either host restyling it.
  */
 import { onBeforeUnmount, ref, watch } from 'vue'
+import { sanitizeHtml as sanitize } from '../sanitize'
 
 const props = withDefaults(
   defineProps<{
@@ -26,44 +27,7 @@ const props = withDefaults(
 
 const html = ref('')
 
-/**
- * Markdown in a workspace is not trusted input. A cloned repo's README reaches
- * `v-html` verbatim, and this runs inside Tauri, where one injected `<script>`
- * has the whole IPC surface — file writes included. `marked` passes raw HTML
- * through by design, so its output is scrubbed before it is mounted: the
- * elements that can execute or phone out are dropped, and so is every `on*`
- * handler and `javascript:` URL. Parsed with DOMParser, into an inert
- * document — assigning to a live `innerHTML` to clean it would already have
- * run the loaders this is meant to strip.
- */
-const FORBIDDEN = 'script,iframe,object,embed,link,meta,base,form,style'
-/** Whitespace and C0 controls, which browsers ignore inside a URL scheme —
- *  `java\tscript:` is a live link, so they come out before the prefix test. */
-function stripUrlNoise(value: string): string {
-  let out = ''
-  for (const ch of value) if (ch.codePointAt(0)! > 0x20) out += ch
-  return out
-}
-
-function sanitize(dirty: string): string {
-  const doc = new DOMParser().parseFromString(dirty, 'text/html')
-  doc.body.querySelectorAll(FORBIDDEN).forEach((el) => el.remove())
-  doc.body.querySelectorAll('*').forEach((el) => {
-    for (const attr of [...el.attributes]) {
-      const name = attr.name.toLowerCase()
-      if (name.startsWith('on')) {
-        el.removeAttribute(attr.name)
-        continue
-      }
-      if (name !== 'href' && name !== 'src' && name !== 'xlink:href') continue
-      const value = stripUrlNoise(attr.value).toLowerCase()
-      if (value.startsWith('javascript:') || value.startsWith('data:text/html')) {
-        el.removeAttribute(attr.name)
-      }
-    }
-  })
-  return doc.body.innerHTML
-}
+// The sanitiser is shared (`../sanitize`): one copy, never two that drift.
 
 /**
  * Rendering is debounced: the host feeds this the live buffer, and parsing plus

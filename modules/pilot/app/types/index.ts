@@ -4,7 +4,8 @@
  * (crate/src/signals.rs).
  */
 
-export type Mode = 'ask' | 'auto' | 'full'
+/** Supervised, Accept edits, Auto, Plan, Full access (docs/PLAN-QUANTPILOT.md §6). */
+export type Mode = 'ask' | 'edits' | 'auto' | 'plan' | 'full'
 export type LiveState = 'offline' | 'idle' | 'thinking' | 'working' | 'waiting' | 'error'
 /** How the pilot learns what an agent does: Claude's hooks, a tailed session file, or output activity alone. */
 export type SignalKind = 'hooks' | 'transcript' | 'activity'
@@ -26,6 +27,15 @@ export interface SessionMeta {
   inputTokens: number
   outputTokens: number
   lastError: string | null
+  /** `chat` = a V3 thread; `terminal` = a V2 session row (continues as a chat on its first message). */
+  kind: 'chat' | 'terminal'
+  effort: string
+  titleSource: 'auto' | 'user'
+  /** The last known state, saved: `idle` | `running` | `waiting` | `error` | `interrupted` | `limited`. */
+  state: string
+  contextTokens: number | null
+  contextWindow: number | null
+  lastActivityAt: number
 }
 
 export interface SessionDetail {
@@ -162,4 +172,83 @@ export interface SessionLive {
   lastOutputAt: number
   /** The terminal bell rang and nothing has happened since. */
   bell: boolean
+}
+
+// ── V3 threads (crate/src/events.rs) ──
+
+export type ItemKind = 'user' | 'assistant' | 'reasoning' | 'tool' | 'approval' | 'question' | 'plan' | 'todo' | 'notice' | 'error'
+
+export interface ThreadItem {
+  id: string
+  threadId: string
+  turnId: string
+  seq: number
+  kind: ItemKind
+  /** The tool call that started the subagent this item belongs to. */
+  parent: string | null
+  data: Record<string, any>
+  createdAt: number
+  updatedAt: number
+}
+
+export type ThreadState = 'idle' | 'starting' | 'running' | 'waiting' | 'error' | 'interrupted' | 'limited'
+
+export interface RateWindow {
+  kind: string
+  usedPct: number | null
+  resetsAt: number | null
+  status: string | null
+}
+
+export type ThreadEvent =
+  | { type: 'item'; item: ThreadItem }
+  | { type: 'delta'; itemId: string; text: string }
+  | { type: 'turn'; turnId: string; status: 'started' | 'completed' | 'failed' | 'interrupted' | 'limited'; durationMs: number | null; costUsd: number | null; error: string | null }
+  | { type: 'state'; state: ThreadState; detail: string | null }
+  | { type: 'session'; provider: string; providerSessionId: string; model: string | null }
+  | { type: 'usage'; contextTokens: number | null; contextWindow: number | null; costUsd: number | null; inputTokens: number | null; outputTokens: number | null }
+  | { type: 'rateLimit'; windows: RateWindow[] }
+  | { type: 'title'; title: string }
+
+export interface ThreadEnvelope {
+  threadId: string
+  seq: number
+  event: ThreadEvent
+}
+
+export interface ThreadSnapshot {
+  thread: SessionMeta
+  items: ThreadItem[]
+  seq: number
+  hasMore: boolean
+  turnId: string | null
+  processAlive: boolean
+}
+
+export type Answer =
+  | { decision: 'allow' }
+  | { decision: 'allowSession' }
+  | { decision: 'deny'; message?: string | null }
+  | { decision: 'answers'; answers: Record<string, string | string[]> }
+  | { decision: 'dismiss' }
+
+export interface ModelInfo {
+  id: string
+  displayName: string
+  description: string
+  resolvedModel: string | null
+  efforts: string[]
+}
+
+export interface CommandInfo {
+  name: string
+  description: string
+  argumentHint: string
+}
+
+export interface ProviderCatalog {
+  provider: string
+  version: string | null
+  models: ModelInfo[]
+  commands: CommandInfo[]
 }

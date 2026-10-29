@@ -54,5 +54,16 @@ export function providerLabel(id: string, known?: { id: string; label: string }[
 }
 
 export function modeLabel(m: string): string {
-  return m === 'auto' ? 'Auto' : m === 'full' ? 'Full access' : 'Ask'
+  switch (m) {
+    case 'edits':
+      return 'Accept edits'
+    case 'auto':
+      return 'Auto'
+    case 'plan':
+      return 'Plan'
+    case 'full':
+      return 'Full access'
+    default:
+      return 'Supervised'
+  }
 }

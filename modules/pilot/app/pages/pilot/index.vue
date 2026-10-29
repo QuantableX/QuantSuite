@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * The one page: the open session's terminal. Every launched session keeps
- * its pane mounted (the console's own tab pattern — switching is instant
- * and the scrollback stays); only the active one is shown. Without a
- * session, the pilot waits in the middle.
+ * The one page: the open thread's conversation (V3). A row's V2 terminal
+ * is still one click away — every launched terminal keeps its pane mounted
+ * (the console's own tab pattern, so the scrollback stays) and is shown
+ * instead of the conversation while the user wants it. Without a thread,
+ * the pilot waits in the middle.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
@@ -16,6 +17,11 @@ const live = computed(() => store.activeLive)
 const stage = ref<HTMLElement | null>(null)
 
 const anyReady = computed(() => (store.status ? store.adapters.some((a) => a.found && a.loggedIn !== false) : true))
+const terminal = computed(() => Boolean(session.value && store.terminalShown[session.value.id]))
+
+function startThread() {
+  void store.createThread({ contextId: 'general', mode: store.settings?.defaultMode ?? 'full' })
+}
 
 /**
  * The grid the stage would hold at the pane's type size, kept in the store
@@ -53,41 +59,50 @@ function restart() {
 <template>
   <div class="qp-page">
     <template v-if="session">
-      <div v-if="live.error" class="qp-banner is-error">
-        <span class="qp-banner-text">{{ live.error }}</span>
-        <button class="qp-btn qp-btn-sm" @click="restart">Try again</button>
-      </div>
-      <div v-else-if="live.ptyId && !live.alive" class="qp-banner">
-        <span class="qp-banner-text">Session ended.</span>
-        <button class="qp-btn qp-btn-sm" @click="restart">Reopen</button>
-      </div>
-      <div v-if="live.notice" class="qp-banner is-notice">{{ live.notice }}</div>
+      <PilotThreadConversation v-if="!terminal" :thread-id="session.id" />
 
-      <div ref="stage" class="qp-stage">
-        <div
-          v-for="s in store.launched"
-          v-show="s.id === store.activeId"
-          :key="s.id"
-          class="qp-pane-host"
-        >
-          <ConsolePane
-            :key="store.live[s.id]?.ptyId ?? s.id"
-            :session-id="store.live[s.id]?.ptyId"
-            :cwd="s.cwd"
-            :label="s.title || store.adapterLabel(s.provider)"
-            :active="s.id === store.activeId"
-            :visible="s.id === store.activeId"
-            @exited="store.markExited(s.id)"
-            @failed="(m: string) => store.paneFailed(s.id, m)"
-          />
+      <div v-show="terminal" class="qp-term">
+        <div class="qp-term-bar">
+          <span class="qp-term-title">Terminal</span>
+          <span class="qp-term-sub">{{ live.display || 'the thread’s shell' }}</span>
+          <button class="qp-btn qp-btn-sm" @click="store.closeTerminal(session.id)">Back to the conversation</button>
         </div>
+        <div v-if="live.error" class="qp-banner is-error">
+          <span class="qp-banner-text">{{ live.error }}</span>
+          <button class="qp-btn qp-btn-sm" @click="restart">Try again</button>
+        </div>
+        <div v-else-if="live.ptyId && !live.alive" class="qp-banner">
+          <span class="qp-banner-text">Session ended.</span>
+          <button class="qp-btn qp-btn-sm" @click="restart">Reopen</button>
+        </div>
+        <div v-if="live.notice" class="qp-banner is-notice">{{ live.notice }}</div>
 
-        <div v-if="!live.ptyId" class="qp-launch">
-          <PilotFace :state="live.launching ? 'thinking' : live.error ? 'error' : 'idle'" />
-          <div class="qp-launch-text">
-            {{ live.launching ? 'Opening the terminal…' : 'No terminal open.' }}
+        <div ref="stage" class="qp-stage">
+          <div
+            v-for="s in store.launched"
+            v-show="s.id === store.activeId"
+            :key="s.id"
+            class="qp-pane-host"
+          >
+            <ConsolePane
+              :key="store.live[s.id]?.ptyId ?? s.id"
+              :session-id="store.live[s.id]?.ptyId"
+              :cwd="s.cwd"
+              :label="s.title || store.adapterLabel(s.provider)"
+              :active="s.id === store.activeId && terminal"
+              :visible="s.id === store.activeId && terminal"
+              @exited="store.markExited(s.id)"
+              @failed="(m: string) => store.paneFailed(s.id, m)"
+            />
           </div>
-          <button v-if="!live.launching" class="qp-btn qp-btn-primary" @click="restart">Open terminal</button>
+
+          <div v-if="!live.ptyId" class="qp-launch">
+            <PilotFace :state="live.launching ? 'thinking' : live.error ? 'error' : 'idle'" />
+            <div class="qp-launch-text">
+              {{ live.launching ? 'Opening the terminal…' : 'No terminal open.' }}
+            </div>
+            <button v-if="!live.launching" class="qp-btn qp-btn-primary" @click="restart">Open terminal</button>
+          </div>
         </div>
       </div>
     </template>
@@ -96,11 +111,11 @@ function restart() {
       <div class="qp-empty-face">
         <PilotFace :state="anyReady ? 'idle' : 'offline'" />
       </div>
-      <h2 class="qp-empty-title">Agent sessions</h2>
-
+      <h2 class="qp-empty-title">What should we build?</h2>
       <p class="qp-empty-text">
-        Create a session from the sidebar to open an agent terminal.
+        Start a thread to work with Claude Code — in the General vault, or pick a workspace in the sidebar.
       </p>
+      <button class="qp-btn qp-btn-primary" @click="startThread">New thread</button>
       <p v-if="store.status && !anyReady" class="qp-empty-warn">
         No agents available. Check installation and login in Settings.
       </p>
@@ -110,6 +125,18 @@ function restart() {
 
 <style scoped>
 .qp-page { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.qp-term { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.qp-term-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--qss-border-subtle, #35353d);
+  font-size: 12px;
+}
+.qp-term-title { font-weight: 600; color: var(--qss-text-secondary, #9a9aa5); }
+.qp-term-sub { flex: 1; min-width: 0; color: var(--qss-text-muted, #6e6e7a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-banner {
   flex-shrink: 0;
   display: flex;

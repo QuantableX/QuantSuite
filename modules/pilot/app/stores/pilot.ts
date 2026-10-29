@@ -12,6 +12,7 @@ import { defineStore } from 'pinia'
 import { navigateTo } from '#app'
 import { bus } from '@quantsuite/core'
 import { pilot } from '#pilot/utils/invoke'
+import { useThreadStore } from '#pilot/stores/thread'
 import { providerLabel } from '#pilot/utils/format'
 import { scanBells, type BellScanState } from '#pilot/utils/bell'
 import type {
@@ -103,6 +104,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
     lastError: '',
     /** The stage's grid, measured by the page, so a launch draws at the right size first time. */
     stage: null as { cols: number; rows: number } | null,
+    /** Rows whose V2 terminal is in front instead of the conversation. */
+    terminalShown: {} as Record<string, boolean>,
   }),
 
   getters: {
@@ -224,13 +227,13 @@ export const usePilotStore = defineStore('pilot/pilot', {
 
     // ── Sessions ──
 
-    /** A new row: a terminal in a context. Which agent runs in it is typed there. */
-    async createSession(opts: { contextId: string; mode: Mode; title?: string }) {
+    /** A new chat thread in a context (V3). */
+    async createThread(opts: { contextId: string; mode: Mode; title?: string; provider?: string }) {
       this.lastError = ''
       try {
-        const meta = await pilot<SessionMeta>('plugin:pilot|pilot_session_create', { req: opts })
+        const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_create', { req: opts })
         if (!meta) return null
-        await this.refreshSessions()
+        this.upsertSession(meta)
         await this.openSession(meta.id)
         return meta
       } catch (e) {
@@ -239,12 +242,34 @@ export const usePilotStore = defineStore('pilot/pilot', {
       }
     },
 
-    /** Switch to a session; start or resume its CLI unless it already runs. */
+    /** Switch to a thread. Its conversation loads; nothing starts until a message is sent. */
     async openSession(id: string) {
       this.activeId = id
+      await useThreadStore().open(id)
+    },
+
+    /** V2's terminal for a row: launch (or attach to) its PTY and show it. */
+    async openTerminal(id: string) {
+      this.activeId = id
+      this.terminalShown[id] = true
       const l = this.ensureLive(id)
       if (l.ptyId && l.alive) return
       await this.launch(id)
+    },
+
+    closeTerminal(id: string) {
+      this.terminalShown[id] = false
+    },
+
+    upsertSession(meta: SessionMeta) {
+      const i = this.sessions.findIndex((s) => s.id === meta.id)
+      if (i >= 0) this.sessions[i] = meta
+      else this.sessions.unshift(meta)
+    },
+
+    patchSession(id: string, patch: Partial<SessionMeta>) {
+      const i = this.sessions.findIndex((s) => s.id === id)
+      if (i >= 0) this.sessions[i] = { ...this.sessions[i], ...patch }
     },
 
     async launch(id: string, size?: { cols: number; rows: number }) {
@@ -305,18 +330,20 @@ export const usePilotStore = defineStore('pilot/pilot', {
       }
       this.sessions = this.sessions.filter((s) => s.id !== id)
       delete this.live[id]
+      delete this.terminalShown[id]
+      useThreadStore().forget(id)
       if (this.activeId === id) this.activeId = this.sessions[0]?.id ?? null
     },
 
-    async update(id: string, patch: { title?: string; model?: string; mode?: Mode }) {
+    /** Title, model, effort or mode; model, effort and mode apply from the next turn. */
+    async update(id: string, patch: { title?: string; model?: string; effort?: string; mode?: Mode }) {
       try {
-        const meta = await pilot<SessionMeta>('plugin:pilot|pilot_session_update', { id, ...patch })
-        if (meta) {
-          const i = this.sessions.findIndex((s) => s.id === id)
-          if (i >= 0) this.sessions[i] = meta
-        }
+        const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_update', { id, ...patch })
+        if (meta) this.upsertSession(meta)
+        return true
       } catch (e) {
         this.lastError = e instanceof Error ? e.message : String(e)
+        return false
       }
     },
 

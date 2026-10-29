@@ -35,7 +35,7 @@ const model = computed(() => live.value.vitals.model || session.value?.model || 
 
 async function end() {
   if (!session.value) return
-  if (!confirm('End this terminal? The session stays and its agent resumes on the next open.')) return
+  if (!confirm('End this terminal? The thread stays and its agent resumes on the next message.')) return
   await store.stop(session.value.id)
 }
 </script>
@@ -48,14 +48,22 @@ async function end() {
           <input ref="titleInput" v-model="draft" class="qp-title-input" @blur="commitEdit" @keydown.esc="editing = false" />
         </form>
         <button v-else class="qp-title" :title="session.title || 'Untitled — click to rename'" @click="startEdit">
-          {{ session.title || 'New session' }}
+          {{ session.title || 'New thread' }}
         </button>
         <span class="qp-head-chip" :title="session.cwd">{{ session.contextName }}</span>
         <span class="qp-head-chip is-provider" :title="live.display || undefined">{{ store.adapterLabel(session.provider) }}</span>
         <span v-if="model" class="qp-head-chip" :title="`Model: ${model}`">{{ model }}</span>
-        <span class="qp-head-chip" :title="'Permissions the wrappers pass on'">{{ modeLabel(session.mode) }}</span>
+        <span class="qp-head-chip" title="Permission mode">{{ modeLabel(session.mode) }}</span>
         <div class="qp-header-spacer" />
-        <button v-if="live.alive" class="qp-btn qp-btn-sm qp-btn-danger" title="End the agent process" @click="end">End</button>
+        <button
+          v-if="!store.terminalShown[session.id]"
+          class="qp-btn qp-btn-sm"
+          title="Open this thread's terminal (the session's shell, with the agent CLIs as commands)"
+          @click="store.openTerminal(session.id)"
+        >
+          Terminal
+        </button>
+        <button v-if="live.alive" class="qp-btn qp-btn-sm qp-btn-danger" title="End the terminal" @click="end">End terminal</button>
       </template>
       <span v-else class="qp-head-hint">QuantPilot</span>
     </div>

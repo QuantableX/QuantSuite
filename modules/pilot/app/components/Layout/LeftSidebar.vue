@@ -1,18 +1,18 @@
 <script setup lang="ts">
 /**
- * Sessions by context. "New" opens a terminal in a context (General or a
- * workspace) with a permission mode; which agent runs there is typed in
- * the terminal — `claude`, `codex`, `pi`… are wrappers on this row's
- * session. The list groups every session under its context. Clicking a
- * row is the link: it attaches to the running terminal, or opens it again
- * with the same wrappers, which then resume.
+ * Threads by context (card 7 rebuilds this list: sections, drag, menus).
+ * "New" starts a chat thread in a context (General or a workspace) with a
+ * permission mode; nothing runs until the first message. V2 terminal rows
+ * stay listed and continue as chats.
  */
 import { computed, reactive, ref } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useThreadStore } from '#pilot/stores/thread'
 import { timeAgo } from '#pilot/utils/format'
 import type { Mode, PilotContext, SessionMeta } from '#pilot/types'
 
 const store = usePilotStore()
+const threads = useThreadStore()
 
 const showNew = ref(false)
 const form = reactive<{ contextId: string; mode: Mode }>({
@@ -27,11 +27,10 @@ function openNew() {
 }
 
 async function create() {
-  const meta = await store.createSession({ contextId: form.contextId, mode: form.mode })
+  const meta = await store.createThread({ contextId: form.contextId, mode: form.mode })
   if (meta) showNew.value = false
 }
 
-const found = computed(() => store.adapters.filter((a) => !store.status || a.found).map((a) => a.id))
 
 const groups = computed(() => {
   const byContext = new Map<string, SessionMeta[]>()
@@ -53,12 +52,19 @@ const groups = computed(() => {
   return out
 })
 
-function stateOf(id: string) {
-  return store.live[id]?.state ?? 'offline'
+/** The row's dot: the chat thread's state, or the V2 terminal's signals. */
+function stateOf(s: SessionMeta) {
+  const v = threads.views[s.id]
+  const st = v?.loaded ? v.state : s.state
+  if (st === 'running' || st === 'starting') return 'working'
+  if (st === 'waiting') return 'waiting'
+  if (st === 'error' || st === 'limited') return 'error'
+  if (s.kind === 'terminal' && store.live[s.id]?.alive) return store.live[s.id]?.state ?? 'idle'
+  return 'idle'
 }
 
 async function remove(s: SessionMeta) {
-  if (!confirm(`Delete "${s.title || 'this session'}"? The row is removed from QuantPilot; the CLI's own transcript stays.`)) return
+  if (!confirm(`Delete "${s.title || 'this thread'}"? It is removed from QuantPilot; the agent CLI's own transcript stays.`)) return
   await store.remove(s.id)
 }
 </script>
@@ -66,7 +72,7 @@ async function remove(s: SessionMeta) {
 <template>
   <div class="qp-side">
     <div class="qp-side-head">
-      <span class="qp-side-title">Sessions</span>
+      <span class="qp-side-title">Threads</span>
       <button class="qp-btn qp-btn-primary qp-btn-sm" @click="openNew">{{ showNew ? 'Close' : 'New' }}</button>
     </div>
 
@@ -80,16 +86,14 @@ async function remove(s: SessionMeta) {
       <label class="qp-field">
         <span>Permissions</span>
         <select v-model="form.mode" class="qp-select">
-          <option value="ask">Ask before tools</option>
-          <option value="auto">Auto (the agent's own judgement)</option>
           <option value="full">Full access</option>
+          <option value="auto">Auto (the agent's own reviewer)</option>
+          <option value="edits">Accept edits</option>
+          <option value="plan">Plan (read and plan only)</option>
+          <option value="ask">Supervised (ask before tools)</option>
         </select>
       </label>
-      <button class="qp-btn qp-btn-primary" type="submit">Open terminal</button>
-      <span class="qp-field-hint">
-        Then type <template v-for="(id, i) in found" :key="id"><code>{{ id }}</code>{{ i < found.length - 1 ? ', ' : '' }}</template>
-        — each runs as this session.
-      </span>
+      <button class="qp-btn qp-btn-primary" type="submit">Start thread</button>
       <span v-if="store.lastError" class="qp-field-warn">{{ store.lastError }}</span>
     </form>
 
@@ -99,7 +103,7 @@ async function remove(s: SessionMeta) {
           <span class="qp-group-name">{{ g.name }}</span>
           <span class="qp-group-count">{{ g.sessions.length }}</span>
         </div>
-        <div v-if="!g.sessions.length" class="qp-group-empty">no sessions yet</div>
+        <div v-if="!g.sessions.length" class="qp-group-empty">no threads yet</div>
         <button
           v-for="s in g.sessions"
           :key="s.id"
@@ -108,12 +112,12 @@ async function remove(s: SessionMeta) {
           :title="store.live[s.id]?.detail || undefined"
           @click="store.openSession(s.id)"
         >
-          <span class="qp-row-dot" :data-state="stateOf(s.id)" />
+          <span class="qp-row-dot" :data-state="stateOf(s)" />
           <span class="qp-row-text">
-            <span class="qp-row-title">{{ s.title || 'New session' }}</span>
-            <span class="qp-row-sub">{{ store.adapterLabel(s.provider) }} · {{ timeAgo(s.updatedAt) }}</span>
+            <span class="qp-row-title">{{ s.title || 'New thread' }}</span>
+            <span class="qp-row-sub">{{ store.adapterLabel(s.provider || 'claude') }} · {{ timeAgo(s.lastActivityAt || s.updatedAt) }}</span>
           </span>
-          <span class="qp-row-x" title="Delete session" @click.stop="remove(s)">×</span>
+          <span class="qp-row-x" title="Delete thread" @click.stop="remove(s)">×</span>
         </button>
       </section>
     </div>
