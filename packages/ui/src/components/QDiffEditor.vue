@@ -10,7 +10,10 @@
  * `file:` URI and shares them process-wide; a diff must never touch those
  * (writing the original into the file's model would overwrite the buffer
  * the editor shows), so this component creates two models of its own under
- * a `quantsuite-diff:` scheme and disposes them on unmount.
+ * a `quantsuite-diff:` scheme and disposes them on unmount. Their URIs are
+ * unique across instances (two diffs can be mounted at once, one per warm
+ * module) and carry a path: the TypeScript worker cannot resolve a URI
+ * without one and throws on every diagnostics pass.
  */
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { defineQuantsuiteTheme, EDITOR_FONT, THEME_NAME, type MonacoTheme, type MonacoTokens } from '../monaco-theme'
@@ -27,12 +30,15 @@ const props = withDefaults(
     tokens?: MonacoTokens
     /** Side by side (default) or inline. */
     sideBySide?: boolean
+    /** Wrap long lines on both sides. */
+    wordWrap?: boolean
   }>(),
   {
     language: 'plaintext',
     theme: 'dark',
     tokens: 'qss',
     sideBySide: true,
+    wordWrap: false,
   }
 )
 
@@ -42,7 +48,6 @@ const monaco = shallowRef<any>(null)
 let originalModel: any = null
 let modifiedModel: any = null
 let destroyed = false
-let counter = 0
 
 async function init() {
   if (!container.value) return
@@ -54,9 +59,9 @@ async function init() {
     const m = monaco.value
     defineQuantsuiteTheme(m, container.value, props.tokens, props.theme)
 
-    const id = ++counter
-    originalModel = m.editor.createModel(props.original, props.language, m.Uri.parse(`quantsuite-diff://original-${id}`))
-    modifiedModel = m.editor.createModel(props.modified, props.language, m.Uri.parse(`quantsuite-diff://modified-${id}`))
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    originalModel = m.editor.createModel(props.original, props.language, m.Uri.parse(`quantsuite-diff://diff/${id}/original`))
+    modifiedModel = m.editor.createModel(props.modified, props.language, m.Uri.parse(`quantsuite-diff://diff/${id}/modified`))
 
     editor.value = m.editor.createDiffEditor(container.value, {
       ...EDITOR_FONT,
@@ -71,7 +76,8 @@ async function init() {
       ignoreTrimWhitespace: false,
       lineNumbers: 'on',
       padding: { top: 8, bottom: 8 },
-      diffWordWrap: 'off',
+      diffWordWrap: props.wordWrap ? 'on' : 'off',
+      wordWrap: props.wordWrap ? 'on' : 'off',
     })
     editor.value.setModel({ original: originalModel, modified: modifiedModel })
 
@@ -129,8 +135,27 @@ watch(
   (sideBySide) => editor.value?.updateOptions({ renderSideBySide: sideBySide })
 )
 
+watch(
+  () => props.wordWrap,
+  (wrap) => editor.value?.updateOptions({ wordWrap: wrap ? 'on' : 'off', diffWordWrap: wrap ? 'on' : 'off' })
+)
+
+/** The selected lines of the right side: for review comments. */
+function selection(): { startLine: number; endLine: number; text: string } | null {
+  const right = editor.value?.getModifiedEditor()
+  const sel = right?.getSelection()
+  const model = right?.getModel()
+  if (!sel || !model) return null
+  const startLine = sel.startLineNumber
+  const endLine = sel.endColumn === 1 && sel.endLineNumber > startLine ? sel.endLineNumber - 1 : sel.endLineNumber
+  const lines: string[] = []
+  for (let l = startLine; l <= endLine; l++) lines.push(model.getLineContent(l))
+  return { startLine, endLine, text: lines.join('\n') }
+}
+
 defineExpose({
   layout: () => editor.value?.layout(),
+  selection,
 })
 </script>
 

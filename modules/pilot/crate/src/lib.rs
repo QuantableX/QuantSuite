@@ -14,6 +14,7 @@
 //! the sink that forwards signals to the webview.
 
 mod adapters;
+mod checkpoints;
 mod claude;
 mod codex;
 mod context;
@@ -479,6 +480,10 @@ fn pilot_session_stop(app: AppHandle, state: State<'_, PilotState>, id: String) 
 fn pilot_session_delete(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<(), String> {
     stop_live(&app, &state, &id);
     state.runtime.stop(&id);
+    // The thread's checkpoints go with it (card 11).
+    if let Some(root) = state.db.get_session(&id).ok().flatten().and_then(|m| checkpoints::repo_root(Path::new(&m.cwd))) {
+        checkpoints::prune(&root, &id);
+    }
     state.db.delete_session(&id).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_dir_all(shell::session_dir(&state.data_dir, &id));
     Ok(())
@@ -663,6 +668,10 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_attachment_save_image,
             threads::pilot_attachment_save_file,
             threads::pilot_skills,
+            threads::pilot_diff_list,
+            threads::pilot_diff_file,
+            threads::pilot_diff_action,
+            threads::pilot_thread_revert,
             threads::pilot_git_info,
             threads::pilot_git_branches,
             threads::pilot_git_checkout,

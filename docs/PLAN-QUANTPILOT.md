@@ -195,7 +195,7 @@ second and at every message end, so the persisted history is the truth.
 | `turns` | one row per user message: status, start, end, duration, cost, error | 2 |
 | `queue` (+ `threads.queue_held`) | queued follow-ups in order (schema v4); a completed turn sends the next one, a stopped, failed or limited turn — or an app restart — holds the queue until Resume or the next sent message | 4 |
 | `threads` sidebar columns (schema v5) | `pinned`, `sort_key` (the user's order in Pinned and Active, larger is higher; new threads take their creation time), `settled_at`, `snoozed_until`, `auto_settle` (per-thread opt-out), `unsettled_at` (a manual Un-settle keeps automatic settlement away until the user writes again). A user message clears `settled_at`, `snoozed_until` and `unsettled_at`. Listing the threads settles those idle for `autoSettleDays` (default 3) unless they run, wait on the user, have queued follow-ups or opted out; pinning does not prevent it and settling unpins | 7 |
-| `checkpoints`, `turn_changes` | hidden git refs per turn, attributed changed files and saved patches | 11 |
+| `checkpoints`, `turn_files`, `turn_changes` (schema v7) | per turn: the before/after snapshot commits (also kept as `refs/quantpilot/checkpoints/<thread>/<turn>-before|after`), the paths the agent's tools reported, and the attributed changes with their patches (2 MiB per turn). `turns.provider_ref` holds the provider's id for the turn (Claude: the last top-level assistant uuid; Codex: the turn id); `threads.rewind` the pending "Edit from here" for the next launch | 11 |
 | `attachments` | images and documents stored under the pilot data dir, never inside the project | 9 |
 | (files, no table) | card 9 keeps attachments as files under `attachments/<thread>/` (images normalized to PNG ≤ 2048 px, files copied); the sent user item keeps their names, paths, PNG thumbnails and the chips' content in its `attachments` JSON | 9 |
 | `links` | kanban card, PR, issue, parent thread | 12, 21 |
@@ -354,6 +354,35 @@ never fakes support.
   and opens the next draft with the same project, mode and workspace.
 - Threads outside git show only the project. Schema v6 adds
   `workspace_mode`, `base_branch`, `branch`, `worktree_path`.
+
+### 5.7 Turn changes, the diff inspector and Edit from here (card 11)
+
+- Every turn in a git checkout is bracketed by two snapshot commits made
+  with a temporary index (`crate/src/checkpoints.rs`: `read-tree HEAD`,
+  `add -A`, `write-tree`, `commit-tree` with a QuantPilot author) — the
+  user's index, HEAD and branch are never touched. After the turn, the
+  changes between the two are restricted to the files the agent's tools
+  reported, so edits the user made meanwhile are not attributed to it; the
+  turn gets a "changes" item under its answer (files, +/−; each file opens
+  its diff).
+- The inspector is a split beside the conversation (pointer-dragged edge,
+  320 px minimum; open state and width per device). Its Diff tab compares
+  This turn (between a turn's checkpoints; the picker lists "Turn N ·
+  prompt"), Uncommitted (HEAD against the working tree, untracked included;
+  Stage / Unstage / Discard with an inline confirmation, refused while the
+  agent works) or Branch vs base (HEAD against its merge base). Monaco's
+  diff editor shows the file — split or unified, wrapped or not; it goes
+  inline by itself below 900 px. A review comment on selected lines lands
+  in the composer as a chip (`path:a–b`) with the lines and the comment.
+- "Edit from here" on a user message drops that turn and every later one
+  from the thread and puts the message — text, chips and attachments — back
+  into the box. The next launch resumes before it: Claude with
+  `--resume <session> --resume-session-at <previous turn's last assistant
+  uuid> --fork-session` (a new session id; the first message starts a new
+  session), Codex with `thread/revert` to before the turn after resuming.
+  "Rewind with files" also restores the checkout to the turn's before
+  checkpoint — only in a worktree thread, and refused while another live
+  thread works in the same folder.
 
 ### 5.5 Composer context (card 9)
 

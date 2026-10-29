@@ -162,6 +162,9 @@ pub enum Emit {
         duration_ms: Option<i64>,
         cost_usd: Option<f64>,
     },
+    /// The provider's own id for this turn's progress — Claude: the last
+    /// assistant message's uuid (resume point); Codex: the turn id.
+    TurnRef { id: String },
     /// A line the driver itself must send (an automatic protocol reply).
     Write(String),
 }

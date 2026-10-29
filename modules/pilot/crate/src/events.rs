@@ -28,6 +28,8 @@ pub enum ItemKind {
     Todo,
     Notice,
     Error,
+    /// What a turn changed in the checkout (card 11).
+    Changes,
 }
 
 impl ItemKind {
@@ -43,6 +45,7 @@ impl ItemKind {
             ItemKind::Todo => "todo",
             ItemKind::Notice => "notice",
             ItemKind::Error => "error",
+            ItemKind::Changes => "changes",
         }
     }
 
@@ -58,6 +61,7 @@ impl ItemKind {
             "todo" => ItemKind::Todo,
             "notice" => ItemKind::Notice,
             "error" => ItemKind::Error,
+            "changes" => ItemKind::Changes,
             _ => return None,
         })
     }

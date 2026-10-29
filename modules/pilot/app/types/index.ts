@@ -248,7 +248,7 @@ export interface SessionLive {
 
 // ── V3 threads (crate/src/events.rs) ──
 
-export type ItemKind = 'user' | 'assistant' | 'reasoning' | 'tool' | 'approval' | 'question' | 'plan' | 'todo' | 'notice' | 'error'
+export type ItemKind = 'user' | 'assistant' | 'reasoning' | 'tool' | 'approval' | 'question' | 'plan' | 'todo' | 'notice' | 'error' | 'changes'
 
 export interface ThreadItem {
   id: string
@@ -291,6 +291,31 @@ export interface QueueItem {
   text: string
   createdAt: number
   updatedAt: number
+}
+
+/** One file a turn or a scope changed (crate/src/checkpoints.rs). */
+export interface FileChange {
+  path: string
+  /** A added, M modified, D deleted, R renamed. */
+  status: 'A' | 'M' | 'D' | 'R'
+  added: number
+  removed: number
+  binary: boolean
+}
+
+/** The Diff tab's file list (pilot_diff_list). */
+export interface DiffList {
+  files: FileChange[]
+  staged: string[]
+  from: string
+  to: string
+  /** Turns with changes, newest first: [turn id, label]. */
+  turns: [string, string][]
+}
+
+export interface DiffSides {
+  original: string
+  modified: string
 }
 
 export interface QueueState {

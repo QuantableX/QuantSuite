@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-diff-list"
+description = "Enables the pilot_diff_list command without any pre-configured scope."
+commands.allow = ["pilot_diff_list"]
+
+[[permission]]
+identifier = "deny-pilot-diff-list"
+description = "Denies the pilot_diff_list command without any pre-configured scope."
+commands.deny = ["pilot_diff_list"]

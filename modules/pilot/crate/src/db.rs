@@ -16,7 +16,7 @@ use std::sync::Mutex;
 
 /// 3: threads, timeline, turns (card 2). 4: the follow-up queue (card 4).
 /// 5: pin, order, settle, snooze (card 7).
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 /// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -219,6 +219,34 @@ const THREADS_TABLE: &str = "CREATE TABLE IF NOT EXISTS threads (
     worktree_path TEXT
 )";
 
+/// Card 11 (schema v7): checkpoints per turn, the files a turn's tools
+/// wrote, the changes they made, and a pending rewind per thread.
+const CHANGE_TABLES: &str = "
+    CREATE TABLE IF NOT EXISTS checkpoints (
+        turn_id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        root TEXT NOT NULL,
+        before_commit TEXT NOT NULL,
+        after_commit TEXT
+    );
+    CREATE INDEX IF NOT EXISTS checkpoints_thread ON checkpoints (thread_id);
+    CREATE TABLE IF NOT EXISTS turn_files (
+        turn_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        PRIMARY KEY (turn_id, path)
+    );
+    CREATE TABLE IF NOT EXISTS turn_changes (
+        turn_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        status TEXT NOT NULL,
+        added INTEGER NOT NULL DEFAULT 0,
+        removed INTEGER NOT NULL DEFAULT 0,
+        binary INTEGER NOT NULL DEFAULT 0,
+        patch TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (turn_id, path)
+    );";
+
 /// Columns the branch toolbar (card 10, schema v6) adds.
 const V6_COLUMNS: [(&str, &str); 4] = [
     ("workspace_mode", "workspace_mode TEXT NOT NULL DEFAULT 'local'"),
@@ -333,6 +361,13 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         if !column_exists(&tx, "threads", name)? {
             tx.execute_batch(&format!("ALTER TABLE threads ADD COLUMN {col};"))?;
         }
+    }
+    tx.execute_batch(CHANGE_TABLES)?;
+    if !column_exists(&tx, "turns", "provider_ref")? {
+        tx.execute_batch("ALTER TABLE turns ADD COLUMN provider_ref TEXT;")?;
+    }
+    if !column_exists(&tx, "threads", "rewind")? {
+        tx.execute_batch("ALTER TABLE threads ADD COLUMN rewind TEXT;")?;
     }
     if added_order {
         // Until the user drags, the order is the order of activity.
@@ -701,10 +736,121 @@ impl Database {
     pub fn delete_session(&self, id: &str) -> rusqlite::Result<()> {
         let conn = self.lock();
         conn.execute("DELETE FROM timeline WHERE thread_id = ?1", params![id])?;
+        conn.execute("DELETE FROM turn_files WHERE turn_id IN (SELECT id FROM turns WHERE thread_id = ?1)", params![id])?;
+        conn.execute("DELETE FROM turn_changes WHERE thread_id = ?1", params![id])?;
+        conn.execute("DELETE FROM checkpoints WHERE thread_id = ?1", params![id])?;
         conn.execute("DELETE FROM turns WHERE thread_id = ?1", params![id])?;
         conn.execute("DELETE FROM queue WHERE thread_id = ?1", params![id])?;
         conn.execute("DELETE FROM threads WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    // ── Checkpoints and turn changes (card 11) ──
+
+    pub fn set_checkpoint(&self, turn_id: &str, thread_id: &str, root: &str, before: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO checkpoints (turn_id, thread_id, root, before_commit) VALUES (?1, ?2, ?3, ?4)",
+            params![turn_id, thread_id, root, before],
+        )?;
+        Ok(())
+    }
+
+    pub fn finish_checkpoint(&self, turn_id: &str, after: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE checkpoints SET after_commit = ?2 WHERE turn_id = ?1", params![turn_id, after])?;
+        Ok(())
+    }
+
+    /// `(root, before, after)` of a turn's checkpoints.
+    pub fn checkpoint(&self, turn_id: &str) -> rusqlite::Result<Option<(String, String, Option<String>)>> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT root, before_commit, after_commit FROM checkpoints WHERE turn_id = ?1",
+            params![turn_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+    }
+
+    pub fn add_turn_file(&self, turn_id: &str, path: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("INSERT OR IGNORE INTO turn_files (turn_id, path) VALUES (?1, ?2)", params![turn_id, path])?;
+        Ok(())
+    }
+
+    pub fn turn_files(&self, turn_id: &str) -> rusqlite::Result<Vec<String>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT path FROM turn_files WHERE turn_id = ?1 ORDER BY path")?;
+        let rows = stmt.query_map(params![turn_id], |r| r.get(0))?;
+        rows.collect()
+    }
+
+    pub fn save_changes(&self, turn_id: &str, thread_id: &str, changes: &[(crate::checkpoints::FileChange, String)]) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("DELETE FROM turn_changes WHERE turn_id = ?1", params![turn_id])?;
+        for (c, patch) in changes {
+            conn.execute(
+                "INSERT INTO turn_changes (turn_id, thread_id, path, status, added, removed, binary, patch) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![turn_id, thread_id, c.path, c.status, c.added, c.removed, c.binary as i64, patch],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn turn_changes(&self, turn_id: &str) -> rusqlite::Result<Vec<crate::checkpoints::FileChange>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT path, status, added, removed, binary FROM turn_changes WHERE turn_id = ?1 ORDER BY path")?;
+        let rows = stmt.query_map(params![turn_id], |r| {
+            Ok(crate::checkpoints::FileChange { path: r.get(0)?, status: r.get(1)?, added: r.get(2)?, removed: r.get(3)?, binary: r.get::<_, i64>(4)? != 0 })
+        })?;
+        rows.collect()
+    }
+
+    pub fn set_provider_ref(&self, turn_id: &str, reference: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE turns SET provider_ref = ?2 WHERE id = ?1", params![turn_id, reference])?;
+        Ok(())
+    }
+
+    /// A thread's turns, oldest first: `(id, provider_ref)`.
+    pub fn turn_refs(&self, thread_id: &str) -> rusqlite::Result<Vec<(String, Option<String>)>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT id, provider_ref FROM turns WHERE thread_id = ?1 ORDER BY started_at, rowid")?;
+        let rows = stmt.query_map(params![thread_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
+    }
+
+    /// Rewinding: the turn and every later one leave the timeline.
+    pub fn drop_turns_from(&self, thread_id: &str, turn_ids: &[String]) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        for t in turn_ids {
+            conn.execute("DELETE FROM timeline WHERE thread_id = ?1 AND turn_id = ?2", params![thread_id, t])?;
+            conn.execute("DELETE FROM turn_files WHERE turn_id = ?1", params![t])?;
+            conn.execute("DELETE FROM turn_changes WHERE turn_id = ?1", params![t])?;
+            conn.execute("DELETE FROM checkpoints WHERE turn_id = ?1", params![t])?;
+            conn.execute("DELETE FROM turns WHERE id = ?1", params![t])?;
+        }
+        Ok(())
+    }
+
+    /// A rewind to before the first message: the next turn starts a new session.
+    pub fn clear_provider_session(&self, id: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET provider_session_id = NULL WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// What the next launch rewinds to (JSON), or nothing.
+    pub fn set_rewind(&self, thread_id: &str, rewind: Option<&str>) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET rewind = ?2 WHERE id = ?1", params![thread_id, rewind])?;
+        Ok(())
+    }
+
+    pub fn rewind(&self, thread_id: &str) -> rusqlite::Result<Option<String>> {
+        let conn = self.lock();
+        conn.query_row("SELECT rewind FROM threads WHERE id = ?1", params![thread_id], |r| r.get(0)).optional().map(Option::flatten)
     }
 
     // ── Timeline ──

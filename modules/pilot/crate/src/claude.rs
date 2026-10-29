@@ -71,6 +71,8 @@ pub struct LaunchOptions {
     pub mcp_config: Option<PathBuf>,
     pub append_prompt_file: Option<PathBuf>,
     pub add_dirs: Vec<String>,
+    /// Rewind: resume the session at this message and fork it (card 11).
+    pub resume_at: Option<String>,
 }
 
 fn path_arg(p: &std::path::Path) -> String {
@@ -93,7 +95,12 @@ pub fn launch_args(o: &LaunchOptions) -> Vec<String> {
     let mut args: Vec<String> = STREAM_ARGS.iter().map(|s| s.to_string()).collect();
     match &o.session {
         SessionRef::New(id) => args.extend(["--session-id".into(), id.clone()]),
-        SessionRef::Resume(id) => args.extend(["--resume".into(), id.clone()]),
+        SessionRef::Resume(id) => {
+            args.extend(["--resume".into(), id.clone()]);
+            if let Some(at) = o.resume_at.as_deref().filter(|a| !a.is_empty()) {
+                args.extend(["--resume-session-at".into(), at.to_string(), "--fork-session".into()]);
+            }
+        }
     }
     args.extend(permission_args(&o.mode));
     if !o.model.trim().is_empty() && o.model != "default" {
@@ -484,6 +491,12 @@ impl ClaudeDriver {
         let message = msg.get("message").cloned().unwrap_or(Value::Null);
         let msg_id = str_field(&message, "id").unwrap_or_default().to_string();
         let mut out = Vec::new();
+        // The newest top-level message of the turn: where a rewind resumes (card 11).
+        if parent.is_none() {
+            if let Some(uuid) = str_field(msg, "uuid") {
+                out.push(Emit::TurnRef { id: uuid.to_string() });
+            }
+        }
         let Some(content) = message.get("content").and_then(Value::as_array) else {
             return out;
         };
@@ -1070,6 +1083,7 @@ mod tests {
             mcp_config: Some(PathBuf::from("C:\\d\\mcp.json")),
             append_prompt_file: Some(PathBuf::from("C:\\d\\context.txt")),
             add_dirs: vec!["C:\\vault".into()],
+            resume_at: None,
         };
         let j = launch_args(&o).join(" ");
         assert!(j.starts_with("-p --input-format stream-json --output-format stream-json --verbose --include-partial-messages --permission-prompt-tool stdio"));

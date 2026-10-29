@@ -36,6 +36,10 @@ Default permissions for the pilot module.
 - `allow-pilot-attachment-save-image`
 - `allow-pilot-attachment-save-file`
 - `allow-pilot-skills`
+- `allow-pilot-diff-list`
+- `allow-pilot-diff-file`
+- `allow-pilot-diff-action`
+- `allow-pilot-thread-revert`
 - `allow-pilot-git-info`
 - `allow-pilot-git-branches`
 - `allow-pilot-git-checkout`
@@ -155,6 +159,84 @@ Enables the pilot_contexts command without any pre-configured scope.
 <td>
 
 Denies the pilot_contexts command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-diff-action`
+
+</td>
+<td>
+
+Enables the pilot_diff_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-diff-action`
+
+</td>
+<td>
+
+Denies the pilot_diff_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-diff-file`
+
+</td>
+<td>
+
+Enables the pilot_diff_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-diff-file`
+
+</td>
+<td>
+
+Denies the pilot_diff_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-diff-list`
+
+</td>
+<td>
+
+Enables the pilot_diff_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-diff-list`
+
+</td>
+<td>
+
+Denies the pilot_diff_list command without any pre-configured scope.
 
 </td>
 </tr>
@@ -883,6 +965,32 @@ Enables the pilot_thread_regenerate_title command without any pre-configured sco
 <td>
 
 Denies the pilot_thread_regenerate_title command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-revert`
+
+</td>
+<td>
+
+Enables the pilot_thread_revert command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-revert`
+
+</td>
+<td>
+
+Denies the pilot_thread_revert command without any pre-configured scope.
 
 </td>
 </tr>
