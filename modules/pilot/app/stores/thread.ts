@@ -167,6 +167,8 @@ export const useThreadStore = defineStore('pilot/thread', {
     /** Files dropped on a sidebar row, waiting for that thread's composer. */
     incoming: {} as Record<string, File[]>,
     skillCache: {} as Record<string, SkillInfo[]>,
+    /** A new thread's first message to several models (card 10). */
+    fanout: {} as Record<string, { provider: string; model: string }[]>,
     /** Files are being dragged over the window: the composer lights up. */
     fileDrag: false,
   }),
@@ -446,6 +448,9 @@ export const useThreadStore = defineStore('pilot/thread', {
       try {
         await pilot<string>('plugin:pilot|pilot_thread_send', { id, text, ...extras })
         this.wrote(id)
+        // The first message of a Worktree thread created its worktree: the row's checkout moved.
+        const meta = usePilotStore().sessions.find((s) => s.id === id)
+        if (meta?.workspaceMode === 'worktree' && !meta.worktreePath) void usePilotStore().refreshSessions()
         return true
       } catch (e) {
         view.error = String(e)

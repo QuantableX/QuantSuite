@@ -6872,6 +6872,7 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "tauri-plugin-console",
+ "tauri-plugin-mcp",
  "tauri-plugin-qs",
  "tauri-winrt-notification",
  "tokio",

@@ -35,5 +35,13 @@ permissions = [
   "allow-pilot-attachment-save-image",
   "allow-pilot-attachment-save-file",
   "allow-pilot-skills",
+  "allow-pilot-git-info",
+  "allow-pilot-git-branches",
+  "allow-pilot-git-checkout",
+  "allow-pilot-thread-set-workspace",
+  "allow-pilot-worktree-previous",
+  "allow-pilot-worktree-check",
+  "allow-pilot-worktree-remove",
+  "allow-pilot-worktree-recreate",
   "allow-pilot-thread-regenerate-title",
 ]

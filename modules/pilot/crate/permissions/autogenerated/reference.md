@@ -36,6 +36,14 @@ Default permissions for the pilot module.
 - `allow-pilot-attachment-save-image`
 - `allow-pilot-attachment-save-file`
 - `allow-pilot-skills`
+- `allow-pilot-git-info`
+- `allow-pilot-git-branches`
+- `allow-pilot-git-checkout`
+- `allow-pilot-thread-set-workspace`
+- `allow-pilot-worktree-previous`
+- `allow-pilot-worktree-check`
+- `allow-pilot-worktree-remove`
+- `allow-pilot-worktree-recreate`
 - `allow-pilot-thread-regenerate-title`
 
 ## Permission Table
@@ -173,6 +181,84 @@ Enables the pilot_files_search command without any pre-configured scope.
 <td>
 
 Denies the pilot_files_search command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-git-branches`
+
+</td>
+<td>
+
+Enables the pilot_git_branches command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-branches`
+
+</td>
+<td>
+
+Denies the pilot_git_branches command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-git-checkout`
+
+</td>
+<td>
+
+Enables the pilot_git_checkout command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-checkout`
+
+</td>
+<td>
+
+Denies the pilot_git_checkout command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-git-info`
+
+</td>
+<td>
+
+Enables the pilot_git_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-git-info`
+
+</td>
+<td>
+
+Denies the pilot_git_info command without any pre-configured scope.
 
 </td>
 </tr>
@@ -830,6 +916,32 @@ Denies the pilot_thread_send command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-thread-set-workspace`
+
+</td>
+<td>
+
+Enables the pilot_thread_set_workspace command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-set-workspace`
+
+</td>
+<td>
+
+Denies the pilot_thread_set_workspace command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-thread-snapshot`
 
 </td>
@@ -901,6 +1013,32 @@ Enables the pilot_thread_update command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-worktree-check`
+
+</td>
+<td>
+
+Enables the pilot_worktree_check command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-worktree-check`
+
+</td>
+<td>
+
+Denies the pilot_worktree_check command without any pre-configured scope.
 
 </td>
 </tr>
@@ -986,6 +1124,32 @@ Denies the pilot_worktree_merge command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-worktree-previous`
+
+</td>
+<td>
+
+Enables the pilot_worktree_previous command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-worktree-previous`
+
+</td>
+<td>
+
+Denies the pilot_worktree_previous command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-worktree-probe`
 
 </td>
@@ -1005,6 +1169,58 @@ Enables the pilot_worktree_probe command without any pre-configured scope.
 <td>
 
 Denies the pilot_worktree_probe command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-worktree-recreate`
+
+</td>
+<td>
+
+Enables the pilot_worktree_recreate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-worktree-recreate`
+
+</td>
+<td>
+
+Denies the pilot_worktree_recreate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-worktree-remove`
+
+</td>
+<td>
+
+Enables the pilot_worktree_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-worktree-remove`
+
+</td>
+<td>
+
+Denies the pilot_worktree_remove command without any pre-configured scope.
 
 </td>
 </tr>

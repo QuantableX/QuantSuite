@@ -73,6 +73,10 @@ pub struct Settings {
     /// Fold running threads into the sidebar's Working section; they come
     /// back on top of the active list when they finish or need you.
     pub working_section: bool,
+    /// Where new threads work: `local` or `worktree` (card 10).
+    pub new_thread_workspace: String,
+    /// The start of a worktree thread's branch name.
+    pub worktree_prefix: String,
 }
 
 impl Default for Settings {
@@ -93,6 +97,8 @@ impl Default for Settings {
             notify_sound: false,
             auto_settle_days: 3,
             working_section: true,
+            new_thread_workspace: "local".into(),
+            worktree_prefix: "quantpilot/".into(),
         }
     }
 }
@@ -130,6 +136,10 @@ impl Settings {
         if !matches!(self.notify.as_str(), "off" | "unfocused" | "always") {
             self.notify = "unfocused".into();
         }
+        if !matches!(self.new_thread_workspace.as_str(), "local" | "worktree") {
+            self.new_thread_workspace = "local".into();
+        }
+        self.worktree_prefix = self.worktree_prefix.trim().to_string();
         if !matches!(self.follow_up.as_str(), "queue" | "steer") {
             self.follow_up = "queue".into();
         }

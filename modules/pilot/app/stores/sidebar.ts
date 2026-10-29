@@ -11,6 +11,7 @@ import { defineStore } from 'pinia'
 import { pilot } from '#pilot/utils/invoke'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
+import { useGitStore } from '#pilot/stores/git'
 import {
   dropExpired,
   inverse,
@@ -208,8 +209,11 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
     unpin(id: string) {
       return this.arrange(id, { pinned: false }, 'Unpinned')
     },
-    settle(id: string) {
-      return this.arrange(id, { settled: true }, 'Settled')
+    async settle(id: string) {
+      await this.arrange(id, { settled: true }, 'Settled')
+      // A worktree thread offers to clean up its worktree (card 10).
+      const meta = usePilotStore().sessions.find((s) => s.id === id)
+      if (meta?.worktreePath) void useGitStore().offerCleanup(meta)
     },
     unsettle(id: string) {
       return this.arrange(id, { settled: false })

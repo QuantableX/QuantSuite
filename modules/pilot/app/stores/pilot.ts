@@ -230,13 +230,25 @@ export const usePilotStore = defineStore('pilot/pilot', {
     // ── Sessions ──
 
     /** A new chat thread in a context (V3). */
-    async createThread(opts: { contextId: string; mode: Mode; title?: string; provider?: string }) {
+    async createThread(
+      opts: {
+        contextId: string
+        mode: Mode
+        title?: string
+        provider?: string
+        model?: string
+        workspaceMode?: 'local' | 'worktree'
+        baseBranch?: string
+        worktreePath?: string
+      },
+      open = true
+    ) {
       this.lastError = ''
       try {
         const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_create', { req: opts })
         if (!meta) return null
         this.upsertSession(meta)
-        await this.openSession(meta.id)
+        if (open) await this.openSession(meta.id)
         return meta
       } catch (e) {
         this.lastError = e instanceof Error ? e.message : String(e)

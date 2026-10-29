@@ -27,6 +27,7 @@ import { ArrowUp, Ban, CornerDownRight, FileText, Folder, ListPlus, Loader2, Pap
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { useGitStore } from '#pilot/stores/git'
 import { caretLine } from '#pilot/utils/caret'
 import { pilot } from '#pilot/utils/invoke'
 import {
@@ -231,6 +232,36 @@ function extras() {
   return { chips, attachments: files }
 }
 
+/**
+ * One message to several models: a thread and a worktree each, all started
+ * in the background while this draft stays open (card 10).
+ */
+async function fanOut(picks: { provider: string; model: string }[], message: string, more: ReturnType<typeof extras>): Promise<boolean> {
+  const t = thread.value
+  const info = useGitStore().info[props.threadId]
+  if (!t || !info?.repo) {
+    showNote('Several models need a git project: each one works in its own worktree.')
+    return false
+  }
+  for (const p of picks) {
+    const meta = await store.createThread(
+      {
+        contextId: t.contextId,
+        mode: t.mode,
+        provider: p.provider,
+        model: p.model,
+        workspaceMode: 'worktree',
+        baseBranch: info.baseBranch || info.repo.branch,
+      },
+      false
+    )
+    if (meta) await threads.send(meta.id, message, more)
+  }
+  delete threads.fanout[props.threadId]
+  showNote(`Started ${picks.length} threads, one worktree each.`)
+  return true
+}
+
 /** QuantPilot's own `/` commands run here instead of being sent. */
 async function runAppCommand(name: string, arg: string): Promise<boolean> {
   const id = props.threadId
@@ -310,6 +341,20 @@ async function perform(action: KeyAction) {
   }
   const message = compose()
   const more = extras()
+  const fan = threads.fanout[id]
+  if (fan && fan.length > 1 && !running.value) {
+    busy.value = true
+    const done = await fanOut(fan, message, more)
+    busy.value = false
+    if (done) {
+      text.value = ''
+      pasted.value = []
+      attachments.value = []
+      delete chipState.value[id]
+      persistSoon()
+    }
+    return
+  }
   busy.value = true
   let ok = false
   if (pendingApproval.value && action !== 'sendNewThread') {
@@ -329,7 +374,9 @@ async function perform(action: KeyAction) {
   menu.value = null
   recall.value = null
   if (action === 'sendNewThread' && thread.value) {
-    await store.createThread({ contextId: thread.value.contextId, mode: thread.value.mode })
+    // The next draft keeps the project, mode and workspace (T3 Code's background start).
+    const t = thread.value
+    await store.createThread({ contextId: t.contextId, mode: t.mode, provider: t.provider, workspaceMode: t.workspaceMode, baseBranch: t.baseBranch || undefined })
   }
   void nextTick(() => box.value?.focus())
 }
@@ -478,6 +525,12 @@ function onKey(e: KeyboardEvent) {
     if (editing.value && !e.shiftKey) {
       e.preventDefault()
       void saveEdit()
+      return
+    }
+    // A new thread: Ctrl+Enter starts it in the background and opens the next draft (T3 Code).
+    if (mod && !e.shiftKey && !e.altKey && sendShortcut.value === 'enter' && !running.value && !thread.value?.providerSessionId) {
+      e.preventDefault()
+      void perform('sendNewThread')
       return
     }
     const action = enterAction({
@@ -921,6 +974,7 @@ function focus() {
     />
     <div v-if="note" class="qp-c-note" role="status">{{ note }}</div>
 
+    <PilotThreadContextBar :thread-id="threadId" class="qp-c-context" />
     <div
       class="qp-composer-box"
       :class="{ editing: !!editing, over: tooLong, 'file-over': threads.fileDrag }"
@@ -1025,7 +1079,7 @@ function focus() {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--qss-accent, #7aa2f7) 45%, transparent);
   color: var(--qss-text, #d4d4d8);
 }
-.qp-c-note { margin: 0 0 6px; padding: 5px 10px; border-radius: 6px; background: var(--qss-bg-raised, #1f1f25); font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
+.qp-c-note { max-width: 780px; margin: 0 auto 6px; padding: 5px 10px; border-radius: 6px; background: var(--qss-bg-raised, #1f1f25); font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-c-shelf { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 0; }
 .qp-c-att {
   position: relative;
@@ -1105,6 +1159,7 @@ function focus() {
 }
 .qp-c-plus-row:hover { background: var(--qss-bg-hover, #313139); }
 .qp-composer { position: relative; flex-shrink: 0; padding: 4px 24px 14px; }
+.qp-c-context { max-width: 780px; margin: 0 auto; }
 .qp-composer-box {
   max-width: 780px;
   margin: 0 auto;

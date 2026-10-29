@@ -26,6 +26,8 @@ const draft = reactive<PilotSettings>({
   notifySound: false,
   autoSettleDays: 3,
   workingSection: true,
+  newThreadWorkspace: 'local',
+  worktreePrefix: 'quantpilot/',
 })
 const notice = ref('')
 const busy = ref(false)
@@ -49,6 +51,8 @@ function pull() {
   draft.notifySound = s.notifySound ?? false
   draft.autoSettleDays = s.autoSettleDays ?? 3
   draft.workingSection = s.workingSection ?? true
+  draft.newThreadWorkspace = s.newThreadWorkspace ?? 'local'
+  draft.worktreePrefix = s.worktreePrefix ?? 'quantpilot/'
 }
 onMounted(async () => {
   if (!store.settings) await store.loadSettings()
@@ -213,6 +217,19 @@ const signalsLabel = (s: string | null) =>
       <label class="qp-settings-field">
         <span>Settle inactive threads after <em>(days; 0 = never)</em></span>
         <input v-model.number="draft.autoSettleDays" class="qp-input" type="number" min="0" max="365" step="1" />
+      </label>
+    </div>
+    <div class="qp-settings-grid">
+      <label class="qp-settings-field">
+        <span>New threads work in <em>(git projects; Ctrl+Shift+X switches before the first message)</em></span>
+        <select v-model="draft.newThreadWorkspace" class="qp-input">
+          <option value="local">Local — the project's checkout</option>
+          <option value="worktree">Worktree — a checkout of their own</option>
+        </select>
+      </label>
+      <label class="qp-settings-field">
+        <span>Worktree branch prefix</span>
+        <input v-model="draft.worktreePrefix" class="qp-input" spellcheck="false" placeholder="quantpilot/" />
       </label>
     </div>
     <label class="qp-settings-check">

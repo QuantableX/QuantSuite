@@ -9,6 +9,7 @@ use crate::db::{Arrangement, QueueItem, ThreadMeta};
 use crate::context::{self, Attachment, Chip, FileHit, SkillInfo};
 use crate::driver::{Answer, Catalog, ImageInput, SkillRef, TurnInput, TurnStatus};
 use crate::events::{Item, ThreadEvent};
+use crate::git::{self, BranchInfo, CleanupCheck, RepoInfo};
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
 use crate::{adapters, context_of, contexts, lock, mcp_url, now, prompt, providers, shell, PilotState};
@@ -32,6 +33,11 @@ pub struct CreateThread {
     effort: Option<String>,
     mode: Option<String>,
     title: Option<String>,
+    /// `local` | `worktree`; absent = the setting (Local outside git).
+    workspace_mode: Option<String>,
+    base_branch: Option<String>,
+    /// An existing worktree to work in ("New thread in this worktree").
+    worktree_path: Option<String>,
 }
 
 #[tauri::command(async)]
@@ -45,6 +51,15 @@ pub fn pilot_thread_create(app: AppHandle, state: State<'_, PilotState>, req: Cr
     }
     let stamp = now();
     let title = req.title.unwrap_or_default().trim().to_string();
+    let in_repo = git::repo_info(Path::new(&ctx.path)).is_some();
+    let worktree = req.worktree_path.filter(|p| Path::new(p).is_dir());
+    let workspace_mode = match (&worktree, req.workspace_mode.as_deref()) {
+        (Some(_), _) => "worktree".to_string(),
+        (None, _) if !in_repo => "local".to_string(),
+        (None, Some(m)) if matches!(m, "local" | "worktree") => m.to_string(),
+        (None, _) => settings.new_thread_workspace.clone(),
+    };
+    let wt_branch = worktree.as_deref().and_then(|p| git::repo_info(Path::new(p))).map(|r| r.branch).unwrap_or_default();
     let meta = ThreadMeta {
         id: uuid::Uuid::new_v4().to_string(),
         provider,
@@ -53,7 +68,7 @@ pub fn pilot_thread_create(app: AppHandle, state: State<'_, PilotState>, req: Cr
         title,
         context_id: ctx.id,
         context_name: ctx.name,
-        cwd: ctx.path,
+        cwd: worktree.clone().unwrap_or(ctx.path),
         model: req.model.unwrap_or_default().trim().to_string(),
         mode: req.mode.filter(|m| settings::valid_mode(m)).unwrap_or(settings.default_mode),
         created_at: stamp,
@@ -73,6 +88,10 @@ pub fn pilot_thread_create(app: AppHandle, state: State<'_, PilotState>, req: Cr
         settled_at: None,
         snoozed_until: None,
         auto_settle: true,
+        workspace_mode,
+        base_branch: req.base_branch.unwrap_or_default().trim().to_string(),
+        branch: wt_branch,
+        worktree_path: worktree,
     };
     state.db.insert_session(&meta).map_err(|e| e.to_string())?;
     Ok(meta)
@@ -417,6 +436,9 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
         meta.kind = "chat".into();
         meta.provider = provider;
     }
+    if meta.workspace_mode == "worktree" {
+        ensure_worktree(state, &mut meta, input.display.as_deref().unwrap_or(&input.text))?;
+    }
     if meta.title.trim().is_empty() {
         let typed = input.display.as_deref().unwrap_or(&input.text).replace([context::CHIP_OPEN, context::CHIP_CLOSE], "");
         let title = title_from_prompt(&typed);
@@ -621,6 +643,211 @@ pub fn pilot_thread_steer(
         return state.runtime.steer(&id, input);
     }
     start_input(&app, &state, &id, input, shown).map(|_| ())
+}
+
+// ── Branch toolbar and worktrees (card 10) ──
+
+/// The first message of a Worktree thread creates its worktree — QuantMCP's
+/// implementation, on the planned branch (`quantpilot/<title>` unless the
+/// user named one) from the chosen base. A worktree that went missing
+/// blocks sending until it is recreated or the thread is settled.
+fn ensure_worktree(state: &PilotState, meta: &mut ThreadMeta, prompt: &str) -> Result<(), String> {
+    if let Some(path) = meta.worktree_path.clone() {
+        if Path::new(&path).is_dir() {
+            return Ok(());
+        }
+        return Err(format!("The worktree {path} is missing — recreate it or settle this thread."));
+    }
+    let repo = git::repo_info(Path::new(&meta.cwd)).ok_or("Worktree threads need a git repository — this project has none.")?;
+    let settings = lock(&state.settings).clone();
+    let branch = if meta.branch.trim().is_empty() {
+        let words = if meta.title.trim().is_empty() { title_from_prompt(prompt) } else { meta.title.clone() };
+        let wanted = git::suggest_branch(&settings.worktree_prefix, &words);
+        unique_branch(Path::new(&repo.root), &wanted)
+    } else {
+        meta.branch.trim().to_string()
+    };
+    git::validate_branch(&branch)?;
+    let base = Some(meta.base_branch.as_str()).filter(|b| !b.trim().is_empty());
+    let (wt, _) = qs_mod_mcp::worktree::create_on_branch(&repo.root, &branch, base)?;
+    state.db.set_workspace(&meta.id, "worktree", &wt.base, &wt.branch, Some(&wt.path), Some(&wt.path)).map_err(|e| e.to_string())?;
+    meta.cwd = wt.path.clone();
+    meta.branch = wt.branch;
+    meta.base_branch = wt.base;
+    meta.worktree_path = Some(wt.path);
+    Ok(())
+}
+
+/// An auto-named branch never takes over an existing one: `-2`, `-3`, …
+fn unique_branch(repo: &Path, wanted: &str) -> String {
+    let taken: Vec<String> = git::branches(repo).unwrap_or_default().into_iter().map(|b| b.name).collect();
+    if !taken.iter().any(|b| b == wanted) {
+        return wanted.to_string();
+    }
+    (2..).map(|n| format!("{wanted}-{n}")).find(|c| !taken.contains(c)).unwrap_or_else(|| wanted.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitInfo {
+    /// The checkout the thread works in (its worktree once there is one).
+    repo: Option<RepoInfo>,
+    mode: String,
+    base_branch: String,
+    /// The worktree's branch, or the name it will get.
+    branch: String,
+    worktree_path: Option<String>,
+    worktree_missing: bool,
+    /// The thread has had its first message: mode and base are fixed.
+    started: bool,
+}
+
+#[tauri::command(async)]
+pub fn pilot_git_info(state: State<'_, PilotState>, id: String) -> Result<GitInfo, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let missing = meta.worktree_path.as_deref().is_some_and(|p| !Path::new(p).is_dir());
+    let repo = if missing { None } else { git::repo_info(Path::new(&meta.cwd)) };
+    let settings = lock(&state.settings).clone();
+    let branch = if meta.branch.is_empty() && meta.workspace_mode == "worktree" {
+        let words = if meta.title.trim().is_empty() { "new thread".to_string() } else { meta.title.clone() };
+        git::suggest_branch(&settings.worktree_prefix, &words)
+    } else {
+        meta.branch.clone()
+    };
+    Ok(GitInfo {
+        repo,
+        mode: meta.workspace_mode.clone(),
+        base_branch: meta.base_branch.clone(),
+        branch,
+        worktree_path: meta.worktree_path.clone(),
+        worktree_missing: missing,
+        started: meta.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty()) || state.runtime.active_turn(&id).is_some(),
+    })
+}
+
+#[tauri::command(async)]
+pub fn pilot_git_branches(state: State<'_, PilotState>, id: String) -> Result<Vec<BranchInfo>, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    git::branches(Path::new(&meta.cwd))
+}
+
+/// Switch (or create) the branch of a Local thread's checkout.
+#[tauri::command(async)]
+pub fn pilot_git_checkout(state: State<'_, PilotState>, id: String, branch: String, create: bool, base: Option<String>) -> Result<RepoInfo, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    if state.runtime.active_turn(&id).is_some() {
+        return Err("the agent is working in this checkout — switch when it is done".into());
+    }
+    let cwd = Path::new(&meta.cwd);
+    git::checkout(cwd, branch.trim(), create, base.as_deref())?;
+    git::repo_info(cwd).ok_or_else(|| "not a git repository".into())
+}
+
+/// Local or Worktree, the base branch and the branch name — only before
+/// the first message; afterwards the thread's checkout is fixed.
+#[tauri::command(async)]
+pub fn pilot_thread_set_workspace(
+    state: State<'_, PilotState>,
+    id: String,
+    mode: String,
+    base_branch: Option<String>,
+    branch: Option<String>,
+    worktree_path: Option<String>,
+) -> Result<ThreadMeta, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    if meta.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty()) || state.runtime.active_turn(&id).is_some() {
+        return Err("This thread has started — its checkout is fixed. Start a new thread to work elsewhere.".into());
+    }
+    if !matches!(mode.as_str(), "local" | "worktree") {
+        return Err(format!("unknown workspace mode '{mode}'"));
+    }
+    let ctx = context_of(&meta);
+    let project = ctx.path.clone();
+    if mode == "worktree" && git::repo_info(Path::new(&project)).is_none() {
+        return Err("Worktree threads need a git repository — this project has none.".into());
+    }
+    let branch = branch.unwrap_or_default().trim().to_string();
+    if !branch.is_empty() {
+        git::validate_branch(&branch)?;
+    }
+    // Reusing a worktree: the thread works in it right away.
+    let reuse = worktree_path.filter(|p| Path::new(p).is_dir());
+    let cwd = reuse.clone().or_else(|| (meta.worktree_path.is_some() || mode == "local").then(|| project.clone()));
+    let branch = match &reuse {
+        Some(p) => git::repo_info(Path::new(p)).map(|r| r.branch).unwrap_or(branch),
+        None => branch,
+    };
+    let mode = if reuse.is_some() { "worktree".to_string() } else { mode };
+    state
+        .db
+        .set_workspace(&id, &mode, base_branch.as_deref().unwrap_or("").trim(), &branch, reuse.as_deref(), cwd.as_deref())
+        .map_err(|e| e.to_string())?;
+    state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or_else(|| "unknown thread".into())
+}
+
+/// The newest worktree another thread of this project used (Ctrl+Shift+L).
+#[tauri::command(async)]
+pub fn pilot_worktree_previous(state: State<'_, PilotState>, id: String) -> Result<Option<ThreadMeta>, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let ctx = context_of(&meta);
+    let Some(repo) = git::repo_info(Path::new(&ctx.path)) else {
+        return Ok(None);
+    };
+    Ok(state
+        .db
+        .latest_worktree(&repo.root)
+        .map_err(|e| e.to_string())?
+        .filter(|t| t.id != id && t.worktree_path.as_deref().is_some_and(|p| Path::new(p).is_dir())))
+}
+
+fn worktree_of(state: &PilotState, id: &str) -> Result<(ThreadMeta, String, String), String> {
+    let meta = state.db.get_session(id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let path = meta.worktree_path.clone().ok_or("this thread has no worktree")?;
+    let ctx = context_of(&meta);
+    let root = git::repo_info(Path::new(&ctx.path)).map(|r| r.root).ok_or("the project is not a git repository")?;
+    Ok((meta, path, root))
+}
+
+/// What settling may clean up (dialog defaults: `CleanupCheck::defaults`).
+#[tauri::command(async)]
+pub fn pilot_worktree_check(state: State<'_, PilotState>, id: String) -> Result<CleanupCheck, String> {
+    let (meta, path, root) = worktree_of(&state, &id)?;
+    // Another thread working in the same worktree keeps it.
+    let shared = state
+        .db
+        .list_sessions()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .any(|t| t.id != id && t.settled_at.is_none() && t.worktree_path.as_deref() == Some(path.as_str()));
+    let mut check = git::cleanup_check(Path::new(&root), Path::new(&path), &meta.branch, &meta.base_branch);
+    if shared {
+        check.exists = false;
+        (check.suggest_remove, check.suggest_delete_branch) = check.defaults();
+    }
+    Ok(check)
+}
+
+/// Remove the worktree (never with uncommitted changes) and, when asked, its branch.
+#[tauri::command(async)]
+pub fn pilot_worktree_remove(state: State<'_, PilotState>, id: String, delete_branch: bool, unmerged_ok: bool) -> Result<(), String> {
+    let (meta, path, root) = worktree_of(&state, &id)?;
+    if state.runtime.active_turn(&id).is_some() {
+        return Err("the agent is still working in this worktree".into());
+    }
+    state.runtime.stop(&id);
+    git::remove_worktree(Path::new(&root), Path::new(&path), &meta.branch, delete_branch, unmerged_ok)
+}
+
+/// A worktree that went missing comes back on its branch (or a fresh one).
+#[tauri::command(async)]
+pub fn pilot_worktree_recreate(state: State<'_, PilotState>, id: String) -> Result<ThreadMeta, String> {
+    let (meta, _path, root) = worktree_of(&state, &id)?;
+    let base = Some(meta.base_branch.as_str()).filter(|b| !b.trim().is_empty());
+    let branch = if meta.branch.is_empty() { git::suggest_branch(&lock(&state.settings).worktree_prefix, &meta.title) } else { meta.branch.clone() };
+    let (wt, _) = qs_mod_mcp::worktree::create_on_branch(&root, &branch, base)?;
+    state.runtime.stop(&id);
+    state.db.set_workspace(&id, "worktree", &wt.base, &wt.branch, Some(&wt.path), Some(&wt.path)).map_err(|e| e.to_string())?;
+    state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or_else(|| "unknown thread".into())
 }
 
 // ── Composer context (card 9) ──
