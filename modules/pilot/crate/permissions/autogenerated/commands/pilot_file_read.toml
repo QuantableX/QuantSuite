@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-file-read"
+description = "Enables the pilot_file_read command without any pre-configured scope."
+commands.allow = ["pilot_file_read"]
+
+[[permission]]
+identifier = "deny-pilot-file-read"
+description = "Denies the pilot_file_read command without any pre-configured scope."
+commands.deny = ["pilot_file_read"]

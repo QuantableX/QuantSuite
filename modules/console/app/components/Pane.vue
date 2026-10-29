@@ -53,7 +53,7 @@ const props = withDefaults(
      * `'console'` sessions on a reload — a canvas window's shell must say
      * `'canvas'` or it grows a console tab it never asked for.
      */
-    owner?: 'console' | 'canvas'
+    owner?: 'console' | 'canvas' | 'pilot-drawer'
   }>(),
   { staged: true, visible: true, chrome: false, active: false, cwd: '.', owner: 'console' }
 )
@@ -68,6 +68,8 @@ const emit = defineEmits<{
   (e: 'zoom'): void
   (e: 'close'): void
   (e: 'focus'): void
+  /** The mouse or keyboard selection changed (QuantPilot's "Add to composer"). */
+  (e: 'selection', text: string): void
 }>()
 
 const root = ref<HTMLElement | null>(null)
@@ -212,6 +214,7 @@ async function createTerminal() {
     const id = sessionId.value
     if (id && !exited.value) void qs.console.write(id, data).catch(() => {})
   })
+  instance.onSelectionChange(() => emit('selection', instance.getSelection()))
 
   instance.open(host.value)
   term = instance
@@ -465,7 +468,16 @@ function run(text: string) {
   term?.focus()
 }
 
-defineExpose({ pushSize, prefill, run, focusTerm })
+/** The selected text and its buffer lines (1-based), for quoting it elsewhere. */
+function selection(): { text: string; startLine: number; endLine: number } | null {
+  const pos = term?.getSelectionPosition()
+  const text = term?.getSelection() ?? ''
+  if (!pos || !text.trim()) return null
+  // xterm 5 reports buffer rows from 0 here, whatever its typings say.
+  return { text, startLine: pos.start.y + 1, endLine: pos.end.y + 1 }
+}
+
+defineExpose({ pushSize, prefill, run, focusTerm, selection })
 </script>
 
 <template>

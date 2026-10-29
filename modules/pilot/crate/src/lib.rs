@@ -22,6 +22,7 @@ mod contexts;
 mod db;
 mod driver;
 mod events;
+mod files;
 mod git;
 mod gitops;
 mod notify;
@@ -32,6 +33,7 @@ mod runtime;
 mod settings;
 mod shell;
 mod signals;
+mod terminals;
 mod threads;
 mod watch;
 
@@ -75,6 +77,8 @@ pub struct PilotState {
     runtime: Arc<runtime::Runtime>,
     /// `@` search: one index per checkout (card 9).
     files: context::FileIndex,
+    /// The terminal drawer's shells and Run terminals (card 13).
+    drawer: terminals::Drawer,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -212,11 +216,13 @@ fn pilot_settings_set(state: State<'_, PilotState>, settings: Settings) -> Resul
 }
 
 #[tauri::command(async)]
-fn pilot_sessions_list(state: State<'_, PilotState>) -> Result<Vec<SessionMeta>, String> {
+fn pilot_sessions_list(app: AppHandle, state: State<'_, PilotState>) -> Result<Vec<SessionMeta>, String> {
     // Threads nobody touched for the configured days move to Settled (card 7).
     let days = lock(&state.settings).auto_settle_days;
-    if let Err(e) = state.db.auto_settle(days, &state.runtime.busy_threads()) {
-        eprintln!("pilot: auto-settle failed: {e}");
+    match state.db.auto_settle(days, &state.runtime.busy_threads()) {
+        // Their "run on settle" actions run (card 13).
+        Ok(settled) => settled.iter().for_each(|id| threads::on_settled(&app, &state, id)),
+        Err(e) => eprintln!("pilot: auto-settle failed: {e}"),
     }
     state.db.list_sessions().map_err(|e| e.to_string())
 }
@@ -623,6 +629,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 sink,
                 runtime,
                 files: context::FileIndex::default(),
+                drawer: terminals::Drawer::default(),
             });
 
             qs_core::tray::register_entry(
@@ -692,6 +699,17 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_pr_create,
             threads::pilot_links,
             threads::pilot_pr_refresh,
+            threads::pilot_files_list,
+            threads::pilot_file_read,
+            threads::pilot_file_write,
+            threads::pilot_file_save_as,
+            threads::pilot_text_search,
+            threads::pilot_ports_alive,
+            threads::pilot_port_owner,
+            threads::pilot_port_stop,
+            threads::pilot_terminal_open,
+            threads::pilot_terminals,
+            threads::pilot_terminal_close,
         ]))
         .build()
 }

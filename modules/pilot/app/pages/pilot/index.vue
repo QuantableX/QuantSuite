@@ -9,11 +9,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useInspectorStore } from '#pilot/stores/inspector'
+import { useDrawerStore } from '#pilot/stores/drawer'
 
 definePageMeta({ layout: 'pilot' })
 
 const store = usePilotStore()
 const inspector = useInspectorStore()
+const drawer = useDrawerStore()
 const session = computed(() => store.active)
 const live = computed(() => store.activeLive)
 const stage = ref<HTMLElement | null>(null)
@@ -62,9 +64,13 @@ function restart() {
   <div class="qp-page">
     <template v-if="session">
       <div v-if="!terminal" class="qp-split">
-        <PilotThreadConversation :thread-id="session.id" />
+        <div class="qp-main-col">
+          <PilotThreadConversation :thread-id="session.id" />
+          <PilotDrawerPanel v-if="drawer.open[session.id]" :thread-id="session.id" />
+        </div>
         <PilotInspectorPanel v-if="inspector.open" :thread-id="session.id" />
       </div>
+      <PilotInspectorFilePicker v-if="inspector.picker" :thread-id="session.id" @close="inspector.picker = false" />
 
       <div v-show="terminal" class="qp-term">
         <div class="qp-term-bar">
@@ -131,7 +137,7 @@ function restart() {
 <style scoped>
 .qp-page { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .qp-split { flex: 1; min-height: 0; display: flex; min-width: 0; }
-.qp-split > :first-child { flex: 1; min-width: 0; }
+.qp-main-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .qp-term { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .qp-term-bar {
   flex-shrink: 0;

@@ -59,6 +59,17 @@ Default permissions for the pilot module.
 - `allow-pilot-pr-create`
 - `allow-pilot-links`
 - `allow-pilot-pr-refresh`
+- `allow-pilot-files-list`
+- `allow-pilot-file-read`
+- `allow-pilot-file-write`
+- `allow-pilot-file-save-as`
+- `allow-pilot-text-search`
+- `allow-pilot-ports-alive`
+- `allow-pilot-port-owner`
+- `allow-pilot-port-stop`
+- `allow-pilot-terminal-open`
+- `allow-pilot-terminals`
+- `allow-pilot-terminal-close`
 
 ## Permission Table
 
@@ -247,6 +258,110 @@ Enables the pilot_diff_list command without any pre-configured scope.
 <td>
 
 Denies the pilot_diff_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-file-read`
+
+</td>
+<td>
+
+Enables the pilot_file_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-file-read`
+
+</td>
+<td>
+
+Denies the pilot_file_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-file-save-as`
+
+</td>
+<td>
+
+Enables the pilot_file_save_as command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-file-save-as`
+
+</td>
+<td>
+
+Denies the pilot_file_save_as command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-file-write`
+
+</td>
+<td>
+
+Enables the pilot_file_write command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-file-write`
+
+</td>
+<td>
+
+Denies the pilot_file_write command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-files-list`
+
+</td>
+<td>
+
+Enables the pilot_files_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-files-list`
+
+</td>
+<td>
+
+Denies the pilot_files_list command without any pre-configured scope.
 
 </td>
 </tr>
@@ -559,6 +674,84 @@ Enables the pilot_links command without any pre-configured scope.
 <td>
 
 Denies the pilot_links command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-port-owner`
+
+</td>
+<td>
+
+Enables the pilot_port_owner command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-port-owner`
+
+</td>
+<td>
+
+Denies the pilot_port_owner command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-port-stop`
+
+</td>
+<td>
+
+Enables the pilot_port_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-port-stop`
+
+</td>
+<td>
+
+Denies the pilot_port_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-ports-alive`
+
+</td>
+<td>
+
+Enables the pilot_ports_alive command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-ports-alive`
+
+</td>
+<td>
+
+Denies the pilot_ports_alive command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1105,6 +1298,110 @@ Enables the pilot_status command without any pre-configured scope.
 <td>
 
 Denies the pilot_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-terminal-close`
+
+</td>
+<td>
+
+Enables the pilot_terminal_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-terminal-close`
+
+</td>
+<td>
+
+Denies the pilot_terminal_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-terminal-open`
+
+</td>
+<td>
+
+Enables the pilot_terminal_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-terminal-open`
+
+</td>
+<td>
+
+Denies the pilot_terminal_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-terminals`
+
+</td>
+<td>
+
+Enables the pilot_terminals command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-terminals`
+
+</td>
+<td>
+
+Denies the pilot_terminals command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-text-search`
+
+</td>
+<td>
+
+Enables the pilot_text_search command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-text-search`
+
+</td>
+<td>
+
+Denies the pilot_text_search command without any pre-configured scope.
 
 </td>
 </tr>

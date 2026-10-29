@@ -6,7 +6,8 @@
  * toast. Commit and pull request open their dialogs; merge and discard ask
  * first. Outside git the control is not there.
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, GitCommitHorizontal, GitMerge, GitPullRequest, LoaderCircle, X } from 'lucide-vue-next'
 import { useGitStore } from '#pilot/stores/git'
 import { useThreadStore } from '#pilot/stores/thread'
@@ -103,8 +104,14 @@ function onDialogKey(e: KeyboardEvent) {
 }
 onMounted(() => {
   document.addEventListener('mousedown', onDocDown)
-  window.addEventListener('focus', onFocus)
+  if (inActiveKeepAliveTree()) window.addEventListener('focus', onFocus)
 })
+// Behind another module (warm cache) a window focus is not ours to act on.
+onActivated(() => {
+  window.addEventListener('focus', onFocus)
+  onFocus()
+})
+onDeactivated(() => window.removeEventListener('focus', onFocus))
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocDown)
   window.removeEventListener('focus', onFocus)

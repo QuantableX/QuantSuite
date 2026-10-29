@@ -421,6 +421,44 @@ never fakes support.
 - Every git/gh call: argv only, null stdin, prompts off, 30 s (local) or
   120 s (hooks, network) timeouts, output capped at 64 KiB.
 
+### 5.9 Files tab, terminal drawer, project actions (card 13)
+
+- Inspector tabs (Diff, Files; Browser with card 14) close with Ctrl+W and
+  come back with Ctrl+Shift+T; the split's width is kept per thread (the
+  last one set is the default for others).
+- Files tab: a lazy tree of the checkout (`files::list_dir`, gitignore
+  honoured, `.git` / `.qs-worktrees` / `node_modules` left out) or the
+  project search (Ctrl+Shift+F: text or regex, case switch, 1,000 matches,
+  binary and >1 MB files skipped, 4 s budget) beside the open file. Text
+  opens in Monaco read-only — Edit, Ctrl+S saves through the crate (only
+  inside the checkout; outside files and texts cut at 4 MB stay
+  read-only). Markdown, HTML (an `allow-scripts` sandbox without
+  same-origin, so it cannot reach the app), SVG and CSV/TSV render with a
+  Raw switch; images and PDFs (≤ 25 MB) show. Copy contents, Save as (the
+  buffer, or a copy of the file). Ctrl+P picks a file by name (the
+  composer's `@` index). `path:line` in backticks or a link to a path in a
+  message opens here at the line; code names like `store.load` do not.
+- Terminal drawer (Ctrl+J) under the conversation: tabs of shells in the
+  thread's checkout (the user's shell setting), each splittable beside or
+  below; PTYs in the console registry under owner `pilot-drawer`, tracked
+  per thread by the crate; tab layout per device. Selected output becomes
+  a "Terminal lines a–b" chip in the composer. When a thread settles,
+  shells idle at their prompt close; running ones and Run terminals stay.
+- Project actions (Settings → Project actions, per project: name,
+  command, icon, own shortcut, run when a worktree is created, run when a
+  thread settles; drag to reorder): the header shows the first as a
+  button and all in its menu; Run types the command into the action's own
+  terminal (a live one gets Ctrl+C and the command again). The crate runs
+  the hooks itself (first message of a Worktree thread; manual or
+  automatic settle).
+- Dev servers: `localhost:PORT` URLs in drawer output and in the agent's
+  command output, listed under Servers in the thread panel while the port
+  answers (checked every 8 s while there are candidates). Stop sends
+  Ctrl+C to a drawer terminal; for an agent's server it names the process
+  holding the port (netstat + tasklist) and ends that tree only after the
+  user confirms, and only if the port still belongs to that pid. Open goes
+  to the system browser until card 14's Browser tab.
+
 ### 5.5 Composer context (card 9)
 
 - `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`
@@ -481,7 +519,7 @@ in `layouts/pilot.vue`; they keep their meaning. No Vim mode or Vim keys.
 | Ctrl+N / Ctrl+Alt+N | New thread / new thread without a project |
 | Ctrl+K | Command palette (`>` = actions only) |
 | Ctrl+B / Ctrl+Shift+B / Ctrl+Alt+B | Sidebar / thread panel / inspector |
-| Ctrl+J | Terminal drawer (Ctrl+N new, Ctrl+D split, Ctrl+W close while focused) |
+| Ctrl+J | Terminal drawer (Ctrl+N new, Ctrl+D split beside, Ctrl+Shift+D split below, Ctrl+W close the pane — while the drawer has focus) |
 | Ctrl+D / Ctrl+Shift+J | Diff tab / browser tab |
 | Ctrl+P / Ctrl+Shift+F | File picker / project search |
 | Ctrl+F | Find in thread (find in diff when the diff has focus) |

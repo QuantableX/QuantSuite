@@ -141,6 +141,76 @@ export interface PilotSettings {
   worktreePrefix: string
   /** Generated commit messages follow the repository's recent subjects, or a standard form. */
   commitStyle: 'repository' | 'standard'
+  /** Project actions by project (context id), in order (card 13). */
+  actions: Record<string, ProjectAction[]>
+}
+
+// ── Files tab, terminal drawer, project actions (card 13) ──
+
+export type ActionIcon = 'play' | 'test' | 'lint' | 'build' | 'configure' | 'debug'
+
+/** A command run in a Run terminal of the thread's checkout. */
+export interface ProjectAction {
+  id: string
+  name: string
+  command: string
+  icon: ActionIcon
+  /** e.g. `Ctrl+Shift+R`; empty = none. */
+  key: string
+  runOnWorktreeCreate: boolean
+  runOnSettle: boolean
+}
+
+export interface DirEntry {
+  name: string
+  /** Relative to the checkout, forward slashes. */
+  rel: string
+  dir: boolean
+  size: number
+}
+
+export interface FileContent {
+  path: string
+  rel: string | null
+  kind: 'text' | 'image' | 'pdf' | 'binary'
+  text: string | null
+  base64: string | null
+  mime: string
+  size: number
+  truncated: boolean
+  readOnly: boolean
+}
+
+export interface LineMatch {
+  line: number
+  column: number
+  text: string
+}
+
+export interface FileMatches {
+  rel: string
+  matches: LineMatch[]
+}
+
+export interface TextSearchResult {
+  files: FileMatches[]
+  total: number
+  truncated: boolean
+}
+
+/** A shell or Run terminal in the drawer. */
+export interface DrawerTerm {
+  ptyId: string
+  threadId: string
+  label: string
+  action: string | null
+  cwd: string
+  createdAt: number
+}
+
+export interface PortOwner {
+  pid: number
+  name: string
 }
 
 // ── Branch toolbar (card 10) ──

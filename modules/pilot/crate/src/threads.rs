@@ -12,6 +12,8 @@ use crate::driver::{Answer, Catalog, ImageInput, SkillRef, TurnInput, TurnStatus
 use crate::events::{Item, ItemKind, ThreadEvent};
 use crate::git::{self, BranchInfo, CleanupCheck, RepoInfo};
 use crate::gitops::{self, Generated, GitStatus, Link};
+use crate::files::{self, DirEntry, FileContent, PortOwner, SearchResult};
+use crate::terminals::{self, DrawerTerm, Hook};
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
 use crate::{adapters, context_of, contexts, lock, mcp_url, now, prompt, providers, shell, PilotState};
@@ -446,7 +448,14 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
         meta.provider = provider;
     }
     if meta.workspace_mode == "worktree" {
+        let fresh = meta.worktree_path.is_none();
         ensure_worktree(state, &mut meta, input.display.as_deref().unwrap_or(&input.text))?;
+        if fresh && meta.worktree_path.is_some() {
+            // The project's "run on worktree create" actions (card 13).
+            let settings = lock(&state.settings).clone();
+            let shell = shell::resolve(&settings.shell);
+            state.drawer.run_hook(app, &settings, &shell, &meta, Hook::WorktreeCreate);
+        }
     }
     if meta.title.trim().is_empty() {
         let typed = input.display.as_deref().unwrap_or(&input.text).replace([context::CHIP_OPEN, context::CHIP_CLOSE], "");
@@ -1343,6 +1352,103 @@ fn link_agent_prs(state: &PilotState, thread_id: &str) {
     }
 }
 
+// ── Files tab, project search, terminal drawer, dev servers (card 13) ──
+
+fn checkout_of(state: &PilotState, id: &str) -> Result<(ThreadMeta, PathBuf), String> {
+    let meta = state.db.get_session(id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let root = PathBuf::from(&meta.cwd);
+    if !root.is_dir() {
+        return Err(format!("{} is not there any more", meta.cwd));
+    }
+    Ok((meta, root))
+}
+
+#[tauri::command(async)]
+pub fn pilot_files_list(state: State<'_, PilotState>, id: String, rel: Option<String>) -> Result<Vec<DirEntry>, String> {
+    let (_, root) = checkout_of(&state, &id)?;
+    files::list_dir(&root, rel.as_deref().unwrap_or_default())
+}
+
+/// A file for the viewer — relative to the thread's checkout, or absolute (outside it: read-only).
+#[tauri::command(async)]
+pub fn pilot_file_read(state: State<'_, PilotState>, id: String, path: String) -> Result<FileContent, String> {
+    let (_, root) = checkout_of(&state, &id)?;
+    files::read(&root, &path)
+}
+
+#[tauri::command(async)]
+pub fn pilot_file_write(state: State<'_, PilotState>, id: String, path: String, content: String) -> Result<(), String> {
+    let (_, root) = checkout_of(&state, &id)?;
+    files::write(&root, &path, &content)
+}
+
+#[tauri::command(async)]
+pub fn pilot_file_save_as(state: State<'_, PilotState>, id: String, path: String, target: String, content: Option<String>) -> Result<(), String> {
+    let (_, root) = checkout_of(&state, &id)?;
+    files::save_as(&root, &path, &target, content.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn pilot_text_search(state: State<'_, PilotState>, id: String, query: String, regex: Option<bool>, case: Option<bool>) -> Result<SearchResult, String> {
+    let (_, root) = checkout_of(&state, &id)?;
+    files::search(&root, &query, regex.unwrap_or(false), case.unwrap_or(false))
+}
+
+#[tauri::command(async)]
+pub fn pilot_ports_alive(ports: Vec<u16>) -> Vec<u16> {
+    files::alive_ports(&ports)
+}
+
+#[tauri::command(async)]
+pub fn pilot_port_owner(port: u16) -> Result<PortOwner, String> {
+    files::port_owner(port)
+}
+
+/// Stop a dev server the user picked: the process tree that still holds the port.
+#[tauri::command(async)]
+pub fn pilot_port_stop(port: u16, pid: u32) -> Result<(), String> {
+    files::stop_port(port, pid)
+}
+
+/// A shell in the thread's checkout, or a project action's Run terminal (a live one is reused).
+#[tauri::command(async)]
+pub fn pilot_terminal_open(
+    app: AppHandle,
+    webview: tauri::Webview,
+    state: State<'_, PilotState>,
+    id: String,
+    action: Option<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
+) -> Result<DrawerTerm, String> {
+    let (meta, root) = checkout_of(&state, &id)?;
+    let settings = lock(&state.settings).clone();
+    let picked = match action.as_deref() {
+        Some(a) => Some(
+            terminals::actions_of(&settings, &meta.context_id)
+                .iter()
+                .find(|x| x.id == a)
+                .cloned()
+                .ok_or_else(|| format!("the project has no action '{a}'"))?,
+        ),
+        None => None,
+    };
+    let shell = shell::resolve(&settings.shell);
+    state.drawer.open(&app, webview.label(), &shell, &id, &root.to_string_lossy(), picked.as_ref(), (cols, rows))
+}
+
+#[tauri::command(async)]
+pub fn pilot_terminals(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<Vec<DrawerTerm>, String> {
+    let console = app.try_state::<qs_mod_console::ConsoleState>().ok_or("the console is not running")?;
+    Ok(state.drawer.list(&console, &id))
+}
+
+#[tauri::command(async)]
+pub fn pilot_terminal_close(app: AppHandle, state: State<'_, PilotState>, pty_id: String) -> Result<(), String> {
+    terminals::close(&app, &state.drawer, &pty_id);
+    Ok(())
+}
+
 // ── Composer context (card 9) ──
 
 /// `@` in the composer: files and folders of the thread's checkout.
@@ -1597,9 +1703,26 @@ pub fn pilot_thread_update(
 
 /// Pin, reorder, settle, un-settle, snooze or wake a thread.
 #[tauri::command(async)]
-pub fn pilot_thread_arrange(state: State<'_, PilotState>, id: String, arrangement: Arrangement) -> Result<ThreadMeta, String> {
+pub fn pilot_thread_arrange(app: AppHandle, state: State<'_, PilotState>, id: String, arrangement: Arrangement) -> Result<ThreadMeta, String> {
+    let was = state.db.get_session(&id).map_err(|e| e.to_string())?.and_then(|m| m.settled_at);
     state.db.arrange(&id, &arrangement).map_err(|e| e.to_string())?;
+    if arrangement.settled == Some(true) && was.is_none() {
+        on_settled(&app, &state, &id);
+    }
     state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or_else(|| "unknown thread".into())
+}
+
+/// A thread settled: its project's "run on settle" actions run in its checkout.
+pub fn on_settled(app: &AppHandle, state: &PilotState, id: &str) {
+    let Ok(Some(meta)) = state.db.get_session(id) else {
+        return;
+    };
+    if !Path::new(&meta.cwd).is_dir() {
+        return;
+    }
+    let settings = lock(&state.settings).clone();
+    let shell = shell::resolve(&settings.shell);
+    state.drawer.run_hook(app, &settings, &shell, &meta, Hook::Settle);
 }
 
 /// A clean title from the model's answer: one line, no quotes or closing

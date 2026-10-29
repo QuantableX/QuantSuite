@@ -35,6 +35,23 @@ fn no_version() -> u32 {
     0
 }
 
+/// A project action (card 13): a command run in a Run terminal of the
+/// thread's checkout — from the header, by its key, when a worktree is
+/// created, or when a thread settles (`cargo clean`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ProjectAction {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    /// `play` | `test` | `lint` | `build` | `configure` | `debug`
+    pub icon: String,
+    /// A shortcut like `Ctrl+Shift+R`; empty = none.
+    pub key: String,
+    pub run_on_worktree_create: bool,
+    pub run_on_settle: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -80,6 +97,8 @@ pub struct Settings {
     /// Generated commit messages: `repository` (the project's recent
     /// subjects and commit instructions) or `standard` (card 12).
     pub commit_style: String,
+    /// Project actions by project (context id), in the user's order.
+    pub actions: BTreeMap<String, Vec<ProjectAction>>,
 }
 
 impl Default for Settings {
@@ -103,6 +122,7 @@ impl Default for Settings {
             new_thread_workspace: "local".into(),
             worktree_prefix: "quantpilot/".into(),
             commit_style: "repository".into(),
+            actions: BTreeMap::new(),
         }
     }
 }
@@ -147,6 +167,31 @@ impl Settings {
         if !matches!(self.commit_style.as_str(), "repository" | "standard") {
             self.commit_style = "repository".into();
         }
+        self.actions = std::mem::take(&mut self.actions)
+            .into_iter()
+            .map(|(project, list)| {
+                let mut seen = std::collections::HashSet::new();
+                let list: Vec<ProjectAction> = list
+                    .into_iter()
+                    .map(|mut a| {
+                        a.name = a.name.trim().to_string();
+                        a.command = a.command.trim().to_string();
+                        a.key = a.key.trim().to_string();
+                        if !matches!(a.icon.as_str(), "play" | "test" | "lint" | "build" | "configure" | "debug") {
+                            a.icon = "play".into();
+                        }
+                        let base = if a.id.trim().is_empty() { slug(&a.name) } else { slug(&a.id) };
+                        let base = if base.is_empty() { "action".to_string() } else { base };
+                        a.id = (1..).map(|n| if n == 1 { base.clone() } else { format!("{base}-{n}") }).find(|c| !seen.contains(c)).unwrap_or(base);
+                        seen.insert(a.id.clone());
+                        a
+                    })
+                    .filter(|a| !a.name.is_empty() && !a.command.is_empty())
+                    .collect();
+                (project.trim().to_string(), list)
+            })
+            .filter(|(p, l)| !p.is_empty() && !l.is_empty())
+            .collect();
         if !matches!(self.follow_up.as_str(), "queue" | "steer") {
             self.follow_up = "queue".into();
         }
@@ -213,6 +258,23 @@ pub fn write(dir: &Path, settings: &Settings) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_actions_are_cleaned_and_get_unique_ids() {
+        let action = |name: &str, command: &str, icon: &str| ProjectAction { name: name.into(), command: command.into(), icon: icon.into(), ..Default::default() };
+        let mut actions = BTreeMap::new();
+        actions.insert(
+            "ws1".to_string(),
+            vec![action(" Dev server ", " npm run dev ", "play"), action("Dev server", "npm run dev:2", "rocket"), action("Empty", "  ", "test")],
+        );
+        actions.insert("ws2".to_string(), vec![action("", "x", "play")]);
+        let s = Settings { actions, ..Default::default() }.normalized();
+        let list = &s.actions["ws1"];
+        assert_eq!(list.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), vec!["dev-server", "dev-server-2"]);
+        assert_eq!((list[0].name.as_str(), list[0].command.as_str()), ("Dev server", "npm run dev"));
+        assert_eq!(list[1].icon, "play", "an unknown icon falls back");
+        assert!(!s.actions.contains_key("ws2"), "a project without valid actions is dropped");
+    }
 
     #[test]
     fn custom_adapters_are_slugged_and_deduped() {

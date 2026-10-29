@@ -9,10 +9,13 @@
 import { computed, nextTick, ref } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useGitStore } from '#pilot/stores/git'
+import { useDrawerStore } from '#pilot/stores/drawer'
+import { SquareTerminal } from 'lucide-vue-next'
 import { modeLabel } from '#pilot/utils/format'
 
 const store = usePilotStore()
 const git = useGitStore()
+const drawer = useDrawerStore()
 const prs = computed(() => (session.value ? (git.links[session.value.id] ?? []).filter((l) => l.kind === 'pr') : []))
 const session = computed(() => store.active)
 const live = computed(() => store.activeLive)
@@ -60,6 +63,10 @@ async function end() {
         <span class="qp-head-chip" title="Permission mode">{{ modeLabel(session.mode) }}</span>
         <PilotGitPrChip v-for="l in prs" :key="l.url" :link="l" />
         <div class="qp-header-spacer" />
+        <PilotDrawerActions :thread-id="session.id" />
+        <button class="qp-head-icon" :class="{ on: drawer.open[session.id] }" title="Terminal drawer (Ctrl+J)" aria-label="Terminal drawer" @click="drawer.toggle(session.id)">
+          <SquareTerminal :size="14" />
+        </button>
         <PilotGitActions :thread-id="session.id" />
         <button
           v-if="!store.terminalShown[session.id]"
@@ -129,5 +136,8 @@ async function end() {
 }
 .qp-head-chip.is-provider { color: var(--qss-text, #d4d4d8); }
 .qp-header-spacer { flex: 1; }
+.qp-head-icon { display: inline-flex; padding: 4px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--qss-text-muted, #6e6e7a); cursor: pointer; }
+.qp-head-icon:hover,
+.qp-head-icon.on { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
 .qp-head-hint { font-size: 12px; color: var(--qss-text-muted, #6e6e7a); }
 </style>

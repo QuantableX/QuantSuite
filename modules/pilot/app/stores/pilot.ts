@@ -14,6 +14,7 @@ import { bus } from '@quantsuite/core'
 import { pilot } from '#pilot/utils/invoke'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { useDrawerStore } from '#pilot/stores/drawer'
 import { providerLabel } from '#pilot/utils/format'
 import { scanBells, type BellScanState } from '#pilot/utils/bell'
 import type {
@@ -171,6 +172,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
     async refreshSessions() {
       const list = await pilot<SessionMeta[]>('plugin:pilot|pilot_sessions_list')
       if (list) {
+        for (const s of list) this.noticeSettled(s)
         this.sessions = list
         for (const s of list) this.ensureLive(s.id)
       }
@@ -276,7 +278,14 @@ export const usePilotStore = defineStore('pilot/pilot', {
       this.terminalShown[id] = false
     },
 
+    /** A thread just settled (by hand or after inactivity): its idle shells close (card 13). */
+    noticeSettled(next: SessionMeta) {
+      const before = this.sessions.find((s) => s.id === next.id)
+      if (before && !before.settledAt && next.settledAt) void useDrawerStore().closeIdle(next.id)
+    },
+
     upsertSession(meta: SessionMeta) {
+      this.noticeSettled(meta)
       const i = this.sessions.findIndex((s) => s.id === meta.id)
       if (i >= 0) this.sessions[i] = meta
       else this.sessions.unshift(meta)
