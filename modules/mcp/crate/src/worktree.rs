@@ -429,6 +429,41 @@ pub fn create(repo_root: &str, name: &str, base: Option<&str>) -> Result<(Worktr
     Ok((Worktree { repo_root: repo_root.to_string(), path: dir_s, branch, base }, prepared))
 }
 
+/// A worktree on a branch the caller names (QuantPilot's `quantpilot/…`):
+/// the same folder layout, preparation and base bookkeeping as [`create`].
+/// An existing branch is checked out as it is; a new one starts at `base`.
+pub fn create_on_branch(repo_root: &str, branch: &str, base: Option<&str>) -> Result<(Worktree, Prepared), String> {
+    let repo = Path::new(repo_root);
+    if !repo.is_dir() {
+        return Err(format!("{repo_root} is not a directory"));
+    }
+    let base = match base.map(str::trim).filter(|b| !b.is_empty()) {
+        Some(b) if ref_exists(repo, b) => b.to_string(),
+        Some(b) => return Err(format!("base '{b}' is not a branch or commit in {repo_root}")),
+        None => current_branch(repo)?,
+    };
+    let leaf = slug(branch.rsplit('/').next().unwrap_or(branch));
+    let dir = loop {
+        let dir = repo.join(DIR).join(format!("{leaf}-{}", short_id()));
+        if !dir.exists() {
+            break dir;
+        }
+    };
+    let parent = repo.join(DIR);
+    std::fs::create_dir_all(&parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    ensure_gitignore(repo);
+    let dir_s = dir.to_string_lossy().into_owned();
+    if branch_exists(repo, branch) {
+        run(repo, &["worktree", "add", &dir_s, branch])?;
+    } else {
+        run(repo, &["worktree", "add", "-b", branch, &dir_s, &base])?;
+        let _ = run(repo, &["config", &format!("branch.{branch}.{BASE_KEY}"), &base]);
+    }
+    let base = base_of(repo, branch).unwrap_or(base);
+    let prepared = prepare(repo_root, &dir_s);
+    Ok((Worktree { repo_root: repo_root.to_string(), path: dir_s, branch: branch.to_string(), base }, prepared))
+}
+
 // ── Links: dependency dirs shared with the main checkout ──
 
 /// A directory link — a junction or directory symlink on Windows, a symlink

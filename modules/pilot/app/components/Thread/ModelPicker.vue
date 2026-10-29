@@ -20,8 +20,17 @@ const props = defineProps<{
   catalog: ProviderCatalog | null
   loading: boolean
   error: string | null
+  /** Several models picked with Shift (a new thread only). */
+  multi?: { provider: string; model: string }[]
+  allowMulti?: boolean
 }>()
-const emit = defineEmits<{ pick: [provider: string, model: string]; close: []; provider: [id: string]; refresh: [] }>()
+const emit = defineEmits<{
+  pick: [provider: string, model: string]
+  close: []
+  provider: [id: string]
+  refresh: []
+  multi: [list: { provider: string; model: string }[]]
+}>()
 
 const query = ref('')
 const search = ref<HTMLInputElement | null>(null)
@@ -41,6 +50,24 @@ function pick(i: number) {
   const r = rows.value[i]
   if (!r) return
   emit('pick', shownProvider.value, r.id)
+}
+
+/** Shift-click in a new thread: several models, one thread and worktree each (card 10). */
+const inMulti = (id: string) => (props.multi ?? []).some((m) => m.provider === shownProvider.value && m.model === id)
+function onRow(e: MouseEvent, i: number) {
+  const r = rows.value[i]
+  if (!r) return
+  if (!e.shiftKey || !props.allowMulti) {
+    pick(i)
+    return
+  }
+  const list = [...(props.multi ?? [])]
+  // The thread's own model joins the selection the first time.
+  if (!list.length) list.push({ provider: props.provider, model: props.model })
+  const at = list.findIndex((m) => m.provider === shownProvider.value && m.model === r.id)
+  if (at >= 0) list.splice(at, 1)
+  else list.push({ provider: shownProvider.value, model: r.id })
+  emit('multi', list)
 }
 
 function switchProvider(dir: 1 | -1) {
@@ -146,9 +173,11 @@ onMounted(() => void nextTick(() => search.value?.focus()))
           :aria-selected="r.id === model && !r.custom"
           :class="{ active: i === active }"
           @mouseenter="active = i"
-          @click="pick(i)"
+          @click="(e: MouseEvent) => onRow(e, i)"
         >
-          <span class="qp-mp-check"><Check v-if="r.id === model && !r.custom && shownProvider === provider" :size="13" /></span>
+          <span class="qp-mp-check">
+            <Check v-if="(multi?.length ?? 0) > 1 ? inMulti(r.id) : r.id === model && !r.custom && shownProvider === provider" :size="13" />
+          </span>
           <span class="qp-mp-text">
             <span class="qp-mp-label">{{ r.label }}</span>
             <span v-if="r.detail" class="qp-mp-detail">{{ r.detail }}</span>
@@ -156,7 +185,9 @@ onMounted(() => void nextTick(() => search.value?.focus()))
           <span v-if="i < 9" class="qp-mp-key">Ctrl+{{ i + 1 }}</span>
         </button>
       </div>
-      <div v-if="catalog?.version" class="qp-mp-foot">{{ providers.find((p) => p.id === shownProvider)?.label }} {{ catalog.version }}</div>
+      <div v-if="(multi?.length ?? 0) > 1" class="qp-mp-foot">{{ multi!.length }} models — sending starts one thread and worktree each</div>
+      <div v-else-if="allowMulti" class="qp-mp-foot">Shift-click to send to several models at once</div>
+      <div v-else-if="catalog?.version" class="qp-mp-foot">{{ providers.find((p) => p.id === shownProvider)?.label }} {{ catalog.version }}</div>
     </div>
   </div>
 </template>

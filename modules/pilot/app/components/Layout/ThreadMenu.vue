@@ -13,6 +13,7 @@ import {
   Check,
   ChevronRight,
   Copy,
+  FolderGit2,
   Pencil,
   Pin,
   PinOff,
@@ -96,6 +97,14 @@ const items = computed<Item[]>(() => {
       ],
     },
   ]
+  if (t.worktreePath) {
+    list.push({
+      id: 'in-worktree',
+      label: 'New thread in this worktree',
+      icon: FolderGit2,
+      run: () => void store.createThread({ contextId: t.contextId, mode: t.mode, provider: t.provider, worktreePath: t.worktreePath ?? undefined }),
+    })
+  }
   if (t.kind === 'terminal') {
     list.push({ id: 'terminal', label: 'Open in terminal', icon: SquareTerminal, run: () => store.openTerminal(t.id) })
   }

@@ -35,6 +35,8 @@ base64 = "0.22"
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
 # The PTYs: one registry with the console, one output channel, one owner rule.
 tauri-plugin-console = { path = "../../console/crate" }
+# Worktrees: QuantMCP's implementation, never a second one (card 10).
+tauri-plugin-mcp = { path = "../../mcp/crate" }
 
 # "Needs you" toasts that open the thread on click — the same WinRT wrapper
 # tauri-plugin-notification uses on Windows, without its JS package.

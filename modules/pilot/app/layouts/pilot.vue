@@ -125,7 +125,23 @@ function onFileDrop(e: DragEvent) {
   if (files.length) threads.dropFiles(store.activeId, files)
 }
 
+/** The branch toolbar's keys go to the open thread's context bar (card 10). */
+const bar = (key: string, which: 'mode' | 'branch' | 'reuse') => ({
+  key,
+  ctrl: true,
+  shift: true,
+  alt: false,
+  handler: (e: KeyboardEvent) => {
+    if (!store.activeId) return
+    e.preventDefault()
+    window.dispatchEvent(new CustomEvent('qp-context-bar', { detail: { threadId: store.activeId, which } }))
+  },
+})
+
 useShortcuts([
+  bar('X', 'mode'),
+  bar('G', 'branch'),
+  bar('L', 'reuse'),
   // The sidebar's keys (card 7; docs/PLAN-QUANTPILOT.md §7). Explicit
   // shift/alt keep Ctrl+N clear of the suite's Ctrl+Shift+N (notes).
   {
@@ -247,6 +263,7 @@ useShortcuts([
       <main class="qp-main">
         <slot />
         <PilotLayoutUndoToast />
+        <PilotLayoutWorktreeCleanup />
       </main>
       <QRightPanel :model-value="app.sidebarRightOpen" storage-key="pilot.right">
         <PilotLayoutRightSidebar />

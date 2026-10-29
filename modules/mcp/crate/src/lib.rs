@@ -14,7 +14,8 @@ mod scripts;
 mod settings;
 mod tools;
 mod tool_preferences;
-mod worktree;
+// QuantPilot builds its threads' worktrees with the same code (card 10).
+pub mod worktree;
 mod worktree_cleanup;
 
 use kanban_db::KanbanDb;

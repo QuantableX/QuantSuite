@@ -16,7 +16,7 @@ use std::sync::Mutex;
 
 /// 3: threads, timeline, turns (card 2). 4: the follow-up queue (card 4).
 /// 5: pin, order, settle, snooze (card 7).
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -73,6 +73,14 @@ pub struct ThreadMeta {
     pub snoozed_until: Option<i64>,
     /// `false` keeps the thread out of automatic settlement (its menu).
     pub auto_settle: bool,
+    /// `local` (the project's checkout) or `worktree` (its own, card 10).
+    pub workspace_mode: String,
+    /// What a worktree starts from; empty = the checkout's branch.
+    pub base_branch: String,
+    /// The worktree's branch — planned until the first message creates it.
+    pub branch: String,
+    /// Set once the worktree exists; `cwd` then points into it.
+    pub worktree_path: Option<String>,
 }
 
 pub type SessionMeta = ThreadMeta;
@@ -101,7 +109,8 @@ pub struct Database {
 
 const THREAD_COLS: &str = "id, provider, provider_session_id, title, context_id, context_name, cwd, model, mode, \
     created_at, updated_at, cost_usd, input_tokens, output_tokens, last_error, kind, effort, title_source, state, \
-    context_tokens, context_window, last_activity_at, pinned, sort_key, settled_at, snoozed_until, auto_settle";
+    context_tokens, context_window, last_activity_at, pinned, sort_key, settled_at, snoozed_until, auto_settle, workspace_mode, base_branch, \
+    branch, worktree_path";
 
 fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
     Ok(ThreadMeta {
@@ -132,6 +141,10 @@ fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
         settled_at: r.get(24)?,
         snoozed_until: r.get(25)?,
         auto_settle: r.get::<_, i64>(26)? != 0,
+        workspace_mode: r.get(27)?,
+        base_branch: r.get(28)?,
+        branch: r.get(29)?,
+        worktree_path: r.get(30)?,
     })
 }
 
@@ -199,8 +212,20 @@ const THREADS_TABLE: &str = "CREATE TABLE IF NOT EXISTS threads (
     settled_at INTEGER,
     snoozed_until INTEGER,
     auto_settle INTEGER NOT NULL DEFAULT 1,
-    unsettled_at INTEGER
+    unsettled_at INTEGER,
+    workspace_mode TEXT NOT NULL DEFAULT 'local',
+    base_branch TEXT NOT NULL DEFAULT '',
+    branch TEXT NOT NULL DEFAULT '',
+    worktree_path TEXT
 )";
+
+/// Columns the branch toolbar (card 10, schema v6) adds.
+const V6_COLUMNS: [(&str, &str); 4] = [
+    ("workspace_mode", "workspace_mode TEXT NOT NULL DEFAULT 'local'"),
+    ("base_branch", "base_branch TEXT NOT NULL DEFAULT ''"),
+    ("branch", "branch TEXT NOT NULL DEFAULT ''"),
+    ("worktree_path", "worktree_path TEXT"),
+];
 
 /// Columns the sidebar (card 7, schema v5) adds to an older `threads` table.
 const V5_COLUMNS: [(&str, &str); 6] = [
@@ -304,6 +329,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             added_order |= name == "sort_key";
         }
     }
+    for (name, col) in V6_COLUMNS {
+        if !column_exists(&tx, "threads", name)? {
+            tx.execute_batch(&format!("ALTER TABLE threads ADD COLUMN {col};"))?;
+        }
+    }
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;
@@ -373,7 +403,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO threads ({THREAD_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, \
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)"
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)"
             ),
             params![
                 m.id,
@@ -402,7 +432,11 @@ impl Database {
                 m.sort_key,
                 m.settled_at,
                 m.snoozed_until,
-                m.auto_settle as i64
+                m.auto_settle as i64,
+                m.workspace_mode,
+                m.base_branch,
+                m.branch,
+                m.worktree_path
             ],
         )?;
         Ok(())
@@ -470,6 +504,31 @@ impl Database {
             conn.execute("UPDATE threads SET settled_at = ?2, pinned = 0 WHERE id = ?1", params![id, now()])?;
         }
         Ok(ids)
+    }
+
+    /// Local or Worktree, the base and the planned branch — before the first message.
+    pub fn set_workspace(&self, id: &str, mode: &str, base: &str, branch: &str, worktree: Option<&str>, cwd: Option<&str>) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE threads SET workspace_mode = ?2, base_branch = ?3, branch = ?4, worktree_path = ?5,
+                cwd = COALESCE(?6, cwd), updated_at = ?7 WHERE id = ?1",
+            params![id, mode, base, branch, worktree, cwd, now()],
+        )?;
+        Ok(())
+    }
+
+    /// The newest worktree of a repository a thread worked in (Reuse previous worktree).
+    pub fn latest_worktree(&self, under: &str) -> rusqlite::Result<Option<ThreadMeta>> {
+        let conn = self.lock();
+        conn.query_row(
+            &format!(
+                "SELECT {THREAD_COLS} FROM threads WHERE worktree_path IS NOT NULL AND lower(worktree_path) LIKE lower(?1) || '%'
+                    ORDER BY last_activity_at DESC LIMIT 1"
+            ),
+            params![under],
+            row_thread,
+        )
+        .optional()
     }
 
     /// The user wrote in the thread: it is live work again — out of the
@@ -965,6 +1024,10 @@ mod tests {
             settled_at: None,
             snoozed_until: None,
             auto_settle: true,
+            workspace_mode: "local".into(),
+            base_branch: String::new(),
+            branch: String::new(),
+            worktree_path: None,
         }
     }
 

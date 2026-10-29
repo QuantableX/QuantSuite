@@ -1206,6 +1206,10 @@ mod tests {
             settled_at: None,
             snoozed_until: None,
             auto_settle: true,
+            workspace_mode: "local".into(),
+            base_branch: String::new(),
+            branch: String::new(),
+            worktree_path: None,
         })
         .unwrap();
     }

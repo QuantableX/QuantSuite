@@ -11,7 +11,7 @@
  * threads start with the default mode from Settings (T3 Code's rule).
  * The catalog is asked for only when a picker opens.
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useShortcuts } from '@quantsuite/core'
 import { ChevronDown, ClipboardList, FilePen, Gauge, ShieldCheck, Sparkles, Zap } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
@@ -35,6 +35,13 @@ const running = computed(() => Boolean(view.value?.turnId))
 
 type Open = 'model' | 'effort' | 'mode' | 'context' | null
 const open = ref<Open>(null)
+// Another thread in the same composer: its pickers start closed.
+watch(
+  () => props.threadId,
+  () => {
+    open.value = null
+  }
+)
 const root = ref<HTMLElement | null>(null)
 
 // ── Catalog, on demand ──
@@ -64,7 +71,15 @@ const providers = computed<ProviderOption[]>(() =>
     })
 )
 
+/** Several models for a new thread's first message (card 10). */
+function setFanout(list: { provider: string; model: string }[]) {
+  if (list.length > 1) threads.fanout[props.threadId] = list
+  else delete threads.fanout[props.threadId]
+}
+
 const modelLabel = computed(() => {
+  const fan = threads.fanout[props.threadId]
+  if (fan && fan.length > 1) return `${fan.length} models`
   const m = thread.value?.model ?? ''
   if (!m) return view.value?.model ? `Default · ${view.value.model.replace(/^claude-/, '')}` : 'Default'
   const known = catalog.value?.models.find((x) => x.id === m)
@@ -202,6 +217,9 @@ useShortcuts([
           @pick="pickModel"
           @close="close"
           @provider="(id: string) => loadCatalog(id)"
+          :multi="threads.fanout[threadId] ?? []"
+          :allow-multi="!started"
+          @multi="setFanout"
           @refresh="loadCatalog(provider, true)"
         />
       </div>

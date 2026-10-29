@@ -330,6 +330,31 @@ plan mode, effort levels, permission modes, images, subagents, usage, limits.
 The UI hides or disables (with the reason) anything a provider cannot do; it
 never fakes support.
 
+### 5.6 Branch toolbar and worktrees (card 10)
+
+- Above the composer: project · Local / Worktree (switchable until the
+  first message; Ctrl+Shift+X) · branch (Ctrl+Shift+G) · copy path. A Local
+  thread switches or creates branches in the project's checkout — refused
+  while files are changed, with the files named. A new Worktree thread
+  shows its base and the planned branch (`quantpilot/<title>`, prefix in
+  Settings; an auto name never takes an existing branch, a typed existing
+  one is checked out in the worktree). The first message creates the
+  worktree with QuantMCP's own code (`qs_mod_mcp::worktree::create_on_branch`
+  — same `.qs-worktrees/` layout and dependency junctions), and the thread's
+  `cwd` moves into it. Ctrl+Shift+L reuses the newest worktree of the
+  project; a thread's menu offers "New thread in this worktree". A missing
+  worktree blocks sending and shows Recreate / Settle.
+- Settling a worktree thread offers a guarded cleanup: a clean worktree is
+  removed by default, its branch only when merged into the base; unmerged
+  commits keep the branch unless ticked (`git branch -D` then); uncommitted
+  changes keep everything; a worktree another open thread uses is kept.
+- Shift-click in a new thread's model picker selects several models: the
+  first message starts one thread and worktree per model in the background.
+  Ctrl+Enter in a new thread (send key Enter) starts it in the background
+  and opens the next draft with the same project, mode and workspace.
+- Threads outside git show only the project. Schema v6 adds
+  `workspace_mode`, `base_branch`, `branch`, `worktree_path`.
+
 ### 5.5 Composer context (card 9)
 
 - `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`

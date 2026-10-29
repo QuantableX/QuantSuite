@@ -21,6 +21,7 @@ mod contexts;
 mod db;
 mod driver;
 mod events;
+mod git;
 mod notify;
 mod prompt;
 mod providers;
@@ -263,6 +264,10 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
         settled_at: None,
         snoozed_until: None,
         auto_settle: true,
+        workspace_mode: "local".into(),
+        base_branch: String::new(),
+        branch: String::new(),
+        worktree_path: None,
     };
     state.db.insert_session(&meta).map_err(|e| e.to_string())?;
     Ok(meta)
@@ -658,6 +663,14 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_attachment_save_image,
             threads::pilot_attachment_save_file,
             threads::pilot_skills,
+            threads::pilot_git_info,
+            threads::pilot_git_branches,
+            threads::pilot_git_checkout,
+            threads::pilot_thread_set_workspace,
+            threads::pilot_worktree_previous,
+            threads::pilot_worktree_check,
+            threads::pilot_worktree_remove,
+            threads::pilot_worktree_recreate,
             threads::pilot_thread_regenerate_title,
         ]))
         .build()

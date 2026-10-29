@@ -31,6 +31,14 @@ const COMMANDS: &[&str] = &[
     "pilot_attachment_save_image",
     "pilot_attachment_save_file",
     "pilot_skills",
+    "pilot_git_info",
+    "pilot_git_branches",
+    "pilot_git_checkout",
+    "pilot_thread_set_workspace",
+    "pilot_worktree_previous",
+    "pilot_worktree_check",
+    "pilot_worktree_remove",
+    "pilot_worktree_recreate",
     "pilot_thread_regenerate_title",
 ];
 

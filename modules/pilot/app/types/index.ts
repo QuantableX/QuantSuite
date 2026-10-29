@@ -46,6 +46,12 @@ export interface SessionMeta {
   snoozedUntil: number | null
   /** `false` keeps it out of automatic settlement. */
   autoSettle: boolean
+  /** `local` (the project's checkout) or `worktree` (its own). */
+  workspaceMode: 'local' | 'worktree'
+  baseBranch: string
+  /** The worktree's branch (planned until the first message). */
+  branch: string
+  worktreePath: string | null
 }
 
 export interface SessionDetail {
@@ -129,6 +135,47 @@ export interface PilotSettings {
   autoSettleDays: number
   /** Fold running threads into the sidebar's Working section. */
   workingSection: boolean
+  /** Where new threads work. */
+  newThreadWorkspace: 'local' | 'worktree'
+  /** The start of a worktree thread's branch name. */
+  worktreePrefix: string
+}
+
+// ── Branch toolbar (card 10) ──
+
+export interface RepoInfo {
+  root: string
+  branch: string
+  defaultBranch: string
+  dirty: number
+}
+
+export interface GitInfo {
+  repo: RepoInfo | null
+  mode: 'local' | 'worktree'
+  baseBranch: string
+  branch: string
+  worktreePath: string | null
+  worktreeMissing: boolean
+  started: boolean
+}
+
+export interface BranchInfo {
+  name: string
+  current: boolean
+  updatedAt: number
+  elsewhere: boolean
+}
+
+export interface CleanupCheck {
+  exists: boolean
+  dirty: string[]
+  merged: boolean
+  ahead: number
+  branch: string
+  base: string
+  suggestRemove: boolean
+  suggestDeleteBranch: boolean
 }
 
 export type SendShortcut = 'enter' | 'modEnterMultiline' | 'modEnter'
