@@ -77,6 +77,22 @@ test('a plan before the answer reads before it', () => {
   assert.deepEqual(b.outside.map((o) => o.kind), ['notice'])
 })
 
+test('a message steered into the turn stays visible in order', () => {
+  seq = 0
+  const items = [
+    item('user', { text: 'run five echoes' }),
+    tool('command'),
+    item('user', { text: 'also BANANA', steer: true }),
+    tool('command'),
+    item('assistant', { text: 'Done, BANANA too.' }),
+  ]
+  const [b] = groupTurns(items)
+  assert.equal(b.user.data.text, 'run five echoes')
+  assert.deepEqual(b.before.map((o) => o.data.text), ['also BANANA'])
+  assert.equal(b.answer.data.text, 'Done, BANANA too.')
+  assert.equal(b.toolCount, 2)
+})
+
 test('turns keep their order and subagent text never becomes the answer', () => {
   seq = 0
   const items = [

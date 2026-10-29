@@ -20,6 +20,8 @@ const draft = reactive<PilotSettings>({
   attachQuantmcp: true,
   includeGeneralVault: true,
   custom: [],
+  sendShortcut: 'enter',
+  followUp: 'queue',
 })
 const notice = ref('')
 const busy = ref(false)
@@ -37,6 +39,8 @@ function pull() {
   draft.attachQuantmcp = s.attachQuantmcp
   draft.includeGeneralVault = s.includeGeneralVault
   draft.custom = s.custom.map((c) => ({ ...c }))
+  draft.sendShortcut = s.sendShortcut ?? 'enter'
+  draft.followUp = s.followUp ?? 'queue'
 }
 onMounted(async () => {
   if (!store.settings) await store.loadSettings()
@@ -134,11 +138,13 @@ const signalsLabel = (s: string | null) =>
         </select>
       </label>
       <label class="qp-settings-field">
-        <span>Permissions <em>(what the wrappers pass on)</em></span>
+        <span>Permissions for new threads</span>
         <select v-model="draft.defaultMode" class="qp-input">
           <option value="full">Full access</option>
-          <option value="auto">Auto</option>
-          <option value="ask">Ask before tools</option>
+          <option value="auto">Auto (the agent's own reviewer)</option>
+          <option value="edits">Accept edits</option>
+          <option value="plan">Plan (read and plan only)</option>
+          <option value="ask">Supervised (ask before tools)</option>
         </select>
       </label>
       <label v-for="a in builtIn" :key="a.id" class="qp-settings-field">
@@ -154,6 +160,25 @@ const signalsLabel = (s: string | null) =>
           <option value="high">high</option>
           <option value="xhigh">xhigh</option>
           <option value="max">max</option>
+        </select>
+      </label>
+    </div>
+
+    <h3 class="qp-settings-title">Composer</h3>
+    <div class="qp-settings-grid">
+      <label class="qp-settings-field">
+        <span>Send with</span>
+        <select v-model="draft.sendShortcut" class="qp-input">
+          <option value="enter">Enter (Shift+Enter for a new line)</option>
+          <option value="modEnterMultiline">Ctrl+Enter once a message has several lines</option>
+          <option value="modEnter">Always Ctrl+Enter</option>
+        </select>
+      </label>
+      <label class="qp-settings-field">
+        <span>While the agent works <em>(Ctrl+Enter does the other)</em></span>
+        <select v-model="draft.followUp" class="qp-input">
+          <option value="queue">Queue — send after the turn</option>
+          <option value="steer">Steer — into the running turn</option>
         </select>
       </label>
     </div>

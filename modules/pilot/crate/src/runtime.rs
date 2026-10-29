@@ -170,6 +170,13 @@ impl Projector {
         item
     }
 
+    /// A message the user sent into the running turn: part of this turn,
+    /// marked so the timeline can say it steered.
+    pub fn steer_message(&mut self, text: &str) {
+        let item = self.new_item(ItemKind::User, None, json!({ "text": text, "attachments": [], "steer": true }));
+        self.publish(item, false);
+    }
+
     pub fn notice(&mut self, kind: ItemKind, text: &str) {
         let item = self.new_item(kind, None, json!({ "text": text }));
         self.publish(item, false);
@@ -430,6 +437,8 @@ impl Projector {
         self.flush();
         if let Some(err) = error.as_deref().filter(|e| !e.trim().is_empty()) {
             self.notice(ItemKind::Error, err);
+        } else if status == TurnStatus::Interrupted {
+            self.notice(ItemKind::Notice, "You stopped the agent.");
         }
         if !self.turn_id.is_empty() {
             let _ = self.db.finish_turn(&self.turn_id, status.as_str(), duration_ms, cost_usd, error.as_deref());
@@ -650,7 +659,11 @@ pub struct Runtime {
     runs: Mutex<HashMap<String, Arc<Run>>>,
     catalogs: Mutex<HashMap<String, (Instant, Catalog)>>,
     me: Mutex<Weak<Runtime>>,
+    on_turn_end: Mutex<Option<TurnEndHook>>,
 }
+
+/// Called after every turn with its thread and how it ended.
+pub type TurnEndHook = Arc<dyn Fn(&str, TurnStatus) + Send + Sync>;
 
 impl Runtime {
     pub fn new(db: Arc<Database>, sink: EventSink) -> Arc<Self> {
@@ -661,6 +674,7 @@ impl Runtime {
             runs: Mutex::new(HashMap::new()),
             catalogs: Mutex::new(HashMap::new()),
             me: Mutex::new(Weak::new()),
+            on_turn_end: Mutex::new(None),
         });
         *lock(&rt.me) = Arc::downgrade(&rt);
         rt
@@ -842,6 +856,32 @@ impl Runtime {
         Ok(())
     }
 
+    /// Whether a message can go into the thread's running turn right now.
+    pub fn can_steer(&self, thread_id: &str) -> bool {
+        self.run(thread_id).is_some_and(|r| r.turn_active() && lock(&r.driver).can_steer())
+    }
+
+    /// A message into the running turn (steering). Refused when no turn
+    /// runs or the provider cannot take one mid-turn — then it is the
+    /// caller's to queue or send.
+    pub fn steer(&self, thread_id: &str, input: TurnInput) -> Result<(), String> {
+        let run = self.run(thread_id).ok_or("nothing is running in this thread")?;
+        if !run.turn_active() {
+            return Err("nothing is running in this thread".into());
+        }
+        let lines = {
+            let mut driver = lock(&run.driver);
+            if !driver.can_steer() {
+                return Err(format!("{} cannot take a message while it works", driver.provider()));
+            }
+            driver.user_message(&input)
+        };
+        run.write(&lines)?;
+        lock(&run.proj).steer_message(&input.text);
+        let _ = self.db.touch(thread_id);
+        Ok(())
+    }
+
     pub fn interrupt(&self, thread_id: &str) -> Result<(), String> {
         let run = self.run(thread_id).ok_or("nothing is running in this thread")?;
         let Some(turn) = lock(&run.turn).clone() else {
@@ -904,9 +944,23 @@ impl Runtime {
         run.close();
     }
 
-    fn turn_ended(&self, run: &Arc<Run>) {
+    /// Tell the owner a turn ended (the queue moves on, or holds). Called
+    /// on its own thread: the hook may start the next turn.
+    fn notify_turn_end(&self, thread_id: &str, status: TurnStatus) {
+        if let Some(hook) = lock(&self.on_turn_end).clone() {
+            let thread_id = thread_id.to_string();
+            std::thread::spawn(move || hook(&thread_id, status));
+        }
+    }
+
+    pub fn set_turn_end_hook(&self, hook: TurnEndHook) {
+        *lock(&self.on_turn_end) = Some(hook);
+    }
+
+    fn turn_ended(&self, run: &Arc<Run>, status: TurnStatus) {
         lock(&run.turn).take();
         run.interrupting.store(false, Ordering::SeqCst);
+        self.notify_turn_end(&run.thread_id, status);
         let since = Instant::now();
         *lock(&run.idle_since) = Some(since);
         let me = lock(&self.me).clone();
@@ -923,6 +977,7 @@ impl Runtime {
     }
 
     fn process_ended(&self, run: &Arc<Run>, code: Option<i32>) {
+        let mut ended = None;
         {
             let mut proj = lock(&run.proj);
             if lock(&run.turn).take().is_some() {
@@ -938,13 +993,19 @@ impl Runtime {
                 });
                 let status = if interrupted { TurnStatus::Interrupted } else { TurnStatus::Failed };
                 proj.end_turn(status, error, None, None);
+                ended = Some(status);
             }
             proj.expire_pending();
             proj.flush();
         }
-        let mut runs = lock(&self.runs);
-        if runs.get(&run.thread_id).is_some_and(|r| Arc::ptr_eq(r, run)) {
-            runs.remove(&run.thread_id);
+        {
+            let mut runs = lock(&self.runs);
+            if runs.get(&run.thread_id).is_some_and(|r| Arc::ptr_eq(r, run)) {
+                runs.remove(&run.thread_id);
+            }
+        }
+        if let Some(status) = ended {
+            self.notify_turn_end(&run.thread_id, status);
         }
     }
 }
@@ -963,7 +1024,7 @@ fn pump(rt: Weak<Runtime>, run: Arc<Run>, stdout: std::process::ChildStdout) {
                 if line.trim().is_empty() {
                     continue;
                 }
-                let mut ended = false;
+                let mut ended = None;
                 let mut writes = Vec::new();
                 {
                     let mut driver = lock(&run.driver);
@@ -982,8 +1043,8 @@ fn pump(rt: Weak<Runtime>, run: Arc<Run>, stdout: std::process::ChildStdout) {
                                 }
                             }
                             other => {
-                                if proj.apply(other, &info, run.provider).is_some() {
-                                    ended = true;
+                                if let Some(status) = proj.apply(other, &info, run.provider) {
+                                    ended = Some(status);
                                 }
                             }
                         }
@@ -992,9 +1053,9 @@ fn pump(rt: Weak<Runtime>, run: Arc<Run>, stdout: std::process::ChildStdout) {
                 if !writes.is_empty() {
                     let _ = run.write(&writes);
                 }
-                if ended {
+                if let Some(status) = ended {
                     if let Some(rt) = rt.upgrade() {
-                        rt.turn_ended(&run);
+                        rt.turn_ended(&run, status);
                     } else {
                         lock(&run.turn).take();
                     }
@@ -1334,6 +1395,11 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         let env = vec![("QP_STAND_IN".to_string(), fixture.to_string_lossy().into_owned())];
+        let ended: Arc<Mutex<Vec<(String, TurnStatus)>>> = Arc::new(Mutex::new(Vec::new()));
+        {
+            let ended = ended.clone();
+            rt.set_turn_end_hook(Arc::new(move |t: &str, s: TurnStatus| lock(&ended).push((t.to_string(), s))));
+        }
         let turn = rt
             .send(
                 "t1",
@@ -1360,6 +1426,12 @@ mod tests {
         let t = db.last_turn("t1").unwrap().unwrap();
         assert_eq!((t.id.as_str(), t.status.as_str()), (turn.as_str(), "completed"), "turn error: {:?}", t.error);
         assert!(lock(&log).iter().any(|(_, e)| matches!(e, ThreadEvent::Turn { status, .. } if status == "completed")));
+        let start = Instant::now();
+        while lock(&ended).is_empty() && start.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(lock(&ended).as_slice(), &[("t1".to_string(), TurnStatus::Completed)], "the owner hears about the end once");
+        assert!(rt.steer("t1", TurnInput { text: "more".into(), images: Vec::new() }).is_err(), "nothing runs to steer into");
         assert!(rt.send("t1", TurnInput::default(), json!([]), || Err("no CLI here".into()), "other").is_err());
         let items = db.items("t1", None, 100).unwrap();
         assert_eq!(items.last().unwrap().data["text"], "no CLI here", "a failed start is visible");

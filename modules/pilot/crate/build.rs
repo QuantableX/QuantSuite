@@ -18,6 +18,14 @@ const COMMANDS: &[&str] = &[
     "pilot_thread_interrupt",
     "pilot_thread_update",
     "pilot_provider_catalog",
+    "pilot_queue_list",
+    "pilot_queue_add",
+    "pilot_queue_update",
+    "pilot_queue_remove",
+    "pilot_queue_send_now",
+    "pilot_queue_resume",
+    "pilot_thread_steer",
+    "pilot_attachment_save_text",
 ];
 
 fn main() {

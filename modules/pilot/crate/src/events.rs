@@ -136,6 +136,9 @@ pub enum ThreadEvent {
     },
     RateLimit { windows: Vec<RateWindow> },
     Title { title: String },
+    /// The follow-ups waiting for the running turn, in order; `held` after
+    /// a stop, a failure or a restart until the user resumes.
+    Queue { items: Vec<crate::db::QueueItem>, held: bool },
 }
 
 #[derive(Debug, Clone, Serialize)]

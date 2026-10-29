@@ -821,6 +821,10 @@ impl Driver for ClaudeDriver {
         Ok(vec![Self::control_success(request_id, response)])
     }
 
+    fn can_steer(&self) -> bool {
+        true
+    }
+
     fn interrupt(&mut self) -> Vec<String> {
         self.interrupt_requested = true;
         let (_, line) = self.control_request("interrupt", json!({ "subtype": "interrupt" }));

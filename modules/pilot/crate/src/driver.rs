@@ -185,4 +185,11 @@ pub trait Driver: Send {
 
     /// Lines that ask the CLI to stop the running turn.
     fn interrupt(&mut self) -> Vec<String>;
+
+    /// Whether a user message written while a turn runs joins that turn
+    /// (steering). Claude Code does: verified 2026-10-29, one `result` and
+    /// the agent answers "per your mid-turn message".
+    fn can_steer(&self) -> bool {
+        false
+    }
 }

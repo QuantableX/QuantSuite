@@ -4,8 +4,8 @@
 //! `claude.rs`.
 
 use crate::claude::{self, ClaudeDriver, LaunchOptions, SessionRef};
-use crate::db::ThreadMeta;
-use crate::driver::{Answer, Catalog, ImageInput, TurnInput};
+use crate::db::{QueueItem, ThreadMeta};
+use crate::driver::{Answer, Catalog, ImageInput, TurnInput, TurnStatus};
 use crate::events::{Item, ThreadEvent};
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
@@ -13,7 +13,7 @@ use crate::{adapters, context_of, contexts, lock, mcp_url, now, prompt, provider
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 /// The providers a chat thread can run today.
 const CHAT_PROVIDERS: [&str; 1] = ["claude"];
@@ -82,6 +82,9 @@ pub struct Snapshot {
     has_more: bool,
     turn_id: Option<String>,
     process_alive: bool,
+    queue: QueueState,
+    /// Whether a message can join the running turn (the provider steers).
+    can_steer: bool,
 }
 
 /// The thread and a page of its timeline: the newest [`PAGE`] items, or
@@ -98,6 +101,7 @@ pub fn pilot_thread_snapshot(
     let thread = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
     let has_more = items.len() as i64 > limit;
     let items = if has_more { items[1..].to_vec() } else { items };
+    let can_steer = thread_can_steer(&thread);
     Ok(Snapshot {
         thread,
         items,
@@ -105,7 +109,19 @@ pub fn pilot_thread_snapshot(
         has_more,
         turn_id: state.runtime.active_turn(&id),
         process_alive: state.runtime.process_alive(&id),
+        queue: queue_state(&state, &id),
+        can_steer,
     })
+}
+
+/// Whether the thread's provider takes messages mid-turn — known without a
+/// running process, so the composer can offer Steer before it starts.
+fn thread_can_steer(meta: &ThreadMeta) -> bool {
+    use crate::driver::Driver;
+    match meta.provider.as_str() {
+        "claude" | "" => ClaudeDriver::new().can_steer(),
+        _ => false,
+    }
 }
 
 #[derive(Deserialize)]
@@ -232,10 +248,21 @@ pub fn pilot_thread_send(
         .into_iter()
         .map(|i| ImageInput { media_type: i.media_type, base64: i.base64 })
         .collect();
+    // A new message resumes a held queue: it runs after this turn.
+    if state.db.queue_held(&id).unwrap_or(false) {
+        let _ = state.db.set_queue_held(&id, false);
+        emit_queue(&state, &id);
+    }
+    start_turn(&app, &state, &id, text, images)
+}
+
+/// Start a turn on a thread — the composer's send, a dequeued follow-up.
+fn start_turn(app: &AppHandle, state: &PilotState, id: &str, text: String, images: Vec<ImageInput>) -> Result<String, String> {
     if text.trim().is_empty() && images.is_empty() {
         return Err("nothing to send".into());
     }
-    let mut meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let mut meta = state.db.get_session(id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let id = id.to_string();
     if meta.kind != "chat" {
         // A V2 terminal row continues as a chat when its CLI can.
         let provider = if meta.provider.is_empty() { "claude".to_string() } else { meta.provider.clone() };
@@ -256,7 +283,180 @@ pub fn pilot_thread_send(
     let key = plan_key(&meta, &settings);
     let input = TurnInput { text, images };
     let attachments = json!(input.images.iter().map(|i| json!({ "kind": "image", "mediaType": i.media_type })).collect::<Vec<_>>());
-    state.runtime.send(&id, input, attachments, || claude_plan(&app, &state, &meta, &settings), &key)
+    state.runtime.send(&id, input, attachments, || claude_plan(app, state, &meta, &settings), &key)
+}
+
+// ── Follow-ups: queue and steer (card 4) ──
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueState {
+    items: Vec<QueueItem>,
+    held: bool,
+}
+
+fn queue_state(state: &PilotState, thread_id: &str) -> QueueState {
+    QueueState {
+        items: state.db.queue(thread_id).unwrap_or_default(),
+        held: state.db.queue_held(thread_id).unwrap_or(false),
+    }
+}
+
+fn emit_queue(state: &PilotState, thread_id: &str) {
+    let q = queue_state(state, thread_id);
+    state.runtime.emit(thread_id, ThreadEvent::Queue { items: q.items, held: q.held });
+}
+
+/// After every turn: a completed one hands the thread its next follow-up;
+/// a stopped, failed or limited one holds the queue until Resume.
+pub fn after_turn(app: &AppHandle, thread_id: &str, status: TurnStatus) {
+    let Some(state) = app.try_state::<PilotState>() else {
+        return;
+    };
+    let queue = state.db.queue(thread_id).unwrap_or_default();
+    if queue.is_empty() {
+        return;
+    }
+    if status != TurnStatus::Completed {
+        let _ = state.db.set_queue_held(thread_id, true);
+        emit_queue(&state, thread_id);
+        return;
+    }
+    if state.db.queue_held(thread_id).unwrap_or(false) || state.runtime.active_turn(thread_id).is_some() {
+        return;
+    }
+    send_next(app, &state, thread_id);
+}
+
+fn send_next(app: &AppHandle, state: &PilotState, thread_id: &str) {
+    let Some(first) = state.db.queue(thread_id).unwrap_or_default().into_iter().next() else {
+        return;
+    };
+    let Ok(Some(item)) = state.db.queue_take(&first.id) else {
+        return;
+    };
+    emit_queue(state, thread_id);
+    if let Err(e) = start_turn(app, state, thread_id, item.text.clone(), Vec::new()) {
+        // It did not start: back to the front of the queue, held.
+        if let Ok(back) = state.db.queue_add(thread_id, &item.text) {
+            let _ = state.db.queue_reorder_first(&back.id);
+        }
+        let _ = state.db.set_queue_held(thread_id, true);
+        emit_queue(state, thread_id);
+        eprintln!("pilot: a queued message could not start: {e}");
+    }
+}
+
+#[tauri::command(async)]
+pub fn pilot_queue_list(state: State<'_, PilotState>, id: String) -> QueueState {
+    queue_state(&state, &id)
+}
+
+/// Queue a follow-up. With no turn running it is sent at once instead —
+/// the turn may have ended between the click and this call.
+#[tauri::command(async)]
+pub fn pilot_queue_add(app: AppHandle, state: State<'_, PilotState>, id: String, text: String) -> Result<QueueState, String> {
+    if text.trim().is_empty() {
+        return Err("nothing to queue".into());
+    }
+    if state.runtime.active_turn(&id).is_none() && !state.db.queue_held(&id).unwrap_or(false) {
+        start_turn(&app, &state, &id, text, Vec::new())?;
+        return Ok(queue_state(&state, &id));
+    }
+    state.db.queue_add(&id, &text).map_err(|e| e.to_string())?;
+    emit_queue(&state, &id);
+    Ok(queue_state(&state, &id))
+}
+
+#[tauri::command(async)]
+pub fn pilot_queue_update(state: State<'_, PilotState>, item_id: String, text: String) -> Result<(), String> {
+    let thread_id = state.db.queue_thread(&item_id).map_err(|e| e.to_string())?.ok_or("this message was already sent")?;
+    if text.trim().is_empty() {
+        return Err("a queued message cannot be empty — remove it instead".into());
+    }
+    state.db.queue_update(&item_id, &text).map_err(|e| e.to_string())?;
+    emit_queue(&state, &thread_id);
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn pilot_queue_remove(state: State<'_, PilotState>, item_id: String) -> Result<(), String> {
+    let Some(thread_id) = state.db.queue_thread(&item_id).map_err(|e| e.to_string())? else {
+        return Ok(());
+    };
+    state.db.queue_take(&item_id).map_err(|e| e.to_string())?;
+    if state.db.queue(&thread_id).unwrap_or_default().is_empty() {
+        let _ = state.db.set_queue_held(&thread_id, false);
+    }
+    emit_queue(&state, &thread_id);
+    Ok(())
+}
+
+/// Send one queued message now: into the running turn when the agent can
+/// take it, otherwise as the next turn.
+#[tauri::command(async)]
+pub fn pilot_queue_send_now(app: AppHandle, state: State<'_, PilotState>, item_id: String) -> Result<(), String> {
+    let thread_id = state.db.queue_thread(&item_id).map_err(|e| e.to_string())?.ok_or("this message was already sent")?;
+    if state.runtime.active_turn(&thread_id).is_some() && !state.runtime.can_steer(&thread_id) {
+        return Err("this agent cannot take a message while it works — it stays queued".into());
+    }
+    let item = state.db.queue_take(&item_id).map_err(|e| e.to_string())?.ok_or("this message was already sent")?;
+    emit_queue(&state, &thread_id);
+    let result = if state.runtime.active_turn(&thread_id).is_some() {
+        state.runtime.steer(&thread_id, TurnInput { text: item.text.clone(), images: Vec::new() })
+    } else {
+        start_turn(&app, &state, &thread_id, item.text.clone(), Vec::new()).map(|_| ())
+    };
+    if let Err(e) = result {
+        if let Ok(back) = state.db.queue_add(&thread_id, &item.text) {
+            let _ = state.db.queue_reorder_first(&back.id);
+        }
+        emit_queue(&state, &thread_id);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Continue a held queue: the next message starts when nothing runs.
+#[tauri::command(async)]
+pub fn pilot_queue_resume(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<(), String> {
+    state.db.set_queue_held(&id, false).map_err(|e| e.to_string())?;
+    emit_queue(&state, &id);
+    if state.runtime.active_turn(&id).is_none() {
+        send_next(&app, &state, &id);
+    }
+    Ok(())
+}
+
+/// A message into the running turn. With nothing running it starts a turn.
+#[tauri::command(async)]
+pub fn pilot_thread_steer(app: AppHandle, state: State<'_, PilotState>, id: String, text: String) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Err("nothing to send".into());
+    }
+    if state.runtime.active_turn(&id).is_some() {
+        return state.runtime.steer(&id, TurnInput { text, images: Vec::new() });
+    }
+    start_turn(&app, &state, &id, text, Vec::new()).map(|_| ())
+}
+
+/// A large paste becomes a file the agent reads on demand (T3 Code: 32 KiB
+/// and up), stored with the thread, never inside the project.
+#[tauri::command(async)]
+pub fn pilot_attachment_save_text(state: State<'_, PilotState>, id: String, name: String, text: String) -> Result<String, String> {
+    let safe: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+        .collect::<String>()
+        .trim_matches(['-', '.'])
+        .chars()
+        .take(60)
+        .collect();
+    let dir = state.data_dir.join("attachments").join(&id);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("attachments folder: {e}"))?;
+    let file = dir.join(format!("{}-{}.txt", if safe.is_empty() { "pasted" } else { &safe }, &uuid::Uuid::new_v4().to_string()[..8]));
+    std::fs::write(&file, text).map_err(|e| format!("could not save the pasted text: {e}"))?;
+    Ok(file.to_string_lossy().into_owned())
 }
 
 #[tauri::command(async)]
