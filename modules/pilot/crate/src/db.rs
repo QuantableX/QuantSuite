@@ -704,7 +704,8 @@ impl Database {
             let conn = self.lock();
             let mut stmt = conn.prepare(
                 "SELECT id FROM timeline WHERE thread_id = ?1 AND kind IN ('approval', 'question', 'plan')
-                    AND json_extract(data, '$.status') = 'pending'",
+                    AND json_extract(data, '$.status') = 'pending'
+                    AND COALESCE(json_extract(data, '$.byMessage'), 0) = 0",
             )?;
             let rows = stmt.query_map(params![thread_id], |r| r.get(0))?;
             rows.collect::<rusqlite::Result<_>>()?
@@ -719,6 +720,20 @@ impl Database {
             }
         }
         Ok(changed)
+    }
+
+    /// A request item by its request id (the newest, should one repeat).
+    pub fn request_item(&self, thread_id: &str, request_id: &str) -> rusqlite::Result<Option<Item>> {
+        let conn = self.lock();
+        conn.query_row(
+            &format!(
+                "SELECT {ITEM_COLS} FROM timeline WHERE thread_id = ?1 AND kind IN ('approval', 'question', 'plan')
+                    AND json_extract(data, '$.requestId') = ?2 ORDER BY seq DESC LIMIT 1"
+            ),
+            params![thread_id, request_id],
+            row_item,
+        )
+        .optional()
     }
 
     /// One line for what the thread waits on — the newest pending request.
@@ -1151,6 +1166,31 @@ mod tests {
         db.set_title_regenerated("t1", "Login fix").unwrap();
         let t = db.get_session("t1").unwrap().unwrap();
         assert_eq!((t.title.as_str(), t.title_source.as_str()), ("Login fix", "auto"));
+    }
+
+    #[test]
+    fn questions_answered_by_message_outlive_the_process() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_session(&thread("t1")).unwrap();
+        for (seq, by_message) in [(1, true), (2, false)] {
+            db.upsert_item(&Item {
+                id: format!("q{seq}"),
+                thread_id: "t1".into(),
+                turn_id: "u1".into(),
+                seq,
+                kind: ItemKind::Question,
+                parent: None,
+                data: json!({ "requestId": format!("r{seq}"), "status": "pending", "byMessage": by_message, "questions": [] }),
+                created_at: seq,
+                updated_at: seq,
+            })
+            .unwrap();
+        }
+        let expired = db.expire_pending("t1").unwrap();
+        assert_eq!(expired.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), vec!["q2"]);
+        let kept = db.request_item("t1", "r1").unwrap().unwrap();
+        assert_eq!(kept.data["status"], "pending", "an async question still waits for the next message");
+        assert!(db.request_item("t1", "nope").unwrap().is_none());
     }
 
     #[test]

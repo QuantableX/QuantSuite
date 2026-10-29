@@ -25,8 +25,8 @@ const emit = defineEmits<{ done: [] }>()
 const threads = useThreadStore()
 const store = usePilotStore()
 
-/** Agents that can run a chat thread today (more arrive with cards 8 and 20). */
-const CHAT_PROVIDERS = ['claude']
+/** Agents that can run a chat thread today (more arrive with card 20). */
+const CHAT_PROVIDERS = ['claude', 'codex']
 
 const view = computed(() => threads.view(props.threadId))
 const thread = computed(() => store.sessions.find((s) => s.id === props.threadId) ?? null)
@@ -50,10 +50,18 @@ async function loadCatalog(id = provider.value, refresh = false) {
   else catalogError.value = 'The CLI did not report its models. You can still type a model id.'
 }
 
+/** Another agent can take a thread only before its first message (carrying a conversation over is card 15). */
+const started = computed(() => Boolean(thread.value?.providerSessionId) || running.value)
 const providers = computed<ProviderOption[]>(() =>
   store.adapters
     .filter((a) => CHAT_PROVIDERS.includes(a.id))
-    .map((a) => ({ id: a.id, label: a.label, available: a.found !== false, reason: a.found === false ? `${a.label} is not installed` : undefined }))
+    .map((a) => {
+      if (a.found === false) return { id: a.id, label: a.label, available: false, reason: `${a.label} is not installed` }
+      if (started.value && a.id !== provider.value) {
+        return { id: a.id, label: a.label, available: false, reason: `This conversation runs on ${store.adapterLabel(provider.value)} — start a new thread for ${a.label}` }
+      }
+      return { id: a.id, label: a.label, available: true }
+    })
 )
 
 const modelLabel = computed(() => {
@@ -111,17 +119,22 @@ async function toggle(which: Exclude<Open, null>) {
 
 function close() {
   open.value = null
+  // Browsing another agent's models leaves its catalog loaded: back to the thread's own.
+  if (catalog.value && catalog.value.provider !== provider.value) void loadCatalog()
   emit('done')
 }
 
-async function pickModel(_provider: string, model: string) {
+async function pickModel(picked: string, model: string) {
   close()
-  if (!thread.value || model === thread.value.model) return
-  if (await store.update(props.threadId, { model })) {
+  if (!thread.value) return
+  const switching = picked !== provider.value
+  if (!switching && model === thread.value.model) return
+  if (await store.update(props.threadId, switching ? { provider: picked, model } : { model })) {
     const remembered = { ...(store.settings?.model ?? {}) }
-    if (model) remembered[provider.value] = model
-    else delete remembered[provider.value]
+    if (model) remembered[picked] = model
+    else delete remembered[picked]
     void store.saveSettings({ model: remembered }, { quiet: true })
+    if (switching) await loadCatalog(picked)
   }
 }
 

@@ -301,6 +301,7 @@ impl ClaudeDriver {
             version: str_field(response, "claude_code_version").map(str::to_string),
             models,
             commands,
+            skills: Vec::new(),
         }
     }
 
@@ -326,7 +327,16 @@ impl ClaudeDriver {
                         suggestions: req.get("permission_suggestions").cloned().filter(|v| !v.is_null()),
                     },
                 );
-                vec![Emit::Request(Request { request_id, kind, tool_name, call_id, input, parent: None })]
+                vec![Emit::Request(Request {
+                    request_id,
+                    kind,
+                    tool_name,
+                    call_id,
+                    input,
+                    parent: None,
+                    allow_session: true,
+                    by_message: false,
+                })]
             }
             // Hook and SDK-MCP callbacks are never registered by QuantPilot;
             // answering keeps the CLI from waiting on them.
