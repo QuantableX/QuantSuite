@@ -17,8 +17,8 @@ use std::sync::Mutex;
 /// 3: threads, timeline, turns (card 2). 4: the follow-up queue (card 4).
 /// 5: pin, order, settle, snooze (card 7). 6: workspace (card 10).
 /// 7: checkpoints and turn changes (card 11). 8: links (card 12).
-/// 9: handoff, scheduled resume and limit reset (card 15).
-pub const SCHEMA_VERSION: i64 = 9;
+/// 9: handoff, scheduled resume and limit reset (card 15). 10: goal (card 16).
+pub const SCHEMA_VERSION: i64 = 10;
 
 /// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -251,10 +251,12 @@ const CHANGE_TABLES: &str = "
 
 /// Card 15: the history a thread still owes a new provider (JSON), when a
 /// limited thread continues by itself, and when its limit lifts.
-const V9_COLUMNS: [(&str, &str); 3] = [
+const V9_COLUMNS: [(&str, &str); 4] = [
     ("handoff", "handoff TEXT"),
     ("resume_at", "resume_at INTEGER"),
     ("limit_reset_at", "limit_reset_at INTEGER"),
+    // Card 16: the provider's goal for the thread (JSON), for the goal line.
+    ("goal", "goal TEXT"),
 ];
 
 /// A turn row as a fork copies it: id, status, started, ended, duration, cost, error, provider ref.
@@ -915,6 +917,17 @@ impl Database {
 
     // ── Lifecycle (card 15) ──
 
+    pub fn set_goal(&self, thread_id: &str, goal: Option<&str>) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET goal = ?2 WHERE id = ?1", params![thread_id, goal])?;
+        Ok(())
+    }
+
+    pub fn goal(&self, thread_id: &str) -> rusqlite::Result<Option<String>> {
+        let conn = self.lock();
+        conn.query_row("SELECT goal FROM threads WHERE id = ?1", params![thread_id], |r| r.get(0)).optional().map(Option::flatten)
+    }
+
     /// History the next message carries to a provider that was not part of the conversation (JSON), or nothing.
     pub fn set_handoff(&self, thread_id: &str, handoff: Option<&str>) -> rusqlite::Result<()> {
         let conn = self.lock();
@@ -1080,6 +1093,19 @@ impl Database {
         let mut items: Vec<Item> = rows.collect::<rusqlite::Result<_>>()?;
         items.reverse();
         Ok(items)
+    }
+
+    /// The task list of the thread's newest task row (card 16).
+    pub fn latest_todos(&self, thread_id: &str) -> rusqlite::Result<Option<serde_json::Value>> {
+        let conn = self.lock();
+        let data: Option<String> = conn
+            .query_row(
+                "SELECT data FROM timeline WHERE thread_id = ?1 AND kind = 'todo' ORDER BY seq DESC LIMIT 1",
+                params![thread_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(data.and_then(|d| serde_json::from_str::<serde_json::Value>(&d).ok()).and_then(|d| d.get("todos").cloned()))
     }
 
     /// Requests of a thread still marked pending — expired when their process is gone.

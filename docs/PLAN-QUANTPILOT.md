@@ -538,6 +538,42 @@ never fakes support.
   CLI's transcript (Claude: the session file after the last known uuid;
   Codex: the rollout beyond the thread's user messages), display only.
 
+### 5.12 Plan mode, task lists, goals, subagents (card 16)
+
+- Plans: Claude's ExitPlanMode waits for review (Implement — accept edits
+  or full access, live on the process; Keep planning with what should
+  change). Codex's finished `plan` item is a proposal (`Emit::Proposal`,
+  a plan item with status `proposed`): on the thread's newest turn while
+  nothing runs, Implement switches the mode and sends `PLEASE IMPLEMENT
+  THIS PLAN:` plus the plan (T3 Code's wording); Keep planning sends what
+  should change. Every plan has Copy. Claude in plan mode reads without
+  asking (verified live).
+- Task lists: one row outside the fold per turn ("Tasks 2/5 · Running the
+  tests", opens into the checklist) and the current list under Tasks in
+  the thread details. Sources: TodoWrite, Codex's `turn/plan/updated`, and
+  Claude Code 2.1.x's TaskCreate/TaskUpdate — headless Claude has those
+  only with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (verified live 2026-10-30).
+  The driver keeps that list itself ("Task #N created" gives the id) and
+  a fresh process gets the thread's last list (`Driver::restore_tasks`).
+- Goals (`/goal <objective>`, `/goal` shows it, `/goal clear`; Codex also
+  `pause`/`resume`), shown above the box with what it took. Claude: the
+  CLI answers `/goal` with synthetic replies ("Goal set: …", "Goal active:
+  … (N turns)", "No goal set"); its Stop hook's "Stop hook feedback" counts
+  a check with the reason; a run that ends with model work while the goal
+  is set met it — the CLI drops it silently (verified live) — so the driver
+  reports it complete. Codex (`thread/goal/*`, experimental API, verified
+  live on 0.165): a new goal is set paused, its first turn starts with the
+  thread's settings, then it turns active; an active goal on an idle
+  thread makes Codex start turns by itself, so Resume only activates and
+  one run spans Codex's goal turns until the goal stops (complete, paused,
+  limits). Stop pauses the goal. A met goal shows until the next message
+  (`threads.goal`, schema 10).
+- Subagents: Agents in the thread details (newest first, kind, tool
+  count, the running one's newest step) and a subagent call's "Open what
+  it did" open its transcript read-only in the inspector's Agent tab: what
+  it was asked, its text, reasoning and newest 16 tool calls (nested
+  agents count in), its report; previews cut at 32 KiB.
+
 ### 5.5 Composer context (card 9)
 
 - `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`

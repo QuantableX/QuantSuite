@@ -433,6 +433,23 @@ export type ThreadEvent =
   | { type: 'rateLimit'; windows: RateWindow[] }
   | { type: 'title'; title: string }
   | { type: 'queue'; items: QueueItem[]; held: boolean }
+  | { type: 'goal'; goal: ThreadGoal | null }
+
+/**
+ * The thread's goal (card 16): Codex's own (`thread/goal/*`) or Claude's
+ * `/goal`, whose Stop hook checks it after every stop.
+ */
+export interface ThreadGoal {
+  objective: string
+  status: 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete'
+  /** Claude: how often the Stop hook found it not met yet, and why the last time. */
+  checks?: number
+  lastCheck?: string
+  /** Codex: what working toward it took so far. */
+  tokensUsed?: number
+  timeUsedSeconds?: number
+  tokenBudget?: number | null
+}
 
 /** A thread's life beyond one process (card 15). */
 export interface ThreadLife {
@@ -444,6 +461,8 @@ export interface ThreadLife {
   handoffFrom: string | null
   /** The conversation is open in the CLI's terminal UI. */
   tui: boolean
+  /** The goal the agent works toward (card 16). */
+  goal?: ThreadGoal | null
 }
 
 /** A follow-up waiting for the running turn (card 4). */

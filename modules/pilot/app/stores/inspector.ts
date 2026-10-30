@@ -1,16 +1,17 @@
 /**
  * The inspector: a resizable split inside the main area, beside the
  * conversation (docs/PLAN-QUANTPILOT.md §3). Its tabs — Diff (card 11),
- * Files (card 13), Browser (card 14) — open on demand, close with Ctrl+W
+ * Files (card 13), Browser (card 14), Agent (card 16: a subagent's
+ * transcript, read-only) — open on demand, close with Ctrl+W
  * and come back with Ctrl+Shift+T. Open state, tabs and view options are a
  * per-device preference; the split's width is remembered per thread.
  */
 import { defineStore } from 'pinia'
 
 export type DiffScope = 'turn' | 'uncommitted' | 'branch'
-export type InspectorTab = 'diff' | 'files' | 'browser'
+export type InspectorTab = 'diff' | 'files' | 'browser' | 'agent'
 
-const TABS: InspectorTab[] = ['diff', 'files', 'browser']
+const TABS: InspectorTab[] = ['diff', 'files', 'browser', 'agent']
 const DEFAULT_WIDTH = 560
 
 function load<T>(key: string, fallback: T): T {
@@ -57,6 +58,8 @@ export const useInspectorStore = defineStore('pilot/inspector', {
     browserZoom: load('pilot.browser.zoom', 1),
     /** Bumped when something opens a page (a server's Open). */
     browserNonce: 0,
+    /** The subagent the Agent tab shows, per thread: its tool call id. */
+    agent: {} as Record<string, string>,
   }),
   actions: {
     persist() {
@@ -121,6 +124,11 @@ export const useInspectorStore = defineStore('pilot/inspector', {
       this.setBrowserUrl(threadId, url)
       this.browserNonce++
       this.show('browser')
+    },
+    /** A subagent's transcript in the Agent tab. */
+    openAgent(threadId: string, callId: string) {
+      this.agent = { ...this.agent, [threadId]: callId }
+      this.show('agent')
     },
     setBrowserUrl(threadId: string, url: string) {
       const next = { ...this.browserUrl }

@@ -3,14 +3,18 @@
  * What happens to the thread beyond the next message (card 15), above the
  * box: a usage limit and its reset (Resume at reset, Snooze until reset), a
  * scheduled continuation, the history the next message carries to a new
- * agent, the conversation being open in the CLI's own terminal, and — for
- * Claude after a long pause on a large conversation — Compact first.
+ * agent, the conversation being open in the CLI's own terminal, the goal
+ * the agent works toward (card 16: `/goal`; Codex can pause and resume it,
+ * Stop pauses it too) and — for Claude after a long pause on a large
+ * conversation — Compact first.
  */
 import { computed, watch } from 'vue'
-import { AlarmClock, ArrowRightLeft, Archive, Clock, SquareTerminal, X } from 'lucide-vue-next'
+import { AlarmClock, ArrowRightLeft, Archive, Clock, SquareTerminal, Target, X } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { fmtTokens } from '#pilot/utils/format'
+import { formatDuration } from '#pilot/utils/timeline'
 
 const props = defineProps<{ threadId: string }>()
 const threads = useThreadStore()
@@ -23,6 +27,30 @@ const life = computed(() => view.value?.life ?? { resumeAt: null, limitResetAt: 
 const limited = computed(() => view.value?.state === 'limited')
 const running = computed(() => Boolean(view.value?.turnId))
 const agent = computed(() => store.adapterLabel(thread.value?.provider || 'claude'))
+
+const goal = computed(() => life.value.goal ?? null)
+const codex = computed(() => thread.value?.provider === 'codex')
+const GOAL_STATES: Record<string, string> = {
+  active: 'Goal',
+  paused: 'Goal · paused',
+  blocked: 'Goal · blocked',
+  usageLimited: 'Goal · usage limit',
+  budgetLimited: 'Goal · token budget used',
+  complete: 'Goal met',
+}
+/** What working toward it took: Codex's tokens and time, Claude's checks. */
+const goalCost = computed(() => {
+  const g = goal.value
+  if (!g) return ''
+  const parts: string[] = []
+  if (g.checks) parts.push(`checked ${g.checks}×`)
+  if (g.tokensUsed) parts.push(`${fmtTokens(g.tokensUsed)}${g.tokenBudget ? ` of ${fmtTokens(g.tokenBudget)}` : ''} tokens`)
+  if (g.timeUsedSeconds) parts.push(formatDuration(g.timeUsedSeconds * 1000))
+  return parts.join(' · ')
+})
+function goalCommand(arg: string) {
+  void threads.send(props.threadId, `/goal ${arg}`)
+}
 
 function when(ms: number): string {
   const d = new Date(ms)
@@ -82,6 +110,23 @@ function snoozeUntilReset() {
       <button class="qp-life-btn" @click="threads.schedule(threadId, null)">Cancel</button>
     </div>
 
+    <div v-if="goal && !life.tui" class="qp-life-row" :class="{ met: goal.status === 'complete', muted: goal.status !== 'active' && goal.status !== 'complete' }">
+      <Target :size="13" />
+      <span class="qp-life-text">
+        <span class="qp-life-label">{{ GOAL_STATES[goal.status] ?? 'Goal' }}</span>
+        <span class="qp-life-goal" :title="goal.objective">{{ goal.objective }}</span>
+        <span v-if="goalCost" class="qp-life-num">{{ goalCost }}</span>
+        <span v-if="goal.lastCheck && goal.status === 'active'" class="qp-life-check" :title="goal.lastCheck">Not met yet: {{ goal.lastCheck }}</span>
+      </span>
+      <template v-if="goal.status === 'active' && running && codex">
+        <button class="qp-life-btn" title="Pause the goal and stop the agent (Stop does the same)" @click="threads.interrupt(threadId)">Pause</button>
+      </template>
+      <template v-else-if="goal.status !== 'complete' && !running">
+        <button v-if="codex && goal.status !== 'active'" class="qp-life-btn" title="Work toward the goal again" @click="goalCommand('resume')">Resume</button>
+        <button class="qp-life-btn" title="Drop the goal" @click="goalCommand('clear')">Clear</button>
+      </template>
+    </div>
+
     <div v-if="life.handoffFrom && !life.tui" class="qp-life-row muted">
       <ArrowRightLeft :size="13" />
       <span class="qp-life-text">
@@ -118,7 +163,13 @@ function snoozeUntilReset() {
 .qp-life-row.warn { border-color: color-mix(in srgb, var(--qss-warning, #d29a3f) 45%, var(--qss-border, #47474f)); color: var(--qss-warning, #d29a3f); }
 .qp-life-row.warn .qp-life-text { color: var(--qss-text, #d4d4d8); }
 .qp-life-row.muted { color: var(--qss-text-secondary, #9a9aa5); }
+.qp-life-row.met { color: var(--qss-success, #34d399); }
+.qp-life-row.met .qp-life-text { color: var(--qss-text, #d4d4d8); }
 .qp-life-text { flex: 1; min-width: 0; line-height: 1.45; }
+.qp-life-label { font-weight: 600; margin-right: 6px; }
+.qp-life-goal { overflow-wrap: anywhere; }
+.qp-life-num { margin-left: 8px; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-life-check { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--qss-text-muted, #6e6e7a); }
 .qp-life-btn {
   flex-shrink: 0;
   padding: 2px 9px;

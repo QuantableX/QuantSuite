@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The inspector split (cards 11, 13): a pointer-dragged edge on the left
+ * The inspector split (cards 11, 13, 14, 16): a pointer-dragged edge on the left
  * (the width is remembered per thread), closeable tabs — Ctrl+W closes the
  * one in front, Ctrl+Shift+T brings it back — and the tab's content.
  * Ctrl+Alt+B toggles the split, Ctrl+D the Diff tab; Ctrl+P and Ctrl+Shift+F
@@ -8,7 +8,7 @@
  * Wide content lives here, never in the 220 px side panels.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { FolderTree, GitCompare, Globe, X } from 'lucide-vue-next'
+import { Bot, FolderTree, GitCompare, Globe, X } from 'lucide-vue-next'
 import { pilot } from '#pilot/utils/invoke'
 import { useInspectorStore, type InspectorTab } from '#pilot/stores/inspector'
 
@@ -21,9 +21,11 @@ const META: Record<string, { label: string; icon: unknown; key: string }> = {
   diff: { label: 'Diff', icon: GitCompare, key: 'Ctrl+D' },
   files: { label: 'Files', icon: FolderTree, key: 'Ctrl+P picks a file' },
   browser: { label: 'Browser', icon: Globe, key: 'Ctrl+Shift+J' },
+  agent: { label: 'Agent', icon: Bot, key: 'Agents in the thread details' },
 }
 const tabs = computed(() => inspector.tabs.filter((t) => t in META))
-const closedOnes = computed(() => (Object.keys(META) as InspectorTab[]).filter((t) => !inspector.tabs.includes(t)))
+// The Agent tab comes back only for a thread with an agent picked.
+const closedOnes = computed(() => (Object.keys(META) as InspectorTab[]).filter((t) => !inspector.tabs.includes(t) && (t !== 'agent' || inspector.agent[props.threadId])))
 
 function onDown(e: PointerEvent) {
   if (e.button !== 0) return
@@ -87,6 +89,7 @@ watch(
       <PilotInspectorDiff v-if="inspector.tab === 'diff'" :thread-id="threadId" />
       <PilotInspectorFiles v-else-if="inspector.tab === 'files'" :thread-id="threadId" />
       <PilotInspectorBrowser v-else-if="inspector.tab === 'browser'" :thread-id="threadId" />
+      <PilotInspectorAgent v-else-if="inspector.tab === 'agent'" :thread-id="threadId" />
     </div>
   </aside>
 </template>

@@ -3,8 +3,10 @@
  * The thread panel (QRightPanel, 220px): the face and one word for what the
  * agent does, then what the conversation does not say at a glance —
  * threads that need you, the model, context fill, cost, tokens, the
- * subscription windows, the dev servers it started (card 13: open, stop),
- * the files this thread wrote (they open in the Files tab), the last error.
+ * subscription windows, the current task list and the subagents it ran
+ * (card 16: each opens its transcript in the inspector), the dev servers it
+ * started (card 13: open, stop), the files this thread wrote (they open in
+ * the Files tab), the last error.
  * Sans labels, mono only for numbers (the agent-UI register).
  */
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
@@ -15,7 +17,7 @@ import { useInspectorStore } from '#pilot/stores/inspector'
 import { serverUrls, useDrawerStore, type DevServer } from '#pilot/stores/drawer'
 import { pilot } from '#pilot/utils/invoke'
 import { basename, dirname, fmtCost, fmtTokens } from '#pilot/utils/format'
-import { formatDuration } from '#pilot/utils/timeline'
+import { formatDuration, subagents, taskCounts } from '#pilot/utils/timeline'
 import type { PortOwner } from '#pilot/types'
 
 const props = defineProps<{ threadId: string }>()
@@ -98,6 +100,20 @@ const limits = computed(() =>
       reset: w.resetsAt ? formatDuration(Math.max(0, w.resetsAt - Date.now())) : '',
     }))
 )
+
+/** The newest task list of the conversation (not a subagent's). */
+const tasks = computed(() => {
+  const items = view.value?.items ?? []
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.kind === 'todo' && !it.parent && Array.isArray(it.data.todos) && it.data.todos.length) return it.data.todos as { status?: string; content?: string; activeForm?: string | null }[]
+  }
+  return []
+})
+const taskSummary = computed(() => taskCounts(tasks.value))
+
+const AGENTS_SHOWN = 8
+const agents = computed(() => subagents(view.value?.items ?? []))
 
 const files = computed(() => {
   const seen = new Set<string>()
@@ -234,6 +250,31 @@ const inspector = useInspectorStore()
       </div>
     </section>
 
+    <section v-if="tasks.length" class="qp-block">
+      <h4 class="qp-block-title">Tasks <span class="qp-block-num">{{ taskSummary.done }}/{{ taskSummary.total }}</span></h4>
+      <ul class="qp-tasklist">
+        <li v-for="(t, i) in tasks" :key="i" :class="`is-${t.status}`" :title="t.content">{{ t.status === 'in_progress' ? t.activeForm || t.content : t.content }}</li>
+      </ul>
+    </section>
+
+    <section v-if="agents.length" class="qp-block">
+      <h4 class="qp-block-title">Agents</h4>
+      <button
+        v-for="a in agents.slice(0, AGENTS_SHOWN)"
+        :key="a.callId"
+        class="qp-agent"
+        :class="{ on: inspector.open && inspector.tab === 'agent' && inspector.agent[threadId] === a.callId }"
+        :title="`${a.title} — open what it did in the inspector`"
+        @click="inspector.openAgent(threadId, a.callId)"
+      >
+        <span class="qp-agent-dot" :class="`is-${a.status}`" />
+        <span class="qp-agent-title">{{ a.title }}</span>
+        <span class="qp-agent-sub"><template v-if="a.type">{{ a.type }} · </template><span class="mono">{{ a.tools }}</span> tool{{ a.tools === 1 ? '' : 's' }}</span>
+        <span v-if="a.status === 'running' && a.last" class="qp-agent-last">{{ a.last }}</span>
+      </button>
+      <div v-if="agents.length > AGENTS_SHOWN" class="qp-agent-more">and {{ agents.length - AGENTS_SHOWN }} earlier</div>
+    </section>
+
     <section v-if="servers.length" class="qp-block">
       <h4 class="qp-block-title">Servers</h4>
       <div v-for="s in servers" :key="s.port" class="qp-srv">
@@ -288,6 +329,25 @@ const inspector = useInspectorStore()
 .qp-block { padding: 10px 12px; border-bottom: 1px solid var(--qss-border-subtle, #35353d); display: flex; flex-direction: column; gap: 5px; }
 .qp-block-title { margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-block-title.is-warn { color: var(--qss-warning, #d29a3f); }
+.qp-block-num { margin-left: 4px; font-weight: 400; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-tasklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
+.qp-tasklist li { position: relative; padding-left: 14px; font-size: 12px; line-height: 1.4; color: var(--qss-text, #d4d4d8); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-tasklist li::before { content: ''; position: absolute; left: 1px; top: 5px; width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--qss-text-muted, #6e6e7a); }
+.qp-tasklist li.is-in_progress::before { border-color: var(--qss-accent, #7aa2f7); background: color-mix(in srgb, var(--qss-accent, #7aa2f7) 40%, transparent); }
+.qp-tasklist li.is-completed { color: var(--qss-text-muted, #6e6e7a); text-decoration: line-through; }
+.qp-tasklist li.is-completed::before { border-color: var(--qss-success, #34d399); background: var(--qss-success, #34d399); }
+.qp-agent { display: grid; grid-template-columns: 10px 1fr; align-items: baseline; gap: 0 6px; padding: 4px 6px; border: none; border-radius: 6px; background: transparent; color: var(--qss-text, #d4d4d8); text-align: left; cursor: pointer; min-width: 0; }
+.qp-agent:hover { background: var(--qss-bg-hover, #313139); }
+.qp-agent.on { background: var(--qss-bg-card, #292930); }
+.qp-agent-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--qss-text-muted, #6e6e7a); }
+.qp-agent-dot.is-running { background: var(--qss-accent, #7aa2f7); }
+.qp-agent-dot.is-completed { background: var(--qss-success, #34d399); }
+.qp-agent-dot.is-failed { background: var(--qss-error, #f87171); }
+.qp-agent-title { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-agent-sub,
+.qp-agent-last { grid-column: 2; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-agent-sub .mono { font-family: var(--qss-font-mono, ui-monospace, monospace); }
+.qp-agent-more { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); padding: 0 6px; }
 .qp-block-title.is-err { color: var(--qss-error, #f87171); }
 .qp-need { display: flex; flex-direction: column; gap: 1px; padding: 5px 7px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--qss-warning, #d29a3f) 40%, var(--qss-border, #47474f)); background: transparent; color: var(--qss-text, #d4d4d8); text-align: left; cursor: pointer; }
 .qp-need:hover { background: var(--qss-bg-hover, #313139); }

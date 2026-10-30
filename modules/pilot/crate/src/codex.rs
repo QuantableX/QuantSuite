@@ -93,6 +93,10 @@ enum Call {
     ThreadResume,
     ThreadFork,
     Compact,
+    /// `/goal` (card 16): what the goal is, gone, set or switched.
+    GoalGet,
+    GoalClear,
+    GoalSet,
     TurnStart,
     TurnSteer,
     Interrupt,
@@ -160,6 +164,56 @@ pub struct CodexDriver {
     models: Option<Vec<ModelInfo>>,
     skills: Option<Vec<SkillInfo>>,
     catalog_sent: bool,
+    /// The thread's goal as Codex last reported it (card 16).
+    goal: Option<Value>,
+    /// The `/goal` command on its way through its steps.
+    goal_step: Option<GoalStep>,
+    /// A native turn ended while the goal is still active: Codex starts the
+    /// next one by itself, so the run stays open until the goal stops.
+    held_end: Option<(TurnStatus, Option<String>, Option<i64>)>,
+}
+
+/// `/goal` for Codex (card 16), as T3 Code runs it: a new goal is set paused,
+/// its first turn starts with this run's settings, then it turns active.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GoalCommand {
+    Show,
+    Clear,
+    Pause,
+    Resume,
+    Set(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum GoalStep {
+    Show,
+    Clear,
+    Pause,
+    /// Stop pressed during a goal: pause it, then the run ends.
+    StopPause,
+    Resume,
+    /// The old goal is being cleared before the new one is set.
+    Replace(String),
+    Set(String),
+    /// The goal's first turn is starting; it turns active once it runs.
+    Activate,
+    /// The activation is on its way.
+    Activating,
+}
+
+pub fn goal_command(text: &str) -> Option<GoalCommand> {
+    let t = text.trim();
+    let rest = t.strip_prefix("/goal")?;
+    if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    Some(match rest.trim() {
+        "" => GoalCommand::Show,
+        "clear" => GoalCommand::Clear,
+        "pause" => GoalCommand::Pause,
+        "resume" => GoalCommand::Resume,
+        objective => GoalCommand::Set(objective.to_string()),
+    })
 }
 
 fn s<'a>(v: &'a Value, k: &str) -> Option<&'a str> {
@@ -259,7 +313,41 @@ impl CodexDriver {
             models: None,
             skills: None,
             catalog_sent: false,
+            goal: None,
+            goal_step: None,
+            held_end: None,
         }
+    }
+
+    fn goal_active(&self) -> bool {
+        self.goal.as_ref().is_some_and(|g| g["status"] == "active")
+    }
+
+    /// A native turn for the goal: `turn/start` with this run's settings.
+    fn goal_turn(&mut self, text: String) -> String {
+        let input = TurnInput { text, ..Default::default() };
+        self.turn_start(&input)
+    }
+
+    /// Stop the native turn (`turn/interrupt`), or as soon as its id is known.
+    fn interrupt_turn(&mut self) -> Vec<String> {
+        match (&self.thread, &self.turn) {
+            (Some(thread), Some(turn)) => {
+                let params = json!({ "threadId": thread, "turnId": turn });
+                vec![self.request(Call::Interrupt, "turn/interrupt", params)]
+            }
+            _ => {
+                // Nothing to name yet: stop as soon as the turn id is known.
+                self.interrupt_pending = true;
+                self.queued.clear();
+                Vec::new()
+            }
+        }
+    }
+
+    /// The run held open for a goal ends now.
+    fn release_held(&mut self) -> Option<Emit> {
+        self.held_end.take().map(|(status, error, duration_ms)| Emit::TurnEnd { status, error, duration_ms, cost_usd: None })
     }
 
     /// A driver that only asks for the catalog (models and skills).
@@ -327,6 +415,40 @@ impl CodexDriver {
     }
 
     fn turn_start(&mut self, input: &TurnInput) -> String {
+        // `/goal …` (card 16): the goal APIs, then a native turn where it starts work.
+        if let Some(cmd) = goal_command(&input.text) {
+            self.starting = true;
+            self.retry_noted = false;
+            self.cancelled = false;
+            let thread = json!(self.thread);
+            return match cmd {
+                GoalCommand::Show => {
+                    self.goal_step = Some(GoalStep::Show);
+                    self.request(Call::GoalGet, "thread/goal/get", json!({ "threadId": thread }))
+                }
+                GoalCommand::Clear => {
+                    self.goal_step = Some(GoalStep::Clear);
+                    self.request(Call::GoalClear, "thread/goal/clear", json!({ "threadId": thread }))
+                }
+                GoalCommand::Pause => {
+                    self.goal_step = Some(GoalStep::Pause);
+                    self.request(Call::GoalSet, "thread/goal/set", json!({ "threadId": thread, "status": "paused" }))
+                }
+                GoalCommand::Resume => {
+                    self.goal_step = Some(GoalStep::Resume);
+                    self.request(Call::GoalSet, "thread/goal/set", json!({ "threadId": thread, "status": "active" }))
+                }
+                GoalCommand::Set(objective) if self.goal.is_some() => {
+                    self.goal_step = Some(GoalStep::Replace(objective));
+                    self.request(Call::GoalClear, "thread/goal/clear", json!({ "threadId": thread }))
+                }
+                GoalCommand::Set(objective) => {
+                    self.goal_step = Some(GoalStep::Set(objective.clone()));
+                    // Paused until our turn runs, so Codex cannot start one first.
+                    self.request(Call::GoalSet, "thread/goal/set", json!({ "threadId": thread, "objective": objective, "status": "paused" }))
+                }
+            };
+        }
         // `/compact` is Codex's own compaction, a turn of its own (card 15).
         if input.text.trim() == "/compact" && input.images.is_empty() {
             self.starting = true;
@@ -503,6 +625,10 @@ impl CodexDriver {
                 if let Some(t) = result.get("turn").and_then(|t| s(t, "id")) {
                     self.turn = Some(t.to_string());
                 }
+                if self.goal_step == Some(GoalStep::Activate) {
+                    self.goal_step = Some(GoalStep::Activating);
+                    out.push(Emit::Write(self.request(Call::GoalSet, "thread/goal/set", json!({ "threadId": self.thread, "status": "active" }))));
+                }
                 // Steers that waited for the turn id go in now, then a deferred stop.
                 let waiting: Vec<TurnInput> = self.queued.drain(..).collect();
                 for input in waiting {
@@ -516,6 +642,63 @@ impl CodexDriver {
             Call::TurnSteer => {
                 if let Some(e) = error {
                     out.push(Emit::Notice { text: format!("Codex did not take the message into the running turn: {e}") });
+                }
+            }
+            Call::GoalGet | Call::GoalClear | Call::GoalSet => {
+                let step = self.goal_step.take();
+                let end = |out: &mut Vec<Emit>, error: Option<String>| {
+                    out.push(Emit::TurnEnd { status: if error.is_some() { TurnStatus::Failed } else { TurnStatus::Completed }, error, duration_ms: None, cost_usd: None });
+                };
+                if let Some(e) = error {
+                    self.starting = false;
+                    end(&mut out, Some(format!("Codex could not change the goal: {e}")));
+                    return out;
+                }
+                if call == Call::GoalClear {
+                    self.goal = None;
+                    out.push(Emit::Goal { goal: None });
+                } else if let Some(g) = result.get("goal") {
+                    self.goal = (!g.is_null()).then(|| g.clone());
+                    out.push(Emit::Goal { goal: self.goal.clone() });
+                }
+                let thread = json!(self.thread);
+                match step {
+                    Some(GoalStep::Show) => {
+                        self.starting = false;
+                        let text = match &self.goal {
+                            Some(g) => format!("Goal ({}): {}", g["status"].as_str().unwrap_or("?"), g["objective"].as_str().unwrap_or_default()),
+                            None => "No goal is set.".to_string(),
+                        };
+                        out.push(Emit::Notice { text });
+                        end(&mut out, None);
+                    }
+                    Some(GoalStep::Replace(objective)) => {
+                        self.goal_step = Some(GoalStep::Set(objective.clone()));
+                        out.push(Emit::Write(self.request(Call::GoalSet, "thread/goal/set", json!({ "threadId": thread, "objective": objective, "status": "paused" }))));
+                    }
+                    Some(GoalStep::Set(objective)) => {
+                        self.goal_step = Some(GoalStep::Activate);
+                        out.push(Emit::Write(self.goal_turn(format!("Start working toward this goal: {objective}"))));
+                    }
+                    // An active goal on an idle thread: Codex starts its turn
+                    // by itself (live 2026-10-30), so the run waits for it.
+                    Some(GoalStep::Resume) if self.goal_active() => {}
+                    Some(GoalStep::StopPause) => {
+                        self.starting = false;
+                        // The run ends here unless a stopping turn still ends it.
+                        match self.release_held() {
+                            Some(e) => out.push(e),
+                            None if self.turn.is_none() => {
+                                out.push(Emit::TurnEnd { status: TurnStatus::Interrupted, error: None, duration_ms: None, cost_usd: None });
+                            }
+                            None => {}
+                        }
+                    }
+                    Some(GoalStep::Resume | GoalStep::Clear | GoalStep::Pause) => {
+                        self.starting = false;
+                        end(&mut out, None);
+                    }
+                    Some(GoalStep::Activate | GoalStep::Activating) | None => {}
                 }
             }
             Call::Compact => {
@@ -595,10 +778,12 @@ impl CodexDriver {
                 }
             }
             "plan" => {
-                // Plan mode's proposal (card 16 adds Implement): shown as a message for now.
+                // Plan mode's proposal: a plan card the user implements (card 16).
                 if done {
-                    out.push(Emit::MessageStart { key: id.clone(), phase: Some("plan".into()), parent });
-                    out.push(Emit::MessageDone { key: id, text: s(&item, "text").unwrap_or_default().to_string() });
+                    let plan = s(&item, "text").unwrap_or_default().trim().to_string();
+                    if !plan.is_empty() {
+                        out.push(Emit::Proposal { plan, parent });
+                    }
                 }
             }
             "reasoning" => {
@@ -762,6 +947,26 @@ impl CodexDriver {
                     self.turn = Some(t.to_string());
                     out.push(Emit::TurnRef { id: t.to_string() });
                 }
+                // Codex went on with the goal: the held run continues.
+                self.held_end = None;
+            }
+            "thread/goal/updated" if !child => {
+                self.goal = params.get("goal").cloned().filter(|g| !g.is_null());
+                out.push(Emit::Goal { goal: self.goal.clone() });
+                if !self.goal_active() && self.turn.is_none() {
+                    if let Some(e) = self.release_held() {
+                        out.push(e);
+                    }
+                }
+            }
+            "thread/goal/cleared" if !child => {
+                self.goal = None;
+                out.push(Emit::Goal { goal: None });
+                if self.turn.is_none() {
+                    if let Some(e) = self.release_held() {
+                        out.push(e);
+                    }
+                }
             }
             "turn/completed" if !child => {
                 let turn = params.get("turn").cloned().unwrap_or(Value::Null);
@@ -795,6 +1000,15 @@ impl CodexDriver {
                     TurnStatus::Interrupted => None,
                     _ => message,
                 };
+                if status == TurnStatus::Completed && self.goal_active() {
+                    // Codex starts the goal's next turn itself; one run holds them all.
+                    self.held_end = Some((status, message, i(&turn, "durationMs")));
+                    return out;
+                }
+                // This end is the run's: a Stop's pause that answers later ends nothing.
+                if self.goal_step == Some(GoalStep::StopPause) {
+                    self.goal_step = None;
+                }
                 out.push(Emit::TurnEnd { status, error: message, duration_ms: i(&turn, "durationMs"), cost_usd: None });
             }
             "item/started" => out.extend(self.on_item(params, false, parent)),
@@ -1186,18 +1400,22 @@ impl Driver for CodexDriver {
     }
 
     fn interrupt(&mut self) -> Vec<String> {
-        match (&self.thread, &self.turn) {
-            (Some(thread), Some(turn)) => {
-                let params = json!({ "threadId": thread, "turnId": turn });
-                vec![self.request(Call::Interrupt, "turn/interrupt", params)]
+        // Stopping a goal pauses it (T3 Code); a run held between goal turns ends with the pause.
+        let mut lines = Vec::new();
+        if self.goal_active() {
+            if let Some(thread) = self.thread.clone() {
+                if let Some((_, error, duration)) = self.held_end.take() {
+                    self.held_end = Some((TurnStatus::Interrupted, error, duration));
+                }
+                self.goal_step = Some(GoalStep::StopPause);
+                lines.push(self.request(Call::GoalSet, "thread/goal/set", json!({ "threadId": thread, "status": "paused" })));
             }
-            _ => {
-                // Nothing to name yet: stop as soon as the turn id is known.
-                self.interrupt_pending = true;
-                self.queued.clear();
-                Vec::new()
+            if self.turn.is_none() {
+                return lines;
             }
         }
+        lines.extend(self.interrupt_turn());
+        lines
     }
 
     fn set_mode(&mut self, mode: &str) -> Option<String> {
@@ -1517,6 +1735,106 @@ mod tests {
         assert_eq!(policy("auto", &roots).1, "auto_review");
         assert_eq!(policy("plan", &roots).2["type"], "readOnly");
         assert_eq!(policy("full", &roots).0, json!("never"));
+    }
+
+    /// Card 16: plan mode's finished plan item is a proposal, not an answer.
+    #[test]
+    fn a_plan_item_is_a_proposal() {
+        let mut d = started();
+        let plan = |method: &str| json!({ "method": method, "params": { "threadId": "th-1", "turnId": "tu-1", "item": { "type": "plan", "id": "p1", "text": "1. Read\n2. Fix" } } });
+        assert!(feed(&mut d, &[plan("item/started")]).is_empty(), "the plan shows once it is complete");
+        let out = feed(&mut d, &[plan("item/completed")]);
+        assert!(matches!(&out[..], [Emit::Proposal { plan, parent: None }] if plan == "1. Read\n2. Fix"), "{out:?}");
+    }
+
+    /// Card 16: `/goal` sets the goal paused, starts its first turn with this
+    /// run's settings, activates it; Codex's own follow-up turns stay in the
+    /// same run, which ends when the goal does. Stop between turns pauses it.
+    #[test]
+    fn a_goal_runs_across_native_turns_until_it_stops() {
+        let mut d = started();
+        feed(&mut d, &[json!({ "method": "turn/completed", "params": { "threadId": "th-1", "turn": { "id": "tu-1", "status": "completed" } } })]);
+        assert_eq!(goal_command("/goal  all tests pass "), Some(GoalCommand::Set("all tests pass".into())));
+        assert_eq!(goal_command("/goal"), Some(GoalCommand::Show));
+        assert_eq!(goal_command("/goals"), None);
+        let set = parse(&d.user_message(&TurnInput { text: "/goal all tests pass".into(), ..Default::default() })[0]);
+        assert_eq!((set["method"].as_str(), set["params"]["status"].as_str(), set["params"]["objective"].as_str()), (Some("thread/goal/set"), Some("paused"), Some("all tests pass")));
+        let goal = |status: &str| json!({ "objective": "all tests pass", "status": status, "threadId": "th-1", "tokensUsed": 900, "timeUsedSeconds": 40, "createdAt": 1, "updatedAt": 2 });
+        let out = feed(&mut d, &[json!({ "id": set["id"], "result": { "goal": goal("paused") } })]);
+        assert!(out.iter().any(|e| matches!(e, Emit::Goal { goal: Some(g) } if g["status"] == "paused")));
+        let turn = writes(&out).into_iter().find(|m| m["method"] == "turn/start").expect("the goal's first turn");
+        assert_eq!(turn["params"]["input"][0]["text"], "Start working toward this goal: all tests pass");
+        assert_eq!(turn["params"]["sandboxPolicy"]["type"], "readOnly", "with this run's settings");
+        let out = feed(&mut d, &[json!({ "id": turn["id"], "result": { "turn": { "id": "g1", "status": "inProgress" } } })]);
+        let activate = writes(&out).into_iter().find(|m| m["method"] == "thread/goal/set").expect("activate");
+        assert_eq!(activate["params"]["status"], "active");
+        feed(&mut d, &[json!({ "id": activate["id"], "result": { "goal": goal("active") } })]);
+        let ends = |out: &[Emit]| out.iter().filter(|e| matches!(e, Emit::TurnEnd { .. })).count();
+        let out = feed(&mut d, &[json!({ "method": "turn/completed", "params": { "threadId": "th-1", "turn": { "id": "g1", "status": "completed" } } })]);
+        assert_eq!(ends(&out), 0, "the goal is active: the run waits for Codex's next turn");
+        let out = feed(&mut d, &[
+            json!({ "method": "turn/started", "params": { "threadId": "th-1", "turn": { "id": "g2" } } }),
+            json!({ "method": "turn/completed", "params": { "threadId": "th-1", "turn": { "id": "g2", "status": "completed" } } }),
+        ]);
+        assert_eq!(ends(&out), 0);
+        let out = feed(&mut d, &[json!({ "method": "thread/goal/updated", "params": { "threadId": "th-1", "goal": goal("complete") } })]);
+        assert!(matches!(out.last(), Some(Emit::TurnEnd { status: TurnStatus::Completed, .. })), "a met goal ends the run: {out:?}");
+
+        // Resume: Codex starts the turn of an active goal itself (live 2026-10-30).
+        // Stop while it is between goal turns pauses the goal and ends the run.
+        let resume = parse(&d.user_message(&TurnInput { text: "/goal resume".into(), ..Default::default() })[0]);
+        assert_eq!(resume["params"]["status"], "active");
+        let out = feed(&mut d, &[json!({ "id": resume["id"], "result": { "goal": goal("active") } })]);
+        assert!(writes(&out).iter().all(|m| m["method"] != "turn/start"), "no second turn next to Codex's own");
+        assert_eq!(ends(&out), 0, "the run waits for Codex's turn");
+        feed(&mut d, &[json!({ "method": "turn/started", "params": { "threadId": "th-1", "turn": { "id": "g3" } } })]);
+        let out = feed(&mut d, &[json!({ "method": "turn/completed", "params": { "threadId": "th-1", "turn": { "id": "g3", "status": "completed" } } })]);
+        assert_eq!(ends(&out), 0);
+        let stop = d.interrupt();
+        assert_eq!(stop.len(), 1, "no native turn runs: only the pause");
+        let pause = parse(&stop[0]);
+        assert_eq!((pause["method"].as_str(), pause["params"]["status"].as_str()), (Some("thread/goal/set"), Some("paused")));
+        let out = feed(&mut d, &[json!({ "id": pause["id"], "result": { "goal": goal("paused") } })]);
+        assert!(matches!(out.last(), Some(Emit::TurnEnd { status: TurnStatus::Interrupted, .. })), "{out:?}");
+        assert_eq!(ends(&out), 1);
+
+        // Stop before Codex's turn began, and Stop during a turn: one end each.
+        let resume = parse(&d.user_message(&TurnInput { text: "/goal resume".into(), ..Default::default() })[0]);
+        feed(&mut d, &[json!({ "id": resume["id"], "result": { "goal": goal("active") } })]);
+        let pause = parse(&d.interrupt()[0]);
+        let out = feed(&mut d, &[json!({ "id": pause["id"], "result": { "goal": goal("paused") } })]);
+        assert!(matches!(out.last(), Some(Emit::TurnEnd { status: TurnStatus::Interrupted, .. })), "{out:?}");
+        let resume = parse(&d.user_message(&TurnInput { text: "/goal resume".into(), ..Default::default() })[0]);
+        feed(&mut d, &[
+            json!({ "id": resume["id"], "result": { "goal": goal("active") } }),
+            json!({ "method": "turn/started", "params": { "threadId": "th-1", "turn": { "id": "g4" } } }),
+        ]);
+        let stop = d.interrupt();
+        assert_eq!(stop.len(), 2, "pause the goal and stop the turn");
+        let pause = parse(&stop[0]);
+        let mut out = feed(&mut d, &[json!({ "id": pause["id"], "result": { "goal": goal("paused") } })]);
+        out.extend(feed(&mut d, &[json!({ "method": "turn/completed", "params": { "threadId": "th-1", "turn": { "id": "g4", "status": "interrupted" } } })]));
+        assert_eq!(ends(&out), 1, "{out:?}");
+        // The same, with the stopped turn ending before the pause is confirmed.
+        let resume = parse(&d.user_message(&TurnInput { text: "/goal resume".into(), ..Default::default() })[0]);
+        feed(&mut d, &[
+            json!({ "id": resume["id"], "result": { "goal": goal("active") } }),
+            json!({ "method": "turn/started", "params": { "threadId": "th-1", "turn": { "id": "g5" } } }),
+        ]);
+        let pause = parse(&d.interrupt()[0]);
+        let mut out = feed(&mut d, &[json!({ "method": "turn/completed", "params": { "threadId": "th-1", "turn": { "id": "g5", "status": "interrupted" } } })]);
+        out.extend(feed(&mut d, &[json!({ "id": pause["id"], "result": { "goal": goal("paused") } })]));
+        assert_eq!(ends(&out), 1, "{out:?}");
+
+        // Show and clear end at once.
+        let show = parse(&d.user_message(&TurnInput { text: "/goal".into(), ..Default::default() })[0]);
+        let out = feed(&mut d, &[json!({ "id": show["id"], "result": { "goal": goal("paused") } })]);
+        assert!(out.iter().any(|e| matches!(e, Emit::Notice { text } if text == "Goal (paused): all tests pass")));
+        assert_eq!(ends(&out), 1);
+        let clear = parse(&d.user_message(&TurnInput { text: "/goal clear".into(), ..Default::default() })[0]);
+        let out = feed(&mut d, &[json!({ "id": clear["id"], "result": { "cleared": true } })]);
+        assert!(out.iter().any(|e| matches!(e, Emit::Goal { goal: None })));
+        assert_eq!(ends(&out), 1);
     }
 
     #[test]

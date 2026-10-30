@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * One turn of the conversation: the user's message, the "Worked for …"
- * fold, the answer, the files it changed, then whatever needs the user
- * (requests) and what must stay visible (plans, errors, notices). "Edit
- * from here" rewinds the thread to before this message (card 11).
+ * fold, the task list (card 16), the answer, the files it changed, then
+ * whatever needs the user (requests) and what must stay visible (plans,
+ * errors, notices). "Edit from here" rewinds the thread to before this
+ * message (card 11).
  */
 import { computed, ref } from 'vue'
 import { AlertTriangle, CornerDownRight, Info } from 'lucide-vue-next'
@@ -106,6 +107,7 @@ async function revert(files: boolean) {
     </div>
 
     <PilotThreadActivity v-if="showActivity" :block="block" :running="running" :elapsed="elapsed" @notice="(t: string) => emit('notice', t)" />
+    <PilotThreadTasks v-if="block.tasks" :item="block.tasks" :running="running" />
 
     <template v-for="o in [...block.before, null, ...block.outside]" :key="o?.id ?? 'answer'">
       <template v-if="o === null">
@@ -127,10 +129,7 @@ async function revert(files: boolean) {
         <span class="qp-error-text">{{ o.data.text }}</span>
       </div>
       <div v-else-if="o.kind === 'notice'" class="qp-notice"><Info :size="12" />{{ o.data.text }}</div>
-      <div v-else-if="o.kind === 'plan'" class="qp-plan" :data-item-id="o.id">
-        <div class="qp-plan-head">Plan · {{ o.data.status === 'approved' ? 'implementing' : o.data.status === 'rejected' ? 'kept planning' : o.data.status }}</div>
-        <PilotThreadMarkdown :source="String(o.data.plan ?? '')" />
-      </div>
+      <PilotThreadPlanCard v-else-if="o.kind === 'plan'" :item="o" @notice="(t: string) => emit('notice', t)" />
     </template>
   </section>
 </template>
@@ -204,12 +203,4 @@ async function revert(files: boolean) {
 }
 .qp-error-text { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; color: var(--qss-text, #d4d4d8); }
 .qp-notice { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; color: var(--qss-text-muted, #6e6e7a); }
-.qp-plan {
-  margin: 6px 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--qss-border, #47474f);
-  background: var(--qss-bg-raised, #1f1f25);
-}
-.qp-plan-head { font-size: 12px; font-weight: 600; color: var(--qss-text-secondary, #9a9aa5); margin-bottom: 6px; }
 </style>
