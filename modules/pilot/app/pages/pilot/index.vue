@@ -66,10 +66,11 @@ function restart() {
   <div class="qp-page">
     <PilotUsagePage v-if="store.page === 'usage'" />
     <PilotBoardView v-else-if="app.view === 'board'" />
+    <PilotGithubView v-else-if="app.view === 'github'" />
     <!-- The terminals stay mounted under the board (their scrollback); the conversation does not, the board's panel has it. -->
-    <div v-show="store.page !== 'usage' && app.view !== 'board'" class="qp-page">
+    <div v-show="store.page !== 'usage' && app.view === 'conversation'" class="qp-page">
     <template v-if="session">
-      <div v-if="!terminal && app.view !== 'board'" class="qp-split">
+      <div v-if="!terminal && app.view === 'conversation'" class="qp-split">
         <div class="qp-main-col">
           <PilotThreadConversation :thread-id="session.id" />
           <PilotDrawerPanel v-if="drawer.open[session.id]" :thread-id="session.id" />

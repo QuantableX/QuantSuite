@@ -27,6 +27,7 @@ mod driver;
 mod events;
 mod files;
 mod git;
+mod github;
 mod lifecycle;
 mod gitops;
 mod notify;
@@ -225,6 +226,7 @@ fn pilot_settings_get(state: State<'_, PilotState>) -> Settings {
 fn pilot_settings_set(state: State<'_, PilotState>, settings: Settings) -> Result<Settings, String> {
     let settings = settings.normalized();
     settings::write(&state.data_dir, &settings)?;
+    github::set_enabled(settings.github);
     *lock(&state.settings) = settings.clone();
     Ok(settings)
 }
@@ -304,7 +306,7 @@ fn pilot_provider_update(state: State<'_, PilotState>, id: String, dry_run: Opti
 /// Settings → Source control (card 19): is `gh` installed and signed in.
 #[tauri::command(async)]
 fn pilot_gh_status() -> Result<(), String> {
-    gitops::gh_ready()
+    github::ready()
 }
 
 /// Settings → Advanced (card 19): what a bug report needs, without secrets —
@@ -706,6 +708,7 @@ pub fn init() -> TauriPlugin<Wry> {
             let data_dir = qs_core::paths::ensure_module("pilot")?;
             let db = Arc::new(Database::open(&data_dir.join("pilot.db"))?);
             let settings = settings::read(&data_dir);
+            github::set_enabled(settings.github);
 
             let sink: Sink = {
                 let app = app.clone();
@@ -872,6 +875,13 @@ pub fn init() -> TauriPlugin<Wry> {
             agent_tools::pilot_agent_start_thread,
             agent_tools::pilot_agent_message_thread,
             threads::pilot_pr_refresh,
+            github::pilot_gh_repo,
+            github::pilot_gh_refs,
+            github::pilot_gh_repos,
+            github::pilot_gh_pulls,
+            github::pilot_gh_issues,
+            github::pilot_gh_merge,
+            github::pilot_gh_link,
             threads::pilot_files_list,
             threads::pilot_file_read,
             threads::pilot_file_write,

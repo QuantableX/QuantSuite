@@ -165,6 +165,9 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+/** `#123` in its GitHub state's colour (card 23), for the highlight being built. */
+let ghStates: Record<number, string> = {}
+
 /** A chip (FSI label PDI, utils/mentions.ts) as a pill — same characters, so the caret stays aligned. */
 const CHIP_RE = /(\u2068[^\u2069]*\u2069)/g
 
@@ -184,7 +187,10 @@ function inline(line: string): string {
       h = h.replace(/(\*\*|__)(?=\S)([^*_]+?)(?<=\S)\1/g, '<span class="qp-hl-mark">$1</span><span class="qp-hl-strong">$2</span><span class="qp-hl-mark">$1</span>')
       h = h.replace(/(^|[^*\w])(\*|_)(?=\S)([^*_\n]+?)(?<=\S)\2(?![*\w])/g, '$1<span class="qp-hl-mark">$2</span><span class="qp-hl-em">$3</span><span class="qp-hl-mark">$2</span>')
       h = h.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, '<span class="qp-hl-mark">[</span><span class="qp-hl-link">$1</span><span class="qp-hl-mark">]($2)</span>')
-      h = h.replace(/(^|\s)(@[\w./\\-]+|\$[\w:-]+|#\d+)/g, '$1<span class="qp-hl-token">$2</span>')
+      h = h.replace(/(^|\s)(@[\w./\\-]+|\$[\w:-]+|#\d+)/g, (_, pre: string, token: string) => {
+        const state = token.startsWith('#') ? ghStates[Number(token.slice(1))] : undefined
+        return `${pre}<span class="qp-hl-token${state ? ` qp-hl-gh is-${state}` : ''}">${token}</span>`
+      })
       return h
     })
     .join('')
@@ -194,7 +200,8 @@ function inline(line: string): string {
  * The composer's backdrop: the same text, coloured — never resized or
  * re-weighted, so the caret in the transparent textarea above stays aligned.
  */
-export function highlight(text: string): string {
+export function highlight(text: string, refs: Record<number, string> = {}): string {
+  ghStates = refs
   let fence = false
   const lines = text.split('\n').map((line, i) => {
     if (/^\s*```/.test(line)) {

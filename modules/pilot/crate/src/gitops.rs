@@ -525,12 +525,12 @@ pub fn gh_ready() -> Result<(), String> {
 #[serde(rename_all = "camelCase")]
 pub struct Link {
     pub thread_id: String,
-    /// `pr`, or `card`: the kanban card the thread was started from (card 21)
+    /// `pr`, `issue` (card 23), or `card`: the kanban card the thread was started from (card 21)
     pub kind: String,
     pub url: String,
     pub number: i64,
     pub title: String,
-    /// `open` | `draft` | `closed` | `merged`
+    /// `open` | `draft` | `closed` | `merged` (`card` for a card)
     pub state: String,
     pub checked_at: i64,
     pub created_at: i64,

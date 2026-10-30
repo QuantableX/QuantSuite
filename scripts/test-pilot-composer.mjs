@@ -89,6 +89,14 @@ test('the backdrop keeps every character and escapes HTML', () => {
   assert.ok(highlight('a\n').endsWith(' '), 'a trailing newline keeps its line')
 })
 
+test('#123 takes its GitHub state\'s colour (card 23)', () => {
+  const html = highlight('see #12 and #13, #14', { 12: 'open', 13: 'merged' })
+  assert.ok(html.includes('<span class="qp-hl-token qp-hl-gh is-open">#12</span>'))
+  assert.ok(html.includes('<span class="qp-hl-token qp-hl-gh is-merged">#13</span>'))
+  assert.ok(html.includes('<span class="qp-hl-token">#14</span>'))
+  assert.ok(highlight('#12').includes('<span class="qp-hl-token">#12</span>'), 'no states, no colour')
+})
+
 test('size labels', () => {
   assert.equal(sizeLabel(48 * 1024), '48 KB')
   assert.equal(sizeLabel(3 * 1024 * 1024), '3.0 MB')

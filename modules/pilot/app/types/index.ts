@@ -167,6 +167,68 @@ export interface PilotSettings {
   renderMath: boolean
   /** What a project changes for its new threads (card 19). */
   projects: Record<string, ProjectPrefs>
+  /** GitHub through `gh` (card 23); off = no `gh` process at all. */
+  github?: boolean
+}
+
+// ── GitHub (card 23) ──
+
+export interface GhRepo {
+  owner: string
+  name: string
+}
+
+/** A workspace whose `origin` is on GitHub. */
+export interface GhRepoRow {
+  contextId: string
+  name: string
+  path: string
+  repo: GhRepo
+  url: string
+}
+
+/** A row of the composer's `#` menu. */
+export interface GhRef {
+  number: number
+  kind: 'pr' | 'issue'
+  state: 'open' | 'draft' | 'closed' | 'merged'
+  title: string
+  updatedAt: string
+}
+
+export interface GhChecks {
+  total: number
+  passed: number
+  failed: number
+  pending: number
+  failing: string[]
+}
+
+export interface GhPull {
+  number: number
+  title: string
+  url: string
+  state: 'open' | 'draft'
+  author: string
+  branch: string
+  review: '' | 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED'
+  checks: GhChecks
+  additions: number
+  deletions: number
+  labels: string[]
+  updatedAt: string
+  /** Checks pass, approved, merges cleanly. */
+  ready: boolean
+}
+
+export interface GhIssue {
+  number: number
+  title: string
+  url: string
+  author: string
+  labels: string[]
+  comments: number
+  updatedAt: string
 }
 
 export interface ProviderPrefs {
@@ -328,8 +390,8 @@ export interface GitDone {
 /** A pull request (or later a board card) linked to a thread. */
 export interface ThreadLink {
   threadId: string
-  /** `card`: the kanban card the thread was started from (card 21), url `card:<id>`. */
-  kind: 'pr' | 'card'
+  /** `card`: the kanban card the thread was started from (card 21), url `card:<id>`; `issue` (card 23). */
+  kind: 'pr' | 'issue' | 'card'
   url: string
   number: number
   title: string

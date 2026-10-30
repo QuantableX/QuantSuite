@@ -16,6 +16,7 @@ import { useAppStore } from '#pilot/stores/app'
 import { useGitStore } from '#pilot/stores/git'
 import { cardPrompt, GENERAL_BOARD, threadsByCard } from '#pilot/utils/board'
 import { pilot } from '#pilot/utils/invoke'
+import { saveDrafts, useDrafts } from '#pilot/utils/drafts'
 
 const store = usePilotStore()
 const app = useAppStore()
@@ -48,14 +49,7 @@ function onSelect(card: KanbanCard) {
   if (ids?.length) openPanel(ids[ids.length - 1]!)
 }
 
-// The composer's drafts (Composer.vue keeps them under the same key).
-const drafts = useState<Record<string, string>>('pilot-drafts', () => {
-  try {
-    return JSON.parse(localStorage.getItem('pilot.drafts.v1') ?? '{}') as Record<string, string>
-  } catch {
-    return {}
-  }
-})
+const drafts = useDrafts()
 
 const starting = ref<string | null>(null)
 const error = ref('')
@@ -70,7 +64,7 @@ async function start(card: KanbanCard) {
       return
     }
     drafts.value[meta.id] = cardPrompt(card, boards.value.find((b) => b.id === card.workspace_id)?.name ?? boardLabel.value)
-    try { localStorage.setItem('pilot.drafts.v1', JSON.stringify(drafts.value)) } catch { /* the draft lives for this session */ }
+    saveDrafts(drafts.value)
     await pilot('plugin:pilot|pilot_card_link', { id: meta.id, cardId: card.id, title: card.title })
     await git.loadLinks()
     app.boardCard = card.id

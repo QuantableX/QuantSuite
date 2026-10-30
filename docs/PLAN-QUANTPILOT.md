@@ -760,6 +760,47 @@ never fakes support.
 - The context file of a V3 thread names the tools in one line (V2 terminal
   sessions do not get it: their connection names no thread).
 
+### 5.17 GitHub (card 23)
+
+- Only through the installed, signed-in `gh` (`crate/src/github.rs`); no
+  tokens stored. Settings → Source control has the switch (`github`,
+  default on): off, no `gh` process runs (`github::ready`, link refresh,
+  pull requests) and no GitHub control shows. Calls are argv arrays with
+  `--flag=value` for user text, prompts off, timeouts, bounded output
+  (`gitops::run`). A thread's repository comes from `git remote get-url
+  origin` (https, ssh and scp forms).
+- `#` in the composer: open pull requests and issues of the thread's
+  repository (`pilot_gh_refs`), newest first; digits filter the numbers,
+  words search GitHub. A pick inserts `#123` as plain text; the backdrop
+  colours known numbers by state (open, draft, merged, closed). On send,
+  up to five `#123` in what the user typed (outside code) resolve once
+  through the issues API into a `GitHub context` block — labeled
+  repository content, not instructions — with title, state, author,
+  labels, URL and a body excerpt of at most 4 KiB; references that do not
+  resolve stay as typed.
+- The GitHub view: a third header toggle (only when `gh` is signed in and
+  the switch is on). Repositories = the workspaces whose `origin` is on
+  GitHub. Tabs: Threads (the workspace's threads with their PR and issue
+  chips, a box to start one), Pull requests (review state, checks
+  passed/failed/running, size; Review — a worktree thread that checks the
+  pull request out and reviews it; menu: Open in thread, Fix failing
+  checks, Address review comments, Merge when ready — re-checked right
+  before: every check passed, approved, `MERGEABLE` + `CLEAN`, not a draft;
+  merge method = the first the repository allows of merge, squash,
+  rebase), Issues (Solve — a worktree thread that fixes it and opens a PR
+  with `Closes #n`; Open in thread — a draft for the user). Every thread
+  started there is linked (`pilot_gh_link`) and its prompt names `#n`, so
+  the item travels as GitHub context; a row whose item has a thread
+  offers Thread instead.
+- Links: `links` kind `issue` beside `pr`; chips in the header and the
+  context bar (`#12 · open`); `pilot_pr_refresh` refreshes issues too
+  (open ones at most every five minutes, on focus). A pull request the
+  agent or the dialog opens links the issues its body closes (`Closes`,
+  `Fixes`, `Resolves #n`); the dialog's body gets `Closes #n` for a linked
+  issue.
+- Not built: listing every repository the `gh` account can reach and
+  cloning one (PandaCode does) — the view lists the workspaces only.
+
 ### 5.5 Composer context (card 9)
 
 - `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`
