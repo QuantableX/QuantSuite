@@ -29,6 +29,8 @@ pub enum Kind {
     Omp,
     Opencode,
     Gemini,
+    /// GitHub Copilot CLI (card 20).
+    Copilot,
     Custom,
 }
 
@@ -40,13 +42,14 @@ pub struct Adapter {
     pub custom: Option<CustomAdapter>,
 }
 
-const BUILT_IN: [(&str, &str, Kind); 6] = [
+const BUILT_IN: [(&str, &str, Kind); 7] = [
     ("claude", "Claude Code", Kind::Claude),
     ("codex", "Codex", Kind::Codex),
     ("pi", "pi", Kind::Pi),
     ("omp", "omp", Kind::Omp),
     ("opencode", "OpenCode", Kind::Opencode),
     ("gemini", "Gemini CLI", Kind::Gemini),
+    ("copilot", "GitHub Copilot", Kind::Copilot),
 ];
 
 pub fn is_built_in(id: &str) -> bool {
@@ -62,6 +65,42 @@ pub fn all(settings: &Settings) -> Vec<Adapter> {
         out.push(Adapter { id: c.id.clone(), label: c.label.clone(), kind: Kind::Custom, custom: Some(c.clone()) });
     }
     out
+}
+
+/// How a chat thread talks to an agent (card 20).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Protocol {
+    Claude,
+    Codex,
+    /// Agent Client Protocol over stdio.
+    Acp,
+    /// pi's RPC mode (pi, omp).
+    PiRpc,
+}
+
+impl Adapter {
+    /// The protocol a chat thread with this agent uses; `None` = terminal only.
+    pub fn protocol(&self) -> Option<Protocol> {
+        match self.kind {
+            Kind::Claude => Some(Protocol::Claude),
+            Kind::Codex => Some(Protocol::Codex),
+            Kind::Pi | Kind::Omp => Some(Protocol::PiRpc),
+            Kind::Gemini | Kind::Opencode | Kind::Copilot => Some(Protocol::Acp),
+            Kind::Custom => self.custom.as_ref().filter(|c| c.protocol == "acp").map(|_| Protocol::Acp),
+        }
+    }
+
+    /// The arguments that put an ACP agent in ACP mode.
+    pub fn acp_args(&self) -> Vec<String> {
+        match self.kind {
+            // Gemini CLI's flag; still `--experimental-acp` in the releases checked (2026-10).
+            Kind::Gemini => vec!["--experimental-acp".into()],
+            Kind::Opencode => vec!["acp".into()],
+            Kind::Copilot => vec!["--acp".into()],
+            Kind::Custom => self.custom.as_ref().map(|c| split_template(&c.args)).unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 pub fn find(settings: &Settings, id: &str) -> Option<Adapter> {
@@ -114,7 +153,7 @@ impl Adapter {
     pub fn immediate_binding(&self, session_id: &str) -> Option<String> {
         match self.kind {
             Kind::Pi | Kind::Custom => Some(session_id.to_string()),
-            Kind::Opencode | Kind::Gemini => Some("latest".to_string()),
+            Kind::Opencode | Kind::Gemini | Kind::Copilot => Some("latest".to_string()),
             Kind::Claude | Kind::Codex | Kind::Omp => None,
         }
     }
@@ -374,6 +413,15 @@ pub fn adapter_args(adapter: &Adapter, input: &LaunchInput<'_>) -> (Vec<String>,
                 args.extend(["--include-directories".into(), vault.clone()]);
             }
         }
+        Kind::Copilot => {
+            if bound.is_some() {
+                args.push("--continue".into());
+                resumed = true;
+            }
+            if !model.is_empty() {
+                args.extend(["--model".into(), model.clone()]);
+            }
+        }
         Kind::Custom => {
             let custom = adapter.custom.clone().unwrap_or_default();
             let template = if bound.is_some() && !custom.resume_args.is_empty() {
@@ -523,6 +571,7 @@ mod tests {
                 exe: "agent".into(),
                 args: "--dir {cwd} --name \"{title}\" --id {session}".into(),
                 resume_args: String::new(),
+                protocol: "terminal".into(),
             }],
             ..Default::default()
         }

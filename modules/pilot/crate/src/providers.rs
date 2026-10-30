@@ -42,6 +42,8 @@ pub struct AdapterStatus {
     pub detail: Option<String>,
     /// How Update would run: `npm`, `winget`, `native` or `cli` (card 19).
     pub update: Option<String>,
+    /// It can run a chat thread (card 20).
+    pub chat: bool,
 }
 
 /// How an installed CLI updates (card 19): through the installer that put it
@@ -63,6 +65,7 @@ fn npm_package(kind: Kind) -> Option<&'static str> {
         Kind::Codex => "@openai/codex",
         Kind::Gemini => "@google/gemini-cli",
         Kind::Opencode => "opencode-ai",
+        Kind::Copilot => "@github/copilot",
         Kind::Pi => "@earendil-works/pi-coding-agent",
         _ => return None,
     })
@@ -230,6 +233,7 @@ pub fn resolve(adapter: &Adapter, settings: &Settings) -> Option<Launchable> {
         Kind::Omp => home_bin(&[".bun", "bin"], &["omp.exe", "omp"]).or_else(|| which("omp")),
         Kind::Opencode => opencode_native().or_else(|| which("opencode")),
         Kind::Gemini => which("gemini"),
+        Kind::Copilot => which("copilot"),
         Kind::Custom => {
             let exe = adapter.custom.as_ref().map(|c| c.exe.as_str()).unwrap_or("");
             override_path(exe)
@@ -417,6 +421,7 @@ fn install_hint(kind: Kind) -> &'static str {
         Kind::Omp => "not found — install omp or set the path in Settings",
         Kind::Opencode => "not found — `npm i -g opencode-ai` or set the path in Settings",
         Kind::Gemini => "not found — `npm i -g @google/gemini-cli` or set the path in Settings",
+        Kind::Copilot => "not found — `npm i -g @github/copilot` or set the path in Settings",
         Kind::Custom => "not found — check the executable in Settings",
     }
 }
@@ -427,6 +432,7 @@ fn status_one(adapter: &Adapter, settings: &Settings) -> AdapterStatus {
         label: adapter.label.clone(),
         custom: adapter.kind == Kind::Custom,
         signals: Some(adapter.signals()),
+        chat: adapter.protocol().is_some(),
         ..Default::default()
     };
     let Some(exe) = resolve(adapter, settings) else {

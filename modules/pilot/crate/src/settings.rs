@@ -47,8 +47,8 @@ pub struct Defaults {
     pub enabled: Vec<String>,
 }
 
-/// The agents a chat thread can run (card 20 adds more).
-pub const CHAT_PROVIDERS: [&str; 2] = ["claude", "codex"];
+/// The built-in agents a chat thread can run (card 20); a user's own ACP agents join them.
+pub const CHAT_PROVIDERS: [&str; 7] = ["claude", "codex", "gemini", "opencode", "copilot", "pi", "omp"];
 
 /// Variables that make Claude Code use something other than the account
 /// saved by `claude auth login` — dropped from new Claude processes when
@@ -100,6 +100,14 @@ pub struct CustomAdapter {
     pub args: String,
     /// Arguments when the session is reopened; empty = the same as `args`.
     pub resume_args: String,
+    /// `acp`: a chat thread speaks the Agent Client Protocol with it (card
+    /// 20). `terminal` (the V2 entries): it runs in a terminal session.
+    #[serde(default = "terminal_protocol")]
+    pub protocol: String,
+}
+
+fn terminal_protocol() -> String {
+    "terminal".into()
 }
 
 fn no_version() -> u32 {
@@ -253,7 +261,8 @@ impl Settings {
         }
         // A V2 file keeps everything; the new fields start at their defaults (card 19).
         self.version = VERSION;
-        if !CHAT_PROVIDERS.contains(&self.default_provider.as_str()) {
+        let chat = self.chat_providers();
+        if !chat.contains(&self.default_provider) {
             self.default_provider = "claude".into();
         }
         if !matches!(self.text_size.as_str(), "small" | "default" | "large" | "larger") {
@@ -275,7 +284,7 @@ impl Settings {
         self.projects = std::mem::take(&mut self.projects)
             .into_iter()
             .map(|(id, mut p)| {
-                p.provider = p.provider.filter(|v| CHAT_PROVIDERS.contains(&v.as_str()));
+                p.provider = p.provider.filter(|v| chat.contains(v));
                 p.mode = p.mode.filter(|m| valid_mode(m));
                 p.workspace = p.workspace.filter(|w| matches!(w.as_str(), "local" | "worktree"));
                 p.model = p.model.into_iter().map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).filter(|(k, v)| !k.is_empty() && !v.is_empty()).collect();
@@ -352,6 +361,9 @@ impl Settings {
                 c.label = c.label.trim().to_string();
                 c.args = c.args.trim().to_string();
                 c.resume_args = c.resume_args.trim().to_string();
+                if c.protocol != "acp" {
+                    c.protocol = "terminal".into();
+                }
                 if c.id.is_empty() || c.exe.is_empty() || crate::adapters::is_built_in(&c.id) || !seen.insert(c.id.clone()) {
                     return None;
                 }
@@ -373,12 +385,22 @@ impl Settings {
         self.projects.get(project).and_then(|p| p.model.get(adapter)).map(String::as_str).filter(|m| !m.is_empty()).or_else(|| self.model_for(adapter))
     }
 
+    /// Every agent a chat thread can run: the built-ins and the user's ACP agents.
+    pub fn chat_providers(&self) -> Vec<String> {
+        CHAT_PROVIDERS.iter().map(|c| c.to_string()).chain(self.custom.iter().filter(|c| c.protocol == "acp").map(|c| c.id.clone())).collect()
+    }
+
+    pub fn is_chat_provider(&self, id: &str) -> bool {
+        self.chat_providers().iter().any(|c| c == id)
+    }
+
     /// The agents offered: each not disabled, or the project's own list.
     pub fn enabled_in(&self, project: &str) -> Vec<String> {
+        let all = self.chat_providers();
         if let Some(list) = self.projects.get(project).and_then(|p| p.enabled.as_ref()) {
-            return CHAT_PROVIDERS.iter().filter(|c| list.iter().any(|e| e == *c)).map(|c| c.to_string()).collect();
+            return all.into_iter().filter(|c| list.contains(c)).collect();
         }
-        CHAT_PROVIDERS.iter().filter(|c| !self.providers.get(**c).is_some_and(|p| p.disabled)).map(|c| c.to_string()).collect()
+        all.into_iter().filter(|c| !self.providers.get(c).is_some_and(|p| p.disabled)).collect()
     }
 
     /// A new thread's defaults in a project: default → project.
@@ -498,7 +520,7 @@ mod tests {
         assert_eq!(s.version, VERSION);
         assert_eq!((s.default_mode.as_str(), s.exe_for("codex"), s.model_for("claude")), ("ask", r"C:\tools\codex.exe", Some("opus")));
         assert!(!s.attach_quantmcp && !s.include_general_vault);
-        assert_eq!(s.custom[0].id, "mine");
+        assert_eq!((s.custom[0].id.as_str(), s.custom[0].protocol.as_str()), ("mine", "terminal"), "a V2 agent stays a terminal agent");
         assert_eq!((s.default_provider.as_str(), s.panel_motion_ms, s.render_math), ("claude", 160, true));
     }
 
@@ -527,7 +549,7 @@ mod tests {
         assert_eq!(off.defaults_for("other").provider, "claude");
         // Invalid overrides fall away.
         let mut bad = Settings::default();
-        bad.projects.insert("ws3".into(), ProjectPrefs { provider: Some("gemini".into()), mode: Some("yolo".into()), ..Default::default() });
+        bad.projects.insert("ws3".into(), ProjectPrefs { provider: Some("no-such-agent".into()), mode: Some("yolo".into()), ..Default::default() });
         assert!(bad.normalized().projects.is_empty());
     }
 

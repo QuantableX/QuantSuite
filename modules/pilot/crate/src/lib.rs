@@ -13,6 +13,7 @@
 //! and the bell. This file is the plugin glue: commands, the session list,
 //! the sink that forwards signals to the webview.
 
+mod acp;
 mod adapters;
 mod browser;
 mod checkpoints;
@@ -28,6 +29,7 @@ mod git;
 mod lifecycle;
 mod gitops;
 mod notify;
+mod pi;
 mod prompt;
 mod providers;
 mod relay;

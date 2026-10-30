@@ -92,6 +92,8 @@ export interface AdapterStatus {
   detail: string | null
   /** How Update would run: npm, winget, native or cli (card 19). */
   update?: string | null
+  /** It can run a chat thread (card 20). */
+  chat?: boolean
 }
 
 export interface PilotStatus {
@@ -110,6 +112,8 @@ export interface CustomAdapter {
   exe: string
   args: string
   resumeArgs: string
+  /** `acp`: chat threads over the Agent Client Protocol (card 20); `terminal`: V2 terminal sessions. */
+  protocol?: 'acp' | 'terminal'
 }
 
 export interface PilotSettings {

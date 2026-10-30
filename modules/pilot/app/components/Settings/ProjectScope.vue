@@ -20,7 +20,7 @@ const MODES: { id: Mode; label: string }[] = [
   { id: 'plan', label: 'Plan' },
   { id: 'ask', label: 'Supervised' },
 ]
-const AGENTS = computed(() => store.adapters.filter((a) => a.id === 'claude' || a.id === 'codex'))
+const AGENTS = computed(() => store.adapters.filter((a) => a.chat ?? (a.id === 'claude' || a.id === 'codex')))
 const label = (id: string) => store.adapterLabel(id)
 
 const draft = reactive<Required<ProjectPrefs>>({ provider: null, model: {}, mode: null, workspace: null, enabled: null })

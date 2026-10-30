@@ -17,7 +17,9 @@ import { pilot } from '#pilot/utils/invoke'
 import type { CustomAdapter, PilotSettings, ProviderPrefs } from '#pilot/types'
 
 const store = usePilotStore()
-const CHAT = ['claude', 'codex']
+/** Agents that run chat threads get the launch options (card 20 adds ACP agents, pi and omp). */
+const chatIds = computed(() => store.adapters.filter((a) => a.chat ?? (a.id === 'claude' || a.id === 'codex')).map((a) => a.id))
+const CHAT = { includes: (id: string) => chatIds.value.includes(id) }
 
 type Owned = Pick<PilotSettings, 'exe' | 'model' | 'effort' | 'providers' | 'env' | 'preferSavedClaudeLogin' | 'custom'>
 const blank = (): ProviderPrefs => ({ args: '', env: {}, models: [], disabled: false })
@@ -40,7 +42,7 @@ function pull() {
   draft.effort = s.effort
   draft.providers = JSON.parse(JSON.stringify(s.providers ?? {}))
   // The chat agents' rows edit these directly.
-  for (const id of CHAT) draft.providers[id] ??= blank()
+  for (const id of chatIds.value) draft.providers[id] ??= blank()
   draft.env = { ...(s.env ?? {}) }
   draft.preferSavedClaudeLogin = s.preferSavedClaudeLogin ?? false
   draft.custom = (s.custom ?? []).map((c) => ({ ...c }))
@@ -53,6 +55,8 @@ onMounted(async () => {
   if (!store.status) void store.refreshStatus()
 })
 watch(() => store.settings, pull)
+// Agents whose status arrives later get their rows too (before the next render).
+watch(chatIds, (ids) => ids.forEach((id) => (draft.providers[id] ? undefined : (draft.providers[id] = blank()))), { immediate: true })
 
 const adapters = computed(() => store.adapters.filter((a) => !a.custom))
 
@@ -112,7 +116,7 @@ async function checkUpdate(id: string, run: boolean) {
 }
 
 function addCustom() {
-  draft.custom.push({ id: '', label: '', exe: '', args: '', resumeArgs: '' } satisfies CustomAdapter)
+  draft.custom.push({ id: '', label: '', exe: '', args: '', resumeArgs: '', protocol: 'acp' } satisfies CustomAdapter)
 }
 </script>
 
@@ -205,16 +209,25 @@ function addCustom() {
 
     <h3 class="qp-settings-title">Your own agents</h3>
     <p class="qp-settings-desc">
-      Any CLI with a terminal UI. Placeholders in the arguments: <code>{cwd}</code> <code>{session}</code> <code>{title}</code> <code>{mode}</code>
+      An agent that speaks the Agent Client Protocol (ACP) runs chat threads like the built-ins: the command and the arguments that start it in
+      ACP mode (e.g. <code>my-agent --acp</code>); its environment is set above once it is saved. A terminal agent (from QuantPilot V2) runs in a
+      terminal session; placeholders in its arguments: <code>{cwd}</code> <code>{session}</code> <code>{title}</code> <code>{mode}</code>
       <code>{model}</code> <code>{vault}</code>.
     </p>
     <div v-for="(c, i) in draft.custom" :key="i" class="qp-prov">
       <div class="qp-settings-grid">
         <label class="qp-settings-field"><span>Id</span><input v-model="c.id" class="qp-input" placeholder="my-agent" spellcheck="false" /></label>
         <label class="qp-settings-field"><span>Name</span><input v-model="c.label" class="qp-input" placeholder="My Agent" spellcheck="false" /></label>
+        <label class="qp-settings-field">
+          <span>Speaks</span>
+          <select v-model="c.protocol" class="qp-input">
+            <option value="acp">ACP — chat threads</option>
+            <option value="terminal">Terminal — a terminal session (V2)</option>
+          </select>
+        </label>
         <label class="qp-settings-field"><span>Executable</span><input v-model="c.exe" class="qp-input" placeholder="my-agent or C:\path\to\my-agent.exe" spellcheck="false" /></label>
         <label class="qp-settings-field"><span>Arguments</span><input v-model="c.args" class="qp-input" placeholder="--cwd {cwd}" spellcheck="false" /></label>
-        <label class="qp-settings-field"><span>Arguments when reopened <em>(empty = the same)</em></span><input v-model="c.resumeArgs" class="qp-input" placeholder="--resume {session}" spellcheck="false" /></label>
+        <label v-if="c.protocol !== 'acp'" class="qp-settings-field"><span>Arguments when reopened <em>(empty = the same)</em></span><input v-model="c.resumeArgs" class="qp-input" placeholder="--resume {session}" spellcheck="false" /></label>
       </div>
       <button class="qp-btn qp-btn-sm qp-btn-danger" @click="draft.custom.splice(i, 1)">Remove</button>
     </div>

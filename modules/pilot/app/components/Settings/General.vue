@@ -77,7 +77,7 @@ onMounted(async () => {
 watch(() => store.settings, pull)
 
 const projects = computed(() => store.contexts.filter((c) => c.kind !== 'general'))
-const agents = computed(() => store.adapters.filter((a) => a.id === 'claude' || a.id === 'codex'))
+const agents = computed(() => store.adapters.filter((a) => a.chat ?? (a.id === 'claude' || a.id === 'codex')))
 
 async function save() {
   busy.value = true

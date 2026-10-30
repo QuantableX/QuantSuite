@@ -26,7 +26,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
 
-use crate::settings::CHAT_PROVIDERS;
+use crate::acp::{AcpDriver, AcpOptions};
+use crate::pi::{PiDriver, PiOptions};
 
 const PAGE: i64 = 100;
 const TITLE_MAX: usize = 60;
@@ -55,7 +56,7 @@ pub fn pilot_thread_create(app: AppHandle, state: State<'_, PilotState>, req: Cr
     // What the request leaves open comes from the settings: default → project (card 19).
     let defaults = settings.defaults_for(&ctx.id);
     let provider = req.provider.unwrap_or_else(|| defaults.provider.clone());
-    if !CHAT_PROVIDERS.contains(&provider.as_str()) {
+    if !settings.is_chat_provider(&provider) {
         return Err(format!("'{provider}' cannot run a chat thread yet"));
     }
     let stamp = now();
@@ -420,6 +421,104 @@ fn codex_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: 
     })
 }
 
+/// An agent id as the runtime keeps it (`&'static str`): the built-ins are
+/// literals, a user's own agent is interned once.
+fn static_id(id: &str) -> &'static str {
+    static IDS: std::sync::OnceLock<std::sync::Mutex<Vec<&'static str>>> = std::sync::OnceLock::new();
+    let mut ids = lock(IDS.get_or_init(Default::default));
+    if let Some(known) = ids.iter().find(|k| **k == id) {
+        return known;
+    }
+    let leaked: &'static str = Box::leak(id.to_string().into_boxed_str());
+    ids.push(leaked);
+    leaked
+}
+
+/// Gemini CLI, OpenCode, Copilot and the user's own agents over the Agent
+/// Client Protocol (card 20). QuantMCP goes in as an HTTP server under a
+/// name of this thread's own, so threads in one folder never share it.
+fn acp_plan(app: &AppHandle, _state: &PilotState, meta: &ThreadMeta, settings: &Settings) -> Result<LaunchPlan, String> {
+    let adapter = adapters::find(settings, &meta.provider).ok_or_else(|| format!("unknown agent '{}'", meta.provider))?;
+    let exe = providers::resolve(&adapter, settings).ok_or_else(|| format!("{} was not found. Install it, or set its path in Settings → Providers.", adapter.label))?;
+    let ctx = context_of(meta);
+    if ctx.kind == "general" {
+        std::fs::create_dir_all(&ctx.path).map_err(|e| format!("general vault: {e}"))?;
+    }
+    let general = contexts::general_vault(app);
+    let mcp = settings.attach_quantmcp.then(mcp_url);
+    let instructions = prompt::system_append(&ctx, &general, mcp.as_deref());
+    let mut args = exe.prefix.clone();
+    args.extend(adapter.acp_args());
+    args.extend(settings.extra_args(&meta.provider));
+    let short: String = meta.id.chars().take(8).collect();
+    let driver = AcpDriver::new(AcpOptions {
+        provider: static_id(&meta.provider),
+        label: adapter.label.clone(),
+        cwd: meta.cwd.clone(),
+        resume: meta.provider_session_id.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
+        mode: meta.mode.clone(),
+        model: effective_model(meta, settings),
+        mcp: mcp.map(|url| (format!("quantsuite-{short}"), url)),
+        instructions: Some(instructions),
+    });
+    Ok(LaunchPlan {
+        key: plan_key(meta, settings),
+        program: exe.program,
+        args,
+        cwd: meta.cwd.clone(),
+        env: agent_env(
+            settings,
+            &meta.provider,
+            vec![
+                ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
+                ("QS_PILOT_THREAD".into(), meta.id.clone()),
+            ],
+        ),
+        driver: Box::new(driver),
+    })
+}
+
+/// pi and omp in RPC mode (card 20), with QuantPilot's mode extension and
+/// the suite's context appended to their system prompt.
+fn pi_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: &Settings) -> Result<LaunchPlan, String> {
+    let adapter = adapters::find(settings, &meta.provider).ok_or_else(|| format!("unknown agent '{}'", meta.provider))?;
+    if !crate::pi::supports(&meta.mode) {
+        return Err(format!("{} has no automatic reviewer — choose another permission mode.", adapter.label));
+    }
+    let exe = providers::resolve(&adapter, settings).ok_or_else(|| format!("{} was not found. Install it, or set its path in Settings → Providers.", adapter.label))?;
+    let ctx = context_of(meta);
+    if ctx.kind == "general" {
+        std::fs::create_dir_all(&ctx.path).map_err(|e| format!("general vault: {e}"))?;
+    }
+    let general = contexts::general_vault(app);
+    let system = prompt::system_append(&ctx, &general, None);
+    let dir = shell::session_dir(&state.data_dir, &meta.id);
+    let (context_file, _) = write_thread_files(&dir, &system, None)?;
+    let extension = dir.join("qp-modes.ts");
+    std::fs::write(&extension, crate::pi::MODES_EXTENSION).map_err(|e| format!("qp-modes.ts: {e}"))?;
+    let mut args = exe.prefix.clone();
+    let session = meta.provider_session_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    args.extend(crate::pi::launch_args(&extension.to_string_lossy(), session, &effective_model(meta, settings)));
+    args.extend(["--append-system-prompt".to_string(), context_file.to_string_lossy().into_owned()]);
+    args.extend(settings.extra_args(&meta.provider));
+    Ok(LaunchPlan {
+        key: plan_key(meta, settings),
+        program: exe.program,
+        args,
+        cwd: meta.cwd.clone(),
+        env: agent_env(
+            settings,
+            &meta.provider,
+            vec![
+                ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
+                ("QS_PILOT_THREAD".into(), meta.id.clone()),
+                ("QP_PILOT_MODE".into(), meta.mode.clone()),
+            ],
+        ),
+        driver: Box::new(PiDriver::new(PiOptions { provider: static_id(&meta.provider), label: adapter.label.clone(), mode: meta.mode.clone(), model: effective_model(meta, settings) })),
+    })
+}
+
 /// An attachment from the composer: saved by `pilot_attachment_*` first.
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -509,7 +608,7 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
     if meta.kind != "chat" {
         // A V2 terminal row continues as a chat when its CLI can.
         let provider = if meta.provider.is_empty() { "claude".to_string() } else { meta.provider.clone() };
-        if !CHAT_PROVIDERS.contains(&provider.as_str()) {
+        if !lock(&state.settings).is_chat_provider(&provider) {
             return Err(format!("this {provider} session can only continue in its terminal for now"));
         }
         state.db.make_chat(&id, &provider).map_err(|e| e.to_string())?;
@@ -566,8 +665,10 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
         &id,
         input,
         attachments,
-        || match provider.as_str() {
-            "codex" => codex_plan(app, state, &meta, &settings),
+        || match adapters::find(&settings, &provider).and_then(|a| a.protocol()) {
+            Some(adapters::Protocol::Codex) => codex_plan(app, state, &meta, &settings),
+            Some(adapters::Protocol::Acp) => acp_plan(app, state, &meta, &settings),
+            Some(adapters::Protocol::PiRpc) => pi_plan(app, state, &meta, &settings),
             _ => claude_plan(app, state, &meta, &settings),
         },
         &key,
@@ -2157,7 +2258,7 @@ pub fn pilot_thread_update(
     }
     let mut before = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
     if let Some(p) = provider.as_deref().map(str::trim).filter(|p| !p.is_empty() && *p != before.provider) {
-        if !CHAT_PROVIDERS.contains(&p) {
+        if !lock(&state.settings).is_chat_provider(p) {
             return Err(format!("'{p}' cannot run a chat thread yet"));
         }
         if state.runtime.active_turn(&id).is_some() {
@@ -2317,8 +2418,24 @@ pub fn pilot_provider_catalog(app: AppHandle, state: State<'_, PilotState>, prov
         state.runtime.store_catalog(catalog.clone());
         return Ok(with_custom_models(catalog, &settings));
     }
-    if provider != "claude" {
-        return Err(format!("no catalog for '{provider}' yet"));
+    let adapter = adapters::find(&settings, &provider).ok_or_else(|| format!("unknown agent '{provider}'"))?;
+    match adapter.protocol() {
+        Some(adapters::Protocol::PiRpc) => {
+            let exe = providers::resolve(&adapter, &settings).ok_or_else(|| format!("{} was not found", adapter.label))?;
+            let mut args = exe.prefix.clone();
+            args.extend(["--mode".to_string(), "rpc".to_string(), "--no-session".to_string()]);
+            let driver = Box::new(PiDriver::new(PiOptions { provider: static_id(&provider), label: adapter.label.clone(), ..Default::default() }));
+            let catalog = runtime::discover(&exe.program, &args, &cwd.to_string_lossy(), &env, driver)?;
+            state.runtime.store_catalog(catalog.clone());
+            return Ok(with_custom_models(catalog, &settings));
+        }
+        // An ACP agent names its models when a session opens: until a thread
+        // has run, the picker offers its default and the user's own ids.
+        Some(adapters::Protocol::Acp) => {
+            return Ok(with_custom_models(Catalog { provider: provider.clone(), ..Default::default() }, &settings));
+        }
+        Some(adapters::Protocol::Claude) => {}
+        _ => return Err(format!("{} runs in a terminal only", adapter.label)),
     }
     let adapter = adapters::find(&settings, "claude").ok_or("Claude Code is not a known adapter")?;
     let exe = providers::resolve(&adapter, &settings).ok_or("Claude Code was not found")?;

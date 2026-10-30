@@ -17,7 +17,7 @@ import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useKeysStore } from '#pilot/stores/keys'
 import { useCommands } from '#pilot/utils/commands'
-import { compactTokens, effortsFor, MODES, type MenuOption, type ProviderOption } from '#pilot/utils/models'
+import { compactTokens, effortsFor, MODES, modesFor, type MenuOption, type ProviderOption } from '#pilot/utils/models'
 import { formatDuration } from '#pilot/utils/timeline'
 import type { Mode, ProviderCatalog } from '#pilot/types'
 
@@ -27,7 +27,6 @@ const threads = useThreadStore()
 const store = usePilotStore()
 
 /** Agents that can run a chat thread today (more arrive with card 20). */
-const CHAT_PROVIDERS = ['claude', 'codex']
 
 const view = computed(() => threads.view(props.threadId))
 const thread = computed(() => store.sessions.find((s) => s.id === props.threadId) ?? null)
@@ -62,7 +61,8 @@ async function loadCatalog(id = provider.value, refresh = false) {
 const started = computed(() => Boolean(thread.value?.providerSessionId) || running.value || Boolean(view.value?.items.some((i) => i.kind === 'user')))
 const providers = computed<ProviderOption[]>(() =>
   store.adapters
-    .filter((a) => CHAT_PROVIDERS.includes(a.id))
+    // Every agent with a chat protocol (card 20): Claude, Codex, the ACP agents, pi and omp.
+    .filter((a) => a.chat ?? (a.id === 'claude' || a.id === 'codex'))
     .filter((a) => a.id === provider.value || !store.settings?.providers?.[a.id]?.disabled)
     .map((a) => {
       if (a.found === false) return { id: a.id, label: a.label, available: false, reason: `${a.label} is not installed` }
@@ -100,7 +100,8 @@ const effortOptions = computed<MenuOption[]>(() => [
 
 const modeInfo = computed(() => MODES.find((m) => m.id === thread.value?.mode) ?? MODES[4])
 const MODE_ICONS: Record<Mode, unknown> = { ask: ShieldCheck, edits: FilePen, auto: Sparkles, plan: ClipboardList, full: Zap }
-const modeOptions = computed<MenuOption[]>(() => MODES.map((m) => ({ id: m.id, label: m.label, description: m.description })))
+// An agent without an automatic reviewer does not offer Auto (card 20).
+const modeOptions = computed<MenuOption[]>(() => modesFor(provider.value).map((m) => ({ id: m.id, label: m.label, description: m.description })))
 
 // ── Context and limits ──
 const usage = computed(() => view.value?.usage)

@@ -317,12 +317,46 @@ Shipped with card 8 (`crate/src/codex.rs`, fixture
 
 ### 5.3 ACP and Pi (card 20)
 
-A generic ACP v1 client (initialize, `session/new`, `session/load` or resume
-when advertised, `session/prompt`, `session/update`, `session/request_permission`,
-`session/set_mode` acknowledged before the prompt, `session/cancel`) serves
-Gemini CLI, OpenCode, GitHub Copilot CLI and **Custom ACP agent** entries
-(which replace V2's custom adapters). Pi and omp use Pi RPC mode, with a small
-injected extension enforcing the permission modes.
+Shipped (`crate/src/acp.rs`, `crate/src/pi.rs`, `pi_modes.ts`):
+
+- ACP v1 client for Gemini CLI (`gemini --experimental-acp`), OpenCode
+  (`opencode acp`), GitHub Copilot CLI (`copilot --acp`, a new built-in) and
+  the user's own agents (Settings → Providers → Your own agents, "Speaks:
+  ACP"; V2 entries stay "Terminal" and keep running in terminal sessions).
+  `initialize` offers no file system and no terminal (requests for them are
+  refused); `session/new`, or `session/load` when advertised (its replayed
+  history is not shown again; a lost session starts a new one with a
+  notice); QuantMCP as an HTTP MCP server named `quantsuite-<thread>` when
+  the agent takes HTTP MCP; the suite's context ahead of a new session's
+  first prompt (ACP has no system prompt); images when advertised.
+  Streaming: message chunks (split at a tool call or thought when there is
+  no `messageId`), thoughts, tool calls and updates (diffs → changed files),
+  plans → task list, `available_commands_update` → the slash menu, models
+  from the session → the picker (`session/set_model`), `usage_update`.
+- Modes: the thread's mode maps onto the agent's modes (`acp::mode_for`:
+  plan / yolo-bypass-full / autoEdit-acceptEdits / default-ask-build) with
+  `session/set_mode` acknowledged before the prompt; a refused switch or a
+  missing mode fails the turn. Permission replies carry the policy too:
+  Full access answers `allow_once` itself, Accept edits for edits, Plan
+  declines anything but reading; Supervised asks (Allow → allow_once,
+  Allow for the session → allow_always, Deny → reject_once). Stop answers
+  waiting requests "cancelled", then `session/cancel`.
+- pi and omp in RPC mode: `--mode rpc -e <thread>/qp-modes.ts
+  [--session <file>] [--model provider/id] --append-system-prompt
+  <context.txt>`; events → messages, thinking, tools (writes/edits →
+  changed files), usage and cost; `prompt` with `streamingBehavior: steer`
+  while a turn runs; `abort`; resume by session file (`get_state`). The
+  extension stops what the mode does not allow and asks through an RPC
+  `select` titled `QP_APPROVAL {json}` (→ an approval; other extensions'
+  selects/confirms → questions); `/qp-mode <mode>` switches it. omp speaks
+  the same protocol but announces commands itself and does not echo ids.
+- Neither has an automatic reviewer: Auto is not offered for them (the
+  composer's mode list per agent) and fails the turn if it is set.
+- Verified: fixture tests for both drivers; live (no inference) pi and omp
+  load the mode extension. Not verified live: Gemini CLI and Copilot CLI are
+  not installed on the development machine (the `copilot` on its PATH is a
+  stub that says so), OpenCode 1.3.15 fails at startup there with its own
+  database migration error, and pi/omp have no model with a key there.
 
 ### 5.4 Capabilities
 
