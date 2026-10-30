@@ -121,7 +121,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="qp-settings">
+  <div class="qp-settings" data-module="pilot">
     <p class="qp-settings-desc">
       Commands for a project, run in a terminal of the thread's checkout — from the thread header, by their key, when a worktree is created
       (install dependencies) or when a thread settles (clean build output). The first one is the header's button.

@@ -96,7 +96,7 @@ function requestLine(kind: string, data: Record<string, any>): string {
 }
 .qp-act-head:hover { color: var(--qss-text-secondary, #9a9aa5); background: var(--qss-bg-hover, #313139); }
 .qp-act-head:focus-visible { outline: 1px solid var(--qss-accent, #7aa2f7); }
-.qp-act-caret { flex-shrink: 0; transition: transform 0.12s ease; }
+.qp-act-caret { flex-shrink: 0; transition: transform calc(var(--qp-motion, 160ms) * 0.75) ease; }
 .qp-act-caret.open { transform: rotate(90deg); }
 .qp-act-title { flex-shrink: 0; font-weight: 500; }
 .running .qp-act-title { color: var(--qss-text-secondary, #9a9aa5); }

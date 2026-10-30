@@ -90,6 +90,8 @@ export interface AdapterStatus {
   version: string | null
   loggedIn: boolean | null
   detail: string | null
+  /** How Update would run: npm, winget, native or cli (card 19). */
+  update?: string | null
 }
 
 export interface PilotStatus {
@@ -147,6 +149,36 @@ export interface PilotSettings {
   commitStyle: 'repository' | 'standard'
   /** Project actions by project (context id), in order (card 13). */
   actions: Record<string, ProjectAction[]>
+  /** The agent of a new thread (card 19). */
+  defaultProvider: string
+  /** Per agent: extra arguments, environment, own model ids, off (card 19). */
+  providers: Record<string, ProviderPrefs>
+  /** Variables for every agent process. */
+  env: Record<string, string>
+  /** New Claude processes ignore inherited API keys, tokens and endpoints. */
+  preferSavedClaudeLogin: boolean
+  textSize: 'small' | 'default' | 'large' | 'larger'
+  /** Panels and menus, 0–400 ms; reduced motion turns it off. */
+  panelMotionMs: number
+  renderMath: boolean
+  /** What a project changes for its new threads (card 19). */
+  projects: Record<string, ProjectPrefs>
+}
+
+export interface ProviderPrefs {
+  args: string
+  env: Record<string, string>
+  models: string[]
+  disabled: boolean
+}
+
+/** `null` / absent inherits the default. */
+export interface ProjectPrefs {
+  provider?: string | null
+  model?: Record<string, string>
+  mode?: Mode | null
+  workspace?: 'local' | 'worktree' | null
+  enabled?: string[] | null
 }
 
 // ── Files tab, terminal drawer, project actions (card 13) ──

@@ -67,6 +67,11 @@ Default permissions for the pilot module.
 - `allow-pilot-messages-search`
 - `allow-pilot-keybindings-get`
 - `allow-pilot-keybindings-set`
+- `allow-pilot-provider-update`
+- `allow-pilot-gh-status`
+- `allow-pilot-diagnostics`
+- `allow-pilot-export-logs`
+- `allow-pilot-open-data-dir`
 - `allow-pilot-usage-report`
 - `allow-pilot-usage-limits`
 - `allow-pilot-ports-alive`
@@ -389,6 +394,32 @@ Denies the pilot_contexts command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-diagnostics`
+
+</td>
+<td>
+
+Enables the pilot_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-diagnostics`
+
+</td>
+<td>
+
+Denies the pilot_diagnostics command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-diff-action`
 
 </td>
@@ -460,6 +491,32 @@ Enables the pilot_diff_list command without any pre-configured scope.
 <td>
 
 Denies the pilot_diff_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-export-logs`
+
+</td>
+<td>
+
+Enables the pilot_export_logs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-export-logs`
+
+</td>
+<td>
+
+Denies the pilot_export_logs command without any pre-configured scope.
 
 </td>
 </tr>
@@ -590,6 +647,32 @@ Enables the pilot_files_search command without any pre-configured scope.
 <td>
 
 Denies the pilot_files_search command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-status`
+
+</td>
+<td>
+
+Enables the pilot_gh_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-status`
+
+</td>
+<td>
+
+Denies the pilot_gh_status command without any pre-configured scope.
 
 </td>
 </tr>
@@ -987,6 +1070,32 @@ Denies the pilot_messages_search command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-open-data-dir`
+
+</td>
+<td>
+
+Enables the pilot_open_data_dir command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-open-data-dir`
+
+</td>
+<td>
+
+Denies the pilot_open_data_dir command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-port-owner`
 
 </td>
@@ -1136,6 +1245,32 @@ Enables the pilot_provider_catalog command without any pre-configured scope.
 <td>
 
 Denies the pilot_provider_catalog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-provider-update`
+
+</td>
+<td>
+
+Enables the pilot_provider_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-provider-update`
+
+</td>
+<td>
+
+Denies the pilot_provider_update command without any pre-configured scope.
 
 </td>
 </tr>

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-diagnostics"
+description = "Enables the pilot_diagnostics command without any pre-configured scope."
+commands.allow = ["pilot_diagnostics"]
+
+[[permission]]
+identifier = "deny-pilot-diagnostics"
+description = "Denies the pilot_diagnostics command without any pre-configured scope."
+commands.deny = ["pilot_diagnostics"]
