@@ -623,6 +623,7 @@ mod live {
                 }
             }
             let _ = child.kill();
+            let _ = child.wait();
             println!("{id} ({}): qp-mode loaded = {}", exe.found, names.iter().any(|n| n == "qp-mode"));
             assert!(names.iter().any(|n| n == "qp-mode"), "{id}: {names:?}");
         }

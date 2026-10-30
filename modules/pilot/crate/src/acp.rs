@@ -855,6 +855,7 @@ mod live {
                 }
             }
             let _ = child.kill();
+            let _ = child.wait();
             let mut err = String::new();
             if let Some(mut e) = child.stderr.take() {
                 use std::io::Read;
