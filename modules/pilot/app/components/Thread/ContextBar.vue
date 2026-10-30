@@ -15,10 +15,12 @@ import { AlertTriangle, Copy, FolderGit2, GitBranch, Laptop } from 'lucide-vue-n
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useGitStore } from '#pilot/stores/git'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { useKeysStore } from '#pilot/stores/keys'
 
 const props = defineProps<{ threadId: string }>()
 const store = usePilotStore()
 const git = useGitStore()
+const keys = useKeysStore()
 
 const thread = computed(() => store.sessions.find((s) => s.id === props.threadId) ?? null)
 const info = computed(() => git.info[props.threadId] ?? null)
@@ -95,7 +97,7 @@ const baseLabel = computed(() => info.value?.baseBranch || repo.value?.branch ||
     </template>
     <template v-else-if="repo">
       <span class="qp-cb-sep">·</span>
-      <span v-if="!started" class="qp-cb-seg" role="radiogroup" aria-label="Where the thread works" title="Local or Worktree (Ctrl+Shift+X)">
+      <span v-if="!started" class="qp-cb-seg" role="radiogroup" aria-label="Where the thread works" :title="keys.hint('composer.workspace', 'Local or Worktree')">
         <button class="qp-cb-seg-btn" role="radio" :aria-checked="!isWorktree" :class="{ on: !isWorktree }" @click="setMode('local')">
           <Laptop :size="12" /> Local
         </button>
@@ -107,7 +109,7 @@ const baseLabel = computed(() => info.value?.baseBranch || repo.value?.branch ||
       <span class="qp-cb-sep">·</span>
       <template v-if="draftWorktree">
         <span class="qp-cb-anchor">
-          <button class="qp-cb-chip" title="Base branch (Ctrl+Shift+G)" @click="picker = picker === 'base' ? null : 'base'">from {{ baseLabel }}</button>
+          <button class="qp-cb-chip" :title="keys.hint('composer.branch', 'Base branch')" @click="picker = picker === 'base' ? null : 'base'">from {{ baseLabel }}</button>
           <PilotThreadBranchPicker v-if="picker === 'base'" :thread-id="threadId" mode="base" :current="baseLabel" @pick="onPick" @close="picker = null" />
         </span>
         <span class="qp-cb-anchor">
@@ -121,7 +123,7 @@ const baseLabel = computed(() => info.value?.baseBranch || repo.value?.branch ||
         <button
           class="qp-cb-chip"
           :disabled="isWorktree"
-          :title="isWorktree ? 'The worktree stays on its branch' : 'Switch or create a branch (Ctrl+Shift+G)'"
+          :title="isWorktree ? 'The worktree stays on its branch' : keys.hint('composer.branch', 'Switch or create a branch')"
           @click="picker = picker === 'branch' ? null : 'branch'"
         >
           <GitBranch :size="12" /> {{ branchLabel }}

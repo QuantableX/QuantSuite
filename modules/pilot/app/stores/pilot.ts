@@ -102,6 +102,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
     contexts: [] as PilotContext[],
     sessions: [] as SessionMeta[],
     activeId: null as string | null,
+    /** Threads visited before and after the open one (Ctrl+[ / Ctrl+], card 17). */
+    history: { back: [] as string[], forward: [] as string[] },
     live: {} as Record<string, SessionLive>,
     lastError: '',
     /** The stage's grid, measured by the page, so a launch draws at the right size first time. */
@@ -259,10 +261,28 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
 
     /** Switch to a thread. Its conversation loads; nothing starts until a message is sent. */
-    async openSession(id: string) {
+    async openSession(id: string, fromHistory = false) {
+      if (!fromHistory && this.activeId && this.activeId !== id) {
+        this.history.back = [...this.history.back, this.activeId].slice(-50)
+        this.history.forward = []
+      }
       this.activeId = id
       useSidebarStore().markRead(id)
       await useThreadStore().open(id)
+    },
+
+    /** Back (-1) or forward (1) through the visited threads, past ones that are gone. */
+    async goHistory(dir: -1 | 1): Promise<boolean> {
+      const from = dir === -1 ? this.history.back : this.history.forward
+      const to = dir === -1 ? this.history.forward : this.history.back
+      while (from.length) {
+        const id = from.pop()!
+        if (id === this.activeId || !this.sessions.some((s) => s.id === id)) continue
+        if (this.activeId) to.push(this.activeId)
+        await this.openSession(id, true)
+        return true
+      }
+      return false
     },
 
     /** V2's terminal for a row: launch (or attach to) its PTY and show it. */

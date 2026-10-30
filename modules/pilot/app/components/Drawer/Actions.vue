@@ -10,7 +10,7 @@ import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { Bug, ChevronDown, Hammer, Play, Settings2, SlidersHorizontal, TestTube2, WandSparkles } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useDrawerStore } from '#pilot/stores/drawer'
-import { chordOf } from '#pilot/utils/keys'
+import { chordOf } from '#pilot/utils/keybindings'
 import type { ProjectAction } from '#pilot/types'
 
 const props = defineProps<{ threadId: string }>()

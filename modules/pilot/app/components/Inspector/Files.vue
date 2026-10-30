@@ -8,9 +8,11 @@
 import { computed } from 'vue'
 import { FolderTree, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-vue-next'
 import { useInspectorStore } from '#pilot/stores/inspector'
+import { useKeysStore } from '#pilot/stores/keys'
 
 const props = defineProps<{ threadId: string }>()
 const inspector = useInspectorStore()
+const keys = useKeysStore()
 const target = computed(() => inspector.file[props.threadId] ?? null)
 /** The tree marks a file inside the checkout by its relative path. */
 const currentRel = computed(() => {
@@ -33,7 +35,7 @@ function open(rel: string, line: number | null = null) {
         <button class="qp-files-seg-btn" role="radio" :aria-checked="inspector.filesMode === 'tree'" :class="{ on: inspector.filesMode === 'tree' }" title="Files" @click="inspector.filesMode = 'tree'; inspector.setShowTree(true)">
           <FolderTree :size="13" />
         </button>
-        <button class="qp-files-seg-btn" role="radio" :aria-checked="inspector.filesMode === 'search'" :class="{ on: inspector.filesMode === 'search' }" title="Search the project (Ctrl+Shift+F)" @click="inspector.filesMode = 'search'; inspector.setShowTree(true)">
+        <button class="qp-files-seg-btn" role="radio" :aria-checked="inspector.filesMode === 'search'" :class="{ on: inspector.filesMode === 'search' }" :title="keys.hint('projectSearch.toggle', 'Search the project')" @click="inspector.filesMode = 'search'; inspector.setShowTree(true)">
           <Search :size="13" />
         </button>
       </span>

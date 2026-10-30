@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-keybindings-get"
+description = "Enables the pilot_keybindings_get command without any pre-configured scope."
+commands.allow = ["pilot_keybindings_get"]
+
+[[permission]]
+identifier = "deny-pilot-keybindings-get"
+description = "Denies the pilot_keybindings_get command without any pre-configured scope."
+commands.deny = ["pilot_keybindings_get"]

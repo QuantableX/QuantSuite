@@ -152,6 +152,42 @@ fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
 
 const ITEM_COLS: &str = "id, thread_id, turn_id, seq, kind, parent, data, created_at, updated_at";
 
+/// One message of the palette's "In messages" (card 17).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageHit {
+    pub thread_id: String,
+    pub item_id: String,
+    pub kind: String,
+    pub snippet: String,
+    pub created_at: i64,
+}
+
+/// `text` around the first case-insensitive match of `needle`, on one line,
+/// `context` characters to each side, with an ellipsis where it was cut.
+pub fn snippet(text: &str, needle: &str, context: usize) -> String {
+    let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let chars: Vec<char> = flat.chars().collect();
+    let lower: Vec<char> = flat.to_lowercase().chars().collect();
+    let want: Vec<char> = needle.to_lowercase().chars().collect();
+    // Lowercasing can change the length of exotic characters: then no offset is trusted.
+    let at = if lower.len() == chars.len() && !want.is_empty() {
+        lower.windows(want.len()).position(|w| w == want.as_slice()).unwrap_or(0)
+    } else {
+        0
+    };
+    let start = at.saturating_sub(context);
+    let end = (at + want.len() + context).min(chars.len());
+    let mut out: String = chars[start..end].iter().collect();
+    if start > 0 {
+        out = format!("…{out}");
+    }
+    if end < chars.len() {
+        out.push('…');
+    }
+    out
+}
+
 fn row_item(r: &rusqlite::Row<'_>) -> rusqlite::Result<Item> {
     let kind: String = r.get(4)?;
     let data: String = r.get(6)?;
@@ -1084,6 +1120,31 @@ impl Database {
     }
 
     /// The newest `limit` items before `before_seq` (all when `None`), oldest first.
+    /// The command palette's "In messages" (card 17): user messages, answers
+    /// and plans of every thread that contain `query` (case-insensitive), newest
+    /// first, each with a snippet around the first match.
+    pub fn search_messages(&self, query: &str, limit: i64) -> rusqlite::Result<Vec<MessageHit>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT t.thread_id, t.id, t.kind, COALESCE(json_extract(t.data, '$.text'), json_extract(t.data, '$.plan'), ''), t.created_at
+               FROM timeline t JOIN threads th ON th.id = t.thread_id
+              WHERE t.kind IN ('user', 'assistant', 'plan') AND t.parent IS NULL
+                AND instr(lower(COALESCE(json_extract(t.data, '$.text'), json_extract(t.data, '$.plan'), '')), lower(?1)) > 0
+              ORDER BY t.created_at DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![query, limit], |r| {
+            let text: String = r.get(3)?;
+            Ok(MessageHit {
+                thread_id: r.get(0)?,
+                item_id: r.get(1)?,
+                kind: r.get(2)?,
+                snippet: snippet(&text, query, 60),
+                created_at: r.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn items(&self, thread_id: &str, before_seq: Option<i64>, limit: i64) -> rusqlite::Result<Vec<Item>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(&format!(
@@ -1723,5 +1784,29 @@ mod tests {
         let t = db.last_turn("t1").unwrap().unwrap();
         assert_eq!(t.status, "completed");
         assert_eq!(t.duration_ms, Some(42));
+    }
+
+    /// Card 17: the palette's "In messages" — every thread, top-level messages and plans only.
+    #[test]
+    fn messages_search_across_threads() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_session(&thread("a")).unwrap();
+        db.insert_session(&thread("b")).unwrap();
+        let mut n = 0;
+        let mut put = |t: &str, kind: ItemKind, parent: Option<&str>, data: serde_json::Value| {
+            n += 1;
+            db.upsert_item(&Item { id: format!("i{n}"), thread_id: t.into(), turn_id: "u1".into(), seq: n, kind, parent: parent.map(Into::into), data, created_at: n, updated_at: n }).unwrap();
+        };
+        put("a", ItemKind::User, None, json!({ "text": "Why does the Parser fail?" }));
+        put("b", ItemKind::Assistant, None, json!({ "text": "The parser splits on spaces." }));
+        put("b", ItemKind::Assistant, Some("task1"), json!({ "text": "a subagent read the parser" }));
+        put("b", ItemKind::Plan, None, json!({ "plan": "1. Fix the PARSER" }));
+        put("b", ItemKind::Tool, None, json!({ "text": "parser" }));
+        let hits = db.search_messages("parser", 20).unwrap();
+        assert_eq!(hits.iter().map(|h| h.item_id.as_str()).collect::<Vec<_>>(), ["i4", "i2", "i1"], "newest first, no subagent text, no tools");
+        assert_eq!(hits[2].thread_id, "a");
+        assert_eq!(db.search_messages("parser", 1).unwrap().len(), 1);
+        assert_eq!(snippet("one two   three\nfour five", "THREE", 4), "…two three fou…");
+        assert_eq!(snippet("short", "nothing", 60), "short");
     }
 }

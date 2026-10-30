@@ -26,6 +26,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowUp, Ban, CornerDownRight, FileText, Folder, ListPlus, Loader2, Paperclip, Play, Plus, Square, X } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useKeysStore } from '#pilot/stores/keys'
+import { useCommands } from '#pilot/utils/commands'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
 import { caretLine } from '#pilot/utils/caret'
@@ -499,6 +501,10 @@ const stashOpen = ref(false)
 function persistStash() {
   save('pilot.stash.v1', stashes.value)
 }
+// Ctrl+S (card 17: a rebindable command): the open thread's draft.
+const keys = useKeysStore()
+useCommands({ 'composer.stash': () => (store.activeId === props.threadId && !editing.value ? stash() : false) })
+
 function stash() {
   if (!hasContent.value) {
     if (stashes.value.length === 1) restore(stashes.value[0].id)
@@ -598,11 +604,6 @@ function onKey(e: KeyboardEvent) {
     } else if (e.key === 'ArrowDown' && recalled && caretLine(el).last) {
       if (recallStep(-1)) e.preventDefault()
     }
-    return
-  }
-  if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's') {
-    e.preventDefault()
-    stash()
     return
   }
   if (mod && e.shiftKey && e.key.toLowerCase() === 'v') {
@@ -1122,7 +1123,7 @@ function focus() {
         <button
           v-if="stashes.length && !editing"
           class="qp-c-stash"
-          :title="hasContent ? 'Stash this prompt (Ctrl+S)' : 'Restore a stashed prompt (Ctrl+S)'"
+          :title="keys.hint('composer.stash', hasContent ? 'Stash this prompt' : 'Restore a stashed prompt')"
           @click.stop="hasContent ? stash() : (stashOpen = !stashOpen)"
         >
           Stash · {{ stashes.length }}

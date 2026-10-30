@@ -7,10 +7,12 @@
 import { computed, ref } from 'vue'
 import { FileDiff } from 'lucide-vue-next'
 import { useInspectorStore } from '#pilot/stores/inspector'
+import { useKeysStore } from '#pilot/stores/keys'
 import type { FileChange, ThreadItem } from '#pilot/types'
 
 const props = defineProps<{ item: ThreadItem }>()
 const inspector = useInspectorStore()
+const keys = useKeysStore()
 const all = ref(false)
 
 const files = computed<FileChange[]>(() => (Array.isArray(props.item.data.files) ? props.item.data.files : []))
@@ -31,7 +33,7 @@ function open(path: string | null = null) {
       <FileDiff :size="13" />
       <span class="qp-chg-title">{{ files.length }} file{{ files.length === 1 ? '' : 's' }} changed</span>
       <span class="qp-chg-num"><span class="add">+{{ item.data.added ?? 0 }}</span> <span class="del">−{{ item.data.removed ?? 0 }}</span></span>
-      <button class="qp-chg-open" title="Open the turn's diff (Ctrl+D)" @click="open()">Open diff</button>
+      <button class="qp-chg-open" :title="keys.hint('diff.toggle', 'Open the turn\'s diff')" @click="open()">Open diff</button>
     </div>
     <button v-for="f in shown" :key="f.path" class="qp-chg-file" :title="f.path" @click="open(f.path)">
       <span class="qp-chg-st" :data-st="f.status">{{ f.status }}</span>

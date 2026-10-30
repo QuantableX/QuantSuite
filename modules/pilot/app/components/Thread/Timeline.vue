@@ -12,10 +12,11 @@
  *   Highlight API; Enter / Shift+Enter move, Escape closes.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useShortcuts } from '@quantsuite/core'
 import { ArrowDown, ChevronDown, ChevronUp, X } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
 import { groupTurns } from '#pilot/utils/timeline'
+import { useCommands } from '#pilot/utils/commands'
+import { usePilotStore } from '#pilot/stores/pilot'
 
 const props = defineProps<{ threadId: string }>()
 const emit = defineEmits<{ notice: [text: string] }>()
@@ -99,6 +100,29 @@ watch(
   (loaded) => {
     if (loaded) void nextTick(() => scrollToBottom())
   }
+)
+
+// ── A message the palette opens at (card 17): older pages load until it is here ──
+watch(
+  () => [threads.reveal?.nonce, view.value?.loaded] as const,
+  async () => {
+    const r = threads.reveal
+    if (!r || r.threadId !== props.threadId || !view.value?.loaded) return
+    threads.reveal = null
+    let guard = 0
+    while (!view.value.items.some((i) => i.id === r.itemId) && view.value.hasMore && guard++ < 50) await threads.loadOlder(props.threadId)
+    await nextTick()
+    const item = view.value.items.find((i) => i.id === r.itemId)
+    const root = content.value
+    if (!item || !root) return
+    // A message folded into "Worked for …" has no row of its own: its turn stands in.
+    const el = root.querySelector(`[data-item-id="${CSS.escape(item.id)}"]`) ?? root.querySelector(`[data-turn="${CSS.escape(item.turnId)}"]`)
+    if (!(el instanceof HTMLElement)) return
+    el.scrollIntoView({ block: 'center' })
+    el.classList.add('qp-flash')
+    setTimeout(() => el.classList.remove('qp-flash'), 1600)
+  },
+  { immediate: true }
 )
 
 // ── Find ──
@@ -211,16 +235,11 @@ function onFindKey(e: KeyboardEvent) {
   }
 }
 
-useShortcuts([
-  {
-    key: 'f',
-    ctrl: true,
-    handler: (e) => {
-      e.preventDefault()
-      void openFind()
-    },
-  },
-])
+// Find (card 17: a rebindable command); only the open thread's timeline answers.
+const pilotStore = usePilotStore()
+useCommands({
+  'chat.find': () => (pilotStore.activeId === props.threadId ? openFind() : false),
+})
 </script>
 
 <template>
@@ -233,7 +252,7 @@ useShortcuts([
       <button class="qp-find-btn" title="Close (Escape)" @click="closeFind"><X :size="14" /></button>
     </div>
 
-    <div ref="scroller" class="qp-tl-scroll" @scroll.passive="onScroll">
+    <div ref="scroller" class="qp-tl-scroll" tabindex="-1" @scroll.passive="onScroll">
       <div ref="content" class="qp-tl-content">
         <div v-if="view?.loadingOlder" class="qp-tl-older">Loading earlier messages…</div>
         <PilotThreadTurn
@@ -257,7 +276,11 @@ useShortcuts([
 
 <style scoped>
 .qp-tl { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.qp-tl-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; }
+.qp-tl-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; outline: none; }
+.qp-tl-scroll:focus-visible { box-shadow: inset 0 0 0 1px var(--qss-accent, #7aa2f7); }
+.qp-tl-content :deep(.qp-flash) { animation: qp-flash 1.6s ease-out; border-radius: 10px; }
+@keyframes qp-flash { 0%, 30% { background: color-mix(in srgb, var(--qss-accent, #7aa2f7) 18%, transparent); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .qp-tl-content :deep(.qp-flash) { animation: none; outline: 1px solid var(--qss-accent, #7aa2f7); } }
 .qp-tl-content { max-width: 780px; margin: 0 auto; padding: 18px 24px 8px; }
 .qp-tl-older { text-align: center; font-size: 12px; color: var(--qss-text-muted, #6e6e7a); padding: 6px 0 12px; }
 .qp-jump {

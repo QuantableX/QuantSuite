@@ -9,7 +9,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { GripVertical, Plus, Trash2 } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
-import { chordOf, usableChord } from '#pilot/utils/keys'
+import { chordOf, usableKey as usableChord } from '#pilot/utils/keybindings'
 import type { ActionIcon, ProjectAction } from '#pilot/types'
 
 const store = usePilotStore()
