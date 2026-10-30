@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-messages-search"
+description = "Enables the pilot_messages_search command without any pre-configured scope."
+commands.allow = ["pilot_messages_search"]
+
+[[permission]]
+identifier = "deny-pilot-messages-search"
+description = "Denies the pilot_messages_search command without any pre-configured scope."
+commands.deny = ["pilot_messages_search"]

@@ -6,8 +6,10 @@
  */
 import { computed } from 'vue'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { useKeysStore } from '#pilot/stores/keys'
 
 const sb = useSidebarStore()
+const keys = useKeysStore()
 const entry = computed(() => sb.latestUndo)
 </script>
 
@@ -15,7 +17,7 @@ const entry = computed(() => sb.latestUndo)
   <Transition name="qp-toast">
     <div v-if="entry" :key="entry.id" class="qp-toast" role="status">
       <span class="qp-toast-text">{{ entry.label }}</span>
-      <button class="qp-toast-undo" title="Undo (Ctrl+Z)" @click="sb.undoLatest()">Undo</button>
+      <button class="qp-toast-undo" :title="keys.hint('thread.undo', 'Undo')" @click="sb.undoLatest()">Undo</button>
       <button class="qp-toast-x" aria-label="Dismiss" @click="sb.dismissUndo(entry.id)">×</button>
     </div>
   </Transition>

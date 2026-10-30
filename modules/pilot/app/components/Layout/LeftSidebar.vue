@@ -36,10 +36,12 @@ import {
   type SidebarThread,
 } from '#pilot/utils/sidebar'
 import type { SessionMeta } from '#pilot/types'
+import { useKeysStore } from '#pilot/stores/keys'
 
 const store = usePilotStore()
 const threads = useThreadStore()
 const sb = useSidebarStore()
+const keys = useKeysStore()
 
 const secs = computed(() => sb.sections)
 const metaById = computed(() => {
@@ -574,7 +576,7 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
         <option v-for="o in filterOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
       </select>
       <div class="qp-new">
-        <button class="qp-new-btn" title="New thread (Ctrl+N) — Ctrl+Alt+N without a project" @click="newThread()">
+        <button class="qp-new-btn" :title="`${keys.hint('chat.new', 'New thread')} — ${keys.hint('chat.newWithoutProject', 'without a project')}`" @click="newThread()">
           <Plus :size="14" />
         </button>
         <button class="qp-new-more" title="New thread in…" aria-haspopup="menu" :aria-expanded="newMenu" @click="newMenu = !newMenu">

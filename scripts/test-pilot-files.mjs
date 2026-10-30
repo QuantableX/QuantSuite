@@ -5,7 +5,7 @@ import { test } from 'node:test'
 
 const { parseFileRef, parseDelimited, languageOf, renderedOf } = await import('../modules/pilot/app/utils/files.ts')
 const { serverUrls, atPrompt } = await import('../modules/pilot/app/utils/terminal.ts')
-const { chordOf, usableChord, normalizeChord } = await import('../modules/pilot/app/utils/keys.ts')
+const { chordOf, usableKey: usableChord, normalizeKey: normalizeChord } = await import('../modules/pilot/app/utils/keybindings.ts')
 
 test('file references in messages', () => {
   assert.deepEqual(parseFileRef('src/a.ts:12'), { path: 'src/a.ts', line: 12, column: null })

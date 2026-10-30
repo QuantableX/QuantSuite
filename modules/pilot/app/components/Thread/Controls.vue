@@ -12,10 +12,11 @@
  * The catalog is asked for only when a picker opens.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useShortcuts } from '@quantsuite/core'
 import { ChevronDown, ClipboardList, FilePen, Gauge, ShieldCheck, Sparkles, Zap } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useKeysStore } from '#pilot/stores/keys'
+import { useCommands } from '#pilot/utils/commands'
 import { compactTokens, effortsFor, MODES, type MenuOption, type ProviderOption } from '#pilot/utils/models'
 import { formatDuration } from '#pilot/utils/timeline'
 import type { Mode, ProviderCatalog } from '#pilot/types'
@@ -189,17 +190,20 @@ onBeforeUnmount(() => {
   window.removeEventListener('qp-open-control', onOpenControl)
 })
 
-useShortcuts([
-  { key: 'm', ctrl: true, shift: true, handler: (e) => { e.preventDefault(); void toggle('model') } },
-  { key: 'e', ctrl: true, shift: true, handler: (e) => { e.preventDefault(); void toggle('effort') } },
-  { key: 'a', ctrl: true, shift: true, handler: (e) => { e.preventDefault(); void toggle('mode') } },
-])
+// The pickers' keys (card 17: rebindable); only the open thread's composer answers.
+const keys = useKeysStore()
+const mine = (fn: () => unknown) => () => (store.activeId === props.threadId ? fn() : false)
+useCommands({
+  'modelPicker.toggle': mine(() => toggle('model')),
+  'composer.effort': mine(() => toggle('effort')),
+  'composer.mode': mine(() => toggle('mode')),
+})
 </script>
 
 <template>
   <div ref="root" class="qp-ctl">
     <span class="qp-ctl-anchor">
-      <button class="qp-ctl-btn" :class="{ on: open === 'model' }" title="Model (Ctrl+Shift+M)" @click.stop="toggle('model')">
+      <button class="qp-ctl-btn" :class="{ on: open === 'model' }" :title="keys.hint('modelPicker.toggle', 'Model')" @click.stop="toggle('model')">
         <span class="qp-ctl-dot" :data-provider="provider" />
         <span class="qp-ctl-text">{{ store.adapterLabel(provider) }}</span>
         <span class="qp-ctl-sep">·</span>
@@ -226,7 +230,7 @@ useShortcuts([
     </span>
 
     <span v-if="efforts === null || efforts.length" class="qp-ctl-anchor">
-      <button class="qp-ctl-btn" :class="{ on: open === 'effort' }" title="Effort (Ctrl+Shift+E)" @click.stop="toggle('effort')">
+      <button class="qp-ctl-btn" :class="{ on: open === 'effort' }" :title="keys.hint('composer.effort', 'Effort')" @click.stop="toggle('effort')">
         <Gauge :size="12" />
         <span class="qp-ctl-text">{{ effortLabel }}</span>
       </button>
@@ -242,7 +246,7 @@ useShortcuts([
     </span>
 
     <span class="qp-ctl-anchor">
-      <button class="qp-ctl-btn" :class="[{ on: open === 'mode' }, `mode-${modeInfo.id}`]" title="Permissions (Ctrl+Shift+A)" @click.stop="toggle('mode')">
+      <button class="qp-ctl-btn" :class="[{ on: open === 'mode' }, `mode-${modeInfo.id}`]" :title="keys.hint('composer.mode', 'Permissions')" @click.stop="toggle('mode')">
         <component :is="MODE_ICONS[modeInfo.id]" :size="12" />
         <span class="qp-ctl-text">{{ modeInfo.short }}</span>
       </button>

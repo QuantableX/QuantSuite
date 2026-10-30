@@ -621,24 +621,47 @@ mode. Full access never answers *questions* for the user.
 
 ## 7. Default keybindings
 
-`mod` is Ctrl on Windows. Rules live in the pilot data dir as JSON
-(`key`, `command`, optional `when`); the last matching rule wins; the
-terminal keeps its own keys. `when` contexts: `terminalFocus`,
-`terminalOpen`, `previewFocus`, `composerFocus`, `editableFocus`,
-`turnRunning`, `modelPickerOpen`, `usagePageOpen`. Most defaults carry
-`!terminalFocus`. QuantPilot already binds Ctrl+B, Ctrl+Shift+B and Ctrl+,
-in `layouts/pilot.vue`; they keep their meaning. No Vim mode or Vim keys.
+`mod` is Ctrl on Windows. Card 17 shipped it as a command registry
+(`utils/keybindings.ts`: command ids, the default table below, `when`
+parser, `compile`/`resolve`) and one dispatcher in `layouts/pilot.vue`:
+each keydown inside the module becomes a chord (letters by layout, so
+Ctrl+Z is the Z key on QWERTZ too; digits and punctuation by physical key)
+and the last rule whose key and `when` match names the command; components
+register what they own with `useCommands` (`utils/commands.ts`, warm-cache
+aware; a handler returning `false` lets the key go on). Handlers closer to
+the key (menus, find bar, the terminal drawer, Monaco) claim it first with
+preventDefault; the suite's own keys (Ctrl+K, Ctrl+Shift+N) are taken in
+the capture phase. The user's rules live in `keybindings.json` in the
+pilot data dir (`pilot_keybindings_get/set`), after the defaults; a rule
+`{ "key", "command": "-id" }` removes that command's earlier rules on that
+key; invalid rules are skipped, named in Settings → Keybindings and kept
+in the file. `when` contexts: `terminalFocus`, `terminalOpen`,
+`previewFocus`, `previewOpen`, `inspectorFocus`, `inspectorOpen`,
+`composerFocus`, `editableFocus`, `turnRunning`, `modelPickerOpen`,
+`paletteOpen`, `usagePageOpen` (card 18); unknown ones are false; `!`,
+`&&`, `||`, parentheses. Settings → Keybindings: search, record (Escape
+cancels), Remove, Reset, conflict warnings (other commands, the suite's
+keys, project actions). Tooltips name the key a command has now. The
+command palette (`components/Palette.vue`, ranking in `utils/palette.ts`):
+threads of every project by title, branch, PR or project — frecency
+(opened often and lately) and the last pick for the same query boosted for
+three weeks; "In messages" (`pilot_messages_search`: top-level user
+messages, answers and plans of every thread, from three letters, opening
+at the message via `threads.reveal`); projects (New thread in…); actions
+with their keys. The open palette keeps the keyboard. Back/forward walks
+the visited threads (`pilot.history`). The composer's send keys (Enter
+variants, Alt+Up, history) stay the composer's own. No Vim mode or Vim keys.
 
 | Key | Command |
 | --- | --- |
 | Ctrl+N / Ctrl+Alt+N | New thread / new thread without a project |
-| Ctrl+K | Command palette (`>` = actions only) |
+| Ctrl+K | Command palette (`>` = actions only; Ctrl+1..9 pick; Escape back to the message box) |
 | Ctrl+B / Ctrl+Shift+B / Ctrl+Alt+B | Sidebar / thread panel / inspector |
 | Ctrl+J | Terminal drawer (Ctrl+N new, Ctrl+D split beside, Ctrl+Shift+D split below, Ctrl+W close the pane — while the drawer has focus) |
 | Ctrl+D / Ctrl+Shift+J | Diff tab / browser tab |
 | Ctrl+P / Ctrl+Shift+F | File picker / project search |
 | Ctrl+F | Find in thread (find in diff when the diff has focus) |
-| Ctrl+U | Usage page (C / T / L tabs, Ctrl+Shift+1..4 periods) |
+| Ctrl+U | Usage page (C / T / L tabs, Ctrl+Shift+1..4 periods) — card 18 |
 | Ctrl+, | Settings |
 | Enter / Shift+Enter | Send / new line (send shortcut is a setting) |
 | Ctrl+Enter | While a turn runs: the opposite of Queue/Steer; in a new thread: start in the background |
@@ -648,7 +671,7 @@ in `layouts/pilot.vue`; they keep their meaning. No Vim mode or Vim keys.
 | ArrowUp / ArrowDown in an empty composer | Prompt history |
 | Ctrl+S | Stash the prompt / restore a stash |
 | Ctrl+Shift+M / E / A / X / G / L | Model / effort / permission mode / workspace / branch / previous worktree |
-| Ctrl+1..9 | Open the first nine threads (pick entries while a picker is open) |
+| Ctrl+1..9 | Open the first nine threads (pick entries while the palette or model picker is open) |
 | Ctrl+Shift+[ / ] | Previous / next thread |
 | Ctrl+[ / ] | Back / forward |
 | Ctrl+Shift+S / Ctrl+Shift+P | Settle / pin thread |

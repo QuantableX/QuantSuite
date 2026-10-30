@@ -1445,6 +1445,16 @@ pub fn pilot_file_save_as(state: State<'_, PilotState>, id: String, path: String
     files::save_as(&root, &path, &target, content.as_deref())
 }
 
+/// The command palette's "In messages" (card 17): at least three letters.
+#[tauri::command(async)]
+pub fn pilot_messages_search(state: State<'_, PilotState>, query: String, limit: Option<i64>) -> Result<Vec<crate::db::MessageHit>, String> {
+    let q = query.trim();
+    if q.chars().count() < 3 {
+        return Ok(Vec::new());
+    }
+    state.db.search_messages(q, limit.unwrap_or(20).clamp(1, 50)).map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub fn pilot_text_search(state: State<'_, PilotState>, id: String, query: String, regex: Option<bool>, case: Option<bool>) -> Result<SearchResult, String> {
     let (_, root) = checkout_of(&state, &id)?;

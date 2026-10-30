@@ -221,6 +221,31 @@ fn pilot_settings_set(state: State<'_, PilotState>, settings: Settings) -> Resul
     Ok(settings)
 }
 
+/// Settings → Keybindings (card 17): the user's rules, a JSON array in the
+/// data dir (`keybindings.json`). The app checks each rule and skips the
+/// invalid ones; `None` when there is no file.
+#[tauri::command(async)]
+fn pilot_keybindings_get(state: State<'_, PilotState>) -> Result<Option<String>, String> {
+    match std::fs::read_to_string(state.data_dir.join("keybindings.json")) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command(async)]
+fn pilot_keybindings_set(state: State<'_, PilotState>, rules: serde_json::Value) -> Result<(), String> {
+    let list = rules.as_array().ok_or("keybindings are a list of rules")?;
+    if list.len() > 256 {
+        return Err("at most 256 keybinding rules".into());
+    }
+    let text = serde_json::to_string_pretty(&rules).map_err(|e| e.to_string())?;
+    let path = state.data_dir.join("keybindings.json");
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 fn pilot_sessions_list(app: AppHandle, state: State<'_, PilotState>) -> Result<Vec<SessionMeta>, String> {
     // Threads nobody touched for the configured days move to Settled (card 7).
@@ -714,6 +739,9 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_file_write,
             threads::pilot_file_save_as,
             threads::pilot_text_search,
+            threads::pilot_messages_search,
+            pilot_keybindings_get,
+            pilot_keybindings_set,
             threads::pilot_ports_alive,
             threads::pilot_port_owner,
             threads::pilot_port_stop,

@@ -11,16 +11,18 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Bot, FolderTree, GitCompare, Globe, X } from 'lucide-vue-next'
 import { pilot } from '#pilot/utils/invoke'
 import { useInspectorStore, type InspectorTab } from '#pilot/stores/inspector'
+import { useKeysStore } from '#pilot/stores/keys'
 
 const props = defineProps<{ threadId: string }>()
 const inspector = useInspectorStore()
 const root = ref<HTMLElement | null>(null)
 let drag: { startX: number; startW: number; max: number } | null = null
 
-const META: Record<string, { label: string; icon: unknown; key: string }> = {
-  diff: { label: 'Diff', icon: GitCompare, key: 'Ctrl+D' },
-  files: { label: 'Files', icon: FolderTree, key: 'Ctrl+P picks a file' },
-  browser: { label: 'Browser', icon: Globe, key: 'Ctrl+Shift+J' },
+const keys = useKeysStore()
+const META: Record<string, { label: string; icon: unknown; key: string; command?: string }> = {
+  diff: { label: 'Diff', icon: GitCompare, key: 'Ctrl+D', command: 'diff.toggle' },
+  files: { label: 'Files', icon: FolderTree, key: 'Ctrl+P picks a file', command: 'filePicker.toggle' },
+  browser: { label: 'Browser', icon: Globe, key: 'Ctrl+Shift+J', command: 'preview.toggle' },
   agent: { label: 'Agent', icon: Bot, key: 'Agents in the thread details' },
 }
 const tabs = computed(() => inspector.tabs.filter((t) => t in META))
@@ -65,25 +67,25 @@ watch(
         tabindex="0"
         :aria-selected="inspector.tab === t"
         :class="{ on: inspector.tab === t }"
-        :title="`${META[t].label} (${META[t].key})`"
+        :title="META[t].command ? keys.hint(META[t].command, META[t].label) : `${META[t].label} (${META[t].key})`"
         @click="inspector.show(t)"
         @keydown.enter="inspector.show(t)"
         @auxclick.middle.prevent="inspector.closeTab(t)"
       >
         <component :is="META[t].icon" :size="14" />
         <span>{{ META[t].label }}</span>
-        <button class="qp-insp-tab-x" :title="`Close ${META[t].label} (Ctrl+W)`" @click.stop="inspector.closeTab(t)"><X :size="12" /></button>
+        <button class="qp-insp-tab-x" :title="keys.hint('rightPanel.close', `Close ${META[t].label}`)" @click.stop="inspector.closeTab(t)"><X :size="12" /></button>
       </div>
       <button
         v-for="t in closedOnes"
         :key="`add-${t}`"
         class="qp-insp-add"
-        :title="`Open ${META[t].label} (${META[t].key})`"
+        :title="META[t].command ? keys.hint(META[t].command, `Open ${META[t].label}`) : `Open ${META[t].label} (${META[t].key})`"
         @click="inspector.show(t)"
       >
         <component :is="META[t].icon" :size="14" />
       </button>
-      <button class="qp-insp-close" title="Close the inspector (Ctrl+Alt+B)" @click="inspector.toggle(false)"><X :size="14" /></button>
+      <button class="qp-insp-close" :title="keys.hint('rightPanel.toggle', 'Close the inspector')" @click="inspector.toggle(false)"><X :size="14" /></button>
     </div>
     <div class="qp-insp-body">
       <PilotInspectorDiff v-if="inspector.tab === 'diff'" :thread-id="threadId" />

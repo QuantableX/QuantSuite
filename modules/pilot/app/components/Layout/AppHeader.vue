@@ -12,10 +12,12 @@ import { useGitStore } from '#pilot/stores/git'
 import { useDrawerStore } from '#pilot/stores/drawer'
 import { SquareTerminal } from 'lucide-vue-next'
 import { modeLabel } from '#pilot/utils/format'
+import { useKeysStore } from '#pilot/stores/keys'
 
 const store = usePilotStore()
 const git = useGitStore()
 const drawer = useDrawerStore()
+const keys = useKeysStore()
 const prs = computed(() => (session.value ? (git.links[session.value.id] ?? []).filter((l) => l.kind === 'pr') : []))
 const session = computed(() => store.active)
 const live = computed(() => store.activeLive)
@@ -64,7 +66,7 @@ async function end() {
         <PilotGitPrChip v-for="l in prs" :key="l.url" :link="l" />
         <div class="qp-header-spacer" />
         <PilotDrawerActions :thread-id="session.id" />
-        <button class="qp-head-icon" :class="{ on: drawer.open[session.id] }" title="Terminal drawer (Ctrl+J)" aria-label="Terminal drawer" @click="drawer.toggle(session.id)">
+        <button class="qp-head-icon" :class="{ on: drawer.open[session.id] }" :title="keys.hint('terminal.toggle', 'Terminal drawer')" aria-label="Terminal drawer" @click="drawer.toggle(session.id)">
           <SquareTerminal :size="14" />
         </button>
         <PilotGitActions :thread-id="session.id" />

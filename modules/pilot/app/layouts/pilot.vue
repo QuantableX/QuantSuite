@@ -12,7 +12,7 @@
  * Loading follows the warm-cache rule (V3): on mount only inside an active
  * KeepAlive tree, again on activation.
  */
-import { inActiveKeepAliveTree, setModuleAttention, useShortcuts, useTauriEvent } from '@quantsuite/core'
+import { inActiveKeepAliveTree, setModuleAttention, useTauriEvent } from '@quantsuite/core'
 import { useAppStore } from '#pilot/stores/app'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
@@ -20,6 +20,10 @@ import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { useDrawerStore } from '#pilot/stores/drawer'
+import { useKeysStore } from '#pilot/stores/keys'
+import { chordOf, resolve, SUITE_KEYS, type KeyContext } from '#pilot/utils/keybindings'
+import { runCommand, useCommands } from '#pilot/utils/commands'
+import { moveFocus, noteFocus } from '#pilot/utils/focus'
 import { chime } from '#pilot/utils/chime'
 import { threadReference } from '#pilot/utils/format'
 import type { PilotEnvelope, ThreadEnvelope } from '#pilot/types'
@@ -83,35 +87,125 @@ onActivated(() => {
   }
 })
 
-/** Typing in a field keeps its own Ctrl+Z, F2 and friends. */
-function inEditable(e: KeyboardEvent): boolean {
-  const el = e.target as HTMLElement | null
-  return Boolean(el?.closest('input, textarea, select, [contenteditable="true"], .xterm'))
-}
-function onActive(e: KeyboardEvent, run: (id: string) => unknown) {
+// ── Keys (card 17): one dispatcher over the command registry ──
+// Each keydown inside the module becomes a chord; the keybindings table
+// (defaults, then the user's keybindings.json) names the command for it in
+// this context, and whoever registered that command runs it. Handlers closer
+// to the key (menus, the find bar, the terminal drawer) claim it first with
+// preventDefault. The suite's own keys (Ctrl+K) are taken in the capture
+// phase, before the shell sees them.
+const keys = useKeysStore()
+const shell = ref<HTMLElement | null>(null)
+
+function keyContext(target: EventTarget | null): KeyContext {
+  const t = target instanceof Element ? target : null
   const id = store.activeId
-  if (!id) return
-  e.preventDefault()
+  return {
+    terminalFocus: Boolean(t?.closest('.xterm')),
+    terminalOpen: Boolean(id && drawer.open[id]),
+    previewFocus: Boolean(t?.closest('.qp-br')),
+    previewOpen: inspector.open && inspector.tab === 'browser',
+    inspectorFocus: Boolean(t?.closest('.qp-insp')),
+    inspectorOpen: inspector.open,
+    composerFocus: Boolean(t?.closest('.qp-composer')),
+    editableFocus: Boolean(t?.closest('input, textarea, select, [contenteditable="true"], .xterm')),
+    turnRunning: Boolean(id && threads.views[id]?.turnId),
+    modelPickerOpen: Boolean(shell.value?.querySelector('.qp-mp')),
+    paletteOpen: keys.paletteOpen,
+  }
+}
+
+function dispatch(e: KeyboardEvent, capture: boolean) {
+  if (keys.recording || e.defaultPrevented || e.isComposing) return
+  // Keys typed into the suite around the module (its settings, its drawer) are not ours.
+  const t = e.target
+  if (t instanceof Node && t !== document.body && !shell.value?.contains(t)) return
+  const chord = chordOf(e)
+  if (!chord || (capture && !SUITE_KEYS[chord])) return
+  const command = resolve(keys.rules, chord, keyContext(t))
+  // The open palette keeps the keyboard: only its own key closes it.
+  if (keys.paletteOpen && command !== 'commandPalette.toggle') return
+  if (command && runCommand(command)) e.preventDefault()
+}
+const onKeyCapture = (e: KeyboardEvent) => dispatch(e, true)
+const onKey = (e: KeyboardEvent) => dispatch(e, false)
+const onFocusIn = (e: FocusEvent) => shell.value && noteFocus(e.target, shell.value)
+function armKeys() {
+  window.addEventListener('keydown', onKeyCapture, true)
+  window.addEventListener('keydown', onKey)
+}
+function disarmKeys() {
+  window.removeEventListener('keydown', onKeyCapture, true)
+  window.removeEventListener('keydown', onKey)
+}
+onMounted(() => {
+  if (!inActiveKeepAliveTree()) return
+  armKeys()
+  if (!keys.loaded) void keys.load()
+})
+onActivated(armKeys)
+onDeactivated(disarmKeys)
+onUnmounted(disarmKeys)
+
+/** A command for the open thread; `false` (the key goes on) without one. */
+const onThread = (run: (id: string) => unknown) => () => {
+  const id = store.activeId
+  if (!id) return false
   void run(id)
 }
-const digit = (n: number) => ({
-  key: String(n),
-  ctrl: true,
-  shift: false,
-  alt: false,
-  handler: (e: KeyboardEvent) => {
-    e.preventDefault()
-    void sidebar.openNth(n - 1)
+const contextBar = (which: 'mode' | 'branch' | 'reuse') =>
+  onThread((id) => window.dispatchEvent(new CustomEvent('qp-context-bar', { detail: { threadId: id, which } })))
+const sessionOf = (id: string) => store.sessions.find((s) => s.id === id)
+// Every opened thread counts for the palette's ranking.
+watch(
+  () => store.activeId,
+  (id) => id && keys.noteOpen(id)
+)
+
+useCommands({
+  'commandPalette.toggle': () => {
+    if (!keys.paletteOpen) return keys.openPalette()
+    keys.closePalette()
+    void nextTick(() => shell.value?.querySelector<HTMLElement>('.qp-c-input')?.focus())
   },
-})
-const step = (key: string, dir: 1 | -1) => ({
-  key,
-  ctrl: true,
-  shift: true,
-  handler: (e: KeyboardEvent) => {
-    e.preventDefault()
-    void sidebar.step(dir)
-  },
+  'navigation.back': () => store.goHistory(-1),
+  'navigation.forward': () => store.goHistory(1),
+  'workspace.focusNext': () => shell.value && moveFocus(1, shell.value),
+  'workspace.focusPrevious': () => shell.value && moveFocus(-1, shell.value),
+  'settings.open': () => window.dispatchEvent(new CustomEvent('qss:settings', { detail: { module: 'pilot' } })),
+  // Explicit Ctrl+Alt+N keeps clear of the suite's Ctrl+Shift+N (notes).
+  'chat.new': () => sidebar.newThread(),
+  'chat.newWithoutProject': () => sidebar.newThread({ noProject: true }),
+  'thread.previous': () => sidebar.step(-1),
+  'thread.next': () => sidebar.step(1),
+  ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`thread.jump.${n}`, () => sidebar.openNth(n - 1)])),
+  'thread.stop': onThread((id) => threads.interrupt(id)),
+  'thread.settle': onThread((id) => (sessionOf(id)?.settledAt ? sidebar.unsettle(id) : sidebar.settle(id))),
+  'thread.pin': onThread((id) => (sessionOf(id)?.pinned ? sidebar.unpin(id) : sidebar.pin(id))),
+  'thread.copyReference': onThread((id) => {
+    const t = sessionOf(id)
+    if (t) return navigator.clipboard.writeText(threadReference(t)).catch(() => undefined)
+  }),
+  'thread.rename': onThread((id) => {
+    if (!app.sidebarLeftOpen) app.toggleSidebar('left')
+    sidebar.renaming = id
+  }),
+  'thread.undo': () => (sidebar.latestUndo ? sidebar.undoLatest() : false),
+  'thread.restart': onThread((id) => threads.restart(id)),
+  'thread.openTui': onThread((id) => threads.openTui(id)),
+  'sidebar.toggle': () => app.toggleSidebar('left'),
+  'threadPanel.toggle': () => app.toggleSidebar('right'),
+  'rightPanel.toggle': () => inspector.toggle(),
+  'rightPanel.close': () => (inspector.open ? inspector.closeTab() : false),
+  'view.reopenClosed': () => (inspector.closed.length ? inspector.reopenTab() : false),
+  'diff.toggle': onThread(() => inspector.toggleTab('diff')),
+  'filePicker.toggle': onThread(() => (inspector.picker = true)),
+  'projectSearch.toggle': onThread(() => inspector.showSearch()),
+  'preview.toggle': onThread(() => inspector.toggleTab('browser')),
+  'terminal.toggle': onThread((id) => drawer.toggle(id)),
+  'composer.workspace': contextBar('mode'),
+  'composer.branch': contextBar('branch'),
+  'composer.previousWorktree': contextBar('reuse'),
 })
 
 // ── Files from Explorer anywhere in the module go to the open thread's composer (card 9) ──
@@ -136,210 +230,10 @@ function onFileDrop(e: DragEvent) {
   if (files.length) threads.dropFiles(store.activeId, files)
 }
 
-/** The branch toolbar's keys go to the open thread's context bar (card 10). */
-const bar = (key: string, which: 'mode' | 'branch' | 'reuse') => ({
-  key,
-  ctrl: true,
-  shift: true,
-  alt: false,
-  handler: (e: KeyboardEvent) => {
-    if (!store.activeId) return
-    e.preventDefault()
-    window.dispatchEvent(new CustomEvent('qp-context-bar', { detail: { threadId: store.activeId, which } }))
-  },
-})
-
-useShortcuts([
-  bar('X', 'mode'),
-  bar('G', 'branch'),
-  bar('L', 'reuse'),
-  // The sidebar's keys (card 7; docs/PLAN-QUANTPILOT.md §7). Explicit
-  // shift/alt keep Ctrl+N clear of the suite's Ctrl+Shift+N (notes).
-  {
-    key: 'n',
-    ctrl: true,
-    shift: false,
-    alt: true,
-    handler: (e) => {
-      e.preventDefault()
-      void sidebar.newThread({ noProject: true })
-    },
-  },
-  {
-    key: 'n',
-    ctrl: true,
-    shift: false,
-    alt: false,
-    handler: (e) => {
-      e.preventDefault()
-      void sidebar.newThread()
-    },
-  },
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(digit),
-  // Ctrl+Shift+[ reports "{" on US layouts.
-  step('{', -1),
-  step('[', -1),
-  step('}', 1),
-  step(']', 1),
-  {
-    key: 'S',
-    ctrl: true,
-    shift: true,
-    alt: false,
-    handler: (e) =>
-      onActive(e, (id) => {
-        const t = store.sessions.find((s) => s.id === id)
-        return t?.settledAt ? sidebar.unsettle(id) : sidebar.settle(id)
-      }),
-  },
-  {
-    key: 'P',
-    ctrl: true,
-    shift: true,
-    alt: false,
-    handler: (e) =>
-      onActive(e, (id) => {
-        const t = store.sessions.find((s) => s.id === id)
-        return t?.pinned ? sidebar.unpin(id) : sidebar.pin(id)
-      }),
-  },
-  {
-    key: 'C',
-    ctrl: true,
-    shift: true,
-    alt: false,
-    handler: (e) =>
-      onActive(e, (id) => {
-        const t = store.sessions.find((s) => s.id === id)
-        if (t) return navigator.clipboard.writeText(threadReference(t)).catch(() => undefined)
-      }),
-  },
-  {
-    key: 'z',
-    ctrl: true,
-    shift: false,
-    alt: false,
-    handler: (e) => {
-      if (inEditable(e) || !sidebar.latestUndo) return
-      e.preventDefault()
-      void sidebar.undoLatest()
-    },
-  },
-  {
-    key: 'F2',
-    handler: (e) => {
-      if (inEditable(e)) return
-      onActive(e, (id) => {
-        if (!app.sidebarLeftOpen) app.toggleSidebar('left')
-        sidebar.renaming = id
-      })
-    },
-  },
-  // The inspector (card 11): Ctrl+D its Diff tab, Ctrl+Alt+B the split.
-  {
-    key: 'd',
-    ctrl: true,
-    shift: false,
-    alt: false,
-    handler: (e) => {
-      // In the terminal Ctrl+D is end-of-input.
-      if (!store.activeId || (e.target instanceof Element && e.target.closest('.xterm'))) return
-      e.preventDefault()
-      inspector.toggleTab('diff')
-    },
-  },
-  // Card 13: Files tab, file picker, project search, closing and reopening inspector tabs, the terminal drawer.
-  {
-    key: 'F',
-    ctrl: true,
-    shift: true,
-    alt: false,
-    handler: (e) => onActive(e, () => inspector.showSearch()),
-  },
-  {
-    key: 'p',
-    ctrl: true,
-    shift: false,
-    alt: false,
-    handler: (e) => onActive(e, () => (inspector.picker = true)),
-  },
-  {
-    key: 'w',
-    ctrl: true,
-    shift: false,
-    alt: false,
-    handler: (e) => {
-      if (!inspector.open) return
-      e.preventDefault()
-      inspector.closeTab()
-    },
-  },
-  {
-    key: 'T',
-    ctrl: true,
-    shift: true,
-    alt: false,
-    handler: (e) => {
-      if (!inspector.closed.length) return
-      e.preventDefault()
-      inspector.reopenTab()
-    },
-  },
-  {
-    key: 'j',
-    ctrl: true,
-    shift: false,
-    alt: false,
-    handler: (e) => onActive(e, (id) => drawer.toggle(id)),
-  },
-  {
-    key: 'J',
-    ctrl: true,
-    shift: true,
-    alt: false,
-    handler: (e) => onActive(e, () => inspector.toggleTab('browser')),
-  },
-  // The wildcard-modifier rule: Ctrl+Alt+B and Ctrl+Shift+B before plain Ctrl+B.
-  {
-    key: 'b',
-    ctrl: true,
-    shift: false,
-    alt: true,
-    handler: (e) => {
-      e.preventDefault()
-      inspector.toggle()
-    },
-  },
-  {
-    key: 'B',
-    ctrl: true,
-    shift: true,
-    handler: (e) => {
-      e.preventDefault()
-      app.toggleSidebar('right')
-    },
-  },
-  {
-    key: 'b',
-    ctrl: true,
-    handler: (e) => {
-      e.preventDefault()
-      app.toggleSidebar('left')
-    },
-  },
-  {
-    key: ',',
-    ctrl: true,
-    handler: (e) => {
-      e.preventDefault()
-      window.dispatchEvent(new CustomEvent('qss:settings', { detail: { module: 'pilot' } }))
-    },
-  },
-])
 </script>
 
 <template>
-  <div class="qp-shell" @dragenter="onFileDrag" @dragover="onFileDrag" @dragleave="onFileLeave" @drop="onFileDrop">
+  <div ref="shell" class="qp-shell" @focusin="onFocusIn" @dragenter="onFileDrag" @dragover="onFileDrag" @dragleave="onFileLeave" @drop="onFileDrop">
     <PilotLayoutAppHeader />
     <div class="qp-body">
       <QSidebar :model-value="app.sidebarLeftOpen" resizable storage-key="pilot.left">
@@ -348,6 +242,7 @@ useShortcuts([
       <main class="qp-main">
         <slot />
         <PilotLayoutUndoToast />
+        <PilotPalette v-if="keys.paletteOpen" />
         <PilotLayoutWorktreeCleanup />
       </main>
       <QRightPanel :model-value="app.sidebarRightOpen" storage-key="pilot.right">

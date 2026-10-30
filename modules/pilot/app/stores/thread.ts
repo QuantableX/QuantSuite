@@ -180,6 +180,8 @@ export const useThreadStore = defineStore('pilot/thread', {
     fanout: {} as Record<string, { provider: string; model: string }[]>,
     /** Files are being dragged over the window: the composer lights up. */
     fileDrag: false,
+    /** A message to scroll to and flash (the palette's "In messages", card 17). */
+    reveal: null as { threadId: string; itemId: string; nonce: number } | null,
   }),
 
   getters: {
