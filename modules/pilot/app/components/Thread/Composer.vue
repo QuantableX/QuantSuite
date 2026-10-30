@@ -31,6 +31,7 @@ import { useUsageStore } from '#pilot/stores/usage'
 import { useCommands } from '#pilot/utils/commands'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
+import { useGithubStore } from '#pilot/stores/github'
 import { caretLine } from '#pilot/utils/caret'
 import { pilot } from '#pilot/utils/invoke'
 import {
@@ -63,6 +64,13 @@ import {
 const props = defineProps<{ threadId: string }>()
 const threads = useThreadStore()
 const store = usePilotStore()
+const github = useGithubStore()
+// The `#` menu needs the thread's GitHub repository (card 23).
+watch(
+  () => [props.threadId, github.available] as const,
+  ([id, on]) => on && void github.repoFor(id).then((repo) => repo && github.search(id, '')),
+  { immediate: true }
+)
 
 const view = computed(() => threads.view(props.threadId))
 const thread = computed(() => store.sessions.find((s) => s.id === props.threadId) ?? null)
@@ -157,7 +165,7 @@ const pasted = computed<Pasted[]>({
 const box = ref<HTMLTextAreaElement | null>(null)
 const mirror = ref<HTMLElement | null>(null)
 const MAX_HEIGHT = 280
-const hl = computed(() => highlight(text.value))
+const hl = computed(() => highlight(text.value, github.statesFor(props.threadId)))
 
 function grow() {
   const el = box.value
@@ -658,13 +666,16 @@ interface Pick {
 }
 const menu = ref<{ trigger: Trigger; picks: Pick[]; active: number; loading: boolean } | null>(null)
 const menuRows = computed(() => menu.value?.picks.map((p) => p.row) ?? [])
-const MENU_TITLES = { '@': 'Files, folders and threads', '/': 'Commands', $: 'Skills' } as const
+const MENU_TITLES = { '@': 'Files, folders and threads', '/': 'Commands', $: 'Skills', '#': 'Issues and pull requests' } as const
+const MENU_EMPTY = { '@': 'No file or thread matches', '/': 'No command matches', $: 'No skills found', '#': 'No open issue or pull request matches' } as const
 let menuSeq = 0
 let menuTimer: ReturnType<typeof setTimeout> | null = null
 
 function updateMenu() {
   const el = box.value
-  const t = el && el.selectionStart === el.selectionEnd ? triggerAt(el.value, el.selectionStart) : null
+  let t = el && el.selectionStart === el.selectionEnd ? triggerAt(el.value, el.selectionStart) : null
+  // `#` is GitHub's only when the thread's repository is on GitHub and `gh` is signed in.
+  if (t?.kind === '#' && !github.repoOf[props.threadId]) t = null
   if (!t) {
     menu.value = null
     return
@@ -678,7 +689,7 @@ function updateMenu() {
     // A newer keystroke asked again: this answer is stale.
     if (seq !== menuSeq || !menu.value) return
     menu.value = { trigger: t, picks, active: Math.min(menu.value.active, Math.max(0, picks.length - 1)), loading: false }
-  }, t.kind === '@' ? 90 : 0)
+  }, t.kind === '@' || t.kind === '#' ? 90 : 0)
 }
 
 function basename(p: string) {
@@ -704,6 +715,20 @@ async function picksFor(t: Trigger): Promise<Pick[]> {
       run: () => insertText(t, h.insert),
     }))
     return [...files, ...others]
+  }
+  if (t.kind === '#') {
+    const rows = await github.search(id, t.query)
+    return rows.map((r) => ({
+      row: {
+        key: `g:${r.kind}:${r.number}`,
+        label: `#${r.number}`,
+        detail: r.title,
+        icon: r.kind,
+        tone: r.state,
+        badge: r.kind === 'pr' ? (r.state === 'draft' ? 'Draft PR' : 'Pull request') : 'Issue',
+      },
+      run: () => insertText(t, `#${r.number}`),
+    }))
   }
   if (t.kind === '/') {
     const provider = thread.value?.provider || 'claude'
@@ -1052,7 +1077,7 @@ function focus() {
       :active="menu.active"
       :loading="menu.loading"
       :title="MENU_TITLES[menu.trigger.kind]"
-      :empty="menu.trigger.kind === '@' ? 'No file or thread matches' : menu.trigger.kind === '$' ? 'No skills found' : 'No command matches'"
+      :empty="MENU_EMPTY[menu.trigger.kind]"
       @hover="(i: number) => menu && (menu.active = i)"
       @pick="pickMenu"
     />
@@ -1324,6 +1349,10 @@ function focus() {
 .qp-c-mirror :deep(.qp-hl-fence) { color: #e0af68; }
 .qp-c-mirror :deep(.qp-hl-link) { color: var(--qss-accent, #7aa2f7); }
 .qp-c-mirror :deep(.qp-hl-token) { color: var(--qss-accent, #7aa2f7); }
+.qp-c-mirror :deep(.qp-hl-gh.is-open) { color: var(--qss-success, #34d399); }
+.qp-c-mirror :deep(.qp-hl-gh.is-merged) { color: #a78bfa; }
+.qp-c-mirror :deep(.qp-hl-gh.is-closed) { color: var(--qss-error, #f87171); }
+.qp-c-mirror :deep(.qp-hl-gh.is-draft) { color: var(--qss-text-muted, #6e6e7a); }
 
 .qp-composer-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .qp-c-count { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }

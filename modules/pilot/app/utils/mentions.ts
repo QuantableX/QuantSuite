@@ -1,6 +1,7 @@
 /**
  * The composer's context rules (card 9), free of Vue for node tests:
- * which trigger (`@` files and threads, `/` commands, `$` skills) the caret
+ * which trigger (`@` files and threads, `/` commands, `$` skills, `#` GitHub
+ * issues and pull requests — card 23) the caret
  * is in, how a pick replaces it, and the inline chips — labels between two
  * invisible marks (FSI … PDI) that move, copy and delete like one character.
  */
@@ -8,7 +9,7 @@
 export const CHIP_OPEN = '⁨'
 export const CHIP_CLOSE = '⁩'
 
-export type TriggerKind = '@' | '/' | '$'
+export type TriggerKind = '@' | '/' | '$' | '#'
 
 export interface Trigger {
   kind: TriggerKind
@@ -19,7 +20,8 @@ export interface Trigger {
 }
 
 /**
- * The trigger the caret is in, if any. `@` and `$` start a word; `/` only
+ * The trigger the caret is in, if any. `@`, `$` and `#` start a word (`#`
+ * takes digits and words, so a Markdown heading's `# ` closes it); `/` only
  * starts a line. `@"…` keeps spaces until the closing quote.
  */
 export function triggerAt(text: string, caret: number): Trigger | null {
@@ -27,7 +29,7 @@ export function triggerAt(text: string, caret: number): Trigger | null {
   // `@"path with spaces` (no closing quote yet)
   const quoted = /(^|[\s(])@"([^"\n]*)$/.exec(before)
   if (quoted) return { kind: '@', query: quoted[2], start: caret - quoted[2].length - 2 }
-  const m = /(^|[\s(])([@$])([^\s@$"]*)$/.exec(before)
+  const m = /(^|[\s(])([@$#])([^\s@$#"]*)$/.exec(before)
   if (m) {
     if (m[3].includes(CHIP_OPEN) || m[3].includes(CHIP_CLOSE)) return null
     return { kind: m[2] as TriggerKind, query: m[3], start: caret - m[3].length - 1 }

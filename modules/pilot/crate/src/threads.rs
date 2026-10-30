@@ -19,7 +19,7 @@ use crate::db::TurnRow;
 use crate::lifecycle;
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
-use crate::{adapters, agent_tools, context_of, contexts, lock, now, prompt, providers, shell, PilotState};
+use crate::{adapters, agent_tools, context_of, contexts, github, lock, now, prompt, providers, shell, PilotState};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -645,6 +645,13 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
         let _ = state.db.set_resume_at(&id, None);
     }
     let mut input = input;
+    // `#123` in what the user typed goes along as a GitHub context block, resolved once (card 23).
+    if let Some(block) = github::context_for(Path::new(&meta.cwd), input.display.as_deref().unwrap_or(&input.text)) {
+        if input.display.is_none() {
+            input.display = Some(input.text.clone());
+        }
+        input.text = format!("{}\n\n{block}", input.text.trim_end());
+    }
     if let Some(from) = state.db.handoff(&id).ok().flatten().and_then(|h| serde_json::from_str::<Value>(&h).ok()).and_then(|v| v["from"].as_str().map(str::to_string)) {
         if let Some((history, dropped)) = lifecycle::pack_history(&state.db.items(&id, None, 5000).unwrap_or_default()) {
             if input.display.is_none() {
@@ -1481,12 +1488,21 @@ pub fn pilot_pr_create(state: State<'_, PilotState>, id: String, base: String, t
     if !st.files.is_empty() {
         return Err("commit or discard the changed files first".into());
     }
+    github::ready()?;
     let remote = st.remote.ok_or("this repository has no remote to push to")?;
     if st.upstream.is_none() || st.ahead > 0 {
         gitops::push(&cwd, &remote, &st.branch, st.upstream.is_none())?;
     }
     let draft = draft.unwrap_or(false);
+    // A linked issue is closed by the pull request (card 23).
+    let mut body = body;
+    for issue in state.db.links(Some(&id)).unwrap_or_default().iter().filter(|l| l.kind == "issue") {
+        if !github::closing_refs(&body).contains(&issue.number) {
+            body = format!("{}\n\nCloses #{}", body.trim_end(), issue.number);
+        }
+    }
     let (url, number) = gitops::pr_create(&cwd, &base, &title, &body, draft)?;
+    link_closed_issues(&state, &id, &url, &body);
     let t = now();
     let link = Link {
         thread_id: id,
@@ -1529,12 +1545,16 @@ pub fn pilot_pr_refresh(state: State<'_, PilotState>, id: String, force: Option<
     let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
     let force = force.unwrap_or(false);
     let t = now();
+    if !github::enabled() {
+        return state.db.links(Some(&id)).map_err(|e| e.to_string());
+    }
     for mut l in state.db.links(Some(&id)).map_err(|e| e.to_string())? {
         let live = matches!(l.state.as_str(), "open" | "draft");
-        if l.kind != "pr" || !(force || (live && t - l.checked_at > 5 * 60 * 1000)) {
+        if !matches!(l.kind.as_str(), "pr" | "issue") || !(force || (live && t - l.checked_at > 5 * 60 * 1000)) {
             continue;
         }
-        if let Ok((title, st)) = gitops::pr_view(Path::new(&meta.cwd), &l.url) {
+        let fresh = if l.kind == "issue" { github::issue_state(Path::new(&meta.cwd), &l.url) } else { gitops::pr_view(Path::new(&meta.cwd), &l.url) };
+        if let Ok((title, st)) = fresh {
             l.title = title;
             l.state = st;
             l.checked_at = t;
@@ -1555,9 +1575,26 @@ fn link_agent_prs(state: &PilotState, thread_id: &str) {
             continue;
         }
         for (url, number) in gitops::pr_urls(item.data["output"].as_str().unwrap_or_default()) {
+            link_closed_issues(state, thread_id, &url, item.data["input"].as_str().unwrap_or_default());
             let link = Link { thread_id: thread_id.into(), kind: "pr".into(), url, number, title: String::new(), state: "open".into(), checked_at: 0, created_at: t };
             let _ = state.db.add_link(&link);
         }
+    }
+}
+
+/// The issues a new pull request closes (`Closes #12` in its body) join the thread's links (card 23).
+fn link_closed_issues(state: &PilotState, thread_id: &str, pr_url: &str, body: &str) {
+    let Some(repo) = pr_url.split("/pull/").next().filter(|r| r.starts_with("https://github.com/")) else {
+        return;
+    };
+    let t = now();
+    for n in github::closing_refs(body) {
+        let url = format!("{repo}/issues/{n}");
+        if state.db.links(Some(thread_id)).unwrap_or_default().iter().any(|l| l.url == url) {
+            continue;
+        }
+        let link = Link { thread_id: thread_id.into(), kind: "issue".into(), url, number: n, title: String::new(), state: "open".into(), checked_at: 0, created_at: t };
+        let _ = state.db.add_link(&link);
     }
 }
 

@@ -29,7 +29,7 @@ const started = computed(() => Boolean(info.value?.started))
 const isWorktree = computed(() => info.value?.mode === 'worktree')
 const draftWorktree = computed(() => isWorktree.value && !thread.value?.worktreePath)
 const project = computed(() => thread.value?.contextName ?? '')
-const prs = computed(() => (git.links[props.threadId] ?? []).filter((l) => l.kind === 'pr'))
+const prs = computed(() => (git.links[props.threadId] ?? []).filter((l) => l.kind === 'pr' || l.kind === 'issue'))
 const picker = ref<'branch' | 'base' | null>(null)
 const message = ref('')
 

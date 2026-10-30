@@ -198,6 +198,8 @@ pub struct Settings {
     pub render_math: bool,
     /// Context id → what that project changes (card 19).
     pub projects: BTreeMap<String, ProjectPrefs>,
+    /// GitHub through `gh` (card 23); off = no `gh` process at all.
+    pub github: bool,
 }
 
 impl Default for Settings {
@@ -230,6 +232,7 @@ impl Default for Settings {
             prefer_saved_claude_login: false,
             text_size: "default".into(),
             panel_motion_ms: 160,
+            github: true,
             render_math: true,
             projects: BTreeMap::new(),
         }

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-gh-repos"
+description = "Enables the pilot_gh_repos command without any pre-configured scope."
+commands.allow = ["pilot_gh_repos"]
+
+[[permission]]
+identifier = "deny-pilot-gh-repos"
+description = "Denies the pilot_gh_repos command without any pre-configured scope."
+commands.deny = ["pilot_gh_repos"]

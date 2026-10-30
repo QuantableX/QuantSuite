@@ -22,6 +22,7 @@ import { useInspectorStore } from '#pilot/stores/inspector'
 import { useDrawerStore } from '#pilot/stores/drawer'
 import { useKeysStore } from '#pilot/stores/keys'
 import { useUsageStore } from '#pilot/stores/usage'
+import { useGithubStore } from '#pilot/stores/github'
 import { chordOf, resolve, SUITE_KEYS, type KeyContext } from '#pilot/utils/keybindings'
 import { runCommand, useCommands } from '#pilot/utils/commands'
 import { moveFocus, noteFocus } from '#pilot/utils/focus'
@@ -93,6 +94,9 @@ useTauriEvent<{ id: string; state: string }>('console-session', (payload) => {
   if (payload.state === 'exited') store.ptyExited(payload.id)
 })
 
+// Whether GitHub is there: the GitHub view's toggle and the `#` menu (card 23).
+const github = useGithubStore()
+watch(() => store.settings?.github, () => void github.loadStatus(), { immediate: true })
 onMounted(() => {
   if (!inActiveKeepAliveTree()) return
   void store.load()
@@ -284,8 +288,8 @@ function onFileDrop(e: DragEvent) {
   <div ref="shell" class="qp-shell" :style="appearance" @focusin="onFocusIn" @dragenter="onFileDrag" @dragover="onFileDrag" @dragleave="onFileLeave" @drop="onFileDrop">
     <PilotLayoutAppHeader />
     <div class="qp-body">
-      <!-- The board fills the main area: no thread list, no thread panel (card 21). -->
-      <QSidebar :model-value="app.sidebarLeftOpen && app.view !== 'board'" resizable storage-key="pilot.left">
+      <!-- The board and GitHub fill the main area: no thread list, no thread panel (cards 21, 23). -->
+      <QSidebar :model-value="app.sidebarLeftOpen && app.view === 'conversation'" resizable storage-key="pilot.left">
         <PilotLayoutLeftSidebar />
       </QSidebar>
       <main class="qp-main">
@@ -294,7 +298,7 @@ function onFileDrop(e: DragEvent) {
         <PilotPalette v-if="keys.paletteOpen" />
         <PilotLayoutWorktreeCleanup />
       </main>
-      <QRightPanel :model-value="app.sidebarRightOpen && app.view !== 'board'" storage-key="pilot.right">
+      <QRightPanel :model-value="app.sidebarRightOpen && app.view === 'conversation'" storage-key="pilot.right">
         <PilotLayoutRightSidebar />
       </QRightPanel>
     </div>

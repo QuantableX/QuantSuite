@@ -16,6 +16,12 @@ test('triggers start a word; / only a line', () => {
   assert.equal(m.triggerAt('a /b', 4), null, '/ mid-line is text')
   assert.deepEqual(m.triggerAt('see @"docs/my no', 16), { kind: '@', query: 'docs/my no', start: 4 })
   assert.equal(m.triggerAt('done @a.rs then', 15), null, 'the caret left the word')
+  // `#` for GitHub (card 23): a word start; a heading's `# ` closes it.
+  assert.deepEqual(m.triggerAt('fixes #12', 9), { kind: '#', query: '12', start: 6 })
+  assert.deepEqual(m.triggerAt('#', 1), { kind: '#', query: '', start: 0 })
+  assert.equal(m.triggerAt('# Title', 7), null)
+  assert.equal(m.triggerAt('##', 2), null)
+  assert.equal(m.triggerAt('color#fff', 9), null)
 })
 
 test('a pick replaces the trigger and adds a space', () => {

@@ -69,6 +69,13 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-start-thread`
 - `allow-pilot-agent-message-thread`
 - `allow-pilot-pr-refresh`
+- `allow-pilot-gh-repo`
+- `allow-pilot-gh-refs`
+- `allow-pilot-gh-repos`
+- `allow-pilot-gh-pulls`
+- `allow-pilot-gh-issues`
+- `allow-pilot-gh-merge`
+- `allow-pilot-gh-link`
 - `allow-pilot-files-list`
 - `allow-pilot-file-read`
 - `allow-pilot-file-write`
@@ -891,6 +898,188 @@ Enables the pilot_files_search command without any pre-configured scope.
 <td>
 
 Denies the pilot_files_search command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-issues`
+
+</td>
+<td>
+
+Enables the pilot_gh_issues command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-issues`
+
+</td>
+<td>
+
+Denies the pilot_gh_issues command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-link`
+
+</td>
+<td>
+
+Enables the pilot_gh_link command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-link`
+
+</td>
+<td>
+
+Denies the pilot_gh_link command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-merge`
+
+</td>
+<td>
+
+Enables the pilot_gh_merge command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-merge`
+
+</td>
+<td>
+
+Denies the pilot_gh_merge command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-pulls`
+
+</td>
+<td>
+
+Enables the pilot_gh_pulls command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-pulls`
+
+</td>
+<td>
+
+Denies the pilot_gh_pulls command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-refs`
+
+</td>
+<td>
+
+Enables the pilot_gh_refs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-refs`
+
+</td>
+<td>
+
+Denies the pilot_gh_refs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-repo`
+
+</td>
+<td>
+
+Enables the pilot_gh_repo command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-repo`
+
+</td>
+<td>
+
+Denies the pilot_gh_repo command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-repos`
+
+</td>
+<td>
+
+Enables the pilot_gh_repos command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-repos`
+
+</td>
+<td>
+
+Denies the pilot_gh_repos command without any pre-configured scope.
 
 </td>
 </tr>

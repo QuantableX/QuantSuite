@@ -1,24 +1,26 @@
 <script setup lang="ts">
 /**
- * The composer's `@` / `/` / `$` menu (card 9): it opens above the box
+ * The composer's `@` / `/` / `$` / `#` menu (cards 9, 23): it opens above the box
  * while the caret sits in a trigger; the box keeps focus and its keys
  * (Up/Down, Enter or Tab picks, Escape closes) drive the menu.
  */
 import { nextTick, ref, watch, type Component } from 'vue'
-import { Bot, File, Folder, Loader2, MessagesSquare, Slash, Sparkles } from 'lucide-vue-next'
+import { Bot, CircleDot, File, Folder, GitPullRequest, Loader2, MessagesSquare, Slash, Sparkles } from 'lucide-vue-next'
 
 export interface MenuRow {
   key: string
   label: string
   detail?: string
   badge?: string
-  icon: 'file' | 'folder' | 'thread' | 'skill' | 'command' | 'agent'
+  icon: 'file' | 'folder' | 'thread' | 'skill' | 'command' | 'agent' | 'pr' | 'issue'
+  /** A GitHub item's state: its icon's colour. */
+  tone?: string
 }
 
 const props = defineProps<{ rows: MenuRow[]; active: number; loading: boolean; title: string; empty: string }>()
 const emit = defineEmits<{ pick: [index: number]; hover: [index: number] }>()
 
-const ICONS: Record<MenuRow['icon'], Component> = { file: File, folder: Folder, thread: MessagesSquare, skill: Sparkles, command: Slash, agent: Bot }
+const ICONS: Record<MenuRow['icon'], Component> = { file: File, folder: Folder, thread: MessagesSquare, skill: Sparkles, command: Slash, agent: Bot, pr: GitPullRequest, issue: CircleDot }
 const list = ref<HTMLElement | null>(null)
 
 watch(
@@ -51,7 +53,7 @@ watch(
         @mouseenter="emit('hover', i)"
         @click="emit('pick', i)"
       >
-        <component :is="ICONS[r.icon]" class="qp-mm-icon" :size="13" />
+        <component :is="ICONS[r.icon]" class="qp-mm-icon" :class="r.tone && `is-${r.tone}`" :size="13" />
         <span class="qp-mm-label">{{ r.label }}</span>
         <span v-if="r.detail" class="qp-mm-detail">{{ r.detail }}</span>
         <span v-if="r.badge" class="qp-mm-badge">{{ r.badge }}</span>
@@ -108,6 +110,10 @@ watch(
 }
 .qp-mm-row.on { background: var(--qss-bg-hover, #313139); }
 .qp-mm-icon { flex-shrink: 0; color: var(--qss-text-secondary, #9a9aa5); }
+.qp-mm-icon.is-open { color: var(--qss-success, #34d399); }
+.qp-mm-icon.is-merged { color: #a78bfa; }
+.qp-mm-icon.is-closed { color: var(--qss-error, #f87171); }
+.qp-mm-icon.is-draft { color: var(--qss-text-muted, #6e6e7a); }
 .qp-mm-label { flex-shrink: 0; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-mm-detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-mm-badge {

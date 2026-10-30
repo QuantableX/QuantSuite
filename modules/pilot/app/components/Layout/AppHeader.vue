@@ -16,15 +16,17 @@ import { SquareKanban, SquareTerminal } from 'lucide-vue-next'
 import { modeLabel } from '#pilot/utils/format'
 import { useKeysStore } from '#pilot/stores/keys'
 import { useAppStore } from '#pilot/stores/app'
+import { useGithubStore } from '#pilot/stores/github'
 import { cardIdOf } from '#pilot/utils/board'
 import type { ThreadLink } from '#pilot/types'
 
 const app = useAppStore()
+const github = useGithubStore()
 const store = usePilotStore()
 const git = useGitStore()
 const drawer = useDrawerStore()
 const keys = useKeysStore()
-const prs = computed(() => (session.value ? (git.links[session.value.id] ?? []).filter((l) => l.kind === 'pr') : []))
+const prs = computed(() => (session.value ? (git.links[session.value.id] ?? []).filter((l) => l.kind === 'pr' || l.kind === 'issue') : []))
 const session = computed(() => store.active)
 const live = computed(() => store.activeLive)
 const cards = computed(() => (session.value ? (git.links[session.value.id] ?? []).filter((l) => l.kind === 'card') : []))
@@ -72,8 +74,17 @@ async function end() {
       <div class="qp-view-switch" role="group" aria-label="Main area">
         <button :class="{ on: app.view === 'conversation' }" :aria-pressed="app.view === 'conversation'" @click="app.setView('conversation')">Conversation</button>
         <button :class="{ on: app.view === 'board' }" :aria-pressed="app.view === 'board'" title="The kanban board of a workspace or General" @click="app.setView('board')">Board</button>
+        <button
+          v-if="github.available"
+          :class="{ on: app.view === 'github' }"
+          :aria-pressed="app.view === 'github'"
+          title="Pull requests and issues of the workspaces on GitHub"
+          @click="app.setView('github')"
+        >
+          GitHub
+        </button>
       </div>
-      <template v-if="app.view === 'board'" />
+      <template v-if="app.view !== 'conversation'" />
       <template v-else-if="session">
         <form v-if="editing" class="qp-title-form" @submit.prevent="commitEdit">
           <input ref="titleInput" v-model="draft" class="qp-title-input" @blur="commitEdit" @keydown.esc="editing = false" />

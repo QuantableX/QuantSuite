@@ -1,24 +1,31 @@
 <script setup lang="ts">
 /**
- * Settings → Source control (card 19): whether the GitHub CLI can open pull
- * requests (installed and signed in — with the exact command when not), and
- * how generated commit messages read.
+ * Settings → Source control (card 19): GitHub on or off (card 23 — off, no
+ * `gh` process runs and no GitHub control shows), whether the GitHub CLI is
+ * installed and signed in (with the exact command when not), and how
+ * generated commit messages read.
  */
 import { onMounted, ref, watch } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useGithubStore } from '#pilot/stores/github'
 import { pilot } from '#pilot/utils/invoke'
 
 const store = usePilotStore()
+const github = useGithubStore()
 const gh = ref<{ ok: boolean; text: string } | null>(null)
 const checking = ref(false)
 const commitStyle = ref<'repository' | 'standard'>('repository')
 const notice = ref('')
 
 async function check() {
+  if (store.settings?.github === false) {
+    gh.value = null
+    return
+  }
   checking.value = true
   try {
     await pilot('plugin:pilot|pilot_gh_status')
-    gh.value = { ok: true, text: 'GitHub CLI signed in to github.com — pull requests open from a thread.' }
+    gh.value = { ok: true, text: 'GitHub CLI signed in to github.com — pull requests, issues and # mentions work in threads of GitHub repositories.' }
   } catch (e) {
     gh.value = { ok: false, text: e instanceof Error ? e.message : String(e) }
   } finally {
@@ -32,6 +39,14 @@ onMounted(async () => {
 })
 watch(() => store.settings?.commitStyle, (v) => v && (commitStyle.value = v))
 
+async function setGithub(on: boolean) {
+  await store.saveSettings({ github: on }, { quiet: true })
+  github.repoOf = {}
+  await github.loadStatus()
+  void check()
+  notice.value = 'Saved.'
+}
+
 async function saveStyle() {
   await store.saveSettings({ commitStyle: commitStyle.value }, { quiet: true })
   notice.value = 'Saved.'
@@ -41,12 +56,16 @@ async function saveStyle() {
 <template>
   <div class="qp-settings" data-module="pilot">
     <h3 class="qp-settings-title">GitHub</h3>
-    <div class="qp-gh" :class="{ ok: gh?.ok, bad: gh && !gh.ok }">
+    <label class="qp-check">
+      <input type="checkbox" :checked="store.settings?.github !== false" @change="setGithub(($event.target as HTMLInputElement).checked)" />
+      <span>Use GitHub <em>— the GitHub view, # mentions, issue and pull request links, through the signed-in <code>gh</code>; off, no <code>gh</code> runs</em></span>
+    </label>
+    <div v-if="store.settings?.github !== false" class="qp-gh" :class="{ ok: gh?.ok, bad: gh && !gh.ok }">
       <span class="qp-dot" />
       <span>{{ checking && !gh ? 'Checking the GitHub CLI…' : gh?.text }}</span>
       <button class="qp-btn qp-btn-sm" :disabled="checking" @click="check">{{ checking ? 'Checking…' : 'Check again' }}</button>
     </div>
-    <p v-if="gh && !gh.ok" class="qp-settings-desc">Run <code>gh auth login</code> in a terminal (the drawer's works), then check again.</p>
+    <p v-if="store.settings?.github !== false && gh && !gh.ok" class="qp-settings-desc">Run <code>gh auth login</code> in a terminal (the drawer's works), then check again.</p>
 
     <h3 class="qp-settings-title">Commit messages</h3>
     <label class="qp-settings-field">
@@ -77,4 +96,7 @@ async function saveStyle() {
 .qp-input:focus { border-color: var(--qss-accent, #a0a0a8); }
 .qp-input::placeholder { color: var(--qss-text-muted, #6e6e7a); }
 .qp-settings-notice { color: var(--qss-text-secondary, #9a9aa5); font-size: 12px; }
+.qp-check { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+.qp-check em { font-style: normal; color: var(--qss-text-muted, #6e6e7a); }
+.qp-check code { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11.5px; }
 </style>
