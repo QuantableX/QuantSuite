@@ -217,6 +217,7 @@ useCommands({
   'projectSearch.toggle': onThread(() => inspector.showSearch()),
   'preview.toggle': onThread(() => inspector.toggleTab('browser')),
   'terminal.toggle': onThread((id) => drawer.toggle(id)),
+  'board.toggle': () => app.setView(app.view === 'board' ? 'conversation' : 'board'),
   'composer.workspace': contextBar('mode'),
   'composer.branch': contextBar('branch'),
   'composer.previousWorktree': contextBar('reuse'),
@@ -263,7 +264,8 @@ function onFileDrop(e: DragEvent) {
   <div ref="shell" class="qp-shell" :style="appearance" @focusin="onFocusIn" @dragenter="onFileDrag" @dragover="onFileDrag" @dragleave="onFileLeave" @drop="onFileDrop">
     <PilotLayoutAppHeader />
     <div class="qp-body">
-      <QSidebar :model-value="app.sidebarLeftOpen" resizable storage-key="pilot.left">
+      <!-- The board fills the main area: no thread list, no thread panel (card 21). -->
+      <QSidebar :model-value="app.sidebarLeftOpen && app.view !== 'board'" resizable storage-key="pilot.left">
         <PilotLayoutLeftSidebar />
       </QSidebar>
       <main class="qp-main">
@@ -272,7 +274,7 @@ function onFileDrop(e: DragEvent) {
         <PilotPalette v-if="keys.paletteOpen" />
         <PilotLayoutWorktreeCleanup />
       </main>
-      <QRightPanel :model-value="app.sidebarRightOpen" storage-key="pilot.right">
+      <QRightPanel :model-value="app.sidebarRightOpen && app.view !== 'board'" storage-key="pilot.right">
         <PilotLayoutRightSidebar />
       </QRightPanel>
     </div>

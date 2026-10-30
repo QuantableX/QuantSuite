@@ -1,6 +1,7 @@
 /**
- * UI state only — the two panels. localStorage: chrome preferences are per
- * machine, not session data.
+ * UI state only — the two panels, and Conversation or Board in the main
+ * area (card 21). localStorage: chrome preferences are per machine, not
+ * session data.
  */
 import { defineStore } from 'pinia'
 
@@ -13,12 +14,39 @@ function readBool(key: string, fallback: boolean): boolean {
   }
 }
 
+function readText(key: string): string {
+  try {
+    return localStorage.getItem(key) ?? ''
+  } catch {
+    return ''
+  }
+}
+function writeText(key: string, value: string) {
+  try { localStorage.setItem(key, value) } catch { /* private mode */ }
+}
+
 export const useAppStore = defineStore('pilot/app', {
   state: () => ({
     sidebarLeftOpen: readBool('qp-sidebar-left', true),
     sidebarRightOpen: readBool('qp-sidebar-right', true),
+    /** The main area: the open thread's conversation, or the kanban board (card 21). */
+    view: (readText('qp-view') === 'board' ? 'board' : 'conversation') as 'conversation' | 'board',
+    /** The board shown: a workspace id or `general`; empty until one was picked. */
+    boardId: readText('qp-board'),
+    /** The thread open beside the board, and the card selected on it. */
+    boardPanel: null as string | null,
+    boardCard: null as string | null,
   }),
   actions: {
+    setView(view: 'conversation' | 'board') {
+      this.view = view
+      writeText('qp-view', view)
+    },
+    setBoard(id: string) {
+      if (this.boardId !== id) this.boardCard = null
+      this.boardId = id
+      writeText('qp-board', id)
+    },
     toggleSidebar(side: 'left' | 'right') {
       if (side === 'left') {
         this.sidebarLeftOpen = !this.sidebarLeftOpen

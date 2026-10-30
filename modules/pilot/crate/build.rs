@@ -53,6 +53,7 @@ const COMMANDS: &[&str] = &[
     "pilot_git_discard_all",
     "pilot_pr_create",
     "pilot_links",
+    "pilot_card_link",
     "pilot_pr_refresh",
     "pilot_files_list",
     "pilot_file_read",

@@ -57,6 +57,7 @@ permissions = [
   "allow-pilot-git-discard-all",
   "allow-pilot-pr-create",
   "allow-pilot-links",
+  "allow-pilot-card-link",
   "allow-pilot-pr-refresh",
   "allow-pilot-files-list",
   "allow-pilot-file-read",

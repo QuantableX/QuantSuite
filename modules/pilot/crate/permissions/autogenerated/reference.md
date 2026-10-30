@@ -58,6 +58,7 @@ Default permissions for the pilot module.
 - `allow-pilot-git-discard-all`
 - `allow-pilot-pr-create`
 - `allow-pilot-links`
+- `allow-pilot-card-link`
 - `allow-pilot-pr-refresh`
 - `allow-pilot-files-list`
 - `allow-pilot-file-read`
@@ -361,6 +362,32 @@ Enables the pilot_browser_zoom command without any pre-configured scope.
 <td>
 
 Denies the pilot_browser_zoom command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-card-link`
+
+</td>
+<td>
+
+Enables the pilot_card_link command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-card-link`
+
+</td>
+<td>
+
+Denies the pilot_card_link command without any pre-configured scope.
 
 </td>
 </tr>

@@ -1503,6 +1503,20 @@ pub fn pilot_links(state: State<'_, PilotState>, id: Option<String>) -> Result<V
     state.db.links(id.as_deref()).map_err(|e| e.to_string())
 }
 
+/// Link a thread to the kanban card it was started from (card 21): the board
+/// shows the card's threads, the thread its card.
+#[tauri::command(async)]
+pub fn pilot_card_link(state: State<'_, PilotState>, id: String, card_id: String, title: String) -> Result<Link, String> {
+    state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let card_id = card_id.trim();
+    if card_id.is_empty() {
+        return Err("no card to link".into());
+    }
+    let link = gitops::card_link(&id, card_id, &title, now());
+    state.db.add_link(&link).map_err(|e| e.to_string())?;
+    Ok(link)
+}
+
 /// A thread's pull requests from GitHub: open ones at most every five
 /// minutes, all of them when forced.
 #[tauri::command(async)]

@@ -525,7 +525,7 @@ pub fn gh_ready() -> Result<(), String> {
 #[serde(rename_all = "camelCase")]
 pub struct Link {
     pub thread_id: String,
-    /// `pr`
+    /// `pr`, or `card`: the kanban card the thread was started from (card 21)
     pub kind: String,
     pub url: String,
     pub number: i64,
@@ -534,6 +534,21 @@ pub struct Link {
     pub state: String,
     pub checked_at: i64,
     pub created_at: i64,
+}
+
+/// The kanban card a thread was started from (card 21): `card:<id>` among
+/// the thread's links, its title as it was then.
+pub fn card_link(thread_id: &str, card_id: &str, title: &str, t: i64) -> Link {
+    Link {
+        thread_id: thread_id.into(),
+        kind: "card".into(),
+        url: format!("card:{card_id}"),
+        number: 0,
+        title: title.trim().into(),
+        state: "card".into(),
+        checked_at: t,
+        created_at: t,
+    }
 }
 
 /// Pull request URLs in a text: `(url, number)`.

@@ -57,6 +57,7 @@ export const COMMANDS: CommandInfo[] = [
   C('projectSearch.toggle', 'Search in the project', 'Panels'),
   C('preview.toggle', 'Browser', 'Panels'),
   C('terminal.toggle', 'Toggle the terminal', 'Panels'),
+  C('board.toggle', 'Switch between the conversation and the board', 'Panels'),
   C('composer.stash', 'Stash the draft', 'Composer'),
   C('modelPicker.toggle', 'Choose the model', 'Composer'),
   C('composer.effort', 'Choose the effort', 'Composer'),

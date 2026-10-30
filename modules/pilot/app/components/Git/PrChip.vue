@@ -9,7 +9,8 @@ import { openExternal } from '#pilot/utils/external'
 import type { ThreadLink } from '#pilot/types'
 
 const props = defineProps<{ link: ThreadLink; compact?: boolean }>()
-const icon = computed(() => ({ open: GitPullRequest, draft: GitPullRequestDraft, merged: GitMerge, closed: GitPullRequestClosed })[props.link.state] ?? GitPullRequest)
+const ICONS: Record<string, typeof GitPullRequest> = { open: GitPullRequest, draft: GitPullRequestDraft, merged: GitMerge, closed: GitPullRequestClosed }
+const icon = computed(() => ICONS[props.link.state] ?? GitPullRequest)
 const tip = computed(() => `${props.link.title ? `${props.link.title} — ` : ''}pull request #${props.link.number} (${props.link.state}). Click to open on GitHub.`)
 </script>
 
