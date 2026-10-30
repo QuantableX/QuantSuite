@@ -630,7 +630,7 @@ impl CodexDriver {
                     out.push(Emit::Write(self.request(Call::GoalSet, "thread/goal/set", json!({ "threadId": self.thread, "status": "active" }))));
                 }
                 // Steers that waited for the turn id go in now, then a deferred stop.
-                let waiting: Vec<TurnInput> = self.queued.drain(..).collect();
+                let waiting = std::mem::take(&mut self.queued);
                 for input in waiting {
                     out.push(Emit::Write(self.steer_line(&input)));
                 }
