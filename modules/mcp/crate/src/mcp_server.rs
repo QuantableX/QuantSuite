@@ -228,6 +228,39 @@ struct McpServerState {
 #[derive(Deserialize)]
 struct SessionQuery {
     session_id: String,
+    #[serde(default)]
+    pilot: Option<String>,
+}
+
+/// `?pilot=<token>` on the server URL: the connection is a QuantPilot
+/// thread's agent (its token, minted by the pilot module).
+#[derive(Deserialize, Default)]
+struct CallerQuery {
+    #[serde(default)]
+    pilot: Option<String>,
+}
+
+/// A pilot token as it may travel: the module mints 32 hex digits.
+fn pilot_token(raw: Option<&str>) -> Option<&str> {
+    raw.filter(|t| !t.is_empty() && t.len() <= 64 && t.chars().all(|c| c.is_ascii_alphanumeric()))
+}
+
+/// The `quantsuite.pilot.*` tools act on the calling QuantPilot thread
+/// (card 22): the connection's token goes in as `pilotToken`, a value the
+/// agent passed itself never does.
+fn with_pilot_token(tool: &str, mut arguments: Value, token: Option<&str>) -> Value {
+    if !tool.starts_with("quantsuite.pilot.") {
+        return arguments;
+    }
+    if !arguments.is_object() {
+        arguments = json!({});
+    }
+    let args = arguments.as_object_mut().expect("an object");
+    args.remove("pilotToken");
+    if let Some(t) = pilot_token(token) {
+        args.insert("pilotToken".into(), Value::String(t.to_string()));
+    }
+    arguments
 }
 
 #[derive(Deserialize)]
@@ -1885,6 +1918,7 @@ impl Drop for SseSessionGuard {
 
 async fn sse_handler(
     AxumState(state): AxumState<McpServerState>,
+    Query(caller): Query<CallerQuery>,
 ) -> Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>> {
     let session_id = Uuid::new_v4().to_string();
     let (tx, mut rx) = mpsc::channel::<Value>(32);
@@ -1900,10 +1934,11 @@ async fn sse_handler(
         session_id: session_id.clone(),
     };
 
-    let endpoint_url = format!(
-        "http://localhost:{}/message?session_id={}",
-        state.port, session_id
-    );
+    // A QuantPilot thread's token rides along to every message of the session.
+    let endpoint_url = match pilot_token(caller.pilot.as_deref()) {
+        Some(token) => format!("http://localhost:{}/message?session_id={}&pilot={}", state.port, session_id, token),
+        None => format!("http://localhost:{}/message?session_id={}", state.port, session_id),
+    };
 
     let stream = async_stream::stream! {
         let _guard = guard;
@@ -1960,8 +1995,9 @@ async fn message_handler(
 
     let state_clone = state.clone();
     let sid = session_id.clone();
+    let pilot = query.pilot;
     tokio::spawn(async move {
-        let response = handle_rpc(&state_clone, &request, Some(&sid)).await;
+        let response = handle_rpc(&state_clone, &request, Some(&sid), pilot.as_deref()).await;
         // Notifications (e.g. notifications/initialized) answer with null —
         // neither logged nor pushed to the client, `null` is no JSON-RPC message.
         if !response.is_null() {
@@ -2072,6 +2108,7 @@ async fn handle_rpc(
     state: &McpServerState,
     req: &JsonRpcRequest,
     session_id: Option<&str>,
+    pilot: Option<&str>,
 ) -> Value {
     let id = req.id.clone().unwrap_or(Value::Null);
 
@@ -2219,6 +2256,7 @@ async fn handle_rpc(
                 .and_then(|p| p.get("arguments"))
                 .cloned()
                 .unwrap_or(json!({}));
+            let arguments = with_pilot_token(tool_name, arguments, pilot);
 
             // Discovery is not an authorization boundary: clients can cache names.
             if let Err(error) = require_available_tool(&state.app, tool_name) {
@@ -2471,6 +2509,7 @@ async fn mcp_delete_handler(
 /// POST /mcp — JSON-RPC over HTTP (used by Codex CLI, Gemini CLI, etc.)
 async fn mcp_post_handler(
     AxumState(state): AxumState<McpServerState>,
+    Query(caller): Query<CallerQuery>,
     req_headers: HeaderMap,
     Json(request): Json<JsonRpcRequest>,
 ) -> impl IntoResponse {
@@ -2501,7 +2540,7 @@ async fn mcp_post_handler(
     }
 
     let is_notification = request.id.is_none();
-    let response = handle_rpc(&state, &request, None).await;
+    let response = handle_rpc(&state, &request, None, caller.pilot.as_deref()).await;
 
     // Notifications → 202 Accepted, no body
     if is_notification || response.is_null() {
@@ -2704,6 +2743,18 @@ mod tests {
         }
     }
     use super::*;
+
+    #[test]
+    fn pilot_tools_get_the_connection_token_and_never_the_agents() {
+        let args = with_pilot_token("quantsuite.pilot.set_title", json!({ "title": "x", "pilotToken": "forged" }), Some("abc123"));
+        assert_eq!(args, json!({ "title": "x", "pilotToken": "abc123" }));
+        let args = with_pilot_token("quantsuite.pilot.list_threads", json!({ "pilotToken": "forged" }), None);
+        assert_eq!(args, json!({}));
+        assert_eq!(with_pilot_token("quantsuite.pilot.list_threads", Value::Null, Some("t")), json!({ "pilotToken": "t" }));
+        assert_eq!(with_pilot_token("quantsuite.pilot.list_threads", json!({}), Some("a&b=c")), json!({}));
+        // Other tools never see a token.
+        assert_eq!(with_pilot_token("quantsuite.notes.search", json!({ "query": "q" }), Some("abc")), json!({ "query": "q" }));
+    }
 
     #[test]
     fn app_filter_removes_schemas_from_all_tool_families() {

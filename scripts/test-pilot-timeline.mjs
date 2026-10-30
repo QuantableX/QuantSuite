@@ -77,6 +77,20 @@ test('a plan before the answer reads before it', () => {
   assert.deepEqual(b.outside.map((o) => o.kind), ['notice'])
 })
 
+test('a rendered page reads above the answer, its tool call folds (card 22)', () => {
+  seq = 0
+  const items = [
+    item('user', { text: 'chart it' }),
+    tool('mcp'),
+    item('page', { title: 'Returns', html: '<svg></svg>' }),
+    item('assistant', { text: 'The chart above shows it.' }),
+  ]
+  const [b] = groupTurns(items)
+  assert.deepEqual(b.before.map((o) => o.kind), ['page'])
+  assert.equal(b.answer.data.text, 'The chart above shows it.')
+  assert.equal(b.toolCount, 1)
+})
+
 test('the turn changes card stays under the answer, never in the fold (card 11)', () => {
   seq = 0
   const items = [

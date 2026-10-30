@@ -130,6 +130,7 @@ async function revert(files: boolean) {
       </div>
       <div v-else-if="o.kind === 'notice'" class="qp-notice"><Info :size="12" />{{ o.data.text }}</div>
       <PilotThreadPlanCard v-else-if="o.kind === 'plan'" :item="o" @notice="(t: string) => emit('notice', t)" />
+      <PilotThreadPage v-else-if="o.kind === 'page'" :item="o" />
     </template>
   </section>
 </template>

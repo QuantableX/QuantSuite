@@ -15,6 +15,7 @@
 
 mod acp;
 mod adapters;
+mod agent_tools;
 mod browser;
 mod checkpoints;
 mod claude;
@@ -88,6 +89,10 @@ pub struct PilotState {
     tui: Mutex<HashMap<String, String>>,
     /// Wakes the scheduled-resume task when a schedule changes (card 15).
     wake: Arc<tokio::sync::Notify>,
+    /// Thread → the token in its QuantMCP URL; it names the caller of a `quantsuite.pilot.*` tool (card 22).
+    mcp_tokens: Mutex<HashMap<String, String>>,
+    /// The thread on screen with its inspector, as the frontend reports it.
+    ui_visible: Mutex<Option<String>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -531,7 +536,7 @@ fn pilot_session_launch(
     }
     let general = contexts::general_vault(&app);
     let mcp = settings.attach_quantmcp.then(mcp_url);
-    let system_append = prompt::system_append(&ctx, &general, mcp.as_deref());
+    let system_append = prompt::system_append(&ctx, &general, mcp.as_deref(), false);
     let dir = shell::session_dir(&state.data_dir, &id);
     let files = write_session_files(&dir, &system_append, mcp.as_deref(), state.relay_port)?;
     let input = LaunchInput {
@@ -784,6 +789,8 @@ pub fn init() -> TauriPlugin<Wry> {
                 drawer: terminals::Drawer::default(),
                 tui: Mutex::new(HashMap::new()),
                 wake: Arc::new(tokio::sync::Notify::new()),
+                mcp_tokens: Mutex::new(HashMap::new()),
+                ui_visible: Mutex::new(None),
             });
             tauri::async_runtime::spawn(threads::resume_scheduler(app.clone()));
             app.manage(browser::BrowserState::default());
@@ -855,6 +862,15 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_pr_create,
             threads::pilot_links,
             threads::pilot_card_link,
+            agent_tools::pilot_ui_visible,
+            agent_tools::pilot_agent_set_title,
+            agent_tools::pilot_agent_open_file,
+            agent_tools::pilot_agent_open_preview,
+            agent_tools::pilot_agent_render_page,
+            agent_tools::pilot_agent_list_threads,
+            agent_tools::pilot_agent_read_thread,
+            agent_tools::pilot_agent_start_thread,
+            agent_tools::pilot_agent_message_thread,
             threads::pilot_pr_refresh,
             threads::pilot_files_list,
             threads::pilot_file_read,

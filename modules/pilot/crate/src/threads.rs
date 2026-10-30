@@ -19,7 +19,7 @@ use crate::db::TurnRow;
 use crate::lifecycle;
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
-use crate::{adapters, context_of, contexts, lock, mcp_url, now, prompt, providers, shell, PilotState};
+use crate::{adapters, agent_tools, context_of, contexts, lock, now, prompt, providers, shell, PilotState};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -32,27 +32,32 @@ use crate::pi::{PiDriver, PiOptions};
 const PAGE: i64 = 100;
 const TITLE_MAX: usize = 60;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateThread {
-    context_id: Option<String>,
-    provider: Option<String>,
-    model: Option<String>,
-    effort: Option<String>,
-    mode: Option<String>,
-    title: Option<String>,
+    pub(crate) context_id: Option<String>,
+    pub(crate) provider: Option<String>,
+    pub(crate) model: Option<String>,
+    pub(crate) effort: Option<String>,
+    pub(crate) mode: Option<String>,
+    pub(crate) title: Option<String>,
     /// `local` | `worktree`; absent = the setting (Local outside git).
-    workspace_mode: Option<String>,
-    base_branch: Option<String>,
+    pub(crate) workspace_mode: Option<String>,
+    pub(crate) base_branch: Option<String>,
     /// An existing worktree to work in ("New thread in this worktree").
-    worktree_path: Option<String>,
+    pub(crate) worktree_path: Option<String>,
 }
 
 #[tauri::command(async)]
 pub fn pilot_thread_create(app: AppHandle, state: State<'_, PilotState>, req: CreateThread) -> Result<ThreadMeta, String> {
+    create(&app, &state, req)
+}
+
+/// A new thread — the composer's, or one an agent starts (card 22).
+pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> Result<ThreadMeta, String> {
     let settings = lock(&state.settings).clone();
     let context_id = req.context_id.unwrap_or_else(|| contexts::GENERAL_ID.into());
-    let ctx = contexts::resolve(&app, &context_id).ok_or_else(|| format!("unknown context '{context_id}'"))?;
+    let ctx = contexts::resolve(app, &context_id).ok_or_else(|| format!("unknown context '{context_id}'"))?;
     // What the request leaves open comes from the settings: default → project (card 19).
     let defaults = settings.defaults_for(&ctx.id);
     let provider = req.provider.unwrap_or_else(|| defaults.provider.clone());
@@ -321,8 +326,8 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
         std::fs::create_dir_all(&ctx.path).map_err(|e| format!("general vault: {e}"))?;
     }
     let general = contexts::general_vault(app);
-    let mcp = settings.attach_quantmcp.then(mcp_url);
-    let system = prompt::system_append(&ctx, &general, mcp.as_deref());
+    let mcp = settings.attach_quantmcp.then(|| agent_tools::thread_mcp_url(state, &meta.id));
+    let system = prompt::system_append(&ctx, &general, mcp.as_deref(), true);
     let (context_file, mcp_file) = write_thread_files(&shell::session_dir(&state.data_dir, &meta.id), &system, mcp.as_deref())?;
     let rewind = pending_rewind(state, &meta.id);
     let session = match meta.provider_session_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
@@ -380,8 +385,8 @@ fn codex_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: 
         std::fs::create_dir_all(&ctx.path).map_err(|e| format!("general vault: {e}"))?;
     }
     let general = contexts::general_vault(app);
-    let mcp = settings.attach_quantmcp.then(mcp_url);
-    let instructions = prompt::system_append(&ctx, &general, mcp.as_deref());
+    let mcp = settings.attach_quantmcp.then(|| agent_tools::thread_mcp_url(state, &meta.id));
+    let instructions = prompt::system_append(&ctx, &general, mcp.as_deref(), true);
     let writable_roots = if ctx.kind != "general" && settings.include_general_vault {
         vec![general.to_string_lossy().into_owned()]
     } else {
@@ -437,7 +442,7 @@ fn static_id(id: &str) -> &'static str {
 /// Gemini CLI, OpenCode, Copilot and the user's own agents over the Agent
 /// Client Protocol (card 20). QuantMCP goes in as an HTTP server under a
 /// name of this thread's own, so threads in one folder never share it.
-fn acp_plan(app: &AppHandle, _state: &PilotState, meta: &ThreadMeta, settings: &Settings) -> Result<LaunchPlan, String> {
+fn acp_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: &Settings) -> Result<LaunchPlan, String> {
     let adapter = adapters::find(settings, &meta.provider).ok_or_else(|| format!("unknown agent '{}'", meta.provider))?;
     let exe = providers::resolve(&adapter, settings).ok_or_else(|| format!("{} was not found. Install it, or set its path in Settings → Providers.", adapter.label))?;
     let ctx = context_of(meta);
@@ -445,8 +450,8 @@ fn acp_plan(app: &AppHandle, _state: &PilotState, meta: &ThreadMeta, settings: &
         std::fs::create_dir_all(&ctx.path).map_err(|e| format!("general vault: {e}"))?;
     }
     let general = contexts::general_vault(app);
-    let mcp = settings.attach_quantmcp.then(mcp_url);
-    let instructions = prompt::system_append(&ctx, &general, mcp.as_deref());
+    let mcp = settings.attach_quantmcp.then(|| agent_tools::thread_mcp_url(state, &meta.id));
+    let instructions = prompt::system_append(&ctx, &general, mcp.as_deref(), true);
     let mut args = exe.prefix.clone();
     args.extend(adapter.acp_args());
     args.extend(settings.extra_args(&meta.provider));
@@ -491,7 +496,7 @@ fn pi_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: &Se
         std::fs::create_dir_all(&ctx.path).map_err(|e| format!("general vault: {e}"))?;
     }
     let general = contexts::general_vault(app);
-    let system = prompt::system_append(&ctx, &general, None);
+    let system = prompt::system_append(&ctx, &general, None, false);
     let dir = shell::session_dir(&state.data_dir, &meta.id);
     let (context_file, _) = write_thread_files(&dir, &system, None)?;
     let extension = dir.join("qp-modes.ts");
@@ -594,7 +599,7 @@ pub fn pilot_thread_send(
 }
 
 /// Start a turn on a thread with plain text — a dequeued follow-up, an answer.
-fn start_turn(app: &AppHandle, state: &PilotState, id: &str, text: String, images: Vec<ImageInput>) -> Result<String, String> {
+pub(crate) fn start_turn(app: &AppHandle, state: &PilotState, id: &str, text: String, images: Vec<ImageInput>) -> Result<String, String> {
     start_input(app, state, id, TurnInput { text, images, ..Default::default() }, json!([]))
 }
 
@@ -754,7 +759,7 @@ fn queue_state(state: &PilotState, thread_id: &str) -> QueueState {
     }
 }
 
-fn emit_queue(state: &PilotState, thread_id: &str) {
+pub(crate) fn emit_queue(state: &PilotState, thread_id: &str) {
     let q = queue_state(state, thread_id);
     state.runtime.emit(thread_id, ThreadEvent::Queue { items: q.items, held: q.held });
 }

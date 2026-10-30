@@ -726,6 +726,40 @@ never fakes support.
   card; a click shows the card selected on its board with the thread
   beside it.
 
+### 5.16 QuantMCP pilot tools (card 22)
+
+- `quantsuite.pilot.*` capabilities in `modules/pilot/module.json`, served by
+  QuantMCP's bridge catalogue and dispatched through the suite's approval
+  gate like every suite tool: `set_title`, `render_page`, `start_thread`,
+  `message_thread` (write); `open_file`, `open_preview`, `list_threads`,
+  `read_thread` (read). Commands in `crate/src/agent_tools.rs`.
+- The calling thread: every V3 thread's agent (Claude, Codex, ACP) gets
+  QuantMCP as `…/mcp?pilot=<token>` — 32 hex digits per thread, minted per
+  app run (`PilotState.mcp_tokens`). QuantMCP's POST and SSE handlers read
+  the token and put it into each `quantsuite.pilot.*` call as `pilotToken`,
+  dropping a value the agent passed (`with_pilot_token`); the command maps
+  it back to the thread. Other threads are reachable by id only inside the
+  caller's workspace.
+- `set_title` keeps a title the user gave (`title_source = user`); the
+  agent's is `agent`. `open_file` / `open_preview` work only while the
+  thread is on screen with its inspector (`pilot_ui_visible`: the frontend
+  reports the open thread in the conversation view, none on the board,
+  the terminal or another module) and emit `pilot-agent-open`.
+  `open_preview` takes what the Browser tab takes (http/https).
+- `render_page`: a timeline item kind `page` (`{ title?, html }`, ≤ 1 MB,
+  local `src` images embedded as data URIs, ≤ 8 MB) in the running turn;
+  it reads above the answer. `Thread/Page.vue` shows it in an
+  `sandbox="allow-scripts"` frame (opaque origin: no Tauri, no parent) with
+  a CSP that loads nothing from the network, the suite's `--qss-*` colours
+  as variables, and the frame's height posted from inside.
+- `start_thread`: a new thread in the caller's workspace with the caller's
+  permission mode and agent (unless given), its turn started at once;
+  `pilot-thread-created` puts it into the sidebar. `message_thread`: starts
+  a turn or queues behind the running one; refused for the caller itself
+  and for a thread whose mode allows more than the caller's.
+- The context file of a V3 thread names the tools in one line (V2 terminal
+  sessions do not get it: their connection names no thread).
+
 ### 5.5 Composer context (card 9)
 
 - `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`

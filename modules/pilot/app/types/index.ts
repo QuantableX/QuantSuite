@@ -436,7 +436,7 @@ export interface SessionLive {
 
 // ── V3 threads (crate/src/events.rs) ──
 
-export type ItemKind = 'user' | 'assistant' | 'reasoning' | 'tool' | 'approval' | 'question' | 'plan' | 'todo' | 'notice' | 'error' | 'changes'
+export type ItemKind = 'user' | 'assistant' | 'reasoning' | 'tool' | 'approval' | 'question' | 'plan' | 'todo' | 'notice' | 'error' | 'changes' | 'page'
 
 export interface ThreadItem {
   id: string

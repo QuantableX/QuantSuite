@@ -30,6 +30,8 @@ pub enum ItemKind {
     Error,
     /// What a turn changed in the checkout (card 11).
     Changes,
+    /// A page the agent rendered with `quantsuite.pilot.render_page` (card 22).
+    Page,
 }
 
 impl ItemKind {
@@ -46,6 +48,7 @@ impl ItemKind {
             ItemKind::Notice => "notice",
             ItemKind::Error => "error",
             ItemKind::Changes => "changes",
+            ItemKind::Page => "page",
         }
     }
 
@@ -62,6 +65,7 @@ impl ItemKind {
             "notice" => ItemKind::Notice,
             "error" => ItemKind::Error,
             "changes" => ItemKind::Changes,
+            "page" => ItemKind::Page,
             _ => return None,
         })
     }
@@ -72,6 +76,7 @@ impl ItemKind {
 /// - `user`: `{ text, attachments: [] }`
 /// - `assistant`: `{ text, phase?, streaming }`
 /// - `reasoning`: `{ text, estimatedTokens?, streaming }`
+/// - `page`: `{ title?, html }` — a self-contained page, local images embedded (card 22)
 /// - `tool`: `{ callId, name, category, title, input, output?, status, isError }`
 ///   — `status` = `running` | `completed` | `failed` | `denied`
 /// - `approval`: `{ requestId, toolName, category, title, input, status, reply? }`
