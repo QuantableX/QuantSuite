@@ -26,8 +26,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
 
-/// The providers a chat thread can run today.
-const CHAT_PROVIDERS: [&str; 2] = ["claude", "codex"];
+use crate::settings::CHAT_PROVIDERS;
 
 const PAGE: i64 = 100;
 const TITLE_MAX: usize = 60;
@@ -53,7 +52,9 @@ pub fn pilot_thread_create(app: AppHandle, state: State<'_, PilotState>, req: Cr
     let settings = lock(&state.settings).clone();
     let context_id = req.context_id.unwrap_or_else(|| contexts::GENERAL_ID.into());
     let ctx = contexts::resolve(&app, &context_id).ok_or_else(|| format!("unknown context '{context_id}'"))?;
-    let provider = req.provider.unwrap_or_else(|| "claude".into());
+    // What the request leaves open comes from the settings: default → project (card 19).
+    let defaults = settings.defaults_for(&ctx.id);
+    let provider = req.provider.unwrap_or_else(|| defaults.provider.clone());
     if !CHAT_PROVIDERS.contains(&provider.as_str()) {
         return Err(format!("'{provider}' cannot run a chat thread yet"));
     }
@@ -65,7 +66,7 @@ pub fn pilot_thread_create(app: AppHandle, state: State<'_, PilotState>, req: Cr
         (Some(_), _) => "worktree".to_string(),
         (None, _) if !in_repo => "local".to_string(),
         (None, Some(m)) if matches!(m, "local" | "worktree") => m.to_string(),
-        (None, _) => settings.new_thread_workspace.clone(),
+        (None, _) => defaults.workspace.clone(),
     };
     let wt_branch = worktree.as_deref().and_then(|p| git::repo_info(Path::new(p))).map(|r| r.branch).unwrap_or_default();
     let meta = ThreadMeta {
@@ -78,7 +79,7 @@ pub fn pilot_thread_create(app: AppHandle, state: State<'_, PilotState>, req: Cr
         context_name: ctx.name,
         cwd: worktree.clone().unwrap_or(ctx.path),
         model: req.model.unwrap_or_default().trim().to_string(),
-        mode: req.mode.filter(|m| settings::valid_mode(m)).unwrap_or(settings.default_mode),
+        mode: req.mode.filter(|m| settings::valid_mode(m)).unwrap_or(defaults.mode),
         created_at: stamp,
         updated_at: stamp,
         cost_usd: 0.0,
@@ -248,13 +249,14 @@ pub fn title_from_prompt(text: &str) -> String {
 /// What decides whether a warm process can take the next turn.
 fn plan_key(meta: &ThreadMeta, settings: &Settings) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}",
         meta.provider,
         effective_model(meta, settings),
         effective_effort(meta, settings),
         meta.mode,
         settings.attach_quantmcp,
-        settings.include_general_vault
+        settings.include_general_vault,
+        settings.launch_fingerprint(&meta.provider)
     )
 }
 
@@ -262,7 +264,26 @@ fn effective_model(meta: &ThreadMeta, settings: &Settings) -> String {
     if !meta.model.trim().is_empty() {
         return meta.model.trim().to_string();
     }
-    settings.model_for(&meta.provider).unwrap_or_default().to_string()
+    settings.model_in(&meta.context_id, &meta.provider).unwrap_or_default().to_string()
+}
+
+/// The base environment of an agent process plus what the settings add (card 19).
+fn agent_env(settings: &Settings, provider: &str, base: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut env = base;
+    env.extend(settings.launch_env(provider));
+    env
+}
+
+/// The user's own model ids join the CLI's list in the picker (card 19).
+fn with_custom_models(mut catalog: Catalog, settings: &Settings) -> Catalog {
+    if let Some(p) = settings.providers.get(&catalog.provider) {
+        for id in &p.models {
+            if !catalog.models.iter().any(|m| &m.id == id) {
+                catalog.models.push(crate::driver::ModelInfo { id: id.clone(), display_name: id.clone(), description: "Your own model id".into(), ..Default::default() });
+            }
+        }
+    }
+    catalog
 }
 
 fn effective_effort(meta: &ThreadMeta, settings: &Settings) -> String {
@@ -326,18 +347,23 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
         add_dirs,
         resume_at,
     }));
+    args.extend(settings.extra_args("claude"));
     Ok(LaunchPlan {
         key: plan_key(meta, settings),
         program: exe.program,
         args,
         cwd: meta.cwd.clone(),
-        env: vec![
-            ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
-            ("QS_PILOT_THREAD".into(), meta.id.clone()),
-            // Headless Claude Code 2.1.x has its task tools (TaskCreate,
-            // TaskUpdate) only with this set — verified live 2026-10-30 (card 16).
-            ("CLAUDE_CODE_ENABLE_TODO_TOOLS".into(), "1".into()),
-        ],
+        env: agent_env(
+            settings,
+            "claude",
+            vec![
+                ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
+                ("QS_PILOT_THREAD".into(), meta.id.clone()),
+                // Headless Claude Code 2.1.x has its task tools (TaskCreate,
+                // TaskUpdate) only with this set — verified live 2026-10-30 (card 16).
+                ("CLAUDE_CODE_ENABLE_TODO_TOOLS".into(), "1".into()),
+            ],
+        ),
         driver: Box::new(ClaudeDriver::new()),
     })
 }
@@ -361,6 +387,8 @@ fn codex_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: 
         Vec::new()
     };
     let mut args = exe.prefix.clone();
+    // Global options (`-c key=value`) go before the subcommand.
+    args.extend(settings.extra_args("codex"));
     args.extend(codex::launch_args());
     let driver = CodexDriver::new(CodexOptions {
         cwd: meta.cwd.clone(),
@@ -380,10 +408,14 @@ fn codex_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: 
         program: exe.program,
         args,
         cwd: meta.cwd.clone(),
-        env: vec![
-            ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
-            ("QS_PILOT_THREAD".into(), meta.id.clone()),
-        ],
+        env: agent_env(
+            settings,
+            "codex",
+            vec![
+                ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
+                ("QS_PILOT_THREAD".into(), meta.id.clone()),
+            ],
+        ),
         driver: Box::new(driver),
     })
 }
@@ -2265,24 +2297,25 @@ pub fn pilot_thread_regenerate_title(state: State<'_, PilotState>, id: String) -
 /// thread's handshake or a short discovery run, cached for five minutes.
 #[tauri::command(async)]
 pub fn pilot_provider_catalog(app: AppHandle, state: State<'_, PilotState>, provider: String, refresh: Option<bool>) -> Result<Catalog, String> {
+    let settings = lock(&state.settings).clone();
     if !refresh.unwrap_or(false) {
         if let Some(c) = state.runtime.cached_catalog(&provider) {
-            return Ok(c);
+            return Ok(with_custom_models(c, &settings));
         }
     }
-    let settings = lock(&state.settings).clone();
     let cwd = contexts::general_vault(&app);
     let _ = std::fs::create_dir_all(&cwd);
-    let env = vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())];
+    let env = agent_env(&settings, &provider, vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())]);
     if provider == "codex" {
         let adapter = adapters::find(&settings, "codex").ok_or("Codex is not a known adapter")?;
         let exe = providers::resolve(&adapter, &settings).ok_or("Codex was not found")?;
         let mut args = exe.prefix.clone();
+        args.extend(settings.extra_args("codex"));
         args.extend(codex::launch_args());
         let driver = Box::new(CodexDriver::discovery(&cwd.to_string_lossy()));
         let catalog = runtime::discover(&exe.program, &args, &cwd.to_string_lossy(), &env, driver)?;
         state.runtime.store_catalog(catalog.clone());
-        return Ok(catalog);
+        return Ok(with_custom_models(catalog, &settings));
     }
     if provider != "claude" {
         return Err(format!("no catalog for '{provider}' yet"));
@@ -2293,7 +2326,7 @@ pub fn pilot_provider_catalog(app: AppHandle, state: State<'_, PilotState>, prov
     args.extend(claude::discovery_args());
     let catalog = runtime::discover(&exe.program, &args, &cwd.to_string_lossy(), &env, Box::new(ClaudeDriver::new()))?;
     state.runtime.store_catalog(catalog.clone());
-    Ok(catalog)
+    Ok(with_custom_models(catalog, &settings))
 }
 
 /// Codex's subscription windows without a turn (card 18): a discovery run
@@ -2304,8 +2337,9 @@ pub fn codex_limits(app: &AppHandle, state: &PilotState) -> Result<Vec<crate::ev
     let exe = providers::resolve(&adapter, &settings).ok_or("Codex is not installed")?;
     let cwd = contexts::general_vault(app);
     let _ = std::fs::create_dir_all(&cwd);
-    let env = vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())];
+    let env = agent_env(&settings, "codex", vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())]);
     let mut args = exe.prefix.clone();
+    args.extend(settings.extra_args("codex"));
     args.extend(codex::launch_args());
     let driver = Box::new(CodexDriver::discovery(&cwd.to_string_lossy()));
     runtime::probe_limits(&exe.program, &args, &cwd.to_string_lossy(), &env, driver)

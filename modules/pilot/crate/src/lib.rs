@@ -247,6 +247,124 @@ fn pilot_keybindings_set(state: State<'_, PilotState>, rules: serde_json::Value)
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
+/// Update an agent CLI (card 19). A dry run says how it would update; a run
+/// executes the installer and reads the version again.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateResult {
+    plan: providers::UpdatePlan,
+    ran: bool,
+    ok: bool,
+    before: Option<String>,
+    after: Option<String>,
+    /// The end of what the installer printed.
+    output: String,
+}
+
+#[tauri::command(async)]
+fn pilot_provider_update(state: State<'_, PilotState>, id: String, dry_run: Option<bool>) -> Result<UpdateResult, String> {
+    let settings = lock(&state.settings).clone();
+    let adapter = adapters::find(&settings, &id).ok_or_else(|| format!("unknown agent '{id}'"))?;
+    let exe = providers::resolve(&adapter, &settings).ok_or_else(|| format!("{} is not installed", adapter.label))?;
+    let found = std::path::PathBuf::from(&exe.found);
+    let plan = providers::update_plan(adapter.kind, &found).ok_or_else(|| format!("{} has no update command QuantPilot knows", adapter.label))?;
+    let before = providers::version_of(&found);
+    if dry_run.unwrap_or(true) {
+        return Ok(UpdateResult { plan, ran: false, ok: true, before, after: None, output: String::new() });
+    }
+    let mut cmd = if plan.program == "npm" {
+        // npm is a .cmd shim.
+        let mut c = std::process::Command::new("cmd");
+        c.arg("/C").arg("npm").args(&plan.args);
+        c
+    } else {
+        let mut c = std::process::Command::new(&plan.program);
+        c.args(&plan.args);
+        c
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let (ok, out, err) = providers::run_capture_split(cmd, std::time::Duration::from_secs(600))?;
+    let text = format!("{out}{err}");
+    let tail: String = text.chars().rev().take(4000).collect::<Vec<_>>().into_iter().rev().collect();
+    let after = providers::version_of(&found);
+    Ok(UpdateResult { plan, ran: true, ok, before, after, output: tail })
+}
+
+/// Settings → Source control (card 19): is `gh` installed and signed in.
+#[tauri::command(async)]
+fn pilot_gh_status() -> Result<(), String> {
+    gitops::gh_ready()
+}
+
+/// Settings → Advanced (card 19): what a bug report needs, without secrets —
+/// variable names, never their values.
+fn diagnostics(state: &PilotState) -> String {
+    let s = lock(&state.settings).clone();
+    let names = |m: &std::collections::BTreeMap<String, String>| m.keys().cloned().collect::<Vec<_>>().join(", ");
+    let mut out = format!(
+        "QuantPilot {}\nOS: {} {}\nData: {}\nSettings: v{}, default agent {}, mode {}, workspace {}, QuantMCP {}, saved Claude login {}\nGlobal env: {}\n",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        state.data_dir.display(),
+        s.version,
+        s.default_provider,
+        s.default_mode,
+        s.new_thread_workspace,
+        s.attach_quantmcp,
+        s.prefer_saved_claude_login,
+        names(&s.env),
+    );
+    for (id, p) in &s.providers {
+        out.push_str(&format!("Agent {id}: args {:?}, env {}, models {}, disabled {}\n", p.args, names(&p.env), p.models.len(), p.disabled));
+    }
+    for a in adapters::all(&s) {
+        match providers::resolve(&a, &s) {
+            Some(exe) => out.push_str(&format!("{}: {} ({})\n", a.label, exe.found, providers::version_of(std::path::Path::new(&exe.found)).unwrap_or_else(|| "version unreadable".into()))),
+            None => out.push_str(&format!("{}: not found\n", a.label)),
+        }
+    }
+    out.push_str(&format!("Threads: {}\n", state.db.list_sessions().map(|l| l.len()).unwrap_or(0)));
+    out
+}
+
+#[tauri::command(async)]
+fn pilot_diagnostics(state: State<'_, PilotState>) -> String {
+    diagnostics(&state)
+}
+
+/// The diagnostics and the newest part of the suite's log, saved to
+/// Downloads and shown in Explorer.
+#[tauri::command(async)]
+fn pilot_export_logs(state: State<'_, PilotState>) -> Result<String, String> {
+    let mut text = diagnostics(&state);
+    let log = qs_core::paths::logs_dir().join("quantsuite.log");
+    if let Ok(bytes) = std::fs::read(&log) {
+        let start = bytes.len().saturating_sub(512 * 1024);
+        text.push_str(&format!("\n--- {} (last {} KB) ---\n", log.display(), (bytes.len() - start) / 1024));
+        text.push_str(&String::from_utf8_lossy(&bytes[start..]));
+    }
+    let dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
+    let path = dir.join(format!("quantpilot-diagnostics-{}.txt", chrono::Local::now().format("%Y%m%d-%H%M%S")));
+    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    reveal(&path);
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// The pilot's data folder in Explorer.
+#[tauri::command(async)]
+fn pilot_open_data_dir(state: State<'_, PilotState>) {
+    let _ = std::process::Command::new("explorer").arg(&state.data_dir).spawn();
+}
+
+fn reveal(path: &std::path::Path) {
+    let _ = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
+}
+
 #[tauri::command(async)]
 fn pilot_sessions_list(app: AppHandle, state: State<'_, PilotState>) -> Result<Vec<SessionMeta>, String> {
     // Threads nobody touched for the configured days move to Settled (card 7).
@@ -743,6 +861,11 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_messages_search,
             pilot_keybindings_get,
             pilot_keybindings_set,
+            pilot_provider_update,
+            pilot_gh_status,
+            pilot_diagnostics,
+            pilot_export_logs,
+            pilot_open_data_dir,
             usage::pilot_usage_report,
             usage::pilot_usage_limits,
             threads::pilot_ports_alive,

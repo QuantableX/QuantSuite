@@ -63,6 +63,7 @@ const started = computed(() => Boolean(thread.value?.providerSessionId) || runni
 const providers = computed<ProviderOption[]>(() =>
   store.adapters
     .filter((a) => CHAT_PROVIDERS.includes(a.id))
+    .filter((a) => a.id === provider.value || !store.settings?.providers?.[a.id]?.disabled)
     .map((a) => {
       if (a.found === false) return { id: a.id, label: a.label, available: false, reason: `${a.label} is not installed` }
       if (running.value && a.id !== provider.value) {

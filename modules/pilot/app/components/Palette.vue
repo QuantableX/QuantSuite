@@ -282,7 +282,7 @@ onBeforeUnmount(() => {
   background: var(--qss-bg-raised, #1f1f25);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   overflow: hidden;
-  animation: qp-pal-in 0.17s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: qp-pal-in var(--qp-motion, 170ms) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @keyframes qp-pal-in { from { opacity: 0; transform: translateY(-6px) scale(0.985); } }
 @media (prefers-reduced-motion: reduce) { .qp-pal { animation: qp-pal-fade 0.12s ease-out; } }

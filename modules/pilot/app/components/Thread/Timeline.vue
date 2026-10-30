@@ -277,6 +277,8 @@ useCommands({
 <style scoped>
 .qp-tl { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .qp-tl-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; outline: none; }
+/* Settings → Appearance → Conversation text (card 19). */
+.qp-tl-content { zoom: var(--qp-text-zoom, 1); }
 .qp-tl-scroll:focus-visible { box-shadow: inset 0 0 0 1px var(--qss-accent, #7aa2f7); }
 .qp-tl-content :deep(.qp-flash) { animation: qp-flash 1.6s ease-out; border-radius: 10px; }
 @keyframes qp-flash { 0%, 30% { background: color-mix(in srgb, var(--qss-accent, #7aa2f7) 18%, transparent); } 100% { background: transparent; } }

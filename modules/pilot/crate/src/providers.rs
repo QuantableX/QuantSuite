@@ -40,6 +40,63 @@ pub struct AdapterStatus {
     /// `None` = could not tell (only Claude and Codex are asked).
     pub logged_in: Option<bool>,
     pub detail: Option<String>,
+    /// How Update would run: `npm`, `winget`, `native` or `cli` (card 19).
+    pub update: Option<String>,
+}
+
+/// How an installed CLI updates (card 19): through the installer that put it
+/// there — npm, winget, Claude's native installer — else the CLI's own
+/// `update`. Never as a side effect of a status check.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePlan {
+    pub method: String,
+    pub program: String,
+    pub args: Vec<String>,
+    /// The command as a user would type it.
+    pub display: String,
+}
+
+fn npm_package(kind: Kind) -> Option<&'static str> {
+    Some(match kind {
+        Kind::Claude => "@anthropic-ai/claude-code",
+        Kind::Codex => "@openai/codex",
+        Kind::Gemini => "@google/gemini-cli",
+        Kind::Opencode => "opencode-ai",
+        Kind::Pi => "@earendil-works/pi-coding-agent",
+        _ => return None,
+    })
+}
+
+pub fn update_plan(kind: Kind, found: &Path) -> Option<UpdatePlan> {
+    let path = found.to_string_lossy().replace('/', "\\");
+    let lower = path.to_ascii_lowercase();
+    let plan = |method: &str, program: &str, args: Vec<String>| UpdatePlan {
+        method: method.into(),
+        display: std::iter::once(program.rsplit('\\').next().unwrap_or(program).trim_end_matches(".exe").to_string()).chain(args.iter().cloned()).collect::<Vec<_>>().join(" "),
+        program: program.into(),
+        args,
+    };
+    if let Some(i) = lower.find("\\winget\\packages\\") {
+        // …\WinGet\Packages\Anthropic.ClaudeCode_Microsoft.Winget.Source_8wekyb3d8bbwe\claude.exe
+        let rest = &path[i + "\\winget\\packages\\".len()..];
+        let id = rest.split(['\\', '_']).next().unwrap_or_default();
+        if !id.is_empty() {
+            return Some(plan("winget", "winget", vec!["upgrade".into(), "--id".into(), id.into(), "--exact".into(), "--silent".into()]));
+        }
+    }
+    if let Some(pkg) = npm_package(kind) {
+        if lower.contains("\\npm\\") || lower.contains("\\node_modules\\") {
+            return Some(plan("npm", "npm", vec!["install".into(), "-g".into(), format!("{pkg}@latest")]));
+        }
+    }
+    let exe = path.clone();
+    match kind {
+        // The native installer puts claude.exe in ~/.local/bin and updates with `claude update`.
+        Kind::Claude if lower.ends_with("\\.local\\bin\\claude.exe") => Some(plan("native", &exe, vec!["update".into()])),
+        Kind::Claude | Kind::Codex => Some(plan("cli", &exe, vec!["update".into()])),
+        _ => None,
+    }
 }
 
 /// A windowless command for the executable — the release binary has no
@@ -287,7 +344,7 @@ pub fn run_with_input(mut cmd: Command, input: Option<String>, timeout: Duration
     }
 }
 
-fn version_of(exe: &Path) -> Option<String> {
+pub fn version_of(exe: &Path) -> Option<String> {
     let mut cmd = base_cmd(exe);
     cmd.arg("--version");
     run_capture(cmd, Duration::from_secs(20))
@@ -296,9 +353,20 @@ fn version_of(exe: &Path) -> Option<String> {
         .and_then(|t| t.lines().find(|l| !l.trim().is_empty()).map(|l| l.trim().to_string()))
 }
 
-fn claude_login(exe: &Path, status: &mut AdapterStatus) {
-    let mut cmd = base_cmd(exe);
-    cmd.args(["auth", "status"]);
+/// The settings' environment on a probe, so it reports what new processes will see (card 19).
+fn with_env(mut cmd: Command, env: &[(String, String)]) -> Command {
+    for (k, v) in env {
+        match k.strip_prefix('-') {
+            Some(name) => cmd.env_remove(name),
+            None => cmd.env(k, v),
+        };
+    }
+    cmd
+}
+
+fn claude_login(exe: &Path, env: &[(String, String)], status: &mut AdapterStatus) {
+    let mut cmd = with_env(base_cmd(exe), env);
+    cmd.args(["auth", "status", "--json"]);
     match run_capture(cmd, Duration::from_secs(20)) {
         Ok((_, text)) => {
             let json_start = text.find('{');
@@ -323,8 +391,8 @@ fn claude_login(exe: &Path, status: &mut AdapterStatus) {
     }
 }
 
-fn codex_login(exe: &Path, status: &mut AdapterStatus) {
-    let mut cmd = base_cmd(exe);
+fn codex_login(exe: &Path, env: &[(String, String)], status: &mut AdapterStatus) {
+    let mut cmd = with_env(base_cmd(exe), env);
     cmd.args(["login", "status"]);
     match run_capture(cmd, Duration::from_secs(20)) {
         Ok((_, text)) => {
@@ -369,9 +437,11 @@ fn status_one(adapter: &Adapter, settings: &Settings) -> AdapterStatus {
     status.found = true;
     status.path = Some(exe.found.clone());
     status.version = version_of(&found);
+    let env = settings.launch_env(&adapter.id);
+    status.update = update_plan(adapter.kind, &found).map(|p| p.method);
     match adapter.kind {
-        Kind::Claude => claude_login(&found, &mut status),
-        Kind::Codex => codex_login(&found, &mut status),
+        Kind::Claude => claude_login(&found, &env, &mut status),
+        Kind::Codex => codex_login(&found, &env, &mut status),
         _ => status.detail = Some(if status.version.is_some() { "found".into() } else { "found, version unreadable".into() }),
     }
     status
@@ -405,6 +475,21 @@ pub fn status_all(adapters: &[Adapter], settings: &Settings) -> Vec<AdapterStatu
 mod tests {
     use super::*;
 
+    /// Card 19: Update goes through the installer that put the CLI there.
+    #[test]
+    fn update_follows_the_installer() {
+        let p = |s: &str| PathBuf::from(s);
+        let npm = update_plan(Kind::Codex, &p("C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd")).unwrap();
+        assert_eq!((npm.method.as_str(), npm.display.as_str()), ("npm", "npm install -g @openai/codex@latest"));
+        let wg = update_plan(Kind::Claude, &p("C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Anthropic.ClaudeCode_Microsoft.Winget.Source_8wekyb3d8bbwe\\claude.exe")).unwrap();
+        assert_eq!(wg.display, "winget upgrade --id Anthropic.ClaudeCode --exact --silent");
+        let native = update_plan(Kind::Claude, &p("C:\\Users\\me\\.local\\bin\\claude.exe")).unwrap();
+        assert_eq!((native.method.as_str(), native.display.as_str()), ("native", "claude update"));
+        let other = update_plan(Kind::Codex, &p("D:\\tools\\codex.exe")).unwrap();
+        assert_eq!((other.method.as_str(), other.args.as_slice()), ("cli", &["update".to_string()][..]));
+        assert!(update_plan(Kind::Omp, &p("D:\\tools\\omp.exe")).is_none(), "no known way: no button");
+    }
+
     #[test]
     fn parses_the_npm_shim() {
         let shim = "@ECHO off\r\n...\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & \"%_prog%\" --no-warnings=DEP0040 \"%dp0%\\node_modules\\@google\\gemini-cli\\dist\\index.js\" %*\r\n";
@@ -416,5 +501,23 @@ mod tests {
         let (flags, script) = parse_npm_shim(plain, Path::new("D:\\x")).unwrap();
         assert!(flags.is_empty());
         assert!(script.ends_with("cli.js"));
+    }
+}
+
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    /// Live, opt-in (card 19): how this machine's Claude Code and Codex would update — nothing runs.
+    #[test]
+    #[ignore = "live: resolves the installed CLIs and reads their versions"]
+    fn live_update_dry_run() {
+        let settings = Settings::default();
+        for id in ["claude", "codex"] {
+            let adapter = crate::adapters::find(&settings, id).unwrap();
+            let exe = resolve(&adapter, &settings).expect("installed");
+            let plan = update_plan(adapter.kind, Path::new(&exe.found)).expect("a plan");
+            println!("{id}: {} → {} via {} ({:?})", exe.found, plan.display, plan.method, version_of(Path::new(&exe.found)));
+        }
     }
 }

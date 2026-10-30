@@ -25,6 +25,7 @@ import { useUsageStore } from '#pilot/stores/usage'
 import { chordOf, resolve, SUITE_KEYS, type KeyContext } from '#pilot/utils/keybindings'
 import { runCommand, useCommands } from '#pilot/utils/commands'
 import { moveFocus, noteFocus } from '#pilot/utils/focus'
+import { setMathEnabled } from '#pilot/utils/markdown'
 import { chime } from '#pilot/utils/chime'
 import { threadReference } from '#pilot/utils/format'
 import type { PilotEnvelope, ThreadEnvelope } from '#pilot/types'
@@ -98,6 +99,16 @@ onActivated(() => {
 const keys = useKeysStore()
 const usage = useUsageStore()
 const shell = ref<HTMLElement | null>(null)
+
+// ── Appearance (card 19): text size, panel motion, math ──
+const ZOOM: Record<string, number> = { small: 0.92, default: 1, large: 1.08, larger: 1.16 }
+const reducedMotion = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-reduced-motion: reduce)') : null
+const appearance = computed(() => {
+  const s = store.settings
+  const motion = reducedMotion?.matches ? 0 : (s?.panelMotionMs ?? 160)
+  return { '--qp-text-zoom': String(ZOOM[s?.textSize ?? 'default'] ?? 1), '--qp-motion': `${motion}ms` }
+})
+watch(() => store.settings?.renderMath ?? true, (on) => setMathEnabled(on), { immediate: true })
 
 function keyContext(target: EventTarget | null): KeyContext {
   const t = target instanceof Element ? target : null
@@ -249,7 +260,7 @@ function onFileDrop(e: DragEvent) {
 </script>
 
 <template>
-  <div ref="shell" class="qp-shell" @focusin="onFocusIn" @dragenter="onFileDrag" @dragover="onFileDrag" @dragleave="onFileLeave" @drop="onFileDrop">
+  <div ref="shell" class="qp-shell" :style="appearance" @focusin="onFocusIn" @dragenter="onFileDrag" @dragover="onFileDrag" @dragleave="onFileLeave" @drop="onFileDrop">
     <PilotLayoutAppHeader />
     <div class="qp-body">
       <QSidebar :model-value="app.sidebarLeftOpen" resizable storage-key="pilot.left">

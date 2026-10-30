@@ -93,7 +93,7 @@ function onRecordKey(e: KeyboardEvent, id: string) {
 </script>
 
 <template>
-  <div class="qp-settings">
+  <div class="qp-settings" data-module="pilot">
     <p class="qp-settings-desc">
       Click a shortcut and press the new keys. The last rule that matches wins; the terminal keeps its own keys. The rules are stored in
       <code>{{ filePath }}</code> — edit it by hand if you like: a JSON list of <code>{ "key", "command", "when" }</code>.

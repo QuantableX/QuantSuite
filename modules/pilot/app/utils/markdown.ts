@@ -49,7 +49,14 @@ function renderTex(tex: string, display: boolean): string {
 }
 
 /** Whether a text needs KaTeX at all — cheap enough to run on every render. */
+/** Settings → Appearance → Render math (card 19). */
+let mathEnabled = true
+export function setMathEnabled(on: boolean) {
+  mathEnabled = on
+}
+
 export function hasMath(src: string): boolean {
+  if (!mathEnabled) return false
   return /\$\$[\s\S]+?\$\$/.test(src) || /(^|[^\\$])\$(?!\s)[^$\n]+?(?<!\s)\$(?!\d)/.test(src)
 }
 
@@ -151,6 +158,7 @@ marked.use({
         return i < 0 ? undefined : i
       },
       tokenizer(src: string) {
+        if (!mathEnabled) return undefined
         const m = /^\$\$([\s\S]+?)\$\$(?:\n|$)/.exec(src)
         if (m) return { type: 'mathBlock', raw: m[0], text: m[1].trim() }
         return undefined
@@ -167,6 +175,7 @@ marked.use({
         return i < 0 ? undefined : i
       },
       tokenizer(src: string) {
+        if (!mathEnabled) return undefined
         const m = /^\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/.exec(src)
         if (m) return { type: 'mathInline', raw: m[0], text: m[1] }
         return undefined

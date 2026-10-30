@@ -239,7 +239,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
     async createThread(
       opts: {
         contextId: string
-        mode: Mode
+        /** Absent: the project's default (card 19). */
+        mode?: Mode
         title?: string
         provider?: string
         model?: string

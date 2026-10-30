@@ -620,6 +620,49 @@ never fakes support.
 - `/usage` in the composer shows the thread agent's windows above the box
   (the last reading, no agent run) until dismissed or the next message.
 
+### 5.14 Settings and providers (card 19)
+
+- Sections: General (new threads: agent, permissions, workspace, branch
+  prefix, shell; composer; notifications; threads; the suite as context),
+  Providers, Keybindings, Project actions, Source control, Appearance,
+  Advanced. Each section root carries `data-module="pilot"` so the
+  module's own styles apply inside the suite's settings modal.
+- Settings v3 (`settings.rs`; a V2 file keeps everything): `defaultProvider`,
+  `providers` (per agent: extra `args`, `env`, own `models`, `disabled`),
+  global `env`, `preferSavedClaudeLogin`, `textSize`, `panelMotionMs`,
+  `renderMath`, `projects` (per context: `provider`, `model` per agent,
+  `mode`, `workspace`, `enabled` agents).
+- Layers: default → project (`Settings::defaults_for`, `model_in`,
+  `enabled_in`). `pilot_thread_create` fills what the request leaves open
+  from them (the frontend no longer sends a mode); a disabled default agent
+  hands over to the next one. Settings → General → "Settings for" shows a
+  project's rows as inherited (muted layers mark) or set here (accent,
+  Reset).
+- Launch: `launch_env` = global variables, then the agent's own; with
+  "Prefer saved Claude login" new Claude processes drop inherited
+  credential variables (`CLAUDE_CREDENTIAL_VARS`: API key, auth/OAuth
+  tokens, base URLs and headers, Bedrock/Vertex/Foundry switches, model
+  overrides) unless the settings set them — `-NAME` env entries remove a
+  variable in `spawn_process`. Extra arguments go after Claude's own and
+  before Codex's `app-server` (global `-c` options). Both are part of the
+  warm-process key, discovery runs and the login probe use them too. Own
+  model ids join the picker's catalog. Agents switched off leave the model
+  picker (the thread's own stays).
+- Login state: `claude auth status --json` and `codex login status`, no
+  prompt, nothing started. Update (`providers::update_plan`): the installer
+  that put the CLI there — WinGet package → `winget upgrade --id <id>`, npm
+  global → `npm install -g <pkg>@latest`, Claude's native install
+  (`~/.local/bin/claude.exe`) → `claude update` — else the CLI's own
+  `update`; the page shows the command first (dry run), runs it on
+  confirmation and reads the version again. Live on this machine: Claude
+  native → `claude update`, Codex (`.cli-bin`) → `codex update`.
+- Source control: `gh auth status` with the exact `gh auth login` hint;
+  commit message style. Appearance: conversation text size (zoom on the
+  timeline), panel motion 0–400 ms (`--qp-motion`, none under reduced
+  motion), math on/off (`setMathEnabled`). Advanced: the data folder,
+  diagnostics without secrets (variable names only), Export logs to
+  Downloads (with the newest 512 KB of the suite log), shown in Explorer.
+
 ### 5.5 Composer context (card 9)
 
 - `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`

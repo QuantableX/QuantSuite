@@ -24,7 +24,7 @@ const anyReady = computed(() => (store.status ? store.adapters.some((a) => a.fou
 const terminal = computed(() => Boolean(session.value && store.terminalShown[session.value.id]))
 
 function startThread() {
-  void store.createThread({ contextId: 'general', mode: store.settings?.defaultMode ?? 'full' })
+  void store.createThread({ contextId: 'general' })
 }
 
 /**

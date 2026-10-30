@@ -661,8 +661,12 @@ fn spawn_process(program: &str, args: &[String], cwd: &str, env: &[(String, Stri
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // `-NAME` removes an inherited variable (card 19: "Prefer saved Claude login").
     for (k, v) in env {
-        cmd.env(k, v);
+        match k.strip_prefix('-') {
+            Some(name) => cmd.env_remove(name),
+            None => cmd.env(k, v),
+        };
     }
     #[cfg(windows)]
     {

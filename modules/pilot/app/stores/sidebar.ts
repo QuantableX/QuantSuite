@@ -29,7 +29,7 @@ import {
   type SidebarThread,
   type UndoEntry,
 } from '#pilot/utils/sidebar'
-import type { Mode, SessionMeta } from '#pilot/types'
+import type { SessionMeta } from '#pilot/types'
 
 interface Undo extends UndoEntry {
   run: () => Promise<void> | void
@@ -365,8 +365,8 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
         await store.openSession(draft.id)
         return draft
       }
-      const mode = (store.settings?.defaultMode ?? 'full') as Mode
-      return store.createThread({ contextId, mode })
+      // Agent, permissions and workspace come from the settings: default → project (card 19).
+      return store.createThread({ contextId })
     },
 
     /** Open the thread `step` rows away in screen order (Ctrl+Shift+[ / ]). */
