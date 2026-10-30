@@ -313,15 +313,14 @@ impl ClaudeDriver {
             Some(json!({ "objective": objective.trim(), "status": "active", "checks": 0 }))
         } else if text.starts_with("Goal cleared") || text.starts_with("No goal set") {
             None
-        } else if let Some(rest) = text.strip_prefix("Goal active: ") {
+        } else {
+            let rest = text.strip_prefix("Goal active: ")?;
             let (objective, turns) = match rest.rfind(" (") {
                 Some(i) => (&rest[..i], rest[i + 2..].trim_end_matches(')')),
                 None => (rest, ""),
             };
             let checks = turns.split_whitespace().next().and_then(|n| n.parse::<i64>().ok()).unwrap_or(0);
             Some(json!({ "objective": objective.trim(), "status": "active", "checks": checks }))
-        } else {
-            return None;
         };
         self.goal = goal.clone();
         Some(vec![Emit::Goal { goal }])

@@ -308,7 +308,7 @@ pub fn claude_skills(claude_home: &Path, cwd: &Path) -> Vec<SkillInfo> {
     }
     let mut seen = std::collections::HashSet::new();
     out.retain(|s| seen.insert(s.name.clone()));
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|a| a.name.to_lowercase());
     out
 }
 
