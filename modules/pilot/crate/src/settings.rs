@@ -99,6 +99,10 @@ pub struct Settings {
     pub commit_style: String,
     /// Project actions by project (context id), in the user's order.
     pub actions: BTreeMap<String, Vec<ProjectAction>>,
+    /// A usage-limit stop schedules the continuation for the reset (card 15).
+    pub limit_resume: bool,
+    /// A usage-limit stop snoozes the thread until the reset (card 15).
+    pub limit_snooze: bool,
 }
 
 impl Default for Settings {
@@ -123,6 +127,8 @@ impl Default for Settings {
             worktree_prefix: "quantpilot/".into(),
             commit_style: "repository".into(),
             actions: BTreeMap::new(),
+            limit_resume: false,
+            limit_snooze: false,
         }
     }
 }

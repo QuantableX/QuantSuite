@@ -58,6 +58,8 @@ pub struct CodexOptions {
     /// Rewind: drop this turn and every later one from the thread before
     /// the next turn (`thread/revert`, card 11).
     pub revert_before: Option<String>,
+    /// Fork: a new Codex thread from this one, up to this turn (`thread/fork`, card 15).
+    pub fork: Option<(String, Option<String>)>,
 }
 
 /// The `codex` arguments after the executable.
@@ -89,6 +91,8 @@ enum Call {
     Initialize,
     ThreadStart,
     ThreadResume,
+    ThreadFork,
+    Compact,
     TurnStart,
     TurnSteer,
     Interrupt,
@@ -305,6 +309,13 @@ impl CodexDriver {
 
     fn open_thread(&mut self) -> String {
         let mut params = self.thread_params();
+        if let Some((source, last)) = self.opts.fork.clone() {
+            params["threadId"] = json!(source);
+            if let Some(turn) = last {
+                params["lastTurnId"] = json!(turn);
+            }
+            return self.request(Call::ThreadFork, "thread/fork", params);
+        }
         match self.opts.resume.clone() {
             Some(id) => {
                 params["threadId"] = json!(id);
@@ -316,6 +327,13 @@ impl CodexDriver {
     }
 
     fn turn_start(&mut self, input: &TurnInput) -> String {
+        // `/compact` is Codex's own compaction, a turn of its own (card 15).
+        if input.text.trim() == "/compact" && input.images.is_empty() {
+            self.starting = true;
+            self.retry_noted = false;
+            self.cancelled = false;
+            return self.request(Call::Compact, "thread/compact/start", json!({ "threadId": self.thread }));
+        }
         let (approval, reviewer, sandbox) = policy(&self.opts.mode, &self.opts.writable_roots);
         let mut params = json!({
             "threadId": self.thread,
@@ -441,8 +459,15 @@ impl CodexDriver {
                     out.push(Emit::RateLimit { windows });
                 }
             }
-            Call::ThreadStart | Call::ThreadResume => {
+            Call::ThreadStart | Call::ThreadResume | Call::ThreadFork => {
                 if let Some(e) = error {
+                    if call == Call::ThreadFork {
+                        // The source thread is gone or too old to fork: a fresh one, said so.
+                        out.push(Emit::Notice { text: format!("Codex could not fork the earlier conversation ({e}); this message starts a new one.") });
+                        self.opts.fork = None;
+                        out.push(Emit::Write(self.open_thread()));
+                        return out;
+                    }
                     if call == Call::ThreadResume {
                         // The saved conversation is gone (another CODEX_HOME, deleted): start fresh, say so.
                         out.push(Emit::Notice { text: format!("Codex could not continue the earlier conversation ({e}); this message starts a new one.") });
@@ -491,6 +516,12 @@ impl CodexDriver {
             Call::TurnSteer => {
                 if let Some(e) = error {
                     out.push(Emit::Notice { text: format!("Codex did not take the message into the running turn: {e}") });
+                }
+            }
+            Call::Compact => {
+                self.starting = false;
+                if let Some(e) = error {
+                    out.push(Emit::TurnEnd { status: TurnStatus::Failed, error: Some(format!("Codex could not compact the conversation: {e}")), duration_ms: None, cost_usd: None });
                 }
             }
             Call::Revert => {

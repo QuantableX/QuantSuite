@@ -94,6 +94,8 @@ pub struct Projector {
     last_flush: Instant,
     tools: HashMap<String, String>,
     requests: HashMap<String, String>,
+    /// The provider's last word on its usage windows: a limit stop's reset time (card 15).
+    windows: Vec<crate::events::RateWindow>,
 }
 
 impl Projector {
@@ -112,6 +114,7 @@ impl Projector {
             last_flush: Instant::now(),
             tools: HashMap::new(),
             requests: HashMap::new(),
+            windows: Vec::new(),
         }
     }
 
@@ -177,7 +180,15 @@ impl Projector {
     }
 
     pub fn user_message(&mut self, text: &str, attachments: Value) -> Item {
-        let item = self.new_item(ItemKind::User, None, json!({ "text": text, "attachments": attachments }));
+        let mut data = json!({ "text": text, "attachments": attachments });
+        // Which agent the turn went to: after a provider switch, earlier replies keep their label (card 15).
+        if let Ok(Some(meta)) = self.db.get_session(&self.thread_id) {
+            data["provider"] = json!(if meta.provider.is_empty() { "claude".to_string() } else { meta.provider });
+        }
+        if text == crate::lifecycle::RESUME_TEXT {
+            data["resume"] = json!(true);
+        }
+        let item = self.new_item(ItemKind::User, None, data);
         self.publish(item.clone(), false);
         item
     }
@@ -429,7 +440,10 @@ impl Projector {
                 }
                 self.emit(self.usage_totals());
             }
-            Emit::RateLimit { windows } => self.emit(ThreadEvent::RateLimit { windows }),
+            Emit::RateLimit { windows } => {
+                self.windows = windows.clone();
+                self.emit(ThreadEvent::RateLimit { windows });
+            }
             Emit::Notice { text } => self.notice(ItemKind::Notice, &text),
             Emit::TurnEnd { status, error, duration_ms, cost_usd } => {
                 self.end_turn(status, error, duration_ms, cost_usd);
@@ -441,6 +455,9 @@ impl Projector {
     }
 
     pub fn end_turn(&mut self, status: TurnStatus, error: Option<String>, duration_ms: Option<i64>, cost_usd: Option<f64>) {
+        // A limit stop remembers when the allowance returns; anything else clears it.
+        let reset = (status == TurnStatus::Limited).then(|| crate::lifecycle::limit_reset(&self.windows, now_ms())).flatten();
+        let _ = self.db.set_limit_reset(&self.thread_id, reset);
         // Whatever still streams or runs ends with the turn.
         let open: Vec<Item> = self.live.values().cloned().collect();
         for mut item in open {
@@ -1685,6 +1702,65 @@ mod tests {
         let asked = db.items("t1", None, 200).unwrap().into_iter().filter(|i| i.kind == ItemKind::Approval).count();
         assert!(asked > 0, "Supervised asked before running the command");
         assert!(!dir.join("c.txt").exists(), "the denied command did not run");
+        rt.stop_all();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Live, opt-in (card 15): Codex forks a thread at an earlier turn
+    /// (`thread/fork`), compacts on `/compact` (`thread/compact/start`), and
+    /// a fresh Codex thread answers from history carried over from another agent.
+    #[test]
+    #[ignore = "live: six small Codex turns (uses the signed-in Codex plan)"]
+    fn live_codex_forks_compacts_and_takes_a_handoff() {
+        use crate::codex::{launch_args, CodexDriver, CodexOptions};
+        let codex = crate::providers::which("codex").expect("codex on PATH").to_string_lossy().into_owned();
+        let dir = std::env::temp_dir().join(format!("qp-live-life-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        for t in ["t1", "t2", "t3"] {
+            thread(&db, t);
+        }
+        let (sink, _) = sink();
+        let rt = Runtime::new(db.clone(), sink);
+        let cwd = dir.to_string_lossy().into_owned();
+        let plan = |resume: Option<String>, fork: Option<(String, Option<String>)>| LaunchPlan {
+            key: "live".into(),
+            program: codex.clone(),
+            args: launch_args(),
+            cwd: cwd.clone(),
+            env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+            driver: Box::new(CodexDriver::new(CodexOptions { cwd: cwd.clone(), resume, fork, mode: "plan".into(), ..Default::default() })),
+        };
+        let ask = |thread: &str, text: &str, resume: Option<String>, fork: Option<(String, Option<String>)>| {
+            rt.stop(thread);
+            let start = Instant::now();
+            while rt.process_alive(thread) && start.elapsed() < Duration::from_secs(10) {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            rt.send(thread, TurnInput { text: text.into(), ..Default::default() }, json!([]), || Ok(plan(resume, fork)), "live").unwrap();
+            let t = wait_for_turn(&db, &rt, thread, true);
+            assert_eq!(t.status, "completed", "{text}: {:?}", t.error);
+            db.items(thread, None, 200).unwrap().into_iter().rev().find(|i| i.kind == ItemKind::Assistant).map(|i| i.data["text"].as_str().unwrap_or_default().to_string()).unwrap_or_default()
+        };
+        ask("t1", "Remember the token MANGO-1. Reply with OK only.", None, None);
+        let source = db.get_session("t1").unwrap().unwrap().provider_session_id.expect("thread id");
+        ask("t1", "Also remember the token KIWI-2. Reply with OK only.", Some(source.clone()), None);
+        let first_turn = db.turn_refs("t1").unwrap()[0].1.clone().expect("the first turn's Codex id");
+
+        let forked = ask("t2", "List every token I asked you to remember. Reply with the tokens only.", None, Some((source.clone(), Some(first_turn))));
+        println!("fork answer: {forked}");
+        assert!(forked.contains("MANGO-1") && !forked.contains("KIWI-2"), "{forked}");
+        assert_ne!(db.get_session("t2").unwrap().unwrap().provider_session_id.as_deref(), Some(source.as_str()), "the fork is a thread of its own");
+
+        ask("t1", "/compact", Some(source.clone()), None);
+        let after = ask("t1", "Which tokens do you remember? Reply with the tokens only.", Some(source), None);
+        println!("after compaction: {after}");
+
+        let history = serde_json::json!([{ "role": "user", "text": "The secret word is OMEGA-7. Remember it." }, { "role": "assistant", "text": "OK" }]).to_string();
+        let prompt = crate::lifecycle::handoff_prompt(&history, 0, "Claude Code", "What is the secret word? Reply with the word only.");
+        let carried = ask("t3", &prompt, None, None);
+        println!("handoff answer: {carried}");
+        assert!(carried.contains("OMEGA-7"), "{carried}");
         rt.stop_all();
         let _ = std::fs::remove_dir_all(dir);
     }

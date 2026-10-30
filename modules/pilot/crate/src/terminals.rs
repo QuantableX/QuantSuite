@@ -112,6 +112,47 @@ impl Drawer {
         Ok(term)
     }
 
+    /// A program of its own in the drawer (the CLI's TUI, card 15): when it
+    /// exits, its PTY ends with it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_program(
+        &self,
+        app: &AppHandle,
+        target: &str,
+        thread_id: &str,
+        cwd: &str,
+        label: &str,
+        program: &str,
+        args: Vec<String>,
+        size: (Option<u16>, Option<u16>),
+    ) -> Result<DrawerTerm, String> {
+        let console = app.try_state::<ConsoleState>().ok_or("the console is not running")?;
+        let pty_id = qs_mod_console::spawn_session(
+            app,
+            &console,
+            target,
+            OpenSessionRequest {
+                cwd: cwd.to_string(),
+                shell: Some(program.to_string()),
+                cols: size.0,
+                rows: size.1,
+                owner: Some(OWNER.into()),
+                args,
+                env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+            },
+        )?;
+        let term = DrawerTerm {
+            pty_id,
+            thread_id: thread_id.to_string(),
+            label: label.to_string(),
+            action: Some("tui".into()),
+            cwd: cwd.to_string(),
+            created_at: chrono::Utc::now().timestamp_millis(),
+        };
+        lock(&self.terms).push(term.clone());
+        Ok(term)
+    }
+
     /// The project's actions flagged for `hook`, each in its Run terminal.
     pub fn run_hook(&self, app: &AppHandle, settings: &Settings, shell: &str, thread: &ThreadMeta, hook: Hook) -> Vec<String> {
         let mut failed = Vec::new();

@@ -15,6 +15,8 @@ use crate::gitops::{self, Generated, GitStatus, Link};
 use crate::files::{self, DirEntry, FileContent, PortOwner, SearchResult};
 use crate::terminals::{self, DrawerTerm, Hook};
 use crate::browser::{self, BrowserState, Listener};
+use crate::db::TurnRow;
+use crate::lifecycle;
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
 use crate::{adapters, context_of, contexts, lock, mcp_url, now, prompt, providers, shell, PilotState};
@@ -117,6 +119,31 @@ pub struct Snapshot {
     queue: QueueState,
     /// Whether a message can join the running turn (the provider steers).
     can_steer: bool,
+    /// Scheduled continuation, limit reset, owed history, open TUI (card 15).
+    life: Life,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Life {
+    resume_at: Option<i64>,
+    limit_reset_at: Option<i64>,
+    /// The provider the next message carries the conversation from.
+    handoff_from: Option<String>,
+    /// The conversation is open in the CLI's terminal UI.
+    tui: bool,
+}
+
+fn life_of(state: &PilotState, id: &str) -> Life {
+    let (resume_at, limit_reset_at) = state.db.schedule(id).unwrap_or_default();
+    let handoff_from = state
+        .db
+        .handoff(id)
+        .ok()
+        .flatten()
+        .and_then(|h| serde_json::from_str::<Value>(&h).ok())
+        .and_then(|v| v["from"].as_str().map(str::to_string));
+    Life { resume_at, limit_reset_at, handoff_from, tui: lock(&state.tui).contains_key(id) }
 }
 
 /// The thread and a page of its timeline: the newest [`PAGE`] items, or
@@ -143,6 +170,7 @@ pub fn pilot_thread_snapshot(
         process_alive: state.runtime.process_alive(&id),
         queue: queue_state(&state, &id),
         can_steer,
+        life: life_of(&state, &id),
     })
 }
 
@@ -338,6 +366,8 @@ fn codex_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: 
         mcp_url: mcp,
         writable_roots,
         revert_before: pending_rewind(state, &meta.id).and_then(|r| r.get("before").and_then(Value::as_str).map(str::to_string)),
+        fork: pending_rewind(state, &meta.id)
+            .and_then(|r| r.get("fork").and_then(Value::as_str).map(|src| (src.to_string(), r.get("last").and_then(Value::as_str).map(str::to_string)))),
     });
     Ok(LaunchPlan {
         key: plan_key(meta, settings),
@@ -465,6 +495,22 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
             state.runtime.emit(&id, ThreadEvent::Title { title });
         }
     }
+    // Card 15: the terminal UI owns the session while it is open; a message
+    // replaces a scheduled continuation; a provider new to the conversation
+    // gets it (bounded) with this message.
+    tui_check(app, state, &id)?;
+    if state.db.schedule(&id).map(|s| s.0.is_some()).unwrap_or(false) {
+        let _ = state.db.set_resume_at(&id, None);
+    }
+    let mut input = input;
+    if let Some(from) = state.db.handoff(&id).ok().flatten().and_then(|h| serde_json::from_str::<Value>(&h).ok()).and_then(|v| v["from"].as_str().map(str::to_string)) {
+        if let Some((history, dropped)) = lifecycle::pack_history(&state.db.items(&id, None, 5000).unwrap_or_default()) {
+            if input.display.is_none() {
+                input.display = Some(input.text.clone());
+            }
+            input.text = lifecycle::handoff_prompt(&history, dropped, &from, &input.text);
+        }
+    }
     let settings = lock(&state.settings).clone();
     let key = plan_key(&meta, &settings);
     // Images sent without a saved copy (pasted base64) still show up as images.
@@ -582,6 +628,7 @@ pub fn after_turn(app: &AppHandle, thread_id: &str, status: TurnStatus) {
     };
     record_changes(&state, thread_id);
     link_agent_prs(&state, thread_id);
+    after_turn_life(&state, thread_id, status);
     let queue = state.db.queue(thread_id).unwrap_or_default();
     if queue.is_empty() {
         return;
@@ -1514,6 +1561,333 @@ pub fn pilot_listeners() -> Result<Vec<Listener>, String> {
     browser::listeners()
 }
 
+// ── Thread lifecycle (card 15) ──
+
+fn label_of(state: &PilotState, provider: &str) -> String {
+    let settings = lock(&state.settings).clone();
+    adapters::find(&settings, if provider.is_empty() { "claude" } else { provider }).map(|a| a.label.to_string()).unwrap_or_else(|| provider.to_string())
+}
+
+/// After a turn: owed history counts as delivered once a turn completed
+/// with a native session; a limit stop applies the settings' defaults.
+fn after_turn_life(state: &PilotState, thread_id: &str, status: TurnStatus) {
+    let Ok(Some(meta)) = state.db.get_session(thread_id) else {
+        return;
+    };
+    let native = meta.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty());
+    if lifecycle::handoff_delivered(status == TurnStatus::Completed, native) && state.db.handoff(thread_id).ok().flatten().is_some() {
+        let _ = state.db.set_handoff(thread_id, None);
+    }
+    if status != TurnStatus::Limited {
+        return;
+    }
+    let Some(reset) = state.db.schedule(thread_id).ok().and_then(|s| s.1) else {
+        return;
+    };
+    let settings = lock(&state.settings).clone();
+    if settings.limit_resume {
+        // A minute after the reset, so the window has really turned over.
+        let _ = state.db.set_resume_at(thread_id, Some(reset + 60_000));
+        state.wake.notify_one();
+    }
+    if settings.limit_snooze {
+        let _ = state.db.arrange(thread_id, &Arrangement { snoozed_until: Some(Some(reset)), ..Default::default() });
+    }
+}
+
+/// Continue an interrupted or limited turn.
+fn resume_now(app: &AppHandle, state: &PilotState, id: &str) -> Result<String, String> {
+    if state.runtime.active_turn(id).is_some() {
+        return Err("the agent is already working".into());
+    }
+    start_input(app, state, id, TurnInput { text: lifecycle::RESUME_TEXT.into(), ..Default::default() }, json!([]))
+}
+
+#[tauri::command(async)]
+pub fn pilot_thread_resume(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<String, String> {
+    resume_now(&app, &state, &id)
+}
+
+/// Resume at reset (`at`, Unix ms) or cancel it (`None`).
+#[tauri::command(async)]
+pub fn pilot_thread_schedule(state: State<'_, PilotState>, id: String, at: Option<i64>) -> Result<(), String> {
+    state.db.set_resume_at(&id, at).map_err(|e| e.to_string())?;
+    state.wake.notify_one();
+    Ok(())
+}
+
+/// Runs scheduled continuations when they are due — also those that came
+/// due while the app was closed. Sleeps until the next one, or until a
+/// schedule changes.
+pub async fn resume_scheduler(app: AppHandle) {
+    loop {
+        let (next, wake) = {
+            let Some(state) = app.try_state::<PilotState>() else {
+                return;
+            };
+            let (due, next) = state.db.resumes(now()).unwrap_or_default();
+            for id in due {
+                let _ = state.db.set_resume_at(&id, None);
+                let meta = state.db.get_session(&id).ok().flatten();
+                // Settled or snoozed-away threads do not wake up talking.
+                if meta.is_some_and(|m| m.settled_at.is_none()) {
+                    if let Err(e) = resume_now(&app, &state, &id) {
+                        state.runtime.append_item(&id, &last_turn(&state, &id), ItemKind::Notice, json!({ "text": format!("The scheduled continuation did not start: {e}") }));
+                    }
+                }
+            }
+            (next, state.wake.clone())
+        };
+        let wait = next.map(|t| std::time::Duration::from_millis((t - now()).max(0) as u64)).unwrap_or(std::time::Duration::from_secs(3600));
+        tokio::select! {
+            _ = tokio::time::sleep(wait) => {}
+            _ = wake.notified() => {}
+        }
+    }
+}
+
+fn last_turn(state: &PilotState, id: &str) -> String {
+    state.db.turn_refs(id).ok().and_then(|t| t.last().map(|x| x.0.clone())).unwrap_or_default()
+}
+
+/// A new thread from this one, up to and including the turn of `item_id`
+/// — in the same checkout, or a new worktree from this one's branch. The
+/// provider continues natively where it can (Claude: forked session at
+/// that turn, same folder only; Codex: `thread/fork`); otherwise the
+/// first message carries the history.
+#[tauri::command(async)]
+pub fn pilot_thread_fork(state: State<'_, PilotState>, id: String, item_id: String, worktree: bool) -> Result<ThreadMeta, String> {
+    let src = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    if state.runtime.active_turn(&id).is_some() {
+        return Err("wait for the agent to finish (or stop it) before forking".into());
+    }
+    let item = state.db.get_item(&item_id).map_err(|e| e.to_string())?.ok_or("that message is gone")?;
+    let t = now();
+    let mut meta = src.clone();
+    meta.id = uuid::Uuid::new_v4().to_string();
+    meta.title = format!("{} (fork)", if src.title.trim().is_empty() { "Thread" } else { src.title.trim() });
+    meta.title_source = "user".into();
+    meta.provider_session_id = None;
+    meta.created_at = t;
+    meta.updated_at = t;
+    meta.last_activity_at = t;
+    meta.cost_usd = 0.0;
+    meta.input_tokens = 0;
+    meta.output_tokens = 0;
+    meta.last_error = None;
+    meta.state = "idle".into();
+    meta.context_tokens = None;
+    meta.context_window = None;
+    meta.pinned = false;
+    meta.sort_key = t as f64;
+    meta.settled_at = None;
+    meta.snoozed_until = None;
+    if worktree {
+        let ctx = context_of(&src);
+        let branch = git::repo_info(Path::new(&src.cwd)).map(|r| r.branch).filter(|b| !b.is_empty());
+        meta.workspace_mode = "worktree".into();
+        meta.base_branch = branch.unwrap_or_else(|| src.base_branch.clone());
+        meta.branch = String::new();
+        meta.worktree_path = None;
+        meta.cwd = ctx.path.clone();
+    }
+    state.db.insert_session(&meta).map_err(|e| e.to_string())?;
+    let copied = state.db.copy_turns(&src.id, &meta.id, &item.turn_id).map_err(|e| e.to_string())?;
+    let Some((_, last_new, last_ref)) = copied.last().cloned() else {
+        let _ = state.db.delete_session(&meta.id);
+        return Err("that message has no turn to fork from".into());
+    };
+    let sid = src.provider_session_id.clone().filter(|s| !s.trim().is_empty());
+    let native = match (src.provider.as_str(), sid, last_ref) {
+        ("claude" | "", Some(sid), Some(at)) if !worktree => {
+            state.db.set_provider_session(&meta.id, &sid).map_err(|e| e.to_string())?;
+            Some(json!({ "provider": "claude", "at": at }))
+        }
+        ("codex", Some(sid), Some(turn)) => Some(json!({ "provider": "codex", "fork": sid, "last": turn })),
+        _ => None,
+    };
+    let note = match native {
+        Some(r) => {
+            state.db.set_rewind(&meta.id, Some(&r.to_string())).map_err(|e| e.to_string())?;
+            format!("Forked from \"{}\" — the conversation continues from here.", src.title)
+        }
+        None => {
+            state.db.set_handoff(&meta.id, Some(&json!({ "from": label_of(&state, &src.provider), "reason": "fork" }).to_string())).map_err(|e| e.to_string())?;
+            format!("Forked from \"{}\" — the next message brings the conversation along.", src.title)
+        }
+    };
+    let note = if worktree { format!("{note} A new worktree branches from the source's branch with the next message; uncommitted changes stay behind.") } else { note };
+    state.runtime.append_item(&meta.id, &last_new, ItemKind::Notice, json!({ "text": note }));
+    state.db.get_session(&meta.id).map_err(|e| e.to_string())?.ok_or_else(|| "the fork was not saved".into())
+}
+
+/// Restart the agent's process (after changing skills or MCP config); the conversation continues on the next message.
+#[tauri::command(async)]
+pub fn pilot_thread_restart(state: State<'_, PilotState>, id: String) -> Result<(), String> {
+    if state.runtime.active_turn(&id).is_some() {
+        return Err("stop the agent first — it is still working".into());
+    }
+    state.runtime.stop(&id);
+    state.runtime.append_item(&id, &last_turn(&state, &id), ItemKind::Notice, json!({ "text": "Agent session restarted — the next message starts it fresh on the same conversation." }));
+    Ok(())
+}
+
+/// While the CLI's terminal UI has the session, the thread does not send;
+/// once it closed, what it added comes into the timeline.
+fn tui_check(app: &AppHandle, state: &PilotState, id: &str) -> Result<(), String> {
+    let pty = lock(&state.tui).get(id).cloned();
+    let console = app.try_state::<qs_mod_console::ConsoleState>();
+    match lifecycle::tui_lock(pty.as_deref(), |p| console.as_ref().is_some_and(|c| c.ptys.contains(p))) {
+        lifecycle::TuiLock::Free => Ok(()),
+        lifecycle::TuiLock::Held => Err("This conversation is open in the terminal — close it there to continue here.".into()),
+        lifecycle::TuiLock::Closed => {
+            lock(&state.tui).remove(id);
+            import_tui(state, id);
+            Ok(())
+        }
+    }
+}
+
+/// The conversation in its CLI's own terminal UI, in the drawer, on the
+/// same session and permission mode. The thread's own process lets go of
+/// the session first.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn pilot_thread_tui(
+    app: AppHandle,
+    webview: tauri::Webview,
+    state: State<'_, PilotState>,
+    id: String,
+    cols: Option<u16>,
+    rows: Option<u16>,
+) -> Result<DrawerTerm, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let sid = meta.provider_session_id.clone().filter(|s| !s.trim().is_empty()).ok_or("Send a message first — the terminal opens the conversation's own session.")?;
+    if pending_rewind(&state, &id).is_some() {
+        return Err("Send a message first — this thread starts its own session with it.".into());
+    }
+    if state.runtime.active_turn(&id).is_some() {
+        return Err("wait for the agent to finish (or stop it) before opening it in the terminal".into());
+    }
+    if let Some(pty) = lock(&state.tui).get(&id).cloned() {
+        if let Some(console) = app.try_state::<qs_mod_console::ConsoleState>() {
+            if let Some(t) = state.drawer.list(&console, &id).into_iter().find(|t| t.pty_id == pty) {
+                return Ok(t);
+            }
+        }
+    }
+    let settings = lock(&state.settings).clone();
+    let provider = if meta.provider.is_empty() { "claude" } else { meta.provider.as_str() };
+    let adapter = adapters::find(&settings, provider).ok_or_else(|| format!("{provider} is not a known agent"))?;
+    let exe = providers::resolve(&adapter, &settings).ok_or_else(|| format!("{} was not found", adapter.label))?;
+    state.runtime.stop(&id);
+    let mut args = exe.prefix.clone();
+    args.extend(lifecycle::tui_args(provider, &sid, &meta.mode));
+    let term = state.drawer.open_program(&app, webview.label(), &id, &meta.cwd, &format!("{} (terminal)", adapter.label), &exe.program, args, (cols, rows))?;
+    lock(&state.tui).insert(id, term.pty_id.clone());
+    Ok(term)
+}
+
+/// The TUI closed: the thread takes its session back and shows what the TUI added.
+#[tauri::command(async)]
+pub fn pilot_thread_tui_done(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<usize, String> {
+    let Some(pty) = lock(&state.tui).get(&id).cloned() else {
+        return Ok(0);
+    };
+    if app.try_state::<qs_mod_console::ConsoleState>().is_some_and(|c| c.ptys.contains(&pty)) {
+        terminals::close(&app, &state.drawer, &pty);
+    }
+    lock(&state.tui).remove(&id);
+    Ok(import_tui(&state, &id))
+}
+
+fn home() -> PathBuf {
+    std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_default()
+}
+
+/// Claude Code's session file: `<config>/projects/<project>/<id>.jsonl`.
+fn claude_session_file(sid: &str) -> Option<PathBuf> {
+    let root = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home().join(".claude"));
+    std::fs::read_dir(root.join("projects")).ok()?.flatten().map(|d| d.path().join(format!("{sid}.jsonl"))).find(|p| p.is_file())
+}
+
+/// Codex's rollout file: `<home>/sessions/YYYY/MM/DD/rollout-…-<id>.jsonl`, newest days first.
+fn codex_rollout_file(sid: &str) -> Option<PathBuf> {
+    let root = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".codex")).join("sessions");
+    let desc = |p: &Path| {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(p).map(|r| r.flatten().map(|d| d.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
+        v.sort();
+        v.reverse();
+        v
+    };
+    let suffix = format!("-{sid}.jsonl");
+    let mut checked = 0;
+    for year in desc(&root) {
+        for month in desc(&year) {
+            for day in desc(&month) {
+                checked += 1;
+                if checked > 400 {
+                    return None;
+                }
+                if let Some(f) = std::fs::read_dir(&day).ok()?.flatten().map(|d| d.path()).find(|p| p.to_string_lossy().ends_with(&suffix)) {
+                    return Some(f);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// What the terminal session added, as turns of the thread. Display only:
+/// the provider resumes its own session natively either way.
+fn import_tui(state: &PilotState, id: &str) -> usize {
+    let Ok(Some(meta)) = state.db.get_session(id) else {
+        return 0;
+    };
+    let Some(sid) = meta.provider_session_id.clone().filter(|s| !s.trim().is_empty()) else {
+        return 0;
+    };
+    let read = |p: PathBuf| std::fs::read_to_string(p).map(|t| t.lines().map(str::to_string).collect::<Vec<_>>()).unwrap_or_default();
+    let turns = if meta.provider == "codex" {
+        let lines = codex_rollout_file(&sid).map(read).unwrap_or_default();
+        lifecycle::codex_tail(&lifecycle::codex_messages(&lines), state.db.user_messages(id).unwrap_or(0))
+    } else {
+        let after = state.db.turn_refs(id).unwrap_or_default().into_iter().rev().find_map(|(_, r)| r);
+        let lines = claude_session_file(&sid).map(read).unwrap_or_default();
+        lifecycle::claude_tail(&lines, after.as_deref())
+    };
+    for t in &turns {
+        let turn_id = uuid::Uuid::new_v4().to_string();
+        let _ = state.db.insert_turn(&TurnRow {
+            id: turn_id.clone(),
+            thread_id: id.to_string(),
+            status: "completed".into(),
+            started_at: now(),
+            ended_at: Some(now()),
+            duration_ms: None,
+            cost_usd: None,
+            error: None,
+        });
+        state.runtime.append_item(id, &turn_id, ItemKind::User, json!({ "text": t.user, "attachments": [], "provider": meta.provider, "fromTerminal": true }));
+        for a in &t.answers {
+            state.runtime.append_item(id, &turn_id, ItemKind::Assistant, json!({ "text": a, "streaming": false }));
+        }
+        if let Some(r) = &t.provider_ref {
+            let _ = state.db.set_provider_ref(&turn_id, r);
+        }
+    }
+    if !turns.is_empty() {
+        let n = turns.len();
+        state.runtime.append_item(
+            id,
+            &last_turn(state, id),
+            ItemKind::Notice,
+            json!({ "text": format!("{n} message{} from the terminal session.", if n == 1 { "" } else { "s" }) }),
+        );
+    }
+    turns.len()
+}
+
 // ── Composer context (card 9) ──
 
 /// `@` in the composer: files and folders of the thread's checkout.
@@ -1725,18 +2099,30 @@ pub fn pilot_thread_update(
         if !CHAT_PROVIDERS.contains(&p) {
             return Err(format!("'{p}' cannot run a chat thread yet"));
         }
-        let started = before.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty());
-        if started || state.runtime.active_turn(&id).is_some() {
-            let settings = lock(&state.settings).clone();
-            let label = |a: &str| adapters::find(&settings, a).map(|x| x.label.to_string()).unwrap_or_else(|| a.to_string());
-            return Err(format!(
-                "This conversation runs on {}. Start a new thread to work with {}.",
-                label(&before.provider),
-                label(p)
-            ));
+        if state.runtime.active_turn(&id).is_some() {
+            return Err("wait for the agent to finish (or stop it) before switching agents".into());
         }
+        if lock(&state.tui).contains_key(&id) {
+            return Err("close the terminal session first".into());
+        }
+        // An idle conversation moves to the other agent: it starts fresh and
+        // gets the history with the next message (card 15).
+        let started = before.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty());
+        let has_history = state.db.user_messages(&id).unwrap_or(0) > 0;
         state.runtime.stop(&id);
         state.db.set_provider(&id, p).map_err(|e| e.to_string())?;
+        if started || has_history {
+            let (from, to) = (label_of(&state, &before.provider), label_of(&state, p));
+            let _ = state.db.clear_provider_session(&id);
+            let _ = state.db.set_rewind(&id, None);
+            state.db.set_handoff(&id, Some(&json!({ "from": from, "reason": "switch" }).to_string())).map_err(|e| e.to_string())?;
+            state.runtime.append_item(
+                &id,
+                &last_turn(&state, &id),
+                ItemKind::Notice,
+                json!({ "text": format!("Conversation carried forward from {from} — the next message brings it to {to}.") }),
+            );
+        }
         before.provider = p.to_string();
     }
     if let Some(t) = title.as_deref().map(str::trim) {

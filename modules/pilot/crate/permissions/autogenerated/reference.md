@@ -78,6 +78,12 @@ Default permissions for the pilot module.
 - `allow-pilot-browser-pick`
 - `allow-pilot-browser-capture`
 - `allow-pilot-listeners`
+- `allow-pilot-thread-resume`
+- `allow-pilot-thread-schedule`
+- `allow-pilot-thread-fork`
+- `allow-pilot-thread-restart`
+- `allow-pilot-thread-tui`
+- `allow-pilot-thread-tui-done`
 
 ## Permission Table
 
@@ -1703,6 +1709,32 @@ Denies the pilot_thread_create command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-thread-fork`
+
+</td>
+<td>
+
+Enables the pilot_thread_fork command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-fork`
+
+</td>
+<td>
+
+Denies the pilot_thread_fork command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-thread-interrupt`
 
 </td>
@@ -1755,6 +1787,58 @@ Denies the pilot_thread_regenerate_title command without any pre-configured scop
 <tr>
 <td>
 
+`pilot:allow-pilot-thread-restart`
+
+</td>
+<td>
+
+Enables the pilot_thread_restart command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-restart`
+
+</td>
+<td>
+
+Denies the pilot_thread_restart command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-resume`
+
+</td>
+<td>
+
+Enables the pilot_thread_resume command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-resume`
+
+</td>
+<td>
+
+Denies the pilot_thread_resume command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-thread-revert`
 
 </td>
@@ -1774,6 +1858,32 @@ Enables the pilot_thread_revert command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_revert command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-schedule`
+
+</td>
+<td>
+
+Enables the pilot_thread_schedule command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-schedule`
+
+</td>
+<td>
+
+Denies the pilot_thread_schedule command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1878,6 +1988,58 @@ Enables the pilot_thread_steer command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_steer command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-tui`
+
+</td>
+<td>
+
+Enables the pilot_thread_tui command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-tui`
+
+</td>
+<td>
+
+Denies the pilot_thread_tui command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-tui-done`
+
+</td>
+<td>
+
+Enables the pilot_thread_tui_done command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-tui-done`
+
+</td>
+<td>
+
+Denies the pilot_thread_tui_done command without any pre-configured scope.
 
 </td>
 </tr>
