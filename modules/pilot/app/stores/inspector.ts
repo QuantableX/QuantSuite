@@ -44,6 +44,8 @@ export const useInspectorStore = defineStore('pilot/inspector', {
     target: { scope: 'turn' as DiffScope, turn: null as string | null, path: null as string | null, nonce: 0 },
     sideBySide: load('pilot.diff.split', true),
     wrap: load('pilot.diff.wrap', false),
+    /** The Diff tab shows every file in one scroll (card 24), or one at a time. */
+    diffAll: load('pilot.diff.all', false),
     /** The file the Files tab shows, per thread; `nonce` re-reveals the same line. */
     file: {} as Record<string, { path: string; line: number | null; nonce: number }>,
     /** Files tab: the tree or the project search beside the viewer. */
@@ -150,7 +152,11 @@ export const useInspectorStore = defineStore('pilot/inspector', {
       this.widths = { ...this.widths, [threadId]: w, '*': w }
       save('pilot.inspector.widths', this.widths)
     },
-    setView(patch: { sideBySide?: boolean; wrap?: boolean }) {
+    setView(patch: { sideBySide?: boolean; wrap?: boolean; all?: boolean }) {
+      if (patch.all !== undefined) {
+        this.diffAll = patch.all
+        save('pilot.diff.all', patch.all)
+      }
       if (patch.sideBySide !== undefined) {
         this.sideBySide = patch.sideBySide
         save('pilot.diff.split', patch.sideBySide)

@@ -801,6 +801,27 @@ never fakes support.
 - Not built: listing every repository the `gh` account can reach and
   cloning one (PandaCode does) — the view lists the workspaces only.
 
+### 5.18 Native-feel pass (card 24)
+
+- The Diff tab shows every file of its scope in one scroll (`DiffAll.vue`,
+  remembered as `pilot.diff.all`): unified lines with old/new numbers,
+  sticky file headers that fold, files loaded through
+  `pilot_diff_patches` as they come within 600 px of the view (binary
+  files never), a sized placeholder until then. Ctrl+F inside it finds
+  across all files — folded and unloaded ones too —, Enter / Shift+Enter
+  step, Escape closes. The one-file view (Monaco, split, stage, comment)
+  stays a click away per file.
+- The "plan is ready" banner above the box also shows a Codex proposal on
+  the newest turn while nothing runs (PlanCard's rule).
+- Open in… (`Inspector/OpenIn.vue`, `pilot_editors`, `pilot_open_in`):
+  VS Code and Cursor at the line (`--goto`) when they are on PATH, and
+  Explorer with the file selected; from the Files tab and both diff views;
+  the last choice comes first.
+- Menus and popovers rise in over `--qp-motion` (160 ms, none under reduced
+  motion); the thread context menu has its own entrance (it is teleported).
+- The stale `pilot_worktree_*` permission files are gone; module.json
+  describes V3.
+
 ### 5.5 Composer context (card 9)
 
 - `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`
@@ -988,12 +1009,43 @@ built if the user asks for it:
 - Mockup sketcher, moodboards, token-saver response packs
 - A global quick-launch overlay (the suite has QuantHUD)
 
+## 12. Shipped state and known gaps (card 24, 2026-10-30)
+
+All 24 cards are merged. Each card's evidence (tests, browser QA shots
+under the internal artifact dir `quantpilot-ade-<n>`) is in its card on the
+board. What is known to be open:
+
+- **Not run in the real app by the agent.** Every card was verified with
+  unit tests, `cargo test`/`clippy`, `test:pilot` and a browser QA against a
+  stubbed backend; the live CLI tests of cards 2, 8 and 20 ran against the
+  real CLIs. An end-to-end pass in the dev app with real Claude and Codex
+  threads (Local + Worktree, approvals, diff, revert, queue, fork, board
+  start), card 16's plan/subagent/goal flows, card 22's tools from a real
+  thread and card 23 against a real GitHub repository are the user's test
+  run — `npm run tauri:dev` belongs to the user.
+- **Performance not measured.** The timeline is paged (100 items, older
+  pages on scroll), not virtualized; RSS idle vs five active threads and
+  ten parallel turns were not measured.
+- **Native feel, partly.** Menus animate in, not out; context menus exist
+  on thread rows, not on every file link or image (no right-click copy
+  path / save on media); Open in… is not offered on file links inside
+  replies; no taskbar flash (toasts and the module badge exist).
+- **V2 kept where it is still used.** The thread's Terminal (header) still
+  runs the agent CLIs through the wrapper commands, and its face reads the
+  hooks relay and tailed session files. Removing them removes that
+  terminal session; that is the user's call. Open in TUI (card 15) uses a
+  plain `--resume` launch.
+- **GitHub.** The view lists the workspaces with a GitHub remote, not every
+  repository the account can reach, and has no clone; linked items refresh
+  per thread, not in one batched GraphQL call.
+
 ## 11. Open questions
 
 None blocking. Decisions taken without asking, open to change:
 
-- The terminal-first V2 model is replaced, not kept as a second mode; the
-  TUI remains reachable per thread (Open in TUI) and in the terminal drawer.
+- The terminal-first V2 model is replaced as the main mode; the TUI remains
+  reachable per thread (Open in TUI), in the terminal drawer, and in the
+  thread's Terminal session, which still uses the V2 wrappers (§12).
 - Threads without a project get their own folder under the pilot data dir,
   like today's General vault context.
 - GitHub (card 23) is low priority because the QuantSuite repo has no remote

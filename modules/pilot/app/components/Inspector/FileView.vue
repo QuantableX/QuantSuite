@@ -126,6 +126,7 @@ async function saveAs() {
         </template>
         <button v-if="file?.kind === 'text'" class="qp-fv-icon" title="Copy contents" @click="copyContents"><Copy :size="13" /></button>
         <button v-if="file" class="qp-fv-icon" title="Save as…" @click="saveAs"><Download :size="13" /></button>
+        <PilotInspectorOpenIn v-if="file" :thread-id="threadId" :path="file.path" :line="line" />
       </span>
     </div>
 

@@ -1224,6 +1224,25 @@ pub struct DiffSides {
     modified: String,
 }
 
+#[derive(Serialize)]
+pub struct FilePatch {
+    path: String,
+    patch: String,
+}
+
+/// The Diff tab's all-files view (card 24): unified diffs of the files that
+/// scrolled in, each cut like a turn's — one working-tree snapshot for all.
+#[tauri::command(async)]
+pub fn pilot_diff_patches(state: State<'_, PilotState>, id: String, from: String, to: String, paths: Vec<String>) -> Result<Vec<FilePatch>, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let root = repo_of(&meta)?;
+    if paths.len() > 50 {
+        return Err("at most 50 files at a time".into());
+    }
+    let to = if to == "working tree" { checkpoints::snapshot(&root)? } else { to };
+    Ok(paths.into_iter().map(|path| FilePatch { patch: checkpoints::patch(&root, &from, &to, &path), path }).collect())
+}
+
 /// Both sides of one file for the diff editor.
 #[tauri::command(async)]
 pub fn pilot_diff_file(state: State<'_, PilotState>, id: String, from: String, to: String, path: String) -> Result<DiffSides, String> {
@@ -1607,6 +1626,27 @@ fn checkout_of(state: &PilotState, id: &str) -> Result<(ThreadMeta, PathBuf), St
         return Err(format!("{} is not there any more", meta.cwd));
     }
     Ok((meta, root))
+}
+
+#[derive(Serialize)]
+pub struct Editor {
+    id: &'static str,
+    label: &'static str,
+}
+
+/// Open in… (card 24): VS Code and Cursor when they are on PATH, and Explorer.
+#[tauri::command(async)]
+pub fn pilot_editors() -> Vec<Editor> {
+    files::editors().into_iter().map(|(id, label)| Editor { id, label }).collect()
+}
+
+/// A thread's file (relative to its folder, or absolute) in an editor at a line, or in Explorer.
+#[tauri::command(async)]
+pub fn pilot_open_in(state: State<'_, PilotState>, id: String, path: String, line: Option<i64>, editor: String) -> Result<(), String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let p = Path::new(path.trim());
+    let full = if p.is_absolute() { p.to_path_buf() } else { Path::new(&meta.cwd).join(p) };
+    files::open_in(&editor, &full, line)
 }
 
 #[tauri::command(async)]

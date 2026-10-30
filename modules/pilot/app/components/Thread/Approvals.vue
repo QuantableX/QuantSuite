@@ -27,7 +27,14 @@ const store = usePilotStore()
 const pending = computed(() => threads.pending(props.threadId))
 const approvals = computed(() => pending.value.filter((i) => i.kind === 'approval'))
 const question = computed(() => pending.value.find((i) => i.kind === 'question') ?? null)
-const plan = computed(() => pending.value.find((i) => i.kind === 'plan') ?? null)
+/** A Codex proposal waits on the newest turn while nothing runs — PlanCard's rule (card 24). */
+const proposal = computed(() => {
+  const v = threads.view(props.threadId)
+  if (!v || v.turnId) return null
+  const last = v.items.at(-1)?.turnId
+  return [...v.items].reverse().find((i) => i.kind === 'plan' && i.data.status === 'proposed' && i.turnId === last) ?? null
+})
+const plan = computed(() => pending.value.find((i) => i.kind === 'plan') ?? proposal.value)
 const thread = computed(() => store.sessions.find((s) => s.id === props.threadId) ?? null)
 const agent = computed(() => store.adapterLabel(thread.value?.provider || 'claude'))
 
@@ -146,7 +153,7 @@ function showPlan() {
 </script>
 
 <template>
-  <div v-if="pending.length" class="qp-ap" role="region" aria-label="Waiting for you">
+  <div v-if="pending.length || proposal" class="qp-ap" role="region" aria-label="Waiting for you">
     <div
       v-for="(a, i) in approvals"
       :key="a.id"

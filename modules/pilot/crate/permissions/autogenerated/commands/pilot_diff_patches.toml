@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-diff-patches"
+description = "Enables the pilot_diff_patches command without any pre-configured scope."
+commands.allow = ["pilot_diff_patches"]
+
+[[permission]]
+identifier = "deny-pilot-diff-patches"
+description = "Denies the pilot_diff_patches command without any pre-configured scope."
+commands.deny = ["pilot_diff_patches"]

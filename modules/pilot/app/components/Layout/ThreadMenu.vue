@@ -397,7 +397,15 @@ function confirmDelete() {
 </template>
 
 <style scoped>
+/* Teleported out of the module: its own short entrance (card 24). */
+@keyframes qp-tm-in {
+  from { opacity: 0; transform: scale(0.985); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qp-tm { animation: none !important; }
+}
 .qp-tm {
+  animation: qp-tm-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
   position: fixed;
   z-index: 1000;
   min-width: 196px;

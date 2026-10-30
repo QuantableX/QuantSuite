@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-open-in"
+description = "Enables the pilot_open_in command without any pre-configured scope."
+commands.allow = ["pilot_open_in"]
+
+[[permission]]
+identifier = "deny-pilot-open-in"
+description = "Denies the pilot_open_in command without any pre-configured scope."
+commands.deny = ["pilot_open_in"]
