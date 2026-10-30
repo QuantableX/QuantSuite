@@ -294,6 +294,23 @@ async function runAppCommand(name: string, arg: string): Promise<boolean> {
     case 'pwd':
       showNote(thread.value?.cwd ?? '')
       return true
+    case 'fork': {
+      const last = [...(view.value?.items ?? [])].reverse().find((i) => i.kind === 'user' || i.kind === 'assistant')
+      if (!last) {
+        showNote('Nothing to fork yet.')
+        return false
+      }
+      return Boolean(await threads.fork(id, last.id, false))
+    }
+    case 'restart':
+      if (await threads.restart(id)) {
+        showNote('The agent starts fresh on the next message; the conversation continues.')
+        return true
+      }
+      return false
+    case 'tui':
+      await threads.openTui(id)
+      return true
   }
   return false
 }
@@ -363,7 +380,11 @@ async function perform(action: KeyAction) {
     ok = !view.value?.error
   } else if (action === 'queue') ok = await threads.queueAdd(id, message, more)
   else if (action === 'steer') ok = await threads.steer(id, message, more)
-  else ok = await threads.send(id, message, more)
+  else if (view.value?.compactFirst) {
+    // Compact first, the message follows from the queue (card 15).
+    ok = (await threads.send(id, '/compact')) && (await threads.queueAdd(id, message, more))
+    if (ok && view.value) view.value.compactFirst = null
+  } else ok = await threads.send(id, message, more)
   busy.value = false
   if (!ok) return
   text.value = ''
@@ -388,6 +409,10 @@ function clickPrimary() {
   }
   if (!running.value && !hasContent.value && view.value?.queueHeld && view.value.queue.length) {
     void threads.queueResume(props.threadId)
+    return
+  }
+  if (primary.value.kind === 'continue') {
+    void threads.resumeTurn(props.threadId)
     return
   }
   void perform(running.value ? buttonAction.value : 'send')
@@ -968,6 +993,10 @@ const primary = computed(() => {
   if (!running.value && !hasContent.value && view.value?.queueHeld && view.value.queue.length) {
     return { kind: 'resume', title: 'Resume the queue', disabled: false }
   }
+  if (view.value?.life.tui) return { kind: 'send', title: 'The conversation is open in the terminal', disabled: true }
+  if (!running.value && !hasContent.value && (view.value?.state === 'interrupted' || view.value?.state === 'limited')) {
+    return { kind: 'continue', title: 'Resume the interrupted turn', disabled: busy.value }
+  }
   if (running.value) {
     const steer = buttonAction.value === 'steer'
     return {
@@ -984,6 +1013,8 @@ const placeholder = computed(() => {
   if (pendingApproval.value) return 'Write why to decline the request above, or answer it there'
   if (running.value) return followUp.value === 'steer' && view.value?.canSteer ? 'Steer the running turn…' : 'Queue a follow-up…'
   if (view.value?.queueHeld && view.value.queue.length) return 'The queue is on hold — Resume, or write a new message'
+  if (view.value?.life.tui) return 'Open in the terminal — close it there to continue here'
+  if (view.value?.state === 'interrupted' || view.value?.state === 'limited') return 'Resume, or write a new message'
   return 'Ask anything, or describe a task'
 })
 
@@ -1105,7 +1136,7 @@ function focus() {
         >
           <Square v-if="primary.kind === 'stop'" :size="12" fill="currentColor" />
           <Ban v-else-if="primary.kind === 'decline'" :size="14" />
-          <Play v-else-if="primary.kind === 'resume'" :size="13" fill="currentColor" />
+          <Play v-else-if="primary.kind === 'resume' || primary.kind === 'continue'" :size="13" fill="currentColor" />
           <ListPlus v-else-if="primary.kind === 'queue'" :size="15" />
           <CornerDownRight v-else-if="primary.kind === 'steer'" :size="15" />
           <ArrowUp v-else :size="15" />

@@ -137,6 +137,10 @@ export interface PilotSettings {
   workingSection: boolean
   /** Where new threads work. */
   newThreadWorkspace: 'local' | 'worktree'
+  /** A usage-limit stop schedules the continuation for the reset (card 15). */
+  limitResume?: boolean
+  /** A usage-limit stop snoozes the thread until the reset (card 15). */
+  limitSnooze?: boolean
   /** The start of a worktree thread's branch name. */
   worktreePrefix: string
   /** Generated commit messages follow the repository's recent subjects, or a standard form. */
@@ -430,6 +434,18 @@ export type ThreadEvent =
   | { type: 'title'; title: string }
   | { type: 'queue'; items: QueueItem[]; held: boolean }
 
+/** A thread's life beyond one process (card 15). */
+export interface ThreadLife {
+  /** A scheduled continuation (Resume at reset), Unix ms. */
+  resumeAt: number | null
+  /** When the usage limit that stopped the thread lifts, Unix ms. */
+  limitResetAt: number | null
+  /** The agent the next message carries the conversation from. */
+  handoffFrom: string | null
+  /** The conversation is open in the CLI's terminal UI. */
+  tui: boolean
+}
+
 /** A follow-up waiting for the running turn (card 4). */
 export interface QueueItem {
   id: string
@@ -485,6 +501,7 @@ export interface ThreadSnapshot {
   processAlive: boolean
   queue: QueueState
   canSteer: boolean
+  life?: ThreadLife
 }
 
 export type Answer =

@@ -21,9 +21,12 @@ import {
   SquareTerminal,
   Sunrise,
   Trash2,
+  GitFork,
+  RotateCcw,
 } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { useThreadStore } from '#pilot/stores/thread'
 import { inHours, parseDuration, tomorrowAt, wakeLabel } from '#pilot/utils/sidebar'
 import { threadReference } from '#pilot/utils/format'
 import type { SessionMeta } from '#pilot/types'
@@ -107,6 +110,22 @@ const items = computed<Item[]>(() => {
   }
   if (t.kind === 'terminal') {
     list.push({ id: 'terminal', label: 'Open in terminal', icon: SquareTerminal, run: () => store.openTerminal(t.id) })
+  } else if (t.providerSessionId) {
+    // Card 15: the conversation in its CLI's own terminal UI; the agent session restarted after config changes.
+    list.push({ id: 'tui', label: 'Open in the agent\u2019s terminal UI', icon: SquareTerminal, run: () => useThreadStore().openTui(t.id) })
+    list.push({ id: 'restart', label: 'Restart agent session', icon: RotateCcw, run: () => void useThreadStore().restart(t.id) })
+  }
+  if (t.kind !== 'terminal' && (useThreadStore().views[t.id]?.items.length ?? 0) > 0) {
+    const forkFrom = () => [...(useThreadStore().views[t.id]?.items ?? [])].reverse().find((i) => i.kind === 'user' || i.kind === 'assistant')?.id
+    list.push({
+      id: 'fork',
+      label: 'Fork',
+      icon: GitFork,
+      children: [
+        { id: 'fork-here', label: 'In this checkout', run: () => { const i = forkFrom(); if (i) void useThreadStore().fork(t.id, i, false) } },
+        { id: 'fork-worktree', label: 'Into a new worktree', run: () => { const i = forkFrom(); if (i) void useThreadStore().fork(t.id, i, true) } },
+      ],
+    })
   }
   list.push({ id: 'delete', label: 'Delete…', icon: Trash2, danger: true, run: () => void openPanel('delete') })
   return list

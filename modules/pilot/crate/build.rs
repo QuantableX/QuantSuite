@@ -73,6 +73,13 @@ const COMMANDS: &[&str] = &[
     "pilot_browser_pick",
     "pilot_browser_capture",
     "pilot_listeners",
+    "pilot_thread_resume",
+    "pilot_thread_schedule",
+    "pilot_thread_fork",
+    "pilot_thread_restart",
+    "pilot_thread_tui",
+    "pilot_thread_tui_done",
+    "pilot_thread_life",
 ];
 
 fn main() {

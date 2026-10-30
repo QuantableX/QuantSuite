@@ -107,6 +107,15 @@ export const useDrawerStore = defineStore('pilot/drawer', {
       this.persist()
     },
 
+    /** A terminal the crate opened (the TUI): its own tab, in front. */
+    async adopt(threadId: string, t: DrawerTerm) {
+      this.open = { ...this.open, [threadId]: true }
+      if (this.placed(threadId, t.ptyId)) return
+      this.tabs = { ...this.tabs, [threadId]: [...(this.tabs[threadId] ?? []), this.tabFor(t)] }
+      this.activeTab[threadId] = `tab-${t.ptyId}`
+      this.persist()
+    },
+
     tabFor(t: DrawerTerm): DrawerTab {
       return { id: `tab-${t.ptyId}`, panes: [t.ptyId], dir: 'row', label: t.label, action: t.action, active: t.ptyId }
     },

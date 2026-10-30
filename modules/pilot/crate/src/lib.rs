@@ -25,6 +25,7 @@ mod driver;
 mod events;
 mod files;
 mod git;
+mod lifecycle;
 mod gitops;
 mod notify;
 mod prompt;
@@ -80,6 +81,10 @@ pub struct PilotState {
     files: context::FileIndex,
     /// The terminal drawer's shells and Run terminals (card 13).
     drawer: terminals::Drawer,
+    /// Threads open in their CLI's terminal UI: thread → its PTY (card 15).
+    tui: Mutex<HashMap<String, String>>,
+    /// Wakes the scheduled-resume task when a schedule changes (card 15).
+    wake: Arc<tokio::sync::Notify>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -631,7 +636,10 @@ pub fn init() -> TauriPlugin<Wry> {
                 runtime,
                 files: context::FileIndex::default(),
                 drawer: terminals::Drawer::default(),
+                tui: Mutex::new(HashMap::new()),
+                wake: Arc::new(tokio::sync::Notify::new()),
             });
+            tauri::async_runtime::spawn(threads::resume_scheduler(app.clone()));
             app.manage(browser::BrowserState::default());
 
             qs_core::tray::register_entry(
@@ -720,6 +728,13 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_browser_pick,
             threads::pilot_browser_capture,
             threads::pilot_listeners,
+            threads::pilot_thread_resume,
+            threads::pilot_thread_schedule,
+            threads::pilot_thread_fork,
+            threads::pilot_thread_restart,
+            threads::pilot_thread_tui,
+            threads::pilot_thread_tui_done,
+            threads::pilot_thread_life,
         ]))
         .build()
 }

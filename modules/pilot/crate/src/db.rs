@@ -17,7 +17,8 @@ use std::sync::Mutex;
 /// 3: threads, timeline, turns (card 2). 4: the follow-up queue (card 4).
 /// 5: pin, order, settle, snooze (card 7). 6: workspace (card 10).
 /// 7: checkpoints and turn changes (card 11). 8: links (card 12).
-pub const SCHEMA_VERSION: i64 = 8;
+/// 9: handoff, scheduled resume and limit reset (card 15).
+pub const SCHEMA_VERSION: i64 = 9;
 
 /// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -248,6 +249,17 @@ const CHANGE_TABLES: &str = "
         PRIMARY KEY (turn_id, path)
     );";
 
+/// Card 15: the history a thread still owes a new provider (JSON), when a
+/// limited thread continues by itself, and when its limit lifts.
+const V9_COLUMNS: [(&str, &str); 3] = [
+    ("handoff", "handoff TEXT"),
+    ("resume_at", "resume_at INTEGER"),
+    ("limit_reset_at", "limit_reset_at INTEGER"),
+];
+
+/// A turn row as a fork copies it: id, status, started, ended, duration, cost, error, provider ref.
+type TurnCopy = (String, String, i64, Option<i64>, Option<i64>, Option<f64>, Option<String>, Option<String>);
+
 /// What a thread links to (card 12: pull requests; card 21 adds board cards).
 const LINK_TABLE: &str = "
     CREATE TABLE IF NOT EXISTS links (
@@ -384,6 +396,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     if !column_exists(&tx, "threads", "rewind")? {
         tx.execute_batch("ALTER TABLE threads ADD COLUMN rewind TEXT;")?;
+    }
+    for (name, col) in V9_COLUMNS {
+        if !column_exists(&tx, "threads", name)? {
+            tx.execute_batch(&format!("ALTER TABLE threads ADD COLUMN {col};"))?;
+        }
     }
     if added_order {
         // Until the user drags, the order is the order of activity.
@@ -896,6 +913,113 @@ impl Database {
         rows.collect()
     }
 
+    // ── Lifecycle (card 15) ──
+
+    /// History the next message carries to a provider that was not part of the conversation (JSON), or nothing.
+    pub fn set_handoff(&self, thread_id: &str, handoff: Option<&str>) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET handoff = ?2 WHERE id = ?1", params![thread_id, handoff])?;
+        Ok(())
+    }
+
+    pub fn handoff(&self, thread_id: &str) -> rusqlite::Result<Option<String>> {
+        let conn = self.lock();
+        conn.query_row("SELECT handoff FROM threads WHERE id = ?1", params![thread_id], |r| r.get(0)).optional().map(Option::flatten)
+    }
+
+    /// A limited thread continues by itself at `at` (Unix ms); `None` cancels.
+    pub fn set_resume_at(&self, thread_id: &str, at: Option<i64>) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET resume_at = ?2 WHERE id = ?1", params![thread_id, at])?;
+        Ok(())
+    }
+
+    pub fn set_limit_reset(&self, thread_id: &str, at: Option<i64>) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET limit_reset_at = ?2 WHERE id = ?1", params![thread_id, at])?;
+        Ok(())
+    }
+
+    /// `(resume_at, limit_reset_at)` of a thread.
+    pub fn schedule(&self, thread_id: &str) -> rusqlite::Result<(Option<i64>, Option<i64>)> {
+        let conn = self.lock();
+        conn.query_row("SELECT resume_at, limit_reset_at FROM threads WHERE id = ?1", params![thread_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()
+            .map(Option::unwrap_or_default)
+    }
+
+    /// Threads whose scheduled continuation is due, and the next time one is.
+    pub fn resumes(&self, now: i64) -> rusqlite::Result<(Vec<String>, Option<i64>)> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT id FROM threads WHERE resume_at IS NOT NULL AND resume_at <= ?1")?;
+        let due = stmt.query_map(params![now], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let next = conn.query_row("SELECT MIN(resume_at) FROM threads WHERE resume_at > ?1", params![now], |r| r.get(0))?;
+        Ok((due, next))
+    }
+
+    /// The thread's user messages so far (top level, not steers): what a
+    /// provider's own transcript must go beyond to add anything.
+    pub fn user_messages(&self, thread_id: &str) -> rusqlite::Result<usize> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT COUNT(*) FROM timeline WHERE thread_id = ?1 AND kind = 'user' AND parent IS NULL
+                AND COALESCE(json_extract(data, '$.steer'), 0) = 0",
+            params![thread_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n.max(0) as usize)
+    }
+
+    /// A fork: the source's turns up to and including `upto`, with their
+    /// items, checkpoints and changes, under new ids in `dst`. Returns
+    /// `(old turn, new turn, provider ref)` in order.
+    pub fn copy_turns(&self, src: &str, dst: &str, upto: &str) -> rusqlite::Result<Vec<(String, String, Option<String>)>> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let turns: Vec<TurnCopy> = {
+            let mut stmt = tx.prepare(
+                "SELECT id, status, started_at, ended_at, duration_ms, cost_usd, error, provider_ref FROM turns
+                    WHERE thread_id = ?1 ORDER BY started_at, rowid",
+            )?;
+            let rows = stmt.query_map(params![src], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        let Some(end) = turns.iter().position(|t| t.0 == upto) else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        for (old, status, started, ended, dur, cost, err, reference) in turns.into_iter().take(end + 1) {
+            let new = uuid::Uuid::new_v4().to_string();
+            // An unfinished turn copies as interrupted: the fork never ran it.
+            let status = if status == "started" { "interrupted".to_string() } else { status };
+            tx.execute(
+                "INSERT INTO turns (id, thread_id, status, started_at, ended_at, duration_ms, cost_usd, error, provider_ref)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![new, dst, status, started, ended, dur, cost, err, reference],
+            )?;
+            tx.execute(
+                &format!(
+                    "INSERT INTO timeline ({ITEM_COLS}) SELECT lower(hex(randomblob(16))), ?2, ?3, seq, kind, parent, data, created_at, updated_at
+                        FROM timeline WHERE thread_id = ?1 AND turn_id = ?4"
+                ),
+                params![src, dst, new, old],
+            )?;
+            tx.execute(
+                "INSERT INTO checkpoints (turn_id, thread_id, root, before_commit, after_commit)
+                    SELECT ?2, ?3, root, before_commit, after_commit FROM checkpoints WHERE turn_id = ?1",
+                params![old, new, dst],
+            )?;
+            tx.execute(
+                "INSERT INTO turn_changes (turn_id, thread_id, path, status, added, removed, binary, patch)
+                    SELECT ?2, ?3, path, status, added, removed, binary, patch FROM turn_changes WHERE turn_id = ?1",
+                params![old, new, dst],
+            )?;
+            out.push((old, new, reference));
+        }
+        tx.commit()?;
+        Ok(out)
+    }
+
     /// What the next launch rewinds to (JSON), or nothing.
     pub fn set_rewind(&self, thread_id: &str, rewind: Option<&str>) -> rusqlite::Result<()> {
         let conn = self.lock();
@@ -1230,6 +1354,77 @@ mod tests {
             branch: String::new(),
             worktree_path: None,
         }
+    }
+
+    fn turn(db: &Database, thread: &str, id: &str, at: i64, status: &str) {
+        let conn = db.lock();
+        conn.execute(
+            "INSERT INTO turns (id, thread_id, status, started_at, provider_ref) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, thread, status, at, format!("ref-{id}")],
+        )
+        .unwrap();
+    }
+
+    fn timeline_item(db: &Database, thread: &str, turn: &str, seq: i64, kind: &str, text: &str) {
+        let conn = db.lock();
+        conn.execute(
+            "INSERT INTO timeline (id, thread_id, turn_id, seq, kind, parent, data, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, 0, 0)",
+            params![uuid::Uuid::new_v4().to_string(), thread, turn, seq, kind, json!({ "text": text }).to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_fork_copies_turns_up_to_the_message() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_session(&thread("src")).unwrap();
+        db.insert_session(&thread("dst")).unwrap();
+        turn(&db, "src", "u1", 1, "completed");
+        turn(&db, "src", "u2", 2, "started");
+        turn(&db, "src", "u3", 3, "completed");
+        for (t, s) in [("u1", 1), ("u2", 3), ("u3", 5)] {
+            timeline_item(&db, "src", t, s, "user", &format!("ask {t}"));
+            timeline_item(&db, "src", t, s + 1, "assistant", &format!("answer {t}"));
+        }
+        db.set_checkpoint("u1", "src", "C:\\r", "abc").unwrap();
+        let copied = db.copy_turns("src", "dst", "u2").unwrap();
+        assert_eq!(copied.iter().map(|c| (c.0.as_str(), c.2.as_deref())).collect::<Vec<_>>(), vec![("u1", Some("ref-u1")), ("u2", Some("ref-u2"))]);
+        let items = db.items("dst", None, 100).unwrap();
+        assert_eq!(items.iter().map(|i| i.data["text"].as_str().unwrap()).collect::<Vec<_>>(), vec!["ask u1", "answer u1", "ask u2", "answer u2"]);
+        assert!(items.iter().all(|i| i.turn_id == copied[0].1 || i.turn_id == copied[1].1), "new turn ids");
+        assert_eq!(db.checkpoint(&copied[0].1).unwrap().map(|c| c.1), Some("abc".into()), "the diff of a copied turn still works");
+        assert_eq!(db.turn_refs("dst").unwrap().len(), 2);
+        let status: String = db.lock().query_row("SELECT status FROM turns WHERE id = ?1", params![copied[1].1], |r| r.get(0)).unwrap();
+        assert_eq!(status, "interrupted", "a turn that never finished copies as interrupted");
+        assert_eq!(db.items("src", None, 100).unwrap().len(), 6, "the source is untouched");
+        assert!(db.copy_turns("src", "dst", "nope").unwrap().is_empty());
+        assert_eq!(db.user_messages("src").unwrap(), 3);
+    }
+
+    #[test]
+    fn schedules_and_handoffs_survive_a_restart() {
+        let dir = std::env::temp_dir().join(format!("qp-life-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pilot.db");
+        {
+            let db = Database::open(&path).unwrap();
+            db.insert_session(&thread("a")).unwrap();
+            db.insert_session(&thread("b")).unwrap();
+            db.set_resume_at("a", Some(1_000)).unwrap();
+            db.set_resume_at("b", Some(5_000)).unwrap();
+            db.set_limit_reset("a", Some(900)).unwrap();
+            db.set_handoff("b", Some(r#"{"from":"Claude Code"}"#)).unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        assert_eq!(db.schedule("a").unwrap(), (Some(1_000), Some(900)));
+        assert_eq!(db.resumes(2_000).unwrap(), (vec!["a".to_string()], Some(5_000)), "an overdue one is due right after the restart");
+        db.set_resume_at("a", None).unwrap();
+        assert_eq!(db.resumes(2_000).unwrap(), (Vec::<String>::new(), Some(5_000)));
+        assert_eq!(db.handoff("b").unwrap().as_deref(), Some(r#"{"from":"Claude Code"}"#));
+        db.set_handoff("b", None).unwrap();
+        assert!(db.handoff("b").unwrap().is_none());
+        drop(db);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

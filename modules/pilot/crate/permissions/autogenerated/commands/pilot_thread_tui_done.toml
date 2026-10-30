@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-thread-tui-done"
+description = "Enables the pilot_thread_tui_done command without any pre-configured scope."
+commands.allow = ["pilot_thread_tui_done"]
+
+[[permission]]
+identifier = "deny-pilot-thread-tui-done"
+description = "Denies the pilot_thread_tui_done command without any pre-configured scope."
+commands.deny = ["pilot_thread_tui_done"]

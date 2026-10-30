@@ -11,10 +11,12 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Columns2, MessageSquarePlus, Plus, Rows2, SquareTerminal, X } from 'lucide-vue-next'
 import { useDrawerStore, type DrawerTab } from '#pilot/stores/drawer'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useThreadStore } from '#pilot/stores/thread'
 
 const props = defineProps<{ threadId: string }>()
 const drawer = useDrawerStore()
 const store = usePilotStore()
+const threads = useThreadStore()
 const root = ref<HTMLElement | null>(null)
 const panes = ref<Record<string, { focusTerm: () => void; selection: () => { text: string; startLine: number; endLine: number } | null } | null>>({})
 const selected = ref<{ ptyId: string; text: string } | null>(null)
@@ -85,6 +87,12 @@ function onUp() {
 }
 onBeforeUnmount(() => (drag = null))
 
+/** A pane's program ended; the agent's TUI hands the conversation back to the thread (card 15). */
+function onExited(t: DrawerTab, ptyId: string) {
+  drawer.exited[ptyId] = true
+  if (t.action === 'tui') void threads.tuiDone(props.threadId)
+}
+
 function tabLabel(t: DrawerTab, i: number) {
   return t.action ? t.label : tabs.value.filter((x) => !x.action).length > 1 ? `${t.label} ${i + 1}` : t.label
 }
@@ -134,7 +142,7 @@ function tabLabel(t: DrawerTab, i: number) {
             :visible="current?.id === t.id"
             :active="t.active === p"
             :terminal-overrides="OVERRIDES"
-            @exited="drawer.exited[p] = true"
+            @exited="onExited(t, p)"
             @failed="(m: string) => (drawer.error[threadId] = m)"
             @selection="(text: string) => onSelection(p, text)"
           />

@@ -77,4 +77,11 @@ permissions = [
   "allow-pilot-browser-pick",
   "allow-pilot-browser-capture",
   "allow-pilot-listeners",
+  "allow-pilot-thread-resume",
+  "allow-pilot-thread-schedule",
+  "allow-pilot-thread-fork",
+  "allow-pilot-thread-restart",
+  "allow-pilot-thread-tui",
+  "allow-pilot-thread-tui-done",
+  "allow-pilot-thread-life",
 ]

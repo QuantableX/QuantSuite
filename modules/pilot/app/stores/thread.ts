@@ -16,6 +16,7 @@ import { defineStore } from 'pinia'
 import { pilot } from '#pilot/utils/invoke'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { useDrawerStore } from '#pilot/stores/drawer'
 import type {
   Answer,
   ProviderCatalog,
@@ -31,6 +32,8 @@ import type {
   FileHit,
   MessageExtras,
   SkillInfo,
+  ThreadLife,
+  DrawerTerm,
 } from '#pilot/types'
 
 export interface TurnInfo {
@@ -90,6 +93,10 @@ export interface ThreadView {
   canSteer: boolean
   /** The queued message open in the composer for editing. */
   editingQueued: string | null
+  /** Scheduled continuation, limit reset, owed history, open TUI (card 15). */
+  life: ThreadLife
+  /** Compact the conversation before the next message (Claude after a long pause, card 15). */
+  compactFirst: boolean | null
 }
 
 function freshView(id: string): ThreadView {
@@ -115,6 +122,8 @@ function freshView(id: string): ThreadView {
     queueHeld: false,
     canSteer: false,
     editingQueued: null,
+    life: { resumeAt: null, limitResetAt: null, handoffFrom: null, tui: false },
+    compactFirst: null,
   }
 }
 
@@ -227,6 +236,7 @@ export const useThreadStore = defineStore('pilot/thread', {
         view.queue = snap.queue?.items ?? []
         view.queueHeld = snap.queue?.held ?? false
         view.canSteer = snap.canSteer ?? false
+        if (snap.life) view.life = snap.life
         view.loaded = true
         usePilotStore().upsertSession(snap.thread)
         const pending = view.pending
@@ -281,7 +291,10 @@ export const useThreadStore = defineStore('pilot/thread', {
       const store = usePilotStore()
       if (ev.type === 'state') store.patchSession(id, { state: ev.state })
       else if (ev.type === 'title') store.patchSession(id, { title: ev.title })
-      else if (ev.type === 'turn' && ev.status !== 'started') store.patchSession(id, { lastActivityAt: Date.now() })
+      else if (ev.type === 'turn' && ev.status !== 'started') {
+        store.patchSession(id, { lastActivityAt: Date.now() })
+        void this.refreshLife(id)
+      }
     },
 
     /** The user wrote: the thread leaves the Settled and Snoozed shelves (the crate does the same). */
@@ -456,6 +469,88 @@ export const useThreadStore = defineStore('pilot/thread', {
         view.error = String(e)
         return false
       }
+    },
+
+    // ── Lifecycle (card 15) ──
+
+    async refreshLife(id: string) {
+      try {
+        const life = await pilot<ThreadLife>('plugin:pilot|pilot_thread_life', { id })
+        if (life) this.ensure(id).life = life
+      } catch {
+        /* the banner keeps what it showed */
+      }
+    },
+
+    /** Continue an interrupted or limited turn. */
+    async resumeTurn(id: string): Promise<boolean> {
+      const view = this.ensure(id)
+      view.error = null
+      try {
+        await pilot('plugin:pilot|pilot_thread_resume', { id })
+        this.wrote(id)
+        void this.refreshLife(id)
+        return true
+      } catch (e) {
+        view.error = String(e)
+        return false
+      }
+    },
+
+    /** Resume at `at` (the limit's reset), or cancel with null. */
+    async schedule(id: string, at: number | null) {
+      try {
+        await pilot('plugin:pilot|pilot_thread_schedule', { id, at })
+      } catch (e) {
+        this.ensure(id).error = String(e)
+      }
+      await this.refreshLife(id)
+    },
+
+    /** A new thread from this one up to `itemId`'s turn; it opens. */
+    async fork(id: string, itemId: string, worktree: boolean): Promise<SessionMeta | null> {
+      try {
+        const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_fork', { id, itemId, worktree })
+        if (!meta) return null
+        const store = usePilotStore()
+        store.upsertSession(meta)
+        await store.openSession(meta.id)
+        return meta
+      } catch (e) {
+        this.ensure(id).error = String(e)
+        return null
+      }
+    },
+
+    async restart(id: string): Promise<boolean> {
+      try {
+        await pilot('plugin:pilot|pilot_thread_restart', { id })
+        return true
+      } catch (e) {
+        this.ensure(id).error = String(e)
+        return false
+      }
+    },
+
+    /** The conversation in its CLI's terminal UI, in the drawer; the thread waits meanwhile. */
+    async openTui(id: string) {
+      try {
+        const term = await pilot<DrawerTerm>('plugin:pilot|pilot_thread_tui', { id, cols: null, rows: null })
+        if (term) await useDrawerStore().adopt(id, term)
+      } catch (e) {
+        this.ensure(id).error = String(e)
+      }
+      await this.refreshLife(id)
+    },
+
+    /** The TUI closed: the session comes back, and what it added shows up. */
+    async tuiDone(id: string) {
+      try {
+        await pilot<number>('plugin:pilot|pilot_thread_tui_done', { id })
+      } catch {
+        /* the next message checks again */
+      }
+      await this.open(id, true)
     },
 
     async interrupt(id: string) {
