@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-usage-limits"
+description = "Enables the pilot_usage_limits command without any pre-configured scope."
+commands.allow = ["pilot_usage_limits"]
+
+[[permission]]
+identifier = "deny-pilot-usage-limits"
+description = "Denies the pilot_usage_limits command without any pre-configured scope."
+commands.deny = ["pilot_usage_limits"]

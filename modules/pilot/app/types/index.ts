@@ -423,6 +423,53 @@ export interface RateWindow {
   status: string | null
 }
 
+// ── Usage (card 18, crate/src/usage) ──
+
+export type UsagePeriod = '24h' | '7d' | '30d' | '90d'
+
+/** An estimate in USD. */
+export interface UsageCost {
+  input: number
+  cacheRead: number
+  cacheWrite: number
+  output: number
+  /** What cache reads saved against uncached input. */
+  savings: number
+}
+
+export interface UsageRow {
+  /** Start of the hour (24h) or local day, Unix ms. */
+  bucket: number
+  provider: string
+  model: string
+  input: number
+  cacheRead: number
+  cacheWrite: number
+  output: number
+  /** `null`: no public price for the model. */
+  cost: UsageCost | null
+}
+
+export interface UsageReport {
+  period: UsagePeriod
+  since: number
+  bucket: 'hour' | 'day'
+  rows: UsageRow[]
+  prices: string
+  sources: string[]
+  files: number
+  unreadable: number
+  scanMs: number
+}
+
+export interface ProviderLimits {
+  provider: string
+  windows: RateWindow[]
+  /** When reported, Unix ms; null = never. */
+  at: number | null
+  error: string | null
+}
+
 export type ThreadEvent =
   | { type: 'item'; item: ThreadItem }
   | { type: 'delta'; itemId: string; text: string }

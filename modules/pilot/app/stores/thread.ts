@@ -15,6 +15,7 @@ import { markRaw } from 'vue'
 import { defineStore } from 'pinia'
 import { pilot } from '#pilot/utils/invoke'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useUsageStore } from '#pilot/stores/usage'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useDrawerStore } from '#pilot/stores/drawer'
 import type {
@@ -466,6 +467,9 @@ export const useThreadStore = defineStore('pilot/thread', {
       try {
         await pilot<string>('plugin:pilot|pilot_thread_send', { id, text, ...extras })
         this.wrote(id)
+        // `/usage`'s limits above the box close with the next message (card 18).
+        const usage = useUsageStore()
+        if (usage.inline === id) usage.inline = null
         // The first message of a Worktree thread created its worktree: the row's checkout moved.
         const meta = usePilotStore().sessions.find((s) => s.id === id)
         if (meta?.workspaceMode === 'worktree' && !meta.worktreePath) void usePilotStore().refreshSessions()

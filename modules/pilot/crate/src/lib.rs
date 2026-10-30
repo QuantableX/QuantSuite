@@ -37,6 +37,7 @@ mod shell;
 mod signals;
 mod terminals;
 mod threads;
+mod usage;
 mod watch;
 
 use adapters::{LaunchInput, SessionFiles};
@@ -742,6 +743,8 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_messages_search,
             pilot_keybindings_get,
             pilot_keybindings_set,
+            usage::pilot_usage_report,
+            usage::pilot_usage_limits,
             threads::pilot_ports_alive,
             threads::pilot_port_owner,
             threads::pilot_port_stop,

@@ -33,6 +33,12 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 base64 = "0.22"
 # Project text search in the Files tab (card 13).
 regex = "1"
+# The Usage page (card 18): Codex's older rollouts are zstd-compressed (a
+# pure-Rust decoder), log lines are screened before parsing, and the public
+# price list is fetched at most daily.
+ruzstd = "0.9"
+memchr = "2"
+reqwest = { workspace = true }
 
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
 # The PTYs: one registry with the console, one output channel, one owner rule.

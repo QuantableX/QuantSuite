@@ -15,11 +15,13 @@ import { inActiveKeepAliveTree, useTauriEvent } from '@quantsuite/core'
 import { pilot } from '#pilot/utils/invoke'
 import { openExternal } from '#pilot/utils/external'
 import { useInspectorStore } from '#pilot/stores/inspector'
+import { usePilotStore } from '#pilot/stores/pilot'
 import { useDrawerStore } from '#pilot/stores/drawer'
 import type { BrowserStatus, ElementPick, Listener } from '#pilot/types'
 
 const props = defineProps<{ threadId: string }>()
 const inspector = useInspectorStore()
+const pilotStore = usePilotStore()
 const drawer = useDrawerStore()
 
 const stage = ref<HTMLElement | null>(null)
@@ -105,7 +107,8 @@ async function sync() {
   const bounds = rect()
   if (!bounds) return
   covered.value = overlapping()
-  const visible = showing.value && active.value && !covered.value && inspector.open && inspector.tab === 'browser'
+  // The Usage page covers the conversation and its inspector (card 18).
+  const visible = showing.value && active.value && !covered.value && inspector.open && inspector.tab === 'browser' && pilotStore.page === 'thread'
   const key = JSON.stringify([bounds, visible])
   if (key === lastSent) return
   lastSent = key
@@ -171,7 +174,7 @@ watch(
   () => inspector.browserNonce,
   () => url.value && void go(url.value)
 )
-watch(() => [inspector.open, inspector.tab, inspector.widthOf(props.threadId)], schedule)
+watch(() => [inspector.open, inspector.tab, inspector.widthOf(props.threadId), pilotStore.page], schedule)
 watch(
   () => status.value.url,
   (u) => {

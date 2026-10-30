@@ -13,6 +13,7 @@ import { AlarmClock, ArrowRightLeft, Archive, Clock, SquareTerminal, Target, X }
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import { useUsageStore } from '#pilot/stores/usage'
 import { fmtTokens } from '#pilot/utils/format'
 import { formatDuration } from '#pilot/utils/timeline'
 
@@ -27,6 +28,7 @@ const life = computed(() => view.value?.life ?? { resumeAt: null, limitResetAt: 
 const limited = computed(() => view.value?.state === 'limited')
 const running = computed(() => Boolean(view.value?.turnId))
 const agent = computed(() => store.adapterLabel(thread.value?.provider || 'claude'))
+const usage = useUsageStore()
 
 const goal = computed(() => life.value.goal ?? null)
 const codex = computed(() => thread.value?.provider === 'codex')
@@ -127,6 +129,11 @@ function snoozeUntilReset() {
       </template>
     </div>
 
+    <div v-if="usage.inline === threadId" class="qp-life-row qp-life-usage">
+      <PilotUsageLimits :provider="thread?.provider || 'claude'" compact />
+      <button class="qp-life-x" aria-label="Close" @click="usage.inline = null"><X :size="12" /></button>
+    </div>
+
     <div v-if="life.handoffFrom && !life.tui" class="qp-life-row muted">
       <ArrowRightLeft :size="13" />
       <span class="qp-life-text">
@@ -166,6 +173,8 @@ function snoozeUntilReset() {
 .qp-life-row.met { color: var(--qss-success, #34d399); }
 .qp-life-row.met .qp-life-text { color: var(--qss-text, #d4d4d8); }
 .qp-life-text { flex: 1; min-width: 0; line-height: 1.45; }
+.qp-life-usage { align-items: flex-start; }
+.qp-life-usage > :first-child { flex: 1; min-width: 0; }
 .qp-life-label { font-weight: 600; margin-right: 6px; }
 .qp-life-goal { overflow-wrap: anywhere; }
 .qp-life-num { margin-left: 8px; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }

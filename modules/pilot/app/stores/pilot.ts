@@ -102,6 +102,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
     contexts: [] as PilotContext[],
     sessions: [] as SessionMeta[],
     activeId: null as string | null,
+    /** The main area: the open thread, or the Usage page (card 18). */
+    page: 'thread' as 'thread' | 'usage',
     /** Threads visited before and after the open one (Ctrl+[ / Ctrl+], card 17). */
     history: { back: [] as string[], forward: [] as string[] },
     live: {} as Record<string, SessionLive>,
@@ -266,6 +268,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
         this.history.back = [...this.history.back, this.activeId].slice(-50)
         this.history.forward = []
       }
+      this.page = 'thread'
       this.activeId = id
       useSidebarStore().markRead(id)
       await useThreadStore().open(id)

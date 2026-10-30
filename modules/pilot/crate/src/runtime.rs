@@ -449,6 +449,8 @@ impl Projector {
                 self.emit(self.usage_totals());
             }
             Emit::RateLimit { windows } => {
+                // The Usage page shows the last windows each provider reported (card 18).
+                let _ = self.db.set_limits(provider, &serde_json::to_string(&windows).unwrap_or_default(), now_ms());
                 self.windows = windows.clone();
                 self.emit(ThreadEvent::RateLimit { windows });
             }
@@ -1181,7 +1183,29 @@ fn pump(rt: Weak<Runtime>, run: Arc<Run>, stdout: std::process::ChildStdout) {
 
 /// Ask a CLI for its catalog: start it, send the driver's handshake, wait
 /// for the `Catalog` emit, end it. Bounded in time and bytes.
-pub fn discover(program: &str, args: &[String], cwd: &str, env: &[(String, String)], mut driver: Box<dyn Driver>) -> Result<Catalog, String> {
+pub fn discover(program: &str, args: &[String], cwd: &str, env: &[(String, String)], driver: Box<dyn Driver>) -> Result<Catalog, String> {
+    let provider = driver.provider();
+    probe(program, args, cwd, env, driver, |e| match e {
+        Emit::Catalog(c) => Some(c),
+        _ => None,
+    })?
+    .ok_or_else(|| format!("{provider} did not report its models in time"))
+}
+
+/// The usage windows a CLI reports without a turn (card 18): Codex answers
+/// `account/rateLimits/read` in its discovery run.
+pub fn probe_limits(program: &str, args: &[String], cwd: &str, env: &[(String, String)], driver: Box<dyn Driver>) -> Result<Vec<crate::events::RateWindow>, String> {
+    let provider = driver.provider();
+    probe(program, args, cwd, env, driver, |e| match e {
+        Emit::RateLimit { windows } => Some(windows),
+        _ => None,
+    })?
+    .ok_or_else(|| format!("{provider} did not report its limits in time"))
+}
+
+/// A short-lived process for one answer: the handshake, then lines until
+/// `pick` finds what it waits for or the deadline passes.
+fn probe<T>(program: &str, args: &[String], cwd: &str, env: &[(String, String)], mut driver: Box<dyn Driver>, mut pick: impl FnMut(Emit) -> Option<T>) -> Result<Option<T>, String> {
     let mut child = spawn_process(program, args, cwd, env)?;
     let pid = child.id();
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
@@ -1214,12 +1238,15 @@ pub fn discover(program: &str, args: &[String], cwd: &str, env: &[(String, Strin
             Ok(line) => {
                 for e in driver.on_line(&line) {
                     match e {
-                        Emit::Catalog(c) => found = Some(c),
                         Emit::Write(l) => {
                             let _ = stdin.write_all(l.as_bytes());
                             let _ = stdin.write_all(b"\n");
                         }
-                        _ => {}
+                        e => {
+                            if found.is_none() {
+                                found = pick(e);
+                            }
+                        }
                     }
                 }
             }
@@ -1230,7 +1257,7 @@ pub fn discover(program: &str, args: &[String], cwd: &str, env: &[(String, Strin
     kill_tree(pid);
     let _ = child.kill();
     let _ = child.wait();
-    found.ok_or_else(|| format!("{} did not report its models in time", driver.provider()))
+    Ok(found)
 }
 
 #[cfg(test)]
@@ -1912,6 +1939,20 @@ mod tests {
         let c = discover(&codex, &crate::codex::launch_args(), &cwd, &env, driver).unwrap();
         println!("catalog in {:?}: {} models, {} skills, version {:?}", started.elapsed(), c.models.len(), c.skills.len(), c.version);
         assert!(c.models.len() > 1 && c.models[0].id == "default");
+    }
+
+    /// Live, opt-in, no inference (card 18): Codex reports its usage windows without a turn.
+    #[test]
+    #[ignore = "live: starts the installed Codex app-server for its rate limits only"]
+    fn live_codex_limits() {
+        let codex = crate::providers::which("codex").expect("codex on PATH").to_string_lossy().into_owned();
+        let env = vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())];
+        let cwd = std::env::temp_dir().to_string_lossy().into_owned();
+        let started = Instant::now();
+        let driver = Box::new(crate::codex::CodexDriver::discovery(&cwd));
+        let windows = probe_limits(&codex, &crate::codex::launch_args(), &cwd, &env, driver).unwrap();
+        println!("limits in {:?}: {windows:?}", started.elapsed());
+        assert!(windows.iter().any(|w| w.used_pct.is_some()));
     }
 
     /// The stand-in CLI for the test below: this test binary, run again with

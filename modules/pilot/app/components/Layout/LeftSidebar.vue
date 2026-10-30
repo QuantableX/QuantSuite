@@ -22,7 +22,7 @@
  * opens the row's menu.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Pin, PinOff, Plus, Sunrise } from 'lucide-vue-next'
+import { Archive, ArchiveRestore, ChartColumn, ChevronDown, ChevronRight, Pin, PinOff, Plus, Sunrise } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
@@ -37,6 +37,7 @@ import {
 } from '#pilot/utils/sidebar'
 import type { SessionMeta } from '#pilot/types'
 import { useKeysStore } from '#pilot/stores/keys'
+import { runCommand } from '#pilot/utils/commands'
 
 const store = usePilotStore()
 const threads = useThreadStore()
@@ -663,6 +664,10 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
       <button class="qp-side-error-x" aria-label="Dismiss" @click="sb.error = ''; store.lastError = ''">×</button>
     </div>
 
+    <button class="qp-side-usage" :class="{ on: store.page === 'usage' }" :title="keys.hint('usage.open', 'Usage and limits')" @click="runCommand('usage.open')">
+      <ChartColumn :size="13" /> Usage
+    </button>
+
     <PilotLayoutThreadMenu v-if="menu && menuThread" :thread="menuThread" :x="menu.x" :y="menu.y" @close="closeMenu" @rename="renameFromMenu" />
 
     <Teleport to="body">
@@ -828,6 +833,23 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
   cursor: pointer;
 }
 .qp-side-empty-btn:hover { background: var(--qss-bg-hover, #313139); }
+.qp-side-usage {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 8px 8px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--qss-text-secondary, #9a9aa5);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.qp-side-usage:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
+.qp-side-usage.on { background: var(--qss-bg-card, #292930); color: var(--qss-text, #d4d4d8); }
 .qp-side-error {
   display: flex;
   align-items: flex-start;

@@ -67,6 +67,8 @@ Default permissions for the pilot module.
 - `allow-pilot-messages-search`
 - `allow-pilot-keybindings-get`
 - `allow-pilot-keybindings-set`
+- `allow-pilot-usage-report`
+- `allow-pilot-usage-limits`
 - `allow-pilot-ports-alive`
 - `allow-pilot-port-owner`
 - `allow-pilot-port-stop`
@@ -2174,6 +2176,58 @@ Enables the pilot_thread_update command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-usage-limits`
+
+</td>
+<td>
+
+Enables the pilot_usage_limits command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-usage-limits`
+
+</td>
+<td>
+
+Denies the pilot_usage_limits command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-usage-report`
+
+</td>
+<td>
+
+Enables the pilot_usage_report command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-usage-report`
+
+</td>
+<td>
+
+Denies the pilot_usage_report command without any pre-configured scope.
 
 </td>
 </tr>
