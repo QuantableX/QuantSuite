@@ -697,6 +697,35 @@ never fakes support.
   diagnostics without secrets (variable names only), Export logs to
   Downloads (with the newest 512 KB of the suite log), shown in Explorer.
 
+### 5.15 Board view (card 21)
+
+- The header's Conversation | Board switch (`app.view`, remembered with the
+  chosen board in localStorage; also `board.toggle` in the palette). Board
+  fills the main area: no thread list, no thread panel, the conversation
+  unmounted (the V2 terminals stay mounted under it).
+- The board is the suite's one board, `QDrawerKanban` bound to a board id
+  (the remembered one, else the open thread's workspace, a forgotten
+  workspace falls back to General): its columns, pointer drag and drop for
+  unclaimed cards, the board's approval mode select and fold rule, the
+  `QKanbanCardModal` editor (double click), refreshes on kanban bus events
+  only. Its host hooks: the `board` slot (QuantPilot's picker: General and
+  every workspace), `card-extra` (a row on every card, no drag starts
+  there), `select` on a plain click, `selectedCardId`.
+- QuantPilot's row (`Board/CardExtra.vue`): priority, the branch (worktree in
+  its tooltip; the agent is the board's own badge), the threads started
+  from the card with their status, Start thread (not on Done cards).
+- Start thread: `pilot_thread_create` in the card's workspace with its
+  defaults and the card's title, the draft prefilled (`cardPrompt`: the
+  card, then the workflow — claim and worktree for a workspace card, the
+  General columns for a General card; nothing is sent by itself), and
+  `pilot_card_link`: a `links` row kind `card`, url `card:<id>`, beside the
+  pull requests (their consumers filter `kind === 'pr'`).
+- A click on a card with threads opens its latest beside the board
+  (`Board/Panel.vue`: the conversation and composer of the open thread,
+  resizable, Open in conversation, Close). The thread's header names its
+  card; a click shows the card selected on its board with the thread
+  beside it.
+
 ### 5.5 Composer context (card 9)
 
 - `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`

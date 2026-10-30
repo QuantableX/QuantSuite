@@ -328,11 +328,12 @@ export interface GitDone {
 /** A pull request (or later a board card) linked to a thread. */
 export interface ThreadLink {
   threadId: string
-  kind: 'pr'
+  /** `card`: the kanban card the thread was started from (card 21), url `card:<id>`. */
+  kind: 'pr' | 'card'
   url: string
   number: number
   title: string
-  state: 'open' | 'draft' | 'closed' | 'merged'
+  state: 'open' | 'draft' | 'closed' | 'merged' | 'card'
   checkedAt: number
   createdAt: number
 }

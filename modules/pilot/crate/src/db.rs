@@ -1565,6 +1565,13 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!((all[0].state.as_str(), all[0].title.as_str(), all[0].checked_at), ("merged", "Faster sidebar", 9));
         assert_eq!(db.links(Some("other")).unwrap().len(), 0);
+        // A card link sits beside the pull request, once (card 21).
+        db.add_link(&crate::gitops::card_link("t1", "c9", " Board view ", 11)).unwrap();
+        db.add_link(&crate::gitops::card_link("t1", "c9", "Board view", 12)).unwrap();
+        let all = db.links(Some("t1")).unwrap();
+        assert_eq!(all.len(), 2);
+        let card = all.iter().find(|l| l.kind == "card").unwrap();
+        assert_eq!((card.url.as_str(), card.title.as_str(), card.state.as_str()), ("card:c9", "Board view", "card"));
         db.delete_session("t1").unwrap();
         assert!(db.links(None).unwrap().is_empty());
     }

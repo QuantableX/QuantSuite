@@ -16,6 +16,11 @@
  *
  * Drag & drop is pointer-event based on purpose — HTML5 DnD is broken in
  * WebView2 (see the pointer-dnd rule; /mcp/projects does the same).
+ *
+ * A host can add to it without a second board (QuantPilot's board view):
+ * the `board` slot takes the place of the board label, `card-extra` adds a
+ * row to every card (no drag starts there), and a plain click on a card
+ * emits `select`.
  */
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
@@ -53,7 +58,8 @@ import {
 
 // Canvas binds its workspace board; the drawer keeps its suite-wide picker.
 // A bound board never follows or changes another surface's board selection.
-const props = defineProps<{ boardId?: string }>()
+const props = defineProps<{ boardId?: string; selectedCardId?: string | null }>()
+const emit = defineEmits<{ select: [card: KanbanCard] }>()
 const available = kanbanAvailable()
 const boardElement = ref<HTMLElement | null>(null)
 
@@ -317,6 +323,7 @@ function onCardPointerDown(e: PointerEvent, card: KanbanCard) {
   }
   pointerUpHandler = async (ev: PointerEvent) => {
     const target = pointerDidMove ? findDropTargetAtPoint(ev.clientX, ev.clientY, card.id) : null
+    if (pointerDidMove) dragEndedAt = Date.now()
     resetDragState()
     if (!target) return
     if (target.column === card.column && target.beforeId === null && byColumn(card.column).at(-1)?.id === card.id)
@@ -331,6 +338,14 @@ function onCardPointerDown(e: PointerEvent, card: KanbanCard) {
   window.addEventListener('pointermove', pointerMoveHandler, true)
   window.addEventListener('pointerup', pointerUpHandler, true)
   window.addEventListener('pointercancel', pointerUpHandler, true)
+}
+
+// The click that ends a drag is not a selection.
+let dragEndedAt = 0
+function onCardClick(e: MouseEvent, card: KanbanCard) {
+  if ((e.target as HTMLElement | null)?.closest('button, a, input, textarea, select, [data-no-drag]')) return
+  if (Date.now() - dragEndedAt < 300) return
+  emit('select', card)
 }
 
 function isDropBefore(column: KanbanColumn, cardId: string): boolean {
@@ -485,7 +500,8 @@ onUnmounted(() => {
            tracks as the outer columns, so they align exactly and scroll
            together (two separate flex rows drifted apart). -->
       <div class="dkb-grid" :style="{ '--dkb-cols': visibleColumns.length }">
-        <span v-if="props.boardId" class="dkb-board-label dkb-select-left" :title="boardLabel">{{ boardLabel }}</span>
+        <div v-if="$slots.board" class="dkb-select-left dkb-board-slot"><slot name="board" /></div>
+        <span v-else-if="props.boardId" class="dkb-board-label dkb-select-left" :title="boardLabel">{{ boardLabel }}</span>
         <select v-else class="dkb-select dkb-select-left" :value="boardId" aria-label="Board" @change="onBoardSelect">
           <option v-for="b in boards" :key="b.id" :value="b.id">{{ b.label }}</option>
         </select>
@@ -522,10 +538,12 @@ onUnmounted(() => {
                 'is-dragging': draggingCardId === card.id,
                 'is-agent': cardClaimed(card),
                 'is-drop-before': isDropBefore(col.id, card.id),
+                'is-selected': props.selectedCardId === card.id,
               }"
               :data-dkb-card-id="card.id"
               :title="cardClaimed(card) ? 'An agent is working this card — read-only here' : undefined"
               @pointerdown="onCardPointerDown($event, card)"
+              @click="onCardClick($event, card)"
               @dblclick="openCard(card)"
             >
               <span class="dkb-card-title">{{ card.title }}</span>
@@ -552,6 +570,10 @@ onUnmounted(() => {
                 </button>
                 <button class="dkb-mini" title="Delete card" @click="removeCard(card)">&times;</button>
               </template>
+
+              <div v-if="$slots['card-extra']" class="dkb-card-extra" data-no-drag>
+                <slot name="card-extra" :card="card" />
+              </div>
 
               <!-- Links: outgoing and incoming, unlink, and search-to-link -->
               <div v-if="linksFor === card.id" class="dkb-links" data-no-drag @click.stop>
@@ -748,6 +770,19 @@ onUnmounted(() => {
 }
 .dkb-card.is-drop-before {
   box-shadow: 0 -2px 0 0 var(--qss-accent);
+}
+.dkb-card.is-selected {
+  border-color: color-mix(in srgb, var(--qss-accent) 60%, var(--qss-border));
+}
+.dkb-card-extra {
+  width: 100%;
+  min-width: 0;
+  cursor: default;
+}
+.dkb-board-slot {
+  min-width: 0;
+  grid-row: 1;
+  display: flex;
 }
 .dkb-card-title {
   flex: 1;

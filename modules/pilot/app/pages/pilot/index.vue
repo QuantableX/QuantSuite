@@ -10,9 +10,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { useDrawerStore } from '#pilot/stores/drawer'
+import { useAppStore } from '#pilot/stores/app'
 
 definePageMeta({ layout: 'pilot' })
 
+const app = useAppStore()
 const store = usePilotStore()
 const inspector = useInspectorStore()
 const drawer = useDrawerStore()
@@ -63,9 +65,11 @@ function restart() {
 <template>
   <div class="qp-page">
     <PilotUsagePage v-if="store.page === 'usage'" />
-    <div v-show="store.page !== 'usage'" class="qp-page">
+    <PilotBoardView v-else-if="app.view === 'board'" />
+    <!-- The terminals stay mounted under the board (their scrollback); the conversation does not, the board's panel has it. -->
+    <div v-show="store.page !== 'usage' && app.view !== 'board'" class="qp-page">
     <template v-if="session">
-      <div v-if="!terminal" class="qp-split">
+      <div v-if="!terminal && app.view !== 'board'" class="qp-split">
         <div class="qp-main-col">
           <PilotThreadConversation :thread-id="session.id" />
           <PilotDrawerPanel v-if="drawer.open[session.id]" :thread-id="session.id" />

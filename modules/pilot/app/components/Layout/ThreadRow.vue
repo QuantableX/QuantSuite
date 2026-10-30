@@ -35,7 +35,7 @@ const props = defineProps<{
 
 const git = useGitStore()
 /** The thread's open pull request, else its latest one. */
-const pr = computed(() => openPr(git.links[props.thread.id]) ?? (git.links[props.thread.id] ?? []).at(-1) ?? null)
+const pr = computed(() => openPr(git.links[props.thread.id]) ?? (git.links[props.thread.id] ?? []).filter((l) => l.kind === 'pr').at(-1) ?? null)
 
 const emit = defineEmits<{
   open: []

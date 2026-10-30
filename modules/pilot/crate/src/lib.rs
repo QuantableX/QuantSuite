@@ -854,6 +854,7 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_git_discard_all,
             threads::pilot_pr_create,
             threads::pilot_links,
+            threads::pilot_card_link,
             threads::pilot_pr_refresh,
             threads::pilot_files_list,
             threads::pilot_file_read,
