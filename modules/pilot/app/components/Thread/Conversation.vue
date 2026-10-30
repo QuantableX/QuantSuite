@@ -71,6 +71,7 @@ const faceState = computed(() => {
         <button class="qp-link" @click="view.error = null">Dismiss</button>
       </div>
       <div v-if="notice" class="qp-conv-banner is-notice">{{ notice }}</div>
+      <PilotThreadLifecycle :thread-id="threadId" />
       <PilotThreadApprovals :thread-id="threadId" @done="composer?.focus()" />
       <PilotThreadComposer ref="composer" :thread-id="threadId" />
     </div>

@@ -83,4 +83,5 @@ permissions = [
   "allow-pilot-thread-restart",
   "allow-pilot-thread-tui",
   "allow-pilot-thread-tui-done",
+  "allow-pilot-thread-life",
 ]

@@ -79,6 +79,7 @@ const COMMANDS: &[&str] = &[
     "pilot_thread_restart",
     "pilot_thread_tui",
     "pilot_thread_tui_done",
+    "pilot_thread_life",
 ];
 
 fn main() {

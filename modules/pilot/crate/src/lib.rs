@@ -734,6 +734,7 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_thread_restart,
             threads::pilot_thread_tui,
             threads::pilot_thread_tui_done,
+            threads::pilot_thread_life,
         ]))
         .build()
 }

@@ -56,6 +56,8 @@ function pull() {
   draft.newThreadWorkspace = s.newThreadWorkspace ?? 'local'
   draft.worktreePrefix = s.worktreePrefix ?? 'quantpilot/'
   draft.commitStyle = s.commitStyle ?? 'repository'
+  draft.limitResume = s.limitResume ?? false
+  draft.limitSnooze = s.limitSnooze ?? false
   draft.actions = JSON.parse(JSON.stringify(s.actions ?? {}))
 }
 onMounted(async () => {
@@ -247,6 +249,14 @@ const signalsLabel = (s: string | null) =>
         </select>
       </label>
     </div>
+    <label class="qp-settings-check">
+      <input v-model="draft.limitResume" type="checkbox" />
+      <span>Resume after usage limits <em>(a limit stop continues by itself when the allowance returns)</em></span>
+    </label>
+    <label class="qp-settings-check">
+      <input v-model="draft.limitSnooze" type="checkbox" />
+      <span>Snooze until limits reset <em>(a limited thread leaves the list until then)</em></span>
+    </label>
     <label class="qp-settings-check">
       <input v-model="draft.workingSection" type="checkbox" />
       <span>Fold working threads into a Working section <em>(they come back on top when they finish, fail or need you)</em></span>

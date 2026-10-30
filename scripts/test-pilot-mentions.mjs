@@ -42,7 +42,7 @@ test('chips delete whole and keep the caret outside', () => {
 
 test('commands: app ones first, prefixes before substrings', () => {
   const rows = m.commandRows([{ name: 'compact', description: 'Clear history but keep a summary' }, { name: 'review', description: 'Review a PR' }], 'co')
-  assert.deepEqual(rows.map((r) => r.name), ['copy', 'compact'])
+  assert.deepEqual(rows.map((r) => r.name), ['copy', 'compact', 'tui'], 'prefix matches first, then description matches')
   assert.equal(rows[0].name, 'copy', 'an app command with the prefix first')
   assert.ok(rows.some((r) => r.name === 'compact' && r.source === 'provider'))
   assert.equal(m.commandRows([], '').length, m.APP_COMMANDS.length)

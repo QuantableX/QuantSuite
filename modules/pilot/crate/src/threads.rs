@@ -856,7 +856,10 @@ pub fn pilot_git_info(state: State<'_, PilotState>, id: String) -> Result<GitInf
         branch,
         worktree_path: meta.worktree_path.clone(),
         worktree_missing: missing,
-        started: meta.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty()) || state.runtime.active_turn(&id).is_some(),
+        // A conversation that moved to another agent (card 15) has no session yet, but it has started.
+        started: meta.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty())
+            || state.runtime.active_turn(&id).is_some()
+            || state.db.user_messages(&id).unwrap_or(0) > 0,
     })
 }
 
@@ -890,7 +893,7 @@ pub fn pilot_thread_set_workspace(
     worktree_path: Option<String>,
 ) -> Result<ThreadMeta, String> {
     let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
-    if meta.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty()) || state.runtime.active_turn(&id).is_some() {
+    if meta.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty()) || state.runtime.active_turn(&id).is_some() || state.db.user_messages(&id).unwrap_or(0) > 0 {
         return Err("This thread has started — its checkout is fixed. Start a new thread to work elsewhere.".into());
     }
     if !matches!(mode.as_str(), "local" | "worktree") {
@@ -1601,6 +1604,16 @@ fn resume_now(app: &AppHandle, state: &PilotState, id: &str) -> Result<String, S
         return Err("the agent is already working".into());
     }
     start_input(app, state, id, TurnInput { text: lifecycle::RESUME_TEXT.into(), ..Default::default() }, json!([]))
+}
+
+/// The thread's lifecycle facts: scheduled continuation, limit reset, owed history, open TUI.
+#[tauri::command(async)]
+pub fn pilot_thread_life(app: AppHandle, state: State<'_, PilotState>, id: String) -> Life {
+    // A TUI that closed on its own hands the session back here.
+    if lock(&state.tui).contains_key(&id) {
+        let _ = tui_check(&app, &state, &id);
+    }
+    life_of(&state, &id)
 }
 
 #[tauri::command(async)]

@@ -28,6 +28,19 @@ const threads = useThreadStore()
 const editing = ref(false)
 const reverting = ref(false)
 const worktree = computed(() => Boolean(store.sessions.find((s) => s.id === props.threadId)?.worktreePath))
+const thread = computed(() => store.sessions.find((s) => s.id === props.threadId) ?? null)
+/** After a provider switch, earlier turns say which agent answered them (card 15). */
+const otherAgent = computed(() => {
+  const p = String(props.block.user?.data.provider ?? '')
+  return p && p !== (thread.value?.provider || 'claude') ? store.adapterLabel(p) : ''
+})
+const resumed = computed(() => Boolean(props.block.user?.data.resume))
+const forking = ref(false)
+async function fork(worktree: boolean) {
+  forking.value = false
+  const item = props.block.answer ?? props.block.user
+  if (item) await threads.fork(props.threadId, item.id, worktree)
+}
 
 const userText = computed(() => plainText(String(props.block.user?.data.text ?? '')))
 const showActivity = computed(() => props.block.activity.length > 0 || (props.running && !props.block.answer))
@@ -62,13 +75,25 @@ async function revert(files: boolean) {
 
 <template>
   <section class="qp-turn" :data-turn="block.turnId">
-    <div v-if="block.user" class="qp-user" :data-item-id="block.user.id">
+    <div v-if="block.user && resumed" class="qp-resumed" :data-item-id="block.user.id">↻ Resumed<template v-if="otherAgent"> · {{ otherAgent }}</template></div>
+    <div v-else-if="block.user" class="qp-user" :data-item-id="block.user.id">
       <div class="qp-user-bubble">
         <PilotThreadUserMessage :item="block.user" @notice="(t: string) => emit('notice', t)" />
       </div>
       <div class="qp-user-tools" :class="{ on: editing }">
         <button v-if="idle" class="qp-user-copy" title="Rewind the thread to before this message and edit it" @click="editing = !editing">Edit from here</button>
         <button class="qp-user-copy" title="Copy message" @click="copyUser">Copy</button>
+        <button v-if="idle" class="qp-user-copy" title="A new thread from here, with this conversation up to this turn" @click="forking = !forking">Fork</button>
+        <span v-if="block.user.data.fromTerminal" class="qp-user-tag">from the terminal</span>
+        <span v-if="otherAgent" class="qp-user-tag">{{ otherAgent }}</span>
+      </div>
+      <div v-if="forking" class="qp-rewind" role="dialog" aria-label="Fork">
+        <div class="qp-rewind-text">A new thread with this conversation up to here; this one stays as it is.</div>
+        <div class="qp-rewind-actions">
+          <button class="qp-rewind-btn" @click="forking = false">Cancel</button>
+          <button class="qp-rewind-btn" title="A new worktree from this thread's branch (committed work only)" @click="fork(true)">Into a new worktree</button>
+          <button class="qp-rewind-btn primary" @click="fork(false)">In this checkout</button>
+        </div>
       </div>
       <div v-if="editing" class="qp-rewind" role="dialog" aria-label="Edit from here">
         <div class="qp-rewind-text">This message and everything after it leave the thread. The agent picks up from before it, and the message comes back into the box.</div>
@@ -138,6 +163,8 @@ async function revert(files: boolean) {
 .qp-user:hover .qp-user-copy,
 .qp-user-tools.on .qp-user-copy,
 .qp-user-copy:focus-visible { opacity: 1; }
+.qp-resumed { align-self: flex-end; margin-bottom: 10px; font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-user-tag { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); padding: 1px 4px; }
 .qp-rewind {
   max-width: min(86%, 640px);
   margin-top: 4px;

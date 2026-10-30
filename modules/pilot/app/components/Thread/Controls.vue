@@ -57,15 +57,15 @@ async function loadCatalog(id = provider.value, refresh = false) {
   else catalogError.value = 'The CLI did not report its models. You can still type a model id.'
 }
 
-/** Another agent can take a thread only before its first message (carrying a conversation over is card 15). */
-const started = computed(() => Boolean(thread.value?.providerSessionId) || running.value)
+/** Another agent takes an idle conversation along (card 15); a running one keeps its agent. */
+const started = computed(() => Boolean(thread.value?.providerSessionId) || running.value || Boolean(view.value?.items.some((i) => i.kind === 'user')))
 const providers = computed<ProviderOption[]>(() =>
   store.adapters
     .filter((a) => CHAT_PROVIDERS.includes(a.id))
     .map((a) => {
       if (a.found === false) return { id: a.id, label: a.label, available: false, reason: `${a.label} is not installed` }
-      if (started.value && a.id !== provider.value) {
-        return { id: a.id, label: a.label, available: false, reason: `This conversation runs on ${store.adapterLabel(provider.value)} — start a new thread for ${a.label}` }
+      if (running.value && a.id !== provider.value) {
+        return { id: a.id, label: a.label, available: false, reason: `${store.adapterLabel(provider.value)} is working — switch when it is done` }
       }
       return { id: a.id, label: a.label, available: true }
     })

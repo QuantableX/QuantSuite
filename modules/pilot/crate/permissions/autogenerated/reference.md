@@ -84,6 +84,7 @@ Default permissions for the pilot module.
 - `allow-pilot-thread-restart`
 - `allow-pilot-thread-tui`
 - `allow-pilot-thread-tui-done`
+- `allow-pilot-thread-life`
 
 ## Permission Table
 
@@ -1754,6 +1755,32 @@ Enables the pilot_thread_interrupt command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_interrupt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-life`
+
+</td>
+<td>
+
+Enables the pilot_thread_life command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-life`
+
+</td>
+<td>
+
+Denies the pilot_thread_life command without any pre-configured scope.
 
 </td>
 </tr>

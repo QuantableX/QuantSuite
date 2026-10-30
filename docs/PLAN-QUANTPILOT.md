@@ -198,6 +198,7 @@ second and at every message end, so the persisted history is the truth.
 | `checkpoints`, `turn_files`, `turn_changes` (schema v7) | per turn: the before/after snapshot commits (also kept as `refs/quantpilot/checkpoints/<thread>/<turn>-before|after`), the paths the agent's tools reported, and the attributed changes with their patches (2 MiB per turn). `turns.provider_ref` holds the provider's id for the turn (Claude: the last top-level assistant uuid; Codex: the turn id); `threads.rewind` the pending "Edit from here" for the next launch | 11 |
 | `attachments` | images and documents stored under the pilot data dir, never inside the project | 9 |
 | (files, no table) | card 9 keeps attachments as files under `attachments/<thread>/` (images normalized to PNG ≤ 2048 px, files copied); the sent user item keeps their names, paths, PNG thumbnails and the chips' content in its `attachments` JSON | 9 |
+| `threads.handoff`, `resume_at`, `limit_reset_at` (schema v9) | history owed to a new agent or a fork (JSON), the scheduled continuation, when a usage limit lifts | 15 |
 | `links` (schema v8) | a thread's pull requests (card 12): url, number, title, state (`open` / `draft` / `closed` / `merged`), when GitHub was last asked; card 21 adds board cards | 12, 21 |
 | `stash`, `prompt_history`, `keybindings` | composer and keyboard state | 4, 17 |
 
@@ -494,6 +495,48 @@ never fakes support.
 - Screenshot: WebView2 CapturePreview of the visible viewport → the same
   PNG normalization as pasted images, saved in the thread's attachments
   (5 MiB at most, four per message); capturing sends nothing.
+
+### 5.11 Thread lifecycle (card 15)
+
+- Restart: threads keep their provider session id; a turn cut by an app
+  exit shows Interrupted, the queue is held. Resume (the empty composer's
+  button) sends a fixed continuation the timeline shows as "↻ Resumed".
+- Fork (a user message's Fork, the thread menu, `/fork`): a new thread with
+  the turns up to that message — items, turns, checkpoints and changes
+  copied under new ids — in this checkout or a new worktree branching from
+  this thread's branch (committed work only). Claude continues natively in
+  the same folder (`--resume … --resume-session-at <turn's last uuid>
+  --fork-session`); Codex with `thread/fork {threadId, lastTurnId, cwd}`
+  (verified live on 0.165); otherwise the first message carries the history.
+- Another agent on an idle conversation: the model picker allows it; the
+  thread starts fresh with the new agent and its next message carries the
+  conversation (`lifecycle::pack_history`: user/assistant text only, the
+  newest 200 messages and 64 KiB, truncation disclosed, wrapped as
+  reference data). A notice and the composer say so; earlier turns keep
+  their agent's label (`data.provider` on user items). The owed history
+  (`threads.handoff`) counts as delivered only after a completed turn with
+  a native session — a failed start or an app exit keeps it.
+- Compaction: `/compact` is Claude's own; for Codex the driver turns it
+  into `thread/compact/start` (a turn of its own, verified live). After an
+  hour's pause on a Claude conversation over 200k tokens the composer
+  offers Compact first (on) or Full for the next message: `/compact` runs
+  and the message waits in the queue.
+- Limits: a Limited stop remembers when the allowance returns (the
+  exhausted rate window's reset, `threads.limit_reset_at`). Resume at
+  reset schedules the continuation (`threads.resume_at`, a minute after
+  the reset; cancellable; a message, a stop or settling cancels it; a
+  background task wakes for the next one and runs overdue ones after a
+  restart); Snooze until reset hides the thread until then. Settings →
+  Threads makes either the default.
+- Restart agent session (thread menu, `/restart`): the provider process
+  ends; the next message starts it fresh on the same conversation.
+- Open in the agent's terminal UI (thread menu, `/tui`): the CLI itself in
+  the drawer (`claude --resume <id>` / `codex resume <id>`, same
+  permission mode) as the PTY's own program. While it runs the thread does
+  not send ("Open in the terminal — close it there…", Take it back closes
+  it); when it ends, what it added comes into the timeline from the
+  CLI's transcript (Claude: the session file after the last known uuid;
+  Codex: the rollout beyond the thread's user messages), display only.
 
 ### 5.5 Composer context (card 9)
 

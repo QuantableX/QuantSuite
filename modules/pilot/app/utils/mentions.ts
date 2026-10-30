@@ -134,6 +134,9 @@ export const APP_COMMANDS: CommandRow[] = [
   { name: 'rename', description: 'Rename this thread', argumentHint: '<title>', source: 'app' },
   { name: 'copy', description: "Copy the agent's latest answer", argumentHint: '', source: 'app' },
   { name: 'pwd', description: "Show this thread's folder", argumentHint: '', source: 'app' },
+  { name: 'fork', description: 'Fork this thread from the latest message', argumentHint: '', source: 'app' },
+  { name: 'restart', description: 'Restart the agent session (after changing skills or MCP)', argumentHint: '', source: 'app' },
+  { name: 'tui', description: "Open this conversation in the agent's own terminal UI", argumentHint: '', source: 'app' },
 ]
 
 /** App commands first when they match, then the provider's; prefix matches before substrings. */
