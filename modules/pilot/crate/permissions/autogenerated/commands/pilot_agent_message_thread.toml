@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-agent-message-thread"
+description = "Enables the pilot_agent_message_thread command without any pre-configured scope."
+commands.allow = ["pilot_agent_message_thread"]
+
+[[permission]]
+identifier = "deny-pilot-agent-message-thread"
+description = "Denies the pilot_agent_message_thread command without any pre-configured scope."
+commands.deny = ["pilot_agent_message_thread"]

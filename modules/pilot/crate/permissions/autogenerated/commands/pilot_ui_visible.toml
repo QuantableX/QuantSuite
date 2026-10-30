@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-ui-visible"
+description = "Enables the pilot_ui_visible command without any pre-configured scope."
+commands.allow = ["pilot_ui_visible"]
+
+[[permission]]
+identifier = "deny-pilot-ui-visible"
+description = "Denies the pilot_ui_visible command without any pre-configured scope."
+commands.deny = ["pilot_ui_visible"]

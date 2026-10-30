@@ -59,6 +59,15 @@ Default permissions for the pilot module.
 - `allow-pilot-pr-create`
 - `allow-pilot-links`
 - `allow-pilot-card-link`
+- `allow-pilot-ui-visible`
+- `allow-pilot-agent-set-title`
+- `allow-pilot-agent-open-file`
+- `allow-pilot-agent-open-preview`
+- `allow-pilot-agent-render-page`
+- `allow-pilot-agent-list-threads`
+- `allow-pilot-agent-read-thread`
+- `allow-pilot-agent-start-thread`
+- `allow-pilot-agent-message-thread`
 - `allow-pilot-pr-refresh`
 - `allow-pilot-files-list`
 - `allow-pilot-file-read`
@@ -105,6 +114,214 @@ Default permissions for the pilot module.
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-list-threads`
+
+</td>
+<td>
+
+Enables the pilot_agent_list_threads command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-list-threads`
+
+</td>
+<td>
+
+Denies the pilot_agent_list_threads command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-message-thread`
+
+</td>
+<td>
+
+Enables the pilot_agent_message_thread command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-message-thread`
+
+</td>
+<td>
+
+Denies the pilot_agent_message_thread command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-open-file`
+
+</td>
+<td>
+
+Enables the pilot_agent_open_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-open-file`
+
+</td>
+<td>
+
+Denies the pilot_agent_open_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-open-preview`
+
+</td>
+<td>
+
+Enables the pilot_agent_open_preview command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-open-preview`
+
+</td>
+<td>
+
+Denies the pilot_agent_open_preview command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-read-thread`
+
+</td>
+<td>
+
+Enables the pilot_agent_read_thread command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-read-thread`
+
+</td>
+<td>
+
+Denies the pilot_agent_read_thread command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-render-page`
+
+</td>
+<td>
+
+Enables the pilot_agent_render_page command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-render-page`
+
+</td>
+<td>
+
+Denies the pilot_agent_render_page command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-set-title`
+
+</td>
+<td>
+
+Enables the pilot_agent_set_title command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-set-title`
+
+</td>
+<td>
+
+Denies the pilot_agent_set_title command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-start-thread`
+
+</td>
+<td>
+
+Enables the pilot_agent_start_thread command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-start-thread`
+
+</td>
+<td>
+
+Denies the pilot_agent_start_thread command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -2338,6 +2555,32 @@ Enables the pilot_thread_update command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-ui-visible`
+
+</td>
+<td>
+
+Enables the pilot_ui_visible command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-ui-visible`
+
+</td>
+<td>
+
+Denies the pilot_ui_visible command without any pre-configured scope.
 
 </td>
 </tr>

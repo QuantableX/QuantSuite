@@ -1440,6 +1440,183 @@
       "sideEffects": "compute"
     },
     {
+      "tool": "quantsuite.pilot.set_title",
+      "module": "pilot",
+      "name": "set_title",
+      "command": "plugin:pilot|pilot_agent_set_title",
+      "description": "Name the calling thread (at most about six words) once its topic is clear. A title the user gave is kept. Works only from a QuantPilot thread: the connection names the thread, never an argument.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "The thread's new title."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "tool": "quantsuite.pilot.open_file",
+      "module": "pilot",
+      "name": "open_file",
+      "command": "plugin:pilot|pilot_agent_open_file",
+      "description": "Show a file, optionally at a line, in the Files tab of the calling thread's inspector — only while the user has the thread on screen. Works only from a QuantPilot thread: the connection names the thread, never an argument.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative to the thread's folder, or absolute."
+          },
+          "line": {
+            "type": "integer",
+            "description": "1-based line to scroll to."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "tool": "quantsuite.pilot.open_preview",
+      "module": "pilot",
+      "name": "open_preview",
+      "command": "plugin:pilot|pilot_agent_open_preview",
+      "description": "Show an http(s) page — typically a local dev server — in the Browser tab of the calling thread's inspector, only while the user has the thread on screen. Works only from a QuantPilot thread: the connection names the thread, never an argument.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "An http(s) address, host:port or a bare port (localhost)."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "tool": "quantsuite.pilot.render_page",
+      "module": "pilot",
+      "name": "render_page",
+      "command": "plugin:pilot|pilot_agent_render_page",
+      "description": "A visual answer: a self-contained HTML page (a chart, table, diagram or mockup) shown in the calling thread above your text. It runs sandboxed — its scripts run, it has no app or network access beyond what it embeds; inline CSS and JS (no external files). It inherits the suite's colours as CSS variables (--qss-bg, --qss-text, --qss-accent, ...). Local images (src paths) are embedded. At most 1 MB. Works only from a QuantPilot thread: the connection names the thread, never an argument.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "html": {
+            "type": "string",
+            "description": "The page: an HTML document or fragment."
+          },
+          "title": {
+            "type": "string",
+            "description": "A short caption above it."
+          }
+        },
+        "required": [
+          "html"
+        ]
+      }
+    },
+    {
+      "tool": "quantsuite.pilot.list_threads",
+      "module": "pilot",
+      "name": "list_threads",
+      "command": "plugin:pilot|pilot_agent_list_threads",
+      "description": "The chat threads of the calling thread's workspace: id, title, agent, state, permission mode, branch, last activity; the caller is marked. Works only from a QuantPilot thread: the connection names the thread, never an argument.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "tool": "quantsuite.pilot.read_thread",
+      "module": "pilot",
+      "name": "read_thread",
+      "command": "plugin:pilot|pilot_agent_read_thread",
+      "description": "The newest messages of another thread of the same workspace (user and agent text, long ones cut). Works only from a QuantPilot thread: the connection names the thread, never an argument.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "description": "From list_threads."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Messages, newest last; default 20, at most 60."
+          }
+        },
+        "required": [
+          "threadId"
+        ]
+      }
+    },
+    {
+      "tool": "quantsuite.pilot.start_thread",
+      "module": "pilot",
+      "name": "start_thread",
+      "command": "plugin:pilot|pilot_agent_start_thread",
+      "description": "Delegate work: a new thread in the same workspace, with the caller's permission mode and (unless given) its agent, starts working on the prompt at once. Works only from a QuantPilot thread: the connection names the thread, never an argument.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The first message: the whole task, self-contained."
+          },
+          "title": {
+            "type": "string",
+            "description": "The new thread's title."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Agent id (claude, codex, ...); default the caller's."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      }
+    },
+    {
+      "tool": "quantsuite.pilot.message_thread",
+      "module": "pilot",
+      "name": "message_thread",
+      "command": "plugin:pilot|pilot_agent_message_thread",
+      "description": "Send a message to another thread of the same workspace: it starts a turn, or waits in its queue while one runs. Refused for the calling thread itself and for a thread with more permissions than the caller. Works only from a QuantPilot thread: the connection names the thread, never an argument.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "description": "From list_threads."
+          },
+          "message": {
+            "type": "string",
+            "description": "What to send."
+          }
+        },
+        "required": [
+          "threadId",
+          "message"
+        ]
+      }
+    },
+    {
       "tool": "quantsuite.memory.context",
       "module": "memory",
       "name": "context",

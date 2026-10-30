@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-agent-open-file"
+description = "Enables the pilot_agent_open_file command without any pre-configured scope."
+commands.allow = ["pilot_agent_open_file"]
+
+[[permission]]
+identifier = "deny-pilot-agent-open-file"
+description = "Denies the pilot_agent_open_file command without any pre-configured scope."
+commands.deny = ["pilot_agent_open_file"]

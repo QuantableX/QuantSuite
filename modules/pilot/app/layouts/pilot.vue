@@ -28,7 +28,8 @@ import { moveFocus, noteFocus } from '#pilot/utils/focus'
 import { setMathEnabled } from '#pilot/utils/markdown'
 import { chime } from '#pilot/utils/chime'
 import { threadReference } from '#pilot/utils/format'
-import type { PilotEnvelope, ThreadEnvelope } from '#pilot/types'
+import { pilot } from '#pilot/utils/invoke'
+import type { PilotEnvelope, SessionMeta, ThreadEnvelope } from '#pilot/types'
 
 const app = useAppStore()
 const store = usePilotStore()
@@ -48,6 +49,25 @@ useTauriEvent<{ threadId: string }>('pilot-open-thread', (payload) => {
   void navigateTo('/pilot')
   void store.openSession(payload.threadId)
 })
+// QuantMCP's pilot tools (card 22): a file or page for the thread on screen, a thread an agent started.
+useTauriEvent<{ threadId: string; kind: 'file' | 'preview'; path?: string; line?: number | null; url?: string }>('pilot-agent-open', (p) => {
+  if (p.threadId !== store.activeId) return
+  if (p.kind === 'file' && p.path) inspector.openFile(p.threadId, p.path, p.line ?? null)
+  else if (p.kind === 'preview' && p.url) inspector.openBrowser(p.threadId, p.url)
+})
+useTauriEvent<SessionMeta>('pilot-thread-created', (meta) => store.upsertSession(meta))
+
+/** The thread on screen with its inspector: the agent tools open files and pages only there. */
+const moduleActive = ref(false)
+const onScreen = computed(() => {
+  const id = store.activeId
+  return moduleActive.value && id && store.page === 'thread' && app.view === 'conversation' && !store.terminalShown[id] ? id : null
+})
+watch(onScreen, (id) => void pilot('plugin:pilot|pilot_ui_visible', { threadId: id }))
+onMounted(() => (moduleActive.value = inActiveKeepAliveTree()))
+onActivated(() => (moduleActive.value = true))
+onDeactivated(() => (moduleActive.value = false))
+onUnmounted(() => void pilot('plugin:pilot|pilot_ui_visible', { threadId: null }))
 
 /** Threads waiting on the user: the rail's badge, and the optional sound. */
 const waitingCount = computed(
