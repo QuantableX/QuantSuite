@@ -6,8 +6,9 @@
  * one "Worked for …" disclosure — commentary, reasoning, tool calls (runs
  * of up to five tools form one group with a summary), resolved requests —
  * and outside it the latest answer (the final reply, or while working the
- * newest narration that no tool followed yet), pending requests, plans,
- * errors and notices. Pure functions: the components only render this.
+ * newest narration that no tool followed yet), the task list ("Tasks 3/7",
+ * card 16), pending requests, plans, errors and notices. Pure functions: the
+ * components only render this.
  */
 import type { ThreadItem } from '../types'
 
@@ -41,6 +42,8 @@ export interface TurnBlock {
   outside: ThreadItem[]
   /** What the turn changed in the checkout (card 11). */
   changes: ThreadItem | null
+  /** The turn's newest task list, shown as one row outside the fold (card 16). */
+  tasks: ThreadItem | null
   startedAt: number
   updatedAt: number
 }
@@ -160,10 +163,15 @@ export function groupTurns(items: ThreadItem[]): TurnBlock[] {
     const outside: ThreadItem[] = []
     const folded: ThreadItem[] = []
     let changes: ThreadItem | null = null
+    let tasks: ThreadItem | null = null
     rest.forEach((it, i) => {
       if (i === answerIndex) return
       if (it.kind === 'changes') {
         changes = it
+        return
+      }
+      if (it.kind === 'todo') {
+        if (!it.parent) tasks = it
         return
       }
       if (isPending(it)) requests.push(it)
@@ -184,10 +192,89 @@ export function groupTurns(items: ThreadItem[]): TurnBlock[] {
       requests,
       outside,
       changes,
+      tasks,
       startedAt: all[0].createdAt,
       updatedAt: all.reduce((m, i) => Math.max(m, i.updatedAt), 0),
     }
   })
+}
+
+export interface TaskCounts {
+  done: number
+  total: number
+  /** What the agent is on now: the task in progress, in its "-ing" form. */
+  current: string
+}
+
+export function taskCounts(todos: { status?: string; content?: string; activeForm?: string | null }[]): TaskCounts {
+  const now = todos.find((t) => t.status === 'in_progress')
+  return {
+    done: todos.filter((t) => t.status === 'completed').length,
+    total: todos.length,
+    current: now ? String(now.activeForm || now.content || '') : '',
+  }
+}
+
+/** Previews stay bounded: a subagent's prompt or report beyond this is cut. */
+export const PREVIEW_MAX = 32 * 1024
+/** The inspector shows a subagent's newest tool calls, this many. */
+export const AGENT_TOOLS_MAX = 16
+
+export function bounded(text: string, max = PREVIEW_MAX): string {
+  return text.length > max ? `${text.slice(0, max)}\n\n… ${Math.round((text.length - max) / 1024)} KiB more` : text
+}
+
+export interface Subagent {
+  callId: string
+  item: ThreadItem
+  /** What it was asked to do ("Explore the parser"). */
+  title: string
+  /** Its kind (Claude's subagent_type), when there is one. */
+  type: string
+  status: string
+  /** Tool calls it (and the agents it started) made. */
+  tools: number
+  /** Its newest tool call or text, one line. */
+  last: string
+}
+
+/** The items a subagent produced: its own and those of the agents it started. */
+export function descendants(items: ThreadItem[], callId: string): ThreadItem[] {
+  const ids = new Set([callId])
+  const out: ThreadItem[] = []
+  for (const it of items) {
+    if (!it.parent || !ids.has(it.parent)) continue
+    out.push(it)
+    if (it.kind === 'tool' && it.data.callId) ids.add(String(it.data.callId))
+  }
+  return out
+}
+
+/** The thread's subagents, newest first (card 16). */
+export function subagents(items: ThreadItem[]): Subagent[] {
+  const out: Subagent[] = []
+  for (const it of items) {
+    if (it.kind !== 'tool' || it.data.category !== 'agent' || !it.data.callId) continue
+    const callId = String(it.data.callId)
+    const kids = descendants(items, callId)
+    const lastKid = [...kids].reverse().find((k) => k.kind === 'tool' || (k.kind === 'assistant' && String(k.data.text ?? '').trim()))
+    let input: Record<string, any> = {}
+    try {
+      input = typeof it.data.input === 'string' ? JSON.parse(it.data.input) : (it.data.input ?? {})
+    } catch {
+      /* a partial input while it streams */
+    }
+    out.push({
+      callId,
+      item: it,
+      title: String(it.data.title || input.description || it.data.name || 'Agent'),
+      type: String(input.subagent_type ?? ''),
+      status: String(it.data.status ?? ''),
+      tools: kids.filter((k) => k.kind === 'tool').length,
+      last: lastKid ? String(lastKid.kind === 'tool' ? lastKid.data.title || lastKid.data.name : lastKid.data.text).split('\n')[0].slice(0, 200) : '',
+    })
+  }
+  return out.reverse()
 }
 
 /** 12s · 1m 12s · 1h 3m */

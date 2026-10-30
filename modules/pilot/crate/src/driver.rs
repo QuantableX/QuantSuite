@@ -146,7 +146,13 @@ pub enum Emit {
     /// A file the agent wrote: from a completed edit tool.
     FileChanged { path: String, call_id: String },
     Request(Request),
+    /// A plan from plan mode that waits for no answer: Codex proposes it, and
+    /// the user implements it with the next message (card 16).
+    Proposal { plan: String, parent: Option<String> },
     Todos { todos: Value },
+    /// The thread's goal changed (card 16): `{objective, status, checks?,
+    /// lastCheck?, tokensUsed?, timeUsedSeconds?, tokenBudget?}`; `None` cleared.
+    Goal { goal: Option<Value> },
     Usage {
         context_tokens: Option<i64>,
         context_window: Option<i64>,
@@ -222,6 +228,10 @@ pub trait Driver: Send {
     fn set_model(&mut self, _model: &str) -> Option<String> {
         None
     }
+
+    /// The thread's latest task list, handed to a fresh process so the CLI's
+    /// task updates still find their tasks after a restart (card 16).
+    fn restore_tasks(&mut self, _todos: &Value) {}
 
     /// Whether a user message written while a turn runs joins that turn
     /// (steering). Claude Code does: verified 2026-10-29, one `result` and

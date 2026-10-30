@@ -132,6 +132,8 @@ pub struct Life {
     handoff_from: Option<String>,
     /// The conversation is open in the CLI's terminal UI.
     tui: bool,
+    /// The provider's goal for the thread (card 16).
+    goal: Option<Value>,
 }
 
 fn life_of(state: &PilotState, id: &str) -> Life {
@@ -143,7 +145,8 @@ fn life_of(state: &PilotState, id: &str) -> Life {
         .flatten()
         .and_then(|h| serde_json::from_str::<Value>(&h).ok())
         .and_then(|v| v["from"].as_str().map(str::to_string));
-    Life { resume_at, limit_reset_at, handoff_from, tui: lock(&state.tui).contains_key(id) }
+    let goal = state.db.goal(id).ok().flatten().and_then(|g| serde_json::from_str(&g).ok());
+    Life { resume_at, limit_reset_at, handoff_from, tui: lock(&state.tui).contains_key(id), goal }
 }
 
 /// The thread and a page of its timeline: the newest [`PAGE`] items, or
@@ -331,6 +334,9 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
         env: vec![
             ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
             ("QS_PILOT_THREAD".into(), meta.id.clone()),
+            // Headless Claude Code 2.1.x has its task tools (TaskCreate,
+            // TaskUpdate) only with this set — verified live 2026-10-30 (card 16).
+            ("CLAUDE_CODE_ENABLE_TODO_TOOLS".into(), "1".into()),
         ],
         driver: Box::new(ClaudeDriver::new()),
     })

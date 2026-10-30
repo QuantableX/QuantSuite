@@ -4,10 +4,10 @@
  * Ran 3 commands, edited 2 files". Collapsed by default; while the turn
  * runs its header shows the live elapsed time and the running tool. Inside,
  * in order: commentary, reasoning, tool groups (≤ 5 calls each, with their
- * own summary), task lists, answered requests.
+ * own summary), answered requests. The task list has its own row (Tasks.vue).
  */
 import { computed, ref } from 'vue'
-import { Brain, ChevronRight, ListChecks, Loader2 } from 'lucide-vue-next'
+import { Brain, ChevronRight, Loader2 } from 'lucide-vue-next'
 import type { TurnBlock } from '#pilot/utils/timeline'
 import { formatDuration } from '#pilot/utils/timeline'
 
@@ -34,11 +34,6 @@ const runningTool = computed(() => {
 
 const headline = computed(() => (props.running ? `Working for ${formatDuration(props.elapsed)}` : `Worked for ${formatDuration(props.elapsed)}`))
 const detail = computed(() => (props.running && runningTool.value ? runningTool.value : props.block.summary))
-
-function todoCounts(todos: { status?: string }[]) {
-  const done = todos.filter((t) => t.status === 'completed').length
-  return `${done}/${todos.length}`
-}
 
 function requestLine(kind: string, data: Record<string, any>): string {
   if (kind === 'approval') {
@@ -74,16 +69,6 @@ function requestLine(kind: string, data: Record<string, any>): string {
           <span>{{ e.item.data.streaming ? 'Thinking…' : 'Thought' }}</span>
           <span v-if="e.item.data.estimatedTokens" class="qp-act-num">{{ e.item.data.estimatedTokens }} tokens</span>
           <span v-if="e.item.data.text" class="qp-act-reason">{{ e.item.data.text }}</span>
-        </div>
-        <div v-else-if="e.item.kind === 'todo'" class="qp-act-todos">
-          <div class="qp-act-line">
-            <ListChecks :size="12" />
-            <span>Tasks</span>
-            <span class="qp-act-num">{{ todoCounts(e.item.data.todos ?? []) }}</span>
-          </div>
-          <ul class="qp-act-todo-list">
-            <li v-for="(t, i) in e.item.data.todos ?? []" :key="i" :class="`is-${t.status}`">{{ t.status === 'in_progress' ? t.activeForm || t.content : t.content }}</li>
-          </ul>
         </div>
         <div v-else-if="e.item.kind === 'approval' || e.item.kind === 'question'" class="qp-act-line is-muted">
           {{ requestLine(e.item.kind, e.item.data) }}
@@ -135,12 +120,6 @@ function requestLine(kind: string, data: Record<string, any>): string {
 .qp-act-line.is-muted { font-style: normal; }
 .qp-act-num { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; }
 .qp-act-reason { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qp-act-todo-list { margin: 0 0 0 26px; padding: 0; list-style: none; font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
-.qp-act-todo-list li { padding: 1px 0; }
-.qp-act-todo-list li::before { content: '○'; margin-right: 6px; color: var(--qss-text-muted, #6e6e7a); }
-.qp-act-todo-list li.is-in_progress::before { content: '◐'; color: var(--qss-accent, #7aa2f7); }
-.qp-act-todo-list li.is-completed { color: var(--qss-text-muted, #6e6e7a); text-decoration: line-through; }
-.qp-act-todo-list li.is-completed::before { content: '●'; color: var(--qss-success, #34d399); }
 .qp-spin { animation: qp-spin 0.9s linear infinite; flex-shrink: 0; }
 @keyframes qp-spin { to { transform: rotate(360deg); } }
 </style>

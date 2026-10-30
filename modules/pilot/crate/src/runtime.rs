@@ -420,6 +420,14 @@ impl Projector {
                 self.publish(item, true);
                 self.set_state("waiting", None);
             }
+            Emit::Proposal { plan, parent } => {
+                let item = self.new_item(ItemKind::Plan, parent, json!({ "plan": plan, "status": "proposed" }));
+                self.publish(item, true);
+            }
+            Emit::Goal { goal } => {
+                let _ = self.db.set_goal(&self.thread_id, goal.as_ref().map(|g| g.to_string()).as_deref());
+                self.emit(ThreadEvent::Goal { goal });
+            }
             Emit::Todos { todos } => {
                 let key = format!("todos:{}", self.turn_id);
                 if let Some(item) = self.live_mut(&key) {
@@ -828,6 +836,9 @@ impl Runtime {
         {
             let mut driver = lock(&run.driver);
             if fresh {
+                if let Ok(Some(todos)) = self.db.latest_todos(thread_id) {
+                    driver.restore_tasks(&todos);
+                }
                 lines.extend(driver.handshake());
             }
             lines.extend(driver.user_message(&input));
@@ -856,6 +867,11 @@ impl Runtime {
         proj.user_message(input.display.as_deref().unwrap_or(&input.text), attachments);
         let _ = self.db.touch(thread_id);
         let _ = self.db.resume(thread_id);
+        // A met goal shows until the conversation moves on (card 16).
+        if self.db.goal(thread_id).ok().flatten().and_then(|g| serde_json::from_str::<Value>(&g).ok()).is_some_and(|g| g["status"] == "complete") {
+            let _ = self.db.set_goal(thread_id, None);
+            proj.emit(ThreadEvent::Goal { goal: None });
+        }
         proj.emit(ThreadEvent::Turn {
             turn_id: turn_id.to_string(),
             status: "started".into(),
@@ -1370,12 +1386,17 @@ mod tests {
     fn wait_for_turn(db: &Database, rt: &Runtime, thread_id: &str, deny: bool) -> crate::db::TurnRow {
         let start = Instant::now();
         loop {
-            if deny {
-                for item in db.items(thread_id, None, 50).unwrap() {
-                    if item.kind == ItemKind::Approval && item.data["status"] == "pending" {
-                        let rid = item.data["requestId"].as_str().unwrap().to_string();
-                        let _ = rt.answer(thread_id, &rid, &Answer::Deny { message: None });
-                    }
+            for item in db.items(thread_id, None, 50).unwrap() {
+                if item.data["status"] != "pending" {
+                    continue;
+                }
+                let rid = item.data["requestId"].as_str().unwrap_or_default().to_string();
+                if deny && item.kind == ItemKind::Approval {
+                    let _ = rt.answer(thread_id, &rid, &Answer::Deny { message: None });
+                }
+                // A model in plan mode may present a plan first; it is approved.
+                if item.kind == ItemKind::Plan {
+                    let _ = rt.answer(thread_id, &rid, &Answer::Allow);
                 }
             }
             if let Some(t) = db.last_turn(thread_id).unwrap() {
@@ -1383,7 +1404,12 @@ mod tests {
                     return t;
                 }
             }
-            assert!(start.elapsed() < Duration::from_secs(180), "the live turn did not finish");
+            if start.elapsed() >= Duration::from_secs(180) {
+                for i in db.items(thread_id, None, 50).unwrap() {
+                    println!("{:?} {}", i.kind, i.data.to_string().chars().take(300).collect::<String>());
+                }
+                panic!("the live turn did not finish");
+            }
             std::thread::sleep(Duration::from_millis(200));
         }
     }
@@ -1639,6 +1665,74 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Live, opt-in (card 16): Claude Code in plan mode reads without asking,
+    /// writes its task list with TodoWrite (CLAUDE_CODE_ENABLE_TODO_TOOLS),
+    /// and confirms a `/goal` the timeline turns into the goal line.
+    #[test]
+    #[ignore = "live: three small Claude Code turns (costs a few cents)"]
+    fn live_claude_plan_todos_and_goal() {
+        use crate::claude::{launch_args, LaunchOptions, SessionRef};
+        let claude = crate::providers::which("claude").expect("claude on PATH").to_string_lossy().into_owned();
+        let dir = std::env::temp_dir().join(format!("qp-live-plan-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("README.md"), "Pineapple is the first word.\n").unwrap();
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        thread(&db, "t1");
+        let (sink, events) = sink();
+        let rt = Runtime::new(db.clone(), sink);
+        let sid = uuid::Uuid::new_v4().to_string();
+        let cwd = dir.to_string_lossy().into_owned();
+        let plan = |session: SessionRef, mode: &str| LaunchPlan {
+            key: format!("live-{mode}"),
+            program: claude.clone(),
+            args: launch_args(&LaunchOptions {
+                session,
+                model: "haiku".into(),
+                effort: String::new(),
+                mode: mode.into(),
+                mcp_config: None,
+                append_prompt_file: None,
+                add_dirs: Vec::new(),
+                resume_at: None,
+            }),
+            cwd: cwd.clone(),
+            env: vec![
+                ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
+                ("CLAUDE_CODE_ENABLE_TODO_TOOLS".into(), "1".into()),
+            ],
+            driver: Box::new(ClaudeDriver::new()),
+        };
+        let turn = |text: &str, session: SessionRef, mode: &str| {
+            rt.send("t1", TurnInput { text: text.into(), ..Default::default() }, json!([]), || Ok(plan(session, mode)), &format!("live-{mode}")).unwrap();
+            let t = wait_for_turn(&db, &rt, "t1", false);
+            assert_eq!(t.status, "completed", "{text}: {:?}", t.error);
+        };
+        turn(
+            "Use your task tools to create a two-item task list: 'read README.md' and 'report the first word'. Mark each one in progress and then completed as you go. Read README.md and reply with its first word only.",
+            SessionRef::New(sid.clone()),
+            "plan",
+        );
+        let items = db.items("t1", None, 200).unwrap();
+        let asked = items.iter().filter(|i| i.kind == ItemKind::Approval).count();
+        let todos = items.iter().filter(|i| i.kind == ItemKind::Todo).count();
+        let answer = items.iter().rev().find(|i| i.kind == ItemKind::Assistant && i.parent.is_none()).map(|i| i.data["text"].to_string()).unwrap_or_default();
+        println!("plan turn: {asked} approvals, {todos} task lists, answer {answer}");
+        assert_eq!(asked, 0, "plan mode reads without asking");
+        assert!(todos > 0, "the task tools reached the timeline");
+        let list = db.latest_todos("t1").unwrap().expect("a task list");
+        assert!(list.as_array().is_some_and(|l| !l.is_empty() && l.iter().all(|t| t["status"] == "completed")), "{list}");
+        assert!(answer.contains("Pineapple"), "{answer}");
+
+        turn("/goal reply with the single word DONE", SessionRef::Resume(sid.clone()), "plan");
+        let goal_seen = lock(&events).iter().any(|(_, e)| matches!(e, ThreadEvent::Goal { goal: Some(_) }));
+        let stored = db.goal("t1").unwrap();
+        println!("goal event: {goal_seen}, stored: {stored:?}");
+        assert!(goal_seen, "the CLI confirmed the goal");
+        assert!(stored.is_some_and(|g| g.contains("\"complete\"")), "a run that ended met the goal");
+        rt.stop_all();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     /// Live, opt-in, no inference: the installed Claude Code reports its catalog.
     #[test]
     #[ignore = "live: starts the installed Claude Code for its initialize handshake only"]
@@ -1702,6 +1796,47 @@ mod tests {
         let asked = db.items("t1", None, 200).unwrap().into_iter().filter(|i| i.kind == ItemKind::Approval).count();
         assert!(asked > 0, "Supervised asked before running the command");
         assert!(!dir.join("c.txt").exists(), "the denied command did not run");
+        rt.stop_all();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Live, opt-in (card 16): `/goal` on Codex runs Codex's own goal turns
+    /// as one run, which ends when Codex marks the goal complete.
+    #[test]
+    #[ignore = "live: runs the installed Codex for a two-turn goal"]
+    fn live_codex_goal_runs_until_met() {
+        use crate::codex::{launch_args, CodexDriver, CodexOptions};
+        let codex = crate::providers::which("codex").expect("codex on PATH").to_string_lossy().into_owned();
+        let dir = std::env::temp_dir().join(format!("qp-live-goal-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        thread(&db, "t1");
+        let (sink, events) = sink();
+        let rt = Runtime::new(db.clone(), sink);
+        let cwd = dir.to_string_lossy().into_owned();
+        let plan = LaunchPlan {
+            key: "live".into(),
+            program: codex.clone(),
+            args: launch_args(),
+            cwd: cwd.clone(),
+            env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+            driver: Box::new(CodexDriver::new(CodexOptions { cwd: cwd.clone(), mode: "plan".into(), ..Default::default() })),
+        };
+        rt.send("t1", TurnInput { text: "/goal reply with the single word OK".into(), ..Default::default() }, json!([]), || Ok(plan), "live").unwrap();
+        let t = wait_for_turn(&db, &rt, "t1", true);
+        let stored = db.goal("t1").unwrap();
+        let statuses: Vec<String> = lock(&events)
+            .iter()
+            .filter_map(|(_, e)| match e {
+                ThreadEvent::Goal { goal } => Some(goal.as_ref().map_or("none".to_string(), |g| g["status"].as_str().unwrap_or("?").to_string())),
+                _ => None,
+            })
+            .collect();
+        let answers = db.items("t1", None, 200).unwrap().into_iter().filter(|i| i.kind == ItemKind::Assistant).count();
+        println!("goal run: {} {:?}, {answers} answers, goal statuses {statuses:?}, stored {stored:?}", t.status, t.error);
+        assert_eq!(t.status, "completed", "{:?}", t.error);
+        assert!(stored.is_some_and(|g| g.contains("\"complete\"")), "Codex marked the goal complete");
+        assert!(answers >= 1);
         rt.stop_all();
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -1847,7 +1982,9 @@ mod tests {
         }
         assert_eq!(lock(&ended).as_slice(), &[("t1".to_string(), TurnStatus::Completed)], "the owner hears about the end once");
         assert!(rt.steer("t1", TurnInput { text: "more".into(), ..Default::default() }).is_err(), "nothing runs to steer into");
+        db.set_goal("t1", Some(r#"{"objective":"x","status":"complete"}"#)).unwrap();
         assert!(rt.send("t1", TurnInput::default(), json!([]), || Err("no CLI here".into()), "other").is_err());
+        assert_eq!(db.goal("t1").unwrap(), None, "a met goal goes with the next message");
         let items = db.items("t1", None, 100).unwrap();
         assert_eq!(items.last().unwrap().data["text"], "no CLI here", "a failed start is visible");
     }

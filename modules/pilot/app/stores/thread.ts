@@ -122,7 +122,7 @@ function freshView(id: string): ThreadView {
     queueHeld: false,
     canSteer: false,
     editingQueued: null,
-    life: { resumeAt: null, limitResetAt: null, handoffFrom: null, tui: false },
+    life: { resumeAt: null, limitResetAt: null, handoffFrom: null, tui: false, goal: null },
     compactFirst: null,
   }
 }
@@ -355,6 +355,9 @@ export const useThreadStore = defineStore('pilot/thread', {
         case 'queue':
           view.queue = ev.items
           view.queueHeld = ev.held
+          break
+        case 'goal':
+          view.life = { ...view.life, goal: ev.goal }
           break
       }
     },

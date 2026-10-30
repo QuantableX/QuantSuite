@@ -211,6 +211,13 @@ pub struct ClaudeDriver {
     main_model: Option<String>,
     context_window: Option<i64>,
     limit_hit: Option<RateWindow>,
+    /// The `/goal` the CLI confirmed, with its checks so far (card 16).
+    goal: Option<Value>,
+    /// The model worked during this turn while the goal was set.
+    goal_worked: bool,
+    /// The task list kept by TaskCreate/TaskUpdate (Claude Code 2.1.x), in
+    /// TodoWrite's shape plus the CLI's task id (card 16).
+    tasks: Vec<Value>,
 }
 
 impl Default for ClaudeDriver {
@@ -235,7 +242,108 @@ impl ClaudeDriver {
             main_model: None,
             context_window: None,
             limit_hit: None,
+            goal: None,
+            goal_worked: false,
+            tasks: Vec::new(),
         }
+    }
+
+    /// A finished TaskCreate/TaskUpdate changes the task list; the whole list
+    /// goes out, like a TodoWrite. `None` for every other tool.
+    fn task_change(&mut self, name: &str, input: &Value, output: &str) -> Option<Emit> {
+        match name {
+            // "Task #3 created successfully: subject"
+            "TaskCreate" => {
+                let id: String = output.split_once('#')?.1.chars().take_while(char::is_ascii_digit).collect();
+                if id.is_empty() {
+                    return None;
+                }
+                self.tasks.retain(|t| t["id"] != id.as_str());
+                self.tasks.push(json!({
+                    "id": id,
+                    "content": str_field(input, "subject").unwrap_or_default(),
+                    "activeForm": str_field(input, "activeForm"),
+                    "status": "pending",
+                }));
+            }
+            "TaskUpdate" => {
+                let id = match input.get("taskId")? {
+                    Value::String(s) => s.clone(),
+                    v => v.to_string(),
+                };
+                if str_field(input, "status") == Some("deleted") {
+                    self.tasks.retain(|t| t["id"] != id.as_str());
+                } else {
+                    let at = match self.tasks.iter().position(|t| t["id"] == id.as_str()) {
+                        Some(at) => at,
+                        // A task from before this process that the list did not have.
+                        None => {
+                            self.tasks.push(json!({ "id": id, "content": format!("Task #{id}"), "status": "pending" }));
+                            self.tasks.len() - 1
+                        }
+                    };
+                    let task = &mut self.tasks[at];
+                    for (from, to) in [("subject", "content"), ("activeForm", "activeForm"), ("status", "status")] {
+                        if let Some(v) = str_field(input, from) {
+                            task[to] = json!(v);
+                        }
+                    }
+                }
+            }
+            _ => return None,
+        }
+        Some(Emit::Todos { todos: Value::Array(self.tasks.clone()) })
+    }
+
+    /// `/goal` shows only in the stream: the CLI confirms it as a synthetic
+    /// reply ("Goal set: …", "Goal active: … (N turns)", "Goal cleared: …"),
+    /// which becomes the goal line instead of an answer.
+    fn goal_ack(&mut self, msg: &Value) -> Option<Vec<Emit>> {
+        let message = msg.get("message")?;
+        if msg.get("parent_tool_use_id").is_some_and(|p| !p.is_null()) || str_field(message, "model") != Some("<synthetic>") {
+            return None;
+        }
+        let text: String = message
+            .get("content")
+            .and_then(Value::as_array)
+            .map(|parts| parts.iter().filter_map(|p| str_field(p, "text")).collect::<Vec<_>>().join(""))
+            .unwrap_or_default();
+        let text = text.trim();
+        let goal = if let Some(objective) = text.strip_prefix("Goal set: ") {
+            Some(json!({ "objective": objective.trim(), "status": "active", "checks": 0 }))
+        } else if text.starts_with("Goal cleared") || text.starts_with("No goal set") {
+            None
+        } else if let Some(rest) = text.strip_prefix("Goal active: ") {
+            let (objective, turns) = match rest.rfind(" (") {
+                Some(i) => (&rest[..i], rest[i + 2..].trim_end_matches(')')),
+                None => (rest, ""),
+            };
+            let checks = turns.split_whitespace().next().and_then(|n| n.parse::<i64>().ok()).unwrap_or(0);
+            Some(json!({ "objective": objective.trim(), "status": "active", "checks": checks }))
+        } else {
+            return None;
+        };
+        self.goal = goal.clone();
+        Some(vec![Emit::Goal { goal }])
+    }
+
+    /// The goal's Stop hook said it is not met yet: one more check, and why.
+    fn goal_check(&mut self, msg: &Value) -> Option<Vec<Emit>> {
+        if msg.get("isSynthetic").and_then(Value::as_bool) != Some(true) {
+            return None;
+        }
+        let goal = self.goal.as_mut()?;
+        let objective = goal["objective"].as_str().unwrap_or_default().to_string();
+        let content = msg.get("message").and_then(|m| m.get("content"))?;
+        let text = match content {
+            Value::String(s) => s.clone(),
+            Value::Array(parts) => parts.iter().filter_map(|p| str_field(p, "text")).collect::<Vec<_>>().join(""),
+            _ => return None,
+        };
+        let reason = text.strip_prefix(&format!("Stop hook feedback:\n[{objective}]: "))?;
+        goal["checks"] = json!(goal["checks"].as_i64().unwrap_or(0) + 1);
+        goal["lastCheck"] = json!(reason.trim());
+        Some(vec![Emit::Goal { goal: Some(goal.clone()) }])
     }
 
     fn request_id(&mut self, what: &str) -> String {
@@ -578,11 +686,14 @@ impl ClaudeDriver {
             }
             let is_error = part.get("is_error").and_then(Value::as_bool).unwrap_or(false);
             let output = text_of_tool_result(part.get("content").unwrap_or(&Value::Null));
-            out.push(Emit::ToolResult { call_id: call_id.clone(), output, is_error });
+            out.push(Emit::ToolResult { call_id: call_id.clone(), output: output.clone(), is_error });
             if !is_error {
-                if let Some((name, input)) = self.tools.get(&call_id) {
-                    if let Some(path) = written_path(name, input) {
+                if let Some((name, input)) = self.tools.get(&call_id).cloned() {
+                    if let Some(path) = written_path(&name, &input) {
                         out.push(Emit::FileChanged { path, call_id: call_id.clone() });
+                    }
+                    if parent_of(msg).is_none() {
+                        out.extend(self.task_change(&name, &input, &output));
                     }
                 }
             }
@@ -675,21 +786,28 @@ impl ClaudeDriver {
             }
             _ => None,
         };
-        let out = vec![
-            Emit::Usage {
-                context_tokens: None,
-                context_window: self.context_window,
-                cost_usd: turn_cost,
-                input_tokens,
-                output_tokens,
-            },
-            Emit::TurnEnd {
+        let mut out = vec![Emit::Usage {
+            context_tokens: None,
+            context_window: self.context_window,
+            cost_usd: turn_cost,
+            input_tokens,
+            output_tokens,
+        }];
+        // The goal's Stop hook let the run end: the goal is met, and the CLI
+        // drops it without a word ("No goal set" afterwards, live 2026-10-30).
+        if status == TurnStatus::Completed && std::mem::take(&mut self.goal_worked) {
+            if let Some(mut goal) = self.goal.take() {
+                goal["status"] = json!("complete");
+                out.push(Emit::Goal { goal: Some(goal) });
+            }
+        }
+        self.goal_worked = false;
+        out.push(Emit::TurnEnd {
                 status,
                 error,
-                duration_ms: msg.get("duration_ms").and_then(Value::as_i64),
-                cost_usd: turn_cost,
-            },
-        ];
+            duration_ms: msg.get("duration_ms").and_then(Value::as_i64),
+            cost_usd: turn_cost,
+        });
         // A turn's streaming state is not needed by the next one.
         self.interrupt_requested = false;
         self.limit_hit = None;
@@ -715,9 +833,19 @@ fn dedupe_todos(out: &mut Vec<Emit>) {
     });
 }
 
+/// The subagent a stream line belongs to, if any.
+fn parent_of(msg: &Value) -> Option<&str> {
+    str_field(msg, "parent_tool_use_id")
+}
+
 impl Driver for ClaudeDriver {
     fn provider(&self) -> &'static str {
         "claude"
+    }
+
+    fn restore_tasks(&mut self, todos: &Value) {
+        // Only lists from the task tools carry ids; a TodoWrite list is replaced whole anyway.
+        self.tasks = todos.as_array().map(|l| l.iter().filter(|t| t.get("id").is_some()).cloned().collect()).unwrap_or_default();
     }
 
     fn tool_info(&self, name: &str, input: &Value) -> ToolInfo {
@@ -737,6 +865,19 @@ impl Driver for ClaudeDriver {
                 if d.is_empty() { s("subagent_type") } else { d }
             }),
             "TodoWrite" => ("todo", "Updated the task list".into()),
+            "TaskCreate" => ("todo", s("subject")),
+            "TaskUpdate" => ("todo", {
+                let id = match input.get("taskId") {
+                    Some(Value::String(id)) => id.clone(),
+                    Some(v) => v.to_string(),
+                    None => String::new(),
+                };
+                match str_field(input, "status") {
+                    Some(status) => format!("Task #{id} {}", status.replace('_', " ")),
+                    None => format!("Updated task #{id}"),
+                }
+            }),
+            "TaskList" | "TaskGet" => ("todo", "Read the task list".into()),
             n if n.starts_with("mcp__") => ("mcp", n.trim_start_matches("mcp__").replacen("__", " · ", 1)),
             _ => ("tool", String::new()),
         };
@@ -819,8 +960,11 @@ impl Driver for ClaudeDriver {
                 _ => Vec::new(),
             },
             Some("stream_event") => self.on_stream_event(&msg),
-            Some("assistant") => self.on_assistant(&msg),
-            Some("user") => self.on_user(&msg),
+            Some("assistant") => self.goal_ack(&msg).unwrap_or_else(|| {
+                self.goal_worked |= self.goal.is_some() && parent_of(&msg).is_none();
+                self.on_assistant(&msg)
+            }),
+            Some("user") => self.goal_check(&msg).unwrap_or_else(|| self.on_user(&msg)),
             Some("rate_limit_event") => self.on_rate_limit(&msg),
             Some("result") => self.on_result(&msg),
             _ => Vec::new(),
@@ -1071,6 +1215,94 @@ mod tests {
         assert!(out.iter().any(|e| matches!(e, Emit::FileChanged { path, .. } if path == "src/a.rs")));
         let again = d.on_line(r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"e1","content":"ok"}]}}"#);
         assert!(again.is_empty(), "a replayed result is not a second change");
+    }
+
+    /// Card 16: `/goal` shows as synthetic replies and Stop hook feedback.
+    #[test]
+    fn goals_come_from_synthetic_replies_and_stop_hooks() {
+        let mut d = ClaudeDriver::new();
+        let synthetic = |text: &str| json!({ "type": "assistant", "parent_tool_use_id": null, "message": { "model": "<synthetic>", "content": [{ "type": "text", "text": text }] } }).to_string();
+        let out = d.on_line(&synthetic("Goal set: all tests pass"));
+        assert_eq!(out.len(), 1, "the confirmation is the goal line, not an answer");
+        assert!(matches!(&out[0], Emit::Goal { goal: Some(g) } if g["objective"] == "all tests pass" && g["checks"] == 0));
+        let feedback = json!({ "type": "user", "isSynthetic": true, "parent_tool_use_id": null,
+            "message": { "role": "user", "content": [{ "type": "text", "text": "Stop hook feedback:\n[all tests pass]: One test still fails." }] } });
+        let out = d.on_line(&feedback.to_string());
+        assert!(matches!(&out[0], Emit::Goal { goal: Some(g) } if g["checks"] == 1 && g["lastCheck"] == "One test still fails."));
+        let out = d.on_line(&synthetic("Goal active: all tests pass (3 turns)"));
+        assert!(matches!(&out[0], Emit::Goal { goal: Some(g) } if g["checks"] == 3));
+        let out = d.on_line(&synthetic("Goal cleared: all tests pass"));
+        assert!(matches!(&out[0], Emit::Goal { goal: None }));
+        // An ordinary model reply stays an answer.
+        let out = d.on_line(&json!({ "type": "assistant", "parent_tool_use_id": null, "message": { "id": "m1", "model": "claude-x", "content": [{ "type": "text", "text": "Goal set: not really" }] } }).to_string());
+        assert!(!out.iter().any(|e| matches!(e, Emit::Goal { .. })));
+
+        // A run that ends with the goal set met it; showing the goal is no work toward it.
+        let result = json!({ "type": "result", "subtype": "success", "is_error": false, "result": "x" }).to_string();
+        d.on_line(&synthetic("Goal active: say DONE (1 turns)"));
+        assert!(!d.on_line(&result).iter().any(|e| matches!(e, Emit::Goal { .. })));
+        d.on_line(&json!({ "type": "assistant", "parent_tool_use_id": null, "message": { "id": "m2", "model": "claude-x", "content": [{ "type": "text", "text": "DONE" }] } }).to_string());
+        let out = d.on_line(&result);
+        assert!(matches!(&out[..], [.., Emit::Goal { goal: Some(g) }, Emit::TurnEnd { .. }] if g["status"] == "complete"), "{out:?}");
+        assert!(d.goal.is_none());
+    }
+
+    /// Card 16: Claude Code 2.1.x keeps its list with TaskCreate/TaskUpdate; it
+    /// shows like a TodoWrite list and survives a fresh process.
+    #[test]
+    fn task_tools_keep_one_task_list() {
+        let mut d = ClaudeDriver::new();
+        let mut n = 0;
+        let mut call = |d: &mut ClaudeDriver, name: &str, input: Value, output: &str| {
+            n += 1;
+            let id = format!("c{n}");
+            d.on_line(&json!({ "type": "assistant", "parent_tool_use_id": null, "message": { "id": format!("m{n}"), "content": [{ "type": "tool_use", "id": id, "name": name, "input": input }] } }).to_string());
+            d.on_line(&json!({ "type": "user", "parent_tool_use_id": null, "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": id, "content": output }] } }).to_string())
+        };
+        let list = |out: &[Emit]| {
+            out.iter().rev().find_map(|e| match e {
+                Emit::Todos { todos } => Some(todos.as_array().unwrap().iter().map(|t| format!("{}:{}", t["content"].as_str().unwrap(), t["status"].as_str().unwrap())).collect::<Vec<_>>()),
+                _ => None,
+            })
+        };
+        call(&mut d, "TaskCreate", json!({ "subject": "read README", "activeForm": "Reading README" }), "Task #1 created successfully: read README");
+        let out = call(&mut d, "TaskCreate", json!({ "subject": "report" }), "Task #2 created successfully: report");
+        assert_eq!(list(&out).unwrap(), ["read README:pending", "report:pending"]);
+        let out = call(&mut d, "TaskUpdate", json!({ "taskId": "1", "status": "in_progress" }), "Updated task #1 status");
+        assert_eq!(list(&out).unwrap(), ["read README:in_progress", "report:pending"]);
+        let out = call(&mut d, "TaskUpdate", json!({ "taskId": "2", "status": "deleted" }), "Updated task #2 deleted");
+        assert_eq!(list(&out).unwrap(), ["read README:in_progress"]);
+        assert_eq!(d.tool_info("TaskUpdate", &json!({ "taskId": "1", "status": "in_progress" })).title, "Task #1 in progress");
+        assert!(list(&call(&mut d, "TaskList", json!({}), "#1 read README")).is_none(), "reading the list changes nothing");
+
+        let saved = json!([{ "id": "1", "content": "read README", "status": "in_progress" }]);
+        let mut fresh = ClaudeDriver::new();
+        fresh.restore_tasks(&saved);
+        let out = call(&mut fresh, "TaskUpdate", json!({ "taskId": "1", "status": "completed" }), "Updated task #1 status");
+        assert_eq!(list(&out).unwrap(), ["read README:completed"], "the fresh process continues the saved list");
+    }
+
+    /// Card 16: subagents nest — a Task inside a Task — and their events interleave with the parent's.
+    #[test]
+    fn nested_subagents_keep_their_parents() {
+        let mut d = ClaudeDriver::new();
+        let assistant = |parent: Option<&str>, id: &str, content: Value| json!({ "type": "assistant", "parent_tool_use_id": parent, "message": { "id": id, "content": content } }).to_string();
+        let mut out = d.on_line(&assistant(None, "m1", json!([{ "type": "tool_use", "id": "task1", "name": "Task", "input": { "description": "Explore", "prompt": "find it", "subagent_type": "Explore" } }])));
+        out.extend(d.on_line(&assistant(Some("task1"), "m2", json!([{ "type": "tool_use", "id": "task2", "name": "Task", "input": { "description": "Deeper", "prompt": "look closer" } }]))));
+        out.extend(d.on_line(&assistant(None, "m3", json!([{ "type": "text", "text": "Waiting on the agent." }]))));
+        out.extend(d.on_line(&assistant(Some("task2"), "m4", json!([{ "type": "tool_use", "id": "r1", "name": "Read", "input": { "file_path": "a.rs" } }]))));
+        out.extend(d.on_line(&assistant(Some("task1"), "m5", json!([{ "type": "text", "text": "child done" }]))));
+        let parent_of = |call: &str| {
+            out.iter().find_map(|e| match e {
+                Emit::ToolStart { call_id, parent, .. } if call_id == call => Some(parent.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(parent_of("task1"), Some(None));
+        assert_eq!(parent_of("task2"), Some(Some("task1".to_string())));
+        assert_eq!(parent_of("r1"), Some(Some("task2".to_string())));
+        assert!(out.iter().any(|e| matches!(e, Emit::MessageStart { parent: Some(p), .. } if p == "task1")));
+        assert!(out.iter().any(|e| matches!(e, Emit::MessageStart { parent: None, .. })), "the parent's text in between stays top level");
     }
 
     #[test]

@@ -3,10 +3,12 @@
  * One tool call: an icon for its kind, the one-line title (the command, the
  * path, the pattern), its status. Expands to the input and the output —
  * both already bounded by the runtime (4 KiB in, 8 KiB out, head and tail).
+ * A subagent's call also opens what it did in the inspector (card 16).
  */
 import { computed, ref } from 'vue'
 import { Bot, Check, ChevronRight, FileText, Globe, ListChecks, Loader2, Pencil, Plug, Search, SquareTerminal, Wrench, X } from 'lucide-vue-next'
 import type { ThreadItem } from '#pilot/types'
+import { useInspectorStore } from '#pilot/stores/inspector'
 
 const props = defineProps<{ item: ThreadItem }>()
 const open = ref(false)
@@ -29,6 +31,8 @@ const name = computed(() => String(props.item.data.name ?? ''))
 const input = computed(() => String(props.item.data.input ?? ''))
 const output = computed(() => String(props.item.data.output ?? ''))
 const hasBody = computed(() => Boolean(input.value || output.value))
+const agentCall = computed(() => (props.item.data.category === 'agent' && props.item.data.callId ? String(props.item.data.callId) : ''))
+const inspector = useInspectorStore()
 const statusLabel = computed(() => {
   switch (status.value) {
     case 'running':
@@ -60,6 +64,7 @@ const statusLabel = computed(() => {
       </span>
     </button>
     <div v-if="open && hasBody" class="qp-tool-body">
+      <button v-if="agentCall" class="qp-tool-open" @click="inspector.openAgent(item.threadId, agentCall)"><Bot :size="12" /> Open what it did</button>
       <div v-if="input" class="qp-tool-section">
         <div class="qp-tool-label">Input</div>
         <pre class="qp-tool-pre">{{ input }}</pre>
@@ -74,6 +79,21 @@ const statusLabel = computed(() => {
 
 <style scoped>
 .qp-tool { min-width: 0; }
+.qp-tool-open {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--qss-border-subtle, #35353d);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--qss-text-secondary, #9a9aa5);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.qp-tool-open:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
 .qp-tool-row {
   display: flex;
   align-items: center;

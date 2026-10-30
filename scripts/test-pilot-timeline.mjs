@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-const { groupTurns, summarize, formatDuration, GROUP_MAX } = await import('../modules/pilot/app/utils/timeline.ts')
+const { groupTurns, summarize, formatDuration, GROUP_MAX, taskCounts, subagents, descendants, bounded, PREVIEW_MAX } = await import('../modules/pilot/app/utils/timeline.ts')
 
 let seq = 0
 function item(kind, data = {}, extra = {}) {
@@ -128,6 +128,50 @@ test('summaries name two categories and count the rest', () => {
   const s = summarize([tool('read'), tool('command'), tool('command'), tool('edit'), tool('web'), tool('search')])
   assert.equal(s, 'Ran 2 commands, edited 1 file and 3 more')
   assert.equal(summarize([]), '')
+})
+
+test('the task list is one row outside the fold, the newest of the turn (card 16)', () => {
+  seq = 0
+  const items = [
+    item('user', { text: 'x' }),
+    item('todo', { todos: [{ content: 'a', status: 'pending' }] }),
+    tool('todo'),
+    item('todo', { todos: [{ content: 'a', status: 'completed' }, { content: 'b', status: 'in_progress', activeForm: 'Doing b' }] }),
+    item('todo', { todos: [{ content: 'sub', status: 'pending' }] }, { parent: 'task1' }),
+    item('assistant', { text: 'done' }),
+  ]
+  const [b] = groupTurns(items)
+  assert.equal(b.tasks.data.todos.length, 2, "the newest list of the conversation, not a subagent's")
+  assert.ok(!b.activity.some((e) => e.kind === 'item' && e.item.kind === 'todo'), 'no list inside the fold')
+  assert.equal(b.answer.data.text, 'done')
+  assert.deepEqual(taskCounts(b.tasks.data.todos), { done: 1, total: 2, current: 'Doing b' })
+  assert.equal(groupTurns([item('user', { text: 'y' }, { turnId: 'u2' })])[0].tasks, null)
+})
+
+test('subagents nest, count their tools and list newest first (card 16)', () => {
+  seq = 0
+  const agent = (callId, description, extra) => item('tool', { category: 'agent', callId, title: description, status: 'running', input: JSON.stringify({ description, subagent_type: 'Explore', prompt: 'look' }) }, extra)
+  const items = [
+    item('user', { text: 'x' }),
+    agent('task1', 'Explore the parser'),
+    item('assistant', { text: 'child says hi' }, { parent: 'task1' }),
+    agent('task2', 'Look closer', { parent: 'task1' }),
+    item('tool', { category: 'read', callId: 'r1', title: 'a.rs', status: 'completed' }, { parent: 'task2' }),
+    item('tool', { category: 'read', callId: 'r2', title: 'b.rs', status: 'completed' }, { parent: 'task1' }),
+    item('tool', { category: 'command', callId: 'c1', title: 'ls', status: 'completed' }),
+  ]
+  assert.deepEqual(descendants(items, 'task1').map((i) => i.data.callId ?? i.data.text), ['child says hi', 'task2', 'r1', 'r2'])
+  const list = subagents(items)
+  assert.deepEqual(list.map((a) => [a.callId, a.tools]), [['task2', 1], ['task1', 3]])
+  assert.equal(list[1].type, 'Explore')
+  assert.equal(list[1].last, 'b.rs')
+})
+
+test('previews stay bounded', () => {
+  assert.equal(bounded('short'), 'short')
+  const long = 'x'.repeat(PREVIEW_MAX + 4096)
+  const cut = bounded(long)
+  assert.ok(cut.length < long.length && cut.endsWith('4 KiB more'), cut.slice(-20))
 })
 
 test('durations read like the references', () => {
