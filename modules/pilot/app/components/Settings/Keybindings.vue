@@ -51,7 +51,7 @@ const rows = computed<Row[]>(() => {
     return { info, keys: k, when: rule?.when ?? '', custom: keys.user.some((r) => r.command === info.id || r.command === `-${info.id}`), warnings }
   }).filter((r) => !q || `${r.info.title} ${r.info.id} ${r.keys.join(' ')}`.toLowerCase().includes(q))
 })
-const groups = computed(() => ['General', 'Threads', 'Panels', 'Composer'].map((g) => ({ name: g, rows: rows.value.filter((r) => r.info.group === g) })).filter((g) => g.rows.length))
+const groups = computed(() => ['General', 'Threads', 'Panels', 'Composer', 'Usage'].map((g) => ({ name: g, rows: rows.value.filter((r) => r.info.group === g) })).filter((g) => g.rows.length))
 
 function startRecording(id: string) {
   recording.value = id

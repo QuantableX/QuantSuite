@@ -18,7 +18,7 @@ export interface CommandInfo {
   id: string
   title: string
   /** Settings groups and palette sections. */
-  group: 'General' | 'Threads' | 'Panels' | 'Composer'
+  group: 'General' | 'Threads' | 'Panels' | 'Composer' | 'Usage'
   /** Offered in the command palette (the jumps and focus moves are keys only). */
   palette: boolean
 }
@@ -64,6 +64,15 @@ export const COMMANDS: CommandInfo[] = [
   C('composer.workspace', 'Choose Local or Worktree', 'Composer'),
   C('composer.branch', 'Choose the branch', 'Composer'),
   C('composer.previousWorktree', 'Reuse the previous worktree', 'Composer'),
+  C('usage.open', 'Usage and limits', 'Usage'),
+  C('usage.close', 'Leave the Usage page', 'Usage', false),
+  C('usage.cost', 'Usage: cost', 'Usage', false),
+  C('usage.tokens', 'Usage: tokens', 'Usage', false),
+  C('usage.limits', 'Usage: limits', 'Usage', false),
+  C('usage.period.day', 'Usage: past 24 hours', 'Usage', false),
+  C('usage.period.week', 'Usage: past 7 days', 'Usage', false),
+  C('usage.period.month', 'Usage: past 30 days', 'Usage', false),
+  C('usage.period.quarter', 'Usage: past 90 days', 'Usage', false),
 ]
 
 const NOT_TERMINAL = '!terminalFocus'
@@ -104,6 +113,15 @@ export const DEFAULT_RULES: KeyRule[] = [
   { key: 'Ctrl+Shift+X', command: 'composer.workspace', when: NOT_TERMINAL },
   { key: 'Ctrl+Shift+G', command: 'composer.branch', when: NOT_TERMINAL },
   { key: 'Ctrl+Shift+L', command: 'composer.previousWorktree', when: NOT_TERMINAL },
+  { key: 'Ctrl+U', command: 'usage.open', when: NOT_TERMINAL },
+  { key: 'Escape', command: 'usage.close', when: 'usagePageOpen && !editableFocus' },
+  { key: 'C', command: 'usage.cost', when: 'usagePageOpen && !editableFocus' },
+  { key: 'T', command: 'usage.tokens', when: 'usagePageOpen && !editableFocus' },
+  { key: 'L', command: 'usage.limits', when: 'usagePageOpen && !editableFocus' },
+  { key: 'Ctrl+Shift+1', command: 'usage.period.day', when: 'usagePageOpen' },
+  { key: 'Ctrl+Shift+2', command: 'usage.period.week', when: 'usagePageOpen' },
+  { key: 'Ctrl+Shift+3', command: 'usage.period.month', when: 'usagePageOpen' },
+  { key: 'Ctrl+Shift+4', command: 'usage.period.quarter', when: 'usagePageOpen' },
 ]
 
 /** Keys the suite itself answers anywhere; binding them here takes them from it inside QuantPilot. */

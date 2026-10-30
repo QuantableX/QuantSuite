@@ -21,6 +21,7 @@ import { useGitStore } from '#pilot/stores/git'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { useDrawerStore } from '#pilot/stores/drawer'
 import { useKeysStore } from '#pilot/stores/keys'
+import { useUsageStore } from '#pilot/stores/usage'
 import { chordOf, resolve, SUITE_KEYS, type KeyContext } from '#pilot/utils/keybindings'
 import { runCommand, useCommands } from '#pilot/utils/commands'
 import { moveFocus, noteFocus } from '#pilot/utils/focus'
@@ -95,6 +96,7 @@ onActivated(() => {
 // preventDefault. The suite's own keys (Ctrl+K) are taken in the capture
 // phase, before the shell sees them.
 const keys = useKeysStore()
+const usage = useUsageStore()
 const shell = ref<HTMLElement | null>(null)
 
 function keyContext(target: EventTarget | null): KeyContext {
@@ -112,6 +114,7 @@ function keyContext(target: EventTarget | null): KeyContext {
     turnRunning: Boolean(id && threads.views[id]?.turnId),
     modelPickerOpen: Boolean(shell.value?.querySelector('.qp-mp')),
     paletteOpen: keys.paletteOpen,
+    usagePageOpen: store.page === 'usage',
   }
 }
 
@@ -206,6 +209,19 @@ useCommands({
   'composer.workspace': contextBar('mode'),
   'composer.branch': contextBar('branch'),
   'composer.previousWorktree': contextBar('reuse'),
+  // The Usage page (card 18); its own keys apply while it is open.
+  'usage.open': () => {
+    store.page = 'usage'
+    void (usage.tab === 'limits' ? usage.loadLimits() : usage.load())
+  },
+  'usage.close': () => (store.page === 'usage' ? void (store.page = 'thread') : false),
+  'usage.cost': () => usage.setTab('cost'),
+  'usage.tokens': () => usage.setTab('tokens'),
+  'usage.limits': () => usage.setTab('limits'),
+  'usage.period.day': () => (usage.tab === 'limits' ? false : usage.setPeriod('24h')),
+  'usage.period.week': () => (usage.tab === 'limits' ? false : usage.setPeriod('7d')),
+  'usage.period.month': () => (usage.tab === 'limits' ? false : usage.setPeriod('30d')),
+  'usage.period.quarter': () => (usage.tab === 'limits' ? false : usage.setPeriod('90d')),
 })
 
 // ── Files from Explorer anywhere in the module go to the open thread's composer (card 9) ──

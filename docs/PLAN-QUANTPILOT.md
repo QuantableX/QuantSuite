@@ -574,6 +574,52 @@ never fakes support.
   it was asked, its text, reasoning and newest 16 tool calls (nested
   agents count in), its report; previews cut at 32 KiB.
 
+### 5.13 Usage and limits (card 18)
+
+- A page in the main area (`store.page = 'usage'`; Ctrl+U, the sidebar's
+  Usage row, the palette): Cost, Tokens, Limits (C / T / L), 24 hours /
+  7 / 30 / 90 days (Ctrl+Shift+1..4; days are today and the days before,
+  whole local days), Escape back. The thread view stays mounted behind it;
+  the Browser tab's webview hides while it is open.
+- Sources (`crate/src/usage/scan.rs`): Claude Code `projects/**/*.jsonl`
+  under `$CLAUDE_CONFIG_DIR`, `~/.claude`, `~/.config/claude` (subagent logs
+  included; a request counts once by message id + request id across files —
+  streams and resumed sessions repeat it); Codex rollouts under
+  `$CODEX_HOME` and `~/.codex` (`sessions/`, `archived_sessions/`, older
+  ones `.jsonl.zst`, read with the pure-Rust `ruzstd`; a rollout counts once
+  by name, the uncompressed copy first; a `token_count` whose running total
+  did not move is a repeat; OpenAI's input includes cached tokens). Only
+  token counts are kept. An in-memory ledger re-reads a file only when its
+  size or time changed, an appended log from where it stopped (complete
+  lines). On this machine: 481 files, 3.2 GB, first scan 2.3 s release /
+  16 s debug, rescan 15 ms. Scans run on open / Refresh only, off the UI
+  thread.
+- Estimated API cost (`usage/pricing.rs`), labelled as not the bill:
+  LiteLLM's public price list, Anthropic's and OpenAI's own chat listings,
+  standard rates (input, cache read, 5-minute and 1-hour cache writes,
+  output, above-200k / above-272k tiers per request size); fetched at most
+  daily (hourly on Refresh) into `usage-prices.json`, else the saved copy,
+  else the built-in snapshot (`usage/prices.json`, 127 models). Dated and
+  suffixed names find their listing; others are unpriced (tokens count, the
+  headline shows their share). Cache savings = cache reads × (input − cache
+  read rate). Checked against `ccusage`: Oct 26–29, 2026 identical to the
+  cent and token.
+- The page: tiles (estimate, savings, tokens, unpriced share / tokens by
+  kind), a stacked bar chart per hour or day (agents for cost, token kinds
+  for tokens; validated categorical slots on the dark surface; hover/arrow
+  keys show every series, a Table view lists the numbers), the breakdown by
+  model (cost, share, tokens, cache hit rate, cost per 1M) and a model's
+  trend.
+- Limits (`pilot_usage_limits`): Codex answers `account/rateLimits/read` in
+  a discovery run (`runtime::probe_limits`, live 0.8 s), asked at most every
+  five minutes (Refresh: now); Claude's windows come from its stream's rate
+  limit events — every reported set is kept per provider (`usage_limits`,
+  schema 11) with its time. Bars show % used, a reset countdown and clock;
+  ≥ 90% "almost used up", 100% "used up"; a window without a reading says
+  "not reported", never 0%.
+- `/usage` in the composer shows the thread agent's windows above the box
+  (the last reading, no agent run) until dismissed or the next message.
+
 ### 5.5 Composer context (card 9)
 
 - `@` searches the thread's checkout (`crate/src/context.rs`: the `ignore`

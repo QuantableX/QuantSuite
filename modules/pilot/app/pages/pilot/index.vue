@@ -62,6 +62,8 @@ function restart() {
 
 <template>
   <div class="qp-page">
+    <PilotUsagePage v-if="store.page === 'usage'" />
+    <div v-show="store.page !== 'usage'" class="qp-page">
     <template v-if="session">
       <div v-if="!terminal" class="qp-split">
         <div class="qp-main-col">
@@ -130,6 +132,7 @@ function restart() {
       <p v-if="store.status && !anyReady" class="qp-empty-warn">
         No agents available. Check installation and login in Settings.
       </p>
+    </div>
     </div>
   </div>
 </template>

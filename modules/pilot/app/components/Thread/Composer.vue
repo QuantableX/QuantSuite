@@ -27,6 +27,7 @@ import { ArrowUp, Ban, CornerDownRight, FileText, Folder, ListPlus, Loader2, Pap
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useKeysStore } from '#pilot/stores/keys'
+import { useUsageStore } from '#pilot/stores/usage'
 import { useCommands } from '#pilot/utils/commands'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
@@ -313,6 +314,13 @@ async function runAppCommand(name: string, arg: string): Promise<boolean> {
     case 'tui':
       await threads.openTui(id)
       return true
+    case 'usage': {
+      // The last reading, as Usage → Limits has it; nothing runs (card 18).
+      const usage = useUsageStore()
+      usage.inline = id
+      void usage.loadLimits()
+      return true
+    }
   }
   return false
 }

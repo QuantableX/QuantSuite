@@ -66,6 +66,8 @@ permissions = [
   "allow-pilot-messages-search",
   "allow-pilot-keybindings-get",
   "allow-pilot-keybindings-set",
+  "allow-pilot-usage-report",
+  "allow-pilot-usage-limits",
   "allow-pilot-ports-alive",
   "allow-pilot-port-owner",
   "allow-pilot-port-stop",

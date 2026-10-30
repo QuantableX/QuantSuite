@@ -137,6 +137,7 @@ export const APP_COMMANDS: CommandRow[] = [
   { name: 'fork', description: 'Fork this thread from the latest message', argumentHint: '', source: 'app' },
   { name: 'restart', description: 'Restart the agent session (after changing skills or MCP)', argumentHint: '', source: 'app' },
   { name: 'tui', description: "Open this conversation in the agent's own terminal UI", argumentHint: '', source: 'app' },
+  { name: 'usage', description: "Show this agent's usage limits", argumentHint: '', source: 'app' },
 ]
 
 /** App commands first when they match, then the provider's; prefix matches before substrings. */

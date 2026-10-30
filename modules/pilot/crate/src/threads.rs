@@ -2296,6 +2296,21 @@ pub fn pilot_provider_catalog(app: AppHandle, state: State<'_, PilotState>, prov
     Ok(catalog)
 }
 
+/// Codex's subscription windows without a turn (card 18): a discovery run
+/// answers `account/rateLimits/read`.
+pub fn codex_limits(app: &AppHandle, state: &PilotState) -> Result<Vec<crate::events::RateWindow>, String> {
+    let settings = lock(&state.settings).clone();
+    let adapter = adapters::find(&settings, "codex").ok_or("Codex is not a known adapter")?;
+    let exe = providers::resolve(&adapter, &settings).ok_or("Codex is not installed")?;
+    let cwd = contexts::general_vault(app);
+    let _ = std::fs::create_dir_all(&cwd);
+    let env = vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())];
+    let mut args = exe.prefix.clone();
+    args.extend(codex::launch_args());
+    let driver = Box::new(CodexDriver::discovery(&cwd.to_string_lossy()));
+    runtime::probe_limits(&exe.program, &args, &cwd.to_string_lossy(), &env, driver)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

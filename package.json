@@ -28,7 +28,7 @@
     "test:systems": "node --test scripts/test-systems-queue.mjs scripts/test-systems-groups.mjs",
     "check:release": "node scripts/check-release.mjs",
     "test:release": "node --test scripts/test-release.mjs",
-    "test:pilot": "node --test scripts/test-pilot-timeline.mjs scripts/test-pilot-composer.mjs scripts/test-pilot-models.mjs scripts/test-pilot-sidebar.mjs scripts/test-pilot-mentions.mjs scripts/test-pilot-git.mjs scripts/test-pilot-files.mjs scripts/test-pilot-keys.mjs"
+    "test:pilot": "node --test scripts/test-pilot-timeline.mjs scripts/test-pilot-composer.mjs scripts/test-pilot-models.mjs scripts/test-pilot-sidebar.mjs scripts/test-pilot-mentions.mjs scripts/test-pilot-git.mjs scripts/test-pilot-files.mjs scripts/test-pilot-keys.mjs scripts/test-pilot-usage.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.0"

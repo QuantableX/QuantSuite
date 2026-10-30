@@ -62,6 +62,8 @@ const COMMANDS: &[&str] = &[
     "pilot_messages_search",
     "pilot_keybindings_get",
     "pilot_keybindings_set",
+    "pilot_usage_report",
+    "pilot_usage_limits",
     "pilot_ports_alive",
     "pilot_port_owner",
     "pilot_port_stop",

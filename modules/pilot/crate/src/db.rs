@@ -18,7 +18,8 @@ use std::sync::Mutex;
 /// 5: pin, order, settle, snooze (card 7). 6: workspace (card 10).
 /// 7: checkpoints and turn changes (card 11). 8: links (card 12).
 /// 9: handoff, scheduled resume and limit reset (card 15). 10: goal (card 16).
-pub const SCHEMA_VERSION: i64 = 10;
+/// 11: the last usage windows per provider (card 18).
+pub const SCHEMA_VERSION: i64 = 11;
 
 /// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -389,6 +390,14 @@ const TIMELINE_TABLES: &str = "
     );
     CREATE INDEX IF NOT EXISTS turns_thread ON turns (thread_id, started_at);";
 
+/// The last subscription windows each provider reported (card 18), as JSON.
+const LIMITS_TABLE: &str = "
+    CREATE TABLE IF NOT EXISTS usage_limits (
+        provider TEXT PRIMARY KEY,
+        windows TEXT NOT NULL,
+        at INTEGER NOT NULL
+    );";
+
 fn table_exists(conn: &Connection, name: &str) -> rusqlite::Result<bool> {
     conn.query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1", params![name], |r| {
         r.get::<_, i64>(0)
@@ -429,6 +438,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     tx.execute_batch(CHANGE_TABLES)?;
     tx.execute_batch(LINK_TABLE)?;
+    tx.execute_batch(LIMITS_TABLE)?;
     if !column_exists(&tx, "turns", "provider_ref")? {
         tx.execute_batch("ALTER TABLE turns ADD COLUMN provider_ref TEXT;")?;
     }
@@ -1120,6 +1130,24 @@ impl Database {
     }
 
     /// The newest `limit` items before `before_seq` (all when `None`), oldest first.
+    pub fn set_limits(&self, provider: &str, windows: &str, at: i64) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO usage_limits (provider, windows, at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(provider) DO UPDATE SET windows = excluded.windows, at = excluded.at",
+            params![provider, windows, at],
+        )?;
+        Ok(())
+    }
+
+    /// (provider, windows JSON, when).
+    pub fn limits(&self) -> rusqlite::Result<Vec<(String, String, i64)>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT provider, windows, at FROM usage_limits")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect()
+    }
+
     /// The command palette's "In messages" (card 17): user messages, answers
     /// and plans of every thread that contain `query` (case-insensitive), newest
     /// first, each with a snippet around the first match.
