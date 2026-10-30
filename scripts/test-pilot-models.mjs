@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-const { modelRows, effortsFor, storedModelId, MODES, compactTokens } = await import('../modules/pilot/app/utils/models.ts')
+const { modelRows, effortsFor, storedModelId, MODES, compactTokens, modesFor } = await import('../modules/pilot/app/utils/models.ts')
 
 // The shape Claude Code 2.1.312's initialize reports (fixture: claude_tool_turn.jsonl).
 const models = [
@@ -44,4 +44,10 @@ test('five modes in the reference order, and compact token labels', () => {
   assert.deepEqual(MODES.map((m) => m.id), ['ask', 'edits', 'auto', 'plan', 'full'])
   assert.equal(compactTokens(200_000), '200k')
   assert.equal(compactTokens(1_000_000), '1M')
+})
+
+test('agents without an automatic reviewer offer no Auto (card 20)', () => {
+  assert.deepEqual(modesFor('claude').map((m) => m.id), ['ask', 'edits', 'auto', 'plan', 'full'])
+  assert.deepEqual(modesFor('pi').map((m) => m.id), ['ask', 'edits', 'plan', 'full'])
+  assert.ok(!modesFor('gemini').some((m) => m.id === 'auto'))
 })

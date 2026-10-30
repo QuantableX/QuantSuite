@@ -90,6 +90,11 @@ export const MODES: ModeInfo[] = [
   { id: 'full', label: 'Full access', short: 'Full access', description: 'Runs commands and edits without asking.' },
 ]
 
+/** The agents with an automatic reviewer (Auto): Claude Code and Codex; ACP agents and pi do not have one (card 20). */
+export function modesFor(provider: string): ModeInfo[] {
+  return provider === 'claude' || provider === 'codex' ? MODES : MODES.filter((m) => m.id !== 'auto')
+}
+
 /** "83k / 200k" for the context meter. */
 export function compactTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
