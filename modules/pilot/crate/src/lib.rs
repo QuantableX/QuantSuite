@@ -281,7 +281,7 @@ fn pilot_provider_update(state: State<'_, PilotState>, id: String, dry_run: Opti
     if dry_run.unwrap_or(true) {
         return Ok(UpdateResult { plan, ran: false, ok: true, before, after: None, output: String::new() });
     }
-    let mut cmd = if plan.program == "npm" {
+    let cmd = if cfg!(windows) && plan.program == "npm" {
         // npm is a .cmd shim.
         let mut c = std::process::Command::new("cmd");
         c.arg("/C").arg("npm").args(&plan.args);
@@ -292,10 +292,12 @@ fn pilot_provider_update(state: State<'_, PilotState>, id: String, dry_run: Opti
         c
     };
     #[cfg(windows)]
-    {
+    let cmd = {
         use std::os::windows::process::CommandExt;
+        let mut cmd = cmd;
         cmd.creation_flags(0x0800_0000);
-    }
+        cmd
+    };
     let (ok, out, err) = providers::run_capture_split(cmd, std::time::Duration::from_secs(600))?;
     let text = format!("{out}{err}");
     let tail: String = text.chars().rev().take(4000).collect::<Vec<_>>().into_iter().rev().collect();

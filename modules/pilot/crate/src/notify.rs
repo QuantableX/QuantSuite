@@ -11,9 +11,12 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager, UserAttentionType, Wry};
+use tauri::{AppHandle, Manager, UserAttentionType, Wry};
+#[cfg(windows)]
+use tauri::Emitter;
 
 /// The webview event a toast click sends: `{ threadId }`.
+#[cfg(windows)]
 pub const OPEN_EVENT: &str = "pilot-open-thread";
 
 /// One toast per thread in this window, however many requests arrive.
@@ -44,11 +47,13 @@ pub fn should_toast(mode: &str, focused: bool) -> bool {
     }
 }
 
+#[cfg(windows)]
 fn main_window(app: &AppHandle<Wry>) -> Option<tauri::WebviewWindow<Wry>> {
     app.get_webview_window("main").or_else(|| app.webview_windows().into_values().next())
 }
 
 /// Bring the suite forward and open the thread.
+#[cfg(windows)]
 pub fn open_thread(app: &AppHandle<Wry>, thread_id: &str) {
     if let Some(w) = main_window(app) {
         let _ = w.unminimize();
