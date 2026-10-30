@@ -2,13 +2,15 @@
 /**
  * The Diff tab (card 11; T3 Code's diff panel): This turn (a turn's own
  * changes, between its checkpoints), Uncommitted (working tree against
- * HEAD) or Branch vs base. Files on top, Monaco's diff below — split or
- * unified, wrapped or not; Ctrl+F finds inside it. Per file: copy the path,
- * stage / unstage / discard (Uncommitted; discard asks first), and a review
- * comment on the selected lines that lands in the composer as a chip.
+ * HEAD) or Branch vs base. One file at a time — files on top, Monaco's diff
+ * below, split or unified, wrapped or not, Ctrl+F inside it; per file: copy
+ * the path, stage / unstage / discard (Uncommitted; discard asks first), and
+ * a review comment on the selected lines that lands in the composer as a
+ * chip — or every file in one scroll with find across all (card 24,
+ * DiffAll.vue).
  */
 import { computed, ref, watch } from 'vue'
-import { Columns2, Copy, MessageSquarePlus, RefreshCw, Rows2, WrapText } from 'lucide-vue-next'
+import { Columns2, Copy, File, Files, MessageSquarePlus, RefreshCw, Rows2, WrapText } from 'lucide-vue-next'
 import { pilot } from '#pilot/utils/invoke'
 import { useInspectorStore, type DiffScope } from '#pilot/stores/inspector'
 import type { DiffList, DiffSides, FileChange } from '#pilot/types'
@@ -150,10 +152,19 @@ function addComment() {
         <option v-for="t in list.turns" :key="t[0]" :value="t[0]">{{ t[1] }}</option>
       </select>
       <span class="qp-diff-tools">
-        <button class="qp-diff-icon" :title="inspector.sideBySide ? 'Unified view' : 'Split view'" @click="inspector.setView({ sideBySide: !inspector.sideBySide })">
+        <button
+          class="qp-diff-icon"
+          :class="{ on: inspector.diffAll }"
+          :title="inspector.diffAll ? 'One file at a time' : 'All files in one scroll (Ctrl+F finds across them)'"
+          :aria-pressed="inspector.diffAll"
+          @click="inspector.setView({ all: !inspector.diffAll })"
+        >
+          <component :is="inspector.diffAll ? File : Files" :size="13" />
+        </button>
+        <button v-if="!inspector.diffAll" class="qp-diff-icon" :title="inspector.sideBySide ? 'Unified view' : 'Split view'" @click="inspector.setView({ sideBySide: !inspector.sideBySide })">
           <component :is="inspector.sideBySide ? Rows2 : Columns2" :size="13" />
         </button>
-        <button class="qp-diff-icon" :class="{ on: inspector.wrap }" title="Wrap lines" @click="inspector.setView({ wrap: !inspector.wrap })"><WrapText :size="13" /></button>
+        <button v-if="!inspector.diffAll" class="qp-diff-icon" :class="{ on: inspector.wrap }" title="Wrap lines" @click="inspector.setView({ wrap: !inspector.wrap })"><WrapText :size="13" /></button>
         <button class="qp-diff-icon" title="Refresh" @click="load"><RefreshCw :size="13" /></button>
       </span>
     </div>
@@ -163,7 +174,16 @@ function addComment() {
       {{ scope === 'turn' ? 'No turn has changed files yet.' : scope === 'uncommitted' ? 'Nothing uncommitted.' : 'This branch has no changes against its base.' }}
     </div>
 
-    <template v-if="list?.files.length">
+    <PilotInspectorDiffAll
+      v-if="list?.files.length && inspector.diffAll"
+      :thread-id="threadId"
+      :from="list.from"
+      :to="list.to"
+      :files="list.files"
+      :staged="list.staged"
+      @focus="(p: string) => { selected = p; inspector.setView({ all: false }) }"
+    />
+    <template v-else-if="list?.files.length">
       <div class="qp-diff-files" role="listbox" aria-label="Changed files">
         <div class="qp-diff-sum">{{ list.files.length }} file{{ list.files.length === 1 ? '' : 's' }} · <span class="add">+{{ totals.a }}</span> <span class="del">−{{ totals.r }}</span></div>
         <button
@@ -185,6 +205,7 @@ function addComment() {
 
       <div v-if="current" class="qp-diff-actions">
         <button class="qp-diff-btn" @click="copyPath"><Copy :size="12" /> Copy path</button>
+        <PilotInspectorOpenIn :thread-id="threadId" :path="current.path" />
         <template v-if="scope === 'uncommitted'">
           <button class="qp-diff-btn" @click="act(staged.has(current.path) ? 'unstage' : 'stage')">{{ staged.has(current.path) ? 'Unstage' : 'Stage' }}</button>
           <button v-if="!confirmDiscard" class="qp-diff-btn danger" @click="confirmDiscard = true">Discard…</button>

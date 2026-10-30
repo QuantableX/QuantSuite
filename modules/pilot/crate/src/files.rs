@@ -345,6 +345,56 @@ pub fn stop_port(port: u16, pid: u32) -> Result<(), String> {
     run("taskkill", &["/PID", &pid.to_string(), "/T", "/F"]).map(|_| ())
 }
 
+// ── Open in… (card 24): a file in the user's editor, or shown in Explorer ──
+
+/// The editors on PATH, then Explorer: `(id, label)`.
+pub fn editors() -> Vec<(&'static str, &'static str)> {
+    let mut out = Vec::new();
+    for (id, label, names) in [("vscode", "VS Code", ["code.cmd", "code.exe"]), ("cursor", "Cursor", ["cursor.cmd", "cursor.exe"])] {
+        if names.iter().any(|n| on_path(n).is_some()) {
+            out.push((id, label));
+        }
+    }
+    out.push(("explorer", "Explorer"));
+    out
+}
+
+fn on_path(name: &str) -> Option<std::path::PathBuf> {
+    std::env::split_paths(&qs_core::system_path::current()).map(|d| d.join(name)).find(|p| p.is_file())
+}
+
+/// `code --goto file:line`, `cursor --goto …`, or Explorer with the file selected.
+pub fn open_in(editor: &str, file: &Path, line: Option<i64>) -> Result<(), String> {
+    if !file.exists() {
+        return Err(format!("{} is not there", file.display()));
+    }
+    let mut cmd = match editor {
+        "explorer" => {
+            let mut c = std::process::Command::new("explorer");
+            c.arg(format!("/select,{}", file.display()));
+            c
+        }
+        "vscode" | "cursor" => {
+            let names = if editor == "vscode" { ["code.cmd", "code.exe"] } else { ["cursor.cmd", "cursor.exe"] };
+            let exe = names.iter().find_map(|n| on_path(n)).ok_or_else(|| format!("{editor} is not on PATH"))?;
+            let target = match line.filter(|l| *l > 0) {
+                Some(l) => format!("{}:{l}", file.display()),
+                None => file.display().to_string(),
+            };
+            let mut c = std::process::Command::new(exe);
+            c.args(["--goto", &target]);
+            c
+        }
+        other => return Err(format!("unknown editor '{other}'")),
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

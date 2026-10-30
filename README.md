@@ -33,7 +33,7 @@ signatures verify the release separately from operating-system code signing.
 | --- | --- |
 | QuantZen | Notes, tasks, calendar, habits and finance |
 | QuantView | Terminal, scripts, systems and algorithmic trading |
-| QuantAgent | Pilot, MCP and memory |
+| QuantAgent | Pilot (an agentic development environment for Claude Code, Codex and ACP agents), MCP and memory |
 | QuantSpace | Code, canvas and console |
 | QuantHUD | Desktop overlay with everyday tools |
 

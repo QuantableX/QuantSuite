@@ -145,7 +145,7 @@
     {
       "id": "pilot",
       "title": "QuantPilot",
-      "description": "The suite's agent harness — the real agent TUIs (Claude Code, Codex, pi, omp, OpenCode, Gemini, or your own) in a terminal, with sessions per workspace, the suite as context, and a face that knows what they are doing",
+      "description": "The suite's agentic development environment — chat threads with Claude Code, Codex, ACP agents (Gemini CLI, OpenCode, Copilot, your own), pi and omp, per workspace or General: streaming conversation, approvals and plans, diffs and checkpoints, worktrees, git and pull requests, a browser and terminals, the kanban board, GitHub and usage; each agent's own terminal UI stays one click away",
       "status": "migrated",
       "phase": null,
       "app": "quantagent",

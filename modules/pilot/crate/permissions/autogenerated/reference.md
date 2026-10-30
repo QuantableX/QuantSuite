@@ -38,6 +38,9 @@ Default permissions for the pilot module.
 - `allow-pilot-skills`
 - `allow-pilot-diff-list`
 - `allow-pilot-diff-file`
+- `allow-pilot-diff-patches`
+- `allow-pilot-editors`
+- `allow-pilot-open-in`
 - `allow-pilot-diff-action`
 - `allow-pilot-thread-revert`
 - `allow-pilot-git-info`
@@ -742,6 +745,58 @@ Enables the pilot_diff_list command without any pre-configured scope.
 <td>
 
 Denies the pilot_diff_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-diff-patches`
+
+</td>
+<td>
+
+Enables the pilot_diff_patches command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-diff-patches`
+
+</td>
+<td>
+
+Denies the pilot_diff_patches command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-editors`
+
+</td>
+<td>
+
+Enables the pilot_editors command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-editors`
+
+</td>
+<td>
+
+Denies the pilot_editors command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1522,6 +1577,32 @@ Enables the pilot_open_data_dir command without any pre-configured scope.
 <td>
 
 Denies the pilot_open_data_dir command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-open-in`
+
+</td>
+<td>
+
+Enables the pilot_open_in command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-open-in`
+
+</td>
+<td>
+
+Denies the pilot_open_in command without any pre-configured scope.
 
 </td>
 </tr>
@@ -2855,84 +2936,6 @@ Denies the pilot_worktree_check command without any pre-configured scope.
 <tr>
 <td>
 
-`pilot:allow-pilot-worktree-diff`
-
-</td>
-<td>
-
-Enables the pilot_worktree_diff command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`pilot:deny-pilot-worktree-diff`
-
-</td>
-<td>
-
-Denies the pilot_worktree_diff command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`pilot:allow-pilot-worktree-discard`
-
-</td>
-<td>
-
-Enables the pilot_worktree_discard command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`pilot:deny-pilot-worktree-discard`
-
-</td>
-<td>
-
-Denies the pilot_worktree_discard command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`pilot:allow-pilot-worktree-merge`
-
-</td>
-<td>
-
-Enables the pilot_worktree_merge command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`pilot:deny-pilot-worktree-merge`
-
-</td>
-<td>
-
-Denies the pilot_worktree_merge command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `pilot:allow-pilot-worktree-previous`
 
 </td>
@@ -2952,32 +2955,6 @@ Enables the pilot_worktree_previous command without any pre-configured scope.
 <td>
 
 Denies the pilot_worktree_previous command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`pilot:allow-pilot-worktree-probe`
-
-</td>
-<td>
-
-Enables the pilot_worktree_probe command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`pilot:deny-pilot-worktree-probe`
-
-</td>
-<td>
-
-Denies the pilot_worktree_probe command without any pre-configured scope.
 
 </td>
 </tr>
@@ -3030,32 +3007,6 @@ Enables the pilot_worktree_remove command without any pre-configured scope.
 <td>
 
 Denies the pilot_worktree_remove command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`pilot:allow-pilot-worktree-status`
-
-</td>
-<td>
-
-Enables the pilot_worktree_status command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`pilot:deny-pilot-worktree-status`
-
-</td>
-<td>
-
-Denies the pilot_worktree_status command without any pre-configured scope.
 
 </td>
 </tr>

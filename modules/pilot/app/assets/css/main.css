@@ -74,3 +74,18 @@
   background-color: var(--qss-warning, #d29a3f);
   color: var(--qss-bg, #18181e);
 }
+
+/* Menus and popovers open from their trigger (card 24; PandaCode's ≈170 ms in):
+   a short rise and fade that never blocks input. --qp-motion is the panel
+   motion setting — 0 under reduced motion, so nothing moves then. */
+@keyframes qp-pop-in {
+  from { opacity: 0; transform: translateY(3px) scale(0.985); }
+}
+[data-module="pilot"] .qp-mm,
+[data-module="pilot"] .qp-bp,
+[data-module="pilot"] .qp-ctl-pop,
+[data-module="pilot"] .qp-pa-pop,
+[data-module="pilot"] .qp-ga-pop,
+[data-module="pilot"] .qp-ghv-pop {
+  animation: qp-pop-in var(--qp-motion, 160ms) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
