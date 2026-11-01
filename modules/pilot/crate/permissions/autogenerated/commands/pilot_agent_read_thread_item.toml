@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-agent-read-thread-item"
+description = "Enables the pilot_agent_read_thread_item command without any pre-configured scope."
+commands.allow = ["pilot_agent_read_thread_item"]
+
+[[permission]]
+identifier = "deny-pilot-agent-read-thread-item"
+description = "Denies the pilot_agent_read_thread_item command without any pre-configured scope."
+commands.deny = ["pilot_agent_read_thread_item"]

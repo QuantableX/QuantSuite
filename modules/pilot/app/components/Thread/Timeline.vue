@@ -17,13 +17,32 @@ import { useThreadStore } from '#pilot/stores/thread'
 import { groupTurns } from '#pilot/utils/timeline'
 import { useCommands } from '#pilot/utils/commands'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { pilot } from '#pilot/utils/invoke'
+import type { ThreadItem } from '#pilot/types'
 
 const props = defineProps<{ threadId: string }>()
 const emit = defineEmits<{ notice: [text: string] }>()
 
 const threads = useThreadStore()
 const view = computed(() => threads.view(props.threadId))
-const blocks = computed(() => groupTurns(view.value?.items ?? []))
+const historyItems = ref<ThreadItem[] | null>(null)
+let revealGeneration = 0
+const findOpen = ref(false)
+const query = ref('')
+const findInput = ref<HTMLInputElement | null>(null)
+const matches = ref<Range[]>([])
+const current = ref(0)
+const searching = ref(false)
+const highlights = typeof CSS !== 'undefined' && 'highlights' in CSS ? (CSS as any).highlights : null
+const blocks = computed(() => groupTurns(historyItems.value ?? view.value?.items ?? []))
+
+async function latest() {
+  revealGeneration++
+  historyItems.value = null
+  closeFind()
+  await nextTick()
+  scrollToBottom(true)
+}
 
 const scroller = ref<HTMLElement | null>(null)
 const content = ref<HTMLElement | null>(null)
@@ -68,7 +87,7 @@ function scrollToBottom(smooth = false) {
 
 async function loadOlder() {
   const el = scroller.value
-  if (!el || !view.value?.hasMore || view.value.loadingOlder) return
+  if (!el || historyItems.value || !view.value?.hasMore || view.value.loadingOlder) return
   const before = el.scrollHeight
   await threads.loadOlder(props.threadId)
   await nextTick()
@@ -78,7 +97,7 @@ async function loadOlder() {
 let resize: ResizeObserver | null = null
 onMounted(() => {
   resize = new ResizeObserver(() => {
-    if (atBottom.value) scrollToBottom()
+    if (atBottom.value && !historyItems.value) scrollToBottom()
   })
   if (content.value) resize.observe(content.value)
   document.addEventListener('visibilitychange', syncTicker)
@@ -86,6 +105,7 @@ onMounted(() => {
   void nextTick(() => scrollToBottom())
 })
 onBeforeUnmount(() => {
+  revealGeneration++
   resize?.disconnect()
   document.removeEventListener('visibilitychange', syncTicker)
   if (ticker) clearInterval(ticker)
@@ -93,7 +113,7 @@ onBeforeUnmount(() => {
 })
 watch(
   () => props.threadId,
-  () => void nextTick(() => scrollToBottom())
+  () => { revealGeneration++; historyItems.value = null; void nextTick(() => scrollToBottom()) }
 )
 watch(
   () => view.value?.loaded,
@@ -102,37 +122,38 @@ watch(
   }
 )
 
-// ── A message the palette opens at (card 17): older pages load until it is here ──
+// An old search hit opens a bounded excerpt; live conversation state keeps updating separately.
 watch(
-  () => [threads.reveal?.nonce, view.value?.loaded] as const,
+  () => [props.threadId, threads.reveal?.nonce, view.value?.loaded] as const,
   async () => {
     const r = threads.reveal
     if (!r || r.threadId !== props.threadId || !view.value?.loaded) return
     threads.reveal = null
-    let guard = 0
-    while (!view.value.items.some((i) => i.id === r.itemId) && view.value.hasMore && guard++ < 50) await threads.loadOlder(props.threadId)
+    const generation = ++revealGeneration
+    closeFind()
+    historyItems.value = null
+    if (!view.value.items.some((i) => i.id === r.itemId)) {
+      try {
+        const items = await pilot<ThreadItem[]>('plugin:pilot|pilot_history_around', { threadId: r.threadId, itemId: r.itemId })
+        if (props.threadId !== r.threadId || generation !== revealGeneration) return
+        historyItems.value = items ?? null
+      } catch (e) { emit('notice', String(e)); return }
+    }
     await nextTick()
-    const item = view.value.items.find((i) => i.id === r.itemId)
+    const item = (historyItems.value ?? view.value.items).find((i) => i.id === r.itemId)
     const root = content.value
     if (!item || !root) return
     // A message folded into "Worked for …" has no row of its own: its turn stands in.
     const el = root.querySelector(`[data-item-id="${CSS.escape(item.id)}"]`) ?? root.querySelector(`[data-turn="${CSS.escape(item.turnId)}"]`)
     if (!(el instanceof HTMLElement)) return
-    el.scrollIntoView({ block: 'center' })
+    el.scrollIntoView({ block: el.offsetHeight > (scroller.value?.clientHeight ?? 0) ? 'start' : 'center' })
     el.classList.add('qp-flash')
     setTimeout(() => el.classList.remove('qp-flash'), 1600)
   },
-  { immediate: true }
+  { immediate: true, flush: 'post' }
 )
 
 // ── Find ──
-const findOpen = ref(false)
-const query = ref('')
-const findInput = ref<HTMLInputElement | null>(null)
-const matches = ref<Range[]>([])
-const current = ref(0)
-const searching = ref(false)
-const highlights = typeof CSS !== 'undefined' && 'highlights' in CSS ? (CSS as any).highlights : null
 
 async function openFind() {
   findOpen.value = true
@@ -152,6 +173,7 @@ function closeFind() {
 }
 
 async function loadEverything() {
+  if (historyItems.value) return
   let guard = 0
   while (view.value?.hasMore && guard++ < 50) await threads.loadOlder(props.threadId)
 }
@@ -244,8 +266,12 @@ useCommands({
 
 <template>
   <div class="qp-tl">
+    <div v-if="historyItems" class="qp-history-excerpt" role="status">
+      <span>History excerpt · {{ historyItems.length }} nearby items</span>
+      <button class="qp-history-return" @click="latest">Return to latest</button>
+    </div>
     <div v-if="findOpen" class="qp-find" role="search">
-      <input ref="findInput" v-model="query" class="qp-find-input" placeholder="Find in thread" @keydown="onFindKey" />
+      <input ref="findInput" v-model="query" class="qp-find-input" :placeholder="historyItems ? 'Find in this excerpt' : 'Find in thread'" @keydown="onFindKey" />
       <span class="qp-find-count">{{ searching ? '…' : query ? `${matches.length ? current + 1 : 0}/${matches.length}` : '' }}</span>
       <button class="qp-find-btn" title="Previous (Shift+Enter)" @click="step(-1)"><ChevronUp :size="14" /></button>
       <button class="qp-find-btn" title="Next (Enter)" @click="step(1)"><ChevronDown :size="14" /></button>
@@ -266,16 +292,19 @@ useCommands({
           :cost="view?.turns[b.turnId]?.costUsd ?? null"
           @notice="(t: string) => emit('notice', t)"
         />
-        <slot name="after" />
+        <slot v-if="!historyItems" name="after" />
       </div>
     </div>
 
-    <button v-if="!atBottom" class="qp-jump" @click="scrollToBottom(true)"><ArrowDown :size="13" /> Jump to latest</button>
+    <button v-if="!atBottom && !historyItems" class="qp-jump" @click="scrollToBottom(true)"><ArrowDown :size="13" /> Jump to latest</button>
   </div>
 </template>
 
 <style scoped>
 .qp-tl { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.qp-history-excerpt { display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; padding: 8px 16px; font-size: 12px; color: var(--qss-text-secondary); border-bottom: 1px solid var(--qss-border); }
+.qp-history-return { flex-shrink: 0; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--qss-border); border-radius: 6px; color: var(--qss-text); background: transparent; cursor: pointer; }
+.qp-history-return:hover { background: var(--qss-hover); }
 .qp-tl-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; outline: none; }
 /* Settings → Appearance → Conversation text (card 19). */
 .qp-tl-content { zoom: var(--qp-text-zoom, 1); }
