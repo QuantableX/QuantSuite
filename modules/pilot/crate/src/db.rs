@@ -14,12 +14,17 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 
+#[path = "history.rs"]
+mod history;
+pub use history::{HistoryChunk, HistoryPage, HistoryRequest};
+
 /// 3: threads, timeline, turns (card 2). 4: the follow-up queue (card 4).
 /// 5: pin, order, settle, snooze (card 7). 6: workspace (card 10).
 /// 7: checkpoints and turn changes (card 11). 8: links (card 12).
 /// 9: handoff, scheduled resume and limit reset (card 15). 10: goal (card 16).
 /// 11: the last usage windows per provider (card 18).
-pub const SCHEMA_VERSION: i64 = 11;
+/// 12: revision-bound history chunks and indexed full-history pagination (parity 02).
+pub const SCHEMA_VERSION: i64 = 12;
 
 /// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -420,6 +425,16 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     tx.execute_batch(THREADS_TABLE)?;
     tx.execute_batch(TIMELINE_TABLES)?;
+    // Body continuations must detect edits even when two writes share a timestamp.
+    if !column_exists(&tx, "timeline", "revision")? {
+        tx.execute_batch("ALTER TABLE timeline ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    tx.execute_batch(
+        "CREATE INDEX IF NOT EXISTS timeline_history_order ON timeline(thread_id, seq, id);
+         CREATE TRIGGER IF NOT EXISTS timeline_body_revision AFTER UPDATE OF data, parent, kind ON timeline
+         WHEN OLD.data IS NOT NEW.data OR OLD.parent IS NOT NEW.parent OR OLD.kind IS NOT NEW.kind
+         BEGIN UPDATE timeline SET revision = OLD.revision + 1 WHERE id = NEW.id; END;",
+    )?;
     if !column_exists(&tx, "threads", "queue_held")? {
         tx.execute_batch("ALTER TABLE threads ADD COLUMN queue_held INTEGER NOT NULL DEFAULT 0;")?;
     }

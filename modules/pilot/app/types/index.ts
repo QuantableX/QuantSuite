@@ -745,3 +745,54 @@ export interface MessageExtras {
   chips?: ContextChip[]
   attachments?: { kind: string; name: string; path: string; thumb?: string | null }[]
 }
+
+/** Shared bounded history API (parity 02); omit history for legacy agent output. */
+export interface HistoryRequest {
+  limit?: number
+  cursor?: string
+  start?: 'oldest' | 'newest'
+  includeActivity?: boolean
+  query?: string
+}
+
+export interface HistoryEntry {
+  itemId: string
+  turnId: string
+  seq: number
+  kind: string
+  parent: string | null
+  createdAt: number
+  updatedAt: number
+  revision: number
+  preview: string
+  previewOffset: number
+  textChars: number
+  truncated: boolean
+  attachmentCount: number
+}
+
+export interface HistoryPage {
+  threadId: string
+  threadProvider: string
+  items: HistoryEntry[]
+  total: number
+  nextCursor: string | null
+  snapshotSeq: number | null
+  contentIsUntrusted: boolean
+  consistency: string
+}
+
+export interface HistoryChunk {
+  threadId: string
+  itemId: string
+  turnId: string
+  kind: string
+  parent: string | null
+  revision: number
+  encoding: 'json'
+  text: string
+  offset: number
+  totalChars: number
+  nextCursor: string | null
+  contentIsUntrusted: boolean
+}

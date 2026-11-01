@@ -1050,3 +1050,36 @@ None blocking. Decisions taken without asking, open to change:
   like today's General vault context.
 - GitHub (card 23) is low priority because the QuantSuite repo has no remote
   locally; the user may delete or postpone it.
+
+## 12. Parity follow-up: paged history (02/23)
+
+`read_thread` keeps its compact newest-message default, now querying messages
+directly instead of filtering the newest 600 timeline items. Its footer gives
+item IDs, truncation, attachment counts and an older-page cursor. `history: {}`
+opts into structured chronological pages from the oldest item; `start: newest`
+walks backward, `query` finds literal content and `includeActivity` includes
+plans, tool inputs/results and attributed subagent items. Limits are 1–60 items;
+previews are at most 2,000 Unicode characters. Search is SQLite case folding.
+
+`read_thread_item` returns the complete saved JSON data in chunks (default 8,000,
+maximum 16,000 Unicode characters). Concatenate `text`, then parse JSON to recover
+text and attachment references. Schema 12 adds revision tracking so edits at the
+same timestamp invalidate a body continuation. Neither API reads provider logs
+or configuration. Both authenticate the connection token and enforce the same
+workspace boundary, including reads of the calling thread itself.
+
+Pages pin their upper `(seq,id)` boundary, excluding concurrent appends. Bodies
+and totals remain live; interior deletions are skipped, while deleted anchors or
+rewind require a fresh cursor. This is not an immutable transcript snapshot.
+History is marked as untrusted quoted content. `threadProvider` means the current
+provider: older items did not store historical provider identity.
+
+Native commands `pilot_history_page`, `pilot_history_item` and
+`pilot_history_around` share this storage implementation. Opening an old palette
+hit fetches at most 100 nearby items into a clearly labeled history excerpt,
+with Return to latest; live conversation state continues separately. It no longer
+loads up to 50 pages just to reveal one old hit. Whole-thread Find improvements
+remain parity 15. Rust regression tests cover large histories, Unicode/body
+reconstruction, migrations, search, permissions and stale cursors. Native and
+real-provider verification evidence is recorded on the card, separately from
+unit tests. This follow-up does not change the 1.0.42 release or the 1.1.0 UI scope.

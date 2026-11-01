@@ -752,6 +752,22 @@ fn record_changes(state: &PilotState, thread_id: &str) {
 
 // ── Follow-ups: queue and steer (card 4) ──
 
+/// Native UI reads use the same bounded storage API as authenticated agent reads.
+#[tauri::command(async)]
+pub fn pilot_history_page(state: State<'_, PilotState>, thread_id: String, request: crate::db::HistoryRequest) -> Result<crate::db::HistoryPage, String> {
+    state.db.history_page(&thread_id, request)
+}
+
+#[tauri::command(async)]
+pub fn pilot_history_item(state: State<'_, PilotState>, thread_id: String, item_id: String, cursor: Option<String>, limit: Option<i64>) -> Result<crate::db::HistoryChunk, String> {
+    state.db.history_chunk(&thread_id, &item_id, cursor.as_deref(), limit)
+}
+
+#[tauri::command(async)]
+pub fn pilot_history_around(state: State<'_, PilotState>, thread_id: String, item_id: String) -> Result<Vec<crate::events::Item>, String> {
+    state.db.history_around(&thread_id, &item_id)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueState {

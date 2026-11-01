@@ -69,6 +69,10 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-render-page`
 - `allow-pilot-agent-list-threads`
 - `allow-pilot-agent-read-thread`
+- `allow-pilot-agent-read-thread-item`
+- `allow-pilot-history-page`
+- `allow-pilot-history-item`
+- `allow-pilot-history-around`
 - `allow-pilot-agent-start-thread`
 - `allow-pilot-agent-message-thread`
 - `allow-pilot-pr-refresh`
@@ -251,6 +255,32 @@ Enables the pilot_agent_read_thread command without any pre-configured scope.
 <td>
 
 Denies the pilot_agent_read_thread command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-read-thread-item`
+
+</td>
+<td>
+
+Enables the pilot_agent_read_thread_item command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-read-thread-item`
+
+</td>
+<td>
+
+Denies the pilot_agent_read_thread_item command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1421,6 +1451,84 @@ Enables the pilot_git_status command without any pre-configured scope.
 <td>
 
 Denies the pilot_git_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-history-around`
+
+</td>
+<td>
+
+Enables the pilot_history_around command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-history-around`
+
+</td>
+<td>
+
+Denies the pilot_history_around command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-history-item`
+
+</td>
+<td>
+
+Enables the pilot_history_item command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-history-item`
+
+</td>
+<td>
+
+Denies the pilot_history_item command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-history-page`
+
+</td>
+<td>
+
+Enables the pilot_history_page command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-history-page`
+
+</td>
+<td>
+
+Denies the pilot_history_page command without any pre-configured scope.
 
 </td>
 </tr>
