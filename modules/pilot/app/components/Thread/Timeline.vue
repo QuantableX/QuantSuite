@@ -124,7 +124,7 @@ watch(
 
 // An old search hit opens a bounded excerpt; live conversation state keeps updating separately.
 watch(
-  () => [threads.reveal?.nonce, view.value?.loaded] as const,
+  () => [props.threadId, threads.reveal?.nonce, view.value?.loaded] as const,
   async () => {
     const r = threads.reveal
     if (!r || r.threadId !== props.threadId || !view.value?.loaded) return
@@ -146,11 +146,11 @@ watch(
     // A message folded into "Worked for …" has no row of its own: its turn stands in.
     const el = root.querySelector(`[data-item-id="${CSS.escape(item.id)}"]`) ?? root.querySelector(`[data-turn="${CSS.escape(item.turnId)}"]`)
     if (!(el instanceof HTMLElement)) return
-    el.scrollIntoView({ block: 'center' })
+    el.scrollIntoView({ block: el.offsetHeight > (scroller.value?.clientHeight ?? 0) ? 'start' : 'center' })
     el.classList.add('qp-flash')
     setTimeout(() => el.classList.remove('qp-flash'), 1600)
   },
-  { immediate: true }
+  { immediate: true, flush: 'post' }
 )
 
 // ── Find ──
@@ -268,7 +268,7 @@ useCommands({
   <div class="qp-tl">
     <div v-if="historyItems" class="qp-history-excerpt" role="status">
       <span>History excerpt · {{ historyItems.length }} nearby items</span>
-      <button class="qp-find-btn" @click="latest">Return to latest</button>
+      <button class="qp-history-return" @click="latest">Return to latest</button>
     </div>
     <div v-if="findOpen" class="qp-find" role="search">
       <input ref="findInput" v-model="query" class="qp-find-input" :placeholder="historyItems ? 'Find in this excerpt' : 'Find in thread'" @keydown="onFindKey" />
@@ -302,7 +302,9 @@ useCommands({
 
 <style scoped>
 .qp-tl { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.qp-history-excerpt { display: flex; justify-content: center; align-items: center; gap: 12px; padding: 8px 16px; font-size: 12px; color: var(--qss-text-secondary); border-bottom: 1px solid var(--qss-border); }
+.qp-history-excerpt { display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; padding: 8px 16px; font-size: 12px; color: var(--qss-text-secondary); border-bottom: 1px solid var(--qss-border); }
+.qp-history-return { flex-shrink: 0; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--qss-border); border-radius: 6px; color: var(--qss-text); background: transparent; cursor: pointer; }
+.qp-history-return:hover { background: var(--qss-hover); }
 .qp-tl-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; outline: none; }
 /* Settings → Appearance → Conversation text (card 19). */
 .qp-tl-content { zoom: var(--qp-text-zoom, 1); }
