@@ -1985,3 +1985,66 @@ reported 0 — fixed before the after-runs: 3.4 % of one core idle, 6.9 % after
 the streams finished); scrolling through all 1,200 messages still has a frame
 p95 of 42 ms (pages of 60 items mounting at once) — virtualizing the timeline
 was not needed for the stream budgets and is left as a follow-up.
+
+## 33. Parity follow-up: native integration baseline and provider matrix (22/23)
+
+**Setup.** The isolated native QA app (`artifacts/qa-native/qa.sh`: own
+identifier `com.quantable.quantsuite.qa`, `QUANTSUITE_HOME` in the artifacts,
+frontend :4188, WebView2 CDP :9228, window on the second monitor, never
+focused, toasts off), debug build of `f8b9b81` plus this change; the real
+user's Claude Code 2.1.316 login; the project "hello world qa" (a clone of
+octocat/Hello-World from parity 10) for Local and Worktree runs. Scripts and
+raw JSON: `artifacts/quantpilot-parity-22/` (`lib.js`, `steps.py` and one
+`<step>.json` per step). The user's own app, port 1420 and sessions were not
+touched.
+
+**Fixed here** (found by codex-1 in parity 02/03 runs, recorded on the card):
+- Codex's catalog offers a synthetic `default` model; it was sent literally on
+  thread start, turn start and model switch ("The 'default' model is not
+  supported when using Codex with a ChatGPT account"), and switching back did
+  not repair the session. Now `default`/empty means no override on start and
+  turn, and a switch back names the catalog's resolved default model so the
+  session really returns (`model_override`, unit test). Live Codex check:
+  **blocked** — Codex is not signed in on this machine.
+- QuantMCP's `quantsuite.*` tools had no MCP `annotations`, so clients could
+  not tell reads from writes; Claude Code's plan mode refused
+  `read_thread`/`read_thread_item`. Each capability now carries
+  `readOnlyHint`/`destructiveHint`/`openWorldHint` from its side-effect class
+  (`read`/`compute` read-only, `external` destructive and open-world).
+
+**Matrix** (✓ passed natively, ⚠ passed with a note, ✗ failed, ⛔ blocked):
+
+| Path | Result | Evidence |
+| --- | --- | --- |
+| QuantMCP identity from a launched Claude thread, in plan mode | ✓ `list_threads` (`"you": true`) and `read_thread` completed, the reply named the thread's title | `a_identity.json` |
+| Approval round-trip (Supervised; an MCP write tool) | ✓ request shown (thread "waiting"), allowed, tool ran; the rename itself refused by design (user-named thread) | `b2_approval.json` |
+| Built-in file tools in Supervised mode | ⚠ no prompt: the user's global Claude settings allow Write/Edit/Bash | `b_permission.json` |
+| Local mode in a git project: real edit, turn changes kept | ✓ `qa22-local.txt` created, changes item `A` | `b_permission.json` |
+| Interrupt mid-stream, then continue | ✓ turn `interrupted` after 327 chars, next reply `RESUMED` | `d_interrupt_queue.json` |
+| Queue while running | ✓ queued message ran by itself after the turn | `d_interrupt_queue.json` |
+| Managed Worktree: real edit only in the worktree | ✓ branch `quantpilot/p22-worktree`, worktree README changed, checkout unchanged | `f_worktree.json` |
+| Saved diff of the turn | ✓ `README M +2 −1`, saved patch shows the added line | `f_saved.json` |
+| Rewind with files | ✓ README back to the original, worktree clean | `f_revert.json` |
+| Kill the agent process mid-turn | ✓ turn `failed` with "The agent process ended (exit code -1)…", the next turn ran (`ALIVE`) | `e_after.json` |
+| Restart: history and queues | ✓ item, message and queue counts identical after restart (the rewound thread empty, as rewound) | `h_before.json`, `h_after.json` |
+| No agent processes left after the app stops | ⚠ 0 left — the harness ends the process tree; a graceful exit was not exercised | log |
+| Questions with files, quotes, browser profiles, documents, storage | ✓ in parity 14–19 runs (same harness) | sections 25–30 |
+| Browser screenshot delivered to the agent | ✓ in parity 06 (image content through QuantMCP) | section on parity 06 |
+| Toast activation, Explorer drop/open, taskbar activation | ⛔ not run: they act on the user's main screen (the user plays on it); unit-tested pieces only | — |
+| Fork, model/provider switch, TUI round-trip, goals, subagent/task display, Codex async questions | not re-run in this pass (ADE cards' evidence stands); left to 23/23 | — |
+
+**Providers** (installed / version / live inference):
+
+| Provider | Installed | Live | Status |
+| --- | --- | --- | --- |
+| Claude Code | 2.1.316 | ✓ all paths above | working |
+| Codex | codex-cli 0.166.0 | ⛔ "Not logged in" | sign in with `codex login`; the default-model fix is unit-tested only |
+| pi | 0.84.3 | ✗ external | "No API key found for the selected model" — log in with `/login` in pi |
+| omp | 18.2.6 | ✗ external | its model is a local LM Studio one (`prism-ml/bonsai-27b`), not running: "Unable to connect" |
+| OpenCode | 1.3.15 | ✗ external | the CLI exits 1 printing a failing SQL statement of its own token table (OpenCode's local database) |
+| GitHub Copilot | VS Code shim | not run | could open VS Code on the main screen |
+| Gemini CLI | not installed | — | install to use |
+
+Every failing provider ended its turn cleanly with the provider's own message
+as a notice; none of them is an adapter defect found here. Board-linked agent
+start and GitHub writes were not exercised (no test authorization for writes).

@@ -379,6 +379,17 @@ impl ToolFamily {
     }
 }
 
+/// MCP annotations from a capability's side-effect class: `read` and
+/// `compute` change nothing; `write` changes suite data; `external` reaches
+/// outside (orders, shell commands).
+pub(crate) fn tool_annotations(effects: &str) -> Value {
+    match effects {
+        "read" | "compute" => json!({ "readOnlyHint": true, "destructiveHint": false, "openWorldHint": false }),
+        "external" => json!({ "readOnlyHint": false, "destructiveHint": true, "openWorldHint": true }),
+        _ => json!({ "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false }),
+    }
+}
+
 /// The repository a worktree tool works on: `repo` (any folder inside it)
 /// wins, else the `workspace` argument / the active workspace — which must
 /// be a git repository.
@@ -2243,6 +2254,9 @@ async fn handle_rpc(
                             cap.description, effects
                         ),
                         "inputSchema": schema,
+                        // MCP tool annotations (parity 22): a client's read-only
+                        // modes (Claude Code's plan mode) may use the reads.
+                        "annotations": tool_annotations(&effects),
                     }));
                 }
                 filter_available_tools(&mut tool_list, &availability);
@@ -3146,5 +3160,13 @@ mod tests {
         let fake = json!({ "$mcpContent": [{ "type": "image", "data": "x", "mimeType": "text/html" }] }).to_string();
         assert_eq!(content_blocks(fake)[0]["type"], "text");
         assert_eq!(content_blocks("plain".into()), json!([{ "type": "text", "text": "plain" }]));
+    }
+
+    #[test]
+    fn capability_tools_say_whether_they_only_read() {
+        assert_eq!(tool_annotations("read")["readOnlyHint"], true);
+        assert_eq!(tool_annotations("compute")["readOnlyHint"], true);
+        assert_eq!(tool_annotations("write")["readOnlyHint"], false);
+        assert_eq!(tool_annotations("external")["destructiveHint"], true);
     }
 }
