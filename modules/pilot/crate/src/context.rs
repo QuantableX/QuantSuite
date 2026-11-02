@@ -349,6 +349,15 @@ pub struct Chip {
     pub content: String,
     #[serde(default)]
     pub path: Option<String>,
+    /// A quote's own comment (parity 14).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+}
+
+/// `pilot-item:<thread>:<item>:<occurrence>` → (thread, item).
+pub fn quote_source(path: Option<&str>) -> (String, String) {
+    let mut parts = path.and_then(|p| p.strip_prefix("pilot-item:")).unwrap_or_default().split(':');
+    (parts.next().unwrap_or_default().to_string(), parts.next().unwrap_or_default().to_string())
 }
 
 /// Chips sit in the text between these marks (FSI … PDI): invisible, and
@@ -383,6 +392,17 @@ pub fn compose(text: &str, chips: &[Chip], attachments: &[Attachment], provider:
 
     let mut blocks = Vec::new();
     for c in chips.iter().filter(|c| c.kind != "skill" && !c.content.trim().is_empty()) {
+        // A quote of an earlier reply (parity 14): marked as quoted, with its
+        // origin, apart from the user's own comment on it.
+        if c.kind == "quote" {
+            let (thread, item) = quote_source(c.path.as_deref());
+            let mut b = format!("<quoted-reply label=\"{}\" from=\"assistant\" thread=\"{thread}\" item=\"{item}\">\n{}\n</quoted-reply>", c.label, c.content.trim_end());
+            if let Some(note) = c.comment.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+                b.push_str(&format!("\n<user-comment-on-quote label=\"{}\">\n{note}\n</user-comment-on-quote>", c.label));
+            }
+            blocks.push(b);
+            continue;
+        }
         let source = c.path.as_deref().map(|p| format!(" source=\"{p}\"")).unwrap_or_default();
         blocks.push(format!("<context kind=\"{}\" label=\"{}\"{source}>\n{}\n</context>", c.kind, c.label, c.content.trim_end()));
     }
@@ -544,7 +564,7 @@ mod tests {
 
     #[test]
     fn the_provider_gets_chips_and_documents_as_labeled_context() {
-        let chip = |kind: &str, label: &str, content: &str| Chip { kind: kind.into(), label: label.into(), content: content.into(), path: None };
+        let chip = |kind: &str, label: &str, content: &str| Chip { kind: kind.into(), label: label.into(), content: content.into(), path: None, comment: None };
         let text = format!("Fix {CHIP_OPEN}Terminal 1 · lines 3–4{CHIP_CLOSE} using {CHIP_OPEN}pdf{CHIP_CLOSE}.");
         let chips = vec![chip("terminal", "Terminal 1 · lines 3–4", "error: E0308"), chip("skill", "pdf", "pdf")];
         let files = vec![
@@ -563,5 +583,22 @@ mod tests {
         assert!(!out.contains("shot.png"), "images go as image blocks, not text");
         assert!(compose(&text, &chips, &[], "codex", &read, &tree).contains("using $pdf."));
         assert_eq!(compose("plain", &[], &[], "claude", &read, &tree), "plain");
+    }
+
+    #[test]
+    fn quotes_keep_their_origin_apart_from_the_users_words() {
+        let quote = Chip {
+            kind: "quote".into(),
+            label: "Use a mutex".into(),
+            content: "Use a mutex here — not a channel. Ünïcode ✓".into(),
+            path: Some("pilot-item:th-1:it-9:2".into()),
+            comment: Some("Why not a channel?".into()),
+        };
+        let text = format!("Explain {CHIP_OPEN}Use a mutex{CHIP_CLOSE} please");
+        let out = compose(&text, &[quote], &[], "claude", &|_| None, &|_| String::new());
+        assert!(out.starts_with("Explain [Use a mutex] please"), "{out}");
+        assert!(out.contains("<quoted-reply label=\"Use a mutex\" from=\"assistant\" thread=\"th-1\" item=\"it-9\">\nUse a mutex here — not a channel. Ünïcode ✓\n</quoted-reply>"), "{out}");
+        assert!(out.contains("<user-comment-on-quote label=\"Use a mutex\">\nWhy not a channel?\n</user-comment-on-quote>"), "{out}");
+        assert_eq!(quote_source(Some("pilot-item:a:b:0")), ("a".to_string(), "b".to_string()));
     }
 }

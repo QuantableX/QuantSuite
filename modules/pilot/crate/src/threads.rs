@@ -553,7 +553,7 @@ fn prepare(provider: &str, text: String, images: Vec<ImageInput>, chips: Vec<Chi
     }
     for c in &chips {
         let content: String = c.content.chars().take(4000).collect();
-        shown.push(json!({ "kind": "chip", "chipKind": c.kind, "label": c.label, "content": content, "path": c.path }));
+        shown.push(json!({ "kind": "chip", "chipKind": c.kind, "label": c.label, "content": content, "path": c.path, "comment": c.comment }));
     }
     let files: Vec<Attachment> = attachments.iter().map(|a| Attachment { kind: a.kind.clone(), name: a.name.clone(), path: a.path.clone() }).collect();
     let read = |p: &str| std::fs::read(p).ok();

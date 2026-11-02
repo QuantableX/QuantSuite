@@ -18,15 +18,27 @@ import { parseFileRef } from '#pilot/utils/files'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useInspectorStore } from '#pilot/stores/inspector'
 
-const props = withDefaults(defineProps<{ source: string; streaming?: boolean }>(), { streaming: false })
+const props = withDefaults(defineProps<{ source: string; streaming?: boolean; cite?: { threadId: string; itemId: string } | null }>(), { streaming: false, cite: null })
 const emit = defineEmits<{ notice: [text: string] }>()
 
 const root = ref<HTMLElement | null>(null)
 const html = ref('')
 let frame = 0
 
+/** A selection inside this message (parity 14): no repaint replaces it. */
+function selectedHere(): boolean {
+  const sel = window.getSelection()
+  return !!sel && !sel.isCollapsed && !!root.value && root.value.contains(sel.anchorNode) && sel.toString().trim().length > 0
+}
+let held = false
+
 function paint() {
   frame = 0
+  if (selectedHere()) {
+    held = true
+    return
+  }
+  held = false
   html.value = renderMarkdown(props.source)
   if (!props.streaming) void nextTick(() => root.value && highlightCode(root.value))
 }
@@ -37,6 +49,69 @@ function schedule() {
 }
 
 watch(() => props.source, schedule)
+
+// ── Cite in composer (parity 14) ──
+const QUOTE_MAX = 16 * 1024
+const cite = ref<{ x: number; y: number; text: string; occurrence: number } | null>(null)
+const citeComment = ref('')
+const citing = ref(false)
+function onSelectionChange() {
+  if (held && !selectedHere()) schedule()
+  if (!props.cite) return
+  if (!selectedHere()) {
+    if (!citing.value) cite.value = null
+    return
+  }
+  const sel = window.getSelection()!
+  const text = sel.toString().trim()
+  const r = sel.getRangeAt(0).getBoundingClientRect()
+  // Which occurrence of the text in the message, for highlighting the right one later.
+  const before = document.createRange()
+  before.setStart(root.value!, 0)
+  before.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset)
+  // Compared without whitespace, like findQuote: a selection's text has line
+  // breaks between blocks that the DOM text has not.
+  const prefix = before.toString().replace(/\s+/g, '')
+  const needle = text.replace(/\s+/g, '')
+  let occurrence = 0
+  for (let i = prefix.indexOf(needle); i >= 0; i = prefix.indexOf(needle, i + 1)) occurrence++
+  cite.value = { x: Math.min(r.right, window.innerWidth - 180), y: r.bottom + 6, text, occurrence }
+}
+function startCite() {
+  if (!cite.value) return
+  if (cite.value.text.length > QUOTE_MAX) {
+    emit('notice', `The selection is ${Math.round(cite.value.text.length / 1024)} KB; a quote can be at most ${QUOTE_MAX / 1024} KB. Select less.`)
+    return
+  }
+  citing.value = true
+}
+function addCite() {
+  const c = cite.value
+  if (!c || !props.cite) return
+  const words = c.text.replace(/\s+/g, ' ')
+  const label = `“${words.length > 40 ? words.slice(0, 40) + '…' : words}”`
+  const chip = { kind: 'quote', label, content: c.text, path: `pilot-item:${props.cite.threadId}:${props.cite.itemId}:${c.occurrence}`, comment: citeComment.value.trim() || null }
+  window.dispatchEvent(new CustomEvent('qp-add-context', { detail: { threadId: props.cite.threadId, chip } }))
+  citing.value = false
+  cite.value = null
+  citeComment.value = ''
+  window.getSelection()?.removeAllRanges()
+}
+function onCiteKey(e: KeyboardEvent) {
+  // Ctrl+Shift+Q cites the selection from the keyboard.
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'q' && cite.value && !citing.value) {
+    e.preventDefault()
+    startCite()
+  }
+}
+onMounted(() => {
+  document.addEventListener('selectionchange', onSelectionChange)
+  document.addEventListener('keydown', onCiteKey)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('selectionchange', onSelectionChange)
+  document.removeEventListener('keydown', onCiteKey)
+})
 // A diagram finished drawing somewhere: this message may show it now (parity 13).
 watch(mermaidVersion, () => {
   if (props.source.includes('mermaid')) schedule()
@@ -140,6 +215,19 @@ async function onClick(e: MouseEvent) {
 <template>
   <!-- eslint-disable-next-line vue/no-v-html — sanitised in renderMarkdown -->
   <div ref="root" class="qp-md" :class="{ streaming }" @click="onClick" v-html="html" />
+  <Teleport to="body">
+    <div v-if="cite && !citing" class="qp-cite-btn-wrap" :style="{ left: `${cite.x}px`, top: `${cite.y}px` }">
+      <button class="qp-cite-btn" title="Quote the selection in the message box (Ctrl+Shift+Q)" @mousedown.prevent @click="startCite">Cite in composer</button>
+    </div>
+    <div v-if="cite && citing" class="qp-cite-pop" role="dialog" aria-label="Cite in composer" :style="{ left: `${Math.min(cite.x, 9999)}px`, top: `${cite.y}px` }">
+      <blockquote class="qp-cite-quote">{{ cite.text.length > 400 ? cite.text.slice(0, 400) + '…' : cite.text }}</blockquote>
+      <input v-model="citeComment" class="qp-cite-comment" maxlength="2000" placeholder="Comment on it (optional)" aria-label="Comment" @keydown.enter.prevent="addCite" @keydown.esc="(citing = false), (cite = null)" />
+      <div class="qp-cite-actions">
+        <button class="qp-btn qp-btn-sm" @click="(citing = false), (cite = null)">Cancel</button>
+        <button class="qp-btn qp-btn-sm qp-btn-primary" @click="addCite">Add to message</button>
+      </div>
+    </div>
+  </Teleport>
   <PilotThreadMermaidView v-if="large" :hash="large.hash" @close="(large.from.focus(), (large = null))" />
 </template>
 
@@ -220,6 +308,13 @@ async function onClick(e: MouseEvent) {
   background: var(--qss-bg-raised, #1f1f25);
   overflow: hidden;
 }
+/* Cite in composer (parity 14) — teleported, so not :deep. */
+:global(.qp-cite-btn-wrap) { position: fixed; z-index: 1100; transform: translateX(-100%); }
+:global(.qp-cite-btn) { padding: 3px 9px; border-radius: 7px; border: 1px solid var(--qss-accent, #7aa2f7); background: var(--qss-bg-raised, #1f1f25); color: var(--qss-text, #d4d4d8); font: inherit; font-size: 12px; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
+:global(.qp-cite-pop) { position: fixed; z-index: 1100; width: 360px; transform: translateX(-100%); display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px; border: 1px solid var(--qss-border, #47474f); background: var(--qss-bg-raised, #1f1f25); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); font-size: 12.5px; }
+:global(.qp-cite-quote) { margin: 0; padding: 4px 8px; border-left: 3px solid var(--qss-accent, #7aa2f7); max-height: 120px; overflow: auto; white-space: pre-wrap; color: var(--qss-text-secondary, #9a9aa5); }
+:global(.qp-cite-comment) { height: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--qss-border, #47474f); background: var(--qss-bg, #18181e); color: var(--qss-text, #d4d4d8); font: inherit; }
+:global(.qp-cite-actions) { display: flex; justify-content: flex-end; gap: 6px; }
 /* Mermaid diagrams (parity 13). */
 .qp-md :deep(.qp-md-mm[data-mm-state='ready'][data-mm-show='diagram'] .qp-md-mm-src) { display: none; }
 .qp-md :deep(.qp-md-mm[data-mm-show='source'] .qp-md-mm-view) { display: none; }

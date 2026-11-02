@@ -75,8 +75,8 @@ function requestLine(kind: string, data: Record<string, any>): string {
           </div>
           <PilotThreadToolCall v-for="t in e.items" :key="t.id" :item="t" />
         </div>
-        <div v-else-if="e.item.kind === 'assistant'" class="qp-act-text" :class="{ sub: e.item.parent }">
-          <PilotThreadMarkdown :source="String(e.item.data.text ?? '')" :streaming="Boolean(e.item.data.streaming)" @notice="(t: string) => emit('notice', t)" />
+        <div v-else-if="e.item.kind === 'assistant'" class="qp-act-text" :class="{ sub: e.item.parent }" :data-item-id="e.item.id">
+          <PilotThreadMarkdown :source="String(e.item.data.text ?? '')" :streaming="Boolean(e.item.data.streaming)" :cite="{ threadId: e.item.threadId, itemId: e.item.id }" @notice="(t: string) => emit('notice', t)" />
         </div>
         <div v-else-if="e.item.kind === 'reasoning'" class="qp-act-line">
           <Brain :size="12" />

@@ -14,6 +14,9 @@ import { computed, onMounted, ref } from 'vue'
 import { ChevronRight, FileText, Folder } from 'lucide-vue-next'
 import { pilot } from '#pilot/utils/invoke'
 import { useInspectorStore } from '#pilot/stores/inspector'
+import { usePilotStore } from '#pilot/stores/pilot'
+import { useThreadStore } from '#pilot/stores/thread'
+import { highlightQuote, parseQuotePath } from '#pilot/utils/quote'
 import { CHIP_OPEN, segments } from '#pilot/utils/mentions'
 import type { ThreadItem } from '#pilot/types'
 
@@ -29,6 +32,7 @@ interface Shown {
   chipKind?: string
   label?: string
   content?: string
+  comment?: string | null
 }
 
 const text = computed(() => String(props.item.data.text ?? ''))
@@ -101,6 +105,44 @@ async function menuAction(what: string) {
   else if (what === 'save') await saveCopy(a)
 }
 
+// ── Quotes go back to their source (parity 14) ──
+const chipOf = (label: string) => chips.value.find((x) => x.label === label)
+const isQuote = (label: string) => chipOf(label)?.chipKind === 'quote'
+async function openQuote(label: string) {
+  const c = chipOf(label)
+  const src = parseQuotePath(c?.path)
+  if (!c || !src) return
+  let turnId = ''
+  try {
+    const around = await pilot<{ id: string; turnId: string }[]>('plugin:pilot|pilot_history_around', { threadId: src.threadId, itemId: src.itemId })
+    turnId = (around ?? []).find((x) => x.id === src.itemId)?.turnId ?? ''
+  } catch {
+    emit('notice', 'The quoted reply is no longer there (rewound, deleted or out of reach) — the quote keeps its text.')
+    return
+  }
+  const store = usePilotStore()
+  const threads = useThreadStore()
+  if (store.activeId !== src.threadId) await store.openSession(src.threadId)
+  threads.reveal = { threadId: src.threadId, itemId: src.itemId, nonce: Date.now() }
+  let unfolded = false
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 150))
+    const el = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(src.itemId)}"]`)
+    // A message folded into "Worked for …": open the fold once.
+    if (!el && !unfolded && turnId) {
+      const head = document.querySelector<HTMLElement>(`[data-turn="${CSS.escape(turnId)}"] .qp-act-head[aria-expanded="false"]`)
+      if (head) {
+        head.click()
+        unfolded = true
+      }
+    }
+    if (el) {
+      if (!highlightQuote(el, c.content ?? '', src.occurrence)) emit('notice', 'The reply changed since it was quoted — the quote keeps the text as it was.')
+      return
+    }
+  }
+}
+
 const chipTitle = (label: string) => {
   const c = chips.value.find((x) => x.label === label)
   return c ? `${c.chipKind ?? 'context'} · ${(c.content ?? '').slice(0, 300)}` : label
@@ -153,7 +195,8 @@ const chipTitle = (label: string) => {
     </Teleport>
     <div v-if="hasChips" class="qp-um-text">
       <template v-for="(p, i) in parts" :key="i">
-        <span v-if="p.chip" class="qp-um-chip" :title="chipTitle(p.text)">{{ p.text }}</span>
+        <button v-if="p.chip && isQuote(p.text)" type="button" class="qp-um-chip qp-um-quote" :title="`Quoted reply — open it\n${(chipOf(p.text)?.content ?? '').slice(0, 300)}${chipOf(p.text)?.comment ? `\nComment: ${chipOf(p.text)?.comment}` : ''}`" @click="openQuote(p.text)">{{ p.text }}</button>
+        <span v-else-if="p.chip" class="qp-um-chip" :title="chipTitle(p.text)">{{ p.text }}</span>
         <template v-else>{{ p.text }}</template>
       </template>
     </div>
@@ -161,7 +204,8 @@ const chipTitle = (label: string) => {
     <details v-if="context.length" class="qp-um-context">
       <summary><ChevronRight class="qp-um-caret" :size="12" /> Attached context · {{ context.length }}</summary>
       <div v-for="(c, i) in context" :key="i" class="qp-um-block">
-        <div class="qp-um-block-head">{{ c.label }}</div>
+        <div class="qp-um-block-head">{{ c.chipKind === 'quote' ? `Quote ${c.label}` : c.label }}</div>
+        <div v-if="c.comment" class="qp-um-comment">Comment: {{ c.comment }}</div>
         <pre class="qp-um-pre">{{ c.content }}</pre>
       </div>
     </details>
@@ -173,6 +217,9 @@ const chipTitle = (label: string) => {
 .qp-um-images { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .qp-um-file { font: inherit; font-size: 11.5px; border: 1px solid transparent; cursor: pointer; }
 .qp-um-file:hover:not(.gone) { border-color: var(--qss-accent, #7aa2f7); }
+.qp-um-quote { border: none; font: inherit; cursor: pointer; }
+.qp-um-quote:hover { text-decoration: underline; }
+.qp-um-comment { font-size: 11.5px; color: var(--qss-text-secondary, #9a9aa5); padding: 2px 0 4px; }
 .qp-um-thumb-btn { padding: 0; border: none; background: transparent; cursor: zoom-in; border-radius: 6px; }
 .qp-um-thumb-btn:focus-visible { outline: 2px solid var(--qss-accent, #7aa2f7); outline-offset: 2px; }
 .qp-um-thumb-btn.gone, .qp-um-file.gone { opacity: 0.55; cursor: not-allowed; text-decoration: line-through; }
