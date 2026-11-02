@@ -1898,3 +1898,90 @@ pixels). Other window sizes and Windows scaling were not run.
 QA note: the QA profile had toasts on ("unfocused") — with a never-focused QA
 window, earlier runs with waiting threads could show a toast on the main
 screen. The QA profile now has toasts off.
+
+## 32. Parity follow-up: measured performance (21/23)
+
+**Setup.** Isolated native QA app (debug Rust build, Nuxt dev frontend —
+unminified, so absolute numbers are higher than a release build; before and
+after use the same build mode), window 1400×900, a 32-core Windows 11
+machine. Fixture `artifacts/quantpilot-parity-21/fixture.py`: "Parity21 perf"
+with 400 turns and 1,200 messages (replies of ~1.6 KB with headings, lists, a
+code block, a table every 7th, a Mermaid diagram every 20th; an image
+attachment every 10th user message; a tool call per turn) plus nine more
+threads. `perf.js` drives the real thread store: open; scroll to the top so
+every older page loads; 20 s of **ten simultaneous streams** (the open thread
+and nine others, 50 deltas/s each, ~17 KB reply) while typing into the
+composer every 250 ms; then the worst case — ten streams for 10 s while
+scrolled to the top with all 1,200 messages loaded. `switch.js` does 2 × 10
+rounds of leaving the module and coming back; `gc.mjs` collects garbage and
+counts heap, DOM nodes and listeners on `window`/`document`; `proc.ps1` samples
+the working set and CPU of the app's process tree. Raw results: `baseline/`,
+`after1/`, `after2/`, `after3/` (`perf.json`, `gc-*.json`, `idle-*.json`,
+`five*.json`, screenshots). Source: baseline `db86fbc`, after = this change.
+
+**Budgets** (set from the baseline, before optimizing): during ten streams
+frames p95 ≤ 33 ms and max ≤ 100 ms, input p95 ≤ 25 ms, stream-to-paint p95
+≤ 100 ms, long tasks ≤ 2 s in 20 s; scrolling through the whole history max
+frame ≤ 250 ms; 20 module switches grow the heap ≤ 5 MB with a constant
+listener count.
+
+| Measure | Baseline | After | Budget |
+| --- | --- | --- | --- |
+| Ten streams: frames p95 / max | 75.2 / 116.8 ms | 29.3 / 70.6 ms | ≤ 33 / 100 ✓ |
+| Ten streams: input p95 | 20.9 ms | 6.5 ms | ≤ 25 ✓ |
+| Ten streams: stream-to-paint p50 / p95 | 108 / 172 ms | 17.6 / 62.7 ms | p95 ≤ 100 ✓ |
+| Ten streams: long tasks in 20 s | 187, 11.6 s | 2, 0.12 s | ≤ 2 s ✓ |
+| Deltas applied per thread in 20 s (of 1,000 sent) | 406 | 731 | — |
+| Worst case (all 1,200 loaded, at the top): frames p95 / max | 66.8 / 125.2 ms ¹ | 4.4 / 38.1 ms | ✓ |
+| Worst case: long tasks in 10 s | 61, 3.6 s ¹ | 0 | ✓ |
+| Scroll through all pages: frames p95 / max | 65.1 / 622 ms | 41.8 / 200.3 ms | max ≤ 250 ✓, p95 over 33 |
+| Scroll: long tasks | 52, 9.8 s | 33, 2.8 s | — |
+| DOM nodes while streaming at the latest | 151,228 | 31,878 | — |
+| JS heap after the streams | 268 MB | 164 MB | — |
+| Listeners on `document` | 1,613 | 13 | constant ✓ |
+| 20 module switches: heap / listeners | +2.4 MB / +1 | +2.0 MB / +1 | ✓ |
+| Working set of the app's processes, idle → after streams | 1,088 → 1,781 MB | 933 → 1,293 MB | recorded |
+
+¹ measured with the second build (after the first two fixes); the baseline
+build had all 1,200 messages mounted during its 20 s run, too.
+
+**What changed.**
+- **Streaming Markdown renders only the unfinished tail** (`utils/stream.ts`,
+  `renderStreaming`): the finished blocks (up to the last blank line outside a
+  code fence) are parsed and sanitized once and kept; each frame parses only
+  the tail. The final paint parses the whole message, so a loose list or a
+  reference split by a blank line comes out exactly right.
+- **One pair of document listeners for all messages**
+  (`utils/markdownEvents.ts`): the quote feature (parity 14) had added a
+  `selectionchange` and a `keydown` listener per rendered message — 1,600
+  with 400 turns, all run on every key. Now the message holding the
+  selection gets selection changes (and the one that held it before), the
+  last one the keys.
+- **Bounded retention**: returning to the latest messages lets go of older
+  pages loaded while scrolling up (`trimOlder`, keeping ~240 items, whole
+  turns) — they load again on the way up; Find and reveal (parity 15) use
+  bounded excerpts and are unaffected. Not while Find is open or an excerpt
+  is shown.
+- **Code is coloured when it comes near the screen** (shared
+  IntersectionObserver, 800 px margin) instead of every block of every
+  newly loaded page at once; a repaint or unmount stops watching its blocks
+  so no detached nodes are kept.
+- **A streaming message far off screen is not repainted** until it comes
+  within 1,200 px; the final paint always happens.
+
+**Real agents**: five Claude Haiku threads streaming ~3–4 KB replies at once
+finished in 11–18 s each; meanwhile frames p95 4.4 ms (max 96 ms) and input
+p95 6.6 ms; the app's process tree used 123 % of one core and a 1,332 MB
+working set (the Claude CLIs not included). Codex is not signed in on this
+machine — no Codex measurement.
+
+Functional checks after the change: code blocks on screen were coloured (3 of
+236 in the loaded window, the rest when reached), a Mermaid diagram drew when
+scrolled to, selecting text showed **Cite in composer** and Ctrl+Shift+Q opened
+it (shared listener), Find reached a turn trimmed from the view, and the
+streaming phases above had selection, scroll and typing active. Not done:
+idle CPU of the baseline (the first sampler read CPU time after sleeping and
+reported 0 — fixed before the after-runs: 3.4 % of one core idle, 6.9 % after
+the streams finished); scrolling through all 1,200 messages still has a frame
+p95 of 42 ms (pages of 60 items mounting at once) — virtualizing the timeline
+was not needed for the stream budgets and is left as a follow-up.

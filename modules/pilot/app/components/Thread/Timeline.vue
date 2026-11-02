@@ -86,8 +86,13 @@ function elapsedOf(turnId: string, fallbackStart: number, fallbackEnd: number): 
 function onScroll() {
   const el = scroller.value
   if (!el) return
+  const wasBottom = atBottom.value
   atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLACK
   if (el.scrollTop < 240) void loadOlder()
+  // Back at the latest: let go of older pages (parity 21), not while Find works with them.
+  if (atBottom.value && !wasBottom && !historyItems.value && !findOpen.value) {
+    if (threads.trimOlder(props.threadId)) void nextTick(() => scrollToBottom())
+  }
 }
 
 function scrollToBottom(smooth = false) {

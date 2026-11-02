@@ -253,6 +253,25 @@ export const useThreadStore = defineStore('pilot/thread', {
       }
     },
 
+    /**
+     * Back at the latest (parity 21): older pages that were loaded while
+     * scrolling up go again — they load again on the way up — so a long
+     * session does not keep thousands of messages rendered.
+     */
+    trimOlder(id: string, keep = 240) {
+      const view = this.views[id]
+      if (!view || view.loadingOlder || view.items.length <= keep + 60) return false
+      const cut = view.items.length - keep
+      // Never cut a turn in two: start at the first item of a turn.
+      let at = cut
+      while (at < view.items.length - 1 && view.items[at]!.turnId === view.items[at - 1]!.turnId) at++
+      if (at >= view.items.length - 1) return false
+      view.items = view.items.slice(at)
+      reindex(view)
+      view.hasMore = true
+      return true
+    },
+
     async loadOlder(id: string) {
       const view = this.views[id]
       if (!view || !view.hasMore || view.loadingOlder || !view.items.length) return
