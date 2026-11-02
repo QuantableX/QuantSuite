@@ -406,9 +406,9 @@ export const useThreadStore = defineStore('pilot/thread', {
       this.ensure(id).editingQueued = itemId
     },
 
-    async queueUpdate(id: string, itemId: string, text: string): Promise<boolean> {
+    async queueUpdate(id: string, itemId: string, text: string, extras: MessageExtras = {}, revision?: number): Promise<boolean> {
       try {
-        await pilot('plugin:pilot|pilot_queue_update', { itemId, text })
+        await pilot('plugin:pilot|pilot_queue_update', { itemId, text, ...extras, revision })
         return true
       } catch (e) {
         this.ensure(id).error = String(e)
@@ -419,8 +419,10 @@ export const useThreadStore = defineStore('pilot/thread', {
     async queueRemove(id: string, itemId: string) {
       try {
         await pilot('plugin:pilot|pilot_queue_remove', { itemId })
+        return true
       } catch (e) {
         this.ensure(id).error = String(e)
+        return false
       }
     },
 

@@ -355,14 +355,8 @@ pub fn pilot_agent_message_thread(
     }
     let from = if me.title.trim().is_empty() { "another thread" } else { me.title.as_str() };
     let text = format!("{}\n\n(Sent by the thread \"{from}\" through QuantMCP.)", message.trim());
-    if state.runtime.active_turn(&target.id).is_none() && !state.db.queue_held(&target.id).unwrap_or(false) {
-        threads::start_turn(&app, &state, &target.id, text, Vec::new())?;
-        Ok("Sent; the thread is working on it.".into())
-    } else {
-        state.db.queue_add(&target.id, &text).map_err(|e| e.to_string())?;
-        threads::emit_queue(&state, &target.id);
-        Ok("Queued; the thread takes it after its current turn.".into())
-    }
+    threads::enqueue(&app, &state, &target.id, crate::db::QueuePayload::text(&text))?;
+    Ok("Saved for delivery; the thread takes it when ready. Failed delivery remains in its queue.".into())
 }
 
 #[cfg(test)]

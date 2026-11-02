@@ -847,7 +847,8 @@ never fakes support.
 - Attachments: paste, drop anywhere in the module (or on a sidebar row), or
   the + menu (system picker for files and folders); images ≤ 10 MiB in,
   PNG out; files ≤ 50 MiB copied; 100 per message; sending waits for
-  uploads; a queued message cannot carry images.
+  uploads. Queued messages retain images, files, folders and chips as editable
+  structured drafts; parity 04 below describes delivery and recovery.
 
 ## 6. Permission modes
 
@@ -1123,3 +1124,41 @@ and fallback budgeting. Binary media, rendered HTML, native tools/background job
 and hidden reasoning cannot be moved between providers; saved text and attachment
 references are recoverable, not reattached binaries. Context-limit rejection does
 not automatically stop, compact or recreate a running provider session.
+
+## 14. Parity follow-up: structured queues (04/23)
+
+Schema 13 stores a versioned payload with the unexpanded composer text, chips
+(including skill references), and saved attachment paths and small thumbnails.
+Legacy text-only rows keep their identity and order. Provider-specific context
+expansion and image loading happen at delivery through the normal send pipeline.
+The payload is bounded by the IPC frame limit, 100 attachments and 96 KiB per
+thumbnail; full image bytes are never repeated in queue events.
+
+Editing opens the complete draft in the normal composer. Saving keeps its queue
+position; cancel/save restores the previous text, pasted text, chips and
+attachments. Edit state survives a restart. If the row changes, disappears or
+starts sending, the unsaved edit remains available as an explicit new queued copy.
+Revision checks reject stale updates. Upload failures block sending until the
+attachment is corrected or removed.
+
+A persisted per-thread delivery claim prevents concurrent Resume, Send now and
+turn-completion callbacks from consuming the same row twice. Preparation or
+launch failure retains the payload and holds the queue with an actionable error.
+Rows remain until their own turn completes; failed/interrupted turns retain them.
+Codex steers additionally wait for the provider's asynchronous acknowledgement,
+including when it arrives after turn completion. A rejected steer stays queued.
+Provider capability checks reject unsupported ACP images rather than silently
+dropping them. Steering retains attachment metadata in the transcript.
+
+Restart holds every queue. An in-flight row becomes uncertain and requires the
+user to check the transcript before explicitly retrying or removing it. There is
+no automatic replay of an ambiguous delivery, and no claim of exactly-once remote
+execution across a process crash. A completion race that prevents delivery can
+leave a recoverable held message instead of silently dropping it.
+
+Removing an unsent row never deletes saved files. The `attachment_references`
+SQLite view counts distinct queue/timeline owners, including forked timelines;
+future retention work can consult it. This card adds no automatic cleanup policy.
+Native QA, real Claude/Codex results and focused regression evidence are recorded
+on the card and in the private `quantpilot-parity-04` artifact directory. These
+source changes are separate from the published 1.0.42 assets and the 1.1.0 redesign.

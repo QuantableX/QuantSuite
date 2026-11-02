@@ -162,6 +162,8 @@ pub enum Emit {
     },
     RateLimit { windows: Vec<RateWindow> },
     Notice { text: String },
+    /// A provider's asynchronous acceptance/rejection of a queued steer.
+    QueueDelivery { id: String, error: Option<String> },
     TurnEnd {
         status: TurnStatus,
         error: Option<String>,
@@ -184,6 +186,8 @@ pub struct TurnInput {
     /// What the timeline shows when it differs (the typed text with its chips).
     pub display: Option<String>,
     pub skills: Vec<SkillRef>,
+    /// Stable queue row associated before provider delivery (never sent as text).
+    pub queue_id: Option<String>,
 }
 
 /// How a tool call is shown: a category for grouping ("Ran 3 commands") and
@@ -197,6 +201,12 @@ pub struct ToolInfo {
 
 pub trait Driver: Send {
     fn provider(&self) -> &'static str;
+
+    /// Refuse known unsupported input before it can be silently discarded.
+    /// Adapters with asynchronous capability discovery also check after init.
+    fn input_error(&self, _input: &TurnInput) -> Option<String> { None }
+
+    fn steer_needs_ack(&self) -> bool { false }
 
     /// Category and title for a tool call of this provider.
     fn tool_info(&self, name: &str, input: &Value) -> ToolInfo;
