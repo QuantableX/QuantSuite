@@ -30,6 +30,8 @@ const COMMANDS: &[&str] = &[
     "pilot_files_search",
     "pilot_attachment_save_image",
     "pilot_attachment_save_file",
+    "pilot_document_extract",
+    "pilot_document_cancel",
     "pilot_skills",
     "pilot_diff_list",
     "pilot_diff_file",

@@ -48,7 +48,7 @@ import {
   type Trigger,
 } from '#pilot/utils/mentions'
 import type { MenuRow } from '#pilot/components/Thread/MentionMenu.vue'
-import type { ComposerAttachment, ContextChip, SessionMeta, ThreadSnapshot } from '#pilot/types'
+import type { ComposerAttachment, ContextChip, DocInfo, SessionMeta, ThreadSnapshot } from '#pilot/types'
 import {
   enterAction,
   highlight,
@@ -143,7 +143,8 @@ function persistSoon() {
 function persistContext() {
   const ready: Record<string, ComposerAttachment[]> = {}
   for (const [id, list] of Object.entries(attachState.value)) {
-    const kept = list.filter((a) => !a.pending && !a.error)
+    // A read in progress is not kept: after a restart it is read again (from the cache).
+    const kept = list.filter((a) => !a.pending && !a.error).map((a) => (a.docPending ? { ...a, docPending: false } : a))
     if (kept.length) ready[id] = kept
   }
   save('pilot.attach.v1', ready)
@@ -987,7 +988,76 @@ async function pickFromDisk(directory: boolean) {
 }
 
 function removeAttachment(key: string) {
+  const gone = attachments.value.find((a) => a.key === key)
+  // A document still being read stops being read.
+  if (gone?.docPending && gone.path) void pilot('plugin:pilot|pilot_document_cancel', { path: gone.path }).catch(() => undefined)
   attachments.value = attachments.value.filter((a) => a.key !== key)
+}
+
+// ── Documents (parity 16) ──
+// PDF and Office files are read in the background as soon as they are on the
+// shelf (saved, restored or put back); the send uses the cached result. Keep
+// the list in step with KINDS in documents.rs.
+const DOCUMENT = /\.(pdf|docx|pptx|odt|doc|xlsx|xls|ppt|odp|ods|epub|pages|key|numbers)$/i
+/** Patches an attachment of the thread it was read for, wherever the composer is now. */
+function patchDoc(threadId: string, key: string, patch: Partial<ComposerAttachment>) {
+  const list = attachState.value[threadId]
+  if (!list?.some((a) => a.key === key)) return
+  attachState.value[threadId] = list.map((a) => (a.key === key ? { ...a, ...patch } : a))
+  persistSoon()
+}
+async function readDocument(a: ComposerAttachment) {
+  const threadId = props.threadId
+  patchDoc(threadId, a.key, { docPending: true })
+  let doc: DocInfo
+  try {
+    doc = (await pilot<DocInfo>('plugin:pilot|pilot_document_extract', { path: a.path, name: a.name }))!
+  } catch (e) {
+    doc = { status: 'failed', kind: '', format: 'Document', title: null, pages: null, pagesRead: 0, unit: '', chars: 0, textPath: null, detail: String(e), emptyPages: [] }
+  }
+  patchDoc(threadId, a.key, { docPending: false, doc })
+}
+watch(
+  attachments,
+  (list) => {
+    for (const a of list) {
+      if (a.kind === 'file' && a.path && !a.pending && !a.error && !a.doc && !a.docPending && DOCUMENT.test(a.name)) void readDocument(a)
+    }
+  },
+  { immediate: true }
+)
+function docLabel(d: DocInfo): string {
+  const n = d.pages ?? 0
+  const units = d.unit && d.pages != null ? `${n.toLocaleString('en-US')} ${d.unit}${n === 1 ? '' : 's'}` : ''
+  switch (d.status) {
+    case 'ok':
+      return units ? `Text · ${units}` : 'Text read'
+    case 'truncated':
+      return units ? `Partly read · ${d.pagesRead.toLocaleString('en-US')} of ${units}` : 'Partly read'
+    case 'needs_ocr':
+      return 'Scanned · needs OCR'
+    case 'encrypted':
+      return 'Password-protected'
+    case 'unsupported':
+      return 'Text not extracted'
+    case 'cancelled':
+      return 'Not read'
+    default:
+      return 'Could not read'
+  }
+}
+function docTitle(a: ComposerAttachment): string {
+  const d = a.doc
+  if (!d) return a.path
+  const lines = [`${d.format}${d.title ? ` — ${d.title}` : ''}`]
+  if (d.detail) lines.push(d.detail)
+  if (d.status === 'ok' || d.status === 'truncated') {
+    lines.push(`${d.chars.toLocaleString('en-US')} characters of text go with the message${d.chars > 48 * 1024 ? ' (the first 48 KiB inline, the rest as a file the agent can read)' : ''}.`)
+  } else {
+    lines.push('The agent gets the original file and this limitation.')
+  }
+  lines.push(a.path)
+  return lines.join('\n')
 }
 
 function onDrop(e: DragEvent) {
@@ -1145,7 +1215,7 @@ function focus() {
           :key="a.key"
           class="qp-c-att"
           :class="{ image: a.kind === 'image' && a.thumb, failed: !!a.error }"
-          :title="a.error ?? a.path"
+          :title="a.error ?? docTitle(a)"
         >
           <img v-if="a.kind === 'image' && a.thumb" :src="a.thumb" :alt="a.name" class="qp-c-att-thumb" />
           <template v-else>
@@ -1155,6 +1225,8 @@ function focus() {
             <span class="qp-c-att-name">{{ a.name }}</span>
             <span v-if="a.size && !a.error" class="qp-c-att-size">{{ sizeLabel(a.size) }}</span>
             <span v-if="a.error" class="qp-c-att-err">{{ a.error }}</span>
+            <span v-else-if="a.docPending" class="qp-c-att-doc">Reading text…</span>
+            <span v-else-if="a.doc" class="qp-c-att-doc" :class="{ warn: a.doc.status !== 'ok' }">{{ docLabel(a.doc) }}</span>
           </template>
           <button class="qp-c-att-x" :title="`Remove ${a.name}`" @click.stop="removeAttachment(a.key)"><X :size="11" /></button>
         </div>
@@ -1239,7 +1311,7 @@ function focus() {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  max-width: 240px;
+  max-width: 340px;
   height: 26px;
   padding: 0 22px 0 8px;
   border: 1px solid var(--qss-border, #47474f);
@@ -1250,9 +1322,11 @@ function focus() {
 .qp-c-att.image { height: 52px; padding: 0; overflow: hidden; }
 .qp-c-att.failed { border-color: var(--qss-error, #f87171); }
 .qp-c-att-thumb { height: 52px; max-width: 120px; object-fit: cover; display: block; }
-.qp-c-att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qp-c-att-size { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 10.5px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-c-att-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-c-att-size { flex-shrink: 0; white-space: nowrap; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 10.5px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-c-att-err { font-size: 11px; color: var(--qss-error, #f87171); white-space: nowrap; }
+.qp-c-att-doc { flex-shrink: 0; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); white-space: nowrap; }
+.qp-c-att-doc.warn { color: var(--qss-warning, #e0af68); }
 .qp-c-att-x {
   position: absolute;
   top: 3px;

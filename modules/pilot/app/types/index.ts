@@ -752,6 +752,24 @@ export interface ComposerAttachment {
   /** Still being saved, or why it failed. */
   pending?: boolean
   error?: string | null
+  /** A PDF or Office document's text, being read or read (parity 16). */
+  docPending?: boolean
+  doc?: DocInfo | null
+}
+
+/** What reading a document attachment gave (documents.rs). */
+export interface DocInfo {
+  status: 'ok' | 'truncated' | 'needs_ocr' | 'encrypted' | 'unsupported' | 'failed' | 'cancelled'
+  kind: string
+  format: string
+  title: string | null
+  pages: number | null
+  pagesRead: number
+  unit: string
+  chars: number
+  textPath: string | null
+  detail: string | null
+  emptyPages: number[]
 }
 
 /** What a message carries besides its text. */
