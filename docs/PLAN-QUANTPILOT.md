@@ -1738,3 +1738,54 @@ refusal for a secret question, an options-only question, an unknown question,
 a file outside the thread's attachments, a missing file, a folder and more
 than 10 files. Codex is not signed in on this machine (no live Codex run; its
 answer mapping takes the same folded strings).
+
+## 29. Parity follow-up: preview-browser profiles (18/23)
+
+The Browser tab stays a temporary (InPrivate) page by default — nothing is
+kept. A **browser profile** keeps cookies, logins and site data across
+restarts in its own WebView2 user-data folder, `browser-profiles/<id>/` in the
+pilot data folder (`browser_profiles.rs`, list in `profiles.json`). The bar's
+profile button shows the page's profile ("Temporary" or the name) and opens a
+menu: Temporary, the profiles, a new profile (created and used at once) and
+**Manage profiles…** — rename, **Clear data** (cookies, logins, storage and
+cache go, the profile stays) and **Delete**, each with a confirmation that
+names what goes, says "Attachments and history are not touched", and warns
+when the page open now uses that profile. The pick belongs to the project of
+the thread on screen (`defaults` per context) and is kept across restarts.
+
+Another profile is another browser: switching closes the guest and opens the
+same address in the new profile, under the browser's one-at-a-time lock, so it
+waits for an agent's page action to finish. Agents keep using whatever page the
+user's choice opened (open_preview opens in the tab's current profile) and have
+no way to pick a profile. Clearing or deleting the profile of the open page
+closes the page first, then removes only that profile's folder, waiting up to
+8 s for WebView2's browser process to let go; a folder Windows still holds is
+reported ("Windows still has the profile's files open … try again") and the
+profile stays listed. A damaged `profiles.json` is set aside as
+`profiles.json.damaged`, never overwritten, and the folders stay. At most 20
+profiles, names of 1–40 characters, unique.
+
+Importing a session: the dialog lists the other browsers on this machine and
+why their sessions cannot be imported — Chrome, Edge and Brave protect cookies
+with app-bound encryption only they can read (found in their `Local State`);
+QuantPilot does not work around it. Firefox is listed as not supported in this
+version (or not installed). Nothing is read from other browsers; signing in
+once in a profile is the supported way.
+
+Verified in the isolated native app (WebView2) with a disposable local app
+that sets a one-day login cookie and logs the cookie of each page load: a new
+profile "QA Work" signed in, a second profile "QA Two" saw no session, signed
+in on its own, and "QA Work" still had its own; Temporary had none. After
+restarting the app the project's pick ("QA Work") was back and still signed
+in, "QA Two" too, Temporary not. Deleting "QA Two" while its page was open
+(after a cancelled first try) closed the page in 0.5 s, removed its folder and
+set the project back to Temporary, and "QA Work" kept its session; **Clear
+data** on "QA Work" signed it out and kept the profile. The import list showed
+Chrome and Edge as not supported (app-bound encryption), Brave and Firefox as
+not installed. Unit tests: names, defaults, clear/delete touching only their
+folder, a held file (Windows share mode 0) reported and the profile kept, a
+damaged list set aside, and the import report from fake browser folders.
+QA-harness note: the CDP port given to all WebView2 environments through
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` can move to a profile's browser
+process after another profile's process ends; the app itself kept working
+(window captured with PrintWindow). Users have no remote-debugging port.

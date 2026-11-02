@@ -17,6 +17,7 @@ mod acp;
 mod adapters;
 mod agent_tools;
 mod browser;
+mod browser_profiles;
 mod checkpoints;
 mod claude;
 mod codex;
@@ -958,6 +959,13 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_browser_action,
             threads::pilot_browser_zoom,
             threads::pilot_browser_close,
+            threads::pilot_browser_profiles,
+            threads::pilot_browser_profile_create,
+            threads::pilot_browser_profile_rename,
+            threads::pilot_browser_profile_default,
+            threads::pilot_browser_profile_clear,
+            threads::pilot_browser_profile_delete,
+            threads::pilot_browser_import_sources,
             threads::pilot_browser_pick,
             threads::pilot_browser_capture,
             threads::pilot_listeners,

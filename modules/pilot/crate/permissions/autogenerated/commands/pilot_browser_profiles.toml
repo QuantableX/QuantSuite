@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-browser-profiles"
+description = "Enables the pilot_browser_profiles command without any pre-configured scope."
+commands.allow = ["pilot_browser_profiles"]
+
+[[permission]]
+identifier = "deny-pilot-browser-profiles"
+description = "Denies the pilot_browser_profiles command without any pre-configured scope."
+commands.deny = ["pilot_browser_profiles"]

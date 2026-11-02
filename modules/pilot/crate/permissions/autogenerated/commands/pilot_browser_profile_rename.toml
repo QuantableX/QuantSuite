@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-browser-profile-rename"
+description = "Enables the pilot_browser_profile_rename command without any pre-configured scope."
+commands.allow = ["pilot_browser_profile_rename"]
+
+[[permission]]
+identifier = "deny-pilot-browser-profile-rename"
+description = "Denies the pilot_browser_profile_rename command without any pre-configured scope."
+commands.deny = ["pilot_browser_profile_rename"]
