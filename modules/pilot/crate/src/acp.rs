@@ -225,6 +225,12 @@ impl AcpDriver {
         if self.queued.is_empty() {
             return out;
         }
+        if let Some(error) = self.queued.iter().find_map(|input| self.input_error(input)) {
+            self.queued.clear();
+            self.prompting = true;
+            self.fail(&mut out, error);
+            return out;
+        }
         match mode_for(&self.opts.mode, &self.modes) {
             Err(why) => {
                 self.queued.clear();
@@ -567,6 +573,11 @@ impl AcpDriver {
 }
 
 impl Driver for AcpDriver {
+    fn input_error(&self, input: &TurnInput) -> Option<String> {
+        (self.session.is_some() && !self.images && !input.images.is_empty())
+            .then(|| format!("{} does not support image prompts. Remove the images or choose another provider; the queued message is retained.", self.opts.label))
+    }
+
     fn provider(&self) -> &'static str {
         self.opts.provider
     }
@@ -700,6 +711,18 @@ mod tests {
         assert!(out.iter().any(|e| matches!(e, Emit::Bound { session_id, model: Some(m) } if session_id == "s-1" && m == "gemini-3-pro")));
         assert!(out.iter().any(|e| matches!(e, Emit::Catalog(c) if c.models.len() == 2)));
         d
+    }
+
+    #[test]
+    fn unsupported_images_fail_instead_of_silently_losing_the_payload() {
+        let mut d=ready("ask",true);
+        d.images=false;
+        let input=TurnInput { text:"Inspect this image".into(), images:vec![crate::driver::ImageInput { media_type:"image/png".into(),base64:"fixture".into(),path:None }],..Default::default() };
+        assert!(d.input_error(&input).unwrap().contains("does not support image"));
+        d.queued.push(input);
+        let out=d.go();
+        assert!(writes(&out).is_empty());
+        assert!(out.iter().any(|e| matches!(e,Emit::TurnEnd {status:TurnStatus::Failed,..})));
     }
 
     #[test]

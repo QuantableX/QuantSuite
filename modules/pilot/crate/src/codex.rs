@@ -139,6 +139,7 @@ pub struct CodexDriver {
     opts: CodexOptions,
     next_id: u64,
     calls: HashMap<u64, Call>,
+    queue_steers: HashMap<u64, String>,
     thread: Option<String>,
     /// Input that arrived before the thread was ready.
     queued: Vec<TurnInput>,
@@ -296,6 +297,7 @@ impl CodexDriver {
             opts,
             next_id: 0,
             calls: HashMap::new(),
+            queue_steers: HashMap::new(),
             thread: None,
             queued: Vec::new(),
             turn: None,
@@ -640,6 +642,9 @@ impl CodexDriver {
                 }
             }
             Call::TurnSteer => {
+                if let Some(queue_id) = self.queue_steers.remove(&id) {
+                    out.push(Emit::QueueDelivery { id: queue_id, error: error.clone() });
+                }
                 if let Some(e) = error {
                     out.push(Emit::Notice { text: format!("Codex did not take the message into the running turn: {e}") });
                 }
@@ -726,7 +731,11 @@ impl CodexDriver {
 
     fn steer_line(&mut self, input: &TurnInput) -> String {
         let params = json!({ "threadId": self.thread, "expectedTurnId": self.turn, "input": Self::input_items(input) });
-        self.request(Call::TurnSteer, "turn/steer", params)
+        let line = self.request(Call::TurnSteer, "turn/steer", params);
+        if let Some(id) = &input.queue_id {
+            self.queue_steers.insert(self.next_id, id.clone());
+        }
+        line
     }
 
     fn on_item(&mut self, params: &Value, done: bool, parent: Option<String>) -> Vec<Emit> {
@@ -1302,6 +1311,8 @@ impl Driver for CodexDriver {
         vec![self.turn_start(input)]
     }
 
+    fn steer_needs_ack(&self) -> bool { true }
+
     fn on_line(&mut self, line: &str) -> Vec<Emit> {
         let Ok(msg) = serde_json::from_str::<Value>(line) else {
             return Vec::new();
@@ -1712,6 +1723,18 @@ mod tests {
         assert_eq!(windows[0].status.as_deref(), Some("rejected"));
         assert_eq!(windows[1].kind, "seven_day");
         assert!(matches!(&out[1], Emit::TurnEnd { status: TurnStatus::Limited, error: Some(e), .. } if e.contains("usage limit")));
+    }
+
+    #[test]
+    fn queued_steers_report_the_providers_acknowledgement() {
+        let mut d = started();
+        for accepted in [true, false] {
+            let line = parse(&d.user_message(&TurnInput { text: "queued".into(), queue_id: Some("queue-1".into()), ..Default::default() })[0]);
+            let response = if accepted { json!({"id":line["id"], "result":{}}) }
+                else { json!({"id":line["id"], "error":{"message":"Turn already ended"}}) };
+            let out = d.on_line(&response.to_string());
+            assert!(out.iter().any(|e| matches!(e, Emit::QueueDelivery { id, error } if id == "queue-1" && error.is_none() == accepted)));
+        }
     }
 
     #[test]

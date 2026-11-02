@@ -114,6 +114,22 @@ const attachState = useState<Record<string, ComposerAttachment[]>>('pilot-attach
 const chipState = useState<Record<string, Record<string, ContextChip>>>('pilot-chips', () => load('pilot.chips.v1', {}))
 const pastes = useState<Record<string, Pasted[]>>('pilot-pastes', () => load('pilot.pasted.v1', {}))
 const stashes = useState<Stash[]>('pilot-stash', () => load('pilot.stash.v1', []))
+interface QueueDraft {
+  text: string
+  pasted: Pasted[]
+  attachments: ComposerAttachment[]
+  chips: Record<string, ContextChip>
+}
+interface QueueEdit { itemId: string; revision: number; previous: QueueDraft; unavailable: boolean }
+const queueEdits = useState<Record<string, QueueEdit>>('pilot-queue-edits', () => load('pilot.queue-edits.v1', {}))
+const editing = computed({
+  get: () => queueEdits.value[props.threadId] ?? null,
+  set: (value: QueueEdit | null) => {
+    if (value) queueEdits.value[props.threadId] = value
+    else delete queueEdits.value[props.threadId]
+    save('pilot.queue-edits.v1', queueEdits.value)
+  },
+})
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 function persistSoon() {
   if (saveTimer) clearTimeout(saveTimer)
@@ -231,6 +247,7 @@ function compose(): string {
 
 const hasContent = computed(() => text.value.trim().length > 0 || pasted.value.length > 0 || attachments.value.length > 0)
 const uploading = computed(() => attachments.value.some((a) => a.pending))
+const attachmentFailed = computed(() => attachments.value.some((a) => a.error))
 
 /** The chips still in the text and the attachments that saved — what goes with the message. */
 function extras() {
@@ -358,14 +375,14 @@ const buttonAction = computed<KeyAction>(() =>
 )
 
 async function perform(action: KeyAction) {
-  if (busy.value) return
+  if (busy.value || editing.value) return
   const id = props.threadId
   if (action === 'steerQueued') {
     const first = view.value?.queue[0]
     if (first) await threads.queueSendNow(id, first.id)
     return
   }
-  if (!hasContent.value || tooLong.value || uploading.value) return
+  if (!hasContent.value || tooLong.value || uploading.value || attachmentFailed.value) return
   const command = !pasted.value.length && !attachments.value.length ? appCommand(text.value) : null
   if (command) {
     if (await runAppCommand(command.name, command.arg)) {
@@ -467,7 +484,18 @@ function recallStep(dir: 1 | -1): boolean {
 }
 
 // ── Editing a queued message ──
-const editing = ref<{ itemId: string; previous: string } | null>(null)
+function draftSnapshot(): QueueDraft {
+  return JSON.parse(JSON.stringify({ text: text.value, pasted: pasted.value, attachments: attachments.value, chips: chipMap.value })) as QueueDraft
+}
+function putDraft(draft: QueueDraft) {
+  text.value = draft.text
+  pasted.value = draft.pasted
+  attachments.value = draft.attachments
+  chipState.value[props.threadId] = draft.chips
+  save('pilot.drafts.v1', drafts.value)
+  save('pilot.pasted.v1', pastes.value)
+  persistContext()
+}
 
 watch(
   () => view.value?.editingQueued,
@@ -475,41 +503,55 @@ watch(
     if (!itemId || editing.value?.itemId === itemId) return
     const item = view.value?.queue.find((q) => q.id === itemId)
     if (!item) return
-    editing.value = { itemId, previous: text.value }
-    text.value = item.text
+    if (uploading.value || ['sending', 'running', 'awaiting'].includes(item.state)) {
+      if (view.value) view.value.error = uploading.value ? 'Wait for the attachment upload before editing a queued message.' : 'This message has started sending.'
+      threads.editQueued(props.threadId, null)
+      return
+    }
+    const previous = editing.value?.previous ?? draftSnapshot()
+    editing.value = { itemId, revision: item.revision, previous, unavailable: false }
+    putDraft({ text: item.payload?.text ?? item.text, pasted: [],
+      attachments: (item.payload?.attachments ?? []).map((a) => ({ ...a, key: crypto.randomUUID(), kind: a.kind as ComposerAttachment['kind'], size: 0 })),
+      chips: Object.fromEntries((item.payload?.chips ?? []).map((c) => [c.label, { ...c }])) })
     void nextTick(() => box.value?.focus())
   }
 )
 watch(
-  () => view.value?.queue,
-  (queue) => {
+  () => [view.value?.queue, view.value?.loaded] as const,
+  ([queue, loaded]) => {
     const e = editing.value
-    if (!e || queue?.some((q) => q.id === e.itemId)) return
-    // It was sent or removed meanwhile: keep the edit only if nothing was waiting in the box.
-    if (e.previous) text.value = e.previous
-    editing.value = null
-    threads.editQueued(props.threadId, null)
-  }
+    if (!e || !loaded) return
+    const item = queue?.find((q) => q.id === e.itemId)
+    if (!item || ['sending', 'running', 'awaiting'].includes(item.state) || item.revision !== e.revision) {
+      editing.value = { ...e, unavailable: true }
+    }
+  },
+  { immediate: true }
 )
 
 async function saveEdit() {
   const e = editing.value
-  if (!e) return
-  if (!text.value.trim()) {
-    await threads.queueRemove(props.threadId, e.itemId)
-  } else if (!(await threads.queueUpdate(props.threadId, e.itemId, text.value))) {
-    return
-  }
-  text.value = e.previous
-  editing.value = null
-  threads.editQueued(props.threadId, null)
+  if (!e || e.unavailable || busy.value || uploading.value || attachmentFailed.value || tooLong.value) return
+  busy.value = true
+  const ok = !hasContent.value
+    ? await threads.queueRemove(props.threadId, e.itemId)
+    : await threads.queueUpdate(props.threadId, e.itemId, compose(), extras(), e.revision)
+  busy.value = false
+  if (ok) cancelEdit()
 }
 function cancelEdit() {
   const e = editing.value
   if (!e) return
-  text.value = e.previous
+  putDraft(e.previous)
   editing.value = null
   threads.editQueued(props.threadId, null)
+}
+async function queueEditedCopy() {
+  if (!editing.value || busy.value || uploading.value || attachmentFailed.value || tooLong.value || !hasContent.value) return
+  busy.value = true
+  const ok = await threads.queueAdd(props.threadId, compose(), extras())
+  busy.value = false
+  if (ok) cancelEdit()
 }
 
 // ── Stash ──
@@ -1021,7 +1063,7 @@ onBeforeUnmount(() => {
 })
 
 const primary = computed(() => {
-  if (editing.value) return { kind: 'save', title: 'Save the queued message (Enter)', disabled: false }
+  if (editing.value) return { kind: 'save', title: 'Save the queued message (Enter)', disabled: busy.value || editing.value.unavailable || uploading.value || attachmentFailed.value || tooLong.value }
   if (pendingApproval.value && hasContent.value) return { kind: 'decline', title: 'Decline the request with this reply', disabled: busy.value || tooLong.value }
   if (running.value && !hasContent.value) return { kind: 'stop', title: 'Interrupt the agent', disabled: false }
   if (!running.value && !hasContent.value && view.value?.queueHeld && view.value.queue.length) {
@@ -1036,10 +1078,10 @@ const primary = computed(() => {
     return {
       kind: steer ? 'steer' : 'queue',
       title: steer ? 'Send into the running turn (Ctrl flips to queue)' : 'Queue for after this turn (Ctrl flips to steer)',
-      disabled: busy.value || tooLong.value,
+      disabled: busy.value || tooLong.value || uploading.value || attachmentFailed.value,
     }
   }
-  return { kind: 'send', title: 'Send', disabled: !hasContent.value || busy.value || tooLong.value }
+  return { kind: 'send', title: 'Send', disabled: !hasContent.value || busy.value || tooLong.value || uploading.value || attachmentFailed.value }
 })
 
 const placeholder = computed(() => {
@@ -1092,7 +1134,8 @@ function focus() {
       @drop="onDrop"
     >
       <div v-if="editing" class="qp-c-editbar">
-        <span>Editing a queued message</span>
+        <span>{{ editing.unavailable ? 'The queued message changed or started sending. Your edits are still here.' : 'Editing a queued message' }}</span>
+        <button v-if="editing.unavailable" class="qp-link" :disabled="busy || uploading || attachmentFailed || !hasContent" @click.stop="queueEditedCopy">Queue edited copy</button>
         <button class="qp-link" @click.stop="cancelEdit">Cancel</button>
       </div>
       <div v-if="attachments.length" class="qp-c-shelf">

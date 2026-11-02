@@ -325,6 +325,18 @@ pub struct Attachment {
     pub path: String,
 }
 
+/// A durable composer attachment; only the small thumbnail travels over IPC.
+/// Image/file contents stay in the suite's saved attachment storage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentArg {
+    pub kind: String,
+    pub name: String,
+    pub path: String,
+    #[serde(default)]
+    pub thumb: Option<String>,
+}
+
 /// A chip in the text: a terminal excerpt, a diff comment, a thread, a
 /// skill, a file. Its label is what the text shows; `content` is what the
 /// agent gets.

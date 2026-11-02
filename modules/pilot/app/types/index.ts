@@ -617,6 +617,10 @@ export interface QueueItem {
   threadId: string
   position: number
   text: string
+  payload: { version: number; text: string; chips: ContextChip[]; attachments: NonNullable<MessageExtras['attachments']> }
+  state: 'queued' | 'sending' | 'running' | 'awaiting' | 'uncertain'
+  error: string | null
+  revision: number
   createdAt: number
   updatedAt: number
 }

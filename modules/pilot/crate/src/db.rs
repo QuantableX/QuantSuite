@@ -24,19 +24,12 @@ pub use history::{HistoryChunk, HistoryPage, HistoryRequest};
 /// 9: handoff, scheduled resume and limit reset (card 15). 10: goal (card 16).
 /// 11: the last usage windows per provider (card 18).
 /// 12: revision-bound history chunks and indexed full-history pagination (parity 02).
-pub const SCHEMA_VERSION: i64 = 12;
+/// 13: versioned queue payloads and recoverable delivery state (parity 04).
+pub const SCHEMA_VERSION: i64 = 13;
 
-/// A follow-up waiting for the running turn to end (docs/PLAN-QUANTPILOT.md, card 4).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct QueueItem {
-    pub id: String,
-    pub thread_id: String,
-    pub position: i64,
-    pub text: String,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
+#[path = "queue.rs"]
+mod queue;
+pub use queue::{QueueItem, QueuePayload};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -439,6 +432,29 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         tx.execute_batch("ALTER TABLE threads ADD COLUMN queue_held INTEGER NOT NULL DEFAULT 0;")?;
     }
     tx.execute_batch(QUEUE_TABLE)?;
+    for (name, definition) in [
+        ("payload", "payload TEXT"),
+        ("state", "state TEXT NOT NULL DEFAULT 'queued'"),
+        ("turn_id", "turn_id TEXT"),
+        ("error", "error TEXT"),
+        ("revision", "revision INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        if !column_exists(&tx, "queue", name)? {
+            tx.execute_batch(&format!("ALTER TABLE queue ADD COLUMN {definition};"))?;
+        }
+    }
+    // Reference counts include forks, which have their own saved timeline IDs.
+    // Removing a queue row never removes a file; retention can consult this view.
+    tx.execute_batch("CREATE VIEW IF NOT EXISTS attachment_references AS
+        SELECT path, count(*) AS refs FROM (
+          SELECT DISTINCT 'queue:' || q.id AS owner, json_extract(a.value, '$.path') AS path
+          FROM queue q, json_each(q.payload, '$.attachments') a
+          WHERE json_extract(a.value, '$.kind') IN ('image','file')
+          UNION ALL
+          SELECT DISTINCT 'item:' || t.id AS owner, json_extract(a.value, '$.path') AS path
+          FROM timeline t, json_each(t.data, '$.attachments') a
+          WHERE json_extract(a.value, '$.kind') IN ('image','file')
+        ) WHERE path IS NOT NULL AND path != '' GROUP BY path;")?;
     let mut added_order = false;
     for (name, col) in V5_COLUMNS {
         if !column_exists(&tx, "threads", name)? {
@@ -510,7 +526,9 @@ impl Database {
                 WHERE kind IN ('assistant', 'reasoning') AND json_extract(data, '$.streaming') = 1;
              UPDATE turns SET status = 'interrupted' WHERE status = 'started';
              UPDATE threads SET state = 'interrupted' WHERE state IN ('running', 'waiting', 'starting');
-             UPDATE threads SET queue_held = 1 WHERE id IN (SELECT thread_id FROM queue);",
+             UPDATE threads SET queue_held = 1 WHERE id IN (SELECT thread_id FROM queue);
+             UPDATE queue SET state = 'uncertain', error = 'The app closed during delivery. Check the conversation, then use Send now to retry or remove this message.'
+                WHERE state IN ('sending', 'running', 'awaiting');",
         )
     }
 
@@ -1288,98 +1306,7 @@ impl Database {
         })
     }
 
-    // ── Queue ──
-
-    pub fn queue(&self, thread_id: &str) -> rusqlite::Result<Vec<QueueItem>> {
-        let conn = self.lock();
-        let mut stmt = conn.prepare(
-            "SELECT id, thread_id, position, text, created_at, updated_at FROM queue
-                WHERE thread_id = ?1 ORDER BY position, created_at",
-        )?;
-        let rows = stmt.query_map(params![thread_id], |r| {
-            Ok(QueueItem {
-                id: r.get(0)?,
-                thread_id: r.get(1)?,
-                position: r.get(2)?,
-                text: r.get(3)?,
-                created_at: r.get(4)?,
-                updated_at: r.get(5)?,
-            })
-        })?;
-        rows.collect()
-    }
-
-    pub fn queue_add(&self, thread_id: &str, text: &str) -> rusqlite::Result<QueueItem> {
-        let conn = self.lock();
-        let position: i64 = conn.query_row(
-            "SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE thread_id = ?1",
-            params![thread_id],
-            |r| r.get(0),
-        )?;
-        let t = now();
-        let item = QueueItem {
-            id: uuid::Uuid::new_v4().to_string(),
-            thread_id: thread_id.to_string(),
-            position,
-            text: text.to_string(),
-            created_at: t,
-            updated_at: t,
-        };
-        conn.execute(
-            "INSERT INTO queue (id, thread_id, position, text, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![item.id, item.thread_id, item.position, item.text, item.created_at, item.updated_at],
-        )?;
-        Ok(item)
-    }
-
-    /// The thread the item belongs to, or `None` when it is gone (already sent).
-    pub fn queue_thread(&self, item_id: &str) -> rusqlite::Result<Option<String>> {
-        let conn = self.lock();
-        conn.query_row("SELECT thread_id FROM queue WHERE id = ?1", params![item_id], |r| r.get(0))
-            .optional()
-    }
-
-    pub fn queue_update(&self, item_id: &str, text: &str) -> rusqlite::Result<bool> {
-        let conn = self.lock();
-        let n = conn.execute("UPDATE queue SET text = ?2, updated_at = ?3 WHERE id = ?1", params![item_id, text, now()])?;
-        Ok(n > 0)
-    }
-
-    /// Remove and return one item — the one that is about to be sent.
-    pub fn queue_take(&self, item_id: &str) -> rusqlite::Result<Option<QueueItem>> {
-        let conn = self.lock();
-        let item = conn
-            .query_row(
-                "SELECT id, thread_id, position, text, created_at, updated_at FROM queue WHERE id = ?1",
-                params![item_id],
-                |r| {
-                    Ok(QueueItem {
-                        id: r.get(0)?,
-                        thread_id: r.get(1)?,
-                        position: r.get(2)?,
-                        text: r.get(3)?,
-                        created_at: r.get(4)?,
-                        updated_at: r.get(5)?,
-                    })
-                },
-            )
-            .optional()?;
-        if item.is_some() {
-            conn.execute("DELETE FROM queue WHERE id = ?1", params![item_id])?;
-        }
-        Ok(item)
-    }
-
-    /// Put an item before every other one of its thread (a send that failed goes back first).
-    pub fn queue_reorder_first(&self, item_id: &str) -> rusqlite::Result<()> {
-        let conn = self.lock();
-        conn.execute(
-            "UPDATE queue SET position = (SELECT COALESCE(MIN(q.position), 1) - 1 FROM queue q
-                WHERE q.thread_id = queue.thread_id) WHERE id = ?1",
-            params![item_id],
-        )?;
-        Ok(())
-    }
+    // Queue payload/delivery operations live in queue.rs.
 
     pub fn queue_held(&self, thread_id: &str) -> rusqlite::Result<bool> {
         let conn = self.lock();

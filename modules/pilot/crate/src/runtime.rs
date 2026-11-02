@@ -199,8 +199,8 @@ impl Projector {
 
     /// A message the user sent into the running turn: part of this turn,
     /// marked so the timeline can say it steered.
-    pub fn steer_message(&mut self, text: &str) {
-        let item = self.new_item(ItemKind::User, None, json!({ "text": text, "attachments": [], "steer": true }));
+    pub fn steer_message(&mut self, text: &str, attachments: Value) {
+        let item = self.new_item(ItemKind::User, None, json!({ "text": text, "attachments": attachments, "steer": true }));
         self.publish(item, false);
     }
 
@@ -461,6 +461,20 @@ impl Projector {
                 self.emit(ThreadEvent::RateLimit { windows });
             }
             Emit::Notice { text } => self.notice(ItemKind::Notice, &text),
+            Emit::QueueDelivery { id, error } => {
+                let result = match error {
+                    Some(error) => self.db.queue_fail(&id, &error),
+                    None => self.db.queue_acknowledge(&id),
+                };
+                if let Err(error) = result {
+                    self.notice(ItemKind::Error, &format!("Could not save queued delivery: {error}"));
+                }
+                let _ = self.db.queue_settle(&self.thread_id);
+                self.emit(ThreadEvent::Queue {
+                    items: self.db.queue(&self.thread_id).unwrap_or_default(),
+                    held: self.db.queue_held(&self.thread_id).unwrap_or(true),
+                });
+            }
             Emit::TurnEnd { status, error, duration_ms, cost_usd } => {
                 self.end_turn(status, error, duration_ms, cost_usd);
                 return Some(status);
@@ -728,10 +742,12 @@ pub struct Runtime {
     catalogs: Mutex<HashMap<String, (Instant, Catalog)>>,
     me: Mutex<Weak<Runtime>>,
     on_turn_end: Mutex<Option<TurnEndHook>>,
+    on_queue_ready: Mutex<Option<QueueReadyHook>>,
 }
 
 /// Called after every turn with its thread and how it ended.
 pub type TurnEndHook = Arc<dyn Fn(&str, TurnStatus) + Send + Sync>;
+pub type QueueReadyHook = Arc<dyn Fn(&str) + Send + Sync>;
 
 impl Runtime {
     pub fn new(db: Arc<Database>, sink: EventSink) -> Arc<Self> {
@@ -743,6 +759,7 @@ impl Runtime {
             catalogs: Mutex::new(HashMap::new()),
             me: Mutex::new(Weak::new()),
             on_turn_end: Mutex::new(None),
+            on_queue_ready: Mutex::new(None),
         });
         *lock(&rt.me) = Arc::downgrade(&rt);
         rt
@@ -830,16 +847,17 @@ impl Runtime {
                     Err(e) => {
                         // Nothing runs, but the message and why are visible.
                         let mut proj = Projector::new(self.db.clone(), self.sink.clone(), self.seqs.clone(), thread_id);
-                        self.start_turn_rows(&mut proj, thread_id, &turn_id, &input, attachments);
+                        self.start_turn_rows(&mut proj, thread_id, &turn_id, &input, attachments)?;
                         proj.end_turn(TurnStatus::Failed, Some(e.clone()), None, None);
                         return Err(e);
                     }
                 }
             }
         };
+        if let Some(error) = lock(&run.driver).input_error(&input) { return Err(error); }
         {
             let mut proj = lock(&run.proj);
-            self.start_turn_rows(&mut proj, thread_id, &turn_id, &input, attachments);
+            self.start_turn_rows(&mut proj, thread_id, &turn_id, &input, attachments)?;
         }
         *lock(&run.turn) = Some(turn_id.clone());
         *lock(&run.idle_since) = None;
@@ -864,7 +882,12 @@ impl Runtime {
         Ok(turn_id)
     }
 
-    fn start_turn_rows(&self, proj: &mut Projector, thread_id: &str, turn_id: &str, input: &TurnInput, attachments: Value) {
+    fn start_turn_rows(&self, proj: &mut Projector, thread_id: &str, turn_id: &str, input: &TurnInput, attachments: Value) -> Result<(), String> {
+        if let Some(id) = &input.queue_id {
+            if !self.db.queue_bind_turn(id, turn_id).map_err(|e| e.to_string())? {
+                return Err("The queued message is no longer available for delivery.".into());
+            }
+        }
         proj.begin_turn(turn_id);
         let _ = self.db.insert_turn(&TurnRow {
             id: turn_id.to_string(),
@@ -892,6 +915,7 @@ impl Runtime {
             error: None,
         });
         proj.set_state("running", None);
+        Ok(())
     }
 
     fn spawn(&self, thread_id: &str, plan: LaunchPlan) -> Result<Arc<Run>, String> {
@@ -985,20 +1009,37 @@ impl Runtime {
     /// A message into the running turn (steering). Refused when no turn
     /// runs or the provider cannot take one mid-turn — then it is the
     /// caller's to queue or send.
+    #[cfg(test)]
     pub fn steer(&self, thread_id: &str, input: TurnInput) -> Result<(), String> {
+        self.steer_prepared(thread_id, input, json!([]))
+    }
+
+    pub fn steer_prepared(&self, thread_id: &str, input: TurnInput, attachments: Value) -> Result<(), String> {
         let run = self.run(thread_id).ok_or("nothing is running in this thread")?;
         if !run.turn_active() {
             return Err("nothing is running in this thread".into());
         }
-        let lines = {
+        {
             let mut driver = lock(&run.driver);
             if !driver.can_steer() {
                 return Err(format!("{} cannot take a message while it works", driver.provider()));
             }
-            driver.user_message(&input)
-        };
-        run.write(&lines)?;
-        lock(&run.proj).steer_message(input.display.as_deref().unwrap_or(&input.text));
+            if let Some(error) = driver.input_error(&input) { return Err(error); }
+            if let Some(id) = &input.queue_id {
+                let turn = lock(&run.turn).clone().ok_or("The turn ended before steering; the message stays queued.")?;
+                if !self.db.queue_bind_turn(id, &turn).map_err(|e| e.to_string())? {
+                    return Err("The turn ended before steering; the message stays queued.".into());
+                }
+                if driver.steer_needs_ack() {
+                    self.db.queue_wait_ack(id).map_err(|e| e.to_string())?;
+                }
+            }
+            let lines = driver.user_message(&input);
+            // Keep completion projection behind this write and its timeline
+            // metadata, so a racing TurnEnd cannot consume an unsent queue row.
+            run.write(&lines)?;
+            lock(&run.proj).steer_message(input.display.as_deref().unwrap_or(&input.text), attachments);
+        }
         let _ = self.db.touch(thread_id);
         let _ = self.db.resume(thread_id);
         Ok(())
@@ -1079,6 +1120,10 @@ impl Runtime {
         *lock(&self.on_turn_end) = Some(hook);
     }
 
+    pub fn set_queue_ready_hook(&self, hook: QueueReadyHook) {
+        *lock(&self.on_queue_ready) = Some(hook);
+    }
+
     fn turn_ended(&self, run: &Arc<Run>, status: TurnStatus) {
         lock(&run.turn).take();
         run.interrupting.store(false, Ordering::SeqCst);
@@ -1147,6 +1192,7 @@ fn pump(rt: Weak<Runtime>, run: Arc<Run>, stdout: std::process::ChildStdout) {
                     continue;
                 }
                 let mut ended = None;
+                let mut delivery = false;
                 let mut writes = Vec::new();
                 {
                     let mut driver = lock(&run.driver);
@@ -1165,6 +1211,7 @@ fn pump(rt: Weak<Runtime>, run: Arc<Run>, stdout: std::process::ChildStdout) {
                                 }
                             }
                             other => {
+                                delivery |= matches!(other, Emit::QueueDelivery { .. });
                                 if let Some(status) = proj.apply(other, &info, run.provider) {
                                     ended = Some(status);
                                 }
@@ -1180,6 +1227,14 @@ fn pump(rt: Weak<Runtime>, run: Arc<Run>, stdout: std::process::ChildStdout) {
                         rt.turn_ended(&run, status);
                     } else {
                         lock(&run.turn).take();
+                    }
+                }
+                if delivery {
+                    if let Some(rt) = rt.upgrade() {
+                        if let Some(hook) = lock(&rt.on_queue_ready).clone() {
+                            let thread_id = run.thread_id.clone();
+                            std::thread::spawn(move || hook(&thread_id));
+                        }
                     }
                 }
             }

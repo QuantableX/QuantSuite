@@ -6,8 +6,8 @@
 use crate::checkpoints::{self, FileChange};
 use crate::claude::{self, ClaudeDriver, LaunchOptions, SessionRef};
 use crate::codex::{self, CodexDriver, CodexOptions};
-use crate::db::{Arrangement, QueueItem, ThreadMeta};
-use crate::context::{self, Attachment, Chip, FileHit, SkillInfo};
+use crate::db::{Arrangement, QueueItem, QueuePayload, ThreadMeta};
+use crate::context::{self, Attachment, AttachmentArg, Chip, FileHit, SkillInfo};
 use crate::driver::{Answer, Catalog, ImageInput, SkillRef, TurnInput, TurnStatus};
 use crate::events::{Item, ItemKind, ThreadEvent};
 use crate::git::{self, BranchInfo, CleanupCheck, RepoInfo};
@@ -526,17 +526,6 @@ fn pi_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: &Se
     })
 }
 
-/// An attachment from the composer: saved by `pilot_attachment_*` first.
-#[derive(Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AttachmentArg {
-    kind: String,
-    name: String,
-    path: String,
-    /// The shelf's thumbnail, kept with the sent message (images).
-    thumb: Option<String>,
-}
-
 /// The message as the provider gets it (chips and documents expanded,
 /// images read from their saved copies) and what the timeline keeps: the
 /// typed text with its chips, the attachments with thumbnails.
@@ -547,7 +536,15 @@ fn prepare(provider: &str, text: String, images: Vec<ImageInput>, chips: Vec<Chi
     let mut images = images;
     let mut shown = Vec::new();
     for a in &attachments {
+        if !matches!(a.kind.as_str(), "image" | "file" | "folder") {
+            return Err(format!("unsupported attachment kind '{}'", a.kind));
+        }
+        let metadata = std::fs::metadata(&a.path).map_err(|e| format!("{} is unavailable: {e}. Reattach it or remove it before retrying.", a.name))?;
+        if (a.kind == "folder") != metadata.is_dir() {
+            return Err(format!("{} is no longer the expected file or folder", a.name));
+        }
         if a.kind == "image" {
+            if metadata.len() > context::IMAGE_MAX_BYTES as u64 { return Err(format!("{} exceeds the image size limit", a.name)); }
             let bytes = std::fs::read(&a.path).map_err(|e| format!("{} could not be read: {e}", a.name))?;
             images.push(ImageInput { media_type: "image/png".into(), base64: context::b64(&bytes), path: Some(a.path.clone()) });
         }
@@ -571,7 +568,7 @@ fn prepare(provider: &str, text: String, images: Vec<ImageInput>, chips: Vec<Chi
     if composed.trim().is_empty() && images.is_empty() {
         return Err("nothing to send".into());
     }
-    Ok((TurnInput { text: composed, images, display, skills }, Value::Array(shown)))
+    Ok((TurnInput { text: composed, images, display, skills, ..Default::default() }, Value::Array(shown)))
 }
 
 #[tauri::command(async)]
@@ -813,6 +810,8 @@ pub fn after_turn(app: &AppHandle, thread_id: &str, status: TurnStatus) {
     record_changes(&state, thread_id);
     link_agent_prs(&state, thread_id);
     after_turn_life(&state, thread_id, status);
+    let _ = state.db.queue_settle(thread_id);
+    emit_queue(&state, thread_id);
     let queue = state.db.queue(thread_id).unwrap_or_default();
     if queue.is_empty() {
         return;
@@ -825,25 +824,66 @@ pub fn after_turn(app: &AppHandle, thread_id: &str, status: TurnStatus) {
     if state.db.queue_held(thread_id).unwrap_or(false) || state.runtime.active_turn(thread_id).is_some() {
         return;
     }
-    send_next(app, &state, thread_id);
+    let _ = send_next(app, &state, thread_id);
 }
 
-fn send_next(app: &AppHandle, state: &PilotState, thread_id: &str) {
-    let Some(first) = state.db.queue(thread_id).unwrap_or_default().into_iter().next() else {
-        return;
-    };
-    let Ok(Some(item)) = state.db.queue_take(&first.id) else {
-        return;
-    };
-    emit_queue(state, thread_id);
-    if let Err(e) = start_turn(app, state, thread_id, item.text.clone(), Vec::new()) {
-        // It did not start: back to the front of the queue, held.
-        if let Ok(back) = state.db.queue_add(thread_id, &item.text) {
-            let _ = state.db.queue_reorder_first(&back.id);
+fn validate_payload(payload: &QueuePayload) -> Result<(), String> {
+    if payload.version != 1 { return Err("This queued payload needs a newer QuantSuite version.".into()); }
+    if payload.text.trim().is_empty() && payload.chips.is_empty() && payload.attachments.is_empty() {
+        return Err("A queued message needs text or an attachment.".into());
+    }
+    if payload.attachments.len() > context::MAX_ATTACHMENTS {
+        return Err(format!("a message can carry up to {} attachments", context::MAX_ATTACHMENTS));
+    }
+    if payload.attachments.iter().any(|a| !matches!(a.kind.as_str(), "image" | "file" | "folder") || a.path.trim().is_empty()) {
+        return Err("An attachment has no saved path or an unsupported kind. Save it again before queueing.".into());
+    }
+    if payload.attachments.iter().any(|a| a.thumb.as_ref().is_some_and(|t| t.len() > 96 * 1024)) {
+        return Err("An attachment thumbnail is too large. Reattach it before queueing.".into());
+    }
+    if serde_json::to_vec(payload).map_err(|e| e.to_string())?.len() > runtime::MAX_FRAME {
+        return Err("This queued draft is too large. Save large text as an attachment.".into());
+    }
+    Ok(())
+}
+
+fn send_queued(app: &AppHandle, state: &PilotState, item: QueueItem, steer: bool) -> Result<(), String> {
+    let result = (|| {
+        validate_payload(&item.payload)?;
+        let meta = state.db.get_session(&item.thread_id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+        let (mut input, shown) = prepare(&meta.provider, item.payload.text.clone(), Vec::new(), item.payload.chips.clone(), item.payload.attachments.clone())?;
+        input.queue_id = Some(item.id.clone());
+        if steer && state.runtime.active_turn(&item.thread_id).is_some() {
+            return match state.runtime.steer_prepared(&item.thread_id, input.clone(), shown.clone()) {
+                Err(e) if e == "nothing is running in this thread" || e == "The turn ended before steering; the message stays queued." =>
+                    start_input(app, state, &item.thread_id, input, shown).map(|_| ()),
+                result => result,
+            };
         }
-        let _ = state.db.set_queue_held(thread_id, true);
+        start_input(app, state, &item.thread_id, input, shown).map(|_| ())
+    })();
+    match &result {
+        Ok(()) => { state.db.queue_settle(&item.thread_id).map_err(|e| e.to_string())?; }
+        Err(error) => { state.db.queue_fail(&item.id, error).map_err(|e| e.to_string())?; }
+    }
+    emit_queue(state, &item.thread_id);
+    result
+}
+
+pub(crate) fn send_next(app: &AppHandle, state: &PilotState, thread_id: &str) -> Result<(), String> {
+    // A provider can finish immediately. Recheck after acknowledgement instead
+    // of depending on which side of that completion the enqueue callback saw.
+    loop {
+        if state.runtime.active_turn(thread_id).is_some() || state.db.queue_held(thread_id).map_err(|e| e.to_string())? { return Ok(()); }
+        let Some(first) = state.db.queue(thread_id).map_err(|e| e.to_string())?.into_iter().next() else { return Ok(()); };
+        if first.state == "uncertain" {
+            state.db.set_queue_held(thread_id, true).map_err(|e| e.to_string())?;
+            emit_queue(state, thread_id);
+            return Err(first.error.unwrap_or_else(|| "Check the interrupted delivery, then use Send now to retry or remove it.".into()));
+        }
+        let Some(item) = state.db.queue_claim(&first.id, false).map_err(|e| e.to_string())? else { return Ok(()); };
         emit_queue(state, thread_id);
-        eprintln!("pilot: a queued message could not start: {e}");
+        send_queued(app, state, item, false)?;
     }
 }
 
@@ -852,8 +892,8 @@ pub fn pilot_queue_list(state: State<'_, PilotState>, id: String) -> QueueState 
     queue_state(&state, &id)
 }
 
-/// Queue a follow-up. With no turn running it is sent at once instead —
-/// the turn may have ended between the click and this call.
+/// Persist before attempting a send. Turn completion racing enqueue therefore
+/// cannot drop the payload or bypass the same delivery claim as Send now.
 #[tauri::command(async)]
 pub fn pilot_queue_add(
     app: AppHandle,
@@ -863,87 +903,62 @@ pub fn pilot_queue_add(
     chips: Option<Vec<Chip>>,
     attachments: Option<Vec<AttachmentArg>>,
 ) -> Result<QueueState, String> {
-    let (chips, attachments) = (chips.unwrap_or_default(), attachments.unwrap_or_default());
-    if attachments.iter().any(|a| a.kind == "image") {
-        return Err("images go with a message sent now — send it after this turn or steer it in".into());
-    }
-    // A queued message is plain text: its chips and documents are expanded now.
-    let text = if chips.is_empty() && attachments.is_empty() {
-        text
-    } else {
-        let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
-        prepare(&meta.provider, text, Vec::new(), chips, attachments)?.0.text
-    };
-    if text.trim().is_empty() {
-        return Err("nothing to queue".into());
-    }
-    if state.runtime.active_turn(&id).is_none() && !state.db.queue_held(&id).unwrap_or(false) {
-        start_turn(&app, &state, &id, text, Vec::new())?;
-        return Ok(queue_state(&state, &id));
-    }
-    state.db.queue_add(&id, &text).map_err(|e| e.to_string())?;
-    emit_queue(&state, &id);
-    Ok(queue_state(&state, &id))
+    let payload = QueuePayload { version:1,text,chips:chips.unwrap_or_default(),attachments:attachments.unwrap_or_default() };
+    enqueue(&app, &state, &id, payload)
+}
+
+pub(crate) fn enqueue(app: &AppHandle, state: &PilotState, id: &str, payload: QueuePayload) -> Result<QueueState, String> {
+    if state.db.get_session(id).map_err(|e| e.to_string())?.is_none() { return Err("unknown thread".into()); }
+    validate_payload(&payload)?;
+    state.db.queue_add_payload(id, &payload).map_err(|e| e.to_string())?;
+    emit_queue(state, id);
+    // A failed prepare/start is now a saved queue error, not a lost draft.
+    let _ = send_next(app, state, id);
+    Ok(queue_state(state, id))
 }
 
 #[tauri::command(async)]
-pub fn pilot_queue_update(state: State<'_, PilotState>, item_id: String, text: String) -> Result<(), String> {
-    let thread_id = state.db.queue_thread(&item_id).map_err(|e| e.to_string())?.ok_or("this message was already sent")?;
-    if text.trim().is_empty() {
-        return Err("a queued message cannot be empty — remove it instead".into());
+pub fn pilot_queue_update(state: State<'_, PilotState>, item_id: String, text: String, chips: Option<Vec<Chip>>, attachments: Option<Vec<AttachmentArg>>, revision: Option<i64>) -> Result<(), String> {
+    let item = state.db.queue_item(&item_id).map_err(|e| e.to_string())?.ok_or("This message was already sent or removed.")?;
+    // Legacy text-only callers retain the structured extras instead of erasing them.
+    let payload = QueuePayload { version:1,text,chips:chips.unwrap_or(item.payload.chips),attachments:attachments.unwrap_or(item.payload.attachments) };
+    validate_payload(&payload)?;
+    if !state.db.queue_update_payload(&item_id, &payload, revision).map_err(|e| e.to_string())? {
+        return Err("This queued message started sending or was edited elsewhere. Your draft is still in the composer.".into());
     }
-    state.db.queue_update(&item_id, &text).map_err(|e| e.to_string())?;
-    emit_queue(&state, &thread_id);
+    emit_queue(&state, &item.thread_id);
     Ok(())
 }
 
 #[tauri::command(async)]
 pub fn pilot_queue_remove(state: State<'_, PilotState>, item_id: String) -> Result<(), String> {
-    let Some(thread_id) = state.db.queue_thread(&item_id).map_err(|e| e.to_string())? else {
-        return Ok(());
-    };
-    state.db.queue_take(&item_id).map_err(|e| e.to_string())?;
-    if state.db.queue(&thread_id).unwrap_or_default().is_empty() {
-        let _ = state.db.set_queue_held(&thread_id, false);
+    let Some(thread_id) = state.db.queue_thread(&item_id).map_err(|e| e.to_string())? else { return Ok(()); };
+    if !state.db.queue_remove(&item_id).map_err(|e| e.to_string())? {
+        return Err("This message is sending. Stop the turn before removing it.".into());
+    }
+    if state.db.queue(&thread_id).map_err(|e| e.to_string())?.is_empty() {
+        state.db.set_queue_held(&thread_id, false).map_err(|e| e.to_string())?;
     }
     emit_queue(&state, &thread_id);
     Ok(())
 }
 
-/// Send one queued message now: into the running turn when the agent can
-/// take it, otherwise as the next turn.
 #[tauri::command(async)]
 pub fn pilot_queue_send_now(app: AppHandle, state: State<'_, PilotState>, item_id: String) -> Result<(), String> {
-    let thread_id = state.db.queue_thread(&item_id).map_err(|e| e.to_string())?.ok_or("this message was already sent")?;
+    let thread_id = state.db.queue_thread(&item_id).map_err(|e| e.to_string())?.ok_or("This message was already sent or removed.")?;
     if state.runtime.active_turn(&thread_id).is_some() && !state.runtime.can_steer(&thread_id) {
-        return Err("this agent cannot take a message while it works — it stays queued".into());
+        return Err("This agent cannot take a message while it works; it stays queued.".into());
     }
-    let item = state.db.queue_take(&item_id).map_err(|e| e.to_string())?.ok_or("this message was already sent")?;
+    let item = state.db.queue_claim(&item_id, true).map_err(|e| e.to_string())?.ok_or("A queued message is already sending. Wait for it to finish.")?;
     emit_queue(&state, &thread_id);
-    let result = if state.runtime.active_turn(&thread_id).is_some() {
-        state.runtime.steer(&thread_id, TurnInput { text: item.text.clone(), ..Default::default() })
-    } else {
-        start_turn(&app, &state, &thread_id, item.text.clone(), Vec::new()).map(|_| ())
-    };
-    if let Err(e) = result {
-        if let Ok(back) = state.db.queue_add(&thread_id, &item.text) {
-            let _ = state.db.queue_reorder_first(&back.id);
-        }
-        emit_queue(&state, &thread_id);
-        return Err(e);
-    }
-    Ok(())
+    send_queued(&app, &state, item, true)
 }
 
-/// Continue a held queue: the next message starts when nothing runs.
 #[tauri::command(async)]
 pub fn pilot_queue_resume(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<(), String> {
     state.db.set_queue_held(&id, false).map_err(|e| e.to_string())?;
     emit_queue(&state, &id);
-    if state.runtime.active_turn(&id).is_none() {
-        send_next(&app, &state, &id);
-    }
-    Ok(())
+    send_next(&app, &state, &id)
 }
 
 /// A message into the running turn. With nothing running it starts a turn.
@@ -959,7 +974,7 @@ pub fn pilot_thread_steer(
     let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
     let (input, shown) = prepare(&meta.provider, text, Vec::new(), chips.unwrap_or_default(), attachments.unwrap_or_default())?;
     if state.runtime.active_turn(&id).is_some() {
-        return state.runtime.steer(&id, input);
+        return state.runtime.steer_prepared(&id, input, shown);
     }
     start_input(&app, &state, &id, input, shown).map(|_| ())
 }
@@ -2018,6 +2033,8 @@ pub fn pilot_thread_restart(state: State<'_, PilotState>, id: String) -> Result<
     if state.runtime.active_turn(&id).is_some() {
         return Err("stop the agent first — it is still working".into());
     }
+    state.db.set_queue_held(&id, true).map_err(|e| e.to_string())?;
+    emit_queue(&state, &id);
     state.runtime.stop(&id);
     state.runtime.append_item(&id, &last_turn(&state, &id), ItemKind::Notice, json!({ "text": "Agent session restarted — the next message starts it fresh on the same conversation." }));
     Ok(())
@@ -2360,6 +2377,10 @@ fn answer_by_message(app: &AppHandle, state: &PilotState, id: &str, mut item: It
 
 #[tauri::command(async)]
 pub fn pilot_thread_interrupt(state: State<'_, PilotState>, id: String) -> Result<(), String> {
+    // Hold before requesting interruption: a racing completion must not start
+    // the next queued message after the user pressed Stop.
+    state.db.set_queue_held(&id, true).map_err(|e| e.to_string())?;
+    emit_queue(&state, &id);
     state.runtime.interrupt(&id)
 }
 

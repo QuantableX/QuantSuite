@@ -778,6 +778,14 @@ pub fn init() -> TauriPlugin<Wry> {
                 }));
             }
             {
+                let app = app.clone();
+                runtime.set_queue_ready_hook(Arc::new(move |thread_id: &str| {
+                    if let Some(state) = app.try_state::<PilotState>() {
+                        let _ = threads::send_next(&app, &state, thread_id);
+                    }
+                }));
+            }
+            {
                 let runtime = runtime.clone();
                 qs_core::shutdown::on_shutdown(app, "pilot", Box::new(move || runtime.stop_all()));
             }

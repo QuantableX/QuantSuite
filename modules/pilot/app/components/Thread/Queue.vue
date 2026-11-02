@@ -27,17 +27,28 @@ const running = computed(() => Boolean(view.value?.turnId))
       </template>
     </div>
     <div v-for="q in queue" :key="q.id" class="qp-queue-item" :class="{ editing: view?.editingQueued === q.id }">
-      <div class="qp-queue-text">{{ q.text }}</div>
+      <div class="qp-queue-content">
+        <div v-if="['sending', 'running', 'awaiting'].includes(q.state)" class="qp-queue-held">Sending · retained until completion</div>
+        <div class="qp-queue-text">{{ q.text }}</div>
+        <div v-if="q.payload?.attachments.length" class="qp-queue-files">
+          <span v-for="(a, index) in q.payload.attachments" :key="index" :title="a.path">
+            <img v-if="a.kind === 'image' && a.thumb" :src="a.thumb" :alt="a.name" />{{ a.name }}
+          </span>
+        </div>
+        <div v-if="q.error" class="qp-queue-error" role="status">{{ q.error }}</div>
+      </div>
       <div class="qp-queue-actions">
         <button
           class="qp-queue-btn"
-          :title="running && view?.canSteer ? 'Send now, into the running turn' : 'Send now'"
+          :disabled="['sending', 'running', 'awaiting'].includes(q.state) || (running && !view?.canSteer)"
+          :title="q.state === 'uncertain' ? 'Retry this delivery after checking the conversation' : running && view?.canSteer ? 'Send now, into the running turn' : 'Send now'"
+          aria-label="Send queued message now"
           @click="threads.queueSendNow(threadId, q.id)"
         >
           <CornerDownRight :size="13" />
         </button>
-        <button class="qp-queue-btn" title="Edit (Alt+Up edits the newest)" @click="threads.editQueued(threadId, q.id)"><Pencil :size="12" /></button>
-        <button class="qp-queue-btn" title="Remove" @click="threads.queueRemove(threadId, q.id)"><X :size="13" /></button>
+        <button class="qp-queue-btn" :disabled="['sending', 'running', 'awaiting'].includes(q.state)" title="Edit (Alt+Up edits the newest)" @click="threads.editQueued(threadId, q.id)"><Pencil :size="12" /></button>
+        <button class="qp-queue-btn" :disabled="['sending', 'running', 'awaiting'].includes(q.state)" title="Remove" @click="threads.queueRemove(threadId, q.id)"><X :size="13" /></button>
       </div>
     </div>
   </div>
@@ -45,6 +56,12 @@ const running = computed(() => Boolean(view.value?.turnId))
 
 <style scoped>
 .qp-queue { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding: 0 0 12px; }
+.qp-queue-content { flex: 1; min-width: 0; }
+.qp-queue-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; font-size: 11px; }
+.qp-queue-files span { display: inline-flex; align-items: center; gap: 4px; max-width: 180px; overflow: hidden; }
+.qp-queue-files img { width: 28px; height: 28px; object-fit: cover; border-radius: 3px; }
+.qp-queue-error { color: var(--qss-error, #f87171); font-size: 12px; margin-top: 5px; }
+.qp-queue-btn:disabled { opacity: 0.35; cursor: default; }
 .qp-queue-head { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-queue-held { color: var(--qss-warning, #d29a3f); }
 .qp-queue-resume {
