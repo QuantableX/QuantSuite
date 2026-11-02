@@ -37,6 +37,7 @@ mod pi;
 mod prompt;
 mod providers;
 mod relay;
+mod review;
 mod run_project;
 mod runtime;
 mod settings;
@@ -891,6 +892,11 @@ pub fn init() -> TauriPlugin<Wry> {
             agent_tools::pilot_agent_list_threads,
             agent_tools::pilot_agent_read_thread,
             agent_tools::pilot_agent_read_thread_item,
+            review::pilot_review_load,
+            review::pilot_review_draft_save,
+            review::pilot_review_draft_delete,
+            review::pilot_review_submit,
+            review::pilot_review_resolve,
             github::pilot_gh_browse,
             github::pilot_gh_clone,
             github::pilot_gh_clone_cancel,

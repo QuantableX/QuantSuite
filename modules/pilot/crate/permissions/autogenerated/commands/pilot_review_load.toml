@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-review-load"
+description = "Enables the pilot_review_load command without any pre-configured scope."
+commands.allow = ["pilot_review_load"]
+
+[[permission]]
+identifier = "deny-pilot-review-load"
+description = "Denies the pilot_review_load command without any pre-configured scope."
+commands.deny = ["pilot_review_load"]

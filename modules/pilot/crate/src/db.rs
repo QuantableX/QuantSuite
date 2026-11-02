@@ -25,7 +25,7 @@ pub use history::{HistoryChunk, HistoryPage, HistoryRequest};
 /// 11: the last usage windows per provider (card 18).
 /// 12: revision-bound history chunks and indexed full-history pagination (parity 02).
 /// 13: versioned queue payloads and recoverable delivery state (parity 04).
-pub const SCHEMA_VERSION: i64 = 15;
+pub const SCHEMA_VERSION: i64 = 16;
 
 #[path = "queue.rs"]
 mod queue;
@@ -297,6 +297,15 @@ const V9_COLUMNS: [(&str, &str); 4] = [
 /// A turn file's saved patch and its frozen sides (before, after), when kept.
 pub type SavedChange = (String, Option<String>, Option<String>);
 
+const REVIEW_DRAFTS_TABLE: &str = "
+    CREATE TABLE IF NOT EXISTS review_drafts (
+        repo TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (repo, number, id)
+    );";
+
 const IMPORTS_TABLE: &str = "
     CREATE TABLE IF NOT EXISTS imports (
         provider TEXT NOT NULL,
@@ -515,6 +524,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // Schema 15 (parity 08): imported CLI conversations, by provider, the
     // CLI home they came from and the native session id.
     tx.execute_batch(IMPORTS_TABLE)?;
+    // Schema 16 (parity 11): draft review comments, per repository and PR.
+    tx.execute_batch(REVIEW_DRAFTS_TABLE)?;
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;
@@ -961,6 +972,33 @@ impl Database {
             })
         })?;
         rows.collect()
+    }
+
+    pub fn review_drafts(&self, repo: &str, number: i64) -> rusqlite::Result<Vec<crate::review::Draft>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT data FROM review_drafts WHERE repo = lower(?1) AND number = ?2")?;
+        let rows = stmt.query_map(params![repo, number], |r| r.get::<_, String>(0))?;
+        let mut out: Vec<crate::review::Draft> = rows.filter_map(|r| r.ok()).filter_map(|d| serde_json::from_str(&d).ok()).collect();
+        out.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        Ok(out)
+    }
+
+    pub fn save_review_draft(&self, repo: &str, number: i64, d: &crate::review::Draft) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO review_drafts (repo, number, id, data) VALUES (lower(?1), ?2, ?3, ?4)",
+            params![repo, number, d.id, serde_json::to_string(d).unwrap_or_default()],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_review_drafts(&self, repo: &str, number: i64, id: Option<&str>) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        match id {
+            Some(i) => conn.execute("DELETE FROM review_drafts WHERE repo = lower(?1) AND number = ?2 AND id = ?3", params![repo, number, i])?,
+            None => conn.execute("DELETE FROM review_drafts WHERE repo = lower(?1) AND number = ?2", params![repo, number])?,
+        };
+        Ok(())
     }
 
     /// The thread an import of this conversation became, if it still exists.

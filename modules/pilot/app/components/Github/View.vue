@@ -46,6 +46,8 @@ const repoThreads = computed(() =>
 const linksOf = (id: string) => (git.links[id] ?? []).filter((l) => l.kind === 'pr' || l.kind === 'issue')
 
 const search = ref('')
+/** The pull request under a human review (parity 11). */
+const reviewing = ref<number | null>(null)
 /** Browse GitHub (parity 10) instead of a repository. */
 const browsing = ref(false)
 async function openedClone(path: string) {
@@ -190,6 +192,7 @@ const CHECK_TITLE = (pr: GhPull) =>
     </aside>
 
     <PilotGithubBrowse v-if="browsing && store.settings?.github !== false" @close="browsing = false" @opened="openedClone" />
+    <PilotGithubReview v-else-if="current && reviewing" :key="`${current.contextId}#${reviewing}`" :context-id="current.contextId" :number="reviewing" @close="reviewing = null" />
     <section v-else-if="current" class="qp-ghv-main">
       <header class="qp-ghv-bar">
         <span class="qp-ghv-title">{{ current.repo.owner }}/{{ current.repo.name }}</span>
@@ -262,6 +265,7 @@ const CHECK_TITLE = (pr: GhPull) =>
             <span v-else class="none">no checks</span>
           </span>
           <span class="qp-ghv-size">{{ sizeOf(pr) }}</span>
+          <button class="qp-btn qp-btn-sm" title="Read the changes and post your own review" @click="reviewing = pr.number">Review yourself</button>
           <button v-if="threadOfPr(pr)" class="qp-btn qp-btn-sm" title="Go to its thread" @click="openThread(threadOfPr(pr)!)">Thread</button>
           <button
             v-else
@@ -270,7 +274,7 @@ const CHECK_TITLE = (pr: GhPull) =>
             title="A thread that checks the pull request out and reviews it"
             @click="start(`pr:${pr.number}`, prItem(pr), reviewPrompt(pr), true)"
           >
-            {{ busy === `pr:${pr.number}` ? 'Starting…' : 'Review' }}
+            {{ busy === `pr:${pr.number}` ? 'Starting…' : 'Agent review' }}
           </button>
           <span class="qp-ghv-more">
             <button class="qp-ghv-icon" :aria-label="`More for #${pr.number}`" @click="menuFor = menuFor === `pr:${pr.number}` ? null : `pr:${pr.number}`">
