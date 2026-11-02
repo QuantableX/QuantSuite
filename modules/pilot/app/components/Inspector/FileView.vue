@@ -26,6 +26,11 @@ const editor = ref<{ reveal: (line: number, column?: number) => void; layout: ()
 let blobUrl: string | null = null
 
 const rendered = computed(() => (file.value?.kind === 'text' ? renderedOf(props.path) : null))
+/** A .mmd file as one Mermaid fence (parity 13). */
+const FENCE = '`'.repeat(3)
+const mermaidSource = computed(() => `${FENCE}mermaid
+${file.value?.text ?? ''}
+${FENCE}`)
 const showRendered = computed(() => Boolean(rendered.value) && !raw.value && !editing.value)
 const dirty = computed(() => editing.value && buffer.value !== (file.value?.text ?? ''))
 const name = computed(() => props.path.split(/[\\/]/).pop() ?? props.path)
@@ -137,7 +142,10 @@ async function saveAs() {
       <iframe v-else-if="file.kind === 'pdf'" class="qp-fv-frame" :src="pdfUrl" :title="name" />
       <div v-else-if="file.kind === 'binary'" class="qp-fv-msg">A binary file ({{ sizeLabel(file.size) }}) — no preview.</div>
       <template v-else-if="showRendered">
-        <div v-if="rendered === 'markdown'" class="qp-fv-md"><QMarkdownPreview :source="file.text ?? ''" /></div>
+        <!-- Diagrams (parity 13): a .mmd file, or Markdown with Mermaid fences, through the replies' renderer. -->
+        <div v-if="rendered === 'mermaid'" class="qp-fv-md"><PilotThreadMarkdown :source="mermaidSource" /></div>
+        <div v-else-if="rendered === 'markdown' && (file.text ?? '').includes('```mermaid')" class="qp-fv-md"><PilotThreadMarkdown :source="file.text ?? ''" /></div>
+        <div v-else-if="rendered === 'markdown'" class="qp-fv-md"><QMarkdownPreview :source="file.text ?? ''" /></div>
         <iframe v-else-if="rendered === 'html'" class="qp-fv-frame white" sandbox="allow-scripts" :srcdoc="file.text ?? ''" :title="name" />
         <div v-else-if="rendered === 'svg'" class="qp-fv-media"><img :src="svgUrl" :alt="name" /></div>
         <div v-else-if="table" class="qp-fv-table">

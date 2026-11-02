@@ -27,10 +27,11 @@ export function languageOf(path: string): string {
 }
 
 /** What the Files tab can show besides the code view. */
-export type Rendered = 'markdown' | 'html' | 'svg' | 'csv' | null
+export type Rendered = 'mermaid' | 'markdown' | 'html' | 'svg' | 'csv' | null
 
 export function renderedOf(path: string): Rendered {
   const e = extOf(path)
+  if (e === 'mmd' || e === 'mermaid') return 'mermaid'
   if (e === 'md' || e === 'markdown') return 'markdown'
   if (e === 'html' || e === 'htm') return 'html'
   if (e === 'svg') return 'svg'
