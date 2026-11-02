@@ -115,6 +115,7 @@ const COMMANDS: &[&str] = &[
     "pilot_gh_status",
     "pilot_diagnostics",
     "pilot_export_logs",
+    "pilot_attention_badge",
     "pilot_storage_inventory",
     "pilot_storage_plan",
     "pilot_storage_clean",

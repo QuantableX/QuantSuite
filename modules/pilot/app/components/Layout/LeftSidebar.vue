@@ -34,6 +34,9 @@ import {
   type DropZone,
   type Section,
   type SidebarThread,
+  inHours,
+  tomorrowAt,
+  wakeLabel,
 } from '#pilot/utils/sidebar'
 import type { SessionMeta } from '#pilot/types'
 import { useKeysStore } from '#pilot/stores/keys'
@@ -199,6 +202,37 @@ interface Range {
   current: string
 }
 const range = ref<Range | null>(null)
+
+// ── Bulk snooze (parity 20) ──
+const bulk = ref<{ ids: string[]; x: number; y: number } | null>(null)
+const bulkMenu = ref<HTMLElement | null>(null)
+const bulkChoices = computed(() => {
+  const now = Date.now()
+  return [
+    { id: '1h', label: '1 hour', at: inHours(now, 1) },
+    { id: '3h', label: '3 hours', at: inHours(now, 3) },
+    { id: 'tomorrow', label: 'Tomorrow', at: tomorrowAt(now) },
+  ]
+})
+async function bulkSnooze(at: number) {
+  const b = bulk.value
+  bulk.value = null
+  if (!b) return
+  const label = wakeLabel(at, Date.now())
+  await sb.arrangeMany(b.ids, { snoozedUntil: at }, b.ids.length > 1 ? `Snoozed ${b.ids.length} threads until ${label}` : `Snoozed until ${label}`)
+}
+function bulkKey(e: KeyboardEvent) {
+  const items = [...(bulkMenu.value?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])]
+  const i = items.indexOf(document.activeElement as HTMLElement)
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    bulk.value = null
+  }
+}
+watch(bulk, (b) => b && void nextTick(() => bulkMenu.value?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()))
 
 const dragging = computed(() => Boolean(drag.value?.started))
 const dragAction = computed<DropAction | null>(() => {
@@ -454,15 +488,21 @@ function suppressNextClick() {
   setTimeout(() => window.removeEventListener('click', swallowClick, { capture: true }), 0)
 }
 
-async function onUp() {
+async function onUp(e?: PointerEvent) {
   const r = range.value
   if (r) {
     const ids = [...rangeIds.value]
     disarm()
     range.value = null
-    if (r.section === 'settled') await sb.arrangeMany(ids, { settled: false })
-    else if (r.section === 'snoozed') await sb.arrangeMany(ids, { snoozedUntil: null })
-    else await sb.arrangeMany(ids, { settled: true }, ids.length > 1 ? `Settled ${ids.length} threads` : 'Settled')
+    const n = ids.length > 1 ? `${ids.length} threads` : ''
+    // Alt held: snooze them instead (parity 20); a choice of how long.
+    if (e?.altKey && (r.section === 'active' || r.section === 'pinned' || r.section === 'working')) {
+      bulk.value = { ids, x: e.clientX, y: e.clientY }
+      return
+    }
+    if (r.section === 'settled') await sb.arrangeMany(ids, { settled: false }, n ? `Unsettled ${n}` : 'Unsettled')
+    else if (r.section === 'snoozed') await sb.arrangeMany(ids, { snoozedUntil: null }, n ? `Woke ${n}` : 'Woke')
+    else await sb.arrangeMany(ids, { settled: true }, n ? `Settled ${n}` : 'Settled')
     return
   }
   const d = drag.value
@@ -674,6 +714,17 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
     </button>
 
     <PilotLayoutThreadMenu v-if="menu && menuThread" :thread="menuThread" :x="menu.x" :y="menu.y" @close="closeMenu" @rename="renameFromMenu" />
+    <Teleport to="body">
+      <div v-if="bulk" class="qp-bulk-veil" @pointerdown.self="bulk = null" @contextmenu.prevent="bulk = null">
+        <div ref="bulkMenu" class="qp-bulk" role="menu" :aria-label="`Snooze ${bulk.ids.length} threads`" :style="{ left: `${Math.min(bulk.x, 9999)}px`, top: `${bulk.y}px` }" @keydown="bulkKey">
+          <div class="qp-bulk-title">Snooze {{ bulk.ids.length }} thread{{ bulk.ids.length === 1 ? '' : 's' }} until</div>
+          <button v-for="c in bulkChoices" :key="c.id" role="menuitem" class="qp-bulk-row" @click="bulkSnooze(c.at)">
+            <span>{{ c.label }}</span><span class="qp-bulk-hint">{{ wakeLabel(c.at, Date.now()) }}</span>
+          </button>
+          <button role="menuitem" class="qp-bulk-row" @click="bulk = null">Cancel</button>
+        </div>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -899,4 +950,12 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
   font-size: 11px;
   font-weight: 600;
 }
+/* Bulk snooze (parity 20). */
+.qp-bulk-veil { position: fixed; inset: 0; z-index: 1150; }
+.qp-bulk { position: fixed; min-width: 220px; padding: 4px; display: flex; flex-direction: column; border: 1px solid var(--qss-border, #47474f); border-radius: 8px; background: var(--qss-bg-raised, #1f1f25); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); font-size: 12.5px; animation: qp-pop-in var(--qp-motion, 160ms) cubic-bezier(0.2, 0.8, 0.2, 1); }
+.qp-bulk-title { padding: 4px 8px 6px; color: var(--qss-text-muted, #6e6e7a); font-size: 11.5px; }
+.qp-bulk-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 8px; border: none; border-radius: 5px; background: transparent; color: var(--qss-text, #d4d4d8); font: inherit; text-align: left; cursor: pointer; outline: none; }
+.qp-bulk-row:hover, .qp-bulk-row:focus-visible { background: var(--qss-bg-hover, #313139); }
+.qp-bulk-hint { color: var(--qss-text-muted, #6e6e7a); font-size: 11px; }
+@media (prefers-reduced-motion: reduce) { .qp-bulk { animation: none; } }
 </style>
