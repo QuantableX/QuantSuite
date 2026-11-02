@@ -29,6 +29,7 @@ mod events;
 mod files;
 mod git;
 mod github;
+mod import;
 mod lifecycle;
 mod gitops;
 mod notify;
@@ -889,6 +890,9 @@ pub fn init() -> TauriPlugin<Wry> {
             agent_tools::pilot_agent_list_threads,
             agent_tools::pilot_agent_read_thread,
             agent_tools::pilot_agent_read_thread_item,
+            import::pilot_import_list,
+            import::pilot_import,
+            import::pilot_import_cancel,
             agent_tools::pilot_agent_run_project,
             agent_tools::pilot_agent_project_status,
             agent_tools::pilot_agent_browser,

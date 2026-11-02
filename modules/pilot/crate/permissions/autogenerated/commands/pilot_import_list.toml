@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-import-list"
+description = "Enables the pilot_import_list command without any pre-configured scope."
+commands.allow = ["pilot_import_list"]
+
+[[permission]]
+identifier = "deny-pilot-import-list"
+description = "Denies the pilot_import_list command without any pre-configured scope."
+commands.deny = ["pilot_import_list"]

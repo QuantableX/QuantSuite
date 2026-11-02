@@ -70,6 +70,9 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-list-threads`
 - `allow-pilot-agent-read-thread`
 - `allow-pilot-agent-read-thread-item`
+- `allow-pilot-import-list`
+- `allow-pilot-import`
+- `allow-pilot-import-cancel`
 - `allow-pilot-agent-run-project`
 - `allow-pilot-agent-project-status`
 - `allow-pilot-agent-browser`
@@ -1637,6 +1640,84 @@ Enables the pilot_history_page command without any pre-configured scope.
 <td>
 
 Denies the pilot_history_page command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-import`
+
+</td>
+<td>
+
+Enables the pilot_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-import`
+
+</td>
+<td>
+
+Denies the pilot_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-import-cancel`
+
+</td>
+<td>
+
+Enables the pilot_import_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-import-cancel`
+
+</td>
+<td>
+
+Denies the pilot_import_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-import-list`
+
+</td>
+<td>
+
+Enables the pilot_import_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-import-list`
+
+</td>
+<td>
+
+Denies the pilot_import_list command without any pre-configured scope.
 
 </td>
 </tr>
