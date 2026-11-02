@@ -1374,3 +1374,48 @@ real Claude Haiku turn through QuantPilot resumed it ("KIWI-08"); importing
 again added nothing; a deleted folder was refused with its reason; a Codex
 rollout from an alternate `CODEX_HOME` (an Orca account home) was imported with
 its provenance. Codex resume could not be run (not logged in on this machine).
+
+## 20. Parity follow-up: skill library (09/23)
+
+Settings → QuantPilot → **Skills** (`skills.rs`, `Settings/Skills.vue`). A skill
+folder with a `SKILL.md` (frontmatter `name` and `description`; plain, quoted
+or folded values) is imported once into `<pilot data>/skills/lib/<id>/` with its
+support files (≤ 64 files, ≤ 1 MiB, no links; written to a staging folder and
+swapped in). `<id>.json` records name, description, source folder, a SHA-256
+library hash over all files, and every activation. A second source with the same
+name is refused unless the import replaces the source.
+
+Activation copies the library version where the CLI itself looks and records
+each written file's hash:
+
+| Provider    | User scope | Project scope (the chosen thread's checkout) |
+|-------------|-----------|-----------------------------------------------|
+| Claude Code | `<CLAUDE_CONFIG_DIR or ~/.claude>/skills/<id>` | `.claude/skills/<id>` |
+| Codex       | `~/.agents/skills/<id>` | `.agents/skills/<id>` |
+| pi, omp, OpenCode, Gemini CLI, Copilot, custom | unsupported — listed, never shown as installed | |
+
+(Codex 0.166 `skills/list` reads user skills from `~/.agents/skills` and repo
+skills from `.agents/skills` and `.codex/skills`.) A project activation adds its
+folder to the checkout's `info/exclude` (via `git rev-parse --git-path`, so
+worktrees work) and removes the line on deactivation.
+
+Each cell is `active`, `outdated` (the library is newer — "Update"),
+`drifted` (a written file was edited — refused unless "keep edits", which updates
+the rest), `missing` (folder gone — "Restore") or `off`. Deactivation deletes only
+files whose hash is still QuantPilot's; edited files stay and are named. A folder
+QuantPilot did not write is never activated over, and skills installed by hand are
+listed as such. A skill can leave the library only when it is off everywhere.
+Activation and deactivation drop the cached Codex catalog, so the composer's `$`
+list follows; a skill chip whose skill disappeared before sending is refused with
+its name while the draft stays.
+
+Not included: importing straight from a GitHub repository (import a cloned
+folder), catalogs/discovery, rules (they stay in AgentOS / QuantMCP).
+
+Verified in the isolated native app (project scope only, so the user's own skill
+folders were untouched): import with a support file, activation for Claude and
+Codex in a Git checkout (exclude lines written), a real Claude Haiku turn used
+the skill through its Skill tool ("LIME-09"), Codex `skills/list` saw it as a repo
+skill, a user edit showed drifted and was kept on deactivation, a library update
+showed outdated and updated, an unsupported provider was refused, removal while
+active was refused.
