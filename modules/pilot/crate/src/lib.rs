@@ -892,6 +892,8 @@ pub fn init() -> TauriPlugin<Wry> {
             agent_tools::pilot_agent_list_threads,
             agent_tools::pilot_agent_read_thread,
             agent_tools::pilot_agent_read_thread_item,
+            threads::pilot_attachment_media,
+            threads::pilot_paths_exist,
             review::pilot_review_load,
             review::pilot_review_draft_save,
             review::pilot_review_draft_delete,

@@ -69,6 +69,8 @@ permissions = [
   "allow-pilot-agent-list-threads",
   "allow-pilot-agent-read-thread",
   "allow-pilot-agent-read-thread-item",
+  "allow-pilot-attachment-media",
+  "allow-pilot-paths-exist",
   "allow-pilot-review-load",
   "allow-pilot-review-draft-save",
   "allow-pilot-review-draft-delete",

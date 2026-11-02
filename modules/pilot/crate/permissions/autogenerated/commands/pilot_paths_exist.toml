@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-paths-exist"
+description = "Enables the pilot_paths_exist command without any pre-configured scope."
+commands.allow = ["pilot_paths_exist"]
+
+[[permission]]
+identifier = "deny-pilot-paths-exist"
+description = "Denies the pilot_paths_exist command without any pre-configured scope."
+commands.deny = ["pilot_paths_exist"]

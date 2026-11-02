@@ -2238,6 +2238,70 @@ pub fn pilot_files_search(state: State<'_, PilotState>, id: String, query: Strin
     Ok(state.files.search(&root, &query))
 }
 
+/// A transcript image at full size (parity 12): only the thread's own
+/// attachments (its attachment folder, or a path one of its messages names).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Media {
+    mime: String,
+    data: String,
+    size: u64,
+    width: Option<u32>,
+    height: Option<u32>,
+}
+
+/// Full-size images up to this, read only when the viewer asks.
+const MEDIA_MAX: u64 = 32 * 1024 * 1024;
+
+fn thread_names(state: &PilotState, id: &str, path: &str) -> bool {
+    let dir = state.data_dir.join("attachments").join(id);
+    let p = Path::new(path);
+    if p.starts_with(&dir) {
+        return true;
+    }
+    let norm = |s: &str| s.replace('\\', "/").to_lowercase();
+    let want = norm(path);
+    state.db.items(id, None, 5000).unwrap_or_default().iter().any(|i| {
+        i.data["attachments"].as_array().is_some_and(|a| a.iter().any(|x| x["path"].as_str().is_some_and(|q| norm(q) == want)))
+    })
+}
+
+#[tauri::command(async)]
+pub fn pilot_attachment_media(state: State<'_, PilotState>, id: String, path: String) -> Result<Media, String> {
+    if !thread_names(&state, &id, &path) {
+        return Err("That file is not an attachment of this thread.".into());
+    }
+    let p = Path::new(&path);
+    let meta = std::fs::metadata(p).map_err(|_| format!("The image is no longer at {path}."))?;
+    if meta.len() > MEDIA_MAX {
+        return Err(format!("The image is {} MB — open it in an app instead.", meta.len() / 1024 / 1024));
+    }
+    let bytes = std::fs::read(p).map_err(|e| format!("The image could not be read ({e})."))?;
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or_default().to_lowercase();
+    let mime = match (ext.as_str(), bytes.get(..4)) {
+        (_, Some([0x89, b'P', b'N', b'G'])) => "image/png",
+        (_, Some([0xFF, 0xD8, 0xFF, _])) => "image/jpeg",
+        (_, Some([b'G', b'I', b'F', b'8'])) => "image/gif",
+        (_, Some([b'R', b'I', b'F', b'F'])) => "image/webp",
+        ("svg", _) => "image/svg+xml",
+        ("bmp", _) => "image/bmp",
+        _ => return Err("This file is not an image the viewer shows; open it in an app.".into()),
+    };
+    let (width, height) = image::ImageReader::new(std::io::Cursor::new(&bytes))
+        .with_guessed_format()
+        .ok()
+        .and_then(|r| r.into_dimensions().ok())
+        .map(|(w, h)| (Some(w), Some(h)))
+        .unwrap_or((None, None));
+    Ok(Media { mime: mime.into(), data: context::b64(&bytes), size: meta.len(), width, height })
+}
+
+/// Which of these paths still exist (attachments that moved show as unavailable).
+#[tauri::command(async)]
+pub fn pilot_paths_exist(paths: Vec<String>) -> Vec<bool> {
+    paths.iter().take(200).map(|p| Path::new(p).exists()).collect()
+}
+
 fn attachment_dir(state: &PilotState, id: &str) -> Result<PathBuf, String> {
     let dir = state.data_dir.join("attachments").join(id);
     std::fs::create_dir_all(&dir).map_err(|e| format!("attachments folder: {e}"))?;
