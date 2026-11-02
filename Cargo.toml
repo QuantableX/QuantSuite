@@ -100,6 +100,21 @@ log = { version = "0.4", features = ["std"] }
 [patch.crates-io]
 tao = { path = "vendor/tao" }
 
+# Debug builds keep line tables for the workspace crates and no debuginfo for
+# dependencies. Full debuginfo made a single `cargo build` write ~15 GB and each
+# one-function edit rewrite ~6 GB (PDBs, rlibs, incremental objects and the
+# quantsuite_lib staticlib), and every agent worktree builds into its own
+# target/. On the DRAM-less QLC system drive that is enough to stall every
+# writer on the machine. Line tables keep file:line in panics and backtraces
+# for our own frames; dependency frames still show function names from the PDB.
+# For a debugger with variables, set `debug = true` locally.
+# `split-debuginfo` is no lever here: windows-msvc only supports "packed".
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 codegen-units = 1
 lto = true
