@@ -285,7 +285,20 @@ fn rate_windows(limits: &Value) -> Vec<RateWindow> {
         .collect()
 }
 
+/// The model to send: none for "Codex's own choice" — empty or the
+/// catalog's synthetic `default` entry, which Codex itself does not accept
+/// (parity 22: "The 'default' model is not supported").
+pub fn model_override(model: &str) -> Option<&str> {
+    let m = model.trim();
+    (!m.is_empty() && m != "default").then_some(m)
+}
+
 impl CodexDriver {
+    /// The model Codex picks by itself, from the catalog's `default` entry.
+    fn default_model(&self) -> Option<String> {
+        self.models.as_ref()?.iter().find(|m| m.id == "default")?.resolved_model.clone()
+    }
+
     pub fn new(opts: CodexOptions) -> Self {
         Self {
             opts,
@@ -385,8 +398,8 @@ impl CodexDriver {
             // user configured is updated for this run instead of doubled.
             p["config"] = json!({ "mcp_servers.QuantMCP": { "url": url } });
         }
-        if !self.opts.model.is_empty() {
-            p["model"] = json!(self.opts.model);
+        if let Some(m) = model_override(&self.opts.model) {
+            p["model"] = json!(m);
         }
         p
     }
@@ -460,8 +473,8 @@ impl CodexDriver {
             "approvalsReviewer": reviewer,
             "sandboxPolicy": sandbox,
         });
-        if !self.opts.model.is_empty() {
-            params["model"] = json!(self.opts.model);
+        if let Some(m) = model_override(&self.opts.model) {
+            params["model"] = json!(m);
         }
         if !self.opts.effort.is_empty() {
             params["effort"] = json!(self.opts.effort);
@@ -1460,8 +1473,10 @@ impl Driver for CodexDriver {
         self.opts.model = model.to_string();
         let thread = self.thread.clone()?;
         let mut params = json!({ "threadId": thread });
-        if !model.is_empty() {
-            params["model"] = json!(model);
+        // Back to Codex's own choice: name it, so a session that took another
+        // model (or a bad id) really goes back.
+        if let Some(m) = model_override(model).map(str::to_string).or_else(|| self.default_model()) {
+            params["model"] = json!(m);
         }
         Some(self.request(Call::Settings, "thread/settings/update", params))
     }
@@ -1890,6 +1905,25 @@ mod tests {
         let out = feed(&mut d, &[json!({ "id": resume["id"], "error": { "code": -1, "message": "no rollout found" } })]);
         assert!(matches!(&out[0], Emit::Notice { text } if text.contains("no rollout found")));
         assert_eq!(writes(&out)[0]["method"], "thread/start");
+    }
+
+    #[test]
+    fn the_synthetic_default_model_is_never_sent_and_going_back_repairs_the_session() {
+        assert_eq!((model_override(""), model_override("default"), model_override(" gpt-x ")), (None, None, Some("gpt-x")));
+        let mut d = CodexDriver::new(CodexOptions { model: "default".into(), mode: "full".into(), ..Default::default() });
+        d.handshake();
+        d.user_message(&TurnInput { text: "hi".into(), ..Default::default() });
+        let out = feed(&mut d, &[json!({ "id": 1, "result": { "userAgent": "x/1.0" } })]);
+        let start = writes(&out).into_iter().find(|m| m["method"] == "thread/start").unwrap();
+        assert!(start["params"].get("model").is_none(), "{start}");
+        // A session that took a bad id goes back to Codex's own model by name.
+        d.thread = Some("t-1".into());
+        d.models = Some(vec![ModelInfo { id: "default".into(), display_name: "Default".into(), description: String::new(), resolved_model: Some("gpt-a".into()), efforts: vec![] }]);
+        let line = d.set_model("default").unwrap();
+        let msg: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!((msg["method"].as_str(), msg["params"]["model"].as_str()), (Some("thread/settings/update"), Some("gpt-a")));
+        let line = d.set_model("gpt-b").unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&line).unwrap()["params"]["model"], "gpt-b");
     }
 
     #[test]
