@@ -2089,3 +2089,102 @@ switching back, and a turn started in the canvas (with an MCP approval shown
 and allowed in the canvas chat, Supervised mode) appeared on the /pilot page;
 after a restart both windows came back with their threads, and closing one
 left its thread in QuantPilot.
+
+## 35. Parity 23/23: completion matrix and delivery handoff
+
+Source state: `main` at `69abb0e` (all 23 parity cards and the pre-1.1.0
+embed card merged) plus this card's upgrade test. Version in the source:
+1.0.42 — unchanged; this milestone does not bump the version and is not
+1.1.0. **Merged ≠ packaged ≠ installed ≠ released:** nothing of parity 01–23
+or the embed is packaged, installed or released. The published v1.0.42 and
+the installed app (`%LOCALAPPDATA%\QuantSuite`, schema 11) predate all of it.
+
+### Audit findings → delivered work
+
+| Audit finding (report of 2026-10-30) | Card | State | Verification |
+| --- | --- | --- | --- |
+| 1 Saved turn diffs miss shell writes; shared-file attribution | 01 | merged | unit + native (§12–13 sections of the series; track_files tool, reported vs snapshot sources) |
+| 2 Handoffs lose context; omitted history not retrievable | 02, 03 | merged | codex-1 native QA (paged history, handoff budgets); plan-mode read tools fixed in 22 |
+| 3 Native integration and performance unverified | 21, 22, 23 | merged | measured before/after (§32), native matrix (§33), final regression (below) |
+| 4 No agent-operated browser / run-and-preview | 06, 07 | merged | native: agent read/click/fill/capture, run_project + readiness |
+| 5 MCP URL authorization and rich forms | 05 | merged | unit + native forms; live URL step needs a server that asks for one |
+| Rich queued messages | 04 | merged | codex-1 native QA; queue verified again in 22/23 |
+| Import of CLI conversations | 08 | merged | native import (Claude); Codex import fixture-only (not signed in) |
+| Skill library | 09 | merged | native, project scope only (the user's skill folders untouched) |
+| Human PR review, browse/clone | 10, 11 | merged | browse/clone native; **review submission not executed** — needs an authorized test PR |
+| Media in the transcript | 12 | merged | native viewer, actions, missing state |
+| Mermaid, quoting replies | 13, 14 | merged | native |
+| Complete Find | 15 | merged | native on 5,601 records |
+| Document extraction (Windows) | 16 | merged | native with real PDFs/DOCX |
+| Files in question answers | 17 | merged | native with a real AskUserQuestion |
+| Browser session persistence | 18 | merged | native profiles; imports explicitly unsupported (app-bound encryption) |
+| Storage retention | 19 | merged | native dry run = cleanup on a long-history fixture |
+| Native polish (menus, attention, bulk snooze) | 20 | merged | native; taskbar overlay/activation unit-tested only |
+| Excluded large features, newer upstream ideas | roadmap card 91212da8 | **not decided** | separate decision card, intentionally open |
+| — (user request) chat in QuantSpace modules | embed 6bfac02b | merged | native in QuantCanvas (§34) |
+
+### Combined checks (this card, on the merged source)
+
+`cargo clippy -p tauri-plugin-pilot -p tauri-plugin-mcp --all-targets -D
+warnings` clean; `cargo test` pilot 225 passed (24 ignored: fixture/upgrade
+runs), mcp 126 passed; `npm run check:ts` clean; `npm run test:pilot` 88
+passed (75 at the audit); module manifests valid. **Not run:** the full
+`npm test` / release checks (`npm run check`, `check:release`,
+`test:distribution`, `test:release`) — recommended once before packaging.
+
+**Upgrade** from the installed build: a read-only SQLite backup copy of the
+installed app's `pilot.db` (schema 11, v1.0.42), enriched with threads,
+messages with attachment paths, a three-item queue, turns and a worktree link
+(`artifacts/quantpilot-parity-23/make_v11.py`), opened with the current build
+(`upgrade_keeps_threads_messages_queue_and_worktrees`, run with
+`QP_UPGRADE_DB`): schema 11 → 16, every thread id/title/worktree link,
+message (with attachment paths) and the queue order unchanged; opening again
+changes nothing. Settings files gain `storage` (rules off) with defaults.
+New data appears only when used: `attachments/.documents/`,
+`browser-profiles/`, `storage-cleanup.log`.
+
+**Rollback**: keep a copy of `%USERPROFILE%\.quantsuite\modules\pilot\`
+before the first start of a new build. An older build does not downgrade the
+schema; going back means restoring that copy (threads created meanwhile are
+then lost). Checkpoints and worktrees live in the repositories and are not
+touched by an upgrade.
+
+### Final native regression
+
+Combined build (`main` + this card's test, debug Rust, Nuxt dev frontend) in
+the isolated QA app with Claude Haiku; raw results in
+`artifacts/quantpilot-parity-23/regress/` (`run.sh`, one JSON + PNG per step).
+
+| Step | Result |
+| --- | --- |
+| QuantMCP identity in plan mode | ✓ list_threads + read_thread completed, own title named |
+| Approval round-trip (MCP write tool, Supervised) | ✓ thread waiting, allowed, tool completed |
+| Interrupt, continue, queued follow-up | ✓ `interrupted`, `RESUMED`, queued message ran by itself |
+| Managed worktree edit, saved diff, rewind with files | ✓ branch `quantpilot/p23-worktree`, `README M +2 −1`, restored |
+| Kill the agent mid-turn | ✓ turn `failed` with the exit notice, next turn `ALIVE` |
+| Find (5,601 records: oldest, folded, chip, plan, Unicode, 26 matches) | ✓ every count right, walk with wraparound, ≤ 50 items in the DOM |
+| PDF + DOCX context | ✓ HERON-42, KESTREL-9, OSPREY-7, the Japanese text |
+| Files in question answers (option+image, image only, text+PDF) | ✓ all three reached Claude; composer draft untouched |
+| Reply link menu | ✓ rows, focus return, one menu on rapid reopen, Files tab opened |
+| QuantCanvas chat (new thread, file window, second window) | ✓ right project and folder, reply streamed, no zoom on wheel, no crosstalk |
+
+No unexplained failures. Measured performance (§32) and the provider matrix
+(§33) were not re-run; nothing in between touched their code paths.
+
+### Remaining limitations and next user actions
+
+- Codex: not signed in on this machine — every Codex path (and the
+  default-model fix) is unit-tested only. Sign in (`codex login`) to verify.
+- pi / omp / OpenCode: external setup (API key; a running LM Studio model;
+  OpenCode's own database error) — see §33.
+- PR review submission (11): needs an explicitly authorized test PR.
+- Taskbar overlay and activation after a flash, toasts, Explorer drag/open:
+  not exercised natively (they act on the user's main screen).
+- Scrolling through every loaded page of a 1,200-message thread still has a
+  frame p95 of ~42 ms; timeline virtualization is a possible follow-up.
+- To try it: stop the app's own dev session first, then run the test command
+  of this card's worktree (in the completion report), or in the main checkout
+  `npm run tauri:dev` as usual. To deliver: follow docs/RELEASING.md once
+  (version, checks, package) — only with the user's release go-ahead; not
+  1.1.0.
+- The QuantSuite 1.1.0 UI overhaul stays its own future milestone.
