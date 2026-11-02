@@ -1337,3 +1337,40 @@ start (dev server with a 4 s start, path with spaces) → preview (HTTP 200,
 opened) → browser read/screenshot → start again ("already running") → stop →
 status; plus a failing build, a missing executable, a port held by a foreign
 server and a static SVG preview. Codex not run (not logged in).
+
+## 19. Parity follow-up: importing CLI conversations (08/23)
+
+Sidebar → "+" menu → **Import from Claude Code or Codex…** lists the session
+logs of every CLI home the Usage page reads (`CLAUDE_CONFIG_DIR`, `~/.claude`,
+`~/.config/claude`; `CODEX_HOME`, `~/.codex`, their `sessions/` and
+`archived_sessions/`, `.jsonl.zst` included), newest first, 600 logs at most,
+searchable by title, folder or session id, 50 at a time. Each row shows title,
+folder, last activity, message count and model; already imported, started by
+QuantPilot itself, unavailable (folder gone, log too large) and problems
+(unreadable lines, a cut last line, a compressed archive) are marked.
+
+Import (`import.rs`) reads only — no model request, the logs are never written
+— and creates a thread bound to the native session id in the conversation's own
+folder, so the next message resumes it natively (Claude `--resume`, Codex
+`thread/resume`). Its context is the registered workspace containing the
+folder, otherwise the mapping chosen in the dialog (General by default); the
+thread's folder stays the original one. Turns, roles and original timestamps
+are kept; tool calls with input and output, inline images (saved as thread
+attachments) and Claude resume points (`provider_ref`) come along; images a log
+only names, skipped lines and entries over the 4,000-per-import limit are said
+in a notice. Subagent logs and sidechains stay out.
+
+Identity is provider + home + session id (schema 15 table `imports`): the same
+session in two homes is two conversations; importing again adds only the
+messages the log gained since (counted by user messages); a session QuantPilot
+started itself is shown as such and not imported twice. A conversation whose
+folder no longer exists is refused with the reason (it could not resume).
+Stop cancels between conversations; a conversation is imported whole or not at
+all (a failure deletes its partial thread).
+
+Verified in the isolated native app: a standalone `claude -p` session in a
+folder with "ü" and a space was listed, imported with its original times, and a
+real Claude Haiku turn through QuantPilot resumed it ("KIWI-08"); importing
+again added nothing; a deleted folder was refused with its reason; a Codex
+rollout from an alternate `CODEX_HOME` (an Orca account home) was imported with
+its provenance. Codex resume could not be run (not logged in on this machine).

@@ -75,6 +75,8 @@ const filterModel = computed({
   set: (v: string) => sb.setFilter(v || null),
 })
 const newMenu = ref(false)
+/** The import dialog (parity 08). */
+const importing = ref(false)
 async function newThread(contextId?: string) {
   newMenu.value = false
   await sb.newThread(contextId ? { contextId } : {})
@@ -586,7 +588,10 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
         <div v-if="newMenu" class="qp-new-menu" role="menu" @keydown.esc.stop="newMenu = false">
           <div class="qp-new-menu-title">New thread in</div>
           <button v-for="o in filterOptions" :key="o.id" class="qp-new-menu-row" role="menuitem" @click="newThread(o.id)">{{ o.name }}</button>
+          <div class="qp-new-menu-sep" role="separator" />
+          <button class="qp-new-menu-row" role="menuitem" @click="(newMenu = false), (importing = true)">Import from Claude Code or Codex…</button>
         </div>
+        <PilotLayoutImportDialog v-if="importing" @close="importing = false" />
       </div>
     </div>
     <div v-if="newMenu" class="qp-scrim" @pointerdown="newMenu = false" />
@@ -748,6 +753,7 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
 }
 .qp-new-menu-title { padding: 4px 8px 3px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-new-menu-sep { height: 1px; margin: 4px 6px; background: var(--qss-border-subtle, #35353d); }
 .qp-new-menu-row {
   display: block;
   width: 100%;

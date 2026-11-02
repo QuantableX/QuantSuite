@@ -25,7 +25,7 @@ pub use history::{HistoryChunk, HistoryPage, HistoryRequest};
 /// 11: the last usage windows per provider (card 18).
 /// 12: revision-bound history chunks and indexed full-history pagination (parity 02).
 /// 13: versioned queue payloads and recoverable delivery state (parity 04).
-pub const SCHEMA_VERSION: i64 = 14;
+pub const SCHEMA_VERSION: i64 = 15;
 
 #[path = "queue.rs"]
 mod queue;
@@ -297,6 +297,17 @@ const V9_COLUMNS: [(&str, &str); 4] = [
 /// A turn file's saved patch and its frozen sides (before, after), when kept.
 pub type SavedChange = (String, Option<String>, Option<String>);
 
+const IMPORTS_TABLE: &str = "
+    CREATE TABLE IF NOT EXISTS imports (
+        provider TEXT NOT NULL,
+        home TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        imported_at INTEGER NOT NULL,
+        PRIMARY KEY (provider, home, session_id)
+    );";
+
 /// Schema 14 (parity 01) columns of `turn_changes`.
 const V14_CHANGE_COLUMNS: [(&str, &str); 5] = [
     ("source", "source TEXT NOT NULL DEFAULT 'snapshot'"),
@@ -501,6 +512,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             tx.execute_batch(&format!("ALTER TABLE turn_changes ADD COLUMN {col};"))?;
         }
     }
+    // Schema 15 (parity 08): imported CLI conversations, by provider, the
+    // CLI home they came from and the native session id.
+    tx.execute_batch(IMPORTS_TABLE)?;
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;
@@ -947,6 +961,39 @@ impl Database {
             })
         })?;
         rows.collect()
+    }
+
+    /// The thread an import of this conversation became, if it still exists.
+    pub fn imported_thread(&self, provider: &str, home: &str, session_id: &str) -> rusqlite::Result<Option<String>> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT i.thread_id FROM imports i JOIN threads t ON t.id = i.thread_id
+                WHERE i.provider = ?1 AND lower(i.home) = lower(?2) AND i.session_id = ?3",
+            params![provider, home, session_id],
+            |r| r.get(0),
+        )
+        .optional()
+    }
+
+    /// A thread QuantPilot itself started on this native session.
+    pub fn native_thread(&self, provider: &str, session_id: &str) -> rusqlite::Result<Option<String>> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT id FROM threads WHERE provider = ?1 AND provider_session_id = ?2
+                AND id NOT IN (SELECT thread_id FROM imports) ORDER BY created_at LIMIT 1",
+            params![provider, session_id],
+            |r| r.get(0),
+        )
+        .optional()
+    }
+
+    pub fn record_import(&self, provider: &str, home: &str, session_id: &str, thread_id: &str, path: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO imports (provider, home, session_id, thread_id, path, imported_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![provider, home, session_id, thread_id, path, now()],
+        )?;
+        Ok(())
     }
 
     /// A saved turn file's patch and, when kept, its frozen sides.
