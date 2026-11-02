@@ -364,9 +364,11 @@ impl Projector {
                 }
             }
             Emit::FileChanged { path, call_id } => {
-                // What the turn's tools wrote: its changes are these files (card 11).
+                // What the turn's tools wrote: its changes are these files
+                // (card 11), each frozen as it is right now (parity 01).
                 if !self.turn_id.is_empty() {
-                    let _ = self.db.add_turn_file(&self.turn_id, &path);
+                    let cwd = self.db.get_session(&self.thread_id).ok().flatten().map(|m| m.cwd).unwrap_or_default();
+                    crate::tracking::reported(&self.thread_id, &self.turn_id, std::path::Path::new(&cwd), &path, crate::checkpoints::show_content);
                 }
                 // The tool has usually finished already, so its row is no
                 // longer live: update the saved one.

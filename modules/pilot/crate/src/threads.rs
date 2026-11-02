@@ -699,6 +699,10 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
             if history.fallback { " Used a conservative context budget because destination capacity is unknown." } else { "" }
         ) }));
     }
+    // What the turn writes is captured file by file (parity 01): inside Git
+    // against the checkpoint, outside it through the agent's track_files.
+    let track_root = root.clone().unwrap_or_else(|| PathBuf::from(&meta.cwd));
+    crate::tracking::start_turn(&id, &started, &track_root, before.clone());
     if let (Some(root), Some(before)) = (root, before) {
         let root_s = root.to_string_lossy().into_owned();
         if checkpoints::keep(&root, &id, &started, "before", &before).is_ok() {
@@ -716,52 +720,39 @@ fn pending_rewind(state: &PilotState, id: &str) -> Option<Value> {
     state.db.rewind(id).ok().flatten().and_then(|r| serde_json::from_str(&r).ok())
 }
 
-/// After a turn: snapshot the checkout again and keep what the turn's own
-/// tools wrote as its changes, with a "changes" item under the answer.
+/// After a turn: keep what the turn's own writes changed (parity 01:
+/// tracked captures and reported edits, each frozen when it was written),
+/// with a "changes" item under the answer. The after-checkpoint is still
+/// taken inside Git — reverting and rewinding restore from it.
 fn record_changes(state: &PilotState, thread_id: &str) {
     let Some(turn) = state.db.turn_refs(thread_id).ok().and_then(|t| t.last().map(|x| x.0.clone())) else {
         return;
     };
-    let Ok(Some((root, before, after))) = state.db.checkpoint(&turn) else {
+    if let Ok(Some((root, _, None))) = state.db.checkpoint(&turn) {
+        let root = PathBuf::from(root);
+        if let Ok(after) = checkpoints::snapshot(&root) {
+            if checkpoints::keep(&root, thread_id, &turn, "after", &after).is_ok() {
+                let _ = state.db.finish_checkpoint(&turn, &after);
+            }
+        }
+    }
+    let Some(finished) = crate::tracking::finish(&turn) else {
         return;
     };
-    if after.is_some() {
+    if finished.files.is_empty() && finished.notes.is_empty() {
         return;
     }
-    let root = PathBuf::from(root);
-    let Ok(after) = checkpoints::snapshot(&root) else {
-        return;
-    };
-    if checkpoints::keep(&root, thread_id, &turn, "after", &after).is_err() {
-        return;
-    }
-    let _ = state.db.finish_checkpoint(&turn, &after);
-    let cwd = state.db.get_session(thread_id).ok().flatten().map(|m| m.cwd).unwrap_or_default();
-    let mut paths: Vec<String> = state
-        .db
-        .turn_files(&turn)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|p| checkpoints::relative(&root, Path::new(&cwd), p))
-        .collect();
-    paths.sort();
-    paths.dedup();
-    if paths.is_empty() {
-        return;
-    }
-    let Ok(changed) = checkpoints::changes(&root, &before, &after, &paths) else {
-        return;
-    };
-    if changed.is_empty() {
-        return;
-    }
-    let mut patches: Vec<String> = changed.iter().map(|c| checkpoints::patch(&root, &before, &after, &c.path)).collect();
-    checkpoints::within_budget(&mut patches);
-    let rows: Vec<(FileChange, String)> = changed.iter().cloned().zip(patches).collect();
-    let _ = state.db.save_changes(&turn, thread_id, &rows);
+    let _ = state.db.save_captured(&turn, thread_id, &finished.files);
+    let changed: Vec<FileChange> = finished.files.iter().map(|f| f.change.clone()).collect();
     let added: i64 = changed.iter().map(|c| c.added).sum();
     let removed: i64 = changed.iter().map(|c| c.removed).sum();
-    state.runtime.append_item(thread_id, &turn, ItemKind::Changes, json!({ "files": changed, "added": added, "removed": removed }));
+    // Never "no files changed" when a capture was incomplete: the item says so.
+    state.runtime.append_item(
+        thread_id,
+        &turn,
+        ItemKind::Changes,
+        json!({ "files": changed, "added": added, "removed": removed, "partial": finished.partial(), "notes": finished.notes }),
+    );
 }
 
 // ── Follow-ups: queue and steer (card 4) ──
@@ -1224,7 +1215,7 @@ fn repo_of(meta: &ThreadMeta) -> Result<PathBuf, String> {
 #[tauri::command(async)]
 pub fn pilot_diff_list(state: State<'_, PilotState>, id: String, scope: String, turn: Option<String>) -> Result<DiffList, String> {
     let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
-    let root = repo_of(&meta)?;
+    let root = repo_of(&meta);
     let mut prompts: HashMap<String, String> = HashMap::new();
     for i in state.db.items(&id, None, 2000).unwrap_or_default() {
         if i.kind == ItemKind::User && i.data.get("steer").is_none() {
@@ -1245,17 +1236,20 @@ pub fn pilot_diff_list(state: State<'_, PilotState>, id: String, scope: String, 
         .rev()
         .collect::<Vec<_>>();
     match scope.as_str() {
+        // A turn's saved, frozen records — no repository needed (parity 01).
         "turn" => {
             let turn = turn.or_else(|| turns.first().map(|t| t.0.clone())).ok_or("no turn has changed files yet")?;
-            let (_, before, after) = state.db.checkpoint(&turn).map_err(|e| e.to_string())?.ok_or("this turn has no checkpoint")?;
-            Ok(DiffList { files: state.db.turn_changes(&turn).map_err(|e| e.to_string())?, staged: Vec::new(), from: before, to: after.unwrap_or_default(), turns })
+            let saved = format!("{SAVED}{turn}");
+            Ok(DiffList { files: state.db.turn_changes(&turn).map_err(|e| e.to_string())?, staged: Vec::new(), from: saved.clone(), to: saved, turns })
         }
         "uncommitted" => {
+            let root = root?;
             let now = checkpoints::snapshot(&root)?;
             let files = checkpoints::changes(&root, "HEAD", &now, &[])?;
             Ok(DiffList { files, staged: checkpoints::staged(&root), from: "HEAD".into(), to: "working tree".into(), turns })
         }
         "branch" => {
+            let root = root?;
             let base = if meta.base_branch.trim().is_empty() { qs_mod_mcp::worktree::default_branch(&root) } else { meta.base_branch.clone() };
             let from = checkpoints::merge_base(&root, &base).ok_or_else(|| format!("no common history with {base}"))?;
             let files = checkpoints::changes(&root, &from, "HEAD", &[])?;
@@ -1282,11 +1276,21 @@ pub struct FilePatch {
 /// scrolled in, each cut like a turn's — one working-tree snapshot for all.
 #[tauri::command(async)]
 pub fn pilot_diff_patches(state: State<'_, PilotState>, id: String, from: String, to: String, paths: Vec<String>) -> Result<Vec<FilePatch>, String> {
-    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
-    let root = repo_of(&meta)?;
     if paths.len() > 50 {
         return Err("at most 50 files at a time".into());
     }
+    // A turn's saved patches: what was frozen, never the files as they are now.
+    if let Some(turn) = from.strip_prefix(SAVED) {
+        return Ok(paths
+            .into_iter()
+            .map(|path| {
+                let patch = state.db.turn_change_saved(turn, &path).ok().flatten().map(|s| s.0).unwrap_or_default();
+                FilePatch { patch, path }
+            })
+            .collect());
+    }
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let root = repo_of(&meta)?;
     let to = if to == "working tree" { checkpoints::snapshot(&root)? } else { to };
     Ok(paths.into_iter().map(|path| FilePatch { patch: checkpoints::patch(&root, &from, &to, &path), path }).collect())
 }
@@ -1295,10 +1299,28 @@ pub fn pilot_diff_patches(state: State<'_, PilotState>, id: String, from: String
 #[tauri::command(async)]
 pub fn pilot_diff_file(state: State<'_, PilotState>, id: String, from: String, to: String, path: String) -> Result<DiffSides, String> {
     let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    if let Some(turn) = from.strip_prefix(SAVED) {
+        return saved_sides(&state, &meta, turn, &path);
+    }
     let root = repo_of(&meta)?;
     let original = checkpoints::show(&root, &from, &path);
     let modified = if to == "working tree" { checkpoints::working(&root, &path) } else { checkpoints::show(&root, &to, &path) };
     Ok(DiffSides { original, modified })
+}
+
+/// The `from`/`to` of a turn's saved diff: `saved:<turn id>`.
+const SAVED: &str = "saved:";
+
+/// Both sides of a turn's file as they were frozen. Turns saved before
+/// parity 01 kept no sides: their Git checkpoints answer instead.
+fn saved_sides(state: &PilotState, meta: &ThreadMeta, turn: &str, path: &str) -> Result<DiffSides, String> {
+    if let Some((_, Some(original), Some(modified))) = state.db.turn_change_saved(turn, path).map_err(|e| e.to_string())? {
+        return Ok(DiffSides { original, modified });
+    }
+    match (state.db.checkpoint(turn).map_err(|e| e.to_string())?, repo_of(meta)) {
+        (Some((_, before, Some(after))), Ok(root)) => Ok(DiffSides { original: checkpoints::show(&root, &before, path), modified: checkpoints::show(&root, &after, path) }),
+        _ => Err("this file's contents were not kept (binary, too large or without a baseline) — its summary is all there is".into()),
+    }
 }
 
 /// Stage, unstage or discard one file (Uncommitted). Discard is asked for in the app first.

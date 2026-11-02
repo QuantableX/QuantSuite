@@ -42,6 +42,7 @@ mod shell;
 mod signals;
 mod terminals;
 mod threads;
+mod tracking;
 mod usage;
 mod watch;
 
@@ -887,6 +888,7 @@ pub fn init() -> TauriPlugin<Wry> {
             agent_tools::pilot_agent_list_threads,
             agent_tools::pilot_agent_read_thread,
             agent_tools::pilot_agent_read_thread_item,
+            agent_tools::pilot_agent_track_files,
             threads::pilot_history_page,
             threads::pilot_history_item,
             threads::pilot_history_around,

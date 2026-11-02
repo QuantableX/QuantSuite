@@ -1212,3 +1212,45 @@ covered by fixtures built from the v0.166.0 generated schema and the opt-in test
 `live_codex_elicitation_form_and_url`. Claude was verified live
 (`live_claude_elicitation_form_and_url`) and in the isolated native app (form
 errors, draft across thread switch, send, web step, Stop → expired + cancel).
+
+## 16. Parity follow-up: write attribution (01/23)
+
+A turn's changes are captured file by file (`tracking.rs`) instead of "the
+turn's snapshot diff restricted to the paths its edit tools named". Every
+file gets a frozen before and after, and the diff is computed from those
+(`git diff --no-index` over temporary copies — the user's index, HEAD and
+hooks are never involved):
+
+- **Tracked**: QuantMCP `quantsuite.pilot.track_files` — `begin` with the
+  exact paths before a write batch (shell scripts included), `complete` with
+  the `captureId` and optionally the subset actually written. Baseline at
+  begin, result at complete. Changed-but-not-reported files are left out and
+  said so. The thread prompt asks agents to use it for shell writes and, outside
+  Git, for every edit. Side effect class `compute` (records only).
+- **Reported**: Claude Edit/Write/MultiEdit/NotebookEdit, Codex fileChange,
+  ACP edit/move/delete and pi write/edit events freeze the file the moment the
+  event arrives; the baseline is the turn-start Git checkpoint (`git cat-file`).
+  Outside Git there is no baseline: the file is listed with a note instead of an
+  invented diff. Duplicate events do not duplicate files or statistics.
+
+Uncertainty is labelled, not hidden (`note` per file, `partial` + `notes` on
+the turn's changes item): another thread wrote the same file during the turn
+or had it open in a capture; the file changed between this turn's own writes;
+captures never completed (left out, turn marked partial); limits reached.
+A file snapshot cannot see an unreported process writing the same file inside
+a capture window — separate worktrees remain the dependable boundary.
+
+Create (A), edit (M), delete (D) and rename (R, a tracked delete + create with
+identical bytes, `from` = old path) are recorded; binary files keep a summary,
+oversized (> 1 MiB) and unreadable files a note. Limits: 200 paths and 32 MiB
+captured per turn, 64 open captures, patches 256 KiB per file / 2 MiB per turn
+(existing budget), saved diff-editor sides 8 MiB per turn. Paths must stay inside
+the thread's folder (parent steps and escaping links are refused).
+
+Schema 14 adds `source`, `note`, `from_path`, `before_text`, `after_text` to
+`turn_changes`; forks copy them. The turn scope of the Diff tab now reads the
+saved records (`saved:<turn>`): patches and sides as frozen, so later editor
+changes never alter an earlier turn, and it works outside Git. Turns saved before
+schema 14 keep source `snapshot` and fall back to their Git checkpoints for the
+editor sides. The after-checkpoint is still taken inside Git: revert and rewind
+are unchanged. `turn_files` is no longer written (the table stays).

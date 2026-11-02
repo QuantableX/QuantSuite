@@ -279,6 +279,32 @@ pub fn pilot_agent_read_thread_item(state: State<'_, PilotState>, pilot_token: O
     serde_json::to_string(&body).map_err(|e| e.to_string())
 }
 
+/// `track_files` (parity 01): the agent names the files a write batch is
+/// about to touch (`begin`), writes them — with edit tools or a shell
+/// script — and reports which it wrote (`complete`). Only those files, as
+/// they were at `complete`, become the turn's changes.
+#[tauri::command(async)]
+pub fn pilot_agent_track_files(
+    state: State<'_, PilotState>,
+    pilot_token: Option<String>,
+    action: String,
+    paths: Option<Vec<String>>,
+    capture_id: Option<String>,
+    edited: Option<Vec<String>>,
+) -> Result<String, String> {
+    let me = caller(&state, pilot_token)?;
+    let cwd = PathBuf::from(&me.cwd);
+    let out = match action.as_str() {
+        "begin" => crate::tracking::begin(&me.id, &cwd, &paths.unwrap_or_default())?,
+        "complete" => {
+            let id = capture_id.filter(|c| !c.trim().is_empty()).ok_or("complete needs the captureId that begin returned")?;
+            crate::tracking::complete(&me.id, &cwd, id.trim(), edited.as_deref())?
+        }
+        other => return Err(format!("unknown action '{other}' — use begin or complete")),
+    };
+    serde_json::to_string(&out).map_err(|e| e.to_string())
+}
+
 /// The newest messages of a thread, as text: who said it, what (cut long).
 pub fn transcript(t: &ThreadMeta, items: &[crate::events::Item], limit: usize, total: Option<i64>) -> String {
     let messages: Vec<(&str, String)> = items

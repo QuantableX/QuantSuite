@@ -65,6 +65,7 @@ const COMMANDS: &[&str] = &[
     "pilot_agent_list_threads",
     "pilot_agent_read_thread",
     "pilot_agent_read_thread_item",
+    "pilot_agent_track_files",
     "pilot_history_page",
     "pilot_history_item",
     "pilot_history_around",

@@ -25,7 +25,7 @@ pub use history::{HistoryChunk, HistoryPage, HistoryRequest};
 /// 11: the last usage windows per provider (card 18).
 /// 12: revision-bound history chunks and indexed full-history pagination (parity 02).
 /// 13: versioned queue payloads and recoverable delivery state (parity 04).
-pub const SCHEMA_VERSION: i64 = 13;
+pub const SCHEMA_VERSION: i64 = 14;
 
 #[path = "queue.rs"]
 mod queue;
@@ -294,6 +294,18 @@ const V9_COLUMNS: [(&str, &str); 4] = [
     ("goal", "goal TEXT"),
 ];
 
+/// A turn file's saved patch and its frozen sides (before, after), when kept.
+pub type SavedChange = (String, Option<String>, Option<String>);
+
+/// Schema 14 (parity 01) columns of `turn_changes`.
+const V14_CHANGE_COLUMNS: [(&str, &str); 5] = [
+    ("source", "source TEXT NOT NULL DEFAULT 'snapshot'"),
+    ("note", "note TEXT"),
+    ("from_path", "from_path TEXT"),
+    ("before_text", "before_text TEXT"),
+    ("after_text", "after_text TEXT"),
+];
+
 /// A turn row as a fork copies it: id, status, started, ended, duration, cost, error, provider ref.
 type TurnCopy = (String, String, i64, Option<i64>, Option<i64>, Option<f64>, Option<String>, Option<String>);
 
@@ -479,6 +491,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     for (name, col) in V9_COLUMNS {
         if !column_exists(&tx, "threads", name)? {
             tx.execute_batch(&format!("ALTER TABLE threads ADD COLUMN {col};"))?;
+        }
+    }
+    // Schema 14 (parity 01): where a turn's file record comes from, why it is
+    // partial, a rename's old path, and the frozen sides for the diff editor.
+    // Rows saved before keep source 'snapshot' and no sides.
+    for (name, col) in V14_CHANGE_COLUMNS {
+        if !column_exists(&tx, "turn_changes", name)? {
+            tx.execute_batch(&format!("ALTER TABLE turn_changes ADD COLUMN {col};"))?;
         }
     }
     if added_order {
@@ -890,38 +910,54 @@ impl Database {
         .optional()
     }
 
-    pub fn add_turn_file(&self, turn_id: &str, path: &str) -> rusqlite::Result<()> {
-        let conn = self.lock();
-        conn.execute("INSERT OR IGNORE INTO turn_files (turn_id, path) VALUES (?1, ?2)", params![turn_id, path])?;
-        Ok(())
-    }
-
-    pub fn turn_files(&self, turn_id: &str) -> rusqlite::Result<Vec<String>> {
-        let conn = self.lock();
-        let mut stmt = conn.prepare("SELECT path FROM turn_files WHERE turn_id = ?1 ORDER BY path")?;
-        let rows = stmt.query_map(params![turn_id], |r| r.get(0))?;
-        rows.collect()
-    }
-
-    pub fn save_changes(&self, turn_id: &str, thread_id: &str, changes: &[(crate::checkpoints::FileChange, String)]) -> rusqlite::Result<()> {
-        let conn = self.lock();
-        conn.execute("DELETE FROM turn_changes WHERE turn_id = ?1", params![turn_id])?;
-        for (c, patch) in changes {
-            conn.execute(
-                "INSERT INTO turn_changes (turn_id, thread_id, path, status, added, removed, binary, patch) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![turn_id, thread_id, c.path, c.status, c.added, c.removed, c.binary as i64, patch],
+    /// A turn's frozen file records (parity 01). Replaces what the turn had.
+    pub fn save_captured(&self, turn_id: &str, thread_id: &str, files: &[crate::tracking::Captured]) -> rusqlite::Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM turn_changes WHERE turn_id = ?1", params![turn_id])?;
+        for f in files {
+            let c = &f.change;
+            let source = if c.source.is_empty() { "snapshot" } else { c.source.as_str() };
+            let (before, after) = match &f.sides {
+                Some((a, b)) => (Some(a.as_str()), Some(b.as_str())),
+                None => (None, None),
+            };
+            tx.execute(
+                "INSERT INTO turn_changes (turn_id, thread_id, path, status, added, removed, binary, patch, source, note, from_path, before_text, after_text)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![turn_id, thread_id, c.path, c.status, c.added, c.removed, c.binary as i64, f.patch, source, c.note, c.from, before, after],
             )?;
         }
-        Ok(())
+        tx.commit()
     }
 
     pub fn turn_changes(&self, turn_id: &str) -> rusqlite::Result<Vec<crate::checkpoints::FileChange>> {
         let conn = self.lock();
-        let mut stmt = conn.prepare("SELECT path, status, added, removed, binary FROM turn_changes WHERE turn_id = ?1 ORDER BY path")?;
+        let mut stmt = conn.prepare("SELECT path, status, added, removed, binary, source, note, from_path FROM turn_changes WHERE turn_id = ?1 ORDER BY path")?;
         let rows = stmt.query_map(params![turn_id], |r| {
-            Ok(crate::checkpoints::FileChange { path: r.get(0)?, status: r.get(1)?, added: r.get(2)?, removed: r.get(3)?, binary: r.get::<_, i64>(4)? != 0 })
+            Ok(crate::checkpoints::FileChange {
+                path: r.get(0)?,
+                status: r.get(1)?,
+                added: r.get(2)?,
+                removed: r.get(3)?,
+                binary: r.get::<_, i64>(4)? != 0,
+                source: r.get(5)?,
+                note: r.get(6)?,
+                from: r.get(7)?,
+            })
         })?;
         rows.collect()
+    }
+
+    /// A saved turn file's patch and, when kept, its frozen sides.
+    pub fn turn_change_saved(&self, turn_id: &str, path: &str) -> rusqlite::Result<Option<SavedChange>> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT patch, before_text, after_text FROM turn_changes WHERE turn_id = ?1 AND path = ?2",
+            params![turn_id, path],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
     }
 
     pub fn set_provider_ref(&self, turn_id: &str, reference: &str) -> rusqlite::Result<()> {
@@ -1104,8 +1140,8 @@ impl Database {
                 params![old, new, dst],
             )?;
             tx.execute(
-                "INSERT INTO turn_changes (turn_id, thread_id, path, status, added, removed, binary, patch)
-                    SELECT ?2, ?3, path, status, added, removed, binary, patch FROM turn_changes WHERE turn_id = ?1",
+                "INSERT INTO turn_changes (turn_id, thread_id, path, status, added, removed, binary, patch, source, note, from_path, before_text, after_text)
+                    SELECT ?2, ?3, path, status, added, removed, binary, patch, source, note, from_path, before_text, after_text FROM turn_changes WHERE turn_id = ?1",
                 params![old, new, dst],
             )?;
             out.push((old, new, reference));
