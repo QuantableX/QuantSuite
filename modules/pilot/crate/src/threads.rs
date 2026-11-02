@@ -330,10 +330,12 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
     let system = prompt::system_append(&ctx, &general, mcp.as_deref(), true);
     let (context_file, mcp_file) = write_thread_files(&shell::session_dir(&state.data_dir, &meta.id), &system, mcp.as_deref())?;
     let rewind = pending_rewind(state, &meta.id);
+    let portable = state.db.handoff(&meta.id).map_err(|e| e.to_string())?.is_some();
     let session = match meta.provider_session_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         Some(id) => SessionRef::Resume(id.to_string()),
-        // A rewind to before the first message starts a session of its own.
-        None if rewind.is_some() => SessionRef::New(uuid::Uuid::new_v4().to_string()),
+        // Returning to Claude must not reuse the thread ID: its original
+        // Claude session still exists. Once bound, retries resume the new ID.
+        None if rewind.is_some() || portable => SessionRef::New(uuid::Uuid::new_v4().to_string()),
         None => SessionRef::New(meta.id.clone()),
     };
     let resume_at = rewind.and_then(|r| r.get("at").and_then(Value::as_str).map(str::to_string));
@@ -652,13 +654,21 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
         }
         input.text = format!("{}\n\n{block}", input.text.trim_end());
     }
-    if let Some(from) = state.db.handoff(&id).ok().flatten().and_then(|h| serde_json::from_str::<Value>(&h).ok()).and_then(|v| v["from"].as_str().map(str::to_string)) {
-        if let Some((history, dropped)) = lifecycle::pack_history(&state.db.items(&id, None, 5000).unwrap_or_default()) {
-            if input.display.is_none() {
-                input.display = Some(input.text.clone());
-            }
-            input.text = lifecycle::handoff_prompt(&history, dropped, &from, &input.text);
-        }
+    let mut transfer = None;
+    if let Some(raw) = state.db.handoff(&id).map_err(|e| e.to_string())? {
+        let owed: Value = serde_json::from_str(&raw).map_err(|e| format!("Cannot read the owed handoff: {e}"))?;
+        let from = owed["from"].as_str().ok_or("Saved handoff has no source provider")?;
+        // A new destination has no reliable capacity telemetry yet. Default
+        // aliases may route to another model, so never borrow their old usage.
+        let trusted = !meta.model.is_empty() && meta.model != "default"
+            && meta.provider_session_id.as_deref().is_some_and(|s| !s.is_empty());
+        let budget = lifecycle::history_budget(&input.text, input.images.len(),
+            trusted.then_some(meta.context_window).flatten(), trusted.then_some(meta.context_tokens).flatten());
+        let (items, total) = state.db.handoff_items(&id)?;
+        let history = lifecycle::pack_history(&id, &items, total, budget)?;
+        if input.display.is_none() { input.display = Some(input.text.clone()); }
+        input.text = lifecycle::handoff_prompt(&history, from, &input.text);
+        transfer = Some(history);
     }
     let settings = lock(&state.settings).clone();
     let key = plan_key(&meta, &settings);
@@ -685,6 +695,13 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
         },
         &key,
     )?;
+    if let Some(history) = transfer {
+        state.runtime.append_item(&id, &started, ItemKind::Notice, json!({ "text": format!(
+            "Handoff sent: {} items included, {} shortened, {} omitted; {} saved attachment references. Full saved text is retrievable through history tools. Binary media and native tool state stay in the source.{}",
+            history.included, history.shortened, history.omitted, history.attachments,
+            if history.fallback { " Used a conservative context budget because destination capacity is unknown." } else { "" }
+        ) }));
+    }
     if let (Some(root), Some(before)) = (root, before) {
         let root_s = root.to_string_lossy().into_owned();
         if checkpoints::keep(&root, &id, &started, "before", &before).is_ok() {

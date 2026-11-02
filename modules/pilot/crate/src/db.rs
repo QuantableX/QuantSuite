@@ -725,7 +725,7 @@ impl Database {
         let changed = current.as_deref() != Some(provider);
         if changed {
             conn.execute(
-                "UPDATE threads SET provider = ?2, provider_session_id = NULL, updated_at = ?3 WHERE id = ?1",
+                "UPDATE threads SET provider = ?2, provider_session_id = NULL, context_tokens = NULL, context_window = NULL, updated_at = ?3 WHERE id = ?1",
                 params![id, provider, now()],
             )?;
         }
@@ -758,7 +758,7 @@ impl Database {
 
     pub fn set_model(&self, id: &str, model: &str) -> rusqlite::Result<()> {
         let conn = self.lock();
-        conn.execute("UPDATE threads SET model = ?2 WHERE id = ?1", params![id, model])?;
+        conn.execute("UPDATE threads SET model = ?2, context_tokens = NULL, context_window = NULL WHERE id = ?1 AND model != ?2", params![id, model])?;
         Ok(())
     }
 
@@ -806,12 +806,14 @@ impl Database {
         Ok(())
     }
 
-    pub fn set_context(&self, id: &str, tokens: Option<i64>, window: Option<i64>) -> rusqlite::Result<()> {
+    /// Late events from a turn started on another model must not repopulate
+    /// telemetry cleared by a model/provider change.
+    pub fn set_context(&self, id: &str, provider: &str, model: &str, tokens: Option<i64>, window: Option<i64>) -> rusqlite::Result<()> {
         let conn = self.lock();
         conn.execute(
             "UPDATE threads SET context_tokens = COALESCE(?2, context_tokens), context_window = COALESCE(?3, context_window)
-                WHERE id = ?1",
-            params![id, tokens, window],
+                WHERE id = ?1 AND provider = ?4 AND model = ?5",
+            params![id, tokens, window, provider, model],
         )?;
         Ok(())
     }
@@ -934,7 +936,7 @@ impl Database {
     /// A rewind to before the first message: the next turn starts a new session.
     pub fn clear_provider_session(&self, id: &str) -> rusqlite::Result<()> {
         let conn = self.lock();
-        conn.execute("UPDATE threads SET provider_session_id = NULL WHERE id = ?1", params![id])?;
+        conn.execute("UPDATE threads SET provider_session_id = NULL, context_tokens = NULL, context_window = NULL WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -1667,10 +1669,31 @@ mod tests {
         let t = db.get_session("t1").unwrap().unwrap();
         assert_eq!((t.input_tokens, t.output_tokens), (11, 5));
         assert!((t.cost_usd - 0.75).abs() < 1e-9);
-        db.set_context("t1", Some(1200), None).unwrap();
-        db.set_context("t1", None, Some(200_000)).unwrap();
+        db.set_context("t1", "claude", "", Some(1200), None).unwrap();
+        db.set_context("t1", "claude", "", None, Some(200_000)).unwrap();
         let t = db.get_session("t1").unwrap().unwrap();
         assert_eq!((t.context_tokens, t.context_window), (Some(1200), Some(200_000)));
+    }
+
+    #[test]
+    fn context_telemetry_is_invalidated_on_model_provider_and_session_changes() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_session(&thread("t1")).unwrap();
+        db.set_model("t1","small").unwrap();
+        db.set_context("t1","claude","small",Some(900),Some(8192)).unwrap();
+        db.set_model("t1","small").unwrap();
+        assert_eq!(db.get_session("t1").unwrap().unwrap().context_window,Some(8192));
+        db.set_model("t1","large").unwrap();
+        db.set_context("t1","claude","small",Some(900),Some(8192)).unwrap();
+        assert_eq!(db.get_session("t1").unwrap().unwrap().context_window,None,"late old-model usage stays invalid");
+        db.set_context("t1","claude","large",Some(1500),Some(200_000)).unwrap();
+        assert_eq!(db.get_session("t1").unwrap().unwrap().context_window,Some(200_000));
+        db.set_provider("t1","codex").unwrap();
+        db.set_context("t1","claude","large",Some(1500),Some(200_000)).unwrap();
+        assert_eq!(db.get_session("t1").unwrap().unwrap().context_window,None);
+        db.set_context("t1","codex","large",Some(1500),Some(200_000)).unwrap();
+        db.clear_provider_session("t1").unwrap();
+        assert_eq!(db.get_session("t1").unwrap().unwrap().context_tokens,None);
     }
 
     #[test]

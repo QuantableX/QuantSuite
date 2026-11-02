@@ -137,7 +137,7 @@ function snoozeUntilReset() {
     <div v-if="life.handoffFrom && !life.tui" class="qp-life-row muted">
       <ArrowRightLeft :size="13" />
       <span class="qp-life-text">
-        The next message brings the conversation from {{ life.handoffFrom }} to {{ agent }} — the newest 200 messages, 64 KiB at most; tools and reasoning stay behind.
+        The next message brings the opening objective and recent context from {{ life.handoffFrom }} to {{ agent }}, within its context budget. Omitted text remains retrievable. Binary attachments and native tool state do not transfer.
       </span>
     </div>
 

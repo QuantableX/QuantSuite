@@ -544,9 +544,9 @@ never fakes support.
   (verified live on 0.165); otherwise the first message carries the history.
 - Another agent on an idle conversation: the model picker allows it; the
   thread starts fresh with the new agent and its next message carries the
-  conversation (`lifecycle::pack_history`: user/assistant text only, the
-  newest 200 messages and 64 KiB, truncation disclosed, wrapped as
-  reference data). A notice and the composer say so; earlier turns keep
+  conversation (`lifecycle::pack_history`: opening objective, recent exchanges
+  and execution outcomes, at most 200 entries and 64 KiB with a lower
+  context-aware budget; see parity 03 below). A notice and the composer say so; earlier turns keep
   their agent's label (`data.provider` on user items). The owed history
   (`threads.handoff`) counts as delivered only after a completed turn with
   a native session — a failed start or an app exit keeps it.
@@ -1083,3 +1083,43 @@ remain parity 15. Rust regression tests cover large histories, Unicode/body
 reconstruction, migrations, search, permissions and stale cursors. Native and
 real-provider verification evidence is recorded on the card, separately from
 unit tests. This follow-up does not change the 1.0.42 release or the 1.1.0 UI scope.
+
+## 13. Parity follow-up: portable context (03/23)
+
+Portable handoffs and non-native forks select the opening objective, recent user
+request/answer, further early constraints and recent execution outcomes. Selection
+is deterministic; entries retain chronological order, item/turn/thread IDs, roles,
+parent attribution and a provider label where it was actually recorded. The
+candidate read is bounded to the first 10 messages, last 20 messages and last 200
+activity items, with a 2,000-character prefix and up to 500-character suffix per
+item. It never materializes a 5,000-message transcript. Oversized entries retain
+both ends and a retrievable item ID instead of stopping selection. This is an
+extract, not a semantic summary: constraints buried in the omitted middle require
+retrieval. The payload names both paged history tools and the source thread;
+shortened entries and omitted counts are explicit. Exact saved JSON, including
+attachment references, is available through parity 02.
+
+The current request stays intact after the history wrapper; its expanded context
+and images reserve space before selection. Text bytes conservatively estimate
+tokens without assuming a provider tokenizer. Capacity reserves one quarter
+(capped at 16,384) for instructions/tools, one quarter (capped at 8,192) for output,
+8,192 per current image, 1,024 for the wrapper, and trustworthy existing usage.
+History is capped at 64 KiB and 200 entries, usually less. A known explicit model's
+existing session may supply capacity/usage; new destinations and default aliases
+use a conservative 65,536-token capacity estimate. Model/provider/session resets
+clear old telemetry, and usage from a turn begun on a different model is rejected.
+Unknown capacity and provider-added instructions/media costs remain estimates,
+not a guarantee of acceptance. If even retrieval references cannot fit, sending
+returns an actionable error without clearing the owed history or stopping work.
+
+Native Claude same-folder fork/resume and Codex native fork remain preferred.
+Returning to Claude with portable history starts a fresh native session ID,
+avoiding collision with the original Claude session; bound retries resume it.
+Portable delivery remains owed in SQLite through failed starts, interruption and
+app restart, clearing only after a completed turn with a usable native session.
+Retrying a partially delivered turn may repeat the bounded reference context in
+that same session. A send notice reports actual included/shortened/omitted counts
+and fallback budgeting. Binary media, rendered HTML, native tools/background jobs
+and hidden reasoning cannot be moved between providers; saved text and attachment
+references are recoverable, not reattached binaries. Context-limit rejection does
+not automatically stop, compact or recreate a running provider session.
