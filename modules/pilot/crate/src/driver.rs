@@ -42,6 +42,9 @@ pub enum RequestKind {
     Question,
     /// A plan waiting to be accepted before implementation.
     Plan,
+    /// An MCP server's form or web-page request (elicitation.rs), answered
+    /// with accept / decline / cancel.
+    Elicitation,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +78,9 @@ pub enum Answer {
     Answers { answers: serde_json::Map<String, Value> },
     /// Close a question without answering.
     Dismiss,
+    /// An elicitation's outcome: `accept` (with the form's `content`),
+    /// `decline` or `cancel`.
+    Elicitation { action: String, content: Option<serde_json::Map<String, Value>> },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -146,6 +152,9 @@ pub enum Emit {
     /// A file the agent wrote: from a completed edit tool.
     FileChanged { path: String, call_id: String },
     Request(Request),
+    /// The provider withdrew a request it had asked (resolved on its side,
+    /// timed out, cancelled by a stop): the waiting item expires.
+    RequestGone { request_id: String },
     /// A plan from plan mode that waits for no answer: Codex proposes it, and
     /// the user implements it with the next message (card 16).
     Proposal { plan: String, parent: Option<String> },

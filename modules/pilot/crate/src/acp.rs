@@ -635,13 +635,16 @@ impl Driver for AcpDriver {
     }
 
     fn answer(&mut self, request_id: &str, answer: &Answer) -> Result<Vec<String>, String> {
+        if matches!(answer, Answer::Answers { .. } | Answer::Elicitation { .. }) {
+            // The wrong kind of answer leaves the request waiting.
+            return Err(if self.pending.contains_key(request_id) { "an approval takes allow or deny" } else { "this request is no longer waiting" }.into());
+        }
         let p = self.pending.remove(request_id).ok_or("this request is no longer waiting")?;
         let pick = |kinds: &[&str]| kinds.iter().find_map(|k| p.options.get(*k).cloned());
         let option = match answer {
             Answer::Allow => pick(&["allow_once", "allow_always"]),
             Answer::AllowSession => pick(&["allow_always", "allow_once"]),
-            Answer::Deny { .. } | Answer::Dismiss => pick(&["reject_once", "reject_always"]),
-            Answer::Answers { .. } => return Err("an approval takes allow or deny".into()),
+            _ => pick(&["reject_once", "reject_always"]),
         };
         Ok(vec![Self::reply(&p.rpc_id, option)])
     }

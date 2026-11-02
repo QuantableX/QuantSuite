@@ -1162,3 +1162,53 @@ future retention work can consult it. This card adds no automatic cleanup policy
 Native QA, real Claude/Codex results and focused regression evidence are recorded
 on the card and in the private `quantpilot-parity-04` artifact directory. These
 source changes are separate from the published 1.0.42 assets and the 1.1.0 redesign.
+
+## 15. Parity follow-up: MCP forms and web authorization (05/23)
+
+MCP elicitations are their own request kind (`RequestKind::Elicitation`), shown
+as a question item with an `elicitation` payload instead of a generic question.
+Both providers pass them through: Codex `mcpServer/elicitation/request` (modes
+`form`, `openai/form`, `openaiForm`, `url`) and Claude Code `control_request`
+`elicitation` (2.1.316; Claude declares `elicitation.form` and `.url` to MCP
+servers). Codex's empty-schema MCP tool approvals stay ordinary approvals.
+
+`elicitation.rs` turns `requestedSchema` into an ordered field list (the
+server's order: Claude's `property_order`, for Codex read from the raw line)
+with type, title, description, required, default, options with labels
+(`enum`/`enumNames`, `oneOf`, multi-select `items.enum`/`anyOf`), text length
+and format (email, uri, date, date-time), numeric bounds and item counts. Any
+other constraint keyword, type or nested object is refused with a precise
+protocol error and a notice — never a form that would accept invalid answers.
+Annotations (`$comment`, `examples`, `deprecated`, `x-*`) are ignored. The
+answer is checked again in the driver before it is sent; a refused answer keeps
+the request waiting with the draft intact. Blank optional fields are left out,
+integers go out as integers.
+
+URL mode shows server, purpose, host and full address. Nothing opens by itself:
+Open in browser (or Copy link) first, then "I've finished" sends `accept`;
+Decline and Cancel send theirs. Only http(s) addresses with a host and without
+embedded credentials are shown; others are refused.
+
+Codex `requestUserInput` keeps `isSecret` (masked input) and `isOther` (no free
+text when false). A secret answer goes to the agent but the saved item keeps
+`{ "secret": true }` instead of the value (`runtime::redact_secrets`, also for
+answers sent as a message). Diagnostics never logged answers. The providers' own
+session files are outside QuantPilot's control.
+
+Drafts (`utils/requestDrafts.ts`) are per thread and request id, in memory only:
+they survive streaming, thread switches and refused submits, and are dropped
+once the request no longer waits. Several waiting questions can be switched;
+several forms stack with "n of m". A request the provider withdraws — Codex
+`serverRequest/resolved`, Claude `control_cancel_request` (sent on Stop) —
+expires at once, and a late answer is refused ("no longer waiting"), so each
+request gets at most one response. A restart expires waiting requests as before.
+
+Limits: ACP and pi have no elicitation path here (ACP/pi answers stay
+approvals/questions). Codex Full access runs with approval policy `never`, under
+which Codex itself auto-rejects elicitations (inferred from the protocol's
+granular `mcp_elicitations` flag, not verified live). Real Codex runs were not
+possible on 2026-11-02 (`codex login status`: not logged in); the Codex path is
+covered by fixtures built from the v0.166.0 generated schema and the opt-in test
+`live_codex_elicitation_form_and_url`. Claude was verified live
+(`live_claude_elicitation_form_and_url`) and in the isolated native app (form
+errors, draft across thread switch, send, web step, Stop → expired + cancel).

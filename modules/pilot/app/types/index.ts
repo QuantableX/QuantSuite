@@ -679,6 +679,8 @@ export type Answer =
   | { decision: 'deny'; message?: string | null }
   | { decision: 'answers'; answers: Record<string, string | string[]> }
   | { decision: 'dismiss' }
+  /** An MCP form or web-page request (parity card 05). */
+  | { decision: 'elicitation'; action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> | null }
 
 export interface ModelInfo {
   id: string

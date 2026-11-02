@@ -24,6 +24,7 @@ mod context;
 mod contexts;
 mod db;
 mod driver;
+mod elicitation;
 mod events;
 mod files;
 mod git;

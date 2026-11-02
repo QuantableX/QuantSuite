@@ -112,19 +112,13 @@ enum Pending {
     Command { rpc: Value, decisions: Vec<Value> },
     File { rpc: Value },
     Permissions { rpc: Value, requested: Value },
-    /// An MCP tool-call approval (empty form) or a form with fields.
-    Elicitation { rpc: Value, fields: Vec<FormField> },
+    /// An MCP tool-call approval (an empty form).
+    Elicitation { rpc: Value },
+    /// An MCP form or web-page request; `input` is elicitation.rs's shape.
+    Elicit { rpc: Value, input: Value },
     UserInput { rpc: Value, questions: Vec<(String, String)> },
     /// v1 `execCommandApproval` / `applyPatchApproval`.
     Legacy { rpc: Value },
-}
-
-#[derive(Debug, Clone)]
-struct FormField {
-    key: String,
-    title: String,
-    /// `string` | `boolean` | `number` | `integer`
-    kind: String,
 }
 
 /// What was shown for a Codex item.
@@ -945,6 +939,19 @@ impl CodexDriver {
             // A subagent's thread: linked to its call once the call names it.
             return Vec::new();
         }
+        if method == "serverRequest/resolved" {
+            // Settled without our answer (timeout, turn end, interrupt): the
+            // item stops waiting, and a late answer is never sent.
+            let id = match params.get("requestId") {
+                Some(Value::String(s)) => format!("rpc-{s}"),
+                Some(other) => format!("rpc-{other}"),
+                None => return Vec::new(),
+            };
+            return match self.requests.remove(&id) {
+                Some(_) => vec![Emit::RequestGone { request_id: id }],
+                None => Vec::new(),
+            };
+        }
         let Some(parent) = self.ours(params) else {
             return Vec::new();
         };
@@ -1117,7 +1124,7 @@ impl CodexDriver {
         out
     }
 
-    fn on_server_request(&mut self, rpc: Value, method: &str, params: &Value) -> Vec<Emit> {
+    fn on_server_request(&mut self, rpc: Value, method: &str, params: &Value, line: &str) -> Vec<Emit> {
         let request_id = match &rpc {
             Value::String(s) => format!("rpc-{s}"),
             other => format!("rpc-{other}"),
@@ -1166,52 +1173,55 @@ impl CodexDriver {
                 vec![request(RequestKind::Approval, "permissions".into(), s(params, "itemId").map(str::to_string), input, true)]
             }
             "mcpServer/elicitation/request" => {
-                if s(params, "mode") == Some("url") {
-                    return vec![
-                        Emit::Write(Self::reply(&rpc, json!({ "action": "decline" }))),
-                        Emit::Notice { text: format!("{} asked to open a web page to continue; QuantPilot declined it.", s(params, "serverName").unwrap_or("An MCP server")) },
-                    ];
-                }
                 let meta = params.get("_meta").cloned().unwrap_or(Value::Null);
-                let server = s(params, "serverName").unwrap_or("mcp");
-                let fields: Vec<FormField> = params
-                    .get("requestedSchema")
-                    .and_then(|r| r.get("properties"))
-                    .and_then(Value::as_object)
-                    .map(|props| {
-                        props
-                            .iter()
-                            .map(|(k, v)| FormField {
-                                key: k.clone(),
-                                title: s(v, "title").or_else(|| s(v, "description")).unwrap_or(k).to_string(),
-                                kind: s(v, "type").unwrap_or("string").to_string(),
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let server = s(params, "serverName").unwrap_or("An MCP server").to_string();
                 let message = s(params, "message").unwrap_or_default().to_string();
-                if fields.is_empty() {
+                let refuse = |why: String| {
+                    vec![
+                        Emit::Write(json!({ "id": rpc, "error": { "code": -32602, "message": format!("QuantPilot cannot show this request: {why}") } }).to_string()),
+                        Emit::Notice { text: format!("{server} asked for input QuantPilot cannot show faithfully ({why}); the request was refused.") },
+                    ]
+                };
+                let mode = s(params, "mode").unwrap_or("form");
+                if mode == "url" {
+                    return match crate::elicitation::url(s(params, "url").unwrap_or_default()) {
+                        Ok(dest) => {
+                            let input = crate::elicitation::request_input(&server, &message, "url", Ok(dest), s(params, "elicitationId"));
+                            self.requests.insert(request_id.clone(), Pending::Elicit { rpc, input: input.clone() });
+                            vec![request(RequestKind::Elicitation, "mcp".into(), None, input, false)]
+                        }
+                        Err(why) => refuse(why),
+                    };
+                }
+                if !matches!(mode, "form" | "openai/form" | "openaiForm") {
+                    return refuse(format!("the mode \u{201c}{mode}\u{201d} is not supported"));
+                }
+                let schema = params.get("requestedSchema").cloned().unwrap_or(Value::Null);
+                let has_fields = schema.get("properties").and_then(Value::as_object).is_some_and(|p| !p.is_empty());
+                if !has_fields {
+                    // An MCP tool-call approval: Codex asks with an empty form.
                     let tool = meta.get("tool_name").and_then(Value::as_str).map(str::to_string).or_else(|| {
                         message.split('"').nth(1).map(str::to_string)
                     });
+                    let server = s(params, "serverName").unwrap_or("mcp");
                     let name = match &tool {
                         Some(t) => format!("mcp__{server}__{t}"),
                         None => format!("mcp__{server}"),
                     };
                     let input = meta.get("tool_params").cloned().unwrap_or(json!({}));
                     let persist = meta.get("persist").map(|p| p.to_string()).unwrap_or_default();
-                    self.requests.insert(request_id.clone(), Pending::Elicitation { rpc, fields });
+                    self.requests.insert(request_id.clone(), Pending::Elicitation { rpc });
                     return vec![request(RequestKind::Approval, name, None, input, persist.contains("session"))];
                 }
-                let questions: Vec<Value> = fields
-                    .iter()
-                    .map(|f| {
-                        let options = if f.kind == "boolean" { json!([{ "label": "Yes", "description": "" }, { "label": "No", "description": "" }]) } else { json!([]) };
-                        json!({ "question": f.title, "header": server, "options": options, "multiSelect": false })
-                    })
-                    .collect();
-                self.requests.insert(request_id.clone(), Pending::Elicitation { rpc, fields });
-                vec![request(RequestKind::Question, "mcp".into(), None, json!({ "questions": questions, "message": message }), false)]
+                let order = crate::elicitation::property_order(line);
+                match crate::elicitation::form(&schema, order.as_deref()) {
+                    Ok(fields) => {
+                        let input = crate::elicitation::request_input(&server, &message, "form", Err(fields), None);
+                        self.requests.insert(request_id.clone(), Pending::Elicit { rpc, input: input.clone() });
+                        vec![request(RequestKind::Elicitation, "mcp".into(), None, input, false)]
+                    }
+                    Err(why) => refuse(why),
+                }
             }
             "item/tool/requestUserInput" => {
                 let list = params.get("questions").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -1219,7 +1229,15 @@ impl CodexDriver {
                     .iter()
                     .map(|q| {
                         let options = q.get("options").cloned().filter(|o| o.is_array()).unwrap_or(json!([]));
-                        json!({ "question": s(q, "question"), "header": s(q, "header").unwrap_or("Question"), "options": options, "multiSelect": false })
+                        json!({
+                            "question": s(q, "question"),
+                            "header": s(q, "header").unwrap_or("Question"),
+                            "options": options,
+                            "multiSelect": false,
+                            // Masked in the UI and never saved (parity card 05).
+                            "isSecret": q.get("isSecret").and_then(Value::as_bool).unwrap_or(false),
+                            "isOther": q.get("isOther").and_then(Value::as_bool).unwrap_or(true),
+                        })
                     })
                     .collect();
                 let ids = list
@@ -1321,7 +1339,7 @@ impl Driver for CodexDriver {
         match (msg.get("id").cloned(), method) {
             (Some(id), Some(method)) => {
                 let params = msg.get("params").cloned().unwrap_or(Value::Null);
-                self.on_server_request(id, &method, &params)
+                self.on_server_request(id, &method, &params, line)
             }
             (Some(id), None) => match id.as_u64() {
                 Some(n) => self.on_response(n, &msg),
@@ -1365,27 +1383,28 @@ impl Driver for CodexDriver {
                 Answer::AllowSession => Self::reply(&rpc, json!({ "permissions": requested, "scope": "session" })),
                 _ => Self::reply(&rpc, json!({ "permissions": {} })),
             },
-            Pending::Elicitation { rpc, fields } => match answer {
-                Answer::Allow if fields.is_empty() => Self::reply(&rpc, json!({ "action": "accept", "content": {} })),
-                Answer::AllowSession if fields.is_empty() => {
-                    Self::reply(&rpc, json!({ "action": "accept", "content": {}, "_meta": { "persist": "session" } }))
-                }
-                Answer::Answers { answers } => {
-                    let mut content = Map::new();
-                    for f in &fields {
-                        let raw = answers.get(&f.title).and_then(Value::as_str).unwrap_or_default().trim().to_string();
-                        let value = match f.kind.as_str() {
-                            "boolean" => json!(raw.eq_ignore_ascii_case("yes") || raw.eq_ignore_ascii_case("true")),
-                            "number" | "integer" => raw.parse::<f64>().map(|n| json!(n)).unwrap_or(json!(raw)),
-                            _ => json!(raw),
-                        };
-                        content.insert(f.key.clone(), value);
-                    }
-                    Self::reply(&rpc, json!({ "action": "accept", "content": content }))
-                }
+            Pending::Elicitation { rpc } => match answer {
+                Answer::Allow => Self::reply(&rpc, json!({ "action": "accept", "content": {} })),
+                Answer::AllowSession => Self::reply(&rpc, json!({ "action": "accept", "content": {}, "_meta": { "persist": "session" } })),
                 Answer::Dismiss => Self::reply(&rpc, json!({ "action": "cancel" })),
                 _ => Self::reply(&rpc, json!({ "action": "decline" })),
             },
+            Pending::Elicit { rpc, input } => {
+                let outcome = match answer {
+                    Answer::Elicitation { action, content } => crate::elicitation::result(&input, action, content.as_ref()),
+                    Answer::Dismiss => Ok(json!({ "action": "cancel" })),
+                    Answer::Deny { .. } => Ok(json!({ "action": "decline" })),
+                    _ => Err("this request takes accept, decline or cancel".to_string()),
+                };
+                match outcome {
+                    Ok(result) => Self::reply(&rpc, result),
+                    Err(e) => {
+                        // An invalid answer keeps the request waiting for a retry.
+                        self.requests.insert(request_id.to_string(), Pending::Elicit { rpc, input });
+                        return Err(e);
+                    }
+                }
+            }
             Pending::UserInput { rpc, questions } => {
                 let mut out = Map::new();
                 if let Answer::Answers { answers } = answer {
@@ -1895,5 +1914,96 @@ mod tests {
         assert_eq!(c.models[0].resolved_model.as_deref(), Some("gpt-a"));
         assert_eq!(c.models[1].efforts, vec!["low", "high"]);
         assert_eq!(c.skills.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(), vec!["pdf"]);
+    }
+
+    #[test]
+    fn elicitation_forms_keep_schema_and_check_answers() {
+        let mut d = started();
+        // Raw line so the server's property order survives.
+        let line = r#"{"id":"f1","method":"mcpServer/elicitation/request","params":{"threadId":"th-1","turnId":"tu-1","serverName":"deploy","mode":"form","message":"Configure the deploy","requestedSchema":{"type":"object","properties":{"target":{"type":"string","enum":["staging","prod"],"enumNames":["Staging","Production"]},"replicas":{"type":"integer","minimum":1,"maximum":5},"note":{"type":"string"}},"required":["target","replicas"]}}}"#;
+        let out = d.on_line(line);
+        let Emit::Request(r) = &out[0] else { panic!("{out:?}") };
+        assert_eq!(r.kind, RequestKind::Elicitation);
+        assert_eq!(r.input["mode"], "form");
+        assert_eq!(r.input["server"], "deploy");
+        assert_eq!(r.input["message"], "Configure the deploy");
+        let keys: Vec<&str> = r.input["fields"].as_array().unwrap().iter().map(|f| f["key"].as_str().unwrap()).collect();
+        assert_eq!(keys, ["target", "replicas", "note"], "the server's order");
+        assert_eq!(r.input["fields"][0]["options"][1]["label"], "Production");
+        assert_eq!(r.input["fields"][2]["required"], false);
+
+        let answer = |c: Value| Answer::Elicitation { action: "accept".into(), content: c.as_object().cloned() };
+        let err = d.answer("rpc-f1", &answer(json!({ "target": "prod", "replicas": 9 }))).unwrap_err();
+        assert!(err.contains("at most 5"), "{err}");
+        // Still waiting: the corrected answer goes out once.
+        let ok = parse(&d.answer("rpc-f1", &answer(json!({ "target": "prod", "replicas": 2, "note": "" }))).unwrap()[0]);
+        assert_eq!(ok, json!({ "id": "f1", "result": { "action": "accept", "content": { "target": "prod", "replicas": 2 } } }));
+        assert!(d.answer("rpc-f1", &answer(json!({ "target": "prod", "replicas": 2 }))).is_err(), "answered once");
+
+        // Decline and cancel carry no content.
+        let out = d.on_line(&line.replace("\"f1\"", "\"f2\""));
+        assert!(matches!(&out[0], Emit::Request(_)));
+        let no = parse(&d.answer("rpc-f2", &Answer::Elicitation { action: "decline".into(), content: None }).unwrap()[0]);
+        assert_eq!(no, json!({ "id": "f2", "result": { "action": "decline" } }));
+    }
+
+    #[test]
+    fn unsupported_forms_get_a_precise_protocol_error() {
+        let mut d = started();
+        let out = feed(&mut d, &[json!({ "id": 3, "method": "mcpServer/elicitation/request", "params": {
+            "threadId": "th-1", "turnId": "tu-1", "serverName": "srv", "mode": "form", "message": "m",
+            "requestedSchema": { "type": "object", "properties": { "code": { "type": "string", "pattern": "^[0-9]+$" } } } } })]);
+        let w = writes(&out);
+        assert_eq!(w[0]["id"], 3);
+        assert!(w[0]["error"]["message"].as_str().unwrap().contains("pattern"), "{w:?}");
+        assert!(out.iter().any(|e| matches!(e, Emit::Notice { text } if text.contains("srv"))));
+        assert!(!out.iter().any(|e| matches!(e, Emit::Request(_))), "no form that would accept invalid answers");
+    }
+
+    #[test]
+    fn url_elicitation_waits_for_an_explicit_outcome() {
+        let mut d = started();
+        let out = feed(&mut d, &[json!({ "id": 4, "method": "mcpServer/elicitation/request", "params": {
+            "threadId": "th-1", "turnId": "tu-1", "serverName": "github", "mode": "url", "elicitationId": "el-1",
+            "message": "Sign in to GitHub", "url": "https://github.com/login/oauth/authorize?state=x" } })]);
+        let Emit::Request(r) = &out[0] else { panic!("{out:?}") };
+        assert_eq!(r.kind, RequestKind::Elicitation);
+        assert_eq!((r.input["mode"].as_str(), r.input["host"].as_str()), (Some("url"), Some("github.com")));
+        assert!(writes(&out).is_empty(), "nothing is accepted or declined on its own");
+        let done = parse(&d.answer("rpc-4", &Answer::Elicitation { action: "accept".into(), content: None }).unwrap()[0]);
+        assert_eq!(done, json!({ "id": 4, "result": { "action": "accept" } }));
+
+        // A credential-bearing or non-http address is refused, not shown.
+        let out = feed(&mut d, &[json!({ "id": 5, "method": "mcpServer/elicitation/request", "params": {
+            "threadId": "th-1", "serverName": "x", "mode": "url", "elicitationId": "e", "message": "m", "url": "https://u:p@evil.example" } })]);
+        assert!(writes(&out)[0]["error"].is_object());
+    }
+
+    #[test]
+    fn requests_settled_by_codex_expire_and_never_get_a_late_answer() {
+        let mut d = started();
+        feed(&mut d, &[json!({ "id": 6, "method": "mcpServer/elicitation/request", "params": {
+            "threadId": "th-1", "serverName": "s", "mode": "url", "elicitationId": "e", "message": "m", "url": "https://example.com" } })]);
+        let out = feed(&mut d, &[json!({ "method": "serverRequest/resolved", "params": { "threadId": "th-1", "requestId": 6 } })]);
+        assert_eq!(out, vec![Emit::RequestGone { request_id: "rpc-6".into() }]);
+        assert!(d.answer("rpc-6", &Answer::Elicitation { action: "accept".into(), content: None }).is_err());
+        // Our own answer settles it first: the later notice changes nothing.
+        let out = feed(&mut d, &[json!({ "method": "serverRequest/resolved", "params": { "threadId": "th-1", "requestId": 6 } })]);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn secret_questions_are_marked() {
+        let mut d = started();
+        let out = feed(&mut d, &[json!({ "id": 10, "method": "item/tool/requestUserInput", "params": {
+            "threadId": "th-1", "turnId": "tu-1", "itemId": "q", "isBlocking": true,
+            "questions": [{ "id": "tok", "header": "Token", "question": "API token?", "isSecret": true, "isOther": false, "options": null }] } })]);
+        let Emit::Request(r) = &out[0] else { panic!("{out:?}") };
+        assert_eq!(r.input["questions"][0]["isSecret"], true);
+        assert_eq!(r.input["questions"][0]["isOther"], false);
+        let mut answers = Map::new();
+        answers.insert("API token?".into(), json!("s3cr3t"));
+        let reply = parse(&d.answer("rpc-10", &Answer::Answers { answers }).unwrap()[0]);
+        assert_eq!(reply["result"]["answers"]["tok"]["answers"][0], "s3cr3t", "the agent gets the real value");
     }
 }
