@@ -1933,4 +1933,47 @@ mod tests {
         assert_eq!(snippet("one two   three\nfour five", "THREE", 4), "…two three fou…");
         assert_eq!(snippet("short", "nothing", 60), "short");
     }
+
+    /// Parity 23: a copy of an older database (the installed v1.0.42 build is
+    /// schema 11) opens with the current build and keeps every thread id,
+    /// message, attachment path, queue order and worktree link.
+    /// `QP_UPGRADE_DB=<copy> cargo test -p tauri-plugin-pilot --lib upgrade_keeps -- --ignored --nocapture`
+    #[test]
+    #[ignore = "migrates a database copy from QP_UPGRADE_DB"]
+    fn upgrade_keeps_threads_messages_queue_and_worktrees() {
+        let Ok(path) = std::env::var("QP_UPGRADE_DB") else { return };
+        let path = std::path::PathBuf::from(path);
+        type Snapshot = (Vec<(String, Option<String>, Option<String>, String)>, Vec<(String, String, i64, String)>, Vec<(String, i64, String)>);
+        let snap = |conn: &Connection| -> Snapshot {
+            let threads = conn
+                .prepare("SELECT id, worktree_path, branch, COALESCE(title, '') FROM threads ORDER BY id").unwrap()
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().map(Result::unwrap).collect();
+            let items = conn
+                .prepare("SELECT id, thread_id, seq, data FROM timeline ORDER BY thread_id, seq").unwrap()
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().map(Result::unwrap).collect();
+            let queue = conn
+                .prepare("SELECT id, position, text FROM queue ORDER BY thread_id, position").unwrap()
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect();
+            (threads, items, queue)
+        };
+        let before_version: i64;
+        let before = {
+            let conn = Connection::open(&path).unwrap();
+            before_version = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+            snap(&conn)
+        };
+        let db = Database::open(&path).unwrap();
+        let after = snap(&db.lock());
+        let version: i64 = db.lock().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        println!("schema {before_version} -> {version}: {} threads, {} messages, {} queued", before.0.len(), before.1.len(), before.2.len());
+        assert_eq!(version, SCHEMA_VERSION);
+        assert_eq!(before.0, after.0, "thread ids, titles and worktree links");
+        assert_eq!(before.1, after.1, "messages with their attachment paths");
+        assert_eq!(before.2, after.2, "queue order");
+        // The upgraded database works: the thread list, history reads and the queue.
+        assert_eq!(db.list_sessions().unwrap().len(), before.0.len());
+        drop(db);
+        let again = Database::open(&path).unwrap();
+        assert_eq!(snap(&again.lock()).1.len(), before.1.len(), "opening twice changes nothing");
+    }
 }
