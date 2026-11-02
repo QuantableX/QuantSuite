@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-storage-plan"
+description = "Enables the pilot_storage_plan command without any pre-configured scope."
+commands.allow = ["pilot_storage_plan"]
+
+[[permission]]
+identifier = "deny-pilot-storage-plan"
+description = "Denies the pilot_storage_plan command without any pre-configured scope."
+commands.deny = ["pilot_storage_plan"]

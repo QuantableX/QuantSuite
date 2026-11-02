@@ -120,6 +120,9 @@ Default permissions for the pilot module.
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
 - `allow-pilot-export-logs`
+- `allow-pilot-storage-inventory`
+- `allow-pilot-storage-plan`
+- `allow-pilot-storage-clean`
 - `allow-pilot-open-data-dir`
 - `allow-pilot-usage-report`
 - `allow-pilot-usage-limits`
@@ -3199,6 +3202,84 @@ Enables the pilot_status command without any pre-configured scope.
 <td>
 
 Denies the pilot_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-storage-clean`
+
+</td>
+<td>
+
+Enables the pilot_storage_clean command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-storage-clean`
+
+</td>
+<td>
+
+Denies the pilot_storage_clean command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-storage-inventory`
+
+</td>
+<td>
+
+Enables the pilot_storage_inventory command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-storage-inventory`
+
+</td>
+<td>
+
+Denies the pilot_storage_inventory command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-storage-plan`
+
+</td>
+<td>
+
+Enables the pilot_storage_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-storage-plan`
+
+</td>
+<td>
+
+Denies the pilot_storage_plan command without any pre-configured scope.
 
 </td>
 </tr>

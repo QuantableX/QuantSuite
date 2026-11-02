@@ -165,6 +165,8 @@ export interface PilotSettings {
   /** Panels and menus, 0–400 ms; reduced motion turns it off. */
   panelMotionMs: number
   renderMath: boolean
+  /** Settings → Storage (parity 19): cleanup rules, all off by default. */
+  storage?: StoragePolicy
   /** What a project changes for its new threads (card 19). */
   projects: Record<string, ProjectPrefs>
   /** GitHub through `gh` (card 23); off = no `gh` process at all. */
@@ -327,6 +329,34 @@ export interface BrowserStatus {
   zoom: number
   /** The browser profile of the page (parity 18); null is temporary. */
   profile?: string | null
+}
+
+/** Cleanup rules (parity 19); null keeps a category. */
+export interface StoragePolicy {
+  patchDays: number | null
+  unsentDays: number | null
+  documentDays: number | null
+  orphans: boolean
+  auto: boolean
+  lastRun: number | null
+}
+export interface StorageCategory {
+  key: string
+  label: string
+  bytes: number
+  items: number
+  note: string
+}
+export interface StoragePlan {
+  items: { category: string; target: string; bytes: number; reason: string; thread: string | null }[]
+  bytes: number
+  kept: { category: string; reason: string; count: number; bytes: number }[]
+}
+export interface StorageCleanResult {
+  removed: number
+  bytes: number
+  failed: { target: string; error: string }[]
+  skipped: number
 }
 
 /** A preview-browser profile (parity 18). */
