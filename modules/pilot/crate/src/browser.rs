@@ -47,6 +47,10 @@ pub struct BrowserState {
     /// Bumped per pick: an old pick's poll stands down.
     pick: AtomicU64,
     pick_key: Mutex<Option<String>>,
+    /// Parity 06: the thread whose page this is (the thread on screen when
+    /// it was opened), and whether the tab shows it right now.
+    owner: Mutex<Option<String>>,
+    shown: std::sync::atomic::AtomicBool,
 }
 
 impl BrowserState {
@@ -183,11 +187,16 @@ fn sync_history(view: &Webview, generation: u64) {
 }
 
 /// Show `url` in the guest — made now when there is none.
-pub fn open(app: &AppHandle, caller: &Webview, url: &str, bounds: Bounds, zoom: f64) -> Result<Status, String> {
+pub fn open(app: &AppHandle, caller: &Webview, url: &str, bounds: Bounds, zoom: f64, owner: Option<String>) -> Result<Status, String> {
     let own = own_origin(app);
     let url = normalize_url(url, own.as_ref())?;
     let bounds = clamp(bounds, window_size(caller)?)?;
     cancel_pick(app);
+    {
+        let state = app.state::<BrowserState>();
+        *lock(&state.owner) = owner;
+        state.shown.store(true, Ordering::SeqCst);
+    }
     emit(app, |s| {
         s.url = url.to_string();
         s.title = url.host_str().unwrap_or_default().to_string();
@@ -254,6 +263,7 @@ pub fn set_bounds(app: &AppHandle, caller: &Webview, bounds: Bounds, visible: bo
     let Some(view) = app.get_webview(LABEL) else {
         return Ok(());
     };
+    app.state::<BrowserState>().shown.store(visible, Ordering::SeqCst);
     if visible {
         place(&view, clamp(bounds, window_size(caller)?)?)?;
         view.show().map_err(|e| e.to_string())
@@ -310,6 +320,8 @@ pub fn zoom(app: &AppHandle, factor: f64) -> Result<f64, String> {
 pub fn close(app: &AppHandle) -> Result<(), String> {
     cancel_pick(app);
     app.state::<BrowserState>().view.fetch_add(1, Ordering::SeqCst);
+    *lock(&app.state::<BrowserState>().owner) = None;
+    app.state::<BrowserState>().shown.store(false, Ordering::SeqCst);
     if let Some(view) = app.get_webview(LABEL) {
         view.close().map_err(|e| e.to_string())?;
     }
@@ -442,6 +454,73 @@ pub async fn pick(app: AppHandle, enabled: bool) -> Result<(), String> {
         }
     });
     Ok(())
+}
+
+// ── Agent actions (parity 06) ──
+
+/// The page an agent of `thread` may use: open, shown in the tab, and opened
+/// for that thread — one task never drives another task's preview.
+pub fn agent_page(app: &AppHandle, thread: &str) -> Result<Webview, String> {
+    let view = app.get_webview(LABEL).ok_or("No page is open in the Browser tab — call open_preview with its address first.")?;
+    let state = app.state::<BrowserState>();
+    if !state.shown.load(Ordering::SeqCst) {
+        return Err("The Browser tab is hidden right now (the user is looking at something else). Ask the user to show it, or call open_preview again.".into());
+    }
+    if lock(&state.owner).as_deref() != Some(thread) {
+        return Err("The page in the Browser tab was opened for another thread. Call open_preview to open your page first.".into());
+    }
+    Ok(view)
+}
+
+pub fn status(app: &AppHandle) -> Status {
+    lock(&app.state::<BrowserState>().status).clone()
+}
+
+/// Wait (bounded) until the page is not loading.
+pub async fn settle(app: &AppHandle, max: Duration) -> bool {
+    let start = std::time::Instant::now();
+    loop {
+        if !status(app).loading {
+            return true;
+        }
+        if start.elapsed() >= max {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+}
+
+/// Run one fixed agent command in the page (`browser_agent.js`) with JSON arguments.
+pub async fn agent_eval(view: &Webview, cmd: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+    if !matches!(cmd, "read" | "click" | "fill" | "press" | "scroll" | "check") {
+        return Err(format!("unknown browser command '{cmd}'"));
+    }
+    let script = include_str!("browser_agent.js")
+        .replace("__QP_CMD__", &serde_json::to_string(cmd).map_err(|e| e.to_string())?)
+        .replace("__QP_ARGS__", &serde_json::to_string(args).map_err(|e| e.to_string())?);
+    let raw = evaluate(view, script).await?;
+    if raw.len() > 512 * 1024 {
+        return Err("the page answered with too much data".into());
+    }
+    let value = match serde_json::from_str::<serde_json::Value>(&raw) {
+        Ok(serde_json::Value::String(inner)) => serde_json::from_str(&inner).unwrap_or(serde_json::Value::Null),
+        Ok(v) => v,
+        Err(_) => serde_json::Value::Null,
+    };
+    if value.is_null() {
+        return Err("the page did not answer (it may be navigating) — try read again".into());
+    }
+    Ok(value)
+}
+
+/// A PNG's width and height from its header.
+pub fn png_size(png: &[u8]) -> Option<(u32, u32)> {
+    if png.len() < 24 || &png[..8] != b"\x89PNG\r\n\x1a\n" {
+        return None;
+    }
+    let w = u32::from_be_bytes(png[16..20].try_into().ok()?);
+    let h = u32::from_be_bytes(png[20..24].try_into().ok()?);
+    Some((w, h))
 }
 
 // ── Screenshot ──

@@ -1888,12 +1888,21 @@ pub fn init() -> TauriPlugin<Wry> {
     // Language to the Windows UI language, which put native date/time pickers,
     // text-field context menus, validation messages and the default `Intl`
     // locale into German. Appended after wry's arguments, this value wins.
+    //
+    // Arguments the environment already sets (a debugging port for QA, a
+    // developer's flags) are kept in front: every webview of the process
+    // must share one argument set, so they cannot go on a single window.
     #[cfg(target_os = "windows")]
-    std::env::set_var(
-        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-        "--use-fake-ui-for-media-stream --lang=en-US \
-         --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
-    );
+    {
+        const OURS: &str = "--use-fake-ui-for-media-stream --lang=en-US \
+         --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion";
+        let args = match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+            Ok(given) if !given.trim().is_empty() && !given.contains("--use-fake-ui-for-media-stream") => format!("{} {OURS}", given.trim()),
+            Ok(given) if !given.trim().is_empty() => given,
+            _ => OURS.to_string(),
+        };
+        std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", args);
+    }
 
     Builder::<Wry>::new("hud")
         .setup(|app, _api| {

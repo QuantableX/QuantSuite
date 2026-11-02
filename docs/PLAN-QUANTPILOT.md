@@ -1254,3 +1254,42 @@ changes never alter an earlier turn, and it works outside Git. Turns saved befor
 schema 14 keep source `snapshot` and fall back to their Git checkpoints for the
 editor sides. The after-checkpoint is still taken inside Git: revert and rewind
 are unchanged. `turn_files` is no longer written (the table stays).
+
+## 17. Parity follow-up: agent browser tools (06/23)
+
+QuantMCP `quantsuite.pilot.browser` lets the agent use the Browser tab the
+user sees: `read` (page text, cut at 8,000 characters, and up to 150 visible
+interactive elements — links, buttons, fields, checkboxes, headings — as refs
+`e1`…, with role, accessible name, value, checked/disabled), `click`, `fill`
+(text fields, textareas, selects by value or label, contenteditable; React-safe
+value setter plus input/change events), `press` (one character or a named key;
+Enter submits a form field), `scroll` (to a ref or by pixels), `wait` (for text
+or a ref, ≤ 15 s) and `screenshot` (WebView2 CapturePreview of the visible
+viewport, saved as a thread attachment and returned as an MCP image block).
+
+Only fixed commands from `browser_agent.js` run in the page; the agent never
+passes code. Refs belong to the document that issued them: a navigation or
+reload gives "the page changed since your last read", a re-rendered element
+"is gone". Page text is labelled untrusted. Results are bounded (512 KiB per
+answer, 3 s per page call, image inline up to 4 MiB).
+
+Ownership: a page belongs to the thread that was on screen when it was opened
+(user navigation or the agent's `open_preview`). The tool works only while that
+thread is on screen, the tab shows the page, and the caller owns it — a hidden
+tab, another thread on screen, a closed tab or a missing page each give an
+actionable error. Guest IPC isolation is unchanged (only `main` drives the guest).
+
+QuantMCP passes a tool's own content blocks through when its output is a JSON
+object with `$mcpContent` (text and `image/*` blocks only); the log keeps a
+size line instead of the image. The QuantHUD plugin now appends its WebView2
+arguments to ones already in `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` instead of
+replacing them — every webview of the process must share one argument set, so a
+per-window argument (as an isolated QA debugging port once was) made child
+webviews such as the Browser tab fail with 0x8007139F.
+
+Verified with a real Claude Haiku thread in the isolated native app: open a local
+page, read refs, fill "Your name", click a checkbox and a button, wait for the
+greeting, screenshot seen by the model; plus hidden tab on thread switch,
+not-on-screen caller, stale ref after reload and closed tab. Codex could not be
+run (not logged in on this machine). Side-effect class `compute`: the provider's
+own permission mode still asks per MCP call in Supervised.

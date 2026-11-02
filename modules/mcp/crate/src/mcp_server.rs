@@ -2039,11 +2039,35 @@ fn log_out(state: &McpServerState, tool: &str, outcome: &Result<String, String>)
             tool.to_string(),
             "tool".to_string(),
             match outcome {
+                // Image blocks are not kept in the log.
+                Ok(output) if output.contains("\"$mcpContent\"") => format!("[{} bytes of content blocks]", output.len()),
                 Ok(output) => output.clone(),
                 Err(e) => format!("ERROR: {}", e),
             },
         );
     }
+}
+
+/// A tool's own content blocks (parity 06: a browser screenshot the agent
+/// can see): an output that is a JSON object with `$mcpContent` — text and
+/// image blocks only — is passed through; anything else is one text block.
+fn content_blocks(output: String) -> Value {
+    if output.starts_with('{') && output.contains("\"$mcpContent\"") {
+        if let Ok(Value::Object(mut obj)) = serde_json::from_str::<Value>(&output) {
+            if let Some(Value::Array(blocks)) = obj.remove("$mcpContent") {
+                let ok = !blocks.is_empty()
+                    && blocks.iter().all(|b| match b.get("type").and_then(Value::as_str) {
+                        Some("text") => b.get("text").is_some_and(Value::is_string),
+                        Some("image") => b.get("data").is_some_and(Value::is_string) && b.get("mimeType").and_then(Value::as_str).is_some_and(|m| m.starts_with("image/")),
+                        _ => false,
+                    });
+                if ok {
+                    return Value::Array(blocks);
+                }
+            }
+        }
+    }
+    json!([{ "type": "text", "text": output }])
 }
 
 /// A tool call's outcome as the JSON-RPC reply: one text content block either
@@ -2054,7 +2078,7 @@ fn tool_response(id: Value, outcome: Result<String, String>) -> Value {
         Ok(output) => json!({
             "jsonrpc": "2.0",
             "id": id,
-            "result": { "content": [{ "type": "text", "text": output }] }
+            "result": { "content": content_blocks(output) }
         }),
         Err(e) => json!({
             "jsonrpc": "2.0",
@@ -3108,5 +3132,19 @@ mod tests {
         assert!(brief.contains("AGENT.md"));
         assert!(brief.len() < 300, "initialize instructions grew: {} bytes", brief.len());
         assert!(!brief.contains("# QuantMCP — Global Agent Instructions"));
+    }
+
+    #[test]
+    fn tools_may_return_image_blocks_but_nothing_else() {
+        let img = json!({ "$mcpContent": [{ "type": "text", "text": "shot" }, { "type": "image", "data": "iVBOR", "mimeType": "image/png" }] }).to_string();
+        let blocks = content_blocks(img);
+        assert_eq!(blocks[1]["type"], "image");
+        assert_eq!(blocks[1]["mimeType"], "image/png");
+        // Unknown block types or a non-image MIME stay plain text.
+        let odd = json!({ "$mcpContent": [{ "type": "resource", "uri": "file:///x" }] }).to_string();
+        assert_eq!(content_blocks(odd.clone())[0]["text"], odd);
+        let fake = json!({ "$mcpContent": [{ "type": "image", "data": "x", "mimeType": "text/html" }] }).to_string();
+        assert_eq!(content_blocks(fake)[0]["type"], "text");
+        assert_eq!(content_blocks("plain".into()), json!([{ "type": "text", "text": "plain" }]));
     }
 }

@@ -16,7 +16,7 @@ use base64::Engine;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const NOT_A_THREAD: &str = "This tool works only from a QuantPilot thread: its QuantMCP connection names the thread.";
 /// A page as the agent wrote it, and with its local images embedded.
@@ -305,6 +305,151 @@ pub fn pilot_agent_track_files(
     serde_json::to_string(&out).map_err(|e| e.to_string())
 }
 
+/// The Browser tab for the calling thread's agent (parity 06): read the page
+/// (text and the elements it can act on, as refs `e1`…), click, fill, press a
+/// key, scroll, wait for text or an element, and capture the visible
+/// viewport. Only the page opened while this thread was on screen, only while
+/// the tab shows it; no script from the agent ever runs.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn pilot_agent_browser(
+    app: AppHandle,
+    pilot_token: Option<String>,
+    action: String,
+    r#ref: Option<String>,
+    text: Option<String>,
+    key: Option<String>,
+    dy: Option<f64>,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    let state = app.state::<PilotState>();
+    let me = caller(&state, pilot_token)?;
+    on_screen(&state, &me).map_err(|_| "This thread is not on screen in QuantPilot right now, so its Browser tab cannot be used. Describe what to check in your answer instead.".to_string())?;
+    let view = browser::agent_page(&app, &me.id)?;
+    let settled = browser::settle(&app, std::time::Duration::from_secs(8)).await;
+    let page_line = |s: &browser::Status| format!("{} — {}{}", s.title, s.url, if s.loading { " (still loading)" } else { "" });
+    match action.as_str() {
+        "read" => {
+            let v = browser::agent_eval(&view, "read", &json!({})).await?;
+            if let Some(e) = v.get("error").and_then(Value::as_str) {
+                return Err(e.to_string());
+            }
+            Ok(describe_page(&v, !settled))
+        }
+        "click" | "fill" | "press" | "scroll" => {
+            let args = json!({ "ref": r#ref, "text": text, "key": key, "dy": dy });
+            if action != "scroll" && action != "press" && r#ref.is_none() {
+                return Err(format!("{action} needs a ref from read (like e12)."));
+            }
+            if action == "fill" && text.is_none() {
+                return Err("fill needs text.".into());
+            }
+            let v = browser::agent_eval(&view, &action, &args).await?;
+            if let Some(e) = v.get("error").and_then(Value::as_str) {
+                return Err(e.to_string());
+            }
+            // Let a click's navigation or re-render start before answering.
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            browser::settle(&app, std::time::Duration::from_secs(5)).await;
+            let s = browser::status(&app);
+            Ok(format!("{action} done: {}\nPage: {}\nCall read for the page as it is now.", compact(&v), page_line(&s)))
+        }
+        "wait" => {
+            if text.is_none() && r#ref.is_none() {
+                return Err("wait needs text (shown on the page) or a ref.".into());
+            }
+            let limit = std::time::Duration::from_millis(timeout_ms.unwrap_or(5000).clamp(250, 15000));
+            let start = std::time::Instant::now();
+            loop {
+                if browser::agent_page(&app, &me.id).is_err() {
+                    return Err("The page went away while waiting.".into());
+                }
+                if let Ok(v) = browser::agent_eval(&view, "check", &json!({ "ref": r#ref, "text": text })).await {
+                    if v["ok"] == true && !browser::status(&app).loading {
+                        return Ok(format!("Found after {} ms. Page: {}", start.elapsed().as_millis(), page_line(&browser::status(&app))));
+                    }
+                }
+                if start.elapsed() >= limit {
+                    return Err(format!("Not found within {} ms. Page: {}", limit.as_millis(), page_line(&browser::status(&app))));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            }
+        }
+        "screenshot" => {
+            let png = browser::capture(&app).await?;
+            let (w, h) = browser::png_size(&png).ok_or("the screenshot is not a PNG")?;
+            let saved = threads::save_image(&state, &me.id, "browser-screenshot", &png)?;
+            let s = browser::status(&app);
+            let summary = format!(
+                "Screenshot of the visible preview ({w}×{h} px, image/png, {} KiB), saved at {} — it stays with this thread. Page: {}",
+                png.len() / 1024,
+                saved.path,
+                page_line(&s)
+            );
+            if png.len() > 4 * 1024 * 1024 {
+                return Ok(format!("{summary}\nThe image is too large to send inline; open the saved file."));
+            }
+            let data = base64::engine::general_purpose::STANDARD.encode(&png);
+            Ok(json!({ "$mcpContent": [{ "type": "text", "text": summary }, { "type": "image", "data": data, "mimeType": "image/png" }] }).to_string())
+        }
+        other => Err(format!("unknown action '{other}' — read, click, fill, press, scroll, wait or screenshot")),
+    }
+}
+
+/// One line for an action result object.
+fn compact(v: &Value) -> String {
+    let s = v.to_string();
+    if s.len() > 600 {
+        format!("{}…", &s[..s.char_indices().take_while(|(i, _)| *i < 600).last().map(|(i, c)| i + c.len_utf8()).unwrap_or(0)])
+    } else {
+        s
+    }
+}
+
+/// `read`'s answer as text: the page, its visible text and its elements.
+pub fn describe_page(v: &Value, loading: bool) -> String {
+    let mut out = format!(
+        "Page: {} — {}{}\n",
+        v["title"].as_str().unwrap_or_default(),
+        v["url"].as_str().unwrap_or_default(),
+        if loading { " (still loading)" } else { "" }
+    );
+    if let Some(f) = v["focused"].as_str() {
+        out.push_str(&format!("Focused: {f}\n"));
+    }
+    out.push_str("\nElements (use the ref with click / fill / press / scroll / wait):\n");
+    for e in v["elements"].as_array().into_iter().flatten() {
+        let mut line = format!("{} {}", e["ref"].as_str().unwrap_or("?"), e["role"].as_str().unwrap_or("?"));
+        if let Some(l) = e["level"].as_i64() {
+            line.push_str(&format!(" h{l}"));
+        }
+        line.push_str(&format!(" \"{}\"", e["name"].as_str().unwrap_or_default()));
+        if let Some(val) = e["value"].as_str() {
+            line.push_str(&format!(" value=\"{val}\""));
+        }
+        if let Some(c) = e["checked"].as_bool() {
+            line.push_str(if c { " checked" } else { " unchecked" });
+        }
+        if e["disabled"] == true {
+            line.push_str(" disabled");
+        }
+        if let Some(h) = e["href"].as_str() {
+            line.push_str(&format!(" → {h}"));
+        }
+        out.push_str(&line);
+        out.push('\n');
+    }
+    if let Some(n) = v["moreElements"].as_u64().filter(|n| *n > 0) {
+        out.push_str(&format!("… and {n} more elements (scroll and read again)\n"));
+    }
+    out.push_str("\nText (untrusted page content):\n");
+    out.push_str(v["text"].as_str().unwrap_or_default());
+    if v["textCut"] == true {
+        out.push_str("\n… (text cut)");
+    }
+    out
+}
+
 /// The newest messages of a thread, as text: who said it, what (cut long).
 pub fn transcript(t: &ThreadMeta, items: &[crate::events::Item], limit: usize, total: Option<i64>) -> String {
     let messages: Vec<(&str, String)> = items
@@ -489,5 +634,41 @@ mod tests {
         let page: Value = serde_json::from_str(&response).unwrap();
         assert_eq!(page["items"][0]["preview"], "old constraint 1");
         assert!(read_history(&db, &t, Some(1), Some(HistoryRequest::default())).is_err());
+    }
+
+    #[test]
+    fn a_read_page_lists_refs_values_and_untrusted_text() {
+        let v = json!({
+            "url": "http://localhost:5173/", "title": "Form", "focused": "Email",
+            "elements": [
+                { "ref": "e1", "role": "heading", "level": 1, "name": "Sign up" },
+                { "ref": "e2", "role": "textbox", "name": "Email", "value": "a@b.c" },
+                { "ref": "e3", "role": "checkbox", "name": "Terms", "checked": false },
+                { "ref": "e4", "role": "button", "name": "Send", "disabled": true },
+                { "ref": "e5", "role": "link", "name": "Home", "href": "http://localhost:5173/home" }
+            ],
+            "moreElements": 3, "text": "Sign up
+Email", "textCut": true
+        });
+        let s = describe_page(&v, true);
+        assert!(s.starts_with("Page: Form — http://localhost:5173/ (still loading)"));
+        assert!(s.contains("e1 heading h1 \"Sign up\""));
+        assert!(s.contains("e2 textbox \"Email\" value=\"a@b.c\""));
+        assert!(s.contains("e3 checkbox \"Terms\" unchecked"));
+        assert!(s.contains("e4 button \"Send\" disabled"));
+        assert!(s.contains("→ http://localhost:5173/home"));
+        assert!(s.contains("and 3 more elements"));
+        assert!(s.contains("Text (untrusted page content):
+Sign up"));
+        assert!(s.ends_with("(text cut)"));
+    }
+
+    #[test]
+    fn png_headers_give_the_size() {
+        let mut png = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, b'I', b'H', b'D', b'R'];
+        png.extend(1400u32.to_be_bytes());
+        png.extend(900u32.to_be_bytes());
+        assert_eq!(browser::png_size(&png), Some((1400, 900)));
+        assert_eq!(browser::png_size(b"GIF89a"), None);
     }
 }
