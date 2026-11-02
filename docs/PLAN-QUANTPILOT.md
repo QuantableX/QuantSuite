@@ -1454,3 +1454,42 @@ search, refusal of a non-empty folder, clone of `octocat/Hello-World` with
 progress, "already cloned" for the same folder, Stop of a `microsoft/vscode`
 clone (its folder gone), and a UI clone of a small repository that became a
 workspace with a thread in it.
+
+## 22. Parity follow-up: human pull-request review (11/23)
+
+A pull request row has **Review yourself** next to the agent's thread action
+(now labelled **Agent review**, unchanged). `review.rs` loads the PR at its
+current head through the signed-in `gh`: title, description, author, branches,
+head SHA, commits, checks, changed files with their patches (`pulls/N/files`,
+paginated; renamed files keep their old path; binary or very large files say
+GitHub sends no diff), existing review threads (GraphQL: resolved, outdated,
+whether the viewer may resolve) and the actions GitHub allows the viewer
+(comment always; approve and request changes only on an open PR the viewer did
+not write).
+
+`Github/Review.vue`: files with viewed checkboxes (stored per head SHA, so a
+push resets them), the selected file's diff with old/new line numbers and the
+discussions at their lines (Resolve/Reopen where allowed), click a line number
+to draft a comment (Shift-click for a range from the last line). Drafts and the
+summary are saved in the pilot database (schema 16, `review_drafts`) — nothing
+is sent before Submit — and survive restarts. Each draft remembers the head it
+was written against and its line's text: after a push, a draft whose text is
+found exactly once moves with it (and says so); any other is marked stale
+inline and in the review panel, and Submit refuses until it is deleted.
+
+Submit re-reads the head, builds one `POST pulls/N/reviews` with the summary,
+the event and all inline comments (`commit_id` = current head), and carries a
+hidden marker derived from its content; a retry after a network failure first
+looks for a review with that marker, so the review is never posted twice. On
+success the drafts are deleted. A review never merges.
+
+Provider boundary: `review::Host` has GitHub only; GitLab, Forgejo and others
+are not implemented and not claimed.
+
+Verified in the isolated native app on a public PR (`octocat/Hello-World#11683`,
+read-only): load, a line draft and a summary draft, a simulated push leaving one
+draft stale (inline and in the panel), Submit refused before any request, drafts
+intact after an app restart, QA drafts deleted. **Not verified: an actual review
+submission** — it writes to GitHub and needs the user's explicit authorization
+and a designated test pull request; payload, marker and refusal rules are covered
+by unit tests only.

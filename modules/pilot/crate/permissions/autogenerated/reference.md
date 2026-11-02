@@ -70,6 +70,11 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-list-threads`
 - `allow-pilot-agent-read-thread`
 - `allow-pilot-agent-read-thread-item`
+- `allow-pilot-review-load`
+- `allow-pilot-review-draft-save`
+- `allow-pilot-review-draft-delete`
+- `allow-pilot-review-submit`
+- `allow-pilot-review-resolve`
 - `allow-pilot-gh-browse`
 - `allow-pilot-gh-clone`
 - `allow-pilot-gh-clone-cancel`
@@ -2324,6 +2329,136 @@ Enables the pilot_queue_update command without any pre-configured scope.
 <td>
 
 Denies the pilot_queue_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-review-draft-delete`
+
+</td>
+<td>
+
+Enables the pilot_review_draft_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-review-draft-delete`
+
+</td>
+<td>
+
+Denies the pilot_review_draft_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-review-draft-save`
+
+</td>
+<td>
+
+Enables the pilot_review_draft_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-review-draft-save`
+
+</td>
+<td>
+
+Denies the pilot_review_draft_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-review-load`
+
+</td>
+<td>
+
+Enables the pilot_review_load command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-review-load`
+
+</td>
+<td>
+
+Denies the pilot_review_load command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-review-resolve`
+
+</td>
+<td>
+
+Enables the pilot_review_resolve command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-review-resolve`
+
+</td>
+<td>
+
+Denies the pilot_review_resolve command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-review-submit`
+
+</td>
+<td>
+
+Enables the pilot_review_submit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-review-submit`
+
+</td>
+<td>
+
+Denies the pilot_review_submit command without any pre-configured scope.
 
 </td>
 </tr>
