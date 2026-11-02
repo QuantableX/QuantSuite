@@ -57,6 +57,10 @@ useTauriEvent<{ threadId: string; kind: 'file' | 'preview'; path?: string; line?
   else if (p.kind === 'preview' && p.url) inspector.openBrowser(p.threadId, p.url)
 })
 useTauriEvent<SessionMeta>('pilot-thread-created', (meta) => store.upsertSession(meta))
+// An agent started a project action (parity 07): its Run terminal gets a tab.
+useTauriEvent<{ threadId: string }>('pilot-drawer-changed', (p) => {
+  if (p.threadId === store.activeId) void drawer.load(p.threadId)
+})
 
 /** The thread on screen with its inspector: the agent tools open files and pages only there. */
 const moduleActive = ref(false)

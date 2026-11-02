@@ -70,6 +70,8 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-list-threads`
 - `allow-pilot-agent-read-thread`
 - `allow-pilot-agent-read-thread-item`
+- `allow-pilot-agent-run-project`
+- `allow-pilot-agent-project-status`
 - `allow-pilot-agent-browser`
 - `allow-pilot-agent-track-files`
 - `allow-pilot-history-page`
@@ -264,6 +266,32 @@ Denies the pilot_agent_open_preview command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-agent-project-status`
+
+</td>
+<td>
+
+Enables the pilot_agent_project_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-project-status`
+
+</td>
+<td>
+
+Denies the pilot_agent_project_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-agent-read-thread`
 
 </td>
@@ -335,6 +363,32 @@ Enables the pilot_agent_render_page command without any pre-configured scope.
 <td>
 
 Denies the pilot_agent_render_page command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-run-project`
+
+</td>
+<td>
+
+Enables the pilot_agent_run_project command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-run-project`
+
+</td>
+<td>
+
+Denies the pilot_agent_run_project command without any pre-configured scope.
 
 </td>
 </tr>
