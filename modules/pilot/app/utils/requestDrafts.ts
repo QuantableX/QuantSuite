@@ -7,12 +7,15 @@
  * (their process is gone) and so needs no drafts.
  */
 import { reactive } from 'vue'
+import type { ComposerAttachment } from '#pilot/types'
 
 export interface RequestDraft {
   /** Question text → picked option labels. */
   picked: Record<string, string[]>
   /** Question text → free-text answer. */
   other: Record<string, string>
+  /** Question text → images and files for the answer (parity 17). */
+  files: Record<string, ComposerAttachment[]>
   /** The question step shown. */
   step: number
   /** Form field key → value. */
@@ -30,7 +33,7 @@ export function requestDraft(threadId: string, requestId: string): RequestDraft 
   const k = key(threadId, requestId)
   let d = drafts.get(k)
   if (!d) {
-    drafts.set(k, { picked: {}, other: {}, step: 0, values: {}, opened: false, error: null })
+    drafts.set(k, { picked: {}, other: {}, files: {}, step: 0, values: {}, opened: false, error: null })
     d = drafts.get(k)!
   }
   return d

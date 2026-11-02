@@ -75,7 +75,14 @@ pub enum Answer {
     /// Decline; `message` goes back to the agent that asked.
     Deny { message: Option<String> },
     /// Answers to a question request: question text → chosen label(s) or free text.
-    Answers { answers: serde_json::Map<String, Value> },
+    /// `files` (parity 17): question text → saved attachments `[{kind, name, path}]`;
+    /// no protocol takes files in an answer, so they reach the agent as
+    /// references folded into the answer text before a driver sees it.
+    Answers {
+        answers: serde_json::Map<String, Value>,
+        #[serde(default)]
+        files: serde_json::Map<String, Value>,
+    },
     /// Close a question without answering.
     Dismiss,
     /// An elicitation's outcome: `accept` (with the form's `content`),

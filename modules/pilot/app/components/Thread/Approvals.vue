@@ -11,7 +11,9 @@
  * - Questions: one at a time with its options (single or multi select),
  *   an "Other" answer, Back / Next / Submit, Dismiss. Digits pick options.
  *   A secret question is a masked field and its answer is never saved; a
- *   question without free text offers only its options.
+ *   question without free text offers only its options. A question with
+ *   free text also takes images and files (parity 17): picked, pasted or
+ *   dropped, saved like the composer's, sent as references in the answer.
  * - MCP forms and web-page steps (Elicitation.vue, parity card 05).
  * - What is picked or typed is a draft per request (utils/requestDrafts):
  *   it survives streaming, switching threads and a refused submit, and with
@@ -20,11 +22,12 @@
  *   one-line pointer to it.
  */
 import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { Bot, ChevronRight, FileText, Globe, ListChecks, Pencil, Plug, SquareTerminal, Wrench } from 'lucide-vue-next'
+import { Bot, ChevronRight, FileText, Globe, ImageIcon, ListChecks, Loader2, Paperclip, Pencil, Plug, SquareTerminal, Wrench, X } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
-import type { ThreadItem } from '#pilot/types'
-import { pruneRequestDrafts, requestDraft } from '#pilot/utils/requestDrafts'
+import type { AnswerFile, ComposerAttachment, ThreadItem } from '#pilot/types'
+import { pruneRequestDrafts, requestDraft, type RequestDraft } from '#pilot/utils/requestDrafts'
+import { DOCUMENT, cancelDocument, docLabel, readDocument } from '#pilot/utils/documents'
 
 const props = defineProps<{ threadId: string }>()
 const emit = defineEmits<{ done: [] }>()
@@ -138,23 +141,137 @@ function toggle(q: Q, label: string) {
   if (!q.multiSelect) other.value[q.question] = ''
 }
 function answered(q: Q): boolean {
-  return (picked.value[q.question]?.length ?? 0) > 0 || Boolean(other.value[q.question]?.trim())
+  return (picked.value[q.question]?.length ?? 0) > 0 || Boolean(other.value[q.question]?.trim()) || ready(q).length > 0
 }
 const allAnswered = computed(() => questions.value.length > 0 && questions.value.every(answered))
 
+// ── Files with an answer (parity 17) ──
+const QFILES = 10
+const canAttach = (q: Q) => freeText(q) && !q.isSecret
+const filesOf = (q: Q): ComposerAttachment[] => draft.value?.files[q.question] ?? []
+const ready = (q: Q) => filesOf(q).filter((f) => !f.pending && !f.error && f.path)
+/** Still saving or failed: the answer waits until that is sorted out. */
+const fileProblem = computed(() => {
+  const all = questions.value.flatMap((q) => filesOf(q))
+  if (all.some((f) => f.pending)) return 'Wait until the files are saved.'
+  if (all.some((f) => f.error)) return 'Remove the files that could not be saved.'
+  return ''
+})
+function readData(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(file)
+  })
+}
+/** Patch one file of one question of one request, wherever the panel is now. */
+function patchFile(d: RequestDraft, question: string, key: string, patch: Partial<ComposerAttachment>) {
+  d.files[question] = (d.files[question] ?? []).map((f) => (f.key === key ? { ...f, ...patch } : f))
+}
+async function saveInto(d: RequestDraft, question: string, entry: ComposerAttachment, save: () => Promise<{ kind: string; name: string; path: string; size: number; thumb?: string | null } | null>) {
+  d.files[question] = [...(d.files[question] ?? []), entry]
+  try {
+    const saved = await save()
+    if (!saved) throw new Error('not saved')
+    patchFile(d, question, entry.key, { kind: saved.kind as ComposerAttachment['kind'], name: saved.name, path: saved.path, size: saved.size, thumb: saved.thumb ?? null, pending: false })
+    if (saved.kind === 'file' && DOCUMENT.test(saved.name)) {
+      patchFile(d, question, entry.key, { docPending: true })
+      const doc = await readDocument(saved.path, saved.name)
+      patchFile(d, question, entry.key, { docPending: false, doc })
+    }
+  } catch (e) {
+    patchFile(d, question, entry.key, { pending: false, error: e instanceof Error ? e.message : String(e) })
+  }
+}
+const newKey = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+function room(q: Q, n: number): number {
+  const left = QFILES - filesOf(q).length
+  if (n > left) fileNote.value = `An answer can carry up to ${QFILES} files.`
+  return Math.max(0, left)
+}
+const fileNote = ref('')
+async function addFiles(q: Q, files: File[]) {
+  const d = draft.value
+  if (!d || !canAttach(q)) return
+  fileNote.value = ''
+  for (const f of files.slice(0, room(q, files.length))) {
+    const image = /^image\/(png|jpeg|webp)$/.test(f.type)
+    const limit = image ? 10 : 50
+    const entry: ComposerAttachment = { key: newKey(), kind: image ? 'image' : 'file', name: f.name || 'pasted.png', path: '', size: f.size, pending: true }
+    if (f.size > limit * 1024 * 1024) {
+      d.files[q.question] = [...(d.files[q.question] ?? []), { ...entry, pending: false, error: `Larger than ${limit} MiB` }]
+      continue
+    }
+    void saveInto(d, q.question, entry, async () => {
+      const data = await readData(f)
+      return image ? threads.saveImage(props.threadId, entry.name, data) : threads.saveFile(props.threadId, entry.name, { data })
+    })
+  }
+}
+async function pickFiles(q: Q) {
+  const d = draft.value
+  if (!d || !canAttach(q)) return
+  let picked: string | string[] | null = null
+  try {
+    const dialog = await import('@tauri-apps/plugin-dialog')
+    picked = await dialog.open({ multiple: true, directory: false, title: 'Attach images and files to your answer' })
+  } catch {
+    fileNote.value = 'The file picker is not available here.'
+    return
+  }
+  const paths = picked === null ? [] : Array.isArray(picked) ? picked : [picked]
+  fileNote.value = ''
+  for (const path of paths.slice(0, room(q, paths.length))) {
+    const name = path.split(/[\\/]/).pop() || path
+    void saveInto(d, q.question, { key: newKey(), kind: 'file', name, path: '', size: 0, pending: true }, () => threads.saveFile(props.threadId, name, { path }))
+  }
+}
+function removeFile(q: Q, key: string) {
+  const d = draft.value
+  if (!d) return
+  const gone = (d.files[q.question] ?? []).find((f) => f.key === key)
+  if (gone?.docPending && gone.path) cancelDocument(gone.path)
+  d.files[q.question] = (d.files[q.question] ?? []).filter((f) => f.key !== key)
+}
+function onPaste(e: ClipboardEvent) {
+  const q = current.value
+  const files = Array.from(e.clipboardData?.files ?? [])
+  if (!q || !files.length || !canAttach(q)) return
+  e.preventDefault()
+  void addFiles(q, files)
+}
+function onDrop(e: DragEvent) {
+  threads.fileDrag = false
+  const q = current.value
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (!q || !files.length) return
+  e.preventDefault()
+  e.stopPropagation()
+  if (!canAttach(q)) {
+    fileNote.value = q.isSecret ? 'A secret answer cannot carry files.' : 'This question takes only its options.'
+    return
+  }
+  void addFiles(q, files)
+}
+const sizeLabel = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`)
+
 async function submitQuestion() {
-  if (!question.value || !allAnswered.value) return
+  if (!question.value || !allAnswered.value || fileProblem.value) return
   const answers: Record<string, string> = {}
+  const files: Record<string, AnswerFile[]> = {}
   for (const q of questions.value) {
     const parts = [...(picked.value[q.question] ?? [])]
     // A secret is sent exactly as typed.
     const own = q.isSecret ? other.value[q.question] : other.value[q.question]?.trim()
     if (own) parts.push(own)
     answers[q.question] = parts.join(', ')
+    const sent = canAttach(q) ? ready(q) : []
+    if (sent.length) files[q.question] = sent.map((f) => ({ kind: f.kind === 'image' ? 'image' : 'file', name: f.name, path: f.path, thumb: f.thumb && f.thumb.length < 96 * 1024 ? f.thumb : null }))
   }
   const item = question.value
   busy.value = item.id
-  const err = await threads.answer(props.threadId, String(item.data.requestId), { decision: 'answers', answers })
+  const err = await threads.answer(props.threadId, String(item.data.requestId), { decision: 'answers', answers, files })
   busy.value = null
   if (!err) emit('done')
 }
@@ -225,7 +342,7 @@ function showPlan() {
       @done="emit('done')"
     />
 
-    <div v-if="question && current" :key="question.id" class="qp-ap-q" tabindex="0" @keydown="onQuestionKey">
+    <div v-if="question && current" :key="question.id" class="qp-ap-q" tabindex="0" @keydown="onQuestionKey" @paste="onPaste" @dragover.prevent @drop="onDrop">
       <div class="qp-ap-q-head">
         <span class="qp-ap-q-tag">{{ current.header || 'Question' }}</span>
         <span v-if="questions.length > 1" class="qp-ap-q-step">{{ step + 1 }} of {{ questions.length }}</span>
@@ -271,10 +388,26 @@ function showPlan() {
         @input="!current.multiSelect && other[current.question] && (picked[current.question] = [])"
         @keydown.enter.prevent="step < questions.length - 1 ? step++ : submitQuestion()"
       />
+      <div v-if="canAttach(current) && filesOf(current).length" class="qp-ap-files">
+        <div v-for="f in filesOf(current)" :key="f.key" class="qp-ap-file" :class="{ failed: !!f.error }" :title="f.error ?? f.path">
+          <Loader2 v-if="f.pending" class="qp-ap-spin" :size="12" />
+          <img v-else-if="f.kind === 'image' && f.thumb" :src="f.thumb" :alt="f.name" class="qp-ap-thumb" />
+          <ImageIcon v-else-if="f.kind === 'image'" :size="12" />
+          <FileText v-else :size="12" />
+          <span class="qp-ap-file-name">{{ f.name }}</span>
+          <span v-if="f.size && !f.error" class="qp-ap-file-size">{{ sizeLabel(f.size) }}</span>
+          <span v-if="f.error" class="qp-ap-file-err">{{ f.error }}</span>
+          <span v-else-if="f.docPending" class="qp-ap-file-doc">Reading text…</span>
+          <span v-else-if="f.doc" class="qp-ap-file-doc" :class="{ warn: f.doc.status !== 'ok' }" :title="f.doc.detail ?? ''">{{ docLabel(f.doc) }}</span>
+          <button class="qp-ap-file-x" :title="`Remove ${f.name}`" @click.stop="removeFile(current, f.key)"><X :size="11" /></button>
+        </div>
+      </div>
+      <div v-if="fileNote || (fileProblem && step === questions.length - 1)" class="qp-ap-q-note" role="status">{{ fileNote || fileProblem }}</div>
       <div class="qp-ap-actions">
+        <button v-if="canAttach(current)" class="qp-btn qp-btn-sm" title="Attach images or files to this answer — or paste or drop them here" @click="pickFiles(current)"><Paperclip :size="12" /> Attach</button>
         <button v-if="step > 0" class="qp-btn qp-btn-sm" @click="step--">Back</button>
         <button v-if="step < questions.length - 1" class="qp-btn qp-btn-sm qp-btn-primary" :disabled="!answered(current)" @click="step++">Next</button>
-        <button v-else class="qp-btn qp-btn-sm qp-btn-primary" :disabled="!allAnswered || busy === question.id" @click="submitQuestion">Answer</button>
+        <button v-else class="qp-btn qp-btn-sm qp-btn-primary" :disabled="!allAnswered || !!fileProblem || busy === question.id" @click="submitQuestion">Answer</button>
         <button class="qp-btn qp-btn-sm" @click="answer(question, { decision: 'dismiss' })">Dismiss</button>
       </div>
     </div>
@@ -376,4 +509,18 @@ function showPlan() {
   cursor: pointer;
 }
 .qp-ap-plan:hover { background: color-mix(in srgb, var(--qss-warning, #d29a3f) 10%, transparent); }
+/* Files with an answer (parity 17). */
+.qp-ap-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.qp-ap-file { display: inline-flex; align-items: center; gap: 5px; max-width: 340px; height: 26px; padding: 0 4px 0 8px; border: 1px solid var(--qss-border, #47474f); border-radius: 6px; font-size: 12px; }
+.qp-ap-file.failed { border-color: var(--qss-error, #f87171); }
+.qp-ap-thumb { height: 18px; width: 18px; object-fit: cover; border-radius: 3px; }
+.qp-ap-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-ap-file-size { flex-shrink: 0; white-space: nowrap; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 10.5px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-ap-file-err { font-size: 11px; color: var(--qss-error, #f87171); white-space: nowrap; }
+.qp-ap-file-doc { flex-shrink: 0; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); white-space: nowrap; }
+.qp-ap-file-doc.warn { color: var(--qss-warning, #e0af68); }
+.qp-ap-file-x { display: inline-flex; padding: 2px; border: none; background: transparent; color: var(--qss-text-muted, #6e6e7a); cursor: pointer; border-radius: 4px; }
+.qp-ap-file-x:hover { color: var(--qss-text, #d4d4d8); }
+.qp-ap-spin { animation: qp-ap-spin 1s linear infinite; }
+@keyframes qp-ap-spin { to { transform: rotate(360deg); } }
 </style>

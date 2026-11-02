@@ -1051,7 +1051,7 @@ impl Driver for ClaudeDriver {
                     None => deny("The user declined this."),
                 }
             }
-            (RequestKind::Question, Answer::Answers { answers }) => {
+            (RequestKind::Question, Answer::Answers { answers, .. }) => {
                 let mut input = pending.input.clone();
                 if let Some(obj) = input.as_object_mut() {
                     obj.insert("answers".into(), Value::Object(answers.clone()));
@@ -1225,7 +1225,7 @@ mod tests {
         assert!(d.answer("q1", &Answer::Allow).is_err(), "a question is not a yes/no");
         let mut answers = serde_json::Map::new();
         answers.insert("Which?".into(), json!("B"));
-        let v: Value = serde_json::from_str(&d.answer("q1", &Answer::Answers { answers }).unwrap()[0]).unwrap();
+        let v: Value = serde_json::from_str(&d.answer("q1", &Answer::Answers { answers, files: Default::default() }).unwrap()[0]).unwrap();
         assert_eq!(v["response"]["response"]["updatedInput"]["answers"]["Which?"], "B");
 
         d.on_line(&q.replace("q1", "q2"));

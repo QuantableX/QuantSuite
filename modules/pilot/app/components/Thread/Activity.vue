@@ -9,6 +9,7 @@
 import { computed, ref } from 'vue'
 import { Brain, ChevronRight, Loader2 } from 'lucide-vue-next'
 import type { TurnBlock } from '#pilot/utils/timeline'
+import type { ThreadItem } from '#pilot/types'
 import { formatDuration } from '#pilot/utils/timeline'
 
 const props = defineProps<{
@@ -35,6 +36,15 @@ const runningTool = computed(() => {
 const headline = computed(() => (props.running ? `Working for ${formatDuration(props.elapsed)}` : `Worked for ${formatDuration(props.elapsed)}`))
 const detail = computed(() => (props.running && runningTool.value ? runningTool.value : props.block.summary))
 
+/** The images and files sent with a question's answers (parity 17), as a message's attachments. */
+function answerFiles(item: ThreadItem): Record<string, any>[] {
+  const files = item.data.replyFiles as Record<string, Record<string, any>[]> | undefined
+  return files ? Object.values(files).flat() : []
+}
+function filesItem(item: ThreadItem): ThreadItem {
+  return { ...item, kind: 'user', data: { text: '', attachments: answerFiles(item).map((f) => ({ kind: f.kind, name: f.name, path: f.path, thumb: f.thumb ?? null })) } }
+}
+
 function requestLine(kind: string, data: Record<string, any>): string {
   if (kind === 'approval') {
     const verdict = data.status === 'denied' ? 'Denied' : data.status === 'expired' ? 'Expired' : 'Allowed'
@@ -54,7 +64,12 @@ function requestLine(kind: string, data: Record<string, any>): string {
         return `${who}: ${what} cancelled`
     }
   }
-  if (kind === 'question') return data.status === 'dismissed' ? 'Question dismissed' : data.status === 'expired' ? 'Question expired' : 'Question answered'
+  if (kind === 'question') {
+    if (data.status === 'dismissed') return 'Question dismissed'
+    if (data.status === 'expired') return 'Question expired'
+    const n = Object.values((data.replyFiles ?? {}) as Record<string, unknown[]>).flat().length
+    return n ? `Question answered · ${n} file${n === 1 ? '' : 's'}` : 'Question answered'
+  }
   return ''
 }
 </script>
@@ -86,6 +101,9 @@ function requestLine(kind: string, data: Record<string, any>): string {
         </div>
         <div v-else-if="e.item.kind === 'approval' || e.item.kind === 'question'" class="qp-act-line is-muted">
           {{ requestLine(e.item.kind, e.item.data) }}
+        </div>
+        <div v-if="e.kind !== 'tools' && e.item.kind === 'question' && answerFiles(e.item).length" class="qp-act-files">
+          <PilotThreadUserMessage :item="filesItem(e.item)" @notice="(t: string) => emit('notice', t)" />
         </div>
       </template>
     </div>
@@ -136,4 +154,5 @@ function requestLine(kind: string, data: Record<string, any>): string {
 .qp-act-reason { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-spin { animation: qp-spin 0.9s linear infinite; flex-shrink: 0; }
 @keyframes qp-spin { to { transform: rotate(360deg); } }
+.qp-act-files { margin: 2px 0 4px 18px; }
 </style>

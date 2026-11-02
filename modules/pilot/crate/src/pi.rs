@@ -431,7 +431,7 @@ impl Driver for PiDriver {
             Answer::Allow if ask.approval => reply(json!({ "value": "Allow" })),
             Answer::AllowSession if ask.approval => reply(json!({ "value": "Allow for this session" })),
             Answer::Deny { .. } if ask.approval => reply(json!({ "value": "Deny" })),
-            Answer::Answers { answers } => {
+            Answer::Answers { answers, .. } => {
                 let picked = answers.values().next().map(|v| match v {
                     Value::Array(a) => a.first().and_then(Value::as_str).unwrap_or_default().to_string(),
                     v => v.as_str().unwrap_or_default().to_string(),
@@ -552,7 +552,7 @@ mod tests {
         assert_eq!(q.kind, RequestKind::Question);
         let mut answers = serde_json::Map::new();
         answers.insert("Clear session?".into(), json!("Yes"));
-        assert_eq!(parse(&d.answer(&q.request_id, &Answer::Answers { answers }).unwrap()[0])["confirmed"], true);
+        assert_eq!(parse(&d.answer(&q.request_id, &Answer::Answers { answers, files: Default::default() }).unwrap()[0])["confirmed"], true);
         // Stop cancels what waits and aborts.
         feed(&mut d, &[json!({ "type": "extension_ui_request", "id": "ui-3", "method": "select", "title": "QP_APPROVAL {\"tool\":\"write\"}", "options": [] })]);
         let stop: Vec<Value> = d.interrupt().iter().map(|l| parse(l)).collect();
