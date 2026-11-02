@@ -167,6 +167,10 @@ fn cache_read(key: &str) -> Option<DocInfo> {
     if info.text_path.as_deref().is_some_and(|p| !Path::new(p).exists()) {
         return None;
     }
+    // Used now: storage cleanup (parity 19) removes text unused for a while.
+    if let Ok(f) = std::fs::File::options().write(true).open(dir.join(format!("{key}.json"))) {
+        let _ = f.set_modified(std::time::SystemTime::now());
+    }
     Some(info)
 }
 

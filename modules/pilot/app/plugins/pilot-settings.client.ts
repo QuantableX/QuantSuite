@@ -11,6 +11,7 @@ import Keybindings from '../components/Settings/Keybindings.vue'
 import SourceControl from '../components/Settings/SourceControl.vue'
 import Appearance from '../components/Settings/Appearance.vue'
 import Advanced from '../components/Settings/Advanced.vue'
+import Storage from '../components/Settings/Storage.vue'
 
 export default defineNuxtPlugin(() => {
   registerSettingsSections('pilot', [
@@ -21,6 +22,7 @@ export default defineNuxtPlugin(() => {
     { id: 'skills', label: 'Skills', component: markRaw(Skills), order: 3.5 },
     { id: 'source-control', label: 'Source control', component: markRaw(SourceControl), order: 4 },
     { id: 'appearance', label: 'Appearance', component: markRaw(Appearance), order: 5 },
+    { id: 'storage', label: 'Storage', component: markRaw(Storage), order: 5.5 },
     { id: 'advanced', label: 'Advanced', component: markRaw(Advanced), order: 6 },
   ])
 })

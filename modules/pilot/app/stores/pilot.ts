@@ -8,6 +8,7 @@
  * that come back — Claude's hooks, a tailed Codex or pi file, or, for
  * adapters that report nothing, the terminal's own output and bell.
  */
+import { dailyStorageCleanup } from '#pilot/utils/storage'
 import { defineStore } from 'pinia'
 import { navigateTo } from '#app'
 import { bus } from '@quantsuite/core'
@@ -207,6 +208,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
     async loadSettings() {
       const s = await pilot<PilotSettings>('plugin:pilot|pilot_settings_get')
       if (s) this.settings = s
+      // The daily storage cleanup, when the user turned it on (parity 19).
+      if (s?.storage?.auto) void dailyStorageCleanup(s.storage)
     },
 
     /** `quiet` skips the CLI status probe — for remembering a picker choice. */

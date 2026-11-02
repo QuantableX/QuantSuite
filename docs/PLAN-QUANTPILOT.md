@@ -1789,3 +1789,59 @@ QA-harness note: the CDP port given to all WebView2 environments through
 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` can move to a profile's browser
 process after another profile's process ends; the app itself kept working
 (window captured with PrintWindow). Users have no remote-debugging port.
+
+## 30. Parity follow-up: storage inventory and cleanup rules (19/23)
+
+Settings → **Storage** (`Storage.vue`, `storage.rs`) measures what QuantPilot
+keeps: messages and history (`pilot.db`), saved patches (turn changes with
+their frozen sides), attachments and screenshots (with how much belongs to
+deleted threads), extracted document text (parity 16), session files, browser
+profiles (parity 18), the skill library and managed worktrees (counted only).
+
+**Cleanup rules**, all off by default: saved patches of turns older than
+30/90/180/365 days lose their text and frozen sides while the file list, line
+counts and a note stay ("The saved patch was removed by storage cleanup on
+<date>; the file list and line counts are kept." — the Diff list's `!` shows
+it); attachments in no message, queued message or draft older than 7/30/90
+days; document text not used for 30/90 days (read again when needed, every use
+refreshes it); and the folders of deleted threads (deleting a thread kept its
+attachments folder until now). **Preview cleanup** is the dry run: the items
+with their reason and size, grouped, and what stays and why ("in a message or
+queued message", "in a draft", "newer than 30 days", "its thread is working",
+"not QuantPilot's own folder"). **Clean up now** asks once and removes only
+the items the preview showed, from a plan computed the same way; the result
+names what could not be removed (a lock), which is tried again next time.
+**Run these rules once a day** is an explicit switch; the run starts a minute
+after the app loads its settings, at most once per 23 hours.
+
+Never removed: message text and history (handoffs and history reads depend on
+them), browser profiles, the skill library, worktrees (Worktree cleanup with
+its own guards), anything a message, queued message or draft names (drafts
+live in the webview; the page and the daily run send their paths), anything of
+a thread whose turn runs, and anything in a folder that is not a thread's.
+Every target is resolved and must lie strictly inside `attachments/` or
+`sessions/` of the pilot data folder; a target outside, the folder itself or a
+link is left alone. Removing what is already gone counts as done, so an
+interrupted run is simply repeated. Each run adds a line to
+`storage-cleanup.log` (newest 200). Space freed inside `pilot.db` is reused
+for new history; the file does not shrink (no VACUUM), the write-ahead log is
+checkpointed after patches are cleared. Recovery: removed files and patch text
+cannot be restored; checkpoints in git (rewind) are not touched.
+
+Verified in the isolated native app on a long-history fixture (the
+5,601-record thread with 330 turns of saved patches, 300 of them 200 days
+old; every attachment aged 40 days, document texts 100 days; one stray
+screenshot in a live thread) after deleting a thread with seven attachments
+the normal way. Before: database 6.4 MB, saved patches 3.0 MB (663 rows),
+attachments 1.8 MB (32 files, 575 KB of the deleted thread), document text
+154 KB. With patches 90, unsent 30 and documents 30 days the preview listed
+314 items (4.1 MB): the deleted thread's folder, 7 unsent files (each checked:
+no reference anywhere in the database), 6 document texts and 300 old turns;
+18 referenced attachments and 32 recent patch groups stayed. **Clean up now**
+removed exactly those 314 (log line written); after: saved patches 284 KB
+(63 recent rows untouched), attachments 672 KB (18 files, the sent ones still
+there), document text 0; the old turns kept their file lists and line counts
+with the note, and a second preview found nothing. Unit tests: dry run and
+cleanup agree, items not shown are skipped, a repeat is harmless, every kind
+of protected file stays, and targets outside the data folders, the folder
+itself and `../pilot.db` are refused.

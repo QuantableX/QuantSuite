@@ -358,6 +358,45 @@ fn pilot_diagnostics(state: State<'_, PilotState>) -> String {
 
 /// The diagnostics and the newest part of the suite's log, saved to
 /// Downloads and shown in Explorer.
+// ── Storage (parity 19) ──
+
+#[tauri::command(async)]
+fn pilot_storage_inventory(state: State<'_, PilotState>) -> Vec<db::StorageCategory> {
+    state.db.storage_inventory(&state.data_dir)
+}
+
+/// The dry run of `policy`; `drafts` are the paths the composer still holds.
+#[tauri::command(async)]
+fn pilot_storage_plan(state: State<'_, PilotState>, policy: db::StoragePolicy, drafts: Vec<String>) -> db::StoragePlan {
+    state.db.storage_plan(&state.data_dir, &policy, &drafts, &state.runtime.busy_threads(), now())
+}
+
+/// Cleans up by `policy`: only the `shown` items of its plan when given (the
+/// Settings preview), else the whole plan (the daily run, which also records
+/// when it ran).
+#[tauri::command(async)]
+fn pilot_storage_clean(state: State<'_, PilotState>, policy: db::StoragePolicy, drafts: Vec<String>, shown: Option<Vec<String>>, daily: Option<bool>) -> Result<db::StorageCleanResult, String> {
+    let daily = daily.unwrap_or(false);
+    if daily {
+        let current = lock(&state.settings).storage.clone();
+        if !current.auto || current.last_run.is_some_and(|t| now() - t < 23 * 60 * 60 * 1000) {
+            return Ok(db::StorageCleanResult::default());
+        }
+    }
+    let plan = state.db.storage_plan(&state.data_dir, &policy, &drafts, &state.runtime.busy_threads(), now());
+    let shown: Option<std::collections::HashSet<String>> = shown.map(|s| s.into_iter().collect());
+    let when = chrono::Local::now();
+    let result = state.db.storage_clean(&state.data_dir, &plan, shown.as_ref(), &when.format("%Y-%m-%d").to_string());
+    db::log_storage_run(&state.data_dir, &when.format("%Y-%m-%dT%H:%M").to_string(), &plan, &result);
+    if daily {
+        let mut settings = lock(&state.settings).clone();
+        settings.storage.last_run = Some(now());
+        settings::write(&state.data_dir, &settings)?;
+        *lock(&state.settings) = settings;
+    }
+    Ok(result)
+}
+
 #[tauri::command(async)]
 fn pilot_export_logs(state: State<'_, PilotState>) -> Result<String, String> {
     let mut text = diagnostics(&state);
@@ -945,6 +984,9 @@ pub fn init() -> TauriPlugin<Wry> {
             pilot_gh_status,
             pilot_diagnostics,
             pilot_export_logs,
+            pilot_storage_inventory,
+            pilot_storage_plan,
+            pilot_storage_clean,
             pilot_open_data_dir,
             usage::pilot_usage_report,
             usage::pilot_usage_limits,

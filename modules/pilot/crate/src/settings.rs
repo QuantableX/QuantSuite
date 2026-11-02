@@ -200,6 +200,8 @@ pub struct Settings {
     pub projects: BTreeMap<String, ProjectPrefs>,
     /// GitHub through `gh` (card 23); off = no `gh` process at all.
     pub github: bool,
+    /// Settings → Storage (parity 19): cleanup rules, all off by default.
+    pub storage: crate::db::StoragePolicy,
 }
 
 impl Default for Settings {
@@ -233,6 +235,7 @@ impl Default for Settings {
             text_size: "default".into(),
             panel_motion_ms: 160,
             github: true,
+            storage: crate::db::StoragePolicy::default(),
             render_math: true,
             projects: BTreeMap::new(),
         }
