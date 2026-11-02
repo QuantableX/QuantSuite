@@ -120,6 +120,7 @@ Default permissions for the pilot module.
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
 - `allow-pilot-export-logs`
+- `allow-pilot-attention-badge`
 - `allow-pilot-storage-inventory`
 - `allow-pilot-storage-plan`
 - `allow-pilot-storage-clean`
@@ -602,6 +603,32 @@ Enables the pilot_attachment_save_text command without any pre-configured scope.
 <td>
 
 Denies the pilot_attachment_save_text command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-attention-badge`
+
+</td>
+<td>
+
+Enables the pilot_attention_badge command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-attention-badge`
+
+</td>
+<td>
+
+Denies the pilot_attention_badge command without any pre-configured scope.
 
 </td>
 </tr>

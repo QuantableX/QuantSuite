@@ -82,11 +82,20 @@ const waitingCount = computed(
       return (v?.loaded ? v.state : s.state) === 'waiting'
     }).length
 )
-watch(waitingCount, (n, old) => {
-  setModuleAttention('pilot', n)
-  if (n > (old ?? 0) && store.settings?.notifySound) chime()
+watch(
+  waitingCount,
+  (n, old) => {
+    setModuleAttention('pilot', n)
+    // The taskbar badge says the same (parity 20).
+    void pilot('plugin:pilot|pilot_attention_badge', { count: n }).catch(() => undefined)
+    if (n > (old ?? 0) && old !== undefined && store.settings?.notifySound) chime()
+  },
+  { immediate: true }
+)
+onUnmounted(() => {
+  setModuleAttention('pilot', 0)
+  void pilot('plugin:pilot|pilot_attention_badge', { count: 0 }).catch(() => undefined)
 })
-onUnmounted(() => setModuleAttention('pilot', 0))
 useTauriEvent<PilotEnvelope>('pilot-event', (envelope) => {
   store.applyEvent(envelope.sessionId, envelope.event)
 })

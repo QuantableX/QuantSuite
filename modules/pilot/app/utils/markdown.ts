@@ -205,7 +205,7 @@ marked.use({
       const ref = parseFileRef(token.text)
       const text = escapeHtml(token.text)
       if (!ref) return `<code>${text}</code>`
-      return `<code class="qp-md-file" data-file="${escapeHtml(ref.path)}" data-line="${ref.line ?? ''}" title="Open in the Files tab">${text}</code>`
+      return `<code class="qp-md-file" tabindex="0" data-file="${escapeHtml(ref.path)}" data-line="${ref.line ?? ''}" title="Open in the Files tab — right-click for more">${text}</code>`
     },
     link(token: Tokens.Link) {
       const text = this.parser.parseInline(token.tokens)

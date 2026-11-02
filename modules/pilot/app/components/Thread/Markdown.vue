@@ -210,12 +210,54 @@ async function onClick(e: MouseEvent) {
   if (ref && threadId) useInspectorStore().openFile(threadId, ref.path, ref.line)
   else if (await copyText(decodeURI(href))) emit('notice', `Copied ${decodeURI(href)}`)
 }
+
+// ── The menu of a file reference or link (parity 20) ──
+const linkMenu = ref<{ x: number; y: number; file: { path: string; line: number | null } | null; href: string | null; from: HTMLElement } | null>(null)
+function onContextMenu(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  const code = target.closest<HTMLElement>('[data-file]')
+  const link = code ? null : target.closest<HTMLAnchorElement>('a[href]')
+  if (!code && !link) return
+  e.preventDefault()
+  // From the keyboard (Shift+F10, Menu key) the menu sits under the element.
+  const r = (code ?? link)!.getBoundingClientRect()
+  const keyboard = e.clientX === 0 && e.clientY === 0
+  const at = keyboard ? { x: r.left, y: r.bottom + 4 } : { x: e.clientX, y: e.clientY }
+  if (code) {
+    linkMenu.value = { ...at, file: { path: code.dataset.file ?? '', line: Number(code.dataset.line) || null }, href: null, from: code }
+    return
+  }
+  const href = link!.getAttribute('href') ?? ''
+  const ref = /^(https?|mailto):/i.test(href) ? null : parseFileRef(decodeURI(href.replace(/^file:\/\/\/?/i, '')))
+  linkMenu.value = ref ? { ...at, file: { path: ref.path, line: ref.line }, href: null, from: link! } : { ...at, file: null, href, from: link! }
+}
+function onKeydown(e: KeyboardEvent) {
+  const code = (e.target as HTMLElement).closest?.<HTMLElement>('[data-file]')
+  const threadId = usePilotStore().activeId
+  if (e.key === 'Enter' && code && threadId) {
+    e.preventDefault()
+    useInspectorStore().openFile(threadId, code.dataset.file ?? '', Number(code.dataset.line) || null)
+  }
+}
 </script>
 
 <template>
   <!-- eslint-disable-next-line vue/no-v-html — sanitised in renderMarkdown -->
-  <div ref="root" class="qp-md" :class="{ streaming }" @click="onClick" v-html="html" />
+  <div ref="root" class="qp-md" :class="{ streaming }" @click="onClick" @contextmenu="onContextMenu" @keydown="onKeydown" v-html="html" />
   <Teleport to="body">
+    <Transition name="qp-lm">
+      <PilotThreadLinkMenu
+        v-if="linkMenu"
+        :x="linkMenu.x"
+        :y="linkMenu.y"
+        :thread-id="usePilotStore().activeId"
+        :file="linkMenu.file"
+        :href="linkMenu.href"
+        :from="linkMenu.from"
+        @close="linkMenu = null"
+        @notice="(t: string) => emit('notice', t)"
+      />
+    </Transition>
     <div v-if="cite && !citing" class="qp-cite-btn-wrap" :style="{ left: `${cite.x}px`, top: `${cite.y}px` }">
       <button class="qp-cite-btn" title="Quote the selection in the message box (Ctrl+Shift+Q)" @mousedown.prevent @click="startCite">Cite in composer</button>
     </div>
@@ -245,6 +287,15 @@ async function onClick(e: MouseEvent) {
 .qp-md :deep(p) { margin: 0 0 10px; }
 .qp-md :deep(code.qp-md-file) { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .qp-md :deep(code.qp-md-file:hover) { color: var(--qss-accent, #7aa2f7); }
+.qp-md :deep(code.qp-md-file:focus-visible) { outline: 1px solid var(--qss-accent, #7aa2f7); outline-offset: 1px; }
+/* The link menu (parity 20): in fast, out faster — and a leaving menu takes no input. */
+:global(.qp-lm-enter-active) { transition: opacity 120ms ease-out, transform 120ms ease-out; }
+:global(.qp-lm-leave-active) { transition: opacity 90ms ease-in; pointer-events: none; }
+:global(.qp-lm-enter-from) { opacity: 0; transform: translateY(-3px); }
+:global(.qp-lm-leave-to) { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  :global(.qp-lm-enter-active), :global(.qp-lm-leave-active) { transition: none; }
+}
 .qp-md :deep(h1),
 .qp-md :deep(h2),
 .qp-md :deep(h3),

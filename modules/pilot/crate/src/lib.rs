@@ -397,6 +397,12 @@ fn pilot_storage_clean(state: State<'_, PilotState>, policy: db::StoragePolicy, 
     Ok(result)
 }
 
+/// The taskbar badge (parity 20): how many threads wait on the user.
+#[tauri::command]
+fn pilot_attention_badge(app: AppHandle, count: u32) -> Result<(), String> {
+    notify::set_badge(&app, count)
+}
+
 #[tauri::command(async)]
 fn pilot_export_logs(state: State<'_, PilotState>) -> Result<String, String> {
     let mut text = diagnostics(&state);
@@ -753,6 +759,14 @@ fn pilot_runtime_state(app: AppHandle, state: State<'_, PilotState>) -> Result<H
 
 pub fn init() -> TauriPlugin<Wry> {
     Builder::<Wry>::new("pilot")
+        // Parity 20: coming forward after a flash opens the thread that asked.
+        .on_event(|app, event| {
+            if let tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Focused(true), .. } = event {
+                if label == "main" {
+                    notify::activated(app);
+                }
+            }
+        })
         .setup(|app, _api| {
             let data_dir = qs_core::paths::ensure_module("pilot")?;
             documents::init(data_dir.join("attachments").join(".documents"));
@@ -984,6 +998,7 @@ pub fn init() -> TauriPlugin<Wry> {
             pilot_gh_status,
             pilot_diagnostics,
             pilot_export_logs,
+            pilot_attention_badge,
             pilot_storage_inventory,
             pilot_storage_plan,
             pilot_storage_clean,

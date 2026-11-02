@@ -1845,3 +1845,56 @@ with the note, and a second preview found nothing. Unit tests: dry run and
 cleanup agree, items not shown are skipped, a repeat is harmless, every kind
 of protected file stays, and targets outside the data folders, the folder
 itself and `../pilot.db` are refused.
+
+## 31. Parity follow-up: interaction polish and Windows attention (20/23)
+
+**File references and links in replies** have a menu (`LinkMenu.vue`):
+right-click, or Shift+F10 / the Menu key on a focused one (file references
+are focusable now; Enter opens them). A file: **Open in the Files tab** (at its
+line), **Open in VS Code / Cursor at line N** (the editors that are installed),
+**Show in Explorer**, **Copy path**. A link: **Open in the system browser**,
+**Open in the Browser tab**, **Copy link**. Without an open thread the
+thread-bound rows are disabled and say why. The first row has the focus as the
+menu appears (input works during the entrance); arrows move, Enter runs,
+Escape or Tab close it and give the focus back to the reference; a click
+outside or the window losing focus closes it. The exit fades in 90 ms with
+`pointer-events: none`, so a closing menu never catches a click; reduced motion
+turns both transitions off.
+
+**Taskbar**: the button carries a badge with the number of threads waiting on
+the user (Windows overlay icon, an amber disc with the count, "9+" above nine;
+the badge count on other systems), driven by the same waiting count as the
+module badge and the sound, and cleared at zero and when the module unloads.
+The flash when a thread starts waiting in the background was there already;
+now bringing the suite forward after such a flash opens that thread — once,
+and only within 30 minutes of the flash. Toasts keep their setting and their
+5-second throttle per thread.
+
+**Bulk snooze**: the range gesture on the rows' action buttons (drag over
+several threads) settles them as before; holding **Alt** at release opens
+"Snooze N threads until" with 1 hour, 3 hours and Tomorrow (each with its wake
+time) and Cancel, keyboard-operable. The snooze is one undo step ("Snoozed 3
+threads until …" with Undo). Waking a range of snoozed threads and unsettling
+a range of settled ones now have undo labels too. Snoozing never stops a
+running thread (it only moves the row).
+
+Verified in the isolated native app (1400×900): on a real Claude Haiku reply
+the reference `qa13.md:3` was focusable, its menu listed the Files tab, VS
+Code, Cursor, Explorer and Copy path with the first row focused; Down moved
+the focus, Escape left a fading menu with `pointer-events: none`, then none,
+and the focus was back on the reference; the keyboard-opened menu sat 4 px
+under the reference; closing and reopening at once left exactly one menu;
+**Open in the Files tab** opened `qa13.md` at line 3; the link's menu had its
+three rows and a click outside closed it (external openers were not clicked).
+A range over three new threads with Alt opened the snooze menu with the focus
+inside; "1 hour" snoozed all three with an undo toast, and Undo woke all
+three. The badge command ran; its picture was checked from the unit test's
+PNG (1, 3, "9+"). Not checked natively: the overlay on a real taskbar button
+and the activation after a flash — the QA window has no taskbar button and
+never takes the focus (the user's main screen stays undisturbed); both are
+covered by unit tests (`take_attention` once and within 30 minutes, the badge
+pixels). Other window sizes and Windows scaling were not run.
+
+QA note: the QA profile had toasts on ("unfocused") — with a never-focused QA
+window, earlier runs with waiting threads could show a toast on the main
+screen. The QA profile now has toasts off.

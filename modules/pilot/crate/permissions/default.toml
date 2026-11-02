@@ -119,6 +119,7 @@ permissions = [
   "allow-pilot-gh-status",
   "allow-pilot-diagnostics",
   "allow-pilot-export-logs",
+  "allow-pilot-attention-badge",
   "allow-pilot-storage-inventory",
   "allow-pilot-storage-plan",
   "allow-pilot-storage-clean",
