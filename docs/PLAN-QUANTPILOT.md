@@ -1550,3 +1550,41 @@ flowchart, a sequence, a state and a class diagram plus an invalid one (states
 seen: partial → pending → ready; the invalid one showed the parse error with its
 source), Source toggle, large view with zoom and Esc focus return, no links or
 scripts inside the drawings, and the `.mmd` and Markdown file previews.
+
+## 25. Parity follow-up: quoting replies (14/23)
+
+Selecting text in an assistant message (the answer or a message inside "Worked
+for …") shows **Cite in composer** under the selection (keyboard:
+Ctrl+Shift+Q). It opens a small box with the quote and an optional comment;
+**Add to message** puts a quote chip into the composer (`kind: "quote"`, label
+`“first 40 characters…”`). Quotes are capped at 16 KB with a notice. The chip
+keeps a snapshot of the selected text, and its path names the source:
+`pilot-item:<thread>:<item>:<occurrence>`, where the occurrence is which
+appearance of the text in that message was selected (counted without
+whitespace, `utils/quote.ts`).
+
+To the agent the quote is sent as `<quoted-reply label from="assistant" thread
+item>…</quoted-reply>`, the comment separately as `<user-comment-on-quote
+label>…</user-comment-on-quote>` (`context.rs`), so quoted text and the user's
+own words never mix. The chip's comment travels with the message, a queued
+message and "Edit from here".
+
+A selection inside a streaming message holds the message's repaint while it
+lasts, so the selection is not lost; the message catches up as soon as the
+selection is gone. In the sent message the quote chip is a button: it opens the
+source (another thread and older history included), unfolds "Worked for …" if
+the message is folded there, scrolls to it and highlights the selected
+occurrence for six seconds (CSS Custom Highlight `qp-quote`). If the source was
+rewound or deleted, or its text changed, a notice says so and the quote keeps
+its text. The comment shows in the message's "Attached context".
+
+Also fixed: a chip inserted while the window has no focus (execCommand refuses)
+is inserted directly.
+
+Verified in the isolated native app with Claude Haiku: the second of two equal
+phrases quoted with a comment, the agent answered with the quote and the
+comment verbatim and apart; the quote chip reopened the source and highlighted
+the second phrase (paragraph 9, not 3); a selection during a stream held while
+the source grew by 2,361 characters and the message caught up after release; a
+quote from a folded "Worked for …" message unfolded it and highlighted it; a
+quote whose source does not exist showed the notice.

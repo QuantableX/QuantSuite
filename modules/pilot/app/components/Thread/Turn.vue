@@ -112,7 +112,7 @@ async function revert(files: boolean) {
     <template v-for="o in [...block.before, null, ...block.outside]" :key="o?.id ?? 'answer'">
       <template v-if="o === null">
         <div v-if="block.answer" class="qp-answer" :data-item-id="block.answer.id">
-          <PilotThreadMarkdown :source="String(block.answer.data.text ?? '')" :streaming="Boolean(block.answer.data.streaming)" @notice="(t: string) => emit('notice', t)" />
+          <PilotThreadMarkdown :source="String(block.answer.data.text ?? '')" :streaming="Boolean(block.answer.data.streaming)" :cite="{ threadId: block.answer.threadId, itemId: block.answer.id }" @notice="(t: string) => emit('notice', t)" />
         </div>
         <PilotThreadChanges v-if="block.changes" :item="block.changes" />
         <!-- Pending approvals and questions wait in the bar above the box (Approvals.vue). -->

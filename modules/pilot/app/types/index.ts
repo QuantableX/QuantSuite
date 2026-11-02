@@ -736,6 +736,8 @@ export interface ContextChip {
   /** What the agent gets (a skill: its name). */
   content: string
   path?: string | null
+  /** A quote's own comment (parity 14). */
+  comment?: string | null
 }
 
 /** An attachment saved next to the thread, waiting in the composer. */

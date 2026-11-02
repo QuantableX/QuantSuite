@@ -173,7 +173,7 @@ mod tests {
     }
     fn payload() -> QueuePayload {
         QueuePayload { version:1,text:"Keep 世界 and \u{2068}skill\u{2069}".into(),
-            chips:vec![Chip { kind:"skill".into(),label:"skill".into(),content:"review".into(),path:Some("skill.md".into()) }],
+            chips:vec![Chip { kind:"skill".into(),label:"skill".into(),content:"review".into(),path:Some("skill.md".into()),comment:None }],
             attachments:vec![AttachmentArg { kind:"image".into(),name:"chart.png".into(),path:"saved.png".into(),thumb:Some("small preview".into()) }] }
     }
     fn turn(db: &Database, id: &str, status: &str) {

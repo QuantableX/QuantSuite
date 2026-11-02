@@ -89,3 +89,6 @@
 [data-module="pilot"] .qp-ghv-pop {
   animation: qp-pop-in var(--qp-motion, 160ms) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+/* Parity 14: a quote's source, highlighted when opened from the quote. */
+::highlight(qp-quote) { background-color: color-mix(in srgb, var(--qss-accent, #7aa2f7) 40%, transparent); color: inherit; }

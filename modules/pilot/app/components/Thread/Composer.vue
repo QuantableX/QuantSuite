@@ -255,7 +255,7 @@ function extras() {
   const chips = chipsIn(text.value)
     .map((label) => chipMap.value[label])
     .filter((c): c is ContextChip => Boolean(c))
-    .map((c) => ({ kind: c.kind, label: c.label, content: c.content, path: c.path ?? null }))
+    .map((c) => ({ kind: c.kind, label: c.label, content: c.content, path: c.path ?? null, ...(c.comment ? { comment: c.comment } : {}) }))
   const files = attachments.value.filter((a) => !a.pending && !a.error).map((a) => ({ kind: a.kind, name: a.name, path: a.path, thumb: a.thumb ?? null }))
   return { chips, attachments: files }
 }
@@ -847,7 +847,8 @@ function insertChip(t: Trigger | null, chip: ContextChip) {
   persistSoon()
   if (t) insertText(t, chipToken(label))
   else {
-    document.execCommand('insertText', false, chipToken(label) + ' ')
+    // A window without focus refuses execCommand: insert directly then.
+    if (!document.execCommand('insertText', false, chipToken(label) + ' ')) el.setRangeText(chipToken(label) + ' ', el.selectionStart, el.selectionEnd, 'end')
     onInput()
   }
 }
@@ -886,7 +887,7 @@ function onComposerSet(e: Event) {
   const kept = Array.isArray(d.attachments) ? d.attachments : []
   const chips: Record<string, ContextChip> = {}
   for (const a of kept.filter((x) => x.kind === 'chip' && x.label)) {
-    chips[a.label] = { kind: String(a.chipKind ?? 'file'), label: String(a.label), content: String(a.content ?? ''), path: a.path ?? null }
+    chips[a.label] = { kind: String(a.chipKind ?? 'file'), label: String(a.label), content: String(a.content ?? ''), path: a.path ?? null, comment: a.comment ?? null }
   }
   chipState.value[props.threadId] = chips
   attachments.value = kept
