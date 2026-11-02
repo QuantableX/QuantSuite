@@ -342,4 +342,3 @@ mod tests {
         assert_eq!(refs(),2,"unsent removal must retain shared ownership");
     }
 }
-
