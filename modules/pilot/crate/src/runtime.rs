@@ -96,6 +96,8 @@ pub struct Projector {
     requests: HashMap<String, String>,
     /// The provider's last word on its usage windows: a limit stop's reset time (card 15).
     windows: Vec<crate::events::RateWindow>,
+    /// Model at turn start, used to reject telemetry after a live model change.
+    context_model: Option<String>,
 }
 
 impl Projector {
@@ -115,6 +117,7 @@ impl Projector {
             tools: HashMap::new(),
             requests: HashMap::new(),
             windows: Vec::new(),
+            context_model: None,
         }
     }
 
@@ -170,6 +173,7 @@ impl Projector {
 
     pub fn begin_turn(&mut self, turn_id: &str) {
         self.flush();
+        self.context_model = self.db.get_session(&self.thread_id).ok().flatten().map(|m| m.model);
         // Items can be added from outside a run (turn changes): never reuse a seq.
         self.next_seq = self.next_seq.max(self.db.next_seq(&self.thread_id).unwrap_or(1));
         self.turn_id = turn_id.to_string();
@@ -442,7 +446,9 @@ impl Projector {
                 }
             }
             Emit::Usage { context_tokens, context_window, cost_usd, input_tokens, output_tokens } => {
-                let _ = self.db.set_context(&self.thread_id, context_tokens, context_window);
+                if let Some(model) = &self.context_model {
+                    let _ = self.db.set_context(&self.thread_id, provider, model, context_tokens, context_window);
+                }
                 if cost_usd.is_some() || input_tokens.is_some() || output_tokens.is_some() {
                     let _ = self.db.add_usage(&self.thread_id, input_tokens, output_tokens, cost_usd);
                 }
@@ -1922,8 +1928,12 @@ mod tests {
         let after = ask("t1", "Which tokens do you remember? Reply with the tokens only.", Some(source), None);
         println!("after compaction: {after}");
 
-        let history = serde_json::json!([{ "role": "user", "text": "The secret word is OMEGA-7. Remember it." }, { "role": "assistant", "text": "OK" }]).to_string();
-        let prompt = crate::lifecycle::handoff_prompt(&history, 0, "Claude Code", "What is the secret word? Reply with the word only.");
+        let (history_sink, _) = self::sink();
+        let mut projector = Projector::new(db.clone(), history_sink, Arc::new(Seqs::default()), "t3");
+        let item = projector.user_message("The secret word is OMEGA-7. Remember it.", json!([]));
+        let request = "What is the secret word? Reply with the word only.";
+        let history = crate::lifecycle::pack_history("t3", &[item], 1, crate::lifecycle::history_budget(request, 0, None, None)).unwrap();
+        let prompt = crate::lifecycle::handoff_prompt(&history, "Claude Code", request);
         let carried = ask("t3", &prompt, None, None);
         println!("handoff answer: {carried}");
         assert!(carried.contains("OMEGA-7"), "{carried}");
@@ -2028,7 +2038,9 @@ mod tests {
         assert_eq!(lock(&ended).as_slice(), &[("t1".to_string(), TurnStatus::Completed)], "the owner hears about the end once");
         assert!(rt.steer("t1", TurnInput { text: "more".into(), ..Default::default() }).is_err(), "nothing runs to steer into");
         db.set_goal("t1", Some(r#"{"objective":"x","status":"complete"}"#)).unwrap();
+        db.set_handoff("t1", Some(r#"{"from":"Claude Code","reason":"switch"}"#)).unwrap();
         assert!(rt.send("t1", TurnInput::default(), json!([]), || Err("no CLI here".into()), "other").is_err());
+        assert!(db.handoff("t1").unwrap().is_some(), "failed launch must keep portable history owed for retry");
         assert_eq!(db.goal("t1").unwrap(), None, "a met goal goes with the next message");
         let items = db.items("t1", None, 100).unwrap();
         assert_eq!(items.last().unwrap().data["text"], "no CLI here", "a failed start is visible");

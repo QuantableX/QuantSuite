@@ -133,6 +133,52 @@ fn limit(value: Option<i64>, default: i64, max: i64) -> Result<i64, String> {
 }
 
 impl Database {
+    /// Bounded candidates for portable handoffs, including the opening even in
+    /// threads far longer than the UI cache. SQLite slices bodies before Rust
+    /// receives them; exact bodies remain available through history_chunk.
+    pub fn handoff_items(&self, thread: &str) -> Result<(Vec<Item>, usize), String> {
+        let mut entries = self.history_page(thread, HistoryRequest {
+            limit: Some(10), ..Default::default()
+        })?.items;
+        entries.extend(self.history_page(thread, HistoryRequest {
+            limit: Some(20), start: Some("newest".into()), ..Default::default()
+        })?.items);
+        let mut request = HistoryRequest {
+            limit: Some(60), start: Some("newest".into()), include_activity: Some(true), ..Default::default()
+        };
+        let mut remaining = 200;
+        let mut total = 0;
+        while remaining > 0 {
+            request.limit = Some(remaining.min(60));
+            let page = self.history_page(thread, request.clone())?;
+            total = page.total as usize;
+            remaining -= page.items.len() as i64;
+            entries.extend(page.items);
+            if page.next_cursor.is_none() { break; }
+            request.cursor = page.next_cursor;
+        }
+        entries.sort_by(|a,b| a.seq.cmp(&b.seq).then_with(|| a.item_id.cmp(&b.item_id)));
+        entries.dedup_by(|a,b| a.item_id == b.item_id);
+        let conn = self.lock();
+        let mut items = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let Some(kind) = crate::events::ItemKind::parse(&entry.kind) else { continue; };
+            let tail_len = (entry.text_chars - PREVIEW_MAX).clamp(0, 500);
+            let (tail, provider): (String, Option<String>) = sql(conn.query_row(
+                &format!("SELECT CASE WHEN ?3=0 THEN '' ELSE substr({TEXT}, -?3) END, json_extract(data, '$.provider') FROM timeline WHERE thread_id=?1 AND id=?2"),
+                params![thread,entry.item_id,tail_len], |r| Ok((r.get(0)?,r.get(1)?))
+            ))?;
+            let shortened = entry.text_chars > PREVIEW_MAX + 500;
+            let text = format!("{}{}{}",entry.preview,if shortened { " …[omitted]… " } else { "" },tail);
+            items.push(Item {
+                id:entry.item_id,thread_id:thread.into(),turn_id:entry.turn_id,seq:entry.seq,kind,parent:entry.parent,
+                data:serde_json::json!({"text":text,"originalChars":entry.text_chars,"shortened":shortened,"attachmentCount":entry.attachment_count,"provider":provider}),
+                created_at:entry.created_at,updated_at:entry.updated_at
+            });
+        }
+        Ok((items,total))
+    }
+
     pub fn history_page(
         &self,
         thread: &str,
@@ -404,6 +450,32 @@ mod tests {
     }
     fn page(db: &Database, request: HistoryRequest) -> HistoryPage {
         db.history_page("thread", request).unwrap()
+    }
+
+    #[test]
+    fn handoff_candidates_keep_opening_recent_messages_and_bounded_unicode_ends() {
+        let db = fixture();
+        let mut opening = put(&db, 1, ItemKind::User, &format!("OBJECTIVE{}CONSTRAINT", "世界🚀".repeat(30_000)));
+        opening.data["attachments"] = json!([{"path":"saved.png"}]);
+        opening.data["provider"] = json!("claude");
+        db.upsert_item(&opening).unwrap();
+        for n in 2..=5100 { put(&db, n, ItemKind::Assistant, "message"); }
+        put(&db, 5101, ItemKind::User, "recent request");
+        for n in 5102..=5400 { put(&db, n, ItemKind::Tool, "activity"); }
+        put(&db, 5401, ItemKind::Reasoning, "private reasoning");
+        let (items,total) = db.handoff_items("thread").unwrap();
+        assert!(items.len() <= 230);
+        assert_eq!(total, 5400);
+        assert_eq!(items[0].id, opening.id);
+        let text = items[0].data["text"].as_str().unwrap();
+        assert!(text.starts_with("OBJECTIVE") && text.ends_with("CONSTRAINT"));
+        assert!(text.chars().count() < 2600);
+        assert_eq!(items[0].data["attachmentCount"],1);
+        assert_eq!(items[0].data["provider"],"claude");
+        assert!(items.iter().any(|i| i.seq==5101));
+        assert!(items.iter().all(|i| i.kind!=ItemKind::Reasoning));
+        let packed = crate::lifecycle::pack_history("thread", &items,total,crate::lifecycle::history_budget("continue",0,None,None)).unwrap();
+        assert!(packed.json.contains("recent request") && packed.json.contains("CONSTRAINT"));
     }
 
     #[test]
