@@ -70,6 +70,7 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-list-threads`
 - `allow-pilot-agent-read-thread`
 - `allow-pilot-agent-read-thread-item`
+- `allow-pilot-agent-browser`
 - `allow-pilot-agent-track-files`
 - `allow-pilot-history-page`
 - `allow-pilot-history-item`
@@ -129,6 +130,32 @@ Default permissions for the pilot module.
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-browser`
+
+</td>
+<td>
+
+Enables the pilot_agent_browser command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-browser`
+
+</td>
+<td>
+
+Denies the pilot_agent_browser command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>

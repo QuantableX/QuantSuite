@@ -1820,9 +1820,11 @@ pub fn pilot_terminal_close(app: AppHandle, state: State<'_, PilotState>, pty_id
 #[tauri::command]
 pub async fn pilot_browser_open(app: AppHandle, webview: tauri::Webview, url: String, bounds: browser::Bounds, zoom: Option<f64>) -> Result<browser::Status, String> {
     browser::guard(&webview)?;
+    // The page belongs to the thread on screen (parity 06): only its agent may drive it.
+    let owner = lock(&app.state::<PilotState>().ui_visible).clone();
     let state = app.state::<BrowserState>();
     let _serial = state.serial().lock().await;
-    browser::open(&app, &webview, &url, bounds, zoom.unwrap_or(1.0))
+    browser::open(&app, &webview, &url, bounds, zoom.unwrap_or(1.0), owner)
 }
 
 #[tauri::command]
@@ -2254,10 +2256,10 @@ fn safe_name(name: &str) -> String {
 pub struct SavedAttachment {
     kind: String,
     name: String,
-    path: String,
-    size: u64,
-    width: Option<u32>,
-    height: Option<u32>,
+    pub(crate) path: String,
+    pub(crate) size: u64,
+    pub(crate) width: Option<u32>,
+    pub(crate) height: Option<u32>,
     /// A PNG data URL for the shelf.
     thumb: Option<String>,
 }
@@ -2270,7 +2272,7 @@ pub fn pilot_attachment_save_image(state: State<'_, PilotState>, id: String, nam
     save_image(&state, &id, &name, &bytes)
 }
 
-fn save_image(state: &PilotState, id: &str, name: &str, bytes: &[u8]) -> Result<SavedAttachment, String> {
+pub(crate) fn save_image(state: &PilotState, id: &str, name: &str, bytes: &[u8]) -> Result<SavedAttachment, String> {
     let img = context::normalize_image(bytes)?;
     let stem = safe_name(Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or("image"));
     let file = attachment_dir(state, id)?.join(format!("{stem}-{}.png", &uuid::Uuid::new_v4().to_string()[..8]));
