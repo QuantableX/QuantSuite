@@ -2359,7 +2359,7 @@ fn answer_by_message(app: &AppHandle, state: &PilotState, id: &str, mut item: It
     }
     let text = match answer {
         Answer::Answers { answers } => {
-            item.data["reply"] = Value::Object(answers.clone());
+            item.data["reply"] = Value::Object(crate::runtime::redact_secrets(&item.data["questions"], answers));
             answers_text(&item.data["questions"], answers)
         }
         _ => String::new(),

@@ -19,6 +19,11 @@
 //!   `assistant` frame arrives just before its `content_block_stop`.
 //! - `result` carries cumulative `total_cost_usd` for the process and
 //!   `modelUsage[model].contextWindow`.
+//! - MCP elicitations (2.1.316, parity card 05) arrive as `control_request`
+//!   `elicitation` (mcp_server_name, message, mode form|url, url,
+//!   elicitation_id, requested_schema, property_order) and are answered with
+//!   `{ action, content? }`; an error reply counts as cancel. A request the
+//!   CLI gives up on (stop, timeout) comes back as `control_cancel_request`.
 //! - `--permission-mode` accepts acceptEdits, auto, bypassPermissions,
 //!   manual, dontAsk and plan; `default` is still accepted as manual.
 
@@ -451,6 +456,44 @@ impl ClaudeDriver {
                     allow_session: true,
                     by_message: false,
                 })]
+            }
+            Some("elicitation") => {
+                let server = str_field(&req, "display_name").or_else(|| str_field(&req, "mcp_server_name")).unwrap_or("An MCP server").to_string();
+                let message = str_field(&req, "message").unwrap_or_default().to_string();
+                let input = if str_field(&req, "mode") == Some("url") {
+                    crate::elicitation::url(str_field(&req, "url").unwrap_or_default())
+                        .map(|dest| crate::elicitation::request_input(&server, &message, "url", Ok(dest), str_field(&req, "elicitation_id")))
+                } else {
+                    let order: Option<Vec<String>> = req
+                        .get("property_order")
+                        .and_then(Value::as_array)
+                        .map(|o| o.iter().filter_map(Value::as_str).map(str::to_string).collect());
+                    let schema = req.get("requested_schema").cloned().unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
+                    crate::elicitation::form(&schema, order.as_deref())
+                        .map(|fields| crate::elicitation::request_input(&server, &message, "form", Err(fields), None))
+                };
+                match input {
+                    Ok(input) => {
+                        self.pending.insert(
+                            request_id.clone(),
+                            Pending { kind: RequestKind::Elicitation, tool_name: "mcp".into(), input: input.clone(), suggestions: None },
+                        );
+                        vec![Emit::Request(Request {
+                            request_id,
+                            kind: RequestKind::Elicitation,
+                            tool_name: "mcp".into(),
+                            call_id: None,
+                            input,
+                            parent: None,
+                            allow_session: false,
+                            by_message: false,
+                        })]
+                    }
+                    Err(why) => vec![
+                        Emit::Write(Self::control_error(&request_id, &format!("QuantPilot cannot show this request: {why}"))),
+                        Emit::Notice { text: format!("{server} asked for input QuantPilot cannot show faithfully ({why}); the request was refused.") },
+                    ],
+                }
             }
             // Hook and SDK-MCP callbacks are never registered by QuantPilot;
             // answering keeps the CLI from waiting on them.
@@ -946,6 +989,15 @@ impl Driver for ClaudeDriver {
                 Vec::new()
             }
             Some("control_request") => self.on_control_request(&msg),
+            // The CLI withdrew a request (stop, timeout): it stops waiting
+            // in the UI and a late answer is never written.
+            Some("control_cancel_request") => {
+                let rid = str_field(&msg, "request_id").unwrap_or_default().to_string();
+                match self.pending.remove(&rid) {
+                    Some(_) => vec![Emit::RequestGone { request_id: rid }],
+                    None => Vec::new(),
+                }
+            }
             Some("system") => match str_field(&msg, "subtype") {
                 Some("init") => {
                     let model = str_field(&msg, "model").map(str::to_string);
@@ -973,6 +1025,22 @@ impl Driver for ClaudeDriver {
     fn answer(&mut self, request_id: &str, answer: &Answer) -> Result<Vec<String>, String> {
         let pending = self.pending.remove(request_id).ok_or("this request is no longer waiting")?;
         let deny = |message: &str| json!({ "behavior": "deny", "message": message });
+        if pending.kind == RequestKind::Elicitation {
+            let outcome = match answer {
+                Answer::Elicitation { action, content } => crate::elicitation::result(&pending.input, action, content.as_ref()),
+                Answer::Dismiss => Ok(json!({ "action": "cancel" })),
+                Answer::Deny { .. } => Ok(json!({ "action": "decline" })),
+                _ => Err("this request takes accept, decline or cancel".to_string()),
+            };
+            return match outcome {
+                Ok(result) => Ok(vec![Self::control_success(request_id, result)]),
+                Err(e) => {
+                    // An invalid answer keeps the request waiting for a retry.
+                    self.pending.insert(request_id.to_string(), pending);
+                    Err(e)
+                }
+            };
+        }
         let response = match (pending.kind, answer) {
             (_, Answer::Deny { message }) => {
                 let m = message.as_deref().map(str::trim).filter(|m| !m.is_empty());
@@ -1009,7 +1077,7 @@ impl Driver for ClaudeDriver {
                 });
                 json!({ "behavior": "allow", "updatedInput": pending.input, "updatedPermissions": updates })
             }
-            (_, Answer::Answers { .. }) | (_, Answer::Dismiss) => {
+            (_, Answer::Answers { .. }) | (_, Answer::Dismiss) | (_, Answer::Elicitation { .. }) => {
                 self.pending.insert(request_id.to_string(), pending);
                 return Err("this request takes allow or deny".into());
             }
@@ -1368,5 +1436,39 @@ mod tests {
         assert_eq!(d.tool_info("Edit", &json!({"file_path":"a.rs"})).category, "edit");
         assert_eq!(d.tool_info("mcp__quantsuite__list_kanban_cards", &json!({})).title, "quantsuite · list_kanban_cards");
         assert_eq!(d.tool_info("Mystery", &json!({})).title, "Mystery");
+    }
+
+    #[test]
+    fn elicitations_render_forms_and_answer_with_the_outcome() {
+        let mut d = ClaudeDriver::new();
+        let req = r#"{"type":"control_request","request_id":"el1","request":{"subtype":"elicitation","mcp_server_name":"deploy","message":"Pick a target","mode":"form","requested_schema":{"type":"object","properties":{"zone":{"type":"string","enum":["a","b"]},"count":{"type":"integer","minimum":1}},"required":["zone"]},"property_order":["zone","count"]}}"#;
+        let out = d.on_line(req);
+        let Some(Emit::Request(r)) = out.first() else { panic!("{out:?}") };
+        assert_eq!(r.kind, RequestKind::Elicitation);
+        assert_eq!(r.input["fields"][0]["key"], "zone");
+        assert_eq!(r.input["fields"][1]["kind"], "integer");
+        let bad = Answer::Elicitation { action: "accept".into(), content: json!({ "count": 0 }).as_object().cloned() };
+        assert!(d.answer("el1", &bad).is_err(), "required zone missing, count below minimum");
+        let ok = Answer::Elicitation { action: "accept".into(), content: json!({ "zone": "b", "count": 3 }).as_object().cloned() };
+        let v: Value = serde_json::from_str(&d.answer("el1", &ok).unwrap()[0]).unwrap();
+        assert_eq!(v["response"]["response"], json!({ "action": "accept", "content": { "zone": "b", "count": 3 } }));
+        assert_eq!(v["response"]["request_id"], "el1");
+
+        // URL mode, then the CLI withdraws it.
+        let url = r#"{"type":"control_request","request_id":"el2","request":{"subtype":"elicitation","mcp_server_name":"gh","message":"Sign in","mode":"url","url":"https://github.com/login","elicitation_id":"x"}}"#;
+        let out = d.on_line(url);
+        let Some(Emit::Request(r)) = out.first() else { panic!("{out:?}") };
+        assert_eq!(r.input["host"], "github.com");
+        let gone = d.on_line(r#"{"type":"control_cancel_request","request_id":"el2"}"#);
+        assert_eq!(gone, vec![Emit::RequestGone { request_id: "el2".into() }]);
+        assert!(d.answer("el2", &Answer::Elicitation { action: "accept".into(), content: None }).is_err(), "no late answer");
+
+        // A schema QuantPilot cannot render is refused with a reason.
+        let odd = r#"{"type":"control_request","request_id":"el3","request":{"subtype":"elicitation","mcp_server_name":"s","message":"m","requested_schema":{"type":"object","properties":{"p":{"type":"string","pattern":"x"}}}}}"#;
+        let out = d.on_line(odd);
+        let Some(Emit::Write(line)) = out.first() else { panic!("{out:?}") };
+        let v: Value = serde_json::from_str(line).unwrap();
+        assert_eq!(v["response"]["subtype"], "error");
+        assert!(v["response"]["error"].as_str().unwrap().contains("pattern"));
     }
 }

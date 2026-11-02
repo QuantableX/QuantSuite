@@ -10,6 +10,12 @@
  *   declines the first request with that text (Composer.vue).
  * - Questions: one at a time with its options (single or multi select),
  *   an "Other" answer, Back / Next / Submit, Dismiss. Digits pick options.
+ *   A secret question is a masked field and its answer is never saved; a
+ *   question without free text offers only its options.
+ * - MCP forms and web-page steps (Elicitation.vue, parity card 05).
+ * - What is picked or typed is a draft per request (utils/requestDrafts):
+ *   it survives streaming, switching threads and a refused submit, and with
+ *   several requests waiting each keeps its own.
  * - A plan waiting for review is a card in the conversation; here it is a
  *   one-line pointer to it.
  */
@@ -18,6 +24,7 @@ import { Bot, ChevronRight, FileText, Globe, ListChecks, Pencil, Plug, SquareTer
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import type { ThreadItem } from '#pilot/types'
+import { pruneRequestDrafts, requestDraft } from '#pilot/utils/requestDrafts'
 
 const props = defineProps<{ threadId: string }>()
 const emit = defineEmits<{ done: [] }>()
@@ -26,7 +33,15 @@ const store = usePilotStore()
 
 const pending = computed(() => threads.pending(props.threadId))
 const approvals = computed(() => pending.value.filter((i) => i.kind === 'approval'))
-const question = computed(() => pending.value.find((i) => i.kind === 'question') ?? null)
+const elicitations = computed(() => pending.value.filter((i) => i.kind === 'question' && i.data.elicitation))
+const asked = computed(() => pending.value.filter((i) => i.kind === 'question' && !i.data.elicitation))
+/** Several questions waiting: one at a time, the user may switch between them. */
+const questionIndex = ref(0)
+const question = computed(() => asked.value[Math.min(questionIndex.value, asked.value.length - 1)] ?? null)
+watch(
+  () => pending.value.map((i) => String(i.data.requestId)),
+  (ids) => pruneRequestDrafts(props.threadId, ids)
+)
 /** A Codex proposal waits on the newest turn while nothing runs — PlanCard's rule (card 24). */
 const proposal = computed(() => {
   const v = threads.view(props.threadId)
@@ -99,38 +114,49 @@ interface Q {
   header?: string
   options?: { label: string; description?: string }[]
   multiSelect?: boolean
+  /** Masked input; the answer is never saved (Codex `isSecret`). */
+  isSecret?: boolean
+  /** `false`: only the offered options (Codex `isOther`). */
+  isOther?: boolean
 }
 const questions = computed<Q[]>(() => question.value?.data.questions ?? [])
-const step = ref(0)
-const picked = reactive<Record<string, string[]>>({})
-const other = reactive<Record<string, string>>({})
-watch(question, () => {
-  step.value = 0
-  for (const k of Object.keys(picked)) delete picked[k]
-  for (const k of Object.keys(other)) delete other[k]
+const draft = computed(() => (question.value ? requestDraft(props.threadId, String(question.value.data.requestId)) : null))
+const picked = computed<Record<string, string[]>>(() => draft.value?.picked ?? {})
+const other = computed<Record<string, string>>(() => draft.value?.other ?? {})
+const step = computed({
+  get: () => draft.value?.step ?? 0,
+  set: (v: number) => {
+    if (draft.value) draft.value.step = v
+  },
 })
 const current = computed(() => questions.value[step.value] ?? null)
+const freeText = (q: Q) => q.isOther !== false || !q.options?.length
 
 function toggle(q: Q, label: string) {
-  const cur = picked[q.question] ?? []
-  picked[q.question] = q.multiSelect ? (cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label]) : [label]
-  if (!q.multiSelect) other[q.question] = ''
+  const cur = picked.value[q.question] ?? []
+  picked.value[q.question] = q.multiSelect ? (cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label]) : [label]
+  if (!q.multiSelect) other.value[q.question] = ''
 }
 function answered(q: Q): boolean {
-  return (picked[q.question]?.length ?? 0) > 0 || Boolean(other[q.question]?.trim())
+  return (picked.value[q.question]?.length ?? 0) > 0 || Boolean(other.value[q.question]?.trim())
 }
 const allAnswered = computed(() => questions.value.length > 0 && questions.value.every(answered))
 
-function submitQuestion() {
+async function submitQuestion() {
   if (!question.value || !allAnswered.value) return
   const answers: Record<string, string> = {}
   for (const q of questions.value) {
-    const parts = [...(picked[q.question] ?? [])]
-    if (other[q.question]?.trim()) parts.push(other[q.question].trim())
+    const parts = [...(picked.value[q.question] ?? [])]
+    // A secret is sent exactly as typed.
+    const own = q.isSecret ? other.value[q.question] : other.value[q.question]?.trim()
+    if (own) parts.push(own)
     answers[q.question] = parts.join(', ')
   }
-  void answer(question.value, { decision: 'answers', answers })
-  emit('done')
+  const item = question.value
+  busy.value = item.id
+  const err = await threads.answer(props.threadId, String(item.data.requestId), { decision: 'answers', answers })
+  busy.value = null
+  if (!err) emit('done')
 }
 
 function onQuestionKey(e: KeyboardEvent) {
@@ -190,10 +216,24 @@ function showPlan() {
       <button class="qp-btn qp-btn-sm" @click="approveAll">Approve all {{ approvals.length }}</button>
     </div>
 
-    <div v-if="question && current" class="qp-ap-q" tabindex="0" @keydown="onQuestionKey">
+    <PilotThreadElicitation
+      v-for="(el, n) in elicitations"
+      :key="el.id"
+      :thread-id="threadId"
+      :item="el"
+      :position="elicitations.length > 1 ? `${n + 1} of ${elicitations.length}` : undefined"
+      @done="emit('done')"
+    />
+
+    <div v-if="question && current" :key="question.id" class="qp-ap-q" tabindex="0" @keydown="onQuestionKey">
       <div class="qp-ap-q-head">
         <span class="qp-ap-q-tag">{{ current.header || 'Question' }}</span>
         <span v-if="questions.length > 1" class="qp-ap-q-step">{{ step + 1 }} of {{ questions.length }}</span>
+        <span v-if="asked.length > 1" class="qp-ap-q-many">
+          <button class="qp-link" :disabled="questionIndex === 0" @click="questionIndex--">Previous request</button>
+          <span class="qp-ap-q-step">request {{ asked.indexOf(question) + 1 }} of {{ asked.length }}</span>
+          <button class="qp-link" :disabled="questionIndex >= asked.length - 1" @click="questionIndex++">Next request</button>
+        </span>
       </div>
       <div v-if="question.data.byMessage" class="qp-ap-q-note">The agent asked this for later — your answer goes out as your next message.</div>
       <div class="qp-ap-q-text">{{ current.question }}</div>
@@ -214,16 +254,27 @@ function showPlan() {
         </button>
       </div>
       <input
+        v-if="freeText(current)"
         v-model="other[current.question]"
         class="qp-ap-other"
-        :placeholder="current.multiSelect ? 'Something else (added to your picks)' : 'Other — your own answer'"
+        :type="current.isSecret ? 'password' : 'text'"
+        :autocomplete="current.isSecret ? 'off' : undefined"
+        :placeholder="
+          current.isSecret
+            ? 'Your answer — hidden, sent to the agent only, never saved'
+            : !current.options?.length
+              ? 'Your answer'
+              : current.multiSelect
+                ? 'Something else (added to your picks)'
+                : 'Other — your own answer'
+        "
         @input="!current.multiSelect && other[current.question] && (picked[current.question] = [])"
         @keydown.enter.prevent="step < questions.length - 1 ? step++ : submitQuestion()"
       />
       <div class="qp-ap-actions">
         <button v-if="step > 0" class="qp-btn qp-btn-sm" @click="step--">Back</button>
         <button v-if="step < questions.length - 1" class="qp-btn qp-btn-sm qp-btn-primary" :disabled="!answered(current)" @click="step++">Next</button>
-        <button v-else class="qp-btn qp-btn-sm qp-btn-primary" :disabled="!allAnswered" @click="submitQuestion">Answer</button>
+        <button v-else class="qp-btn qp-btn-sm qp-btn-primary" :disabled="!allAnswered || busy === question.id" @click="submitQuestion">Answer</button>
         <button class="qp-btn qp-btn-sm" @click="answer(question, { decision: 'dismiss' })">Dismiss</button>
       </div>
     </div>
@@ -281,6 +332,7 @@ function showPlan() {
 .qp-ap-q-head { display: flex; align-items: center; justify-content: space-between; }
 .qp-ap-q-tag { font-size: 11.5px; font-weight: 600; color: var(--qss-warning, #d29a3f); }
 .qp-ap-q-note { margin-top: 4px; font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-ap-q-many { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding-left: 10px; font-size: 11.5px; }
 .qp-ap-q-step { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-ap-q-text { font-size: 13px; color: var(--qss-text, #d4d4d8); }
 .qp-ap-q-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }

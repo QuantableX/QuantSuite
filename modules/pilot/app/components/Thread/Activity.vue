@@ -40,7 +40,21 @@ function requestLine(kind: string, data: Record<string, any>): string {
     const verdict = data.status === 'denied' ? 'Denied' : data.status === 'expired' ? 'Expired' : 'Allowed'
     return `${verdict}: ${data.title || data.toolName}`
   }
-  if (kind === 'question') return data.status === 'dismissed' ? 'Question dismissed' : 'Question answered'
+  if (kind === 'question' && data.elicitation) {
+    const who = data.elicitation.server || 'An MCP server'
+    const what = data.elicitation.mode === 'url' ? 'web step' : 'form'
+    switch (data.status) {
+      case 'accepted':
+        return data.elicitation.mode === 'url' ? `${who}: web step finished` : `${who}: form sent`
+      case 'declined':
+        return `${who}: ${what} declined`
+      case 'expired':
+        return `${who}: ${what} expired`
+      default:
+        return `${who}: ${what} cancelled`
+    }
+  }
+  if (kind === 'question') return data.status === 'dismissed' ? 'Question dismissed' : data.status === 'expired' ? 'Question expired' : 'Question answered'
   return ''
 }
 </script>

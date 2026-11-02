@@ -415,6 +415,17 @@ impl Projector {
                             "status": "pending",
                         }),
                     ),
+                    // A question item of its own shape: the UI renders the
+                    // server's form or web-page step (parity card 05).
+                    RequestKind::Elicitation => (
+                        ItemKind::Question,
+                        json!({
+                            "requestId": r.request_id,
+                            "questions": [],
+                            "elicitation": r.input,
+                            "status": "pending",
+                        }),
+                    ),
                 };
                 let parent = r.parent.or_else(|| {
                     r.call_id.as_ref().and_then(|c| self.tool_mut(c)).and_then(|i| i.parent.clone())
@@ -423,6 +434,19 @@ impl Projector {
                 self.requests.insert(r.request_id, item.id.clone());
                 self.publish(item, true);
                 self.set_state("waiting", None);
+            }
+            Emit::RequestGone { request_id } => {
+                if let Some(id) = self.requests.remove(&request_id) {
+                    let item = self.live.get(&id).cloned().or_else(|| self.db.get_item(&id).ok().flatten());
+                    if let Some(mut item) = item.filter(|i| i.data["status"] == "pending") {
+                        item.data["status"] = "expired".into();
+                        item.updated_at = now_ms();
+                        self.publish(item, false);
+                    }
+                    if self.requests.is_empty() {
+                        self.set_state("running", None);
+                    }
+                }
             }
             Emit::Proposal { plan, parent } => {
                 let item = self.new_item(ItemKind::Plan, parent, json!({ "plan": plan, "status": "proposed" }));
@@ -553,8 +577,24 @@ impl Projector {
             Answer::Deny { message } => {
                 (if item.kind == ItemKind::Plan { "rejected" } else { "denied" }, json!(message.clone().unwrap_or_default()))
             }
-            Answer::Answers { answers } => ("answered", Value::Object(answers.clone())),
+            Answer::Answers { answers } => ("answered", Value::Object(redact_secrets(&item.data["questions"], answers))),
             Answer::Dismiss => ("dismissed", Value::Null),
+            // What a form sent is the server's non-secret data (MCP keeps
+            // credentials out of forms); a web-page step has only its outcome.
+            Answer::Elicitation { action, content } => (
+                match action.as_str() {
+                    "accept" => "accepted",
+                    "decline" => "declined",
+                    _ => "cancelled",
+                },
+                match content {
+                    Some(c) if action == "accept" && item.data["elicitation"]["mode"] != "url" => {
+                        let fields = crate::elicitation::fields_of(&item.data["elicitation"]);
+                        crate::elicitation::content(&fields, c).map(Value::Object).unwrap_or(Value::Null)
+                    }
+                    _ => Value::Null,
+                },
+            ),
         };
         item.data["status"] = status.into();
         if !reply.is_null() {
@@ -583,6 +623,18 @@ impl Projector {
             }
         }
     }
+}
+
+/// Answers as saved in the timeline: a secret question's answer is
+/// replaced by a marker — it went to the agent, never to disk.
+pub fn redact_secrets(questions: &Value, answers: &serde_json::Map<String, Value>) -> serde_json::Map<String, Value> {
+    let secret = |text: &str| {
+        questions.as_array().is_some_and(|qs| qs.iter().any(|q| q["question"] == text && q["isSecret"] == true))
+    };
+    answers
+        .iter()
+        .map(|(k, v)| (k.clone(), if secret(k) { json!({ "secret": true }) } else { v.clone() }))
+        .collect()
 }
 
 fn pretty(v: &Value) -> String {
@@ -2099,5 +2151,195 @@ mod tests {
         assert_eq!(db.goal("t1").unwrap(), None, "a met goal goes with the next message");
         let items = db.items("t1", None, 100).unwrap();
         assert_eq!(items.last().unwrap().data["text"], "no CLI here", "a failed start is visible");
+    }
+
+    #[test]
+    fn secret_answers_never_reach_the_timeline() {
+        let questions = json!([
+            { "question": "API token?", "isSecret": true },
+            { "question": "Region?" }
+        ]);
+        let mut answers = serde_json::Map::new();
+        answers.insert("API token?".into(), json!("s3cr3t"));
+        answers.insert("Region?".into(), json!("eu"));
+        let saved = redact_secrets(&questions, &answers);
+        assert_eq!(saved["API token?"], json!({ "secret": true }));
+        assert_eq!(saved["Region?"], "eu");
+        assert!(!serde_json::to_string(&saved).unwrap().contains("s3cr3t"));
+    }
+
+    /// Live elicitation (parity 05): answers every waiting request the way a
+    /// user would — approvals allowed, the form first sent invalid (refused,
+    /// still waiting) and then valid, the web step confirmed — until the turn
+    /// ends. Returns what the test MCP server received.
+    fn drive_elicitations(db: &Database, rt: &Runtime, log: &std::path::Path) -> (crate::db::TurnRow, Vec<Value>, Vec<Value>) {
+        let start = Instant::now();
+        let mut seen = Vec::new();
+        let mut refused_once = false;
+        loop {
+            for item in db.items("t1", None, 100).unwrap() {
+                if item.data["status"] != "pending" {
+                    continue;
+                }
+                let rid = item.data["requestId"].as_str().unwrap_or_default().to_string();
+                match (item.kind, item.data["elicitation"]["mode"].as_str()) {
+                    (ItemKind::Approval, _) | (ItemKind::Plan, _) => {
+                        let _ = rt.answer("t1", &rid, &Answer::Allow);
+                    }
+                    (ItemKind::Question, Some("form")) => {
+                        seen.push(item.data["elicitation"].clone());
+                        if !refused_once {
+                            let bad = json!({ "target": "prod", "replicas": 9 });
+                            let err = rt.answer("t1", &rid, &Answer::Elicitation { action: "accept".into(), content: bad.as_object().cloned() });
+                            assert!(err.unwrap_err().contains("at most 5"), "an invalid answer is refused before it is sent");
+                            refused_once = true;
+                        }
+                        let ok = json!({ "target": "prod", "replicas": 3, "note": "" });
+                        rt.answer("t1", &rid, &Answer::Elicitation { action: "accept".into(), content: ok.as_object().cloned() }).unwrap();
+                    }
+                    (ItemKind::Question, Some("url")) => {
+                        seen.push(item.data["elicitation"].clone());
+                        rt.answer("t1", &rid, &Answer::Elicitation { action: "accept".into(), content: None }).unwrap();
+                    }
+                    (ItemKind::Question, _) => {
+                        let _ = rt.answer("t1", &rid, &Answer::Dismiss);
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(t) = db.last_turn("t1").unwrap() {
+                if t.status != "started" {
+                    let received = std::fs::read_to_string(log)
+                        .unwrap_or_default()
+                        .lines()
+                        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+                        .collect();
+                    return (t, seen, received);
+                }
+            }
+            if start.elapsed() >= Duration::from_secs(240) {
+                for i in db.items("t1", None, 80).unwrap() {
+                    println!("{:?} {}", i.kind, i.data.to_string().chars().take(400).collect::<String>());
+                }
+                panic!("the live turn did not finish");
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    fn elicit_fixture(dir: &std::path::Path) -> (String, std::path::PathBuf) {
+        let server = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/elicit_mcp.py");
+        (server.to_string_lossy().replace('\\', "/"), dir.join("elicit-log.jsonl"))
+    }
+
+    fn check_elicit_log(received: &[Value]) {
+        for r in received {
+            println!("server saw: {r}");
+        }
+        let form = received.iter().find(|r| r["elicitation"] == "form").expect("the server got a form answer");
+        assert_eq!(form["reply"]["result"]["action"], "accept");
+        assert_eq!(form["reply"]["result"]["content"], json!({ "target": "prod", "replicas": 3 }), "typed values, blank optional left out");
+        let url = received.iter().find(|r| r["elicitation"] == "url").expect("the server got a URL answer");
+        assert_eq!(url["reply"]["result"]["action"], "accept");
+    }
+
+    /// Live, opt-in (parity 05): a real Claude Code turn calls an MCP
+    /// server that asks for a form and a web step; QuantPilot answers both.
+    #[test]
+    #[ignore = "live: one small Claude Code turn with a local MCP server (costs a few cents)"]
+    fn live_claude_elicitation_form_and_url() {
+        use crate::claude::{launch_args, LaunchOptions, SessionRef};
+        let claude = crate::providers::which("claude").expect("claude on PATH").to_string_lossy().into_owned();
+        let dir = std::env::temp_dir().join(format!("qp-live-el-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (server, log) = elicit_fixture(&dir);
+        let config = dir.join("mcp.json");
+        std::fs::write(
+            &config,
+            json!({ "mcpServers": { "qa": { "command": "python", "args": [server], "env": { "QP_ELICIT_LOG": log.to_string_lossy() } } } }).to_string(),
+        )
+        .unwrap();
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        thread(&db, "t1");
+        let (sink, _) = sink();
+        let rt = Runtime::new(db.clone(), sink);
+        let cwd = dir.to_string_lossy().into_owned();
+        let plan = LaunchPlan {
+            key: "live".into(),
+            program: claude.clone(),
+            args: launch_args(&LaunchOptions {
+                session: SessionRef::New(uuid::Uuid::new_v4().to_string()),
+                model: "haiku".into(),
+                effort: String::new(),
+                mode: "full".into(),
+                mcp_config: Some(config),
+                append_prompt_file: None,
+                add_dirs: Vec::new(),
+                resume_at: None,
+            }),
+            cwd: cwd.clone(),
+            env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+            driver: Box::new(ClaudeDriver::new()),
+        };
+        let text = "Call the MCP tool mcp__qa__configure_deploy, then the MCP tool mcp__qa__connect_account. Then reply with both tool results verbatim.";
+        rt.send("t1", TurnInput { text: text.into(), ..Default::default() }, json!([]), || Ok(plan), "live").unwrap();
+        let (t, seen, received) = drive_elicitations(&db, &rt, &log);
+        println!("turn: {} {:?}; requests seen: {seen:?}", t.status, t.error);
+        assert_eq!(t.status, "completed", "{:?}", t.error);
+        check_elicit_log(&received);
+        let form = seen.iter().find(|s| s["mode"] == "form").unwrap();
+        let keys: Vec<&str> = form["fields"].as_array().unwrap().iter().map(|f| f["key"].as_str().unwrap()).collect();
+        assert_eq!(keys, ["target", "replicas", "note"], "the server's field order");
+        assert_eq!(seen.iter().find(|s| s["mode"] == "url").unwrap()["host"], "example.com");
+        let saved: Vec<Value> = db.items("t1", None, 100).unwrap().into_iter().filter(|i| i.data["elicitation"].is_object()).map(|i| i.data).collect();
+        assert!(saved.iter().all(|d| d["status"] == "accepted"), "{saved:?}");
+        rt.stop_all();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Live, opt-in (parity 05): the same through `codex app-server`, with
+    /// the MCP server as a per-run config override.
+    #[test]
+    #[ignore = "live: one small Codex turn with a local MCP server (uses the signed-in Codex plan)"]
+    fn live_codex_elicitation_form_and_url() {
+        use crate::codex::{launch_args, CodexDriver, CodexOptions};
+        let codex = crate::providers::which("codex").expect("codex on PATH").to_string_lossy().into_owned();
+        let dir = std::env::temp_dir().join(format!("qp-live-el-codex-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (server, log) = elicit_fixture(&dir);
+        let mode = std::env::var("QP_LIVE_CODEX_MODE").unwrap_or_else(|_| "ask".into());
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        thread(&db, "t1");
+        let (sink, _) = sink();
+        let rt = Runtime::new(db.clone(), sink);
+        let cwd = dir.to_string_lossy().into_owned();
+        let mut args = launch_args();
+        args.extend([
+            "-c".into(),
+            "mcp_servers.qa.command=\"python\"".into(),
+            "-c".into(),
+            format!("mcp_servers.qa.args=[\"{server}\"]"),
+            "-c".into(),
+            format!("mcp_servers.qa.env={{QP_ELICIT_LOG=\"{}\"}}", log.to_string_lossy().replace('\\', "/")),
+        ]);
+        let plan = LaunchPlan {
+            key: "live".into(),
+            program: codex.clone(),
+            args,
+            cwd: cwd.clone(),
+            env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+            driver: Box::new(CodexDriver::new(CodexOptions { cwd: cwd.clone(), mode, ..Default::default() })),
+        };
+        let text = "Call the qa MCP tool configure_deploy, then the qa MCP tool connect_account. Then reply with both tool results verbatim.";
+        rt.send("t1", TurnInput { text: text.into(), ..Default::default() }, json!([]), || Ok(plan), "live").unwrap();
+        let (t, seen, received) = drive_elicitations(&db, &rt, &log);
+        println!("turn: {} {:?}; requests seen: {seen:?}", t.status, t.error);
+        for i in db.items("t1", None, 100).unwrap() {
+            println!("{:?} {}", i.kind, i.data.to_string().chars().take(300).collect::<String>());
+        }
+        assert_eq!(t.status, "completed", "{:?}", t.error);
+        check_elicit_log(&received);
+        rt.stop_all();
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

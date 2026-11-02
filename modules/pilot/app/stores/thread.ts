@@ -573,13 +573,16 @@ export const useThreadStore = defineStore('pilot/thread', {
       }
     },
 
-    async answer(id: string, requestId: string, answer: Answer) {
+    /** The refusal, if any. `quiet`: the caller shows it (a form keeps its draft and says why). */
+    async answer(id: string, requestId: string, answer: Answer, quiet = false): Promise<string | null> {
       const view = this.ensure(id)
-      view.error = null
+      if (!quiet) view.error = null
       try {
         await pilot('plugin:pilot|pilot_thread_answer', { id, requestId, answer })
+        return null
       } catch (e) {
-        view.error = String(e)
+        if (!quiet) view.error = String(e)
+        return String(e)
       }
     },
 
