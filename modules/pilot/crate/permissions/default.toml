@@ -94,6 +94,7 @@ permissions = [
   "allow-pilot-history-page",
   "allow-pilot-history-item",
   "allow-pilot-history-around",
+  "allow-pilot-thread-find",
   "allow-pilot-agent-start-thread",
   "allow-pilot-agent-message-thread",
   "allow-pilot-pr-refresh",

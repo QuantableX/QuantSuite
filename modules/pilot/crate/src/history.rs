@@ -420,6 +420,171 @@ impl Database {
     }
 }
 
+// ── In-thread Find (parity 15) ──
+//
+// Every user message, answer, commentary (folded "Worked for …" included,
+// subagents too) and plan of one thread, however old, without the UI loading
+// the transcript. Text is compared as the UI shows it: case folded per
+// character, chip marks and Markdown emphasis characters (* _ ` ~) dropped,
+// whitespace runs as one space. modules/pilot/app/utils/find.ts applies the
+// same rules to the rendered text, so the counts agree.
+
+/// At most this many matching items are listed, the newest; the total still counts all.
+pub const FIND_MAX_HITS: usize = 5_000;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindHit {
+    pub item_id: String,
+    pub turn_id: String,
+    pub seq: i64,
+    pub kind: String,
+    pub parent: Option<String>,
+    /// Non-overlapping matches in the item.
+    pub count: usize,
+    pub snippet: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindResult {
+    pub query: String,
+    /// Matches in the whole thread.
+    pub total: usize,
+    /// Items with a match in the whole thread.
+    pub items: usize,
+    /// Oldest first; the newest FIND_MAX_HITS when there are more.
+    pub hits: Vec<FindHit>,
+    pub truncated: bool,
+}
+
+/// The searchable form of `text` and, per output char, its source char index.
+pub fn find_normalize(text: &str) -> (Vec<char>, Vec<usize>) {
+    let mut out = Vec::with_capacity(text.len());
+    let mut map = Vec::with_capacity(text.len());
+    for (i, c) in text.chars().enumerate() {
+        if matches!(c, '*' | '_' | '`' | '~' | '\u{2068}' | '\u{2069}') {
+            continue;
+        }
+        if c.is_whitespace() {
+            if out.last() != Some(&' ') {
+                out.push(' ');
+                map.push(i);
+            }
+            continue;
+        }
+        for l in c.to_lowercase() {
+            out.push(l);
+            map.push(i);
+        }
+    }
+    (out, map)
+}
+
+/// The query in searchable form, without spaces at the ends.
+pub fn find_needle(query: &str) -> Vec<char> {
+    let (mut n, _) = find_normalize(query);
+    while n.first() == Some(&' ') {
+        n.remove(0);
+    }
+    while n.last() == Some(&' ') {
+        n.pop();
+    }
+    n
+}
+
+/// Non-overlapping matches of `needle` in `hay` and where the first starts.
+pub fn find_count(hay: &[char], needle: &[char]) -> (usize, Option<usize>) {
+    let (mut count, mut first, mut i) = (0, None, 0);
+    if needle.is_empty() {
+        return (0, None);
+    }
+    while i + needle.len() <= hay.len() {
+        if hay[i..i + needle.len()] == *needle {
+            count += 1;
+            first.get_or_insert(i);
+            i += needle.len();
+        } else {
+            i += 1;
+        }
+    }
+    (count, first)
+}
+
+fn find_snippet(text: &str, at: usize) -> String {
+    let start = at.saturating_sub(40);
+    let raw: String = text.chars().skip(start).take(140).collect();
+    let mut s = String::new();
+    for c in raw.chars().filter(|c| *c != '\u{2068}' && *c != '\u{2069}') {
+        if c.is_whitespace() {
+            if !s.ends_with(' ') {
+                s.push(' ');
+            }
+        } else {
+            s.push(c);
+        }
+    }
+    let s = s.trim().to_string();
+    if start > 0 {
+        format!("…{s}")
+    } else {
+        s
+    }
+}
+
+impl Database {
+    /// Find (parity 15): one pass over the thread's messages, keeping only the
+    /// matching items' ids, counts and snippets.
+    pub fn find_in_thread(&self, thread: &str, query: &str) -> Result<FindResult, String> {
+        if query.trim().is_empty() || query.chars().count() > 256 {
+            return Err("Search query must contain 1–256 characters.".into());
+        }
+        let needle = find_needle(query);
+        let conn = self.lock();
+        if !sql(conn.query_row("SELECT EXISTS(SELECT 1 FROM threads WHERE id = ?1)", [thread], |r| r.get::<_, bool>(0)))? {
+            return Err("Thread was deleted.".into());
+        }
+        let mut result = FindResult { query: query.trim().into(), total: 0, items: 0, hits: Vec::new(), truncated: false };
+        if needle.is_empty() {
+            return Ok(result);
+        }
+        let mut hits = std::collections::VecDeque::new();
+        let mut stmt = sql(conn.prepare(
+            "SELECT id, turn_id, seq, kind, parent,
+                CAST(CASE WHEN kind = 'plan' THEN COALESCE(json_extract(data, '$.plan'), json_extract(data, '$.text'), '')
+                     ELSE COALESCE(json_extract(data, '$.text'), '') END AS TEXT)
+               FROM timeline WHERE thread_id = ?1 AND kind IN ('user', 'assistant', 'plan')
+              ORDER BY seq, id",
+        ))?;
+        let mut rows = sql(stmt.query([thread]))?;
+        while let Some(r) = sql(rows.next())? {
+            let text: String = sql(r.get(5))?;
+            let (hay, map) = find_normalize(&text);
+            let (count, first) = find_count(&hay, &needle);
+            if count == 0 {
+                continue;
+            }
+            result.total += count;
+            result.items += 1;
+            if hits.len() >= FIND_MAX_HITS {
+                hits.pop_front();
+                result.truncated = true;
+            }
+            hits.push_back(FindHit {
+                item_id: sql(r.get(0))?,
+                turn_id: sql(r.get(1))?,
+                seq: sql(r.get(2))?,
+                kind: sql(r.get(3))?,
+                parent: sql(r.get(4))?,
+                count,
+                snippet: find_snippet(&text, first.map(|f| map[f]).unwrap_or(0)),
+            });
+        }
+        result.hits = hits.into();
+        Ok(result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -799,5 +964,75 @@ mod tests {
             detail.contains("timeline_history_order") && detail.contains("SEARCH"),
             "{detail}"
         );
+    }
+
+    #[test]
+    fn find_counts_readable_text_across_folds_chips_unicode_and_old_history() {
+        let db = fixture();
+        // 6,000 records: the oldest holds a unique phrase.
+        put(&db, 0, ItemKind::Assistant, "The OLDEST needle lives here.");
+        {
+            let conn = db.lock();
+            let tx = conn.unchecked_transaction().unwrap();
+            for seq in 1..6000 {
+                tx.execute(
+                    "INSERT INTO timeline(id,thread_id,turn_id,seq,kind,parent,data,created_at,updated_at) VALUES(?1,'thread',?2,?3,'tool',NULL,'{\"output\":\"needle in a tool\"}',?3,?3)",
+                    params![format!("bulk-{seq:05}"), format!("turn-{seq}"), seq],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        // A user message with a chip, a folded subagent commentary, a plan, Unicode.
+        put(&db, 6001, ItemKind::User, "Look at \u{2068}main.rs\u{2069} for the needle please");
+        let mut sub = put(&db, 6002, ItemKind::Assistant, "Subagent: **Needle** found, needle again.");
+        sub.parent = Some("tool-x".into());
+        db.upsert_item(&sub).unwrap();
+        let plan = Item { kind: ItemKind::Plan, data: json!({"plan":"1. Fix the NEEDLE\n2. Ship"}), ..put(&db, 6003, ItemKind::Plan, "") };
+        db.upsert_item(&plan).unwrap();
+        put(&db, 6004, ItemKind::Assistant, "Größe ÄRGER İstanbul  straße");
+        put(&db, 6005, ItemKind::Reasoning, "needle in reasoning is not searched");
+
+        let r = db.find_in_thread("thread", "needle").unwrap();
+        // Tools and reasoning are out of scope; the rest counts every match.
+        assert_eq!((r.total, r.items, r.truncated), (5, 4, false), "{r:?}");
+        assert_eq!(r.hits.iter().map(|h| (h.item_id.as_str(), h.count)).collect::<Vec<_>>(), vec![("item-00000", 1), ("item-06001", 1), ("item-06002", 2), ("item-06003", 1)]);
+        assert_eq!(r.hits[2].parent.as_deref(), Some("tool-x"));
+        assert_eq!(r.hits[3].kind, "plan");
+        assert!(r.hits[1].snippet.contains("main.rs for the needle"), "{}", r.hits[1].snippet);
+        // The chip label reads as text; emphasis and spacing do not split a phrase.
+        assert_eq!(db.find_in_thread("thread", "main.rs for").unwrap().total, 1);
+        assert_eq!(db.find_in_thread("thread", "subagent: needle found").unwrap().total, 1);
+        // Unicode case folding, not ASCII only.
+        assert_eq!(db.find_in_thread("thread", "größe ärger").unwrap().total, 1);
+        assert_eq!(db.find_in_thread("thread", "GRÖSSE").unwrap().total, 0);
+        assert_eq!(db.find_in_thread("thread", "i\u{307}stanbul straße").unwrap().total, 1);
+        // Empty or unsearchable queries.
+        assert!(db.find_in_thread("thread", "  ").is_err());
+        assert_eq!(db.find_in_thread("thread", "**").unwrap().total, 0);
+        assert_eq!(db.find_in_thread("thread", "no such words").unwrap().hits.len(), 0);
+        assert!(db.find_in_thread("missing", "needle").is_err());
+    }
+
+    #[test]
+    fn find_lists_the_newest_items_when_there_are_too_many() {
+        let db = fixture();
+        for seq in 0..(FIND_MAX_HITS as i64 + 3) {
+            put(&db, seq, ItemKind::Assistant, "x x");
+        }
+        let r = db.find_in_thread("thread", "x").unwrap();
+        assert_eq!((r.total, r.items, r.hits.len(), r.truncated), ((FIND_MAX_HITS + 3) * 2, FIND_MAX_HITS + 3, FIND_MAX_HITS, true));
+        assert_eq!(r.hits.first().unwrap().seq, 3);
+        assert_eq!(r.hits.last().unwrap().seq, FIND_MAX_HITS as i64 + 2);
+    }
+
+    #[test]
+    fn find_normalizes_like_the_ui() {
+        let s = |t: &str| find_normalize(t).0.into_iter().collect::<String>();
+        assert_eq!(s("A  **b**\n\n_c_ `d` ~~e~~"), "a b c d e");
+        assert_eq!(s("\u{2068}x.md\u{2069} Ü"), "x.md ü");
+        assert_eq!(find_count(&find_needle("aa").to_vec(), &find_needle("a")), (2, Some(0)));
+        assert_eq!(find_count(&find_normalize("aaaa").0, &find_needle("aa")), (2, Some(0)));
+        assert_eq!(find_needle("  Hi  ").into_iter().collect::<String>(), "hi");
     }
 }

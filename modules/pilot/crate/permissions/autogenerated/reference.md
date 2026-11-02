@@ -95,6 +95,7 @@ Default permissions for the pilot module.
 - `allow-pilot-history-page`
 - `allow-pilot-history-item`
 - `allow-pilot-history-around`
+- `allow-pilot-thread-find`
 - `allow-pilot-agent-start-thread`
 - `allow-pilot-agent-message-thread`
 - `allow-pilot-pr-refresh`
@@ -3137,6 +3138,32 @@ Enables the pilot_thread_create command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-find`
+
+</td>
+<td>
+
+Enables the pilot_thread_find command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-find`
+
+</td>
+<td>
+
+Denies the pilot_thread_find command without any pre-configured scope.
 
 </td>
 </tr>
