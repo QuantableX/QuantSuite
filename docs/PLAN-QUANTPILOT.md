@@ -1637,3 +1637,63 @@ raised the count from 4 to 35 while the current match stayed on its item, no
 highlight showed wrong text, and a rewind brought it back to 4. The palette hit
 for the folded commentary switched threads, opened the fold and highlighted the
 text. Backend search took 55–113 ms per query on that thread (debug build).
+
+## 27. Parity follow-up: PDF and Office document context (16/23)
+
+Document attachments are read into text for the agent, on Windows and
+everywhere else, with no system tool (`documents.rs`). Libraries, all compiled
+into the binary (nothing extra to install or package, all MIT): `pdf-extract`
+0.12 (with `lopdf` 0.42) for PDF text layers, `zip` 9.2 (deflate only) and
+`quick-xml` 0.42 for the XML inside Office and OpenDocument files.
+
+| Format | Status | What the agent gets |
+| --- | --- | --- |
+| PDF with a text layer | read | text with `[page N]` marks, title, page count; Unicode (CJK, Greek, emoji) from embedded fonts |
+| PDF without a text layer (scanned, image-only) | `needs_ocr` | "needs OCR, which QuantPilot does not include" + the original's path — never an empty success |
+| PDF with a password (an empty user password opens) | `encrypted` | the limitation + the path |
+| Word `.docx` | read | paragraphs, `#` headings (also localized ids such as `berschrift2`), `-` list items, tables as `| a | b |` rows; deleted tracked changes and field codes left out; title and page count from the properties |
+| PowerPoint `.pptx` | read | `[slide N]` marks in slide order |
+| OpenDocument text `.odt` | read | paragraphs, headings, lists, tables, title, page count |
+| `.doc`, `.xls`, `.xlsx`, `.ppt`, `.odp`, `.ods`, `.epub`, `.pages`, `.key`, `.numbers` | `unsupported` | "not extracted" + the path |
+| password-protected Office file (an OLE container) | `encrypted` | the limitation + the path |
+| other files | unchanged | text inline (32 KiB) or "binary file, read it from the path" |
+
+Limits: the attachment limit of 50 MiB, 2,000 pages or slides, 30 s, 4 MiB of
+text kept, 64 MiB per decompressed XML part, 20,000 zip entries. Hitting one
+gives `truncated` ("Partly read · 1,200 of 2,000 pages", the reason in the
+detail), never a silent cut. PDF pages without text in an otherwise readable
+PDF are named ("Pages without a text layer (scanned?): 3, 7"). A malformed
+document fails with the reader's message; a reader panic is caught.
+
+The message carries the first 48 KiB of the text inline (cut at a line end) in
+`<attached-document name path format title pages|slides status note inline
+full-text>`; the whole extracted text is a file in the pilot data folder
+(`attachments/.documents/<sha256>-v1.txt`) whose path the block names, so the
+agent reads on with its own tools. The original attachment is untouched and
+still opens, previews and saves as before; nothing in a document is executed
+or followed.
+
+The composer reads a document in the background as soon as it is on the
+shelf (dropped, picked, restored or put back) and shows the state next to its
+size: "Reading text…", "Text · 3 pages", "Partly read · …", "Scanned · needs
+OCR", "Password-protected", "Text not extracted", "Could not read" — the
+tooltip has the format, title, the limitation and how much text goes along.
+Removing a document while it is read stops the reading. Results are cached by
+content hash and extractor version (`.json` + `.txt`), so the send (and a
+queued message later) use the same result, and an edited file is read again
+instead of mixing versions. The cache is not pruned yet (retention, 19/23).
+
+Verified: unit tests build PDFs (WinAnsi Unicode, an empty page, page, time
+and text limits, an image-only PDF, a locked PDF, corrupt data, cancel),
+DOCX (headings, lists, a table with a two-paragraph cell, entities), PPTX
+(slide order 1, 2, 10) and ODT, and the cache (same content once, a changed
+file read again, a bounded block naming the full text). Real files: Chrome
+printed a three-page report with German, Japanese, Greek and emoji and a
+table, a 121-page manual (read in 0.7 s, debug build) and an image-only page;
+a hand-built locked PDF, a cut-off PDF, a fake `.doc` and an OOXML-built DOCX.
+In the isolated native app the shelf showed each state; Claude Haiku answered
+all four questions about the PDF and the DOCX from the inline text without
+tools, and for the 121-page PDF read the full-text file with its own tool to
+find the marker on the last page and the last chapter; removing a document
+while it was read stopped it; the saved copies kept their hashes. Codex is not
+signed in on this machine, so no live Codex run.

@@ -34,6 +34,8 @@ permissions = [
   "allow-pilot-files-search",
   "allow-pilot-attachment-save-image",
   "allow-pilot-attachment-save-file",
+  "allow-pilot-document-extract",
+  "allow-pilot-document-cancel",
   "allow-pilot-skills",
   "allow-pilot-diff-list",
   "allow-pilot-diff-file",

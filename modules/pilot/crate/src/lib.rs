@@ -23,6 +23,7 @@ mod codex;
 mod context;
 mod contexts;
 mod db;
+mod documents;
 mod driver;
 mod elicitation;
 mod events;
@@ -714,6 +715,7 @@ pub fn init() -> TauriPlugin<Wry> {
     Builder::<Wry>::new("pilot")
         .setup(|app, _api| {
             let data_dir = qs_core::paths::ensure_module("pilot")?;
+            documents::init(data_dir.join("attachments").join(".documents"));
             let db = Arc::new(Database::open(&data_dir.join("pilot.db"))?);
             let settings = settings::read(&data_dir);
             github::set_enabled(settings.github);
@@ -857,6 +859,8 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_files_search,
             threads::pilot_attachment_save_image,
             threads::pilot_attachment_save_file,
+            threads::pilot_document_extract,
+            threads::pilot_document_cancel,
             threads::pilot_skills,
             threads::pilot_diff_list,
             threads::pilot_diff_file,

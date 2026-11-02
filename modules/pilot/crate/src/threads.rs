@@ -19,7 +19,7 @@ use crate::db::TurnRow;
 use crate::lifecycle;
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
-use crate::{adapters, agent_tools, context_of, contexts, github, lock, now, prompt, providers, shell, PilotState};
+use crate::{adapters, agent_tools, context_of, contexts, documents, github, lock, now, prompt, providers, shell, PilotState};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -558,7 +558,10 @@ fn prepare(provider: &str, text: String, images: Vec<ImageInput>, chips: Vec<Chi
     let files: Vec<Attachment> = attachments.iter().map(|a| Attachment { kind: a.kind.clone(), name: a.name.clone(), path: a.path.clone() }).collect();
     let read = |p: &str| std::fs::read(p).ok();
     let tree = |p: &str| context::folder_tree(Path::new(p));
-    let composed = context::compose(&text, &chips, &files, provider, &read, &tree);
+    // PDF and Office documents (parity 16): their text, from the cache the
+    // composer filled, or read now with the same limits — queued or not.
+    let doc = |name: &str, p: &str| documents::kind_of(name).map(|_| documents::message_block(name, p, &documents::extract(Path::new(p), name)));
+    let composed = context::compose(&text, &chips, &files, provider, &read, &tree, &doc);
     let skills: Vec<SkillRef> = chips
         .iter()
         .filter(|c| c.kind == "skill")
@@ -2361,6 +2364,24 @@ pub(crate) fn save_image(state: &PilotState, id: &str, name: &str, bytes: &[u8])
         height: Some(img.height),
         thumb: Some(format!("data:image/png;base64,{}", context::b64(&img.thumb))),
     })
+}
+
+/// Reads a saved document attachment's text (parity 16) — in the
+/// background while it sits in the composer; the send uses the cached result.
+#[tauri::command(async)]
+pub fn pilot_document_extract(state: State<'_, PilotState>, path: String, name: String) -> Result<documents::DocInfo, String> {
+    let root = std::fs::canonicalize(state.data_dir.join("attachments")).map_err(|e| e.to_string())?;
+    let file = std::fs::canonicalize(&path).map_err(|e| format!("{name} is unavailable: {e}"))?;
+    if !file.starts_with(&root) {
+        return Err("Only saved attachments are read.".into());
+    }
+    Ok(documents::extract(Path::new(&path), &name))
+}
+
+/// Stops reading a document that left the composer.
+#[tauri::command]
+pub fn pilot_document_cancel(path: String) -> bool {
+    documents::cancel(&path)
 }
 
 /// A file dropped or picked: copied next to the thread, so the message

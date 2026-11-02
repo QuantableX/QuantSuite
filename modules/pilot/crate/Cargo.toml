@@ -40,6 +40,11 @@ sha2 = "0.10"
 # price list is fetched at most daily.
 ruzstd = "0.9"
 memchr = "2"
+# Document context (parity 16): PDF text layers (pure Rust, MIT) and the
+# XML inside DOCX / PPTX / ODT; no system tools, nothing extra to package.
+pdf-extract = "0.12"
+zip = { version = "9.2", default-features = false, features = ["deflate-flate2"] }
+quick-xml = "0.42"
 reqwest = { workspace = true }
 
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
