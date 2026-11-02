@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-browser-import-sources"
+description = "Enables the pilot_browser_import_sources command without any pre-configured scope."
+commands.allow = ["pilot_browser_import_sources"]
+
+[[permission]]
+identifier = "deny-pilot-browser-import-sources"
+description = "Denies the pilot_browser_import_sources command without any pre-configured scope."
+commands.deny = ["pilot_browser_import_sources"]

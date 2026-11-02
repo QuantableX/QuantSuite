@@ -325,6 +325,30 @@ export interface BrowserStatus {
   canGoForward: boolean
   picking: boolean
   zoom: number
+  /** The browser profile of the page (parity 18); null is temporary. */
+  profile?: string | null
+}
+
+/** A preview-browser profile (parity 18). */
+export interface BrowserProfile {
+  id: string
+  name: string
+  createdAt: number
+}
+
+export interface BrowserProfiles {
+  profiles: BrowserProfile[]
+  /** Project → profile id. */
+  defaults: Record<string, string>
+  /** The profile of the open page. */
+  active: string | null
+}
+
+/** Another browser on this machine, and why its session cannot be imported. */
+export interface ImportSource {
+  browser: string
+  status: 'unsupported' | 'not_found'
+  reason: string
 }
 
 /** An element picked in the preview — untrusted page content. */

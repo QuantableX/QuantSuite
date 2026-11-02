@@ -19,7 +19,7 @@ use crate::db::TurnRow;
 use crate::lifecycle;
 use crate::runtime::{self, LaunchPlan};
 use crate::settings::{self, Settings};
-use crate::{adapters, agent_tools, context_of, contexts, documents, github, lock, now, prompt, providers, shell, PilotState};
+use crate::{adapters, agent_tools, browser_profiles, context_of, contexts, documents, github, lock, now, prompt, providers, shell, PilotState};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -1832,13 +1832,91 @@ pub fn pilot_terminal_close(app: AppHandle, state: State<'_, PilotState>, pty_id
 // ── Browser tab (card 14) ──
 
 #[tauri::command]
-pub async fn pilot_browser_open(app: AppHandle, webview: tauri::Webview, url: String, bounds: browser::Bounds, zoom: Option<f64>) -> Result<browser::Status, String> {
+pub async fn pilot_browser_open(app: AppHandle, webview: tauri::Webview, url: String, bounds: browser::Bounds, zoom: Option<f64>, profile: Option<String>) -> Result<browser::Status, String> {
     browser::guard(&webview)?;
     // The page belongs to the thread on screen (parity 06): only its agent may drive it.
     let owner = lock(&app.state::<PilotState>().ui_visible).clone();
+    // A browser profile (parity 18): its own kept cookies and site data.
+    let data_dir = app.state::<PilotState>().data_dir.clone();
+    let profile = match profile.filter(|p| !p.is_empty()) {
+        Some(id) if browser_profiles::exists(&data_dir, &id) => Some((id.clone(), browser_profiles::data_dir_of(&data_dir, &id))),
+        Some(_) => return Err("That browser profile no longer exists — pick another one.".into()),
+        None => None,
+    };
     let state = app.state::<BrowserState>();
     let _serial = state.serial().lock().await;
-    browser::open(&app, &webview, &url, bounds, zoom.unwrap_or(1.0), owner)
+    browser::open(&app, &webview, &url, bounds, zoom.unwrap_or(1.0), owner, profile)
+}
+
+// ── Browser profiles (parity 18) ──
+
+#[tauri::command]
+pub fn pilot_browser_profiles(app: AppHandle, webview: tauri::Webview) -> Result<Value, String> {
+    browser::guard(&webview)?;
+    let data_dir = app.state::<PilotState>().data_dir.clone();
+    let store = browser_profiles::load(&data_dir);
+    Ok(json!({ "profiles": store.profiles, "defaults": store.defaults, "active": browser::active_profile(&app) }))
+}
+
+#[tauri::command]
+pub fn pilot_browser_profile_create(app: AppHandle, webview: tauri::Webview, name: String) -> Result<browser_profiles::Profile, String> {
+    browser::guard(&webview)?;
+    browser_profiles::create(&app.state::<PilotState>().data_dir, &name, now())
+}
+
+#[tauri::command]
+pub fn pilot_browser_profile_rename(app: AppHandle, webview: tauri::Webview, id: String, name: String) -> Result<browser_profiles::Profile, String> {
+    browser::guard(&webview)?;
+    browser_profiles::rename(&app.state::<PilotState>().data_dir, &id, &name)
+}
+
+/// A project's profile; `None` makes its page temporary again.
+#[tauri::command]
+pub fn pilot_browser_profile_default(app: AppHandle, webview: tauri::Webview, context: String, id: Option<String>) -> Result<(), String> {
+    browser::guard(&webview)?;
+    browser_profiles::set_default(&app.state::<PilotState>().data_dir, &context, id.as_deref().filter(|i| !i.is_empty()))
+}
+
+/// Clearing or deleting the profile of the open page closes the page first.
+async fn profile_change(app: &AppHandle, id: &str, delete: bool) -> Result<(), String> {
+    let state = app.state::<BrowserState>();
+    let _serial = state.serial().lock().await;
+    if browser::active_profile(app).as_deref() == Some(id) {
+        browser::close(app)?;
+    }
+    let data_dir = app.state::<PilotState>().data_dir.clone();
+    let id = id.to_string();
+    tokio::task::spawn_blocking(move || {
+        let wait = std::time::Duration::from_secs(8);
+        if delete {
+            browser_profiles::delete(&data_dir, &id, wait)
+        } else {
+            browser_profiles::clear(&data_dir, &id, wait)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn pilot_browser_profile_clear(app: AppHandle, webview: tauri::Webview, id: String) -> Result<(), String> {
+    browser::guard(&webview)?;
+    profile_change(&app, &id, false).await
+}
+
+#[tauri::command]
+pub async fn pilot_browser_profile_delete(app: AppHandle, webview: tauri::Webview, id: String) -> Result<(), String> {
+    browser::guard(&webview)?;
+    profile_change(&app, &id, true).await
+}
+
+/// Other browsers on this machine and why their sessions cannot be imported.
+#[tauri::command]
+pub fn pilot_browser_import_sources(webview: tauri::Webview) -> Result<Vec<browser_profiles::ImportSource>, String> {
+    browser::guard(&webview)?;
+    let local = dirs::data_local_dir().ok_or("no local app data folder")?;
+    let roaming = dirs::data_dir().ok_or("no app data folder")?;
+    Ok(browser_profiles::import_sources(&local, &roaming))
 }
 
 #[tauri::command]

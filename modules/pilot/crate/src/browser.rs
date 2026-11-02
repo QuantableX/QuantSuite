@@ -6,7 +6,9 @@
 //! result waits in a page global the app reads by evaluation, polled only
 //! while armed — the visible-viewport screenshot (WebView2 CapturePreview)
 //! and the list of local listeners for the start page. Cookies and history
-//! are ephemeral (incognito).
+//! are ephemeral (incognito) unless a browser profile is chosen (parity 18,
+//! browser_profiles.rs): then the guest keeps them in that profile's own
+//! WebView2 user-data folder, and another profile means another guest.
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,6 +38,8 @@ pub struct Status {
     pub can_go_forward: bool,
     pub picking: bool,
     pub zoom: f64,
+    /// The profile the page runs in; `None` is temporary.
+    pub profile: Option<String>,
 }
 
 #[derive(Default)]
@@ -51,6 +55,8 @@ pub struct BrowserState {
     /// it was opened), and whether the tab shows it right now.
     owner: Mutex<Option<String>>,
     shown: std::sync::atomic::AtomicBool,
+    /// The profile of the guest that exists (parity 18).
+    profile: Mutex<Option<String>>,
 }
 
 impl BrowserState {
@@ -186,12 +192,32 @@ fn sync_history(view: &Webview, generation: u64) {
     let _ = (view, generation);
 }
 
-/// Show `url` in the guest — made now when there is none.
-pub fn open(app: &AppHandle, caller: &Webview, url: &str, bounds: Bounds, zoom: f64, owner: Option<String>) -> Result<Status, String> {
+/// The profile of the page that is open; `None` is temporary or no page.
+pub fn active_profile(app: &AppHandle) -> Option<String> {
+    let state = app.state::<BrowserState>();
+    let open = app.get_webview(LABEL).is_some();
+    open.then(|| lock(&state.profile).clone()).flatten()
+}
+
+/// Show `url` in the guest — made now when there is none. `profile` is (id,
+/// user-data folder) of a browser profile, `None` the temporary page.
+pub fn open(app: &AppHandle, caller: &Webview, url: &str, bounds: Bounds, zoom: f64, owner: Option<String>, profile: Option<(String, std::path::PathBuf)>) -> Result<Status, String> {
     let own = own_origin(app);
     let url = normalize_url(url, own.as_ref())?;
     let bounds = clamp(bounds, window_size(caller)?)?;
     cancel_pick(app);
+    // Another profile is another browser: the page is made again.
+    let want = profile.as_ref().map(|(id, _)| id.clone());
+    if app.get_webview(LABEL).is_some() && *lock(&app.state::<BrowserState>().profile) != want {
+        app.state::<BrowserState>().view.fetch_add(1, Ordering::SeqCst);
+        if let Some(view) = app.get_webview(LABEL) {
+            view.close().map_err(|e| e.to_string())?;
+        }
+        let start = std::time::Instant::now();
+        while app.get_webview(LABEL).is_some() && start.elapsed() < Duration::from_secs(3) {
+            std::thread::sleep(Duration::from_millis(30));
+        }
+    }
     {
         let state = app.state::<BrowserState>();
         *lock(&state.owner) = owner;
@@ -212,8 +238,12 @@ pub fn open(app: &AppHandle, caller: &Webview, url: &str, bounds: Bounds, zoom: 
         let generation = state.view.fetch_add(1, Ordering::SeqCst) + 1;
         let nav = app.clone();
         let own_nav = own.clone();
-        let builder = tauri::webview::WebviewBuilder::new(LABEL, tauri::WebviewUrl::External(url))
-            .incognito(true)
+        let builder = tauri::webview::WebviewBuilder::new(LABEL, tauri::WebviewUrl::External(url));
+        let builder = match &profile {
+            Some((_, dir)) => builder.data_directory(dir.clone()),
+            None => builder.incognito(true),
+        };
+        let builder = builder
             .devtools(false)
             .on_navigation(move |u| {
                 if !current(&nav, generation) || !allowed(u, own_nav.as_ref()) {
@@ -250,7 +280,9 @@ pub fn open(app: &AppHandle, caller: &Webview, url: &str, bounds: Bounds, zoom: 
             .add_child(builder, tauri::LogicalPosition::new(bounds.x, bounds.y), tauri::LogicalSize::new(bounds.width, bounds.height))
             .map_err(|e| format!("the browser could not open: {e}"))?;
         view.show().map_err(|e| e.to_string())?;
+        *lock(&app.state::<BrowserState>().profile) = want.clone();
     }
+    emit(app, |s| s.profile = want.clone());
     if let Ok(view) = guest(app) {
         let _ = view.set_zoom(zoom);
     }
@@ -322,6 +354,7 @@ pub fn close(app: &AppHandle) -> Result<(), String> {
     app.state::<BrowserState>().view.fetch_add(1, Ordering::SeqCst);
     *lock(&app.state::<BrowserState>().owner) = None;
     app.state::<BrowserState>().shown.store(false, Ordering::SeqCst);
+    *lock(&app.state::<BrowserState>().profile) = None;
     if let Some(view) = app.get_webview(LABEL) {
         view.close().map_err(|e| e.to_string())?;
     }

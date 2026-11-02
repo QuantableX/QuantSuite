@@ -134,6 +134,13 @@ Default permissions for the pilot module.
 - `allow-pilot-browser-action`
 - `allow-pilot-browser-zoom`
 - `allow-pilot-browser-close`
+- `allow-pilot-browser-profiles`
+- `allow-pilot-browser-profile-create`
+- `allow-pilot-browser-profile-rename`
+- `allow-pilot-browser-profile-default`
+- `allow-pilot-browser-profile-clear`
+- `allow-pilot-browser-profile-delete`
+- `allow-pilot-browser-import-sources`
 - `allow-pilot-browser-pick`
 - `allow-pilot-browser-capture`
 - `allow-pilot-listeners`
@@ -703,6 +710,32 @@ Denies the pilot_browser_close command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-browser-import-sources`
+
+</td>
+<td>
+
+Enables the pilot_browser_import_sources command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-import-sources`
+
+</td>
+<td>
+
+Denies the pilot_browser_import_sources command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-browser-open`
 
 </td>
@@ -748,6 +781,162 @@ Enables the pilot_browser_pick command without any pre-configured scope.
 <td>
 
 Denies the pilot_browser_pick command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-profile-clear`
+
+</td>
+<td>
+
+Enables the pilot_browser_profile_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-profile-clear`
+
+</td>
+<td>
+
+Denies the pilot_browser_profile_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-profile-create`
+
+</td>
+<td>
+
+Enables the pilot_browser_profile_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-profile-create`
+
+</td>
+<td>
+
+Denies the pilot_browser_profile_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-profile-default`
+
+</td>
+<td>
+
+Enables the pilot_browser_profile_default command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-profile-default`
+
+</td>
+<td>
+
+Denies the pilot_browser_profile_default command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-profile-delete`
+
+</td>
+<td>
+
+Enables the pilot_browser_profile_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-profile-delete`
+
+</td>
+<td>
+
+Denies the pilot_browser_profile_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-profile-rename`
+
+</td>
+<td>
+
+Enables the pilot_browser_profile_rename command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-profile-rename`
+
+</td>
+<td>
+
+Denies the pilot_browser_profile_rename command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-browser-profiles`
+
+</td>
+<td>
+
+Enables the pilot_browser_profiles command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-browser-profiles`
+
+</td>
+<td>
+
+Denies the pilot_browser_profiles command without any pre-configured scope.
 
 </td>
 </tr>
