@@ -1519,3 +1519,34 @@ images, a file and a folder outside the checkout (paths with spaces): full-size
 originals, navigation, zoom, Esc with focus return, the file in the read-only
 inspector, and a file deleted afterwards shown as unavailable with its actions
 disabled.
+
+## 24. Parity follow-up: Mermaid diagrams (13/23)
+
+`mermaid` 12.2.0 is a dependency of the shell (added with `npm install
+--workspace=@quantsuite/shell`, lockfile updated) and loads lazily the first
+time a diagram appears (`utils/mermaid.ts`).
+
+A ` ```mermaid ` fence in a reply is source while it is still streaming ("drawn
+when the block is complete"), then drawn once and cached by source and theme (64
+diagrams); every later repaint of the streaming message takes the drawing from
+the cache, so only a newly finished diagram is ever drawn. The Markdown
+sanitiser removes `<style>`, which Mermaid's SVG needs, so the drawing is put
+in after sanitising through a placeholder and its own cleaning: no scripts,
+foreign objects, images, links (a link becomes its text), event handlers,
+external `href`/`url()` or `@import`. Mermaid runs with `securityLevel:
+'strict'`, SVG labels, `maxTextSize` 20,000 and `maxEdges` 500; sources over 20k
+characters or 1,000 lines stay source with the reason, a render over 8 s or a
+parse error shows Mermaid's message above the source.
+
+Each diagram has Source/Diagram, Large view (fit, + / − / Ctrl+wheel, 0 fits, Esc
+closes and returns focus), Export SVG (native save dialog) and Copy (the
+source). Diagrams are shown at natural size and a wide one scrolls sideways
+instead of shrinking its text. The Files tab draws `.mmd`/`.mermaid` files and
+Markdown files with Mermaid fences through the same renderer. Theme: the suite's
+dark theme (light is keyed separately in the cache; the suite has no light mode).
+
+Verified in the isolated native app: a real Claude Haiku reply streamed a
+flowchart, a sequence, a state and a class diagram plus an invalid one (states
+seen: partial → pending → ready; the invalid one showed the parse error with its
+source), Source toggle, large view with zoom and Esc focus return, no links or
+scripts inside the drawings, and the `.mmd` and Markdown file previews.

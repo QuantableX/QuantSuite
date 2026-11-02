@@ -11,6 +11,8 @@
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ensureKatex, hasMath, highlightCode, renderMarkdown } from '#pilot/utils/markdown'
+import { mermaidVersion, showingSource, svgOf } from '#pilot/utils/mermaid'
+import { pilot } from '#pilot/utils/invoke'
 import { openExternal } from '#pilot/utils/external'
 import { parseFileRef } from '#pilot/utils/files'
 import { usePilotStore } from '#pilot/stores/pilot'
@@ -35,6 +37,10 @@ function schedule() {
 }
 
 watch(() => props.source, schedule)
+// A diagram finished drawing somewhere: this message may show it now (parity 13).
+watch(mermaidVersion, () => {
+  if (props.source.includes('mermaid')) schedule()
+})
 watch(
   () => props.streaming,
   (s) => {
@@ -66,8 +72,40 @@ async function copyText(text: string) {
 }
 
 
+const pilotStore = usePilotStore()
+const large = ref<{ hash: string; from: HTMLElement } | null>(null)
+async function mermaidAction(btn: HTMLElement) {
+  const hash = btn.dataset.mm ?? ''
+  const act = btn.dataset.mmAct
+  if (act === 'toggle') {
+    if (showingSource.has(hash)) showingSource.delete(hash)
+    else showingSource.add(hash)
+    schedule()
+  } else if (act === 'large') {
+    large.value = { hash, from: btn }
+  } else if (act === 'export') {
+    const svg = svgOf(hash)
+    if (!svg) return
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog')
+      const target = await save({ defaultPath: 'diagram.svg', title: 'Export the diagram', filters: [{ name: 'SVG', extensions: ['svg'] }] })
+      if (!target || !pilotStore.activeId) return
+      await pilot('plugin:pilot|pilot_file_save_as', { id: pilotStore.activeId, path: '', target, content: svg })
+      emit('notice', `Exported to ${target}`)
+    } catch (err) {
+      emit('notice', String(err))
+    }
+  }
+}
+
 async function onClick(e: MouseEvent) {
   const target = e.target as HTMLElement
+  const mm = target.closest<HTMLElement>('[data-mm-act]')
+  if (mm) {
+    e.preventDefault()
+    void mermaidAction(mm)
+    return
+  }
   const copy = target.closest<HTMLElement>('[data-copy]')
   if (copy) {
     e.preventDefault()
@@ -102,6 +140,7 @@ async function onClick(e: MouseEvent) {
 <template>
   <!-- eslint-disable-next-line vue/no-v-html — sanitised in renderMarkdown -->
   <div ref="root" class="qp-md" :class="{ streaming }" @click="onClick" v-html="html" />
+  <PilotThreadMermaidView v-if="large" :hash="large.hash" @close="(large.from.focus(), (large = null))" />
 </template>
 
 <style scoped>
@@ -181,6 +220,15 @@ async function onClick(e: MouseEvent) {
   background: var(--qss-bg-raised, #1f1f25);
   overflow: hidden;
 }
+/* Mermaid diagrams (parity 13). */
+.qp-md :deep(.qp-md-mm[data-mm-state='ready'][data-mm-show='diagram'] .qp-md-mm-src) { display: none; }
+.qp-md :deep(.qp-md-mm[data-mm-show='source'] .qp-md-mm-view) { display: none; }
+.qp-md :deep(.qp-md-mm-view) { padding: 10px; overflow: auto; max-height: 520px; text-align: center; background: var(--qss-bg, #18181e); }
+.qp-md :deep(.qp-md-mm-view svg) { max-width: none; }
+.qp-md :deep(.qp-md-mm-act) { margin-left: 6px; border: none; background: transparent; color: var(--qss-text-secondary, #9a9aa5); font: inherit; font-size: 11px; cursor: pointer; }
+.qp-md :deep(.qp-md-mm-act:hover) { color: var(--qss-text, #d4d4d8); }
+.qp-md :deep(.qp-md-mm-note) { margin-left: 8px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-md :deep(.qp-md-mm-error) { padding: 6px 10px; font-size: 12px; color: var(--qss-warning, #d29a3f); font-family: var(--qss-font-sans, system-ui); }
 .qp-md :deep(.qp-md-code-head) {
   display: flex;
   align-items: center;

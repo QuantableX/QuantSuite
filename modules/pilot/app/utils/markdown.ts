@@ -10,11 +10,13 @@
  *   Dollar amounts stay text (`$5 and $10`): an inline formula cannot start
  *   or end with a space or be followed by a digit.
  * - GitHub alerts: `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`.
- * - Mermaid blocks render as code (mermaid is not installed in the suite).
+ * - Mermaid fences become diagrams once complete (utils/mermaid.ts, parity 13):
+ *   drawn once, cached, put in after sanitising; the source stays one click away.
  * - The result always goes through the suite's sanitiser.
  */
 import { Marked, type Tokens } from 'marked'
 import { sanitizeHtml } from '@quantsuite/ui'
+import { diagram, fillDiagrams, showingSource } from './mermaid'
 import { parseFileRef } from './files'
 
 let katex: { renderToString: (tex: string, opts: Record<string, unknown>) => string } | null = null
@@ -188,6 +190,7 @@ marked.use({
   renderer: {
     code(token: Tokens.Code) {
       const lang = (token.lang ?? '').trim().split(/\s+/)[0].toLowerCase()
+      if (lang === 'mermaid') return mermaidBlock(token)
       const label = LANG_LABEL[lang] ?? (lang || 'Code')
       const code = escapeHtml(token.text)
       return (
@@ -213,6 +216,34 @@ marked.use({
   },
 })
 
+/** A Mermaid fence: the diagram when it is complete and drawn, its source otherwise. */
+function mermaidBlock(token: Tokens.Code): string {
+  const src = token.text
+  const code = `<pre class="qp-md-mm-src"><code data-lang="mermaid">${escapeHtml(src)}</code></pre>`
+  const complete = /\n\s*(`{3,}|~{3,})\s*$/.test(token.raw)
+  const head = (actions: string) =>
+    `<div class="qp-md-code-head"><span class="qp-md-code-lang">Mermaid</span>${actions}<button type="button" class="qp-md-copy" data-copy>Copy</button></div>`
+  if (!complete) {
+    return `<div class="qp-md-code qp-md-mm" data-lang="mermaid" data-mm-state="partial">${head('<span class="qp-md-mm-note">drawn when the block is complete</span>')}${code}</div>`
+  }
+  const d = diagram(src)
+  if (d.state === 'error') {
+    return `<div class="qp-md-code qp-md-mm" data-lang="mermaid" data-mm-state="error">${head('')}<div class="qp-md-mm-error">${escapeHtml(d.error ?? '')}</div>${code}</div>`
+  }
+  if (d.state === 'pending') {
+    return `<div class="qp-md-code qp-md-mm" data-lang="mermaid" data-mm-state="pending">${head('<span class="qp-md-mm-note">drawing…</span>')}${code}</div>`
+  }
+  const source = showingSource.has(d.hash)
+  const actions =
+    `<button type="button" class="qp-md-mm-act" data-mm-act="toggle" data-mm="${d.hash}" aria-pressed="${source}">${source ? 'Diagram' : 'Source'}</button>` +
+    `<button type="button" class="qp-md-mm-act" data-mm-act="large" data-mm="${d.hash}">Large view</button>` +
+    `<button type="button" class="qp-md-mm-act" data-mm-act="export" data-mm="${d.hash}">Export SVG</button>`
+  return (
+    `<div class="qp-md-code qp-md-mm" data-lang="mermaid" data-mm-state="ready" data-mm-show="${source ? 'source' : 'diagram'}">${head(actions)}` +
+    `<div class="qp-md-mm-view" role="img" aria-label="Mermaid diagram">%%QPMM:${d.hash}%%</div>${code}</div>`
+  )
+}
+
 /** Turn `> [!NOTE]` blockquotes into alert boxes, after parsing. */
 function alerts(html: string): string {
   return html.replace(/<blockquote>\s*<p>\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(?:<br>\s*)?/g, (_m, kind: string) => {
@@ -222,7 +253,7 @@ function alerts(html: string): string {
 
 export function renderMarkdown(src: string): string {
   const html = marked.parse(src, { async: false }) as string
-  return sanitizeHtml(alerts(html))
+  return fillDiagrams(sanitizeHtml(alerts(html)))
 }
 
 let monaco: any = null
