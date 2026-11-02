@@ -12,6 +12,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ensureKatex, forgetCode, hasMath, highlightCode, renderMarkdown, renderStreaming, type StreamCache } from '#pilot/utils/markdown'
 import { registerMessage, unregisterMessage } from '#pilot/utils/markdownEvents'
+import { useHost } from '#pilot/utils/host'
 import { mermaidVersion, showingSource, svgOf } from '#pilot/utils/mermaid'
 import { pilot } from '#pilot/utils/invoke'
 import { openExternal } from '#pilot/utils/external'
@@ -24,6 +25,13 @@ const emit = defineEmits<{ notice: [text: string] }>()
 
 const root = ref<HTMLElement | null>(null)
 const html = ref('')
+// Embedded in another module (pre-1.1.0): its thread, and its way to open files.
+const host = useHost()
+const currentThread = () => host?.threadId ?? props.cite?.threadId ?? usePilotStore().activeId
+function openRef(threadId: string, path: string, line: number | null) {
+  if (host?.openFile?.(path, line)) return
+  useInspectorStore().openFile(threadId, path, line)
+}
 let frame = 0
 
 /** A selection inside this message (parity 14): no repaint replaces it. */
@@ -210,8 +218,9 @@ async function mermaidAction(btn: HTMLElement) {
     try {
       const { save } = await import('@tauri-apps/plugin-dialog')
       const target = await save({ defaultPath: 'diagram.svg', title: 'Export the diagram', filters: [{ name: 'SVG', extensions: ['svg'] }] })
-      if (!target || !pilotStore.activeId) return
-      await pilot('plugin:pilot|pilot_file_save_as', { id: pilotStore.activeId, path: '', target, content: svg })
+      const owner = currentThread()
+      if (!target || !owner) return
+      await pilot('plugin:pilot|pilot_file_save_as', { id: owner, path: '', target, content: svg })
       emit('notice', `Exported to ${target}`)
     } catch (err) {
       emit('notice', String(err))
@@ -237,10 +246,10 @@ async function onClick(e: MouseEvent) {
     }
     return
   }
-  const threadId = usePilotStore().activeId
+  const threadId = currentThread()
   const code = target.closest<HTMLElement>('[data-file]')
   if (code && threadId && !window.getSelection()?.toString()) {
-    useInspectorStore().openFile(threadId, code.dataset.file ?? '', Number(code.dataset.line) || null)
+    openRef(threadId, code.dataset.file ?? '', Number(code.dataset.line) || null)
     return
   }
   const link = target.closest<HTMLAnchorElement>('a[href]')
@@ -253,7 +262,7 @@ async function onClick(e: MouseEvent) {
   }
   if (!href || href.startsWith('#')) return
   const ref = parseFileRef(decodeURI(href.replace(/^file:\/\/\/?/i, '')))
-  if (ref && threadId) useInspectorStore().openFile(threadId, ref.path, ref.line)
+  if (ref && threadId) openRef(threadId, ref.path, ref.line)
   else if (await copyText(decodeURI(href))) emit('notice', `Copied ${decodeURI(href)}`)
 }
 
@@ -279,10 +288,10 @@ function onContextMenu(e: MouseEvent) {
 }
 function onKeydown(e: KeyboardEvent) {
   const code = (e.target as HTMLElement).closest?.<HTMLElement>('[data-file]')
-  const threadId = usePilotStore().activeId
+  const threadId = currentThread()
   if (e.key === 'Enter' && code && threadId) {
     e.preventDefault()
-    useInspectorStore().openFile(threadId, code.dataset.file ?? '', Number(code.dataset.line) || null)
+    openRef(threadId, code.dataset.file ?? '', Number(code.dataset.line) || null)
   }
 }
 </script>
@@ -296,7 +305,9 @@ function onKeydown(e: KeyboardEvent) {
         v-if="linkMenu"
         :x="linkMenu.x"
         :y="linkMenu.y"
-        :thread-id="usePilotStore().activeId"
+        :thread-id="currentThread()"
+        :host-open="host?.openFile ?? null"
+        :host-label="host?.openLabel ?? ''"
         :file="linkMenu.file"
         :href="linkMenu.href"
         :from="linkMenu.from"

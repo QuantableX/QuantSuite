@@ -2048,3 +2048,44 @@ touched.
 Every failing provider ended its turn cleanly with the provider's own message
 as a notice; none of them is an adapter defect found here. Board-linked agent
 start and GitHub writes were not exercised (no test authorization for writes).
+
+## 34. Pre-1.1.0: the QuantPilot chat embedded in QuantCanvas
+
+`PilotEmbedChat` (`components/Embed/Chat.vue`) mounts the same conversation
+component as the /pilot page — timeline, composer, approvals, questions,
+queue, stop — for one thread, outside the pilot layout. It loads the pilot
+stores if QuantPilot was never opened, and takes live events for its thread
+while its host is in front (warm cache: on activation, off on deactivation,
+the thread reloaded on return). Events the /pilot layout also applies are
+harmless: the store applies each sequence number once. Several embedded
+chats run side by side, each bound to its own thread. A host is provided
+through `utils/host.ts` (`PILOT_HOST`): the thread the chat shows and the
+host's own open action; replies use the host's thread for file references
+and diagram exports instead of the /pilot page's active thread, and the
+reference menu offers the host's action ("Open in a File window") in place
+of the Files tab and Browser tab.
+
+QuantCanvas gets a window type `chat` (start page **Chat**, context menu **New
+QuantPilot Chat**). Without a thread it offers **New thread in this
+workspace** (the canvas's folder as the QuantPilot project, General for the
+general canvas) and a list of existing threads (this workspace's first). The
+window keeps only `chatConfig.threadId` in the canvas layout, is titled
+"Chat · <thread title>", and closing it leaves the thread alone. A file
+reference in the chat opens a File window beside it (relative paths against
+the thread's folder). Plain wheel scrolling stays in the transcript (canvas
+zoom is Ctrl+wheel, as for every window); Space and Ctrl+V typed in the chat
+stay there (no canvas panning, no window paste). A window whose thread was
+deleted says so and offers the picker. QuantCode and QuantConsole hosts are
+follow-ups (the component is host-agnostic).
+
+Verified in the isolated native app on the "hello world qa" canvas: a new
+chat window started a thread in that workspace (project and folder right),
+a Claude Haiku reply streamed into it and named the window; wheel over the
+transcript left the canvas zoom unchanged; `src/app.ts:12` in a reply opened
+a File window beside the chat and its menu read "Open in a File window"; a
+second window attached an existing thread with no crosstalk between the two;
+a message sent from the /pilot page appeared in the canvas chat after
+switching back, and a turn started in the canvas (with an MCP approval shown
+and allowed in the canvas chat, Supervised mode) appeared on the /pilot page;
+after a restart both windows came back with their threads, and closing one
+left its thread in QuantPilot.

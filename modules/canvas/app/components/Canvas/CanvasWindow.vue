@@ -78,6 +78,7 @@ const typeIcon = computed(() => {
     spec: '\u25A3',
     file: '\u25A0',
     browser: '\u260D',
+    chat: '\u275D',
   }
   return icons[props.window.type] ?? '\u25C7'
 })
@@ -484,6 +485,10 @@ provide('canvasWindowActions', { close: closeWindow, toggleZoom })
       />
       <CanvasWindowsBrowserWindow
         v-else-if="window.type === 'browser'"
+        :window="window"
+      />
+      <CanvasWindowsChatWindow
+        v-else-if="window.type === 'chat'"
         :window="window"
       />
     </div>

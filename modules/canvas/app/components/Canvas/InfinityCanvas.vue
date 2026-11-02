@@ -7,7 +7,7 @@ import type { CanvasWindow as CanvasWindowType, WindowType, FilePreviewKind } fr
 import { useEventListener } from '@vueuse/core'
 import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import { AppWindow, Globe, LayoutDashboard, Terminal } from 'lucide-vue-next'
+import { AppWindow, Globe, LayoutDashboard, MessageSquare, Terminal } from 'lucide-vue-next'
 import { terminalHasFocus } from '../../utils/terminalFocus'
 
 const workspacesStore = useWorkspacesStore()
@@ -301,6 +301,7 @@ function createWindow(type: WindowType, centered = false) {
     spec: 'Workspace Kanban',
     file: 'File',
     browser: 'Browser',
+    chat: 'Chat',
   }
 
   const sizes: Record<WindowType, { width: number; height: number }> = {
@@ -309,6 +310,7 @@ function createWindow(type: WindowType, centered = false) {
     spec: { width: 800, height: 450 },
     file: { width: 500, height: 400 },
     browser: { width: 700, height: 500 },
+    chat: { width: 520, height: 640 },
   }
 
   const screenX = centered ? (rect.width - sizes[type].width * scale) / 2 : contextMenu.value.x - rect.left
@@ -332,6 +334,7 @@ function createWindow(type: WindowType, centered = false) {
     // actually opens a PTY, and a made-up one here is indistinguishable from a
     // real one the window is meant to re-attach to.
     ...(type === 'browser' ? { browserConfig: { url: 'http://localhost:3000' } } : {}),
+    ...(type === 'chat' ? { chatConfig: { threadId: null } } : {}),
   }
 
   canvasStore.addWindow(workspaceId.value, win)
@@ -598,6 +601,7 @@ useEventListener(window, 'click', () => {
         <button class="canvas-start-action" @click="createWindow('terminal', true)"><Terminal :size="16" /> Terminal</button>
         <button class="canvas-start-action" @click="createWindow('spec', true)"><LayoutDashboard :size="16" /> Kanban</button>
         <button class="canvas-start-action" @click="createWindow('browser', true)"><Globe :size="16" /> Browser</button>
+        <button class="canvas-start-action" @click="createWindow('chat', true)"><MessageSquare :size="16" /> Chat</button>
       </QEmptyState>
     </div>
 
@@ -685,6 +689,13 @@ useEventListener(window, 'click', () => {
         @click="createWindow('browser')"
       >
         <span class="text-sky-400">&#9741;</span> New Browser
+      </button>
+      <button
+        class="w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 hover:brightness-125"
+        :style="{ color: 'var(--qc-text)' }"
+        @click="createWindow('chat')"
+      >
+        <span class="text-amber-400">&#10077;</span> New QuantPilot Chat
       </button>
       <div :style="{ borderTop: '1px solid var(--qc-border)', margin: '4px 0' }" />
       <button
