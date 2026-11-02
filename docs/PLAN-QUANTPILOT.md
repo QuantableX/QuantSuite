@@ -1651,7 +1651,7 @@ into the binary (nothing extra to install or package, all MIT): `pdf-extract`
 | PDF with a text layer | read | text with `[page N]` marks, title, page count; Unicode (CJK, Greek, emoji) from embedded fonts |
 | PDF without a text layer (scanned, image-only) | `needs_ocr` | "needs OCR, which QuantPilot does not include" + the original's path — never an empty success |
 | PDF with a password (an empty user password opens) | `encrypted` | the limitation + the path |
-| Word `.docx` | read | paragraphs, `#` headings (also localized ids such as `berschrift2`), `-` list items, tables as `| a | b |` rows; deleted tracked changes and field codes left out; title and page count from the properties |
+| Word `.docx` | read | paragraphs, `#` headings (also localized ids such as `berschrift2`), `-` list items, tables as rows of cells joined by `\|`; deleted tracked changes and field codes left out; title and page count from the properties |
 | PowerPoint `.pptx` | read | `[slide N]` marks in slide order |
 | OpenDocument text `.odt` | read | paragraphs, headings, lists, tables, title, page count |
 | `.doc`, `.xls`, `.xlsx`, `.ppt`, `.odp`, `.ods`, `.epub`, `.pages`, `.key`, `.numbers` | `unsupported` | "not extracted" + the path |
