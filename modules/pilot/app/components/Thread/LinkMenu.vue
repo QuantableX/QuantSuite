@@ -13,7 +13,17 @@ import { pilot } from '#pilot/utils/invoke'
 import { openExternal } from '#pilot/utils/external'
 import { useInspectorStore } from '#pilot/stores/inspector'
 
-const props = defineProps<{ x: number; y: number; threadId: string | null; file?: { path: string; line: number | null } | null; href?: string | null; from: HTMLElement | null }>()
+const props = defineProps<{
+  x: number
+  y: number
+  threadId: string | null
+  file?: { path: string; line: number | null } | null
+  href?: string | null
+  from: HTMLElement | null
+  /** An embedding module's own open action (pre-1.1.0 embed); replaces the Files tab. */
+  hostOpen?: ((path: string, line: number | null) => boolean) | null
+  hostLabel?: string
+}>()
 const emit = defineEmits<{ close: []; notice: [text: string] }>()
 
 interface Row {
@@ -52,7 +62,9 @@ const rows = computed<Row[]>(() => {
     const f = props.file
     const at = f.line ? ` at line ${f.line}` : ''
     return [
-      { id: 'here', label: 'Open in the Files tab', hint: 'Enter', disabled: noThread, run: () => useInspectorStore().openFile(props.threadId!, f.path, f.line) },
+      props.hostOpen
+        ? { id: 'here', label: props.hostLabel || 'Open', hint: 'Enter', run: () => void props.hostOpen!(f.path, f.line) }
+        : { id: 'here', label: 'Open in the Files tab', hint: 'Enter', disabled: noThread, run: () => useInspectorStore().openFile(props.threadId!, f.path, f.line) },
       ...(editors.value ?? [])
         .filter((e) => e.id !== 'explorer')
         .map<Row>((e) => ({ id: `ed-${e.id}`, label: `Open in ${e.label}${at}`, disabled: noThread, run: () => openIn(e.id) })),
@@ -64,7 +76,7 @@ const rows = computed<Row[]>(() => {
   const web = /^https?:/i.test(href)
   return [
     { id: 'open', label: web ? 'Open in the system browser' : 'Open', hint: 'Enter', run: () => void openExternal(href) },
-    ...(web ? [{ id: 'tab', label: 'Open in the Browser tab', disabled: noThread, run: () => useInspectorStore().openBrowser(props.threadId!, href) }] : []),
+    ...(web && !props.hostOpen ? [{ id: 'tab', label: 'Open in the Browser tab', disabled: noThread, run: () => useInspectorStore().openBrowser(props.threadId!, href) }] : []),
     { id: 'copy', label: 'Copy link', run: () => copy(href, 'the link') },
   ]
 })

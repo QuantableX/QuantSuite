@@ -30,7 +30,7 @@ export interface WindowPosition {
   height: number
 }
 
-export type WindowType = 'terminal' | 'diff' | 'spec' | 'file' | 'browser'
+export type WindowType = 'terminal' | 'diff' | 'spec' | 'file' | 'browser' | 'chat'
 
 /** Shell flavour a terminal window runs. Re-exported from `stores/app`. */
 export type ShellType = 'powershell' | 'cmd' | 'bash' | 'wsl' | 'git-bash'
@@ -92,6 +92,12 @@ export interface CanvasWindow {
   shellType?: ShellType
   fileConfig?: FileConfig
   browserConfig?: BrowserConfig
+  /** A QuantPilot chat window: only its thread id is kept (pre-1.1.0). */
+  chatConfig?: ChatConfig
+}
+
+export interface ChatConfig {
+  threadId: string | null
 }
 
 export interface CanvasState {
