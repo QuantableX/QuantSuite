@@ -10,7 +10,8 @@
  * the Files tab at the line (card 13).
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ensureKatex, hasMath, highlightCode, renderMarkdown } from '#pilot/utils/markdown'
+import { ensureKatex, forgetCode, hasMath, highlightCode, renderMarkdown, renderStreaming, type StreamCache } from '#pilot/utils/markdown'
+import { registerMessage, unregisterMessage } from '#pilot/utils/markdownEvents'
 import { mermaidVersion, showingSource, svgOf } from '#pilot/utils/mermaid'
 import { pilot } from '#pilot/utils/invoke'
 import { openExternal } from '#pilot/utils/external'
@@ -32,6 +33,9 @@ function selectedHere(): boolean {
 }
 let held = false
 
+/** Finished blocks of a streaming message, rendered once (parity 21). */
+const stream: StreamCache = { prefix: '', html: '' }
+
 function paint() {
   frame = 0
   if (selectedHere()) {
@@ -39,14 +43,55 @@ function paint() {
     return
   }
   held = false
-  html.value = renderMarkdown(props.source)
+  if (root.value) forgetCode(root.value)
+  if (props.streaming) html.value = renderStreaming(props.source, stream)
+  else {
+    stream.prefix = ''
+    stream.html = ''
+    html.value = renderMarkdown(props.source)
+  }
   if (!props.streaming) void nextTick(() => root.value && highlightCode(root.value))
 }
 
+// A streaming message far off screen waits to be painted until it comes
+// near (parity 21); the final paint always happens.
+let offscreen = false
+let dirty = false
+let seen: IntersectionObserver | null = null
 function schedule() {
+  if (props.streaming && offscreen) {
+    dirty = true
+    return
+  }
   if (frame) return
   frame = requestAnimationFrame(paint)
 }
+function watchVisibility() {
+  if (seen || !root.value || typeof IntersectionObserver === 'undefined') return
+  seen = new IntersectionObserver(
+    ([e]) => {
+      offscreen = !e?.isIntersecting
+      if (!offscreen && dirty) {
+        dirty = false
+        schedule()
+      }
+    },
+    { rootMargin: '1200px 0px' }
+  )
+  seen.observe(root.value)
+}
+watch(
+  () => props.streaming,
+  (s) => {
+    if (s) watchVisibility()
+    else if (!s && seen) {
+      seen.disconnect()
+      seen = null
+      offscreen = false
+    }
+  },
+  { flush: 'post' }
+)
 
 watch(() => props.source, schedule)
 
@@ -104,13 +149,13 @@ function onCiteKey(e: KeyboardEvent) {
     startCite()
   }
 }
-onMounted(() => {
-  document.addEventListener('selectionchange', onSelectionChange)
-  document.addEventListener('keydown', onCiteKey)
-})
+// One shared pair of document listeners for all messages (parity 21).
+onMounted(() => root.value && registerMessage(root.value, { selection: onSelectionChange, key: onCiteKey }))
 onBeforeUnmount(() => {
-  document.removeEventListener('selectionchange', onSelectionChange)
-  document.removeEventListener('keydown', onCiteKey)
+  seen?.disconnect()
+  if (!root.value) return
+  unregisterMessage(root.value)
+  forgetCode(root.value)
 })
 // A diagram finished drawing somewhere: this message may show it now (parity 13).
 watch(mermaidVersion, () => {
@@ -124,6 +169,7 @@ watch(
 )
 
 onMounted(() => {
+  if (props.streaming) watchVisibility()
   paint()
   if (hasMath(props.source)) void ensureKatex().then(paint)
 })

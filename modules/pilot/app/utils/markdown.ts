@@ -14,6 +14,7 @@
  *   drawn once, cached, put in after sanitising; the source stays one click away.
  * - The result always goes through the suite's sanitiser.
  */
+import { streamBoundary } from './stream'
 import { Marked, type Tokens } from 'marked'
 import { sanitizeHtml } from '@quantsuite/ui'
 import { diagram, fillDiagrams, showingSource } from './mermaid'
@@ -256,6 +257,29 @@ export function renderMarkdown(src: string): string {
   return fillDiagrams(sanitizeHtml(alerts(html)))
 }
 
+export interface StreamCache {
+  prefix: string
+  html: string
+}
+
+/**
+ * A streaming message (parity 21): finished blocks are rendered once and
+ * kept; each frame renders only the tail. The final render (not streaming)
+ * parses the whole message, so lists or references split by a blank line
+ * while streaming come out exactly right in the end.
+ */
+export { streamBoundary }
+
+export function renderStreaming(src: string, cache: StreamCache): string {
+  const at = streamBoundary(src)
+  const prefix = src.slice(0, at)
+  if (prefix !== cache.prefix) {
+    cache.html = cache.prefix && prefix.startsWith(cache.prefix) ? cache.html + renderMarkdown(prefix.slice(cache.prefix.length)) : prefix ? renderMarkdown(prefix) : ''
+    cache.prefix = prefix
+  }
+  return cache.html + renderMarkdown(src.slice(at))
+}
+
 let monaco: any = null
 let monacoLoading: Promise<any> | null = null
 
@@ -278,23 +302,52 @@ async function loadMonaco(host: HTMLElement) {
 }
 
 /** Colour every not-yet-highlighted code block inside `root`. */
+// Code is coloured when it comes near the screen (parity 21): a page of
+// older messages loading above does not colour 20 replies in one frame.
+let codeObserver: IntersectionObserver | null = null
+function observer(): IntersectionObserver | null {
+  if (typeof IntersectionObserver === 'undefined') return null
+  codeObserver ??= new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting && e.target.isConnected) continue
+        codeObserver!.unobserve(e.target)
+        if (e.isIntersecting) void colorize(e.target as HTMLElement)
+      }
+    },
+    { rootMargin: '800px 0px' }
+  )
+  return codeObserver
+}
+
+async function colorize(el: HTMLElement) {
+  if (!el.isConnected || el.dataset.hl) return
+  const m = await loadMonaco(el)
+  if (!m || !el.isConnected || el.dataset.hl) return
+  const lang = MONACO_LANG[el.dataset.lang ?? '']
+  try {
+    const html: string = await m.editor.colorize(el.textContent ?? '', lang, { tabSize: 2 })
+    if (!el.isConnected) return
+    el.innerHTML = html
+    el.dataset.hl = '1'
+  } catch {
+    el.dataset.hl = '0'
+  }
+}
+
 export async function highlightCode(root: HTMLElement) {
   const blocks = [...root.querySelectorAll<HTMLElement>('pre > code[data-lang]:not([data-hl])')].filter(
     (el) => MONACO_LANG[el.dataset.lang ?? ''] && (el.textContent?.length ?? 0) < 60_000
   )
-  if (!blocks.length) return
-  const m = await loadMonaco(root)
-  if (!m) return
+  const io = observer()
   for (const el of blocks) {
-    if (!el.isConnected || el.dataset.hl) continue
-    const lang = MONACO_LANG[el.dataset.lang ?? '']
-    try {
-      const html: string = await m.editor.colorize(el.textContent ?? '', lang, { tabSize: 2 })
-      if (!el.isConnected) continue
-      el.innerHTML = html
-      el.dataset.hl = '1'
-    } catch {
-      el.dataset.hl = '0'
-    }
+    if (io) io.observe(el)
+    else await colorize(el)
   }
+}
+
+/** The message's code goes (repaint, unmount): stop watching it, keep no detached nodes. */
+export function forgetCode(root: HTMLElement) {
+  if (!codeObserver) return
+  for (const el of root.querySelectorAll<HTMLElement>('pre > code[data-lang]:not([data-hl])')) codeObserver.unobserve(el)
 }
