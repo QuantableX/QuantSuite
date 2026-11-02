@@ -36,6 +36,7 @@ mod pi;
 mod prompt;
 mod providers;
 mod relay;
+mod run_project;
 mod runtime;
 mod settings;
 mod shell;
@@ -888,6 +889,8 @@ pub fn init() -> TauriPlugin<Wry> {
             agent_tools::pilot_agent_list_threads,
             agent_tools::pilot_agent_read_thread,
             agent_tools::pilot_agent_read_thread_item,
+            agent_tools::pilot_agent_run_project,
+            agent_tools::pilot_agent_project_status,
             agent_tools::pilot_agent_browser,
             agent_tools::pilot_agent_track_files,
             threads::pilot_history_page,

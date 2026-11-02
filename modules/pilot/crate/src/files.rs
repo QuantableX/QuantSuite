@@ -297,14 +297,22 @@ pub struct PortOwner {
 
 /// The pid listening on `port` in `netstat -ano` output.
 pub fn pid_in_netstat(out: &str, port: u16) -> Option<u32> {
-    out.lines().find_map(|l| {
-        let cols: Vec<&str> = l.split_whitespace().collect();
-        if cols.len() < 5 || !cols[0].eq_ignore_ascii_case("TCP") || !cols[3].eq_ignore_ascii_case("LISTENING") {
-            return None;
-        }
-        let local_port = cols[1].rsplit(':').next()?.parse::<u16>().ok()?;
-        (local_port == port).then(|| cols[4].parse().ok()).flatten()
-    })
+    out.lines().filter_map(netstat_listener).find_map(|(p, pid)| (p == port).then_some(pid))
+}
+
+/// A `netstat -ano` row of a listening TCP socket: `(port, pid)`.
+///
+/// The state column is translated (`LISTENING`, `ABHÖREN`, `ÉCOUTE`, …), so
+/// a listener is recognised by its remote address instead: port 0
+/// (`0.0.0.0:0`, `[::]:0`) — every Windows language writes that the same.
+pub fn netstat_listener(line: &str) -> Option<(u16, u32)> {
+    let cols: Vec<&str> = line.split_whitespace().collect();
+    if cols.len() < 5 || !cols[0].eq_ignore_ascii_case("TCP") || cols[2].rsplit(':').next() != Some("0") {
+        return None;
+    }
+    let port = cols[1].rsplit(':').next()?.parse::<u16>().ok()?;
+    let pid = cols[cols.len() - 1].parse::<u32>().ok()?;
+    Some((port, pid))
 }
 
 fn run(program: &str, args: &[&str]) -> Result<String, String> {

@@ -1293,3 +1293,47 @@ greeting, screenshot seen by the model; plus hidden tab on thread switch,
 not-on-screen caller, stale ref after reload and closed tab. Codex could not be
 run (not logged in on this machine). Side-effect class `compute`: the provider's
 own permission mode still asks per MCP call in Supervised.
+
+## 18. Parity follow-up: run and preview for agents (07/23)
+
+Two QuantMCP tools over the project actions the user configured (Settings →
+Actions, the drawer's Run terminals — no second registry, nothing guessed, no
+installs):
+
+- `project_status` (read): `list` (starts nothing), `status` (the action's
+  processes under its terminal's shell, their listening ports, local addresses
+  from the output with who listens there, and the last 40 output lines) and
+  `preview` (wait up to `timeoutMs` for the action's address — or a given local
+  url — to answer over HTTP, then open it in the Browser tab for the parity 06
+  browser tool; with `file`, a generated .html/.svg of the thread's folder is
+  shown in the thread through the isolated page frame, no server).
+- `run_project` (write — the suite's approval gate applies): `start` runs the
+  action in the thread's checkout (Local or worktree cwd) in its drawer
+  terminal; a running action is reported, not started twice (`restart` runs it
+  again); `stop` sends Ctrl+C and, if the action ignores it, ends only that
+  action's process tree. The terminal stays; nothing outside the action is
+  touched — a port held by another process (the source checkout's server) is
+  reported as such.
+
+A preview that loses the screen while waiting does not open (and the frontend
+ignores an open for a thread that is not active). A failing command, a
+missing executable and a port collision come back with the command's own
+output. The drawer reloads when an agent starts an action
+(`pilot-drawer-changed`).
+
+`qs-pty` keeps the newest 16 KiB of every session's output (`tail`) and exposes
+the shell's pid. The tail is rendered like a screen (carriage returns,
+backspaces, line erases and cursor moves applied), so an interactive shell's
+redrawn input line reads once.
+
+Fix of all three netstat parsers (`files::pid_in_netstat` for Servers →
+Stop, `browser::parse_listeners` for the Browser tab's start page, and this
+card's): they matched the state column `LISTENING`, which Windows translates
+(`ABHÖREN` here), so on a non-English Windows nothing was found. A listener is
+now recognised by its remote port 0 (`files::netstat_listener`).
+
+Verified with real Claude Haiku threads in the isolated native app: list →
+start (dev server with a 4 s start, path with spaces) → preview (HTTP 200,
+opened) → browser read/screenshot → start again ("already running") → stop →
+status; plus a failing build, a missing executable, a port held by a foreign
+server and a static SVG preview. Codex not run (not logged in).

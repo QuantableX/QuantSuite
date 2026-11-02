@@ -129,6 +129,80 @@
       }
     },
     {
+      "name": "project_status",
+      "command": "plugin:pilot|pilot_agent_project_status",
+      "description": "Look at the project actions of this thread's checkout without starting anything. action=list shows the configured actions; status reports one action's processes, listening ports, local addresses (and whether another process holds the port) and last output; preview waits (timeoutMs, default 30000) for the action's local address — or a given local url — to answer and opens it in the Browser tab, ready for the browser tool; preview with file shows a generated .html/.svg of the thread's folder in the thread (isolated, no server). Start and stop actions with run_project. Works only from a QuantPilot thread.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "status",
+              "preview"
+            ]
+          },
+          "actionId": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "status/preview: the action's id (or name) from list."
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "preview: a local address to wait for instead of the detected one."
+          },
+          "file": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "preview: a generated .html/.svg file in the thread's folder to show without a server."
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000,
+            "description": "preview: how long to wait for the page."
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "run_project",
+      "command": "plugin:pilot|pilot_agent_run_project",
+      "description": "Start or stop one of the project actions the user configured (QuantPilot settings → Actions; nothing is guessed, no installs) in this thread's checkout. action=start runs it in the thread's terminal drawer — a running one is reused, restart=true runs it again; action=stop ends only that action's processes (its terminal stays). Use project_status to list actions, check one and open its preview. Works only from a QuantPilot thread.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "start",
+              "stop"
+            ]
+          },
+          "actionId": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The action's id (or name) from project_status list."
+          },
+          "restart": {
+            "type": "boolean",
+            "description": "start: run again even if it is running."
+          }
+        },
+        "required": [
+          "action",
+          "actionId"
+        ]
+      }
+    },
+    {
       "name": "render_page",
       "command": "plugin:pilot|pilot_agent_render_page",
       "description": "A visual answer: a self-contained HTML page (a chart, table, diagram or mockup) shown in the calling thread above your text. It runs sandboxed — its scripts run, it has no app or network access beyond what it embeds; inline CSS and JS (no external files). It inherits the suite's colours as CSS variables (--qss-bg, --qss-text, --qss-accent, ...). Local images (src paths) are embedded. At most 1 MB. Works only from a QuantPilot thread: the connection names the thread, never an argument.",

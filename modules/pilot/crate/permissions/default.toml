@@ -69,6 +69,8 @@ permissions = [
   "allow-pilot-agent-list-threads",
   "allow-pilot-agent-read-thread",
   "allow-pilot-agent-read-thread-item",
+  "allow-pilot-agent-run-project",
+  "allow-pilot-agent-project-status",
   "allow-pilot-agent-browser",
   "allow-pilot-agent-track-files",
   "allow-pilot-history-page",

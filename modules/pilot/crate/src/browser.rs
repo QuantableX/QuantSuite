@@ -601,11 +601,8 @@ pub fn parse_listeners(netstat: &str, tasklist: &str) -> Vec<Listener> {
         .collect();
     let mut out: Vec<Listener> = Vec::new();
     for line in netstat.lines() {
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() < 5 || !cols[0].eq_ignore_ascii_case("TCP") || !cols[3].eq_ignore_ascii_case("LISTENING") {
-            continue;
-        }
-        let (Some(port), Ok(pid)) = (cols[1].rsplit(':').next().and_then(|p| p.parse::<u16>().ok()), cols[4].parse::<u32>()) else {
+        // Language-independent: the state column is translated (files.rs).
+        let Some((port, pid)) = crate::files::netstat_listener(line) else {
             continue;
         };
         // System, svchost-style low ports and the RPC range are not dev servers.

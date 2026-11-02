@@ -113,7 +113,13 @@ pub struct PtySession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
     connected: Arc<AtomicBool>,
     output_buffer: Arc<Mutex<VecDeque<u8>>>,
+    /// The newest output, always kept (parity 07: an agent reads how its
+    /// project action is doing without attaching a terminal).
+    tail: Arc<Mutex<VecDeque<u8>>>,
 }
+
+/// Bytes of newest output kept per session for [`PtyRegistry::tail`].
+pub const TAIL_BYTES: usize = 16 * 1024;
 
 /// The two handles [`PtyRegistry::attach_with`] needs, cloned out of a session so
 /// the replay does not run under the registry lock.
@@ -194,6 +200,8 @@ impl PtySession {
         // to render the gap; the flusher reports it on the next tick.
         let dropped = Arc::new(AtomicUsize::new(0));
 
+        let tail: Arc<Mutex<VecDeque<u8>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let reader_tail = tail.clone();
         let reader_staged = staged.clone();
         let reader_eof = eof.clone();
         let reader_dropped = dropped.clone();
@@ -203,6 +211,11 @@ impl PtySession {
                 match reader.read(&mut buf) {
                     Ok(0) => break, // EOF — shell exited
                     Ok(n) => {
+                        if let Ok(mut t) = reader_tail.lock() {
+                            t.extend(&buf[..n]);
+                            let over = t.len().saturating_sub(TAIL_BYTES);
+                            t.drain(..over);
+                        }
                         if let Ok(mut s) = reader_staged.lock() {
                             s.extend_from_slice(&buf[..n]);
                             // A child that outruns the flusher must not grow
@@ -305,7 +318,18 @@ impl PtySession {
             child,
             connected,
             output_buffer,
+            tail,
         })
+    }
+
+    /// The newest output (lossy UTF-8, at most [`TAIL_BYTES`]).
+    pub fn tail(&self) -> String {
+        self.tail.lock().map(|t| String::from_utf8_lossy(&t.iter().copied().collect::<Vec<u8>>()).into_owned()).unwrap_or_default()
+    }
+
+    /// The shell's process id.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.process_id()
     }
 
     /// A cheap clone of the writer, for callers that want to drop the registry
@@ -424,6 +448,16 @@ impl PtyRegistry {
         };
 
         replay_and_connect(&parts, replay)
+    }
+
+    /// A session's newest output (parity 07).
+    pub fn tail(&self, id: &str) -> Option<String> {
+        self.sessions.lock().ok()?.get(id).map(PtySession::tail)
+    }
+
+    /// A session's shell process id.
+    pub fn pid(&self, id: &str) -> Option<u32> {
+        self.sessions.lock().ok()?.get(id).and_then(PtySession::pid)
     }
 
     pub fn contains(&self, id: &str) -> bool {

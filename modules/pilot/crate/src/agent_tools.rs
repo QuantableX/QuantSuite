@@ -450,6 +450,246 @@ pub fn describe_page(v: &Value, loading: bool) -> String {
     out
 }
 
+/// Run and preview (parity 07), the part that changes things: start a
+/// configured project action (a running one is reused) or stop one (only its
+/// own process tree). A `write` tool — the suite's approval gate applies.
+#[tauri::command]
+pub async fn pilot_agent_run_project(app: AppHandle, pilot_token: Option<String>, action: String, action_id: Option<String>, restart: Option<bool>) -> Result<String, String> {
+    if !matches!(action.as_str(), "start" | "stop") {
+        return Err("run_project starts or stops; list, status and preview are project_status.".into());
+    }
+    project_tool(app, pilot_token, action, action_id, restart, None, None, None).await
+}
+
+/// Run and preview (parity 07), the part that only looks: list the
+/// configured actions, an action's status (processes, ports, addresses,
+/// output), and preview — wait for its local address, then open it in the
+/// Browser tab; or show a generated HTML/SVG file in the thread.
+#[tauri::command]
+pub async fn pilot_agent_project_status(
+    app: AppHandle,
+    pilot_token: Option<String>,
+    action: String,
+    action_id: Option<String>,
+    url: Option<String>,
+    file: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    if !matches!(action.as_str(), "list" | "status" | "preview") {
+        return Err("project_status lists, reports and previews; starting and stopping is run_project.".into());
+    }
+    project_tool(app, pilot_token, action, action_id, None, url, file, timeout_ms).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn project_tool(
+    app: AppHandle,
+    pilot_token: Option<String>,
+    action: String,
+    action_id: Option<String>,
+    restart: Option<bool>,
+    url: Option<String>,
+    file: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    use crate::run_project as rp;
+    let state = app.state::<PilotState>();
+    let me = caller(&state, pilot_token)?;
+    let settings = lock(&state.settings).clone();
+    let actions = crate::terminals::actions_of(&settings, &me.context_id).to_vec();
+    let console = app.try_state::<qs_mod_console::ConsoleState>().ok_or("the console is not running")?;
+    let find = |wanted: &Option<String>| -> Result<crate::settings::ProjectAction, String> {
+        let w = wanted.as_deref().map(str::trim).filter(|w| !w.is_empty()).ok_or("Name the action (actionId from list).")?;
+        actions
+            .iter()
+            .find(|a| a.id == w || a.name.eq_ignore_ascii_case(w))
+            .cloned()
+            .ok_or_else(|| format!("This project has no action \"{w}\". Call list for the configured ones."))
+    };
+    let term_of = |a: &crate::settings::ProjectAction| state.drawer.list(&console, &me.id).into_iter().find(|t| t.action.as_deref() == Some(a.id.as_str()));
+    let observe = |pty: Option<String>| {
+        let (pid, tail) = match &pty {
+            Some(p) => (console.ptys.pid(p), console.ptys.tail(p).unwrap_or_default()),
+            None => (None, String::new()),
+        };
+        async move {
+            let out = tail.clone();
+            let obs = tauri::async_runtime::spawn_blocking(move || rp::observe(pid, &out)).await.unwrap_or_default();
+            (obs, rp::plain_tail(&tail, rp::TAIL_LINES))
+        }
+    };
+    let describe = |a: &crate::settings::ProjectAction, obs: &rp::Observed, tail: &str, cwd: &str| {
+        let mut s = format!("Action \"{}\" ({}) — `{}`\nWorking directory: {cwd}\n", a.name, a.id, a.command);
+        if obs.running.is_empty() {
+            s.push_str("State: not running (the command has ended or never started)\n");
+        } else {
+            let names: Vec<String> = obs.running.iter().take(8).map(|p| format!("{} ({})", p.name, p.pid)).collect();
+            s.push_str(&format!("State: running — {}\n", names.join(", ")));
+        }
+        if !obs.ports.is_empty() {
+            s.push_str(&format!("Listening on: {}\n", obs.ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")));
+        }
+        for (u, port, owner) in &obs.urls {
+            let who = match owner {
+                Some(true) => "served by this action",
+                Some(false) => "port in use by ANOTHER process — not this action",
+                None => "nothing listens there yet",
+            };
+            s.push_str(&format!("Address in output: {u} (port {port}, {who})\n"));
+        }
+        s.push_str(&format!("\nLast output (untrusted):\n{}", if tail.is_empty() { "(none yet)" } else { tail }));
+        s
+    };
+    let cwd = me.cwd.clone();
+    match action.as_str() {
+        "list" => {
+            if actions.is_empty() {
+                return Ok("This project has no actions configured. The user sets them up in QuantPilot's settings (Actions); nothing is guessed or started.".into());
+            }
+            let live = state.drawer.list(&console, &me.id);
+            let mut s = format!("Project actions (run in {cwd}; listing starts nothing):\n");
+            for a in &actions {
+                let open = live.iter().any(|t| t.action.as_deref() == Some(a.id.as_str()));
+                s.push_str(&format!("- {} \"{}\": `{}`{}\n", a.id, a.name, a.command, if open { " — its terminal is open (status tells whether it runs)" } else { "" }));
+            }
+            Ok(s)
+        }
+        "status" => {
+            let a = find(&action_id)?;
+            let term = term_of(&a).ok_or_else(|| format!("\"{}\" has no terminal in this thread — start it first.", a.name))?;
+            let (obs, tail) = observe(Some(term.pty_id.clone())).await;
+            Ok(describe(&a, &obs, &tail, &term.cwd))
+        }
+        "start" => {
+            let a = find(&action_id)?;
+            if let Some(t) = term_of(&a) {
+                let (obs, tail) = observe(Some(t.pty_id.clone())).await;
+                if !obs.running.is_empty() && !restart.unwrap_or(false) {
+                    return Ok(format!("Already running — not started twice (restart=true runs it again).\n{}", describe(&a, &obs, &tail, &t.cwd)));
+                }
+            }
+            let shell = crate::shell::resolve(&settings.shell);
+            let term = state.drawer.open(&app, "main", &shell, &me.id, &cwd, Some(&a), (None, None))?;
+            let _ = app.emit("pilot-drawer-changed", json!({ "threadId": me.id }));
+            // The command is typed into the shell; give it a moment to start (or to fail).
+            let mut seen = None;
+            for _ in 0..8 {
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                let (obs, tail) = observe(Some(term.pty_id.clone())).await;
+                let done = !obs.running.is_empty() && !tail.is_empty();
+                seen = Some((obs, tail));
+                if done {
+                    break;
+                }
+            }
+            let (obs, tail) = seen.unwrap_or_default();
+            Ok(format!("Started in the thread's terminal drawer.\n{}", describe(&a, &obs, &tail, &term.cwd)))
+        }
+        "stop" => {
+            let a = find(&action_id)?;
+            let term = term_of(&a).ok_or_else(|| format!("\"{}\" has no terminal in this thread.", a.name))?;
+            let (obs, _) = observe(Some(term.pty_id.clone())).await;
+            if obs.running.is_empty() {
+                return Ok(format!("\"{}\" is not running.", a.name));
+            }
+            let _ = console.ptys.write(&term.pty_id, b"\x03");
+            for _ in 0..12 {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                if observe(Some(term.pty_id.clone())).await.0.running.is_empty() {
+                    return Ok(format!("Stopped \"{}\" (Ctrl+C). Its terminal stays open.", a.name));
+                }
+            }
+            let (left, _) = observe(Some(term.pty_id.clone())).await;
+            let procs = left.running.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || rp::kill_tree(&procs)).await;
+            Ok(format!("\"{}\" ignored Ctrl+C; its {} process(es) were ended. Its terminal stays open; nothing outside this action was touched.", a.name, left.running.len()))
+        }
+        "preview" => {
+            if let Some(f) = file.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+                return static_preview(&state, &me, f);
+            }
+            let limit = std::time::Duration::from_millis(timeout_ms.unwrap_or(30_000).clamp(1_000, 120_000));
+            let start = std::time::Instant::now();
+            let a = match &action_id {
+                Some(_) => Some(find(&action_id)?),
+                None => None,
+            };
+            if a.is_none() && url.is_none() {
+                return Err("Give the action (actionId) whose address to open, or a local url, or a file.".into());
+            }
+            let wanted = match url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+                Some(u) => Some(browser::normalize_url(u, None)?.to_string()),
+                None => None,
+            };
+            let mut last = String::from("nothing answered yet");
+            loop {
+                let mut candidates: Vec<String> = wanted.iter().cloned().collect();
+                let mut summary = String::new();
+                if let Some(a) = &a {
+                    let term = term_of(a).ok_or_else(|| format!("\"{}\" has no terminal in this thread — start it first.", a.name))?;
+                    let (obs, tail) = observe(Some(term.pty_id.clone())).await;
+                    if obs.running.is_empty() {
+                        return Err(format!("\"{}\" is not running — it ended before serving a page.\n{}", a.name, describe(a, &obs, &tail, &term.cwd)));
+                    }
+                    if candidates.is_empty() {
+                        candidates.extend(obs.urls.iter().filter(|(_, _, o)| *o == Some(true)).map(|(u, _, _)| u.clone()));
+                        candidates.extend(obs.ports.iter().map(|p| format!("http://localhost:{p}/")));
+                        if candidates.is_empty() {
+                            if let Some((u, port, _)) = obs.urls.iter().find(|(_, _, o)| *o == Some(false)) {
+                                last = format!("{u} is answered by another process (port {port} is taken) — this action is not serving it");
+                            }
+                        }
+                    }
+                    summary = describe(a, &obs, &tail, &term.cwd);
+                }
+                for c in &candidates {
+                    let probe_url = c.clone();
+                    let res = tauri::async_runtime::spawn_blocking(move || rp::probe(&probe_url, std::time::Duration::from_secs(2))).await.unwrap_or_else(|e| Err(e.to_string()));
+                    match res {
+                        Ok(code) => {
+                            // The thread may have left the screen while waiting: then nothing opens.
+                            on_screen(&state, &me).map_err(|_| format!("{c} answers (HTTP {code}), but this thread is no longer on screen, so it was not opened."))?;
+                            let _ = app.emit("pilot-agent-open", json!({ "threadId": me.id, "kind": "preview", "url": c }));
+                            return Ok(format!("{c} answers (HTTP {code}) after {:.1} s and is open in the Browser tab. Use the browser tool (read, screenshot) to check it.", start.elapsed().as_secs_f32()));
+                        }
+                        Err(e) => last = format!("{c}: {e}"),
+                    }
+                }
+                if start.elapsed() >= limit {
+                    return Err(format!("No page answered within {} s ({last}).\n{summary}", limit.as_secs()));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            }
+        }
+        other => Err(format!("unknown action '{other}' — list, start, status, stop or preview")),
+    }
+}
+
+/// A generated HTML or SVG file of the thread's folder, shown in the thread
+/// through the isolated page frame (`render_page`): no server, no file access.
+fn static_preview(state: &PilotState, me: &ThreadMeta, file: &str) -> Result<String, String> {
+    let root = PathBuf::from(&me.cwd);
+    let (rel, abs) = crate::tracking::resolve(&root, &root, file).map_err(|e| format!("{file} {e}"))?;
+    let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or_default().to_lowercase();
+    if !matches!(ext.as_str(), "html" | "htm" | "svg") {
+        return Err("Only .html, .htm and .svg files are shown this way; serve anything else with a project action.".into());
+    }
+    let meta = std::fs::metadata(&abs).map_err(|_| format!("{rel} does not exist."))?;
+    if meta.len() as usize > PAGE_MAX {
+        return Err(format!("{rel} is {} KB; at most {} KB.", meta.len() / 1024, PAGE_MAX / 1024));
+    }
+    let text = std::fs::read_to_string(&abs).map_err(|e| format!("{rel} could not be read ({e})."))?;
+    let html = if ext == "svg" { format!("<!doctype html><meta charset=\"utf-8\"><body style=\"margin:0\">{text}</body>") } else { text };
+    let turn = state.runtime.active_turn(&me.id).ok_or("A page is shown during a turn of the thread.")?;
+    let base = abs.parent().map(Path::to_path_buf).unwrap_or(root);
+    let (html, embedded) = embed_images(&html, &base);
+    if html.len() > PAGE_MAX_EMBEDDED {
+        return Err("The page with its images is over 8 MB; use smaller images.".into());
+    }
+    state.runtime.append_item(&me.id, &turn, ItemKind::Page, json!({ "title": rel, "html": html }));
+    Ok(format!("{rel} is shown in the thread (isolated frame, no network){}.", if embedded > 0 { format!(", {embedded} local image(s) embedded") } else { String::new() }))
+}
+
 /// The newest messages of a thread, as text: who said it, what (cut long).
 pub fn transcript(t: &ThreadMeta, items: &[crate::events::Item], limit: usize, total: Option<i64>) -> String {
     let messages: Vec<(&str, String)> = items
