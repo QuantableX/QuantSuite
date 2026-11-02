@@ -70,6 +70,8 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-list-threads`
 - `allow-pilot-agent-read-thread`
 - `allow-pilot-agent-read-thread-item`
+- `allow-pilot-attachment-media`
+- `allow-pilot-paths-exist`
 - `allow-pilot-review-load`
 - `allow-pilot-review-draft-save`
 - `allow-pilot-review-draft-delete`
@@ -483,6 +485,32 @@ Enables the pilot_agent_track_files command without any pre-configured scope.
 <td>
 
 Denies the pilot_agent_track_files command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-attachment-media`
+
+</td>
+<td>
+
+Enables the pilot_attachment_media command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-attachment-media`
+
+</td>
+<td>
+
+Denies the pilot_attachment_media command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1991,6 +2019,32 @@ Enables the pilot_open_in command without any pre-configured scope.
 <td>
 
 Denies the pilot_open_in command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-paths-exist`
+
+</td>
+<td>
+
+Enables the pilot_paths_exist command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-paths-exist`
+
+</td>
+<td>
+
+Denies the pilot_paths_exist command without any pre-configured scope.
 
 </td>
 </tr>

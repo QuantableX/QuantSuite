@@ -1493,3 +1493,29 @@ intact after an app restart, QA drafts deleted. **Not verified: an actual review
 submission** — it writes to GitHub and needs the user's explicit authorization
 and a designated test pull request; payload, marker and refusal rules are covered
 by unit tests only.
+
+## 23. Parity follow-up: clickable transcript attachments (12/23)
+
+In a sent message (`Thread/UserMessage.vue`) thumbnails are buttons: click or
+Enter opens `Thread/MediaViewer.vue` with the **original** image (not the
+thumbnail), read only when shown through `pilot_attachment_media` — allowed
+only for the thread's own attachment folder or a path one of its messages names,
+32 MB at most, PNG/JPEG/GIF/WebP/SVG/BMP with real dimensions. The viewer fits
+by default; + / − / Ctrl+wheel zoom, 0 fits, 1 shows actual size, ← / → move
+between the message's images, Copy path, Save a copy (native save dialog,
+`pilot_file_save_as`), Esc closes and focus returns to the thumbnail that opened
+it. The data URL is dropped when the viewer closes.
+
+File attachments open in the inspector's file viewer (read-only outside the
+checkout, as before), folders in Explorer. Right-click or Shift+F10 opens a menu:
+Copy path, Open in the default app (new `default` opener: the Windows file
+association), Show in Explorer, Save a copy. On showing a message, its
+attachment paths are checked (`pilot_paths_exist`); a moved or deleted file is
+struck through as "unavailable", its actions are disabled and a click says where
+it was. Video playback is not offered.
+
+Verified in the isolated native app with a real Claude Haiku turn carrying two
+images, a file and a folder outside the checkout (paths with spaces): full-size
+originals, navigation, zoom, Esc with focus return, the file in the read-only
+inspector, and a file deleted afterwards shown as unavailable with its actions
+disabled.

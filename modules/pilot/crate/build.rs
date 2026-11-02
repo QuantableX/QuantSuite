@@ -65,6 +65,8 @@ const COMMANDS: &[&str] = &[
     "pilot_agent_list_threads",
     "pilot_agent_read_thread",
     "pilot_agent_read_thread_item",
+    "pilot_attachment_media",
+    "pilot_paths_exist",
     "pilot_review_load",
     "pilot_review_draft_save",
     "pilot_review_draft_delete",

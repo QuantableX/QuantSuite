@@ -393,6 +393,12 @@ pub fn open_in(editor: &str, file: &Path, line: Option<i64>) -> Result<(), Strin
             c.args(["--goto", &target]);
             c
         }
+        // The app Windows associates with the file (parity 12).
+        "default" => {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/C", "start", ""]).arg(file);
+            c
+        }
         other => return Err(format!("unknown editor '{other}'")),
     };
     #[cfg(windows)]
