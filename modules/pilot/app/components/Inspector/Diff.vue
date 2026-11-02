@@ -193,11 +193,12 @@ function addComment() {
           role="option"
           :aria-selected="f.path === selected"
           :class="{ on: f.path === selected }"
-          :title="f.path"
+          :title="[f.from ? `${f.from} → ${f.path}` : f.path, f.note].filter(Boolean).join('\n')"
           @click="selected = f.path"
         >
           <span class="qp-diff-st" :data-st="f.status">{{ f.status }}</span>
           <span class="qp-diff-dir">{{ split(f.path).dir }}</span><span class="qp-diff-name">{{ split(f.path).name }}</span>
+          <span v-if="f.note" class="qp-diff-warn" :aria-label="f.note">!</span>
           <span v-if="staged.has(f.path)" class="qp-diff-staged" title="Staged">●</span>
           <span class="qp-diff-num"><span class="add">+{{ f.added }}</span> <span class="del">−{{ f.removed }}</span></span>
         </button>
@@ -281,6 +282,8 @@ function addComment() {
 .qp-diff-st[data-st='M'] { color: var(--qss-warning, #d29a3f); }
 .qp-diff-dir { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--qss-text-muted, #6e6e7a); }
 .qp-diff-name { flex-shrink: 0; white-space: nowrap; }
+.qp-diff-st[data-st='R'] { color: var(--qss-accent, #7aa2f7); }
+.qp-diff-warn { flex-shrink: 0; width: 14px; height: 14px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--qss-warning, #d29a3f) 22%, transparent); color: var(--qss-warning, #d29a3f); font-size: 10px; font-weight: 700; }
 .qp-diff-staged { color: var(--qss-success, #34d399); font-size: 9px; }
 .qp-diff-num { margin-left: auto; flex-shrink: 0; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; }
 .add { color: var(--qss-success, #34d399); }

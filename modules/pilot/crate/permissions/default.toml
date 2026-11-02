@@ -69,6 +69,7 @@ permissions = [
   "allow-pilot-agent-list-threads",
   "allow-pilot-agent-read-thread",
   "allow-pilot-agent-read-thread-item",
+  "allow-pilot-agent-track-files",
   "allow-pilot-history-page",
   "allow-pilot-history-item",
   "allow-pilot-history-around",

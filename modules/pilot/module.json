@@ -203,6 +203,51 @@
       }
     },
     {
+      "name": "track_files",
+      "command": "plugin:pilot|pilot_agent_track_files",
+      "description": "Attribute file writes to this QuantPilot turn. Before a write batch (edit tools or a shell command/script), call action=begin with the exact paths you will create, change, rename or delete (relative to the thread's folder); then write; then call action=complete with the returned captureId and, optionally, edited = the subset you actually wrote. Only those files, as they are at complete, become the turn's saved diff; later changes by others never leak in. Use it for every shell write and, outside Git repositories, for every edit. Records only — it never changes files, Git index or history. Works only from a QuantPilot thread; the connection names the thread.",
+      "sideEffects": "compute",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "begin",
+              "complete"
+            ],
+            "description": "begin before writing, complete after."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 200,
+            "description": "begin: the files the batch will write, relative to the thread's folder."
+          },
+          "captureId": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "complete: the captureId begin returned."
+          },
+          "edited": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "maxItems": 200,
+            "description": "complete: the files actually written (default: all tracked)."
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
       "name": "start_thread",
       "command": "plugin:pilot|pilot_agent_start_thread",
       "description": "Delegate work: a new thread in the same workspace, with the caller's permission mode and (unless given) its agent, starts working on the prompt at once. Works only from a QuantPilot thread: the connection names the thread, never an argument.",

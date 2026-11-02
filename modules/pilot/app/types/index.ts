@@ -633,6 +633,12 @@ export interface FileChange {
   added: number
   removed: number
   binary: boolean
+  /** Parity 01: `tracked` (the agent's track_files), `reported` (a provider edit event), `snapshot` (saved before). */
+  source?: 'tracked' | 'reported' | 'snapshot'
+  /** Why the record is partial or uncertain. */
+  note?: string
+  /** A rename's old path. */
+  from?: string
 }
 
 /** The Diff tab's file list (pilot_diff_list). */

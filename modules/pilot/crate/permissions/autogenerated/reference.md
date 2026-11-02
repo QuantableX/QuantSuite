@@ -70,6 +70,7 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-list-threads`
 - `allow-pilot-agent-read-thread`
 - `allow-pilot-agent-read-thread-item`
+- `allow-pilot-agent-track-files`
 - `allow-pilot-history-page`
 - `allow-pilot-history-item`
 - `allow-pilot-history-around`
@@ -359,6 +360,32 @@ Enables the pilot_agent_start_thread command without any pre-configured scope.
 <td>
 
 Denies the pilot_agent_start_thread command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-track-files`
+
+</td>
+<td>
+
+Enables the pilot_agent_track_files command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-track-files`
+
+</td>
+<td>
+
+Denies the pilot_agent_track_files command without any pre-configured scope.
 
 </td>
 </tr>

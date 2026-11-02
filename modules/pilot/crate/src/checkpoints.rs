@@ -96,7 +96,7 @@ pub fn prune(root: &Path, thread: &str) {
     }
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FileChange {
     /// Relative to the repository, forward slashes.
@@ -106,18 +106,16 @@ pub struct FileChange {
     pub added: i64,
     pub removed: i64,
     pub binary: bool,
-}
-
-/// Paths an agent's tool reported, relative to the repository root.
-pub fn relative(root: &Path, cwd: &Path, path: &str) -> Option<String> {
-    let p = Path::new(path);
-    let abs = if p.is_absolute() { p.to_path_buf() } else { cwd.join(p) };
-    let norm = |x: &Path| x.to_string_lossy().replace('\\', "/").trim_end_matches('/').to_lowercase();
-    let (a, r) = (norm(&abs), norm(root));
-    let rel = a.strip_prefix(&format!("{r}/"))?;
-    // Keep the path's own case from the original string.
-    let start = abs.to_string_lossy().len() - rel.len();
-    Some(abs.to_string_lossy()[start..].replace('\\', "/"))
+    /// A turn's file (parity 01): `tracked` (the agent's begin/complete),
+    /// `reported` (a provider edit event) or `snapshot` (saved before 01).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub source: String,
+    /// Why the record is partial or uncertain (overlap, no baseline, limits).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// A rename's old path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 /// Files that differ between two commits (all of them when `paths` is empty).
@@ -141,7 +139,7 @@ pub fn changes(root: &Path, from: &str, to: &str, paths: &[String]) -> Result<Ve
         .filter_map(|l| {
             let (s, p) = l.split_once('\t')?;
             let (a, d) = counts.get(p).copied().unwrap_or((None, None));
-            Some(FileChange { path: p.to_string(), status: s.chars().next().unwrap_or('M').to_string(), added: a.unwrap_or(0), removed: d.unwrap_or(0), binary: a.is_none() })
+            Some(FileChange { path: p.to_string(), status: s.chars().next().unwrap_or('M').to_string(), added: a.unwrap_or(0), removed: d.unwrap_or(0), binary: a.is_none(), ..Default::default() })
         })
         .collect())
 }
@@ -161,6 +159,33 @@ fn cut(text: String, max: usize) -> String {
         end -= 1;
     }
     format!("{}\n… (cut at {} KiB)", &text[..end], max / 1024)
+}
+
+/// A file's bytes as a commit has it: the baseline of a reported write
+/// (parity 01). Bounded like a tracked capture.
+pub fn show_content(root: &Path, commit: &str, path: &str) -> crate::tracking::Content {
+    use crate::tracking::{Content, FILE_CAP};
+    let spec = format!("{commit}:{path}");
+    let size = match git(root, &["cat-file", "-s", &spec]) {
+        Ok(s) => s.trim().parse::<u64>().unwrap_or(0),
+        // Not in the commit: the turn created it.
+        Err(_) => return Content::Missing,
+    };
+    if size as usize > FILE_CAP {
+        return Content::TooLarge(size);
+    }
+    let mut cmd = Command::new("git");
+    cmd.args(["cat-file", "blob", &spec]).current_dir(root).env("GIT_TERMINAL_PROMPT", "0").stdin(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    match cmd.output() {
+        Ok(out) if out.status.success() => Content::Bytes(out.stdout),
+        Ok(out) => Content::Unreadable(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+        Err(e) => Content::Unreadable(e.to_string()),
+    }
 }
 
 /// A file as a commit has it — empty when it does not exist there.
@@ -302,9 +327,11 @@ mod tests {
     #[test]
     fn paths_become_repo_relative() {
         let root = Path::new("C:/Repo");
-        assert_eq!(relative(root, root, "C:\\Repo\\src\\A.rs").as_deref(), Some("src/A.rs"));
-        assert_eq!(relative(root, Path::new("C:/Repo/src"), "b.rs").as_deref(), Some("src/b.rs"));
-        assert_eq!(relative(root, root, "D:/elsewhere.rs"), None);
+        let rel = |cwd: &Path, p: &str| crate::tracking::resolve(root, cwd, p).ok().map(|x| x.0);
+        assert_eq!(rel(root, "C:\\Repo\\src\\A.rs").as_deref(), Some("src/A.rs"));
+        assert_eq!(rel(Path::new("C:/Repo/src"), "b.rs").as_deref(), Some("src/b.rs"));
+        assert_eq!(rel(root, "D:/elsewhere.rs"), None);
+        assert_eq!(rel(Path::new("C:/Repo/src"), "../../out.rs"), None, "no way out by parent steps");
         let mut p = vec!["x".repeat(PATCH_TURN - 10), "y".repeat(100)];
         within_budget(&mut p);
         assert!(p[1].is_empty(), "the turn budget");

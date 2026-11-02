@@ -3,6 +3,11 @@
  * What a turn changed (card 11): a card under the answer with the files and
  * their +/− counts. A file opens its diff in the inspector; "Open diff"
  * opens the whole turn.
+ *
+ * Parity 01: every file was frozen when it was written. A file whose
+ * attribution is uncertain (another thread wrote it too, no baseline, too
+ * large) carries a "!" with the reason; a turn whose capture was incomplete
+ * says so instead of looking complete.
  */
 import { computed, ref } from 'vue'
 import { FileDiff } from 'lucide-vue-next'
@@ -17,6 +22,8 @@ const all = ref(false)
 
 const files = computed<FileChange[]>(() => (Array.isArray(props.item.data.files) ? props.item.data.files : []))
 const shown = computed(() => (all.value ? files.value : files.value.slice(0, 6)))
+const notes = computed<string[]>(() => (Array.isArray(props.item.data.notes) ? props.item.data.notes : []))
+const partial = computed(() => Boolean(props.item.data.partial))
 const split = (p: string) => {
   const i = p.lastIndexOf('/')
   return i < 0 ? { dir: '', name: p } : { dir: p.slice(0, i + 1), name: p.slice(i + 1) }
@@ -32,12 +39,21 @@ function open(path: string | null = null) {
     <div class="qp-chg-head">
       <FileDiff :size="13" />
       <span class="qp-chg-title">{{ files.length }} file{{ files.length === 1 ? '' : 's' }} changed</span>
+      <span v-if="partial" class="qp-chg-partial" title="Some writes of this turn could not be attributed with certainty">partial</span>
       <span class="qp-chg-num"><span class="add">+{{ item.data.added ?? 0 }}</span> <span class="del">−{{ item.data.removed ?? 0 }}</span></span>
       <button class="qp-chg-open" :title="keys.hint('diff.toggle', 'Open the turn\'s diff')" @click="open()">Open diff</button>
     </div>
-    <button v-for="f in shown" :key="f.path" class="qp-chg-file" :title="f.path" @click="open(f.path)">
+    <div v-for="n in notes" :key="n" class="qp-chg-note">{{ n }}</div>
+    <button
+      v-for="f in shown"
+      :key="f.path"
+      class="qp-chg-file"
+      :title="[f.from ? `${f.from} → ${f.path}` : f.path, f.note].filter(Boolean).join('\n')"
+      @click="open(f.path)"
+    >
       <span class="qp-chg-st" :data-st="f.status">{{ f.status }}</span>
       <span class="qp-chg-dir">{{ split(f.path).dir }}</span><span class="qp-chg-name">{{ split(f.path).name }}</span>
+      <span v-if="f.note" class="qp-chg-warn" :aria-label="f.note">!</span>
       <span class="qp-chg-num"><span class="add">+{{ f.added }}</span> <span class="del">−{{ f.removed }}</span></span>
     </button>
     <button v-if="files.length > 6" class="qp-chg-more" @click="all = !all">{{ all ? 'Show fewer' : `Show all ${files.length}` }}</button>
@@ -94,6 +110,10 @@ function open(path: string | null = null) {
 .qp-chg-head .qp-chg-open { margin-left: auto; }
 .add { color: var(--qss-success, #34d399); }
 .del { color: var(--qss-error, #f87171); }
+.qp-chg-st[data-st='R'] { color: var(--qss-accent, #7aa2f7); }
+.qp-chg-partial { padding: 0 6px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--qss-warning, #d29a3f) 60%, transparent); color: var(--qss-warning, #d29a3f); font-size: 11px; }
+.qp-chg-note { padding: 1px 6px 3px; color: var(--qss-warning, #d29a3f); font-size: 11.5px; }
+.qp-chg-warn { flex-shrink: 0; width: 14px; height: 14px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--qss-warning, #d29a3f) 22%, transparent); color: var(--qss-warning, #d29a3f); font-size: 10px; font-weight: 700; }
 .qp-chg-more { align-self: flex-start; margin: 2px 6px; padding: 0; border: none; background: transparent; color: var(--qss-text-muted, #6e6e7a); font: inherit; cursor: pointer; }
 .qp-chg-more:hover { color: var(--qss-text, #d4d4d8); }
 </style>
