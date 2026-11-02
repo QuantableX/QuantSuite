@@ -34,6 +34,7 @@ import { useGitStore } from '#pilot/stores/git'
 import { useGithubStore } from '#pilot/stores/github'
 import { caretLine } from '#pilot/utils/caret'
 import { pilot } from '#pilot/utils/invoke'
+import { DOCUMENT, cancelDocument, docLabel, readDocument as readDocumentText } from '#pilot/utils/documents'
 import {
   appCommand,
   chipNextTo,
@@ -48,7 +49,7 @@ import {
   type Trigger,
 } from '#pilot/utils/mentions'
 import type { MenuRow } from '#pilot/components/Thread/MentionMenu.vue'
-import type { ComposerAttachment, ContextChip, DocInfo, SessionMeta, ThreadSnapshot } from '#pilot/types'
+import type { ComposerAttachment, ContextChip, SessionMeta, ThreadSnapshot } from '#pilot/types'
 import {
   enterAction,
   highlight,
@@ -990,15 +991,13 @@ async function pickFromDisk(directory: boolean) {
 function removeAttachment(key: string) {
   const gone = attachments.value.find((a) => a.key === key)
   // A document still being read stops being read.
-  if (gone?.docPending && gone.path) void pilot('plugin:pilot|pilot_document_cancel', { path: gone.path }).catch(() => undefined)
+  if (gone?.docPending && gone.path) cancelDocument(gone.path)
   attachments.value = attachments.value.filter((a) => a.key !== key)
 }
 
 // ── Documents (parity 16) ──
 // PDF and Office files are read in the background as soon as they are on the
-// shelf (saved, restored or put back); the send uses the cached result. Keep
-// the list in step with KINDS in documents.rs.
-const DOCUMENT = /\.(pdf|docx|pptx|odt|doc|xlsx|xls|ppt|odp|ods|epub|pages|key|numbers)$/i
+// shelf (saved, restored or put back); the send uses the cached result.
 /** Patches an attachment of the thread it was read for, wherever the composer is now. */
 function patchDoc(threadId: string, key: string, patch: Partial<ComposerAttachment>) {
   const list = attachState.value[threadId]
@@ -1009,12 +1008,7 @@ function patchDoc(threadId: string, key: string, patch: Partial<ComposerAttachme
 async function readDocument(a: ComposerAttachment) {
   const threadId = props.threadId
   patchDoc(threadId, a.key, { docPending: true })
-  let doc: DocInfo
-  try {
-    doc = (await pilot<DocInfo>('plugin:pilot|pilot_document_extract', { path: a.path, name: a.name }))!
-  } catch (e) {
-    doc = { status: 'failed', kind: '', format: 'Document', title: null, pages: null, pagesRead: 0, unit: '', chars: 0, textPath: null, detail: String(e), emptyPages: [] }
-  }
+  const doc = await readDocumentText(a.path, a.name)
   patchDoc(threadId, a.key, { docPending: false, doc })
 }
 watch(
@@ -1026,26 +1020,6 @@ watch(
   },
   { immediate: true }
 )
-function docLabel(d: DocInfo): string {
-  const n = d.pages ?? 0
-  const units = d.unit && d.pages != null ? `${n.toLocaleString('en-US')} ${d.unit}${n === 1 ? '' : 's'}` : ''
-  switch (d.status) {
-    case 'ok':
-      return units ? `Text · ${units}` : 'Text read'
-    case 'truncated':
-      return units ? `Partly read · ${d.pagesRead.toLocaleString('en-US')} of ${units}` : 'Partly read'
-    case 'needs_ocr':
-      return 'Scanned · needs OCR'
-    case 'encrypted':
-      return 'Password-protected'
-    case 'unsupported':
-      return 'Text not extracted'
-    case 'cancelled':
-      return 'Not read'
-    default:
-      return 'Could not read'
-  }
-}
 function docTitle(a: ComposerAttachment): string {
   const d = a.doc
   if (!d) return a.path

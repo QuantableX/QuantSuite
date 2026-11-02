@@ -579,7 +579,7 @@ impl Projector {
             Answer::Deny { message } => {
                 (if item.kind == ItemKind::Plan { "rejected" } else { "denied" }, json!(message.clone().unwrap_or_default()))
             }
-            Answer::Answers { answers } => ("answered", Value::Object(redact_secrets(&item.data["questions"], answers))),
+            Answer::Answers { answers, .. } => ("answered", Value::Object(redact_secrets(&item.data["questions"], answers))),
             Answer::Dismiss => ("dismissed", Value::Null),
             // What a form sent is the server's non-secret data (MCP keeps
             // credentials out of forms); a web-page step has only its outcome.
@@ -601,6 +601,12 @@ impl Projector {
         item.data["status"] = status.into();
         if !reply.is_null() {
             item.data["reply"] = reply;
+        }
+        // The files sent with the answers stay with the question (parity 17).
+        if let Answer::Answers { files, .. } = answer {
+            if !files.is_empty() {
+                item.data["replyFiles"] = Value::Object(files.clone());
+            }
         }
         item.updated_at = now_ms();
         if let Some(call_id) = item.data["callId"].as_str().map(str::to_string) {

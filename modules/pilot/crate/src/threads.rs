@@ -2448,14 +2448,85 @@ pub fn pilot_attachment_save_text(state: State<'_, PilotState>, id: String, name
 
 #[tauri::command(async)]
 pub fn pilot_thread_answer(app: AppHandle, state: State<'_, PilotState>, id: String, request_id: String, answer: Answer) -> Result<(), String> {
+    let item = state.db.request_item(&id, &request_id).map_err(|e| e.to_string())?;
+    // Files in answers (parity 17): checked, then folded into the answer text.
+    let answer = match answer {
+        Answer::Answers { answers, files } if !files.is_empty() => {
+            let questions = item.as_ref().map(|i| i.data["questions"].clone()).unwrap_or(Value::Null);
+            let root = state.data_dir.join("attachments").join(&id);
+            let answers = fold_answer_files(&questions, answers, &files, &root)?;
+            Answer::Answers { answers, files }
+        }
+        other => other,
+    };
     // A question the agent asked for later (Codex async questions) is
     // answered by the next user message, not by a protocol reply.
-    if let Some(item) = state.db.request_item(&id, &request_id).map_err(|e| e.to_string())? {
+    if let Some(item) = item {
         if item.data["byMessage"].as_bool().unwrap_or(false) {
             return answer_by_message(&app, &state, &id, item, &answer);
         }
     }
     state.runtime.answer(&id, &request_id, &answer)
+}
+
+/// At most this many files go with one question's answer, and with one request.
+const ANSWER_FILES: usize = 10;
+const REQUEST_FILES: usize = 20;
+
+/// The answers with each question's files as references the agent can open
+/// (images with its file or image tool, documents also as extracted text).
+/// Only saved attachments of this thread, never with a secret question.
+pub fn fold_answer_files(questions: &Value, mut answers: serde_json::Map<String, Value>, files: &serde_json::Map<String, Value>, root: &Path) -> Result<serde_json::Map<String, Value>, String> {
+    let root = std::fs::canonicalize(root).map_err(|_| "This thread has no saved attachments; attach the files again.".to_string())?;
+    let total: usize = files.values().filter_map(Value::as_array).map(Vec::len).sum();
+    if total > REQUEST_FILES {
+        return Err(format!("At most {REQUEST_FILES} files can go with one set of answers."));
+    }
+    for (question, list) in files {
+        let q = questions.as_array().and_then(|qs| qs.iter().find(|q| q["question"] == question.as_str()));
+        let Some(q) = q else { return Err(format!("\"{question}\" is not a question of this request.")) };
+        if q["isSecret"] == true {
+            return Err("A secret answer cannot carry files.".into());
+        }
+        if q["isOther"] == false && q["options"].as_array().is_some_and(|o| !o.is_empty()) {
+            return Err(format!("\"{question}\" takes only its options, no files."));
+        }
+        let list = list.as_array().cloned().unwrap_or_default();
+        if list.len() > ANSWER_FILES {
+            return Err(format!("At most {ANSWER_FILES} files can go with one answer."));
+        }
+        let mut lines = Vec::new();
+        for f in &list {
+            let (kind, name, path) = (f["kind"].as_str().unwrap_or_default(), f["name"].as_str().unwrap_or_default(), f["path"].as_str().unwrap_or_default());
+            if !matches!(kind, "image" | "file") {
+                return Err(format!("{name}: only images and files can be attached."));
+            }
+            let saved = std::fs::canonicalize(path).map_err(|_| format!("{name} is no longer available — remove it and attach it again."))?;
+            if !saved.starts_with(&root) || !saved.is_file() {
+                return Err(format!("{name} is not a saved attachment of this thread."));
+            }
+            let line = if kind == "image" {
+                format!("- {name} (image): {path}")
+            } else if documents::kind_of(name).is_some() {
+                let info = documents::extract(&saved, name);
+                match (info.status.as_str(), &info.text_path) {
+                    ("ok" | "truncated", Some(text)) => format!("- {name} ({}): {path} — its extracted text: {text}", info.format),
+                    _ => format!("- {name} ({}, {}): {path}", info.format, info.detail.as_deref().unwrap_or("text not extracted").trim_end_matches('.')),
+                }
+            } else {
+                format!("- {name} (file): {path}")
+            };
+            lines.push(line);
+        }
+        if lines.is_empty() {
+            continue;
+        }
+        let text = answers.get(question).and_then(Value::as_str).unwrap_or_default().trim_end().to_string();
+        let refs = format!("Files the user attached to this answer (saved copies; open them from these paths):\n{}", lines.join("\n"));
+        let folded = if text.is_empty() { refs } else { format!("{text}\n\n{refs}") };
+        answers.insert(question.clone(), Value::String(folded));
+    }
+    Ok(answers)
 }
 
 /// The answers as a message — one `question → answer` line each.
@@ -2478,8 +2549,11 @@ fn answer_by_message(app: &AppHandle, state: &PilotState, id: &str, mut item: It
         return Err("this question was already answered".into());
     }
     let text = match answer {
-        Answer::Answers { answers } => {
+        Answer::Answers { answers, files } => {
             item.data["reply"] = Value::Object(crate::runtime::redact_secrets(&item.data["questions"], answers));
+            if !files.is_empty() {
+                item.data["replyFiles"] = Value::Object(files.clone());
+            }
             answers_text(&item.data["questions"], answers)
         }
         _ => String::new(),
@@ -2774,5 +2848,52 @@ mod tests {
         assert_eq!(clean_title("\"Lazy settings sections.\"\n"), "Lazy settings sections");
         assert_eq!(clean_title("Title: Fix the login bug"), "Fix the login bug");
         assert_eq!(clean_title("\n\n**Provider page plan**"), "Provider page plan");
+    }
+
+    #[test]
+    fn answer_files_become_references_only_for_saved_non_secret_answers() {
+        let dir = std::env::temp_dir().join(format!("qp-answer-files-{}", uuid::Uuid::new_v4()));
+        let root = dir.join("attachments").join("th");
+        std::fs::create_dir_all(&root).unwrap();
+        let shot = root.join("a1-shot.png");
+        let notes = root.join("b2-notes.txt");
+        std::fs::write(&shot, b"png").unwrap();
+        std::fs::write(&notes, b"hello").unwrap();
+        let outside = dir.join("elsewhere.txt");
+        std::fs::write(&outside, b"x").unwrap();
+        let questions = json!([
+            { "question": "Which screen?", "options": [{ "label": "Login" }] },
+            { "question": "Anything else?" },
+            { "question": "Token?", "isSecret": true },
+            { "question": "Pick one", "options": [{ "label": "A" }], "isOther": false }
+        ]);
+        let file = |kind: &str, name: &str, path: &Path| json!({ "kind": kind, "name": name, "path": path.to_string_lossy() });
+        let mut answers = serde_json::Map::new();
+        answers.insert("Which screen?".into(), json!("Login"));
+        answers.insert("Anything else?".into(), json!(""));
+        let mut files = serde_json::Map::new();
+        files.insert("Which screen?".into(), json!([file("image", "shot.png", &shot)]));
+        files.insert("Anything else?".into(), json!([file("file", "notes.txt", &notes)]));
+        let out = fold_answer_files(&questions, answers.clone(), &files, &root).unwrap();
+        let a = out["Which screen?"].as_str().unwrap();
+        assert!(a.starts_with("Login\n\nFiles the user attached to this answer"), "{a}");
+        assert!(a.contains(&format!("- shot.png (image): {}", shot.to_string_lossy())), "{a}");
+        let b = out["Anything else?"].as_str().unwrap();
+        assert!(b.starts_with("Files the user attached") && b.contains("- notes.txt (file): "), "an answer of only a file: {b}");
+
+        let refuse = |q: &str, f: Value| {
+            let mut files = serde_json::Map::new();
+            files.insert(q.into(), f);
+            fold_answer_files(&questions, answers.clone(), &files, &root).unwrap_err()
+        };
+        assert_eq!(refuse("Token?", json!([file("image", "shot.png", &shot)])), "A secret answer cannot carry files.");
+        assert!(refuse("Pick one", json!([file("image", "shot.png", &shot)])).contains("takes only its options"));
+        assert!(refuse("Elsewhere?", json!([])).contains("is not a question of this request"));
+        assert!(refuse("Anything else?", json!([file("file", "elsewhere.txt", &outside)])).contains("not a saved attachment of this thread"));
+        assert!(refuse("Anything else?", json!([file("file", "gone.txt", &root.join("gone.txt"))])).contains("no longer available"));
+        assert!(refuse("Anything else?", json!([file("folder", "src", &root)])).contains("only images and files"));
+        let many: Vec<Value> = (0..11).map(|_| file("image", "shot.png", &shot)).collect();
+        assert!(refuse("Anything else?", json!(many)).contains("At most 10 files"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

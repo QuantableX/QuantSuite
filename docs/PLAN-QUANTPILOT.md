@@ -1697,3 +1697,44 @@ tools, and for the 121-page PDF read the full-text file with its own tool to
 find the marker on the last page and the last chapter; removing a document
 while it was read stopped it; the saved copies kept their hashes. Codex is not
 signed in on this machine, so no live Codex run.
+
+## 28. Parity follow-up: images and files in question answers (17/23)
+
+A question that takes a free answer also takes images and files: the
+**Attach** button (system picker), paste into the question panel, or drop onto
+it. They are saved like the composer's attachments (same limits: images
+10 MiB, normalized to PNG; files 50 MiB; at most 10 per answer, 20 per
+request), documents are read like the composer's (parity 16) and show their
+state, and an image shows its thumbnail. Questions with only their options
+(Codex `isOther: false`) and secret questions take no files — in the panel and
+again in the backend. Each question of each request keeps its own draft of
+picks, text and files (`utils/requestDrafts.ts`, memory only) through Back /
+Next, other requests and streaming; the composer's draft is separate. While a
+file is still saving or failed to save, **Answer** waits and the panel says
+why; nothing partial is sent.
+
+No agent protocol takes files in an answer (Claude Code's AskUserQuestion
+answers and Codex `request_user_input` are strings), so `pilot_thread_answer`
+checks the files (saved copies of this thread, existing, image or file) and
+folds them into that question's answer as references the agent opens with its
+own tools: "Files the user attached to this answer (saved copies; open them
+from these paths): - shot.png (image): <path>", a document also with the path
+of its extracted text. An answer can be only a file. Codex questions answered
+by the next message carry the same text. The question keeps the files as
+`replyFiles`; in the conversation "Question answered · 3 files" lists them
+with the message attachment view (viewer for images, open/reveal/save for
+files), also after a restart. The files live in the thread's attachment folder
+and go only with the thread.
+
+Verified in the isolated native app with Claude Haiku answering a real
+AskUserQuestion of three questions: an option plus an image, only an image,
+and text plus a PDF; an oversized image blocked **Answer** with "Remove the
+files that could not be saved" until removed; Back to the first question kept
+its pick and files; the composer draft stayed as typed. Claude read all three
+paths and named the colors of both images and the PDF's code word. History
+showed "Question answered · 3 files" and opened the image in the viewer, also
+after restarting the app. Unit test: references, an only-file answer, and
+refusal for a secret question, an options-only question, an unknown question,
+a file outside the thread's attachments, a missing file, a folder and more
+than 10 files. Codex is not signed in on this machine (no live Codex run; its
+answer mapping takes the same folded strings).

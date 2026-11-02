@@ -1407,7 +1407,7 @@ impl Driver for CodexDriver {
             }
             Pending::UserInput { rpc, questions } => {
                 let mut out = Map::new();
-                if let Answer::Answers { answers } = answer {
+                if let Answer::Answers { answers, .. } = answer {
                     for (id, text) in &questions {
                         let value = answers.get(text).and_then(Value::as_str).unwrap_or_default();
                         if !value.is_empty() {
@@ -1695,7 +1695,7 @@ mod tests {
         assert_eq!(r.input["questions"][0]["question"], "Which database?");
         let mut answers = Map::new();
         answers.insert("Which database?".into(), json!("SQLite"));
-        let reply = parse(&d.answer("rpc-9", &Answer::Answers { answers }).unwrap()[0]);
+        let reply = parse(&d.answer("rpc-9", &Answer::Answers { answers, files: Default::default() }).unwrap()[0]);
         assert_eq!(reply, json!({ "id": 9, "result": { "answers": { "db": { "answers": ["SQLite"] } } } }));
 
         let out = feed(&mut d, &[
@@ -2003,7 +2003,7 @@ mod tests {
         assert_eq!(r.input["questions"][0]["isOther"], false);
         let mut answers = Map::new();
         answers.insert("API token?".into(), json!("s3cr3t"));
-        let reply = parse(&d.answer("rpc-10", &Answer::Answers { answers }).unwrap()[0]);
+        let reply = parse(&d.answer("rpc-10", &Answer::Answers { answers, files: Default::default() }).unwrap()[0]);
         assert_eq!(reply["result"]["answers"]["tok"]["answers"][0], "s3cr3t", "the agent gets the real value");
     }
 }

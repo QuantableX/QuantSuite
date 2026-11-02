@@ -683,7 +683,8 @@ export type Answer =
   | { decision: 'allow' }
   | { decision: 'allowSession' }
   | { decision: 'deny'; message?: string | null }
-  | { decision: 'answers'; answers: Record<string, string | string[]> }
+  /** `files` (parity 17): question → saved attachments, sent as references the agent can open. */
+  | { decision: 'answers'; answers: Record<string, string | string[]>; files?: Record<string, AnswerFile[]> }
   | { decision: 'dismiss' }
   /** An MCP form or web-page request (parity card 05). */
   | { decision: 'elicitation'; action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> | null }
@@ -755,6 +756,14 @@ export interface ComposerAttachment {
   /** A PDF or Office document's text, being read or read (parity 16). */
   docPending?: boolean
   doc?: DocInfo | null
+}
+
+/** A saved attachment sent with a question's answer (parity 17). */
+export interface AnswerFile {
+  kind: 'image' | 'file'
+  name: string
+  path: string
+  thumb?: string | null
 }
 
 /** What reading a document attachment gave (documents.rs). */
