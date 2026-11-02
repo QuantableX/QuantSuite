@@ -41,6 +41,7 @@ mod run_project;
 mod runtime;
 mod settings;
 mod shell;
+mod skills;
 mod signals;
 mod terminals;
 mod threads;
@@ -890,6 +891,11 @@ pub fn init() -> TauriPlugin<Wry> {
             agent_tools::pilot_agent_list_threads,
             agent_tools::pilot_agent_read_thread,
             agent_tools::pilot_agent_read_thread_item,
+            skills::pilot_skill_library,
+            skills::pilot_skill_import,
+            skills::pilot_skill_activate,
+            skills::pilot_skill_deactivate,
+            skills::pilot_skill_remove,
             import::pilot_import_list,
             import::pilot_import,
             import::pilot_import_cancel,

@@ -559,11 +559,15 @@ fn prepare(provider: &str, text: String, images: Vec<ImageInput>, chips: Vec<Chi
     let read = |p: &str| std::fs::read(p).ok();
     let tree = |p: &str| context::folder_tree(Path::new(p));
     let composed = context::compose(&text, &chips, &files, provider, &read, &tree);
-    let skills = chips
+    let skills: Vec<SkillRef> = chips
         .iter()
         .filter(|c| c.kind == "skill")
         .filter_map(|c| c.path.clone().map(|path| SkillRef { name: c.content.clone(), path }))
         .collect();
+    // A skill deactivated between picking and sending (parity 09).
+    if let Some(gone) = skills.iter().find(|s| !Path::new(&s.path).exists()) {
+        return Err(format!("The skill \"{}\" is no longer installed — remove its chip and send again.", gone.name));
+    }
     let display = (composed != text).then_some(text);
     if composed.trim().is_empty() && images.is_empty() {
         return Err("nothing to send".into());

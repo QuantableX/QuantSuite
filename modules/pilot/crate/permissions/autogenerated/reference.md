@@ -70,6 +70,11 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-list-threads`
 - `allow-pilot-agent-read-thread`
 - `allow-pilot-agent-read-thread-item`
+- `allow-pilot-skill-library`
+- `allow-pilot-skill-import`
+- `allow-pilot-skill-activate`
+- `allow-pilot-skill-deactivate`
+- `allow-pilot-skill-remove`
 - `allow-pilot-import-list`
 - `allow-pilot-import`
 - `allow-pilot-import-cancel`
@@ -2498,6 +2503,136 @@ Enables the pilot_settings_set command without any pre-configured scope.
 <td>
 
 Denies the pilot_settings_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-skill-activate`
+
+</td>
+<td>
+
+Enables the pilot_skill_activate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-skill-activate`
+
+</td>
+<td>
+
+Denies the pilot_skill_activate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-skill-deactivate`
+
+</td>
+<td>
+
+Enables the pilot_skill_deactivate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-skill-deactivate`
+
+</td>
+<td>
+
+Denies the pilot_skill_deactivate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-skill-import`
+
+</td>
+<td>
+
+Enables the pilot_skill_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-skill-import`
+
+</td>
+<td>
+
+Denies the pilot_skill_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-skill-library`
+
+</td>
+<td>
+
+Enables the pilot_skill_library command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-skill-library`
+
+</td>
+<td>
+
+Denies the pilot_skill_library command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-skill-remove`
+
+</td>
+<td>
+
+Enables the pilot_skill_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-skill-remove`
+
+</td>
+<td>
+
+Denies the pilot_skill_remove command without any pre-configured scope.
 
 </td>
 </tr>

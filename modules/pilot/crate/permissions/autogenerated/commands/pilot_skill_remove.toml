@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-skill-remove"
+description = "Enables the pilot_skill_remove command without any pre-configured scope."
+commands.allow = ["pilot_skill_remove"]
+
+[[permission]]
+identifier = "deny-pilot-skill-remove"
+description = "Denies the pilot_skill_remove command without any pre-configured scope."
+commands.deny = ["pilot_skill_remove"]

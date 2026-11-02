@@ -866,6 +866,11 @@ impl Runtime {
         (self.sink)(thread_id, seq, &event);
     }
 
+    /// Forget a provider's catalog (its skills changed, parity 09).
+    pub fn forget_catalog(&self, provider: &str) {
+        lock(&self.catalogs).remove(provider);
+    }
+
     pub fn cached_catalog(&self, provider: &str) -> Option<Catalog> {
         let cats = lock(&self.catalogs);
         cats.get(provider).filter(|(at, _)| at.elapsed() < CATALOG_TTL).map(|(_, c)| c.clone())
