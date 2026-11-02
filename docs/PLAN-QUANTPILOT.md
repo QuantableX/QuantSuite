@@ -1588,3 +1588,52 @@ the second phrase (paragraph 9, not 3); a selection during a stream held while
 the source grew by 2,361 characters and the message caught up after release; a
 quote from a folded "Worked for …" message unfolded it and highlighted it; a
 quote whose source does not exist showed the notice.
+
+## 26. Parity follow-up: Find across folds, chips and old history (15/23)
+
+Find (Ctrl+F) searches the thread in storage instead of the mounted messages:
+`pilot_thread_find` (history.rs `find_in_thread`) reads the thread's user
+messages, answers, commentary (folded "Worked for …" and subagents included)
+and plans in one pass and returns the matching items, oldest first, with their
+match counts, turn ids and a snippet, plus the total over the whole thread.
+Tool output and reasoning are not searched. Over 5,000 matching items the
+newest 5,000 are listed and the counter shows `+` (its tooltip says how many
+older matches are not listed).
+
+Text is compared as it reads: case folded per character (Unicode, not only
+ASCII; `ß` does not become `ss`), chip marks and the Markdown emphasis
+characters (`*`, `_`, `` ` ``, `~`) dropped, whitespace runs as one space — so a chip's label,
+`**bold**` text and wrapped lines match like the shown text. `utils/find.ts`
+applies the same rules to the rendered text of a mounted item; both sides have
+the same test cases (`test-pilot-find.mjs`, `history.rs` tests). A mounted
+item's own count wins (a match only inside a link target, say, is not shown and
+is skipped).
+
+Only the current match's item is brought into view: from the live view when it
+is loaded, otherwise a bounded excerpt around it (`pilot_history_around`, ~100
+items, "History excerpt" banner); a folded commentary's "Worked for …" opens,
+and folds Find opened for earlier matches close again. A new query starts on
+the newest match; Enter / Shift+Enter move with wraparound, Escape closes and
+returns focus to the conversation (the fold of the current match stays open).
+Typing cancels the previous search and clears its highlights at once. While
+Find is open, new or streamed text and rewinds refresh the results at most
+every 700 ms without moving or scrolling the current match. Searching no longer
+loads older pages into the live view.
+
+The command palette's "In messages" hits use the same reveal: the folded
+commentary opens and the searched text is highlighted for six seconds.
+
+Verified in the isolated native app on a 5,601-record thread (fixture, Claude
+provider, only the newest 100 items loaded): the answer in the oldest turn
+(5,597 records back), a commentary inside a folded "Worked for …" (opened, and
+closed again when Find moved on), a user message with a chip
+(`report.md for MARMOT` across the chip), an approved plan and `größe ärger`
+(`GRÖSSE ÄRGER` finds nothing, as intended) were each found as 1/1 and
+highlighted visibly; `common-term` counted 26/26 in 13 answers and Enter walked
+1/26 … 26/26 with wraparound and Shift+Enter back, every step visible; the DOM
+never held more than 51 items. Escape closed Find, cleared the highlights and
+focused the conversation. With a live Claude Haiku thread, a streamed reply
+raised the count from 4 to 35 while the current match stayed on its item, no
+highlight showed wrong text, and a rewind brought it back to 4. The palette hit
+for the folded commentary switched threads, opened the fold and highlighted the
+text. Backend search took 55–113 ms per query on that thread (debug build).

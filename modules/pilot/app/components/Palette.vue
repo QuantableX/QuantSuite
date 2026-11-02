@@ -111,7 +111,7 @@ const rows = computed<Row[]>(() => {
         run: () => {
           keys.notePick(text.value, h.threadId)
           close(false)
-          threads.reveal = { threadId: h.threadId, itemId: h.itemId, nonce: Date.now() }
+          threads.reveal = { threadId: h.threadId, itemId: h.itemId, nonce: Date.now(), query: text.value }
           void store.openSession(h.threadId)
         },
       })

@@ -772,6 +772,12 @@ pub fn pilot_history_item(state: State<'_, PilotState>, thread_id: String, item_
     state.db.history_chunk(&thread_id, &item_id, cursor.as_deref(), limit)
 }
 
+/// Find in one thread (parity 15): matching items with counts, however old.
+#[tauri::command(async)]
+pub fn pilot_thread_find(state: State<'_, PilotState>, thread_id: String, query: String) -> Result<crate::db::FindResult, String> {
+    state.db.find_in_thread(&thread_id, &query)
+}
+
 #[tauri::command(async)]
 pub fn pilot_history_around(state: State<'_, PilotState>, thread_id: String, item_id: String) -> Result<Vec<crate::events::Item>, String> {
     state.db.history_around(&thread_id, &item_id)

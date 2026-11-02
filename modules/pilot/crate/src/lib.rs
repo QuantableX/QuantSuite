@@ -917,6 +917,7 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_history_page,
             threads::pilot_history_item,
             threads::pilot_history_around,
+            threads::pilot_thread_find,
             agent_tools::pilot_agent_start_thread,
             agent_tools::pilot_agent_message_thread,
             threads::pilot_pr_refresh,

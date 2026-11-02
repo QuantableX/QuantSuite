@@ -16,7 +16,7 @@ use std::sync::Mutex;
 
 #[path = "history.rs"]
 mod history;
-pub use history::{HistoryChunk, HistoryPage, HistoryRequest};
+pub use history::{FindResult, HistoryChunk, HistoryPage, HistoryRequest};
 
 /// 3: threads, timeline, turns (card 2). 4: the follow-up queue (card 4).
 /// 5: pin, order, settle, snooze (card 7). 6: workspace (card 10).

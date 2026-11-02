@@ -90,6 +90,7 @@ const COMMANDS: &[&str] = &[
     "pilot_history_page",
     "pilot_history_item",
     "pilot_history_around",
+    "pilot_thread_find",
     "pilot_agent_start_thread",
     "pilot_agent_message_thread",
     "pilot_pr_refresh",

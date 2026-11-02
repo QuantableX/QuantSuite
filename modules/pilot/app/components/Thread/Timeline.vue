@@ -7,9 +7,11 @@
  * - Older pages load when the top comes into reach, keeping the reading
  *   position.
  * - One elapsed timer, only while a turn runs and the window is visible.
- * - Find (Ctrl+F): every user message, answer and plan of the whole thread
- *   (older pages are loaded first), highlighted with the CSS Custom
- *   Highlight API; Enter / Shift+Enter move, Escape closes.
+ * - Find (Ctrl+F): every user message, answer, commentary and plan of the
+ *   whole thread, searched in storage (parity 15); the current match's item
+ *   is brought in (a bounded excerpt when old, its fold opened) and
+ *   highlighted with the CSS Custom Highlight API; Enter / Shift+Enter move,
+ *   Escape closes.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowDown, ChevronDown, ChevronUp, X } from 'lucide-vue-next'
@@ -19,6 +21,7 @@ import { useCommands } from '#pilot/utils/commands'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { pilot } from '#pilot/utils/invoke'
 import type { ThreadItem } from '#pilot/types'
+import { domMatches, locateMatch, matchIndex, needleOf, textHost, type FindHit, type FindResult } from '#pilot/utils/find'
 
 const props = defineProps<{ threadId: string }>()
 const emit = defineEmits<{ notice: [text: string] }>()
@@ -30,7 +33,16 @@ let revealGeneration = 0
 const findOpen = ref(false)
 const query = ref('')
 const findInput = ref<HTMLInputElement | null>(null)
-const matches = ref<Range[]>([])
+// Find state (parity 15) — declared before the reveal watcher runs.
+const hits = ref<FindHit[]>([])
+const total = computed(() => hits.value.reduce((n, h) => n + h.count, 0))
+const truncated = ref(0)
+const needle = computed(() => needleOf(query.value))
+let findGen = 0
+let navGen = 0
+let anchor: { itemId: string; n: number } | null = null
+let currentRange: Range | null = null
+const unfoldedByFind = new Set<string>()
 const current = ref(0)
 const searching = ref(false)
 const highlights = typeof CSS !== 'undefined' && 'highlights' in CSS ? (CSS as any).highlights : null
@@ -113,7 +125,7 @@ onBeforeUnmount(() => {
 })
 watch(
   () => props.threadId,
-  () => { revealGeneration++; historyItems.value = null; void nextTick(() => scrollToBottom()) }
+  () => { revealGeneration++; historyItems.value = null; closeFind(); void nextTick(() => scrollToBottom()) }
 )
 watch(
   () => view.value?.loaded,
@@ -143,9 +155,23 @@ watch(
     const item = (historyItems.value ?? view.value.items).find((i) => i.id === r.itemId)
     const root = content.value
     if (!item || !root) return
-    // A message folded into "Worked for …" has no row of its own: its turn stands in.
-    const el = root.querySelector(`[data-item-id="${CSS.escape(item.id)}"]`) ?? root.querySelector(`[data-turn="${CSS.escape(item.turnId)}"]`)
+    // A message folded into "Worked for …": its fold opens (parity 15); the turn stands in otherwise.
+    if (!itemEl(item.id)) {
+      root.querySelector<HTMLElement>(`[data-turn="${CSS.escape(item.turnId)}"] .qp-act-head[aria-expanded="false"]`)?.click()
+      await nextTick()
+    }
+    const el = itemEl(item.id) ?? root.querySelector(`[data-turn="${CSS.escape(item.turnId)}"]`)
     if (!(el instanceof HTMLElement)) return
+    // A palette hit highlights the searched text in the message.
+    if (r.query && highlights) {
+      await settle()
+      if (generation !== revealGeneration) return
+      const first = domMatches(el, needleOf(r.query))[0]
+      if (first) {
+        highlights.set('qp-quote', new (window as any).Highlight(first))
+        setTimeout(() => highlights.delete('qp-quote'), 6000)
+      }
+    }
     el.scrollIntoView({ block: el.offsetHeight > (scroller.value?.clientHeight ?? 0) ? 'start' : 'center' })
     el.classList.add('qp-flash')
     setTimeout(() => el.classList.remove('qp-flash'), 1600)
@@ -153,98 +179,210 @@ watch(
   { immediate: true, flush: 'post' }
 )
 
-// ── Find ──
+// ── Find (parity 15) ──
+// The backend lists the matching items of the whole thread with their counts
+// (pilot_thread_find); only the current match's item is brought into view —
+// a bounded excerpt for an old one, its "Worked for …" fold opened — so a
+// search never renders the whole transcript.
+
 
 async function openFind() {
   findOpen.value = true
   await nextTick()
   findInput.value?.select()
+  if (needle.value && !hits.value.length) void search(true)
 }
 
 function clearFind() {
+  findGen++
   highlights?.delete('qp-find')
   highlights?.delete('qp-find-current')
-  matches.value = []
+  hits.value = []
+  truncated.value = 0
+  anchor = null
+  currentRange = null
+  searching.value = false
 }
 
-function closeFind() {
+function closeFind(refocus = false) {
   findOpen.value = false
   clearFind()
+  // A fold opened for the current match stays open: the user is reading it.
+  unfoldedByFind.clear()
+  if (refocus) scroller.value?.focus({ preventScroll: true })
 }
 
-async function loadEverything() {
-  if (historyItems.value) return
-  let guard = 0
-  while (view.value?.hasMore && guard++ < 50) await threads.loadOlder(props.threadId)
+function itemEl(id: string): HTMLElement | null {
+  return content.value?.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(id)}"]`) ?? null
 }
 
-function collect(q: string): Range[] {
-  const root = content.value
-  if (!root || !q) return []
-  const needle = q.toLowerCase()
-  const ranges: Range[] = []
-  for (const host of root.querySelectorAll<HTMLElement>('[data-item-id] .qp-md')) {
-    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const text = (node.nodeValue ?? '').toLowerCase()
-      let at = text.indexOf(needle)
-      while (at >= 0) {
-        const r = new Range()
-        r.setStart(node, at)
-        r.setEnd(node, at + needle.length)
-        ranges.push(r)
-        at = text.indexOf(needle, at + needle.length)
-      }
-    }
-  }
-  return ranges
+/** Rendered text settles a frame after mounting (Markdown paints, code highlights). */
+function settle(): Promise<void> {
+  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 30))))
 }
 
+/**
+ * Highlight every match in the mounted items. A mounted item's own count wins
+ * over the stored text's (a link target, for one, is not shown), and the
+ * current match keeps its place.
+ */
 function paintMatches() {
+  const index = new Map(hits.value.map((h, i) => [h.itemId, i]))
+  const found = new Map<number, Range[]>()
+  for (const el of content.value?.querySelectorAll<HTMLElement>('[data-item-id]') ?? []) {
+    const i = index.get(el.dataset.itemId ?? '')
+    if (i === undefined || !textHost(el)?.textContent) continue
+    found.set(i, domMatches(el, needle.value))
+  }
+  if ([...found].some(([i, r]) => hits.value[i]!.count !== r.length)) {
+    hits.value = hits.value.map((h, i) => (found.has(i) ? { ...h, count: found.get(i)!.length } : h))
+  }
+  if (anchor) {
+    const h = hits.value.findIndex((x) => x.itemId === anchor!.itemId)
+    if (h >= 0 && hits.value[h]!.count) current.value = matchIndex(hits.value, h, Math.min(anchor.n, hits.value[h]!.count - 1))
+  }
+  current.value = Math.min(current.value, Math.max(0, total.value - 1))
+  const loc = locateMatch(hits.value, current.value)
+  currentRange = (loc && found.get(loc.hit)?.[loc.n]) || null
   if (!highlights) return
   const H = (window as any).Highlight
-  highlights.set('qp-find', new H(...matches.value))
-  const cur = matches.value[current.value]
-  if (cur) highlights.set('qp-find-current', new H(cur))
+  highlights.set('qp-find', new H(...[...found.values()].flat()))
+  if (currentRange) highlights.set('qp-find-current', new H(currentRange))
   else highlights.delete('qp-find-current')
 }
 
-function reveal() {
-  const cur = matches.value[current.value]
+function revealCurrent() {
   const el = scroller.value
-  if (!cur || !el) return
-  const r = cur.getBoundingClientRect()
+  if (!currentRange || !el) return
+  const r = currentRange.getBoundingClientRect()
   const box = el.getBoundingClientRect()
   if (r.top < box.top + 40 || r.bottom > box.bottom - 40) {
     el.scrollTop += r.top - box.top - box.height / 3
   }
 }
 
-let findTimer: ReturnType<typeof setTimeout> | null = null
-watch(query, (q) => {
-  if (findTimer) clearTimeout(findTimer)
-  findTimer = setTimeout(async () => {
-    if (!q.trim()) {
-      clearFind()
-      return
+/** Mount a hit's item: the live view, or a bounded excerpt around it; open its fold. */
+async function bringIn(hit: FindHit, gen: number): Promise<boolean> {
+  const live = view.value?.items ?? []
+  if (!(historyItems.value ?? live).some((i) => i.id === hit.itemId)) {
+    if (live.some((i) => i.id === hit.itemId)) {
+      revealGeneration++
+      historyItems.value = null
+    } else {
+      try {
+        const items = await pilot<ThreadItem[]>('plugin:pilot|pilot_history_around', { threadId: props.threadId, itemId: hit.itemId })
+        if (gen !== navGen) return false
+        revealGeneration++
+        historyItems.value = items ?? null
+      } catch (e) {
+        emit('notice', String(e))
+        return false
+      }
     }
-    searching.value = true
-    await loadEverything()
     await nextTick()
-    matches.value = collect(q.trim())
-    current.value = Math.max(0, matches.value.length - 1)
-    searching.value = false
-    paintMatches()
-    reveal()
-  }, 150)
+  }
+  if (!itemEl(hit.itemId)) {
+    const head = content.value?.querySelector<HTMLElement>(`[data-turn="${CSS.escape(hit.turnId)}"] .qp-act-head[aria-expanded="false"]`)
+    if (head) {
+      head.click()
+      unfoldedByFind.add(hit.turnId)
+      await nextTick()
+    }
+  }
+  // Folds Find opened for earlier matches close again.
+  for (const t of [...unfoldedByFind]) {
+    if (t === hit.turnId) continue
+    content.value?.querySelector<HTMLElement>(`[data-turn="${CSS.escape(t)}"] .qp-act-head[aria-expanded="true"]`)?.click()
+    unfoldedByFind.delete(t)
+  }
+  return true
+}
+
+/** Go to match `index` of the thread: mount it, highlight it, scroll to it. */
+async function goTo(index: number, tries = 0) {
+  const gen = ++navGen
+  const fg = findGen
+  const loc = locateMatch(hits.value, index)
+  if (!loc) return
+  const hit = hits.value[loc.hit]!
+  current.value = index
+  anchor = { itemId: hit.itemId, n: loc.n }
+  if (!(await bringIn(hit, gen))) return
+  await settle()
+  if (gen !== navGen || fg !== findGen) return
+  paintMatches()
+  // The item shows no match after all (only in a link target, say): the next one.
+  if (!currentRange && total.value && tries < 3 && hits.value[loc.hit]?.count === 0) return goTo(Math.min(index, total.value - 1), tries + 1)
+  revealCurrent()
+  // Code highlighting may replace text nodes a moment later.
+  setTimeout(() => gen === navGen && fg === findGen && paintMatches(), 400)
+}
+
+/** Search the thread; `fresh` (a new query) goes to the newest match, a refresh keeps the current one. */
+async function search(fresh: boolean) {
+  const q = query.value.trim()
+  if (!q || !needle.value) {
+    clearFind()
+    return
+  }
+  const gen = ++findGen
+  if (fresh) searching.value = true
+  let res: FindResult | null
+  try {
+    res = await pilot<FindResult>('plugin:pilot|pilot_thread_find', { threadId: props.threadId, query: q })
+  } catch (e) {
+    if (gen === findGen) {
+      searching.value = false
+      emit('notice', String(e))
+    }
+    return
+  }
+  if (gen !== findGen || !res) return
+  searching.value = false
+  hits.value = res.hits
+  truncated.value = res.truncated ? res.total - res.hits.reduce((n, h) => n + h.count, 0) : 0
+  if (fresh) {
+    anchor = null
+    if (total.value) await goTo(total.value - 1)
+    else paintMatches()
+  } else {
+    // New text, a rewind or a deletion: the current match stays where it is, no scrolling.
+    await settle()
+    if (gen === findGen) paintMatches()
+  }
+}
+
+let findTimer: ReturnType<typeof setTimeout> | null = null
+watch(query, () => {
+  // Old highlights go at once; the search follows the typing.
+  findGen++
+  highlights?.delete('qp-find')
+  highlights?.delete('qp-find-current')
+  if (findTimer) clearTimeout(findTimer)
+  findTimer = setTimeout(() => void search(true), 150)
 })
 
+// Streaming text, new messages, rewinds: refresh at most every 700 ms.
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  () => {
+    const v = view.value
+    const last = v?.items[v.items.length - 1]
+    return `${v?.items.length}:${last?.id}:${last?.updatedAt}:${historyItems.value?.length ?? 0}`
+  },
+  () => {
+    if (!findOpen.value || !needle.value || refreshTimer) return
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null
+      if (findOpen.value && needle.value) void search(false)
+    }, 700)
+  }
+)
+
 function step(dir: 1 | -1) {
-  const n = matches.value.length
+  const n = total.value
   if (!n) return
-  current.value = (current.value + dir + n) % n
-  paintMatches()
-  reveal()
+  void goTo((current.value + dir + n) % n)
 }
 
 function onFindKey(e: KeyboardEvent) {
@@ -253,7 +391,7 @@ function onFindKey(e: KeyboardEvent) {
     step(e.shiftKey ? -1 : 1)
   } else if (e.key === 'Escape') {
     e.preventDefault()
-    closeFind()
+    closeFind(true)
   }
 }
 
@@ -271,11 +409,11 @@ useCommands({
       <button class="qp-history-return" @click="latest">Return to latest</button>
     </div>
     <div v-if="findOpen" class="qp-find" role="search">
-      <input ref="findInput" v-model="query" class="qp-find-input" :placeholder="historyItems ? 'Find in this excerpt' : 'Find in thread'" @keydown="onFindKey" />
-      <span class="qp-find-count">{{ searching ? '…' : query ? `${matches.length ? current + 1 : 0}/${matches.length}` : '' }}</span>
+      <input ref="findInput" v-model="query" class="qp-find-input" placeholder="Find in thread" aria-label="Find in thread" @keydown="onFindKey" />
+      <span class="qp-find-count" role="status" :title="truncated ? `${truncated.toLocaleString('en-US')} older matches are not listed — narrow the search` : ''">{{ searching ? '…' : query.trim() ? `${total ? current + 1 : 0}/${total}${truncated ? '+' : ''}` : '' }}</span>
       <button class="qp-find-btn" title="Previous (Shift+Enter)" @click="step(-1)"><ChevronUp :size="14" /></button>
       <button class="qp-find-btn" title="Next (Enter)" @click="step(1)"><ChevronDown :size="14" /></button>
-      <button class="qp-find-btn" title="Close (Escape)" @click="closeFind"><X :size="14" /></button>
+      <button class="qp-find-btn" title="Close (Escape)" @click="closeFind(true)"><X :size="14" /></button>
     </div>
 
     <div ref="scroller" class="qp-tl-scroll" tabindex="-1" @scroll.passive="onScroll">
