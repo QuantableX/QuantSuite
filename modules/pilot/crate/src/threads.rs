@@ -1646,7 +1646,8 @@ pub fn pilot_pr_refresh(state: State<'_, PilotState>, id: String, force: Option<
         if !matches!(l.kind.as_str(), "pr" | "issue") || !(force || (live && t - l.checked_at > 5 * 60 * 1000)) {
             continue;
         }
-        let fresh = if l.kind == "issue" { github::issue_state(Path::new(&meta.cwd), &l.url) } else { gitops::pr_view(Path::new(&meta.cwd), &l.url) };
+        // One question per item for all threads that link it (parity 10).
+        let fresh = github::shared_state(&l.url, || if l.kind == "issue" { github::issue_state(Path::new(&meta.cwd), &l.url) } else { gitops::pr_view(Path::new(&meta.cwd), &l.url) });
         if let Ok((title, st)) = fresh {
             l.title = title;
             l.state = st;

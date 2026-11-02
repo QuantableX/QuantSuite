@@ -10,7 +10,8 @@ use serde::Serialize;
 use serde_json::Value;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 const GH_TIMEOUT: Duration = Duration::from_secs(30);
 /// `#123` references resolved per message, and each body's excerpt.
@@ -654,4 +655,393 @@ pub fn pilot_gh_link(state: State<'_, PilotState>, id: String, kind: String, num
     let link = Link { thread_id: id, kind, url, number, title: title.trim().into(), state: item_state, checked_at: t, created_at: t };
     state.db.add_link(&link).map_err(|e| e.to_string())?;
     Ok(link)
+}
+
+// ── Browse and clone (parity 10) ──
+
+/// One repository the signed-in account can reach.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Remote {
+    pub slug: String,
+    pub owner: String,
+    pub name: String,
+    pub description: String,
+    pub private: bool,
+    pub archived: bool,
+    pub fork: bool,
+    /// `admin` | `write` | `read`
+    pub access: String,
+    pub updated_at: String,
+    /// Registered workspaces whose `origin` is this repository.
+    pub local: Vec<(String, String, String)>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowsePage {
+    pub items: Vec<Remote>,
+    pub page: u32,
+    pub more: bool,
+}
+
+/// `gh`'s complaint, readable and without anything token-shaped.
+pub fn gh_error(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+    if lower.contains("rate limit") {
+        return "GitHub's rate limit is reached — try again in a few minutes.".into();
+    }
+    if lower.contains("http 401") || lower.contains("bad credentials") || lower.contains("auth login") {
+        return "GitHub refused the sign-in. Run `gh auth login` again.".into();
+    }
+    if lower.contains("could not resolve host") || lower.contains("connection") && lower.contains("refused") || lower.contains("timeout") {
+        return "GitHub cannot be reached — check the connection.".into();
+    }
+    let re = regex::Regex::new(r"(gh[opsur]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,})").expect("a valid pattern");
+    re.replace_all(raw.trim(), "[token]").chars().take(400).collect()
+}
+
+/// `owner/name` lower-cased: one repository however its remote is written.
+pub fn key_of(slug: &str) -> String {
+    slug.trim().trim_end_matches(".git").to_lowercase()
+}
+
+pub fn remote_from(v: &Value) -> Option<Remote> {
+    let slug = v["full_name"].as_str()?.to_string();
+    let (owner, name) = slug.split_once('/')?;
+    let p = &v["permissions"];
+    let access = if p["admin"] == true {
+        "admin"
+    } else if p["push"] == true || p["maintain"] == true {
+        "write"
+    } else {
+        "read"
+    };
+    Some(Remote {
+        owner: owner.to_string(),
+        name: name.to_string(),
+        description: v["description"].as_str().unwrap_or_default().chars().take(300).collect(),
+        private: v["private"] == true,
+        archived: v["archived"] == true,
+        fork: v["fork"] == true,
+        access: access.into(),
+        updated_at: v["updated_at"].as_str().or_else(|| v["pushed_at"].as_str()).unwrap_or_default().to_string(),
+        local: Vec::new(),
+        slug,
+    })
+}
+
+/// The account's repositories, 50 a page (owned, collaborator, organization
+/// member), or a search across the account and its organizations.
+pub fn browse(query: &str, page: u32) -> Result<BrowsePage, String> {
+    ready()?;
+    let page = page.max(1);
+    let dir = std::env::temp_dir();
+    let raw = if query.trim().is_empty() {
+        let path = format!("user/repos?per_page=50&page={page}&sort=updated&affiliation=owner,collaborator,organization_member");
+        gitops::run("gh", &dir, &["api", "-H", "Accept: application/vnd.github+json", &path], Duration::from_secs(30)).map_err(|e| gh_error(&e))?
+    } else {
+        let login = gitops::run("gh", &dir, &["api", "user", "--jq", ".login"], Duration::from_secs(20)).map_err(|e| gh_error(&e))?;
+        let orgs = gitops::run("gh", &dir, &["api", "user/orgs?per_page=20", "--jq", ".[].login"], Duration::from_secs(20)).unwrap_or_default();
+        let mut q = format!("{} in:name,description fork:true", query.trim().chars().take(100).collect::<String>());
+        q.push_str(&format!(" user:{}", login.trim()));
+        for o in orgs.lines().map(str::trim).filter(|o| !o.is_empty()).take(10) {
+            q.push_str(&format!(" org:{o}"));
+        }
+        let out = gitops::run(
+            "gh",
+            &dir,
+            &["api", "-X", "GET", "search/repositories", "-f", &format!("q={q}"), "-f", "per_page=50", "-f", &format!("page={page}"), "--jq", ".items"],
+            Duration::from_secs(30),
+        )
+        .map_err(|e| gh_error(&e))?;
+        out
+    };
+    let list: Vec<Value> = serde_json::from_str(&raw).map_err(|_| "GitHub answered with something unexpected.".to_string())?;
+    let items: Vec<Remote> = list.iter().filter_map(remote_from).collect();
+    Ok(BrowsePage { more: list.len() >= 50, page, items })
+}
+
+/// Why a folder cannot take a clone; `Ok(true)` when it already is this repository.
+pub fn destination_check(dest: &Path, slug: &str) -> Result<bool, String> {
+    if !dest.exists() {
+        return Ok(false);
+    }
+    if !dest.is_dir() {
+        return Err(format!("{} is a file.", dest.display()));
+    }
+    if let Some(r) = repo_of(dest) {
+        if key_of(&r.slug()) == key_of(slug) {
+            return Ok(true);
+        }
+        return Err(format!("{} is already a checkout of {} — choose another folder.", dest.display(), r.slug()));
+    }
+    let empty = std::fs::read_dir(dest).map(|mut r| r.next().is_none()).unwrap_or(false);
+    if !empty {
+        return Err(format!("{} is not empty — it is left as it is; choose an empty or new folder.", dest.display()));
+    }
+    Ok(false)
+}
+
+/// What `git clone --progress` reports: phase and percent.
+pub fn progress_of(line: &str) -> Option<(String, u8)> {
+    let line = line.trim();
+    let line = line.strip_prefix("remote:").unwrap_or(line).trim();
+    let (phase, rest) = line.split_once(':')?;
+    let pct = rest.trim().split('%').next()?.trim().parse::<u8>().ok()?;
+    Some((phase.trim().to_string(), pct))
+}
+
+pub struct CloneJob {
+    pub child: std::process::Child,
+    pub dest: PathBuf,
+    pub created: bool,
+}
+
+type Jobs = Mutex<std::collections::HashMap<String, Arc<Mutex<Option<CloneJob>>>>>;
+
+pub fn clone_jobs() -> &'static Jobs {
+    static J: std::sync::OnceLock<Jobs> = std::sync::OnceLock::new();
+    J.get_or_init(Default::default)
+}
+
+/// A clone that did not finish leaves no trace: only what this clone
+/// created is removed, never a folder the user had before.
+pub fn clean_partial(dest: &Path, created: bool) {
+    if created {
+        let _ = std::fs::remove_dir_all(dest);
+    } else if let Ok(entries) = std::fs::read_dir(dest) {
+        // The folder was empty before: everything in it is the clone's.
+        for e in entries.flatten() {
+            let p = e.path();
+            let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+        }
+    }
+}
+
+/// Linked PR and issue states shared by every thread of a repository for a
+/// while, so ten threads linking one PR ask GitHub once.
+pub fn shared_state(url: &str, fetch: impl FnOnce() -> Result<(String, String), String>) -> Result<(String, String), String> {
+    type States = std::collections::HashMap<String, (Instant, (String, String))>;
+    static CACHE: Mutex<Option<States>> = Mutex::new(None);
+    {
+        let mut c = CACHE.lock().unwrap_or_else(|p| p.into_inner());
+        let map = c.get_or_insert_with(Default::default);
+        map.retain(|_, (at, _)| at.elapsed() < Duration::from_secs(120));
+        if let Some((_, v)) = map.get(url) {
+            return Ok(v.clone());
+        }
+    }
+    let v = fetch()?;
+    CACHE.lock().unwrap_or_else(|p| p.into_inner()).get_or_insert_with(Default::default).insert(url.to_string(), (Instant::now(), v.clone()));
+    Ok(v)
+}
+
+#[cfg(test)]
+mod browse_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn remotes_parse_access_and_flags() {
+        let v = json!({ "full_name": "Acme/Tool", "private": true, "archived": true, "fork": false, "description": "d", "updated_at": "2026-10-01T00:00:00Z", "permissions": { "admin": false, "push": true } });
+        let r = remote_from(&v).unwrap();
+        assert_eq!((r.owner.as_str(), r.name.as_str(), r.access.as_str(), r.private, r.archived), ("Acme", "Tool", "write", true, true));
+        assert_eq!(remote_from(&json!({ "full_name": "x/y", "permissions": {} })).unwrap().access, "read");
+        assert_eq!(key_of("Acme/Tool.git"), key_of("acme/tool"));
+    }
+
+    #[test]
+    fn gh_errors_are_readable_and_never_show_tokens() {
+        assert!(gh_error("HTTP 403: API rate limit exceeded").contains("rate limit"));
+        assert!(gh_error("HTTP 401: Bad credentials").contains("gh auth login"));
+        let e = gh_error("failed with token gho_abcdefghijklmnopqrstuvwxyz0123 in header");
+        assert!(!e.contains("gho_abc") && e.contains("[token]"), "{e}");
+    }
+
+    #[test]
+    fn clone_progress_lines_parse() {
+        assert_eq!(progress_of("Receiving objects:  45% (450/1000), 1.2 MiB | 2 MiB/s"), Some(("Receiving objects".into(), 45)));
+        assert_eq!(progress_of("remote: Counting objects: 100% (12/12), done."), Some(("Counting objects".into(), 100)));
+        assert_eq!(progress_of("Cloning into 'x'..."), None);
+    }
+
+    #[test]
+    fn destinations_are_never_overwritten() {
+        let base = std::env::temp_dir().join(format!("qp-dest-{}", uuid::Uuid::new_v4().simple()));
+        let full = base.join("full of things");
+        std::fs::create_dir_all(&full).unwrap();
+        std::fs::write(full.join("keep.txt"), "mine").unwrap();
+        assert!(destination_check(&full, "a/b").unwrap_err().contains("not empty"));
+        let empty = base.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert_eq!(destination_check(&empty, "a/b"), Ok(false));
+        assert_eq!(destination_check(&base.join("new"), "a/b"), Ok(false));
+        // A failed clone into a folder the user made empty: its contents go, the folder stays.
+        std::fs::create_dir_all(empty.join(".git")).unwrap();
+        clean_partial(&empty, false);
+        assert!(empty.is_dir() && std::fs::read_dir(&empty).unwrap().next().is_none());
+        assert_eq!(std::fs::read_to_string(full.join("keep.txt")).unwrap(), "mine");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn shared_states_ask_once() {
+        let mut calls = 0;
+        let url = format!("https://github.com/a/b/pull/{}", uuid::Uuid::new_v4().as_u128() % 100000);
+        for _ in 0..3 {
+            let v = shared_state(&url, || {
+                calls += 1;
+                Ok(("t".into(), "open".into()))
+            })
+            .unwrap();
+            assert_eq!(v.1, "open");
+        }
+        assert_eq!(calls, 1);
+    }
+}
+
+// ── Browse and clone commands ──
+
+#[tauri::command(async)]
+pub fn pilot_gh_browse(app: AppHandle, query: Option<String>, page: Option<u32>) -> Result<BrowsePage, String> {
+    let mut out = browse(query.as_deref().unwrap_or_default(), page.unwrap_or(1))?;
+    let mut local: std::collections::HashMap<String, Vec<(String, String, String)>> = std::collections::HashMap::new();
+    for c in contexts::list(&app).into_iter().filter(|c| c.kind == "workspace") {
+        if let Some(r) = repo_of(Path::new(&c.path)) {
+            local.entry(key_of(&r.slug())).or_default().push((c.id, c.name, c.path));
+        }
+    }
+    for r in &mut out.items {
+        r.local = local.get(&key_of(&r.slug)).cloned().unwrap_or_default();
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneEvent {
+    pub job: String,
+    pub phase: String,
+    pub percent: Option<u8>,
+    pub done: bool,
+    pub error: Option<String>,
+    pub path: String,
+    /// The folder already was this repository: nothing was cloned.
+    pub existing: bool,
+}
+
+/// Clone `owner/name` into `parent/folder` through the signed-in `gh`.
+/// Progress and the outcome arrive as `pilot-gh-clone` events.
+#[tauri::command(async)]
+pub fn pilot_gh_clone(app: AppHandle, slug: String, parent: String, folder: Option<String>) -> Result<String, String> {
+    use tauri::Emitter;
+    ready()?;
+    let repo = parse_remote(&format!("https://github.com/{}", slug.trim())).ok_or("Not a GitHub repository name.")?;
+    let parent = PathBuf::from(parent.trim());
+    if !parent.is_dir() {
+        return Err(format!("{} is not a folder.", parent.display()));
+    }
+    let folder = folder.map(|f| f.trim().to_string()).filter(|f| !f.is_empty()).unwrap_or_else(|| repo.name.clone());
+    if folder.contains(['/', '\\']) || folder == "." || folder == ".." {
+        return Err("The folder name must be a single name.".into());
+    }
+    let dest = parent.join(&folder);
+    let job = uuid::Uuid::new_v4().simple().to_string();
+    let path = dest.to_string_lossy().into_owned();
+    if destination_check(&dest, &repo.slug())? {
+        let _ = app.emit("pilot-gh-clone", CloneEvent { job: job.clone(), phase: "Already cloned".into(), percent: Some(100), done: true, error: None, path, existing: true });
+        return Ok(job);
+    }
+    let created = !dest.exists();
+    let mut cmd = std::process::Command::new("gh");
+    cmd.args(["repo", "clone", &repo.slug(), &path, "--", "--progress"])
+        .current_dir(&parent)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GH_PROMPT_DISABLED", "1")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("gh could not start ({e})"))?;
+    let stderr = child.stderr.take();
+    let slot = Arc::new(Mutex::new(Some(CloneJob { child, dest: dest.clone(), created })));
+    clone_jobs().lock().unwrap_or_else(|p| p.into_inner()).insert(job.clone(), slot.clone());
+    let (app2, job2) = (app.clone(), job.clone());
+    std::thread::spawn(move || {
+        use std::io::Read;
+        let mut last = String::new();
+        if let Some(mut err) = stderr {
+            let mut buf = [0u8; 4096];
+            let mut pending = String::new();
+            let mut sent = Instant::now() - Duration::from_secs(1);
+            while let Ok(n) = err.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                pending.push_str(&String::from_utf8_lossy(&buf[..n]));
+                // Progress lines end in \r while they update.
+                while let Some(i) = pending.find(['\r', '\n']) {
+                    let line: String = pending.drain(..=i).collect();
+                    let line = line.trim().to_string();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    last = line.clone();
+                    if let Some((phase, pct)) = progress_of(&line) {
+                        if sent.elapsed() > Duration::from_millis(150) || pct == 100 {
+                            sent = Instant::now();
+                            let _ = app2.emit("pilot-gh-clone", CloneEvent { job: job2.clone(), phase, percent: Some(pct), done: false, error: None, path: String::new(), existing: false });
+                        }
+                    }
+                }
+            }
+        }
+        let job_state = clone_jobs().lock().unwrap_or_else(|p| p.into_inner()).remove(&job2);
+        let taken = job_state.and_then(|s| s.lock().unwrap_or_else(|p| p.into_inner()).take());
+        let (ok, dest, created, cancelled) = match taken {
+            Some(mut j) => (j.child.wait().map(|s| s.success()).unwrap_or(false), j.dest, j.created, false),
+            None => (false, PathBuf::new(), false, true),
+        };
+        let error = if ok {
+            None
+        } else if cancelled {
+            Some("Cancelled.".to_string())
+        } else {
+            if !dest.as_os_str().is_empty() {
+                clean_partial(&dest, created);
+            }
+            Some(gh_error(&last))
+        };
+        let path = if ok { dest.to_string_lossy().into_owned() } else { String::new() };
+        let _ = app2.emit("pilot-gh-clone", CloneEvent { job: job2, phase: if ok { "Cloned".into() } else { "Failed".into() }, percent: ok.then_some(100), done: true, error, path, existing: false });
+    });
+    Ok(job)
+}
+
+/// Stop a clone; what it created goes, the chosen folder's earlier state stays.
+#[tauri::command(async)]
+pub fn pilot_gh_clone_cancel(job: String) -> Result<(), String> {
+    let slot = clone_jobs().lock().unwrap_or_else(|p| p.into_inner()).get(&job).cloned().ok_or("That clone is not running.")?;
+    let taken = slot.lock().unwrap_or_else(|p| p.into_inner()).take();
+    if let Some(mut j) = taken {
+        #[cfg(windows)]
+        {
+            let mut kill = std::process::Command::new("taskkill");
+            kill.args(["/PID", &j.child.id().to_string(), "/T", "/F"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+            use std::os::windows::process::CommandExt;
+            kill.creation_flags(0x0800_0000);
+            let _ = kill.status();
+        }
+        let _ = j.child.kill();
+        let _ = j.child.wait();
+        // Git may hold files a moment after it ends.
+        std::thread::sleep(Duration::from_millis(300));
+        clean_partial(&j.dest, j.created);
+    }
+    Ok(())
 }

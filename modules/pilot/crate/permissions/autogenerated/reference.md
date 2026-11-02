@@ -70,6 +70,9 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-list-threads`
 - `allow-pilot-agent-read-thread`
 - `allow-pilot-agent-read-thread-item`
+- `allow-pilot-gh-browse`
+- `allow-pilot-gh-clone`
+- `allow-pilot-gh-clone-cancel`
 - `allow-pilot-skill-library`
 - `allow-pilot-skill-import`
 - `allow-pilot-skill-activate`
@@ -1099,6 +1102,84 @@ Enables the pilot_files_search command without any pre-configured scope.
 <td>
 
 Denies the pilot_files_search command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-browse`
+
+</td>
+<td>
+
+Enables the pilot_gh_browse command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-browse`
+
+</td>
+<td>
+
+Denies the pilot_gh_browse command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-clone`
+
+</td>
+<td>
+
+Enables the pilot_gh_clone command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-clone`
+
+</td>
+<td>
+
+Denies the pilot_gh_clone command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-gh-clone-cancel`
+
+</td>
+<td>
+
+Enables the pilot_gh_clone_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gh-clone-cancel`
+
+</td>
+<td>
+
+Denies the pilot_gh_clone_cancel command without any pre-configured scope.
 
 </td>
 </tr>

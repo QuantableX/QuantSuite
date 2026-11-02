@@ -1419,3 +1419,38 @@ the skill through its Skill tool ("LIME-09"), Codex `skills/list` saw it as a re
 skill, a user edit showed drifted and was kept on deactivation, a library update
 showed outdated and updated, an unsupported provider was refused, removal while
 active was refused.
+
+## 21. Parity follow-up: GitHub browse, clone and onboarding (10/23)
+
+The GitHub view's sidebar has **Browse GitHub…** (hidden while GitHub is off
+in Settings → Source control; every `gh` call checks the same switch). It lists
+what the signed-in `gh` can reach — owned, collaborator and organization member
+repositories, newest first, 50 a page — or searches name and description across
+the account and up to ten of its organizations. Rows show private, archived,
+fork and access (admin/write/read), and every registered workspace whose
+`origin` is that repository (HTTPS, SSH and scp remotes normalized, compared
+case-insensitively; distinct checkouts of one repository are all listed).
+`gh` errors become readable sentences (rate limit, sign-in, offline) with
+anything token-shaped masked.
+
+**Clone…** asks for a parent folder (native picker) and a folder name. The
+destination must not exist or be empty — a non-empty folder or another
+repository's checkout is refused and left untouched; a folder that already is
+this repository is registered instead of cloned. `gh repo clone … -- --progress`
+reports phase and percent (`pilot-gh-clone` events); Stop ends the process
+tree. A failed or stopped clone removes only what it created (the whole folder
+when it was new, its contents when the folder was empty before). A successful
+clone is registered through the suite's workspace service (`openWorkspacePath`,
+which also makes it the active workspace), and the view selects it on its
+Threads tab; if registration fails the clone stays and the message says so.
+
+Linked PR and issue states are shared for two minutes across all threads that
+link the same item (`github::shared_state`), so many threads on one PR ask
+GitHub once per refresh window.
+
+Verified in the isolated native app with the real `gh` login (read-only on
+GitHub): browse (7 repositories including private and collaborator ones),
+search, refusal of a non-empty folder, clone of `octocat/Hello-World` with
+progress, "already cloned" for the same folder, Stop of a `microsoft/vscode`
+clone (its folder gone), and a UI clone of a small repository that became a
+workspace with a thread in it.

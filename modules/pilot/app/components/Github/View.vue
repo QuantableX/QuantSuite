@@ -46,6 +46,19 @@ const repoThreads = computed(() =>
 const linksOf = (id: string) => (git.links[id] ?? []).filter((l) => l.kind === 'pr' || l.kind === 'issue')
 
 const search = ref('')
+/** Browse GitHub (parity 10) instead of a repository. */
+const browsing = ref(false)
+async function openedClone(path: string) {
+  await store.refreshContexts()
+  await github.loadRepos()
+  const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  const row = github.repos.find((r) => norm(r.path) === norm(path))
+  if (row) {
+    github.select(row.contextId)
+    github.setTab('threads')
+  }
+  browsing.value = false
+}
 const task = ref('')
 const busy = ref<string | null>(null)
 const notice = ref<{ text: string; error: boolean } | null>(null)
@@ -173,9 +186,11 @@ const CHECK_TITLE = (pr: GhPull) =>
       <p v-if="github.reposLoaded && !github.repos.length" class="qp-ghv-none">
         No workspace has a GitHub remote. Open a folder whose <code>origin</code> is on GitHub as a workspace.
       </p>
+      <button v-if="store.settings?.github !== false" class="qp-ghv-browse" :class="{ on: browsing }" @click="browsing = !browsing">Browse GitHub…</button>
     </aside>
 
-    <section v-if="current" class="qp-ghv-main">
+    <PilotGithubBrowse v-if="browsing && store.settings?.github !== false" @close="browsing = false" @opened="openedClone" />
+    <section v-else-if="current" class="qp-ghv-main">
       <header class="qp-ghv-bar">
         <span class="qp-ghv-title">{{ current.repo.owner }}/{{ current.repo.name }}</span>
         <button class="qp-ghv-icon" title="Open on GitHub" aria-label="Open on GitHub" @click="openExternal(current.url)"><ExternalLink :size="13" /></button>
@@ -347,6 +362,8 @@ const CHECK_TITLE = (pr: GhPull) =>
 .qp-ghv-repo.on { background: var(--qss-bg-hover, #313139); }
 .qp-ghv-repo-name { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-ghv-repo-slug { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-ghv-browse { margin: 8px 6px 0; padding: 5px 8px; border: 1px dashed var(--qss-border, #47474f); border-radius: 7px; background: transparent; color: var(--qss-text-secondary, #9a9aa5); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.qp-ghv-browse:hover, .qp-ghv-browse.on { color: var(--qss-text, #d4d4d8); border-color: var(--qss-accent, #7aa2f7); }
 .qp-ghv-none { margin: 6px 8px; font-size: 12px; line-height: 1.5; color: var(--qss-text-muted, #6e6e7a); }
 .qp-ghv-none code { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; }
 .qp-ghv-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
