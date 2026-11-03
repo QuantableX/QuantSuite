@@ -35,10 +35,12 @@ const entry = computed(() => sb.latestUndo)
   max-width: min(420px, calc(100% - 32px));
   padding: 7px 8px 7px 12px;
   transform: translateX(-50%);
-  border: 1px solid var(--qss-border, #47474f);
-  border-radius: 8px;
-  background: var(--qss-bg-raised, #1f1f25);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--qp-glass-edge, var(--qss-border, #47474f));
+  border-radius: 12px;
+  background: var(--qp-glass, var(--qss-bg-raised, #1f1f25));
+  backdrop-filter: var(--qp-glass-blur, none);
+  -webkit-backdrop-filter: var(--qp-glass-blur, none);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.4);
   color: var(--qss-text, #d4d4d8);
   font-size: 12.5px;
 }
@@ -57,10 +59,10 @@ const entry = computed(() => sb.latestUndo)
 .qp-toast-undo:hover { background: var(--qss-bg-hover, #313139); }
 .qp-toast-x { flex-shrink: 0; border: none; background: transparent; color: var(--qss-text-muted, #6e6e7a); font-size: 15px; line-height: 1; cursor: pointer; padding: 0 4px; }
 .qp-toast-x:hover { color: var(--qss-text, #d4d4d8); }
-.qp-toast-enter-active,
-.qp-toast-leave-active { transition: opacity 140ms ease, transform 140ms ease; }
+.qp-toast-enter-active { transition: opacity 170ms ease, transform 170ms var(--qp-ease-out, ease); }
+.qp-toast-leave-active { transition: opacity 110ms ease, transform 110ms ease; }
 .qp-toast-enter-from,
-.qp-toast-leave-to { opacity: 0; transform: translate(-50%, 6px); }
+.qp-toast-leave-to { opacity: 0; transform: translate(-50%, 8px) scale(0.98); }
 @media (prefers-reduced-motion: reduce) {
   .qp-toast-enter-active,
   .qp-toast-leave-active { transition: none; }

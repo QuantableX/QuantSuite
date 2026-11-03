@@ -455,6 +455,12 @@ useCommands({
 
 <style scoped>
 .qp-tl { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* The transcript fades out at the panel's top edge and into the composer (round 2, card 06):
+   two still gradients over the scroller — nothing repaints while scrolling. */
+.qp-tl::before,
+.qp-tl::after { content: ''; position: absolute; left: 0; right: 10px; z-index: 3; pointer-events: none; }
+.qp-tl::before { top: 0; height: 28px; background: linear-gradient(var(--qss-bg, #18181e), transparent); }
+.qp-tl::after { bottom: 0; height: 18px; background: linear-gradient(transparent, var(--qss-bg, #18181e)); }
 .qp-history-excerpt { display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; padding: 8px 16px; font-size: 12px; color: var(--qss-text-secondary); border-bottom: 1px solid var(--qss-border); }
 .qp-history-return { flex-shrink: 0; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--qss-border); border-radius: 6px; color: var(--qss-text); background: transparent; cursor: pointer; }
 .qp-history-return:hover { background: var(--qss-hover); }

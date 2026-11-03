@@ -152,17 +152,17 @@ async function revert(files: boolean) {
 .qp-user { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; margin-bottom: 10px; }
 .qp-user-bubble {
   max-width: min(86%, 640px);
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: var(--qss-bg-card, #292930);
-  border: 1px solid var(--qss-border-subtle, #35353d);
+  padding: 9px 14px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--qss-text, #d4d4d8) 8%, var(--qss-bg, #18181e));
+  border: 1px solid transparent;
 }
 .qp-user-bubble :deep(.qp-md) { font-size: 13.5px; }
 .qp-user-bubble.bare { padding: 0; background: transparent; border: none; min-width: 0; width: min(86%, 420px); }
 .qp-user-media { max-width: min(86%, 640px); align-items: flex-end; }
 .qp-user-att { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); margin-bottom: 4px; }
 .qp-user.is-steer { margin: 4px 0 10px; }
-.qp-user.is-steer .qp-user-bubble { border-style: dashed; }
+.qp-user.is-steer .qp-user-bubble { border: 1px dashed var(--qss-border, #47474f); }
 .qp-user-copy {
   opacity: 0;
   border: none;

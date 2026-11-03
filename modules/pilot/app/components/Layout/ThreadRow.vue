@@ -243,15 +243,15 @@ function openMenuFromButton(e: MouseEvent) {
   gap: 8px;
   margin: 0 6px;
   padding: 5px 6px;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--qss-text, #d4d4d8);
   cursor: pointer;
   user-select: none;
   outline: none;
-  transition: transform 140ms ease;
+  transition: transform 140ms ease, background-color 120ms ease;
 }
-.qp-row:hover { background: var(--qss-bg-hover, #313139); }
-.qp-row.active { background: var(--qss-bg-card, #292930); }
+.qp-row:hover { background: color-mix(in srgb, var(--qss-text, #d4d4d8) 6%, transparent); }
+.qp-row.active { background: color-mix(in srgb, var(--qss-text, #d4d4d8) 10%, transparent); }
 .qp-row:focus-visible { box-shadow: inset 0 0 0 1px var(--qss-accent, #7c8cff); }
 .qp-row.source { visibility: hidden; }
 .qp-row.in-range { background: color-mix(in srgb, var(--qss-accent, #7c8cff) 18%, transparent); }
