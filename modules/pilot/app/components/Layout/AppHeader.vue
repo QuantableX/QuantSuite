@@ -93,7 +93,7 @@ async function end() {
           {{ session.title || 'New thread' }}
         </button>
         <span class="qp-head-chip" :title="session.cwd">{{ session.contextName }}</span>
-        <span class="qp-head-chip is-provider" :title="live.display || undefined">{{ store.adapterLabel(session.provider) }}</span>
+        <span class="qp-head-chip is-provider" :title="live.display || undefined"><PilotAgentIcon :agent="session.provider || null" :size="12" decorative /><span class="qp-head-chip-text">{{ store.adapterLabel(session.provider) }}</span></span>
         <span v-if="model" class="qp-head-chip" :title="`Model: ${model}`">{{ model }}</span>
         <span class="qp-head-chip" title="Permission mode">{{ modeLabel(session.mode) }}</span>
         <PilotGitPrChip v-for="l in prs" :key="l.url" :link="l" />
@@ -173,7 +173,8 @@ async function end() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.qp-head-chip.is-provider { color: var(--qss-text, #d4d4d8); }
+.qp-head-chip.is-provider { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--qss-text, #d4d4d8); }
+.qp-head-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .qp-head-chip.is-card {
   display: inline-flex;
   align-items: center;

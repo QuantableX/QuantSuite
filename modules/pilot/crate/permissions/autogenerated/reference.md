@@ -116,6 +116,9 @@ Default permissions for the pilot module.
 - `allow-pilot-messages-search`
 - `allow-pilot-keybindings-get`
 - `allow-pilot-keybindings-set`
+- `allow-pilot-agent-icons`
+- `allow-pilot-agent-icon-set`
+- `allow-pilot-agent-icon-clear`
 - `allow-pilot-provider-update`
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
@@ -187,6 +190,84 @@ Enables the pilot_agent_browser command without any pre-configured scope.
 <td>
 
 Denies the pilot_agent_browser command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-icon-clear`
+
+</td>
+<td>
+
+Enables the pilot_agent_icon_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-icon-clear`
+
+</td>
+<td>
+
+Denies the pilot_agent_icon_clear command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-icon-set`
+
+</td>
+<td>
+
+Enables the pilot_agent_icon_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-icon-set`
+
+</td>
+<td>
+
+Denies the pilot_agent_icon_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-icons`
+
+</td>
+<td>
+
+Enables the pilot_agent_icons command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-icons`
+
+</td>
+<td>
+
+Denies the pilot_agent_icons command without any pre-configured scope.
 
 </td>
 </tr>

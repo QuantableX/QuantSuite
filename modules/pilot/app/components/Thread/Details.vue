@@ -216,7 +216,7 @@ const inspector = useInspectorStore()
       <h4 class="qp-block-title is-warn">Needs you</h4>
       <button v-for="s in needsYou" :key="s.id" class="qp-need" @click="store.openSession(s.id)">
         <span class="qp-need-title">{{ s.title || 'New thread' }}</span>
-        <span class="qp-need-sub">{{ s.contextName }}</span>
+        <span class="qp-need-sub"><PilotAgentIcon :agent="s.provider || null" :size="11" />{{ s.contextName }}</span>
       </button>
     </section>
 
@@ -224,7 +224,7 @@ const inspector = useInspectorStore()
       <h4 class="qp-block-title">Vitals</h4>
       <div class="qp-vital">
         <span class="qp-vital-k">Agent</span>
-        <span class="qp-vital-v">{{ store.adapterLabel(thread?.provider || 'claude') }}</span>
+        <span class="qp-vital-v qp-vital-agent"><PilotAgentIcon :agent="thread?.provider || null" :size="12" decorative />{{ store.adapterLabel(thread?.provider || 'claude') }}</span>
       </div>
       <div v-if="model" class="qp-vital">
         <span class="qp-vital-k">Model</span>
@@ -267,7 +267,7 @@ const inspector = useInspectorStore()
         :title="`${a.title} — open what it did in the inspector`"
         @click="inspector.openAgent(threadId, a.callId)"
       >
-        <span class="qp-agent-dot" :class="`is-${a.status}`" />
+        <PilotAgentIcon :agent="thread?.provider || null" :size="12" :status="a.status === 'running' ? 'working' : a.status === 'failed' ? 'error' : null" />
         <span class="qp-agent-title">{{ a.title }}</span>
         <span class="qp-agent-sub"><template v-if="a.type">{{ a.type }} · </template><span class="mono">{{ a.tools }}</span> tool{{ a.tools === 1 ? '' : 's' }}</span>
         <span v-if="a.status === 'running' && a.last" class="qp-agent-last">{{ a.last }}</span>
@@ -336,13 +336,9 @@ const inspector = useInspectorStore()
 .qp-tasklist li.is-in_progress::before { border-color: var(--qss-accent, #7aa2f7); background: color-mix(in srgb, var(--qss-accent, #7aa2f7) 40%, transparent); }
 .qp-tasklist li.is-completed { color: var(--qss-text-muted, #6e6e7a); text-decoration: line-through; }
 .qp-tasklist li.is-completed::before { border-color: var(--qss-success, #34d399); background: var(--qss-success, #34d399); }
-.qp-agent { display: grid; grid-template-columns: 10px 1fr; align-items: baseline; gap: 0 6px; padding: 4px 6px; border: none; border-radius: 6px; background: transparent; color: var(--qss-text, #d4d4d8); text-align: left; cursor: pointer; min-width: 0; }
+.qp-agent { display: grid; grid-template-columns: 16px 1fr; align-items: center; gap: 0 6px; padding: 4px 6px; border: none; border-radius: 6px; background: transparent; color: var(--qss-text, #d4d4d8); text-align: left; cursor: pointer; min-width: 0; }
 .qp-agent:hover { background: var(--qss-bg-hover, #313139); }
 .qp-agent.on { background: var(--qss-bg-card, #292930); }
-.qp-agent-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--qss-text-muted, #6e6e7a); }
-.qp-agent-dot.is-running { background: var(--qss-accent, #7aa2f7); }
-.qp-agent-dot.is-completed { background: var(--qss-success, #34d399); }
-.qp-agent-dot.is-failed { background: var(--qss-error, #f87171); }
 .qp-agent-title { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-agent-sub,
 .qp-agent-last { grid-column: 2; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -351,8 +347,9 @@ const inspector = useInspectorStore()
 .qp-block-title.is-err { color: var(--qss-error, #f87171); }
 .qp-need { display: flex; flex-direction: column; gap: 1px; padding: 5px 7px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--qss-warning, #d29a3f) 40%, var(--qss-border, #47474f)); background: transparent; color: var(--qss-text, #d4d4d8); text-align: left; cursor: pointer; }
 .qp-need:hover { background: var(--qss-bg-hover, #313139); }
+.qp-vital-agent { display: inline-flex; align-items: center; gap: 5px; }
 .qp-need-title { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qp-need-sub { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-need-sub { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-vital { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 8px; font-size: 12px; }
 .qp-vital.is-bar { grid-template-columns: auto 1fr; }
 .qp-vital-k { color: var(--qss-text-muted, #6e6e7a); }

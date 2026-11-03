@@ -113,7 +113,7 @@ async function save() {
     <div class="qp-row">
       <span class="qp-row-k"><Layers :size="13" class="qp-mark" :class="{ on: draft.enabled !== null }" /> Agents offered</span>
       <span class="qp-agents">
-        <label v-for="a in AGENTS" :key="a.id" class="qp-check"><input type="checkbox" :checked="enabled.includes(a.id)" @change="toggleAgent(a.id, ($event.target as HTMLInputElement).checked)" /> {{ a.label }}</label>
+        <label v-for="a in AGENTS" :key="a.id" class="qp-check"><input type="checkbox" :checked="enabled.includes(a.id)" @change="toggleAgent(a.id, ($event.target as HTMLInputElement).checked)" /> <PilotAgentIcon :agent="a.id" :size="12" decorative /> {{ a.label }}</label>
       </span>
       <button class="qp-reset" :disabled="draft.enabled === null" @click="draft.enabled = null">Reset</button>
     </div>

@@ -132,8 +132,8 @@ const short = (p: string) => (p.length > 64 ? `…${p.slice(-63)}` : p)
           <Download :size="15" />
           <span class="qp-im-title">Import conversations</span>
           <div class="qp-im-tabs" role="tablist">
-            <button role="tab" :aria-selected="provider === 'claude'" :class="{ on: provider === 'claude' }" @click="provider = 'claude'">Claude Code</button>
-            <button role="tab" :aria-selected="provider === 'codex'" :class="{ on: provider === 'codex' }" @click="provider = 'codex'">Codex</button>
+            <button role="tab" :aria-selected="provider === 'claude'" :class="{ on: provider === 'claude' }" @click="provider = 'claude'"><PilotAgentIcon agent="claude" :size="12" decorative /> Claude Code</button>
+            <button role="tab" :aria-selected="provider === 'codex'" :class="{ on: provider === 'codex' }" @click="provider = 'codex'"><PilotAgentIcon agent="codex" :size="12" decorative /> Codex</button>
           </div>
           <button class="qp-im-x" aria-label="Close" :disabled="busy" @click="emit('close')"><X :size="14" /></button>
         </div>

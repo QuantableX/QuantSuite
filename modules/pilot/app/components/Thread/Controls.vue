@@ -73,6 +73,9 @@ const providers = computed<ProviderOption[]>(() =>
     })
 )
 
+/** The agents of a fan-out (card 10), one logo each in the control. */
+const fanAgents = computed(() => [...new Set((threads.fanout[props.threadId] ?? []).map((m) => m.provider))])
+
 /** Several models for a new thread's first message (card 10). */
 function setFanout(list: { provider: string; model: string }[]) {
   if (list.length > 1) threads.fanout[props.threadId] = list
@@ -206,7 +209,10 @@ useCommands({
   <div ref="root" class="qp-ctl">
     <span class="qp-ctl-anchor">
       <button class="qp-ctl-btn" :class="{ on: open === 'model' }" :title="keys.hint('modelPicker.toggle', 'Model')" @click.stop="toggle('model')">
-        <span class="qp-ctl-dot" :data-provider="provider" />
+        <span v-if="fanAgents.length > 1" class="qp-ctl-stack">
+          <PilotAgentIcon v-for="id in fanAgents" :key="id" :agent="id" :size="13" />
+        </span>
+        <PilotAgentIcon v-else :agent="provider" :size="13" decorative />
         <span class="qp-ctl-text">{{ store.adapterLabel(provider) }}</span>
         <span class="qp-ctl-sep">·</span>
         <span class="qp-ctl-text">{{ modelLabel }}</span>
@@ -311,9 +317,7 @@ useCommands({
 .qp-ctl-btn.mode-plan { color: #a78bfa; }
 .qp-ctl-text { overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .qp-ctl-sep { opacity: 0.6; }
-.qp-ctl-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--qss-text-muted, #6e6e7a); flex-shrink: 0; }
-.qp-ctl-dot[data-provider='claude'] { background: #d97757; }
-.qp-ctl-dot[data-provider='codex'] { background: #e5e7eb; }
+.qp-ctl-stack { display: inline-flex; align-items: center; gap: 2px; }
 .qp-ctl-spacer { flex: 1; }
 .qp-ctl-limit {
   font-size: 11px;

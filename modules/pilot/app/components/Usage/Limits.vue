@@ -43,7 +43,7 @@ const level = (pct: number | null) => (pct === null ? 'none' : pct >= 100 ? 'out
     <div v-if="!usage.limits && usage.limitsLoading" class="qp-limits-empty">Asking for the current windows…</div>
     <section v-for="l in shown" :key="l.provider" class="qp-limits-card">
       <header class="qp-limits-head">
-        <span class="qp-limits-name">{{ store.adapterLabel(l.provider) }}</span>
+        <span class="qp-limits-name"><PilotAgentIcon :agent="l.provider" :size="14" decorative />{{ store.adapterLabel(l.provider) }}</span>
         <span v-if="l.at" class="qp-limits-age">reported {{ ago(l.at) }}</span>
       </header>
       <div v-for="w in l.windows" :key="w.kind" class="qp-limit" :class="`is-${level(w.usedPct)}`">
@@ -73,7 +73,7 @@ const level = (pct: number | null) => (pct === null ? 'none' : pct >= 100 ? 'out
 .qp-limits-card { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--qss-border-subtle, #35353d); background: var(--qss-bg-raised, #1f1f25); display: flex; flex-direction: column; gap: 8px; }
 .compact .qp-limits-card { padding: 0; border: none; background: transparent; gap: 5px; }
 .qp-limits-head { display: flex; align-items: baseline; gap: 10px; }
-.qp-limits-name { font-size: 13px; font-weight: 600; }
+.qp-limits-name { display: inline-flex; align-items: center; gap: 6px; align-self: center; font-size: 13px; font-weight: 600; }
 .compact .qp-limits-name { font-size: 12px; }
 .qp-limits-age { font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
 /* Fixed text columns, so the bars and resets line up across windows and agents. */

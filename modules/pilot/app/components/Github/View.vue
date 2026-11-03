@@ -10,7 +10,7 @@
  * Everything runs through the signed-in `gh`; nothing else talks to GitHub.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { CircleDot, ExternalLink, GitPullRequest, LoaderCircle, MoreHorizontal, RefreshCw } from 'lucide-vue-next'
+import { CircleDot, ExternalLink, GitPullRequest, MoreHorizontal, RefreshCw } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useAppStore } from '#pilot/stores/app'
 import { useGitStore } from '#pilot/stores/git'
@@ -231,8 +231,7 @@ const CHECK_TITLE = (pr: GhPull) =>
           <button class="qp-btn qp-btn-sm qp-btn-primary" type="submit" :disabled="!task.trim() || busy === 'new'">Start</button>
         </form>
         <button v-for="t in repoThreads" :key="t.id" class="qp-ghv-row is-thread" @click="openThread(t.id)">
-          <LoaderCircle v-if="sidebar.statusOf(t.id) === 'working'" class="qp-ghv-spin qp-ghv-working" :size="12" />
-          <span v-else class="qp-ghv-dot" :class="`is-${sidebar.statusOf(t.id)}`" />
+          <PilotAgentIcon :agent="t.provider || null" :size="13" :status="sidebar.statusOf(t.id)" />
           <span class="qp-ghv-row-title">{{ t.title || 'New thread' }}</span>
           <PilotGitPrChip v-for="l in linksOf(t.id)" :key="l.url" :link="l" compact />
           <span class="qp-ghv-when">{{ timeAgo(t.lastActivityAt) }}</span>
@@ -274,6 +273,7 @@ const CHECK_TITLE = (pr: GhPull) =>
             title="A thread that checks the pull request out and reviews it"
             @click="start(`pr:${pr.number}`, prItem(pr), reviewPrompt(pr), true)"
           >
+            <PilotAgentIcon :agent="store.newThreadAgent(current?.contextId)" :size="12" decorative />
             {{ busy === `pr:${pr.number}` ? 'Starting…' : 'Agent review' }}
           </button>
           <span class="qp-ghv-more">
@@ -483,11 +483,6 @@ const CHECK_TITLE = (pr: GhPull) =>
 .qp-ghv-label { flex-shrink: 0; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--qss-border-subtle, #35353d); color: var(--qss-text-secondary, #9a9aa5); }
 .qp-ghv-more { position: relative; flex-shrink: 0; }
 .qp-ghv-pop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; }
-.qp-ghv-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--qss-text-muted, #6e6e7a); }
-.qp-ghv-dot.is-waiting,
-.qp-ghv-dot.is-limited { background: var(--qss-warning, #d29a3f); }
-.qp-ghv-dot.is-error { background: var(--qss-error, #f87171); }
-.qp-ghv-working { flex-shrink: 0; color: var(--qss-success, #34d399); }
 .qp-ghv-when { flex-shrink: 0; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-ghv-empty { margin: 16px 8px; font-size: 12.5px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-ghv-empty.is-error { color: var(--qss-error, #f87171); }

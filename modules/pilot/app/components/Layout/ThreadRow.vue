@@ -1,13 +1,14 @@
 <script setup lang="ts">
 /**
- * One sidebar row: the agent's mark (a spinner while it works), the title
+ * One sidebar row: the agent's logo (a status ring around it while it works,
+ * waits, hit a limit or failed), the title
  * (an input while renaming), project · time, and what needs you — pending
  * requests, an error, a limit, an unread finished turn. The hover action
  * settles, un-settles or wakes; drag it across rows to do several at once.
  * Files dropped from Explorer open the thread with them attached.
  */
 import { computed, nextTick, ref, watch } from 'vue'
-import { Archive, ArchiveRestore, Ellipsis, LoaderCircle, Pin, Sunrise } from 'lucide-vue-next'
+import { Archive, ArchiveRestore, Ellipsis, Pin, Sunrise } from 'lucide-vue-next'
 import { timeAgo } from '#pilot/utils/format'
 import { wakeLabel, type RowStatus, type Section } from '#pilot/utils/sidebar'
 import { useGitStore } from '#pilot/stores/git'
@@ -50,9 +51,8 @@ const emit = defineEmits<{
 
 const title = computed(() => props.thread.title || 'New thread')
 const isDraft = computed(() => props.thread.kind === 'chat' && !props.thread.providerSessionId && !props.thread.title)
-/** Two agents can share an initial (Claude Code, Codex): short marks keep them apart. */
-const MARKS: Record<string, string> = { claude: 'Cl', codex: 'Cx', opencode: 'Oc', gemini: 'G', pi: 'π', omp: 'om' }
-const mark = computed(() => MARKS[props.thread.provider || 'claude'] ?? (props.providerLabel || '?').trim().charAt(0).toUpperCase())
+/** A V2 terminal row may have no agent yet (''); a chat thread without one is not known yet. */
+const agent = computed(() => (props.thread.kind === 'terminal' ? props.thread.provider : props.thread.provider || null))
 
 const sub = computed(() => {
   const parts: string[] = []
@@ -155,9 +155,8 @@ function openMenuFromButton(e: MouseEvent) {
     @dragleave="fileOver = false"
     @drop="onDrop"
   >
-    <span class="qp-row-mark" :data-status="status" :data-provider="thread.provider || 'claude'" :title="providerLabel">
-      <LoaderCircle v-if="status === 'working'" class="qp-spin" :size="13" />
-      <template v-else>{{ mark }}</template>
+    <span class="qp-row-mark" :data-status="status" :data-provider="thread.provider">
+      <PilotAgentIcon :agent="agent" :size="14" :status="status" :label="providerLabel" />
     </span>
     <span class="qp-row-text">
       <input
@@ -231,27 +230,10 @@ function openMenuFromButton(e: MouseEvent) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
-  border-radius: 5px;
-  background: var(--qss-bg-raised, #1f1f25);
-  border: 1px solid var(--qss-border-subtle, #35353d);
-  color: var(--qss-text-secondary, #9a9aa5);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-.qp-row-mark[data-provider='claude'] { color: #d97757; }
-.qp-row-mark[data-provider='codex'] { color: var(--qss-text, #d4d4d8); }
-.qp-row-mark[data-status='working'] { color: var(--qss-success, #34d399); border-color: transparent; background: transparent; }
-.qp-row-mark[data-status='error'] { color: var(--qss-error, #f87171); }
-.qp-row-mark[data-status='limited'],
-.qp-row-mark[data-status='waiting'] { color: var(--qss-warning, #d29a3f); }
-.qp-spin { animation: qp-spin 900ms linear infinite; }
-@keyframes qp-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .qp-spin { animation-duration: 2.4s; }
+  color: var(--qss-text, #d4d4d8);
 }
 .qp-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .qp-row-title { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

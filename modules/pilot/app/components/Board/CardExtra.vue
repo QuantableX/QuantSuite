@@ -2,12 +2,13 @@
 /**
  * What QuantPilot adds to a kanban card on its board (card 21): priority,
  * the branch (and worktree) an agent works it on, the threads started from
- * it — a click opens one beside the board — and Start thread. The agent is
+ * it (their agent's logo, ringed by its state) — a click opens one beside
+ * the board — and Start thread. The agent is
  * the shared board's own badge.
  */
 import { computed } from 'vue'
 import type { KanbanCard } from '@quantsuite/core'
-import { GitBranch, LoaderCircle, Play } from 'lucide-vue-next'
+import { GitBranch, Play } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 
@@ -22,7 +23,7 @@ const linked = computed(() =>
   props.threadIds
     .map((id) => store.sessions.find((s) => s.id === id))
     .filter((s) => s !== undefined)
-    .map((s) => ({ id: s.id, title: s.title || 'New thread', status: sidebar.statusOf(s.id) }))
+    .map((s) => ({ id: s.id, title: s.title || 'New thread', status: sidebar.statusOf(s.id), provider: s.provider || null }))
 )
 const branchTitle = computed(() => (props.card.worktree_path ? `Branch ${props.card.branch} — worktree ${props.card.worktree_path}` : `Branch ${props.card.branch}`))
 const STATUS: Record<string, string> = { working: 'Working', waiting: 'Needs you', error: 'Failed', limited: 'Limited', idle: 'Idle' }
@@ -43,8 +44,7 @@ const STATUS: Record<string, string> = { working: 'Working', waiting: 'Needs you
       :title="`${t.title} — ${STATUS[t.status] ?? t.status}. Open it beside the board.`"
       @click="emit('open', t.id)"
     >
-      <LoaderCircle v-if="t.status === 'working'" class="qp-bc-spin" :size="10" />
-      <span v-else class="qp-bc-dot" :class="`is-${t.status}`" />
+      <PilotAgentIcon :agent="t.provider" :size="11" :status="t.status" decorative />
       <span class="qp-bc-clip">{{ t.title }}</span>
     </button>
     <button
@@ -102,13 +102,4 @@ const STATUS: Record<string, string> = { working: 'Working', waiting: 'Needs you
 .qp-bc-thread.on { border-color: color-mix(in srgb, var(--qss-accent, #7c8cff) 60%, var(--qss-border, #47474f)); }
 .qp-bc-start { margin-left: auto; }
 .qp-bc-start:disabled { opacity: 0.5; cursor: default; }
-.qp-bc-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--qss-text-muted, #6e6e7a); }
-.qp-bc-dot.is-waiting { background: var(--qss-warning, #d29a3f); }
-.qp-bc-dot.is-error { background: var(--qss-error, #f87171); }
-.qp-bc-dot.is-limited { background: var(--qss-warning, #d29a3f); }
-.qp-bc-spin { flex-shrink: 0; color: var(--qss-success, #34d399); animation: qp-bc-spin 900ms linear infinite; }
-@keyframes qp-bc-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .qp-bc-spin { animation-duration: 2.4s; }
-}
 </style>

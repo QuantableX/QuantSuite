@@ -15,6 +15,7 @@
 
 mod acp;
 mod adapters;
+mod agent_icons;
 mod agent_tools;
 mod browser;
 mod browser_profiles;
@@ -234,9 +235,35 @@ fn pilot_settings_get(state: State<'_, PilotState>) -> Settings {
 fn pilot_settings_set(state: State<'_, PilotState>, settings: Settings) -> Result<Settings, String> {
     let settings = settings.normalized();
     settings::write(&state.data_dir, &settings)?;
+    agent_icons::prune(&state.data_dir, &custom_ids(&settings));
     github::set_enabled(settings.github);
     *lock(&state.settings) = settings.clone();
     Ok(settings)
+}
+
+fn custom_ids(settings: &Settings) -> Vec<String> {
+    settings.custom.iter().map(|c| c.id.clone()).collect()
+}
+
+/// Round 2, card 01: the images the user chose for their own agents, id →
+/// data URL (the built-in agents' logos are bundled with the app).
+#[tauri::command(async)]
+fn pilot_agent_icons(state: State<'_, PilotState>) -> std::collections::BTreeMap<String, String> {
+    let ids = custom_ids(&lock(&state.settings));
+    agent_icons::all(&state.data_dir, &ids)
+}
+
+/// Check an image file and store it as a custom agent's icon (PNG, JPEG or
+/// WebP, at most 256 KB); returns its data URL.
+#[tauri::command(async)]
+fn pilot_agent_icon_set(state: State<'_, PilotState>, id: String, path: String) -> Result<String, String> {
+    agent_icons::set(&state.data_dir, &id, Path::new(&path))
+}
+
+/// The custom agent shows its letter again.
+#[tauri::command(async)]
+fn pilot_agent_icon_clear(state: State<'_, PilotState>, id: String) -> Result<(), String> {
+    agent_icons::clear(&state.data_dir, &id)
 }
 
 /// Settings → Keybindings (card 17): the user's rules, a JSON array in the
@@ -994,6 +1021,9 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_messages_search,
             pilot_keybindings_get,
             pilot_keybindings_set,
+            pilot_agent_icons,
+            pilot_agent_icon_set,
+            pilot_agent_icon_clear,
             pilot_provider_update,
             pilot_gh_status,
             pilot_diagnostics,
