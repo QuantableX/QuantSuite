@@ -135,6 +135,14 @@ pub fn base_cmd(exe: &Path) -> Command {
     // A `.cmd` shim finds `node` through PATH, and the suite's own can
     // predate its installation (see `qs_core::system_path`).
     cmd.env("PATH", qs_core::system_path::current());
+    // The login folders as the PC has them, not as a launching terminal
+    // set them (callers with settings override this with their own env).
+    for (k, v) in crate::settings::system_homes() {
+        match k.strip_prefix('-') {
+            Some(name) => cmd.env_remove(name),
+            None => cmd.env(k, v),
+        };
+    }
     #[cfg(windows)]
     let cmd = {
         use std::os::windows::process::CommandExt;
@@ -375,7 +383,7 @@ pub fn version_of(exe: &Path) -> Option<String> {
 }
 
 /// The settings' environment on a probe, so it reports what new processes will see (card 19).
-fn with_env(mut cmd: Command, env: &[(String, String)]) -> Command {
+pub(crate) fn with_env(mut cmd: Command, env: &[(String, String)]) -> Command {
     for (k, v) in env {
         match k.strip_prefix('-') {
             Some(name) => cmd.env_remove(name),
@@ -465,7 +473,7 @@ fn status_one(adapter: &Adapter, settings: &Settings) -> AdapterStatus {
     status.found = true;
     status.path = Some(exe.found.clone());
     status.version = version_of(&found);
-    let env = settings.launch_env(&adapter.id);
+    let env = settings.launch_env_for(&adapter.id, "");
     status.update = update_plan_for(adapter, &found).map(|p| p.method);
     match adapter.kind {
         Kind::Claude => claude_login(&found, &env, &mut status),

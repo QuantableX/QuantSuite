@@ -169,8 +169,13 @@ impl PtySession {
             cmd.env("PYTHONIOENCODING", "utf-8");
         }
 
+        // `-NAME` removes an inherited variable (an agent's login folder, see
+        // QuantPilot's settings); a real variable name never starts with '-'.
         for (key, value) in &opts.env {
-            cmd.env(key, value);
+            match key.strip_prefix('-') {
+                Some(name) => cmd.env_remove(name),
+                None => cmd.env(key, value),
+            }
         }
 
         let child = pair
