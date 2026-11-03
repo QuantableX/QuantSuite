@@ -203,6 +203,10 @@ export interface PilotSettings {
   github?: boolean
   /** While recording, threads with one of these tags are hidden (round 2, card 12). */
   hideTagsWhileRecording?: string[]
+  /** Crews (round 2, card 07): workers at once, a worker's time limit, own worktrees. */
+  crewParallel?: number
+  crewTimeoutMinutes?: number
+  crewWorktrees?: boolean
 }
 
 // ── GitHub (card 23) ──
@@ -926,4 +930,84 @@ export interface HistoryChunk {
   totalChars: number
   nextCursor: string | null
   contentIsUntrusted: boolean
+}
+
+// ── Crews (round 2, card 07) ──
+
+export type CrewTaskStatus = 'waiting' | 'running' | 'asking' | 'stalled' | 'done' | 'failed' | 'stopped'
+
+export interface Crew {
+  id: string
+  orchestratorId: string
+  contextId: string
+  objective: string
+  /** `running` | `stopped` | `done`. */
+  status: string
+  maxParallel: number
+  allowPeers: boolean
+  rev: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CrewTask {
+  id: string
+  crewId: string
+  key: string
+  spec: string
+  deps: string[]
+  cardId: string | null
+  provider: string
+  model: string
+  worktree: boolean
+  timeoutMin: number
+  status: CrewTaskStatus
+  progress: number
+  note: string
+  workerId: string | null
+  attempts: number
+  summary: string
+  result: string
+  error: string
+  startedAt: number | null
+  finishedAt: number | null
+  sort: number
+  brief: string
+}
+
+export interface CrewMember {
+  crewId: string
+  threadId: string
+  taskId: string | null
+  role: 'orchestrator' | 'worker'
+  attempt: number
+  status: string
+  provider: string
+  joinedAt: number
+}
+
+export interface CrewMessage {
+  id: string
+  crewId: string
+  taskId: string | null
+  fromId: string
+  toId: string
+  kind: string
+  text: string
+  replyTo: string | null
+  status: string
+  at: number
+  n: number
+}
+
+export interface CrewSnapshot {
+  crew: Crew
+  tasks: CrewTask[]
+  members: CrewMember[]
+  messages: CrewMessage[]
+  messageCount: number
+  /** Open questions and pending gates, whole. */
+  open: CrewMessage[]
+  maxParallel: number
+  titles: Record<string, string>
 }

@@ -19,6 +19,7 @@ import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
 import { useSideStore } from '#pilot/stores/side'
+import { useCrewStore } from '#pilot/stores/crew'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { useDrawerStore } from '#pilot/stores/drawer'
 import { useKeysStore } from '#pilot/stores/keys'
@@ -31,11 +32,12 @@ import { setMathEnabled } from '#pilot/utils/markdown'
 import { chime } from '#pilot/utils/chime'
 import { threadReference } from '#pilot/utils/format'
 import { pilot } from '#pilot/utils/invoke'
-import type { PilotEnvelope, SessionMeta, ThreadEnvelope } from '#pilot/types'
+import type { CrewSnapshot, PilotEnvelope, SessionMeta, ThreadEnvelope } from '#pilot/types'
 
 const app = useAppStore()
 const store = usePilotStore()
 const side = useSideStore()
+const crews = useCrewStore()
 const threads = useThreadStore()
 const sidebar = useSidebarStore()
 const git = useGitStore()
@@ -59,6 +61,8 @@ useTauriEvent<{ threadId: string; kind: 'file' | 'preview'; path?: string; line?
   else if (p.kind === 'preview' && p.url) inspector.openBrowser(p.threadId, p.url)
 })
 useTauriEvent<SessionMeta>('pilot-thread-created', (meta) => store.upsertSession(meta))
+// Crews (round 2, card 07): each change carries the crew's snapshot.
+useTauriEvent<CrewSnapshot | { deleted: string }>('pilot-crew', (p) => crews.apply(p))
 // An agent started a project action (parity 07): its Run terminal gets a tab.
 useTauriEvent<{ threadId: string }>('pilot-drawer-changed', (p) => {
   if (p.threadId === store.activeId) void drawer.load(p.threadId)
@@ -76,13 +80,13 @@ onActivated(() => (moduleActive.value = true))
 onDeactivated(() => (moduleActive.value = false))
 onUnmounted(() => void pilot('plugin:pilot|pilot_ui_visible', { threadId: null }))
 
-/** Threads waiting on the user: the rail's badge, and the optional sound. */
+/** Threads waiting on the user, and crew decisions: the rail's badge, and the optional sound. */
 const waitingCount = computed(
   () =>
     store.sessions.filter((s) => {
       const v = threads.views[s.id]
       return (v?.loaded ? v.state : s.state) === 'waiting'
-    }).length
+    }).length + crews.gatesWaiting
 )
 watch(
   waitingCount,
@@ -116,6 +120,7 @@ onMounted(() => {
   if (!inActiveKeepAliveTree()) return
   void store.load()
   void git.loadLinks()
+  void crews.load()
 })
 onActivated(() => {
   void git.loadLinks()
@@ -325,6 +330,7 @@ function onFileDrop(e: DragEvent) {
         <PilotLayoutWorktreeCleanup />
         <PilotLayoutResumeDialog v-if="store.restartOffer.length" />
         <PilotLayoutSideChat v-if="side.open && side.open.mainId === store.activeId && app.view === 'conversation'" />
+        <PilotCrewLog v-if="crews.logOpen" :crew-id="crews.logOpen" />
       </main>
       <QRightPanel :model-value="app.sidebarRightOpen && app.view === 'conversation'" storage-key="pilot.right">
         <PilotLayoutRightSidebar />

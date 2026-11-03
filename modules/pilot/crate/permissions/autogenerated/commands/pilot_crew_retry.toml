@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-crew-retry"
+description = "Enables the pilot_crew_retry command without any pre-configured scope."
+commands.allow = ["pilot_crew_retry"]
+
+[[permission]]
+identifier = "deny-pilot-crew-retry"
+description = "Denies the pilot_crew_retry command without any pre-configured scope."
+commands.deny = ["pilot_crew_retry"]

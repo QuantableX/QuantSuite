@@ -12,6 +12,7 @@ import { pilot } from '#pilot/utils/invoke'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useGitStore } from '#pilot/stores/git'
+import { useCrewStore } from '#pilot/stores/crew'
 import {
   dropExpired,
   inverse,
@@ -116,7 +117,9 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
       const threads = useThreadStore()
       return store.sessions
         // Side chats live under their main thread (round 2, card 10).
-        .filter((s) => !this.hidden[s.id] && !this.isPrivate(s) && !s.parentId)
+        // Side chats live under their main thread (round 2, card 10), crew
+        // workers in their orchestrator's crew panel (card 07).
+        .filter((s) => !this.hidden[s.id] && !this.isPrivate(s) && !s.parentId && !useCrewStore().workers.has(s.id))
         .map((s) => {
           const v = threads.views[s.id]
           const started = v?.turnId ? v.turns[v.turnId]?.startedAt : undefined

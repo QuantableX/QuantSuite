@@ -123,6 +123,21 @@ Default permissions for the pilot module.
 - `allow-pilot-thread-apply-setup`
 - `allow-pilot-restart-interrupted`
 - `allow-pilot-thread-set-parent`
+- `allow-pilot-agent-crew-dispatch`
+- `allow-pilot-agent-crew-ask`
+- `allow-pilot-agent-crew-reply`
+- `allow-pilot-agent-crew-report`
+- `allow-pilot-agent-crew-done`
+- `allow-pilot-agent-crew-wait`
+- `allow-pilot-agent-crew-gate`
+- `allow-pilot-agent-crew-retry`
+- `allow-pilot-agent-crew-stop`
+- `allow-pilot-crews`
+- `allow-pilot-crew-log`
+- `allow-pilot-crew-decide`
+- `allow-pilot-crew-retry`
+- `allow-pilot-crew-stop`
+- `allow-pilot-crew-resume`
 - `allow-pilot-provider-update`
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
@@ -194,6 +209,240 @@ Enables the pilot_agent_browser command without any pre-configured scope.
 <td>
 
 Denies the pilot_agent_browser command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-crew-ask`
+
+</td>
+<td>
+
+Enables the pilot_agent_crew_ask command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-crew-ask`
+
+</td>
+<td>
+
+Denies the pilot_agent_crew_ask command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-crew-dispatch`
+
+</td>
+<td>
+
+Enables the pilot_agent_crew_dispatch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-crew-dispatch`
+
+</td>
+<td>
+
+Denies the pilot_agent_crew_dispatch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-crew-done`
+
+</td>
+<td>
+
+Enables the pilot_agent_crew_done command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-crew-done`
+
+</td>
+<td>
+
+Denies the pilot_agent_crew_done command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-crew-gate`
+
+</td>
+<td>
+
+Enables the pilot_agent_crew_gate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-crew-gate`
+
+</td>
+<td>
+
+Denies the pilot_agent_crew_gate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-crew-reply`
+
+</td>
+<td>
+
+Enables the pilot_agent_crew_reply command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-crew-reply`
+
+</td>
+<td>
+
+Denies the pilot_agent_crew_reply command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-crew-report`
+
+</td>
+<td>
+
+Enables the pilot_agent_crew_report command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-crew-report`
+
+</td>
+<td>
+
+Denies the pilot_agent_crew_report command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-crew-retry`
+
+</td>
+<td>
+
+Enables the pilot_agent_crew_retry command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-crew-retry`
+
+</td>
+<td>
+
+Denies the pilot_agent_crew_retry command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-crew-stop`
+
+</td>
+<td>
+
+Enables the pilot_agent_crew_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-crew-stop`
+
+</td>
+<td>
+
+Denies the pilot_agent_crew_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-crew-wait`
+
+</td>
+<td>
+
+Enables the pilot_agent_crew_wait command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-crew-wait`
+
+</td>
+<td>
+
+Denies the pilot_agent_crew_wait command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1130,6 +1379,162 @@ Enables the pilot_contexts command without any pre-configured scope.
 <td>
 
 Denies the pilot_contexts command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-crew-decide`
+
+</td>
+<td>
+
+Enables the pilot_crew_decide command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-crew-decide`
+
+</td>
+<td>
+
+Denies the pilot_crew_decide command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-crew-log`
+
+</td>
+<td>
+
+Enables the pilot_crew_log command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-crew-log`
+
+</td>
+<td>
+
+Denies the pilot_crew_log command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-crew-resume`
+
+</td>
+<td>
+
+Enables the pilot_crew_resume command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-crew-resume`
+
+</td>
+<td>
+
+Denies the pilot_crew_resume command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-crew-retry`
+
+</td>
+<td>
+
+Enables the pilot_crew_retry command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-crew-retry`
+
+</td>
+<td>
+
+Denies the pilot_crew_retry command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-crew-stop`
+
+</td>
+<td>
+
+Enables the pilot_crew_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-crew-stop`
+
+</td>
+<td>
+
+Denies the pilot_crew_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-crews`
+
+</td>
+<td>
+
+Enables the pilot_crews command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-crews`
+
+</td>
+<td>
+
+Denies the pilot_crews command without any pre-configured scope.
 
 </td>
 </tr>
