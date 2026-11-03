@@ -101,6 +101,8 @@ export type Skin = 'night' | 'mint' | 'sky' | 'violet' | 'peach' | 'lemon'
 export type EyeStyle = 'dots' | 'round' | 'sparkle'
 export type Accessory = 'none' | 'cap' | 'glasses' | 'headset' | 'bow'
 export type MascotSize = 'small' | 'medium' | 'large'
+/** Lively: breathing and idle quirks. Still: expressions only. */
+export type MascotMotion = 'lively' | 'still'
 
 export interface MascotPrefs {
   on: boolean
@@ -115,6 +117,11 @@ export interface MascotPrefs {
   companion: boolean
   /** Where the companion was left, as fractions of the window. */
   companionAt: { x: number; y: number }
+  /**
+   * Its own setting, not the system's: Windows reports reduced motion whenever
+   * animation effects are off, which silenced the mascot entirely.
+   */
+  motion: MascotMotion
 }
 
 export const SKINS: { id: Skin; label: string; base: string; light: string; ink: string }[] = [
@@ -138,6 +145,10 @@ export const ACCESSORIES: { id: Accessory; label: string }[] = [
   { id: 'headset', label: 'Headset' },
   { id: 'bow', label: 'Bow' },
 ]
+export const MOTIONS: { id: MascotMotion; label: string }[] = [
+  { id: 'lively', label: 'Lively' },
+  { id: 'still', label: 'Still' },
+]
 export const SIZES: { id: MascotSize; label: string; px: number }[] = [
   { id: 'small', label: 'Small', px: 88 },
   { id: 'medium', label: 'Medium', px: 120 },
@@ -154,6 +165,7 @@ export const DEFAULT_PREFS: MascotPrefs = {
   agentTint: false,
   companion: false,
   companionAt: { x: 0.92, y: 0.82 },
+  motion: 'lively',
 }
 
 const oneOf = <T extends string>(v: unknown, list: { id: T }[], d: T): T => (list.some((x) => x.id === v) ? (v as T) : d)
@@ -173,6 +185,7 @@ export function normalizePrefs(raw: unknown): MascotPrefs {
     agentTint: typeof r.agentTint === 'boolean' ? r.agentTint : DEFAULT_PREFS.agentTint,
     companion: typeof r.companion === 'boolean' ? r.companion : DEFAULT_PREFS.companion,
     companionAt: { x: unit(at.x, DEFAULT_PREFS.companionAt.x), y: unit(at.y, DEFAULT_PREFS.companionAt.y) },
+    motion: oneOf(r.motion, MOTIONS, DEFAULT_PREFS.motion),
   }
 }
 
@@ -202,4 +215,48 @@ export function gazeToward(dx: number, dy: number, max = 0.06): { x: number; y: 
   // Near the face the eyes turn a little; far away they turn fully.
   const reach = Math.min(1, d / 260)
   return { x: (dx / d) * max * reach, y: (dy / d) * max * reach * 0.8 }
+}
+
+// ── Idle quirks: what it does on its own while calm ──
+// The face speaks with its eyes (no mouth), so the life is in the eyes and in
+// the body: a new quirk every few seconds, never the same twice in a row.
+
+export type Quirk = 'look' | 'roll' | 'tilt' | 'wink' | 'happy' | 'hop' | 'wiggle' | 'pop' | 'giggle' | 'stretch' | 'drowsy'
+
+/** Each quirk: how long it runs (ms) and how often it comes up. */
+export const QUIRKS: Record<Quirk, { ms: number; weight: number }> = {
+  look: { ms: 1900, weight: 5 },
+  roll: { ms: 1500, weight: 3 },
+  tilt: { ms: 1900, weight: 4 },
+  wink: { ms: 700, weight: 3 },
+  happy: { ms: 1600, weight: 3 },
+  hop: { ms: 900, weight: 3 },
+  wiggle: { ms: 1100, weight: 2 },
+  pop: { ms: 800, weight: 2 },
+  giggle: { ms: 1300, weight: 2 },
+  stretch: { ms: 1700, weight: 2 },
+  drowsy: { ms: 3200, weight: 0 },
+}
+
+/** After this long without the user moving the pointer it starts nodding off now and then. */
+export const DROWSY_AFTER_MS = 45_000
+
+/** The next quirk: weighted, not the last one; drowsy only after a long quiet spell. */
+export function pickQuirk(last: Quirk | null, quietMs: number, r: () => number = Math.random): Quirk {
+  const pool = (Object.keys(QUIRKS) as Quirk[])
+    .filter((q) => q !== last)
+    .map((q) => [q, q === 'drowsy' ? (quietMs >= DROWSY_AFTER_MS ? 4 : 0) : QUIRKS[q].weight] as const)
+    .filter(([, w]) => w > 0)
+  const total = pool.reduce((n, [, w]) => n + w, 0)
+  let x = r() * total
+  for (const [q, w] of pool) {
+    x -= w
+    if (x < 0) return q
+  }
+  return pool[pool.length - 1]![0]
+}
+
+/** The pause before the next quirk (ms). */
+export function quirkPause(r: () => number = Math.random): number {
+  return 2800 + r() * 4200
 }

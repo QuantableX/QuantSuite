@@ -53,3 +53,26 @@ test('the eyes turn toward the pointer, a little when close, fully when far', ()
   const up = m.gazeToward(0, -1000)
   assert.ok(up.y < 0 && Math.abs(up.y) < Math.abs(far.x), 'vertical travel is a little shorter')
 })
+
+test('idle quirks: weighted, never the same twice in a row, nodding off only after a long quiet spell', () => {
+  let last = null
+  for (let i = 0; i < 400; i++) {
+    const q = m.pickQuirk(last, 0)
+    assert.notEqual(q, last, 'never the same quirk twice in a row')
+    assert.notEqual(q, 'drowsy', 'no nodding off while the user is around')
+    last = q
+  }
+  const seen = new Set()
+  for (let i = 0; i < 2000; i++) seen.add(m.pickQuirk(null, m.DROWSY_AFTER_MS))
+  assert.deepEqual([...seen].sort(), Object.keys(m.QUIRKS).sort(), 'after a quiet spell every quirk comes up, drowsy included')
+  assert.equal(m.pickQuirk('look', 0, () => 0), 'roll', 'the lowest draw takes the first quirk that is not the last one')
+  assert.equal(m.quirkPause(() => 0), 2800)
+  assert.equal(m.quirkPause(() => 1), 7000)
+  for (const q of Object.values(m.QUIRKS)) assert.ok(q.ms >= 600 && q.ms <= 3500)
+})
+
+test("movement is the mascot's own setting, lively unless the user picks still", () => {
+  assert.equal(m.DEFAULT_PREFS.motion, 'lively')
+  assert.equal(m.normalizePrefs({ motion: 'still' }).motion, 'still')
+  assert.equal(m.normalizePrefs({ motion: 'wild' }).motion, 'lively')
+})

@@ -3002,3 +3002,22 @@ face's ink. Moods, gaze, blink, skins, eye styles, accessories, the companion
 and the performance rules of §47 are unchanged. Before/after in
 `artifacts/mascot-friendly/`. Checks: mascot tests, test:pilot, check:ts, css,
 isolation, components.
+
+## 50. The mascot: eyes only, lively (2026-11-03)
+
+Card 8b5daac4. The user: no smile at all — "nur mit den Augen" — and more idle
+animation. No mouth and no cheeks in any mood now. While calm it does a quirk
+every 3–7 s, never the same twice in a row (utils/mascot.ts pickQuirk): look
+around, roll its eyes, curious tilt, wink, ^^ hop, hop, wiggle, eyes pop (also
+"oh, hi" when the pointer returns after 15 s), giggle > <, stretch with closed
+eyes, and after 45 s without the pointer a drowsy nod-off with a startle.
+
+**Why it never moved on this machine:** shell.css collapses every animation and
+transition to 1 ms under prefers-reduced-motion, and Windows reports that
+whenever its animation effects are off — the mascot did not breathe, its eyes
+jumped. The mascot now has its own setting (Appearance → Movement: Lively /
+Still, default Lively); while Lively it carries [data-own-motion], which the
+global rule leaves alone. Measured: the empty thread with the lively face 1.2 %
+of a core. Also: the inset main area got its top margin (it touched the header).
+Checks: mascot tests 6, test:pilot, check:ts, css, isolation, components; QA
+frames of every quirk in artifacts/mascot-friendly (quirks-sheet2.png).
