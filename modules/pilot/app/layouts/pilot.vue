@@ -20,6 +20,7 @@ import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
 import { useSideStore } from '#pilot/stores/side'
 import { useCrewStore } from '#pilot/stores/crew'
+import { useMascotStore } from '#pilot/stores/mascot'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { useDrawerStore } from '#pilot/stores/drawer'
 import { useKeysStore } from '#pilot/stores/keys'
@@ -38,6 +39,7 @@ const app = useAppStore()
 const store = usePilotStore()
 const side = useSideStore()
 const crews = useCrewStore()
+const mascot = useMascotStore()
 const threads = useThreadStore()
 const sidebar = useSidebarStore()
 const git = useGitStore()
@@ -332,6 +334,7 @@ function onFileDrop(e: DragEvent) {
         <PilotLayoutResumeDialog v-if="store.restartOffer.length" />
         <PilotLayoutSideChat v-if="side.open && side.open.mainId === store.activeId && app.view === 'conversation'" />
         <PilotCrewLog v-if="crews.logOpen" :crew-id="crews.logOpen" />
+        <PilotLayoutCompanion v-if="mascot.prefs.on && mascot.prefs.companion" />
       </main>
       <QRightPanel :model-value="app.sidebarRightOpen && app.view === 'conversation'" storage-key="pilot.right">
         <PilotLayoutRightSidebar />
@@ -342,6 +345,7 @@ function onFileDrop(e: DragEvent) {
 
 <style scoped>
 .qp-shell {
+  position: relative;
   display: flex;
   flex-direction: column;
   /* The module fills its container, never the viewport (ARCHITECTURE.md §9). */

@@ -27,6 +27,7 @@ import { useGitStore } from '#pilot/stores/git'
 import { useAppStore } from '#pilot/stores/app'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { useSideStore } from '#pilot/stores/side'
+import { useMascotStore } from '#pilot/stores/mascot'
 import { useCrewStore } from '#pilot/stores/crew'
 import { serverUrls, useDrawerStore, type DevServer } from '#pilot/stores/drawer'
 import { pilot } from '#pilot/utils/invoke'
@@ -48,6 +49,10 @@ const view = computed(() => (props.threadId ? threads.view(props.threadId) : nul
 const thread = computed(() => (props.threadId ? store.sessions.find((s) => s.id === props.threadId) ?? null : null))
 
 // ── The header: a small face, the state, what it does ──
+const mascot = useMascotStore()
+/** Agents working anywhere: the face juggles from three (round 2, card 05). */
+const busyAgents = computed(() => store.sessions.filter((s) => sb.statusOf(s.id) === 'working').length)
+const turnStart = computed(() => (view.value?.turnId ? view.value.turns[view.value.turnId]?.startedAt ?? null : null))
 const faceState = computed(() => {
   switch (view.value?.state) {
     case 'running':
@@ -385,7 +390,9 @@ const dropLine = computed(() => {
 <template>
   <div ref="root" class="qp-panel" :class="{ dragging: drag?.started }">
     <header class="qp-head">
-      <div class="qp-head-face"><PilotFace :state="faceState" :cheer="view?.cheer ?? 0" /></div>
+      <div v-if="mascot.prefs.on" class="qp-head-face">
+        <PilotFace :state="faceState" :cheer="view?.cheer ?? 0" :nod="threadId ? mascot.nods[threadId] ?? 0 : 0" :busy="busyAgents" :started-at="turnStart" :agent="thread?.provider ?? null" />
+      </div>
       <div class="qp-head-text">
         <span class="qp-head-state" :class="`is-${faceState}`">{{ stateLabel }}</span>
         <span v-if="doing" class="qp-head-doing" :title="doing">{{ doing }}</span>
