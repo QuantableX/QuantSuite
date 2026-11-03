@@ -77,6 +77,8 @@ export interface BrowserConfig {
   tabs?: BrowserTab[]
   activeTabId?: string
   searchEngine?: SearchEngine
+  /** Page zoom of this browser window (Ctrl +/-), on top of the canvas zoom. */
+  pageZoom?: number
 }
 
 export interface CanvasWindow {

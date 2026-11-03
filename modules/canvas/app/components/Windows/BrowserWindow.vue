@@ -1,14 +1,31 @@
 <script setup lang="ts">
+/**
+ * A browser window on the canvas (rework 2026-11-03).
+ *
+ * Every tab is a native webview (made and watched by the canvas crate,
+ * commands/browser.rs). A native webview is drawn above all HTML, so the
+ * window shows the LIVE page only while nothing lies on top of it and the
+ * canvas is at rest; otherwise a PICTURE of the page (WebView2's capture)
+ * stands in its place in the DOM, below every menu, dialog, drawer and
+ * window like any other element. Higher canvas windows, the minimap and what
+ * lies outside the visible canvas are cut out of a live page exactly (a
+ * window region); anything else on top is found by hit-testing the page's
+ * area (utils/browserSurface.ts).
+ *
+ * Nothing runs per frame: the page follows the canvas on events — the
+ * canvas moving (pan, zoom, a window dragged or resized: the picture moves
+ * with it and the live page returns ~160 ms after the motion ends), DOM
+ * changes and the user's clicks and keys (something may have opened on top),
+ * and the tab's own events (address, title, loading, history).
+ */
 import { invoke } from '@tauri-apps/api/core'
-import { Webview } from '@tauri-apps/api/webview'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi'
-import { listen } from '@tauri-apps/api/event'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { useCanvasStore } from '../../../stores/canvas'
 import { useWorkspacesStore } from '../../../stores/workspaces'
 import { useBrowserStore } from '../../../stores/browser'
 import type { CanvasWindow, BrowserTab } from '../../../shared/types'
+import { clipRects, covered, intersect, normalizeAddress, overlaps, probePoints, tabTitle, zoomStep, type Box } from '../../utils/browserSurface'
 import BrowserTabBar from './Browser/BrowserTabBar.vue'
 import BrowserOmnibox from './Browser/BrowserOmnibox.vue'
 import BrowserNavButtons from './Browser/BrowserNavButtons.vue'
@@ -22,1299 +39,694 @@ const props = defineProps<{
   window: CanvasWindow
 }>()
 
+interface TabStatus {
+  label: string
+  url: string
+  title: string
+  loading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+}
+
 const canvasStore = useCanvasStore()
 const workspacesStore = useWorkspacesStore()
 const browserStore = useBrowserStore()
 const workspaceId = computed(() => workspacesStore.contentWorkspaceId!)
 
-// Placeholder element whose screen rect drives webview positioning
+/** The page's area: the live page is placed on it, the picture lives in it. */
 const contentRef = ref<HTMLElement | null>(null)
 const omniboxRef = ref<InstanceType<typeof BrowserOmnibox> | null>(null)
 
-// Viewport insets (sidebar widths) for clipping — provided by index.vue
-const viewportInsets = inject<ComputedRef<{ left: number; right: number }>>(
-  'viewportInsets',
-  computed(() => ({ left: 0, right: 0 })),
-)
-
-// Context menu visibility — hide webview when canvas context menu is open
-const contextMenuVisible = inject<ComputedRef<boolean>>(
-  'contextMenuVisible',
-  computed(() => false),
-)
-
-// The canvas element, provided by InfinityCanvas. Its screen rect is the area
-// this window is allowed to paint in — see computeObscuringRects.
+// Sidebar widths inside the canvas (index.vue), the canvas context menu and
+// the canvas element (InfinityCanvas).
+const viewportInsets = inject<ComputedRef<{ left: number; right: number }>>('viewportInsets', computed(() => ({ left: 0, right: 0 })))
+const contextMenuVisible = inject<ComputedRef<boolean>>('contextMenuVisible', computed(() => false))
 const canvasEl = inject<Ref<HTMLElement | null>>('canvasRef', ref(null))
 
-// Bookmarks panel state
-const bookmarksPanelVisible = ref(false)
+// ---- Tabs ----
 
-// ---- Overlay rects: screen-coordinate rects that punch through the webview clip ----
-const overlayRects = ref<{ x: number; y: number; w: number; h: number }[]>([])
-provide('browserOverlayRects', overlayRects)
-
-// ---- Tab state ----
 const tabs = ref<BrowserTab[]>([])
 const activeTabId = ref('')
+/** What each tab's page reports, by tab id. */
+const status = reactive<Record<string, TabStatus>>({})
+/** Tabs whose page exists (a tab is opened when it is first shown). */
+const opened = reactive(new Set<string>())
+const openError = ref('')
 
-interface TabWebviewState {
-  webview: Webview
-  history: string[]
-  historyIndex: number
-}
-
-const tabWebviews = new Map<string, TabWebviewState>()
-
-const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
-
-const activeTabWebview = computed(() => {
-  if (!activeTabId.value) return undefined
-  return tabWebviews.get(activeTabId.value)
-})
-
-const canGoBack = computed(() => {
-  const state = activeTabWebview.value
-  return state ? state.historyIndex > 0 : false
-})
-
-const canGoForward = computed(() => {
-  const state = activeTabWebview.value
-  return state ? state.historyIndex < state.history.length - 1 : false
-})
-
-// URL bar state
+const activeTab = computed(() => tabs.value.find((t) => t.id === activeTabId.value))
+const activeStatus = computed(() => status[activeTabId.value])
+const canGoBack = computed(() => activeStatus.value?.canGoBack ?? false)
+const canGoForward = computed(() => activeStatus.value?.canGoForward ?? false)
+const loading = computed(() => activeStatus.value?.loading ?? !!activeTab.value?.isLoading)
+const currentUrl = computed(() => activeStatus.value?.url || activeTab.value?.url || '')
 const urlInput = ref('')
-const currentUrl = ref('')
-const webviewReady = ref(false)
 
-// Progress bar state
-const loadProgress = ref(0)
-let progressInterval: ReturnType<typeof setInterval> | null = null
-
-// Find in page state
+const pageZoom = ref(props.window.browserConfig?.pageZoom ?? 1)
 const findBarVisible = ref(false)
 const findQuery = ref('')
-
-// History panel state
 const historyPanelVisible = ref(false)
-
-// Fullscreen state — when content goes fullscreen, we expand the webview to fill the window
+const bookmarksPanelVisible = ref(false)
+/** A video in the page went fullscreen: the page covers the suite window. */
 const isContentFullscreen = ref(false)
 
-// ---- Webview label helper ----
-
-function webviewLabelForTab(tabId: string): string {
+function labelOf(tabId: string): string {
   return `browser-${props.window.id.replace(/[^a-zA-Z0-9_-]/g, '_')}-${tabId.replace(/[^a-zA-Z0-9_-]/g, '_')}`
 }
 
-/**
- * close() promises from unmounting instances, keyed by webview label.
- *
- * A remount (workspace switch, HMR) races the old instance's `close()` against
- * the new instance's `getByLabel`: the label still resolves while the webview
- * is being torn down, the new instance "reconnects" to it, and the browser
- * shows a black content area from then on. The registry lives on `globalThis`
- * deliberately — module replacement during HMR would reset a module-level map,
- * and the whole point is surviving into the next instance.
- */
-const pendingWebviewCloses = ((globalThis as unknown as Record<string, unknown>)
-  .__qcBrowserPendingCloses ??= new Map()) as Map<string, Promise<unknown>>
+function tabOfLabel(label: string): string | undefined {
+  return tabs.value.find((t) => labelOf(t.id) === label)?.id
+}
 
-/** Close a native tab webview and register the teardown for remounts to await. */
-function closeWebviewTracked(label: string, webview: Webview) {
-  const closing: Promise<unknown> = webview
-    .close()
+const SEARCH: Record<string, (q: string) => string> = {
+  google: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`,
+  duckduckgo: (q) => `https://duckduckgo.com/?q=${encodeURIComponent(q)}`,
+  bing: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
+  brave: (q) => `https://search.brave.com/search?q=${encodeURIComponent(q)}`,
+}
+function address(input: string): string {
+  return normalizeAddress(input, SEARCH[browserStore.searchEngine] ?? SEARCH.google)
+}
+
+// ---- Saved with the canvas ----
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+function persist(): void {
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    canvasStore.updateWindow(workspaceId.value, props.window.id, {
+      browserConfig: {
+        ...props.window.browserConfig,
+        url: activeTab.value?.url ?? '',
+        tabs: tabs.value.map((t) => ({ id: t.id, url: t.url, title: t.title, isLoading: false })),
+        activeTabId: activeTabId.value,
+        pageZoom: pageZoom.value,
+      },
+    })
+  }, 400)
+}
+
+watch(currentUrl, (url) => {
+  const omnibox = (omniboxRef.value?.$el as HTMLElement | undefined)?.querySelector('input')
+  if (document.activeElement !== omnibox) urlInput.value = url
+}, { immediate: true })
+
+// The window's title: the page's.
+watch(() => (activeTab.value ? tabTitle(activeStatus.value?.title ?? activeTab.value.title, currentUrl.value) : ''), (name) => {
+  if (!name) return
+  const title = `Browser - ${name}`
+  if (props.window.title !== title) canvasStore.updateWindow(workspaceId.value, props.window.id, { title })
+})
+
+// ---- The tab's page: events from the canvas crate ----
+
+function applyStatus(tabId: string, next: TabStatus): void {
+  const before = status[tabId]
+  status[tabId] = next
+  const tab = tabs.value.find((t) => t.id === tabId)
+  if (tab) {
+    const url = next.url || tab.url
+    const title = tabTitle(next.title, url)
+    if (tab.url !== url || tab.title !== title) {
+      tab.url = url
+      tab.title = title
+      persist()
+    }
+    tab.isLoading = next.loading
+  }
+  // A page finished loading: into the history, and a fresh picture of it.
+  if (before?.loading && !next.loading && next.url && !next.url.startsWith('about:')) {
+    browserStore.addHistoryEntry({ url: next.url, title: tabTitle(next.title, next.url), visitedAt: new Date().toISOString() })
+    if (tabId === activeTabId.value) setTimeout(capture, 600)
+  }
+}
+
+const pendingCloses = ((globalThis as unknown as Record<string, unknown>).__qcBrowserPendingCloses ??= new Map()) as Map<string, Promise<unknown>>
+
+/** Make (or reconnect to) a tab's page, off screen; `sync` shows it. */
+async function openTab(tabId: string, url: string): Promise<void> {
+  const label = labelOf(tabId)
+  const closing = pendingCloses.get(label)
+  if (closing) await closing
+  const r = contentRef.value?.getBoundingClientRect()
+  const bounds = r && r.width > 0 ? { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) } : { x: 0, y: 0, width: 800, height: 600 }
+  try {
+    const st = await invoke<TabStatus>('plugin:canvas|browser_tab_open', { label, url, bounds, zoom: scale() * pageZoom.value, visible: false })
+    if (!tabs.value.some((t) => t.id === tabId)) {
+      // Closed while it was opening.
+      closePage(tabId)
+      return
+    }
+    opened.add(tabId)
+    openError.value = ''
+    // Events that came while it opened are newer than this answer.
+    if (!status[tabId]) applyStatus(tabId, st)
+  } catch (e) {
+    if (tabId === activeTabId.value) openError.value = String(e)
+  }
+  requestSync()
+}
+
+/** The tab's page goes — its media and process with it. */
+function closePage(tabId: string): void {
+  const label = labelOf(tabId)
+  opened.delete(tabId)
+  delete status[tabId]
+  const closing: Promise<unknown> = invoke('plugin:canvas|browser_tab_close', { label })
     .catch(() => {})
     .finally(() => {
-      if (pendingWebviewCloses.get(label) === closing) pendingWebviewCloses.delete(label)
+      if (pendingCloses.get(label) === closing) pendingCloses.delete(label)
     })
-  pendingWebviewCloses.set(label, closing)
+  pendingCloses.set(label, closing)
 }
 
-// ---- URL normalization with search detection ----
-
-function normalizeUrl(input: string): string {
-  let u = input.trim()
-  if (/^https?:\/\//i.test(u)) return u
-  if (/^(localhost|127\.|192\.|10\.|0\.0\.0\.0)/.test(u)) return 'http://' + u
-  if (/^[\w-]+(\.[\w-]+)+/.test(u) && !u.includes(' ')) return 'https://' + u
-  // Search query
-  const engines: Record<string, string> = {
-    google: 'https://www.google.com/search?q=',
-    duckduckgo: 'https://duckduckgo.com/?q=',
-    bing: 'https://www.bing.com/search?q=',
-    brave: 'https://search.brave.com/search?q=',
-  }
-  return (engines[browserStore.searchEngine] ?? engines.google) + encodeURIComponent(u)
+/** Step the page aside (its picture stays). */
+function hidePage(tabId: string): void {
+  if (!opened.has(tabId)) return
+  invoke('plugin:canvas|browser_tab_place', { label: labelOf(tabId), bounds: { x: 0, y: 0, width: 1, height: 1 }, zoom: 1, visible: false }).catch(() => {})
 }
-
-// ---- Progress bar ----
-
-function startProgress() {
-  loadProgress.value = 10
-  if (progressInterval) clearInterval(progressInterval)
-  progressInterval = setInterval(() => {
-    if (loadProgress.value < 90) {
-      loadProgress.value += (90 - loadProgress.value) * 0.1
-    }
-  }, 200)
-}
-
-function finishProgress() {
-  if (progressInterval) clearInterval(progressInterval)
-  loadProgress.value = 100
-  setTimeout(() => { loadProgress.value = 0 }, 300)
-}
-
-// ---- Persist tab state to canvas ----
-
-function persistTabState() {
-  canvasStore.updateWindow(workspaceId.value, props.window.id, {
-    browserConfig: {
-      url: activeTab.value?.url ?? '',
-      tabs: tabs.value,
-      activeTabId: activeTabId.value,
-    },
-  })
-}
-
-// ---- Tab lifecycle ----
 
 let nextTabNum = 1
-
-async function createWebviewForTab(tabId: string, url: string): Promise<Webview | null> {
-  const label = webviewLabelForTab(tabId)
-
-  // A previous mount may still be tearing this label down — wait it out, or
-  // getByLabel below finds the dying webview and reconnects to a corpse.
-  const pendingClose = pendingWebviewCloses.get(label)
-  if (pendingClose) await pendingClose
-
-  await nextTick()
-  if (!contentRef.value) return null
-
-  const rect = contentRef.value.getBoundingClientRect()
-  const initX = Math.round(rect.left)
-  const initY = Math.round(rect.top)
-  const initW = Math.max(Math.round(rect.width), 100)
-  const initH = Math.max(Math.round(rect.height), 100)
-
-  const isActive = tabId === activeTabId.value
-
-  try {
-    // Try to reconnect to an existing webview (survives page reloads)
-    let existing = await Webview.getByLabel(label)
-    if (existing) {
-      // The label can outlive its webview through teardown paths this
-      // registry never sees (an old code version's unmount, the window
-      // frame's own cleanup). Ping it: a webview that cannot report its URL
-      // is not one worth reconnecting to — clear it and build fresh.
-      try {
-        await invoke<string>('plugin:canvas|get_browser_url', { label })
-      } catch {
-        await existing.close().catch(() => {})
-        existing = null
-      }
-    }
-    if (existing) {
-      if (isActive) {
-        await existing.setPosition(new LogicalPosition(initX, initY)).catch(() => {})
-        await existing.setSize(new LogicalSize(initW, initH)).catch(() => {})
-        await existing.show().catch(() => {})
-      } else {
-        await existing.hide().catch(() => {})
-      }
-
-      // Sync URL from the webview's actual state
-      try {
-        const actualUrl = await invoke<string>('plugin:canvas|get_browser_url', { label })
-        if (actualUrl) {
-          const tab = tabs.value.find(t => t.id === tabId)
-          if (tab) {
-            tab.url = actualUrl
-            if (isActive) {
-              urlInput.value = actualUrl
-              currentUrl.value = actualUrl
-            }
-          }
-          const tabState = tabWebviews.get(tabId)
-          if (tabState) {
-            tabState.history = [actualUrl]
-            tabState.historyIndex = 0
-          }
-        }
-      } catch { /* ignore */ }
-
-      // Prevent WebView2 from making the Tauri window fullscreen
-      invoke('plugin:canvas|browser_disable_fullscreen', { label }).catch(() => {})
-
-      if (isActive) {
-        injectBrowserScripts(label)
-      }
-
-      return existing
-    }
-
-    // No existing webview — create a new one
-    const appWindow = getCurrentWindow()
-    const wv = new Webview(appWindow, label, {
-      url,
-      x: isActive ? initX : -10000,
-      y: isActive ? initY : -10000,
-      width: initW,
-      height: initH,
-      zoomHotkeysEnabled: false,
-    })
-
-    return await new Promise<Webview | null>((resolve) => {
-      wv.once('tauri://created', () => {
-        if (!isActive) {
-          wv.hide().catch(() => {})
-        }
-        if (isActive) {
-          setTimeout(() => injectBrowserScripts(label), 1000)
-        }
-        // Prevent WebView2 from making the Tauri window fullscreen
-        invoke('plugin:canvas|browser_disable_fullscreen', { label }).catch(() => {})
-        resolve(wv)
-      })
-
-      wv.once('tauri://error', (e) => {
-        // Resolve null, not the handle: a webview that failed to create shows
-        // nothing, and handing it back flips webviewReady while the content
-        // area stays black. Null keeps the "Loading browser..." placeholder
-        // on screen, which is at least an honest state.
-        console.error('Webview creation error:', e)
-        resolve(null)
-      })
-    })
-  } catch (err) {
-    console.error('Failed to create/reconnect webview for tab:', tabId, err)
-    return null
-  }
-}
-
-async function addTab(url?: string, options?: { background?: boolean }) {
-  const background = options?.background ?? false
+async function addTab(url?: string): Promise<void> {
   const tabId = `tab-${Date.now()}-${nextTabNum++}`
-  const tabUrl = url ?? 'https://www.google.com'
-  const normalizedUrl = normalizeUrl(tabUrl)
-
-  const newTab: BrowserTab = {
-    id: tabId,
-    url: normalizedUrl,
-    title: 'New Tab',
-    isLoading: true,
-  }
-
-  tabs.value.push(newTab)
-
-  if (!background) {
-    activeTabId.value = tabId
-    urlInput.value = normalizedUrl
-    currentUrl.value = normalizedUrl
-
-    // Hide the previously active webview
-    for (const [id, state] of tabWebviews) {
-      if (id !== tabId) {
-        state.webview.hide().catch(() => {})
-      }
-    }
-  }
-
-  const wv = await createWebviewForTab(tabId, normalizedUrl)
-  if (wv) {
-    tabWebviews.set(tabId, {
-      webview: wv,
-      history: [normalizedUrl],
-      historyIndex: 0,
-    })
-    if (!background) webviewReady.value = true
-    newTab.isLoading = false
-  } else {
-    newTab.isLoading = false
-  }
-
-  // Update title from hostname
-  try {
-    const hostname = new URL(normalizedUrl).hostname
-    newTab.title = hostname
-    if (!background) {
-      canvasStore.updateWindow(workspaceId.value, props.window.id, {
-        title: `Browser - ${hostname}`,
-      })
-    }
-  } catch { /* invalid URL */ }
-
-  // Add to browser history store
-  browserStore.addHistoryEntry({
-    url: normalizedUrl,
-    title: newTab.title,
-    visitedAt: new Date().toISOString(),
-  })
-
-  // Start position sync if this is the first tab
-  if (tabs.value.length === 1 && rafId === null) {
-    rafId = requestAnimationFrame(syncWebviewPosition)
-  }
-
-  persistTabState()
+  const target = address(url ?? 'https://www.google.com')
+  tabs.value.push({ id: tabId, url: target, title: tabTitle('', target), isLoading: true })
+  await switchTab(tabId)
+  persist()
 }
 
-async function closeTab(tabId: string) {
-  const idx = tabs.value.findIndex(t => t.id === tabId)
-  if (idx === -1) return
-
-  // If it's the only tab, don't close
-  if (tabs.value.length <= 1) return
-
-  // Destroy the webview (close stops media playback, frees the OS process)
-  const state = tabWebviews.get(tabId)
-  if (state) {
-    const label = webviewLabelForTab(tabId)
-    invoke('plugin:canvas|set_browser_clip_region', {
-      label,
-      fullWidth: 0,
-      fullHeight: 0,
-      obscuringRects: [],
-    }).catch(() => {})
-    closeWebviewTracked(label, state.webview)
-    tabWebviews.delete(tabId)
+async function switchTab(tabId: string): Promise<void> {
+  if (tabId === activeTabId.value && opened.has(tabId)) return
+  const before = activeTabId.value
+  if (before && before !== tabId) {
+    hidePage(before)
+    goStill()
   }
-
-  tabs.value.splice(idx, 1)
-
-  // If we closed the active tab, switch to adjacent
-  if (activeTabId.value === tabId) {
-    const newIdx = Math.min(idx, tabs.value.length - 1)
-    const newActiveTab = tabs.value[newIdx]
-    if (newActiveTab) {
-      await switchTab(newActiveTab.id)
-    }
-  }
-
-  persistTabState()
-}
-
-async function switchTab(tabId: string) {
-  if (tabId === activeTabId.value) return
-
-  const oldTabId = activeTabId.value
-
-  // Hide old webview
-  const oldState = tabWebviews.get(oldTabId)
-  if (oldState) {
-    oldState.webview.hide().catch(() => {})
-  }
-
-  // Reset clip key so we re-apply on the new webview
-  lastClipKey = null
-
   activeTabId.value = tabId
+  findBarVisible.value = false
+  const tab = tabs.value.find((t) => t.id === tabId)
+  if (tab && !opened.has(tabId)) await openTab(tabId, tab.url)
+  persist()
+  requestSync()
+}
 
-  // Show new webview
-  const newState = tabWebviews.get(tabId)
-  if (newState) {
-    const rect = contentRef.value?.getBoundingClientRect()
-    if (rect) {
-      await newState.webview.setPosition(new LogicalPosition(Math.round(rect.left), Math.round(rect.top))).catch(() => {})
-      await newState.webview.setSize(new LogicalSize(Math.max(Math.round(rect.width), 100), Math.max(Math.round(rect.height), 100))).catch(() => {})
-    }
-    await newState.webview.show().catch(() => {})
-    injectCtrlWheelForwarder(webviewLabelForTab(tabId))
+async function closeTab(tabId: string): Promise<void> {
+  const idx = tabs.value.findIndex((t) => t.id === tabId)
+  if (idx === -1 || tabs.value.length <= 1) return
+  closePage(tabId)
+  tabs.value.splice(idx, 1)
+  if (activeTabId.value === tabId) {
+    activeTabId.value = ''
+    mode.value = 'still'
+    placedKey = ''
+    stopLiveTimers()
+    const next = tabs.value[Math.min(idx, tabs.value.length - 1)]
+    if (next) await switchTab(next.id)
   }
-
-
-  // Sync URL bar to the new tab
-  const tab = tabs.value.find(t => t.id === tabId)
-  if (tab) {
-    urlInput.value = tab.url
-    currentUrl.value = tab.url
-
-    // Update window title
-    try {
-      const hostname = new URL(tab.url).hostname
-      canvasStore.updateWindow(workspaceId.value, props.window.id, {
-        title: `Browser - ${hostname}`,
-      })
-    } catch { /* invalid URL */ }
-  }
-
-  persistTabState()
+  persist()
 }
 
 // ---- Navigation ----
 
-async function navigateTo(url: string) {
-  const normalizedUrl = normalizeUrl(url)
+async function navigateTo(input: string): Promise<void> {
   const tabId = activeTabId.value
-  const label = webviewLabelForTab(tabId)
-  const tab = tabs.value.find(t => t.id === tabId)
-  const state = tabWebviews.get(tabId)
-
-  urlInput.value = normalizedUrl
-  currentUrl.value = normalizedUrl
-
-  if (tab) {
-    tab.url = normalizedUrl
-    tab.isLoading = true
-  }
-
-  startProgress()
-
-  // Update per-tab navigation history
-  if (state) {
-    if (state.historyIndex < state.history.length - 1) {
-      state.history = state.history.slice(0, state.historyIndex + 1)
-    }
-    state.history.push(normalizedUrl)
-    state.historyIndex = state.history.length - 1
-  }
-
-  // Navigate the native webview
-  try {
-    await invoke('plugin:canvas|navigate_browser', { label, url: normalizedUrl })
-    if (tab) tab.isLoading = false
-    finishProgress()
-  } catch (err) {
-    console.error('navigate_browser failed:', err)
-    if (tab) tab.isLoading = false
-    finishProgress()
-  }
-
-  // Update title with hostname
-  try {
-    const hostname = new URL(normalizedUrl).hostname
-    if (tab) tab.title = hostname
-    canvasStore.updateWindow(workspaceId.value, props.window.id, {
-      title: `Browser - ${hostname}`,
-    })
-  } catch { /* invalid URL */ }
-
-  // Add to browser history store
-  browserStore.addHistoryEntry({
-    url: normalizedUrl,
-    title: tab?.title ?? '',
-    visitedAt: new Date().toISOString(),
-  })
-
-  persistTabState()
-}
-
-function onUrlSubmit(value?: string) {
-  navigateTo(value ?? urlInput.value)
-}
-
-async function goBack() {
-  if (!canGoBack.value) return
-  const state = activeTabWebview.value
-  if (!state) return
-
-  state.historyIndex--
-  const url = state.history[state.historyIndex]
   const tab = activeTab.value
-  const label = webviewLabelForTab(activeTabId.value)
-
+  if (!tabId || !tab) return
+  const url = address(input)
+  tab.url = url
   urlInput.value = url
-  currentUrl.value = url
-  if (tab) tab.url = url
-
-  startProgress()
-  try {
-    await invoke('plugin:canvas|navigate_browser', { label, url })
-    finishProgress()
-  } catch {
-    finishProgress()
-  }
-
-  persistTabState()
-}
-
-async function goForward() {
-  if (!canGoForward.value) return
-  const state = activeTabWebview.value
-  if (!state) return
-
-  state.historyIndex++
-  const url = state.history[state.historyIndex]
-  const tab = activeTab.value
-  const label = webviewLabelForTab(activeTabId.value)
-
-  urlInput.value = url
-  currentUrl.value = url
-  if (tab) tab.url = url
-
-  startProgress()
-  try {
-    await invoke('plugin:canvas|navigate_browser', { label, url })
-    finishProgress()
-  } catch {
-    finishProgress()
-  }
-
-  persistTabState()
-}
-
-async function reload() {
-  const tab = activeTab.value
-  const label = webviewLabelForTab(activeTabId.value)
-
-  if (tab) tab.isLoading = true
-  startProgress()
-  try {
-    await invoke('plugin:canvas|eval_browser', { label, js: 'location.reload()' })
-  } catch { /* ignore */ }
-  if (tab) tab.isLoading = false
-  finishProgress()
-}
-
-// ---- Bookmark toggle ----
-
-function toggleBookmark() {
-  if (browserStore.isBookmarked(currentUrl.value)) {
-    const bookmark = browserStore.getBookmarkByUrl(currentUrl.value)
-    if (bookmark) {
-      browserStore.removeBookmark(bookmark.id)
-    }
+  if (opened.has(tabId)) {
+    await invoke('plugin:canvas|browser_tab_navigate', { label: labelOf(tabId), url }).catch((e) => { openError.value = String(e) })
   } else {
-    browserStore.addBookmark({
-      id: `bm-${Date.now()}`,
-      url: currentUrl.value,
-      title: activeTab.value?.title ?? currentUrl.value,
-      createdAt: new Date().toISOString(),
-    })
+    await openTab(tabId, url)
+  }
+  persist()
+}
+
+function onUrlSubmit(value?: string): void {
+  void navigateTo(value ?? urlInput.value)
+}
+
+function act(action: 'back' | 'forward' | 'reload' | 'stop'): void {
+  const tabId = activeTabId.value
+  if (!opened.has(tabId)) return
+  invoke('plugin:canvas|browser_tab_action', { label: labelOf(tabId), action }).catch(() => {})
+}
+
+function toggleBookmark(): void {
+  const url = currentUrl.value
+  if (!url) return
+  if (browserStore.isBookmarked(url)) {
+    const bm = browserStore.bookmarks.find((b) => b.url === url)
+    if (bm) browserStore.removeBookmark(bm.id)
+  } else {
+    browserStore.addBookmark({ id: `bm-${Date.now()}`, url, title: activeTab.value?.title ?? url, createdAt: new Date().toISOString() })
   }
 }
 
-// ---- Find in page ----
-
-function findNext() {
-  if (!findQuery.value) return
-  const label = webviewLabelForTab(activeTabId.value)
-  invoke('plugin:canvas|find_in_browser', { label, query: findQuery.value, forward: true }).catch(() => {})
+function find(forward: boolean): void {
+  const tabId = activeTabId.value
+  if (!opened.has(tabId)) return
+  invoke('plugin:canvas|find_in_browser', { label: labelOf(tabId), query: findQuery.value, forward }).catch(() => {})
 }
 
-function findPrev() {
-  if (!findQuery.value) return
-  const label = webviewLabelForTab(activeTabId.value)
-  invoke('plugin:canvas|find_in_browser', { label, query: findQuery.value, forward: false }).catch(() => {})
+function closeFind(): void {
+  findBarVisible.value = false
+  findQuery.value = ''
+  find(true)
 }
 
-// ---- Keyboard shortcuts ----
-
-function onKeydown(e: KeyboardEvent) {
-  if (e.ctrlKey && e.key === 't') {
-    e.preventDefault()
-    addTab()
-  } else if (e.ctrlKey && e.key === 'w') {
-    e.preventDefault()
-    closeTab(activeTabId.value)
-  } else if (e.ctrlKey && e.key === 'f') {
-    e.preventDefault()
-    findBarVisible.value = !findBarVisible.value
-    if (!findBarVisible.value) {
-      findQuery.value = ''
-    }
-  } else if (e.ctrlKey && e.key === 'l') {
-    e.preventDefault()
-    // Focus the omnibox input
-    const omniboxEl = omniboxRef.value?.$el
-    if (omniboxEl) {
-      const input = omniboxEl.querySelector('input')
-      if (input) {
-        input.focus()
-        input.select()
-      }
-    }
-  } else if (e.key === 'Escape') {
-    if (findBarVisible.value) {
-      findBarVisible.value = false
-      findQuery.value = ''
-    } else if (historyPanelVisible.value) {
-      historyPanelVisible.value = false
-    } else if (bookmarksPanelVisible.value) {
-      bookmarksPanelVisible.value = false
-    }
-  }
+function setZoom(z: number): void {
+  pageZoom.value = Math.round(z * 100) / 100
+  placedKey = ''
+  persist()
+  requestSync()
 }
 
-// ---- Webview position sync with clipping ----
+// ---- Keyboard (while the browser's own bar has the focus) ----
 
-let rafId: number | null = null
-let lastRect = { x: 0, y: 0, w: 0, h: 0 }
-let lastVisible = true
-/**
- * The region currently on the native HWND, as a key — `null` means "unknown",
- * which is NOT the same as "nothing obscures the browser".
- *
- * A region set with SetWindowRgn belongs to the webview's HWND, and that HWND
- * outlives this component: a reload or a remount reconnects to the same
- * webview by label. Starting this at `''` — the key an empty clip list
- * produces — made "nothing obscures it" indistinguishable from "nothing has
- * changed since mount", so a region left over from a previous life was never
- * cleared: the page went on rendering through a hole the shape of a panel
- * that closed minutes ago, the rest of the content area black. The sentinel
- * makes the first frame push the truth, empty or not.
- */
-let lastClipKey: string | null = null
-
-interface LocalClipRect {
-  x: number
-  y: number
-  w: number
-  h: number
+function focusOmnibox(): void {
+  const input = (omniboxRef.value?.$el as HTMLElement | undefined)?.querySelector('input')
+  input?.focus()
+  input?.select()
 }
 
-// Compute obscuring rectangles in webview-local coordinates (physical pixels).
-// These rects are subtracted from the full webview area by SetWindowRgn on the
-// native HWND, allowing the main webview's HTML content to show through.
-function computeObscuringRects(
-  wvX: number, wvY: number, wvW: number, wvH: number,
-): LocalClipRect[] {
-  const state = canvasStore.activeCanvasState
-  if (!state) return []
-
-  const dpr = window.devicePixelRatio || 1
-  const my = props.window
-  const clips: LocalClipRect[] = []
-
-  /** Cut a screen rect (CSS px) out of the webview, if the two overlap. */
-  function subtract(rect: { left: number; top: number; right: number; bottom: number }) {
-    const iLeft = Math.max(wvX, rect.left)
-    const iTop = Math.max(wvY, rect.top)
-    const iRight = Math.min(wvX + wvW, rect.right)
-    const iBottom = Math.min(wvY + wvH, rect.bottom)
-    if (iRight <= iLeft || iBottom <= iTop) return
-    clips.push({
-      x: Math.round((iLeft - wvX) * dpr),
-      y: Math.round((iTop - wvY) * dpr),
-      w: Math.round((iRight - iLeft) * dpr),
-      h: Math.round((iBottom - iTop) * dpr),
-    })
+function onKeydown(e: KeyboardEvent): void {
+  const ctrl = e.ctrlKey || e.metaKey
+  if (ctrl && e.key === 't') addTab()
+  else if (ctrl && e.key === 'w') closeTab(activeTabId.value)
+  else if (ctrl && e.key === 'f') {
+    if (findBarVisible.value) closeFind()
+    else findBarVisible.value = true
   }
+  else if (ctrl && e.key === 'l') focusOmnibox()
+  else if ((ctrl && e.key === 'r') || e.key === 'F5') act('reload')
+  else if (e.altKey && e.key === 'ArrowLeft') act('back')
+  else if (e.altKey && e.key === 'ArrowRight') act('forward')
+  else if (ctrl && (e.key === '=' || e.key === '+')) setZoom(zoomStep(pageZoom.value, 1))
+  else if (ctrl && e.key === '-') setZoom(zoomStep(pageZoom.value, -1))
+  else if (ctrl && e.key === '0') setZoom(1)
+  else if (e.key === 'Escape') {
+    if (findBarVisible.value) closeFind()
+    else if (historyPanelVisible.value) historyPanelVisible.value = false
+    else if (bookmarksPanelVisible.value) bookmarksPanelVisible.value = false
+    else return
+  } else return
+  e.preventDefault()
+}
 
-  // --- Higher-z canvas windows ---
-  for (const win of state.windows) {
-    if (win.id === my.id) continue
-    if (win.minimized) continue
-    if (win.zIndex <= my.zIndex) continue
+// ---- Live page or picture ----
 
-    // Find the DOM element for this window and get its screen rect
-    const el = document.querySelector(`[data-window-id="${win.id}"]`)
-    if (!el) continue
-    subtract(el.getBoundingClientRect())
-  }
+const mode = ref<'live' | 'still'>('still')
+const picture = ref<{ src: string; w: number; h: number; tabId: string } | null>(null)
+/** The stage this window lives in is on screen (KeepAlive). */
+let stageActive = false
+let started = false
+let moving = false
+let settleTimer: ReturnType<typeof setTimeout> | null = null
+let placedKey = ''
+let clipKey = ''
+let syncQueued = false
+let lastProbe = 0
+let probeTimer: ReturnType<typeof setTimeout> | null = null
 
-  // --- Canvas overlays that belong above every window (the minimap) ---
-  // They are HTML and the webview is a native HWND, so z-index cannot reach
-  // them: without cutting them out by hand a browser window parked in the
-  // corner simply swallows the minimap.
-  for (const el of canvasEl.value?.querySelectorAll('[data-canvas-overlay]') ?? []) {
-    subtract(el.getBoundingClientRect())
-  }
+function scale(): number {
+  return canvasStore.activeCanvasState?.transform.scale ?? 1
+}
 
-  // --- Everything outside the visible canvas (sidebars, and the suite chrome
-  // around the module panel). The webview is a native HWND floating above all
-  // HTML, so anything the canvas does not own has to be cut away by hand.
-  //
-  // Measured from the canvas element, NOT from the window: under V3 the module
-  // is a panel inset by the shell's rail, titlebar, module header and drawer,
-  // so window coordinates put the canvas' left edge at 0 and its right edge at
-  // innerWidth. That let a browser window dragged to an edge paint straight
-  // over the suite chrome, and put the sidebar bands off by the panel's own
-  // offset. Top and bottom were never clipped at all.
-  const canvasRect = canvasEl.value?.getBoundingClientRect()
+function box(r: DOMRect): Box {
+  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+}
+
+/** The visible canvas on screen (CSS px), inside its sidebars. */
+function viewportBox(): Box {
+  const c = canvasEl.value?.getBoundingClientRect()
   const insets = viewportInsets.value
-  const vpLeft = (canvasRect?.left ?? 0) + insets.left
-  const vpRight = (canvasRect?.right ?? window.innerWidth) - insets.right
-  const vpTop = canvasRect?.top ?? 0
-  const vpBottom = canvasRect?.bottom ?? window.innerHeight
-
-  // Left of the canvas (file explorer, rail, panel edge)
-  if (wvX < vpLeft) {
-    const clipW = Math.min(vpLeft - wvX, wvW)
-    clips.push({
-      x: 0,
-      y: 0,
-      w: Math.round(clipW * dpr),
-      h: Math.round(wvH * dpr),
-    })
+  return {
+    left: (c?.left ?? 0) + insets.left,
+    right: (c?.right ?? window.innerWidth) - insets.right,
+    top: c?.top ?? 0,
+    bottom: c?.bottom ?? window.innerHeight,
   }
-
-  // Right of the canvas (editor panel, panel edge)
-  if (wvX + wvW > vpRight) {
-    const clipStart = Math.max(0, vpRight - wvX)
-    clips.push({
-      x: Math.round(clipStart * dpr),
-      y: 0,
-      w: Math.round((wvW - clipStart) * dpr),
-      h: Math.round(wvH * dpr),
-    })
-  }
-
-  // Above the canvas (module header, titlebar)
-  if (wvY < vpTop) {
-    const clipH = Math.min(vpTop - wvY, wvH)
-    clips.push({
-      x: 0,
-      y: 0,
-      w: Math.round(wvW * dpr),
-      h: Math.round(clipH * dpr),
-    })
-  }
-
-  // Below the canvas (notes bar, drawer, panel edge)
-  if (wvY + wvH > vpBottom) {
-    const clipStart = Math.max(0, vpBottom - wvY)
-    clips.push({
-      x: 0,
-      y: Math.round(clipStart * dpr),
-      w: Math.round(wvW * dpr),
-      h: Math.round((wvH - clipStart) * dpr),
-    })
-  }
-
-  // Overlay rects (popups/context menus that need to punch through the webview)
-  for (const rect of overlayRects.value) {
-    subtract({ left: rect.x, top: rect.y, right: rect.x + rect.w, bottom: rect.y + rect.h })
-  }
-
-  return clips
 }
 
-function syncWebviewPosition() {
-  const state = tabWebviews.get(activeTabId.value)
-  if (!state || !contentRef.value) {
-    rafId = requestAnimationFrame(syncWebviewPosition)
+/** What is cut out of the live page exactly: higher windows and the minimap. */
+function cutBoxes(): Box[] {
+  const cuts: Box[] = []
+  const me = props.window
+  for (const w of canvasStore.activeCanvasState?.windows ?? []) {
+    // A folded window stays on the canvas as its title bar: cut that.
+    if (w.id === me.id || w.zIndex <= me.zIndex) continue
+    const el = document.querySelector(`[data-window-id="${w.id}"]`)
+    if (!el) continue
+    cuts.push(box(el.getBoundingClientRect()))
+    // Its resize handles and port straddle its edges.
+    for (const child of el.children) cuts.push(box(child.getBoundingClientRect()))
+  }
+  for (const el of canvasEl.value?.querySelectorAll('[data-canvas-overlay]') ?? []) cuts.push(box(el.getBoundingClientRect()))
+  // This window's own frame — its resize handles straddle the edges and its
+  // connection port sits on one: cut out, so they stay usable over a live page.
+  const root = contentRef.value?.closest('.qcb')
+  const frame = root?.closest('[data-window-id]')
+  if (root && frame) {
+    for (const child of frame.children) if (!child.contains(root)) cuts.push(box(child.getBoundingClientRect()))
+  }
+  return cuts
+}
+
+function wantLive(): boolean {
+  return stageActive
+    && !props.window.minimized
+    && document.visibilityState === 'visible'
+    && !moving
+    && !contextMenuVisible.value
+    && !historyPanelVisible.value
+    && !bookmarksPanelVisible.value
+    && opened.has(activeTabId.value)
+}
+
+function goStill(): void {
+  if (mode.value === 'live') hidePage(activeTabId.value)
+  mode.value = 'still'
+  placedKey = ''
+  stopLiveTimers()
+}
+
+/** Show the live page where it belongs, or step it aside for its picture. */
+function sync(): void {
+  const tabId = activeTabId.value
+  const el = contentRef.value
+  if (!tabId || !el || !opened.has(tabId) || isContentFullscreen.value) return
+  const r = el.getBoundingClientRect()
+  const page = box(r)
+  const viewport = viewportBox()
+  let live = wantLive() && r.width >= 40 && r.height >= 30 && !!intersect(page, viewport)
+  let cuts: Box[] = []
+  if (live) {
+    cuts = cutBoxes()
+    lastProbe = performance.now()
+    if (covered(probePoints(page, viewport, cuts), (x, y) => document.elementFromPoint(x, y), (e) => el.contains(e))) live = false
+  }
+  if (!live) {
+    if (mode.value === 'live') goStill()
     return
   }
-
-  // When content is in fullscreen, the webview fills the entire window.
-  // Skip normal positioning/clipping so we don't shrink it back.
-  if (isContentFullscreen.value) {
-    rafId = requestAnimationFrame(syncWebviewPosition)
-    return
+  const label = labelOf(tabId)
+  const bounds = { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) }
+  const zoom = scale() * pageZoom.value
+  const key = `${label}|${bounds.x},${bounds.y},${bounds.width},${bounds.height}|${zoom.toFixed(4)}`
+  const dpr = window.devicePixelRatio || 1
+  const clips = clipRects(page, cuts, viewport, dpr)
+  const fullWidth = Math.round(r.width * dpr)
+  const fullHeight = Math.round(r.height * dpr)
+  const ck = `${label}|${fullWidth}x${fullHeight}:` + clips.map((c) => `${c.x},${c.y},${c.w},${c.h}`).join('|')
+  // The region first, so the page never shows uncut for a frame.
+  if (ck !== clipKey || mode.value !== 'live') {
+    clipKey = ck
+    invoke('plugin:canvas|set_browser_clip_region', { label, fullWidth, fullHeight, obscuringRects: clips }).catch(() => {})
   }
-
-  const webview = state.webview
-  const rect = contentRef.value.getBoundingClientRect()
-  const x = Math.round(rect.left)
-  const y = Math.round(rect.top)
-  const w = Math.round(rect.width)
-  const h = Math.round(rect.height)
-
-  const tooSmall = w <= 10 || h <= 10
-  const visible = !tooSmall
-
-  // Update position/size if changed
-  if (x !== lastRect.x || y !== lastRect.y || w !== lastRect.w || h !== lastRect.h || visible !== lastVisible) {
-    lastRect = { x, y, w, h }
-    lastVisible = visible
-
-    if (visible) {
-      webview.setPosition(new LogicalPosition(x, y)).catch(() => {})
-      webview.setSize(new LogicalSize(w, h)).catch(() => {})
-      webview.show().catch(() => {})
-    } else {
-      webview.hide().catch(() => {})
-    }
+  if (key !== placedKey || mode.value !== 'live') {
+    placedKey = key
+    invoke('plugin:canvas|browser_tab_place', { label, bounds, zoom, visible: true }).catch(() => {})
   }
-
-  // Compute & apply clip region (only when visible)
-  if (visible) {
-    const clips = computeObscuringRects(rect.left, rect.top, rect.width, rect.height)
-    const dpr = window.devicePixelRatio || 1
-    const label = webviewLabelForTab(activeTabId.value)
-    const fullWidth = Math.round(rect.width * dpr)
-    const fullHeight = Math.round(rect.height * dpr)
-
-    // The size is part of the key because the region is built FROM it: a
-    // resize that leaves the obscuring rects unchanged still needs a new
-    // region, or the window keeps the one cut for its old size and the area it
-    // gained stays invisible.
-    const clipKey = `${fullWidth}x${fullHeight}:` + clips.map(r => `${r.x},${r.y},${r.w},${r.h}`).join('|')
-    if (clipKey !== lastClipKey) {
-      lastClipKey = clipKey
-      invoke('plugin:canvas|set_browser_clip_region', {
-        label,
-        fullWidth,
-        fullHeight,
-        obscuringRects: clips,
-      }).catch(() => {})
-    }
-  }
-
-  rafId = requestAnimationFrame(syncWebviewPosition)
-}
-
-// Hide webview when minimized and stop the loops behind it — the body stays
-// mounted (v-show), so nothing else stops them. Same shape as onDeactivated.
-watch(() => props.window.minimized, (minimized) => {
-  const state = tabWebviews.get(activeTabId.value)
-  if (minimized) {
-    state?.webview.hide().catch(() => {})
-    if (rafId !== null) {
-      cancelAnimationFrame(rafId)
-      rafId = null
-    }
-    stopUrlPolling()
-  } else {
-    state?.webview.show().catch(() => {})
-    if (rafId === null) {
-      rafId = requestAnimationFrame(syncWebviewPosition)
-    }
-    startUrlPolling()
-  }
-})
-
-// Force clip region recalculation when overlay rects change
-watch(overlayRects, () => { lastClipKey = null }, { deep: true })
-
-// Computed: should the webview be hidden? (context menu, panels open, etc.)
-const shouldHideWebview = computed(() =>
-  contextMenuVisible.value || historyPanelVisible.value || bookmarksPanelVisible.value
-)
-
-// Hide/show webview when overlays toggle (native webviews render above HTML)
-watch(shouldHideWebview, (hide) => {
-  if (props.window.minimized) return
-  const state = tabWebviews.get(activeTabId.value)
-  if (!state) return
-  if (hide) {
-    state.webview.hide().catch(() => {})
-  } else {
-    state.webview.show().catch(() => {})
-  }
-})
-
-// ---- URL polling: detect in-webview navigation (link clicks, redirects) ----
-
-let urlPollInterval: ReturnType<typeof setInterval> | null = null
-
-/** Ticks since the last safety re-injection — see startUrlPolling. */
-let injectTicks = 0
-
-function startUrlPolling() {
-  if (urlPollInterval) return
-  urlPollInterval = setInterval(async () => {
-    const tabId = activeTabId.value
-    if (!tabId) return
-    const label = webviewLabelForTab(tabId)
-    try {
-      const actualUrl = await invoke<string>('plugin:canvas|get_browser_url', { label })
-
-      // This used to re-inject on EVERY tick — one eval_browser per second per
-      // browser window, forever, for a script that no-ops after the first run.
-      // Injection belongs on navigation (a new JS context loses the guards),
-      // which is the branch below. The slow tick here is the safety net for
-      // the one case a URL comparison cannot see: a reload of the same URL.
-      injectTicks += 1
-      if (injectTicks >= 5) {
-        injectTicks = 0
-        injectBrowserScripts(label)
-      }
-
-      if (actualUrl && actualUrl !== currentUrl.value) {
-        injectBrowserScripts(label)
-        injectTicks = 0
-
-        currentUrl.value = actualUrl
-        urlInput.value = actualUrl
-
-        const tab = tabs.value.find(t => t.id === tabId)
-        if (tab) {
-          tab.url = actualUrl
-          try {
-            const hostname = new URL(actualUrl).hostname
-            tab.title = hostname
-            canvasStore.updateWindow(workspaceId.value, props.window.id, {
-              title: `Browser - ${hostname}`,
-            })
-          } catch { /* invalid URL */ }
-        }
-
-        // Update per-tab history
-        const state = tabWebviews.get(tabId)
-        if (state) {
-          const lastUrl = state.history[state.historyIndex]
-          if (actualUrl !== lastUrl) {
-            // Trim forward history and push new URL
-            state.history = state.history.slice(0, state.historyIndex + 1)
-            state.history.push(actualUrl)
-            state.historyIndex = state.history.length - 1
-          }
-        }
-
-        // Add to browsing history store
-        browserStore.addHistoryEntry({
-          url: actualUrl,
-          title: tab?.title ?? '',
-          visitedAt: new Date().toISOString(),
-        })
-
-        persistTabState()
-      }
-    } catch { /* webview may not exist yet */ }
-  }, 1000)
-}
-
-function stopUrlPolling() {
-  if (urlPollInterval) {
-    clearInterval(urlPollInterval)
-    urlPollInterval = null
+  if (mode.value !== 'live') {
+    mode.value = 'live'
+    startLiveTimers()
+    setTimeout(capture, 700)
   }
 }
 
-// ---- Inject Ctrl+Wheel forwarding into the child webview ----
+function requestSync(): void {
+  if (syncQueued || !started) return
+  syncQueued = true
+  requestAnimationFrame(() => {
+    syncQueued = false
+    sync()
+  })
+}
 
-async function injectBrowserScripts(label: string) {
+/** DOM changes: something may have opened on top. Probed at most 5× a second. */
+function onMutations(): void {
+  if (!stageActive || probeTimer) return
+  const wait = Math.max(0, 200 - (performance.now() - lastProbe))
+  if (wait === 0) requestSync()
+  else probeTimer = setTimeout(() => { probeTimer = null; requestSync() }, wait)
+}
+
+/** A click or key in the suite: menus open on those — look now and once more after their entrance. */
+function onUserInput(): void {
+  if (!stageActive) return
+  requestSync()
+  setTimeout(requestSync, 140)
+}
+
+/** The canvas or this window moves: the picture moves with it, the page waits. */
+function markMoving(): void {
+  if (!stageActive) return
+  if (!moving) {
+    moving = true
+    if (mode.value === 'live') sync()
+  }
+  if (settleTimer) clearTimeout(settleTimer)
+  settleTimer = setTimeout(() => {
+    settleTimer = null
+    moving = false
+    clipKey = ''
+    requestSync()
+    setTimeout(requestSync, 260)
+  }, 160)
+}
+
+watch(() => {
+  const t = canvasStore.activeCanvasState?.transform
+  return t ? `${t.x},${t.y},${t.scale}` : ''
+}, markMoving)
+watch(() => {
+  const p = props.window.position
+  return `${p.x},${p.y},${p.width},${p.height}`
+}, markMoving)
+watch(() => props.window.zIndex, requestSync)
+watch(() => props.window.minimized, (min) => (min ? goStill() : requestSync()))
+watch([contextMenuVisible, historyPanelVisible, bookmarksPanelVisible, findBarVisible], requestSync)
+
+// Other windows: one that moves over or off this one is motion too (its
+// picture moves with it cleanly); anything else only re-cuts the page.
+let others = new Map<string, string>()
+watch(() => (canvasStore.activeCanvasState?.windows ?? [])
+  .filter((w) => w.id !== props.window.id)
+  .map((w) => `${w.id}:${w.zIndex}:${w.minimized ? 1 : 0}:${w.position.x},${w.position.y},${w.position.width},${w.position.height}`)
+  .join('|'), () => {
+  const me = props.window.position
+  const now = new Map<string, string>()
+  let touched = false
+  for (const w of canvasStore.activeCanvasState?.windows ?? []) {
+    if (w.id === props.window.id) continue
+    const key = `${w.zIndex}:${w.minimized ? 1 : 0}:${w.position.x},${w.position.y},${w.position.width},${w.position.height}`
+    now.set(w.id, key)
+    const before = others.get(w.id)
+    if (before !== undefined && before !== key && (w.zIndex > props.window.zIndex || Number(before.split(':')[0]) > props.window.zIndex)) {
+      const [bx, by, bw, bh] = before.split(':')[2]!.split(',').map(Number)
+      if (overlaps(me, w.position) || overlaps(me, { x: bx!, y: by!, width: bw!, height: bh! })) touched = true
+    }
+  }
+  others = now
+  if (touched) markMoving()
+  else requestSync()
+  // A window that opens or folds animates its size: cut again once it has.
+  setTimeout(requestSync, 260)
+}, { immediate: true })
+
+// ---- The picture ----
+
+let captureBusy = false
+let lastCapture = 0
+let liveTimer: ReturnType<typeof setInterval> | null = null
+let lastPointer = 0
+
+/** A picture of the live page, for whenever it has to step aside. */
+async function capture(): Promise<void> {
+  const tabId = activeTabId.value
+  const el = contentRef.value
+  if (mode.value !== 'live' || captureBusy || !el || !opened.has(tabId)) return
+  captureBusy = true
+  // Layout px inside the (scaled) canvas: the picture keeps the size the page had.
+  const w = el.offsetWidth
+  const h = el.offsetHeight
   try {
-    await invoke('plugin:canvas|eval_browser', {
-      label,
-      js: `
-        // ---- Ctrl+Wheel forwarding (canvas zoom) ----
-        if (!window.__qcWheelInjected) {
-          window.__qcWheelInjected = true;
-          document.addEventListener('wheel', function(e) {
-            if (e.ctrlKey) {
-              e.preventDefault();
-              e.stopPropagation();
-              if (window.__TAURI_INTERNALS__) {
-                window.__TAURI_INTERNALS__.invoke('plugin:event|emit', {
-                  event: 'browser-ctrl-wheel',
-                  payload: { deltaY: e.deltaY, clientX: e.clientX, clientY: e.clientY }
-                }).catch(function(){});
-              }
-            }
-          }, { passive: false, capture: true });
-        }
-
-        // ---- Middle-click on links → open in new tab ----
-        if (!window.__qcMiddleClickInjected) {
-          window.__qcMiddleClickInjected = true;
-          document.addEventListener('auxclick', function(e) {
-            if (e.button === 1) {
-              var target = e.target;
-              while (target && target.tagName !== 'A') {
-                target = target.parentElement;
-              }
-              if (target && target.href && target.href.startsWith('http')) {
-                e.preventDefault();
-                e.stopPropagation();
-                if (window.__TAURI_INTERNALS__) {
-                  window.__TAURI_INTERNALS__.invoke('plugin:canvas|browser_request_new_tab', { url: target.href }).catch(function(){});
-                }
-              }
-            }
-          }, { capture: true });
-        }
-
-      `,
-    })
+    const bytes = await invoke<ArrayBuffer>('plugin:canvas|browser_tab_capture', { label: labelOf(tabId) })
+    if (tabId !== activeTabId.value) return
+    const src = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }))
+    const old = picture.value?.src
+    picture.value = { src, w, h, tabId }
+    if (old) setTimeout(() => URL.revokeObjectURL(old), 1000)
   } catch {
-    // External pages may not have __TAURI_INTERNALS__
+    // No picture (another platform, a page still starting): the placeholder stays.
+  } finally {
+    captureBusy = false
+    lastCapture = performance.now()
   }
 }
 
-// Listen for fullscreen state changes from the Rust handler
-let unlistenFullscreen: (() => void) | null = null
-
-async function setupFullscreenListener() {
-  unlistenFullscreen = await listen<{ label: string; isFullscreen: boolean }>(
-    'browser-fullscreen-changed',
-    (event) => {
-      // Only handle events for webviews belonging to this browser window
-      const activeLabel = webviewLabelForTab(activeTabId.value)
-      if (event.payload.label !== activeLabel) return
-
-      isContentFullscreen.value = event.payload.isFullscreen
-
-      if (event.payload.isFullscreen) {
-        // Entering fullscreen: expand webview to fill the entire app window,
-        // remove clip region so the video surface renders properly
-        const state = tabWebviews.get(activeTabId.value)
-        if (state) {
-          const w = window.innerWidth
-          const h = window.innerHeight
-          state.webview.setPosition(new LogicalPosition(0, 0)).catch(() => {})
-          state.webview.setSize(new LogicalSize(w, h)).catch(() => {})
-          // Remove clip region
-          invoke('plugin:canvas|set_browser_clip_region', {
-            label: activeLabel,
-            fullWidth: 0,
-            fullHeight: 0,
-            obscuringRects: [],
-          }).catch(() => {})
-        }
-        // Reset sync so it doesn't override our fullscreen positioning
-        lastRect = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight }
-        lastClipKey = null
-      } else {
-        // Leaving fullscreen: force a position re-sync on next frame
-        lastRect = { x: 0, y: 0, w: 0, h: 0 }
-        lastClipKey = null
-      }
-    },
-  )
+/** The pointer comes back from the page (the suite sees it again): what it did there is worth a picture. */
+function onPointerMove(): void {
+  const now = performance.now()
+  if (mode.value === 'live' && now - lastPointer > 250 && now - lastCapture > 1000) void capture()
+  lastPointer = now
 }
 
-// Listen for forwarded Ctrl+Wheel events from child webviews
-let unlistenWheel: (() => void) | null = null
-let unlistenMiddleClick: (() => void) | null = null
-
-async function setupWheelListener() {
-  unlistenWheel = await listen<{ deltaY: number; clientX: number; clientY: number }>(
-    'browser-ctrl-wheel',
-    (event) => {
-      // Dispatch a synthetic wheel event on the document to trigger canvas zoom
-      const syntheticEvent = new WheelEvent('wheel', {
-        deltaY: event.payload.deltaY,
-        clientX: event.payload.clientX,
-        clientY: event.payload.clientY,
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      })
-      document.dispatchEvent(syntheticEvent)
-    },
-  )
+function startLiveTimers(): void {
+  if (liveTimer) return
+  // Moving pages (video, animations): a fresh picture now and then.
+  liveTimer = setInterval(() => {
+    if (document.visibilityState === 'visible' && performance.now() - lastCapture > 4000) void capture()
+  }, 5000)
 }
 
-async function setupMiddleClickListener() {
-  unlistenMiddleClick = await listen<string>(
-    'browser-new-tab-request',
-    (event) => {
-      if (event.payload) {
-        addTab(event.payload, { background: true })
-      }
-    },
-  )
+function stopLiveTimers(): void {
+  if (liveTimer) clearInterval(liveTimer)
+  liveTimer = null
+}
+
+// ---- Watching the suite while on screen ----
+
+let mutations: MutationObserver | null = null
+let resizes: ResizeObserver | null = null
+
+function startWatching(): void {
+  if (mutations) return
+  mutations = new MutationObserver(onMutations)
+  mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'open', 'hidden', 'data-state'] })
+  resizes = new ResizeObserver(markMoving)
+  if (contentRef.value) resizes.observe(contentRef.value)
+  if (canvasEl.value) resizes.observe(canvasEl.value)
+  document.addEventListener('pointerdown', onUserInput, true)
+  document.addEventListener('keydown', onUserInput, true)
+  document.addEventListener('contextmenu', onUserInput, true)
+  document.addEventListener('pointermove', onPointerMove, { capture: true, passive: true })
+  document.addEventListener('visibilitychange', requestSync)
+  window.addEventListener('resize', markMoving)
+}
+
+function stopWatching(): void {
+  mutations?.disconnect()
+  mutations = null
+  resizes?.disconnect()
+  resizes = null
+  document.removeEventListener('pointerdown', onUserInput, true)
+  document.removeEventListener('keydown', onUserInput, true)
+  document.removeEventListener('contextmenu', onUserInput, true)
+  document.removeEventListener('pointermove', onPointerMove, true)
+  document.removeEventListener('visibilitychange', requestSync)
+  window.removeEventListener('resize', markMoving)
+  if (probeTimer) clearTimeout(probeTimer)
+  probeTimer = null
+  if (settleTimer) clearTimeout(settleTimer)
+  settleTimer = null
+  moving = false
 }
 
 // ---- Lifecycle ----
 
-onMounted(async () => {
-  // Read before the first await: Vue only keeps the current instance set while
-  // the hook body runs synchronously, and the helper needs it for its walk.
-  const stageWasActive = inActiveKeepAliveTree()
+const unlisten: UnlistenFn[] = []
 
-  canvasStore.updateWindow(workspaceId.value, props.window.id, { status: 'live' })
-
-  // Initialize the browser store
-  await browserStore.loadFromDisk()
-
-  // Wait for the placeholder to be in the DOM
-  await nextTick()
-  if (!contentRef.value) return
-
-  try {
-    // Restore tabs from saved state, or create initial tab
-    const config = props.window.browserConfig
-    const savedTabs = config?.tabs
-    const savedActiveTabId = config?.activeTabId
-
-    if (savedTabs && savedTabs.length > 0) {
-      // Restore saved tabs
-      tabs.value = savedTabs.map(t => ({ ...t, isLoading: true }))
-      activeTabId.value = savedActiveTabId && savedTabs.some(t => t.id === savedActiveTabId)
-        ? savedActiveTabId
-        : savedTabs[0].id
-
-      // Create webviews for all saved tabs
-      for (const tab of tabs.value) {
-        const wv = await createWebviewForTab(tab.id, tab.url)
-        if (wv) {
-          tabWebviews.set(tab.id, {
-            webview: wv,
-            history: [tab.url],
-            historyIndex: 0,
-          })
-          tab.isLoading = false
-        } else {
-          tab.isLoading = false
-        }
-      }
-
-      // Only ready when something actually exists to show — flipping this
-      // with every creation failed used to hide the placeholder and leave a
-      // silent black pane (the missing-permission bug looked exactly so).
-      webviewReady.value = tabWebviews.size > 0
-
-      // Sync URL bar to active tab
-      const active = tabs.value.find(t => t.id === activeTabId.value)
-      if (active) {
-        urlInput.value = active.url
-        currentUrl.value = active.url
-      }
+async function listenToPages(): Promise<void> {
+  unlisten.push(await listen<TabStatus>('canvas-browser-state', (e) => {
+    const tabId = tabOfLabel(e.payload.label)
+    if (tabId) applyStatus(tabId, e.payload)
+  }))
+  unlisten.push(await listen<{ label: string; url: string }>('canvas-browser-new-tab', (e) => {
+    if (tabOfLabel(e.payload.label)) void addTab(e.payload.url)
+  }))
+  unlisten.push(await listen<{ label: string; isFullscreen: boolean }>('browser-fullscreen-changed', (e) => {
+    const tabId = activeTabId.value
+    if (!tabId || e.payload.label !== labelOf(tabId)) return
+    isContentFullscreen.value = e.payload.isFullscreen
+    if (e.payload.isFullscreen) {
+      // The page over the whole suite window, uncut.
+      invoke('plugin:canvas|set_browser_clip_region', { label: e.payload.label, fullWidth: 0, fullHeight: 0, obscuringRects: [] }).catch(() => {})
+      invoke('plugin:canvas|browser_tab_place', { label: e.payload.label, bounds: { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }, zoom: pageZoom.value, visible: true }).catch(() => {})
+      mode.value = 'live'
     } else {
-      // No saved tabs — create a single initial tab
-      const initialUrl = config?.url ?? 'https://www.google.com'
-      await addTab(initialUrl)
+      placedKey = ''
+      clipKey = ''
+      requestSync()
     }
-
-    // Update title with hostname
-    try {
-      const hostname = new URL(currentUrl.value).hostname
-      canvasStore.updateWindow(workspaceId.value, props.window.id, {
-        title: `Browser - ${hostname}`,
-      })
-    } catch { /* invalid URL */ }
-
-    // Start position sync loop
-    if (rafId === null) {
-      rafId = requestAnimationFrame(syncWebviewPosition)
-    }
-
-    // Set up listeners for events forwarded from child webview
-    await setupFullscreenListener()
-    await setupWheelListener()
-    await setupMiddleClickListener()
-
-    // Start polling for URL changes from in-webview navigation
-    startUrlPolling()
-
-    // Mounted into a stage the user had already left: the webviews had to be
-    // created (onActivated bails until they exist), but they must not be shown
-    // over whatever module is on screen. The stage's own onDeactivated is long
-    // past, so stand down here — onActivated brings everything back.
-    if (!stageWasActive) goDormant()
-
-  } catch (err) {
-    console.error('Failed to initialize browser tabs:', err)
-  }
-})
-
-/**
- * V3 warm cache: the canvas stage keeps this window mounted while the module
- * is hidden — but the tab webviews are NATIVE child webviews that float above
- * all HTML, including other modules. So hide them and stop the position/url
- * loops whenever the stage is not on screen; on reactivation force a full
- * re-sync (the loop's change detection would otherwise see "nothing changed"
- * and never re-show). Called from onDeactivated and, for a window that mounted
- * into an already-abandoned stage, from the tail of onMounted.
- */
-function goDormant() {
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
-  }
-  stopUrlPolling()
-  for (const [, state] of tabWebviews) {
-    state.webview.hide().catch(() => {})
-  }
+  }))
 }
+
+/** The stage left the screen: the page steps aside, nothing keeps watching. */
+function goDormant(): void {
+  stageActive = false
+  stopWatching()
+  goStill()
+}
+
+onMounted(async () => {
+  // Read before the first await: Vue keeps the current instance only while
+  // the hook body runs synchronously.
+  stageActive = inActiveKeepAliveTree()
+  canvasStore.updateWindow(workspaceId.value, props.window.id, { status: 'live' })
+  await browserStore.loadFromDisk()
+  await nextTick()
+  await listenToPages()
+
+  const config = props.window.browserConfig
+  const saved = config?.tabs ?? []
+  if (saved.length) {
+    tabs.value = saved.map((t) => ({ ...t, title: t.title || tabTitle('', t.url), isLoading: false }))
+    const active = saved.some((t) => t.id === config?.activeTabId) ? config!.activeTabId! : saved[0]!.id
+    started = true
+    if (stageActive) startWatching()
+    await switchTab(active)
+  } else {
+    started = true
+    if (stageActive) startWatching()
+    await addTab(config?.url || 'https://www.google.com')
+  }
+  if (!stageActive) goDormant()
+})
 
 onDeactivated(goDormant)
 
 onActivated(() => {
-  // Initial mount: onMounted owns startup (webviews don't exist yet).
-  if (!webviewReady.value) return
-  if (props.window.minimized) return
-  if (!shouldHideWebview.value) {
-    // Force the sync loop past its change detection so it re-shows the
-    // active tab; with an overlay panel open, leave it hidden — the panel
-    // watcher shows it again when the panel closes.
-    lastRect = { x: 0, y: 0, w: 0, h: 0 }
-    lastVisible = false
-    lastClipKey = null
-  }
-  if (rafId === null) {
-    rafId = requestAnimationFrame(syncWebviewPosition)
-  }
-  startUrlPolling()
+  // The first mount starts everything itself.
+  if (!started) return
+  stageActive = true
+  startWatching()
+  placedKey = ''
+  clipKey = ''
+  requestSync()
 })
 
 onUnmounted(() => {
-  // Stop position sync
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
+  started = false
+  stopWatching()
+  stopLiveTimers()
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
   }
-
-  // Clean up progress interval
-  if (progressInterval) {
-    clearInterval(progressInterval)
-    progressInterval = null
-  }
-
-  // Stop URL polling
-  stopUrlPolling()
-
-
-  // Clean up event listeners
-  unlistenFullscreen?.()
-  unlistenFullscreen = null
-  unlistenWheel?.()
-  unlistenWheel = null
-  unlistenMiddleClick?.()
-  unlistenMiddleClick = null
-
-  // Destroy all tab webviews (close stops media, frees OS processes). Tracked,
-  // so the instance a workspace switch mounts next can await the teardown
-  // instead of reconnecting to a half-closed webview.
-  for (const [tabId, state] of tabWebviews) {
-    const label = webviewLabelForTab(tabId)
-    invoke('plugin:canvas|set_browser_clip_region', {
-      label,
-      fullWidth: 0,
-      fullHeight: 0,
-      obscuringRects: [],
-    }).catch(() => {})
-    closeWebviewTracked(label, state.webview)
-  }
-  tabWebviews.clear()
-
-  lastClipKey = null
+  for (const fn of unlisten.splice(0)) fn()
+  // Every tab, not only those opened since this mount: a reload of the suite
+  // page keeps the pages of tabs it never showed again, hidden but running.
+  for (const t of tabs.value) closePage(t.id)
+  if (picture.value) URL.revokeObjectURL(picture.value.src)
 })
-
-/**
- * PRE-EXISTING BUG, carried over unchanged in behaviour.
- *
- * This is called in `switchTab` but was never defined - not here and not in the
- * standalone QuantCode either. At runtime it throws a ReferenceError, which
- * aborts `switchTab` before the URL bar and window title are synced, so
- * switching browser tabs is half-broken today.
- *
- * Defined here as a no-op so the module type-checks and so the surrounding
- * best-effort code (every other webview call is `.catch(() => {})`) behaves the
- * way it was evidently meant to. Whatever ctrl+wheel zoom forwarding was
- * intended is NOT implemented - inventing it would be a behaviour change the
- * migration has no business making.
- */
-function injectCtrlWheelForwarder(_webviewLabel: string): void {
-  // intentionally empty - see above
-}
 </script>
 
 <template>
-  <div
-    class="w-full h-full flex flex-col overflow-hidden"
-    :style="{ background: 'var(--qc-bg)' }"
-    tabindex="0"
-    @keydown="onKeydown"
-  >
-    <!-- Tab Bar -->
-    <BrowserTabBar
-      :tabs="tabs"
-      :active-tab-id="activeTabId"
-      @switch="switchTab"
-      @close="closeTab"
-      @add="addTab()"
-    />
+  <div class="qcb" tabindex="0" @keydown="onKeydown">
+    <BrowserTabBar :tabs="tabs" :active-tab-id="activeTabId" @switch="switchTab" @close="closeTab" @add="addTab()" />
 
-    <!-- Navigation Bar -->
-    <div
-      class="flex items-center gap-1 px-2 py-1.5 flex-shrink-0"
-      :style="{ background: 'var(--qc-bg-header)', borderBottom: '1px solid var(--qc-border)' }"
-    >
+    <div class="qcb-bar">
       <BrowserNavButtons
         :can-go-back="canGoBack"
         :can-go-forward="canGoForward"
-        :is-loading="activeTab?.isLoading ?? false"
-        @back="goBack"
-        @forward="goForward"
-        @reload="reload"
+        :is-loading="loading"
+        @back="act('back')"
+        @forward="act('forward')"
+        @reload="act('reload')"
+        @stop="act('stop')"
       />
       <BrowserOmnibox
         ref="omniboxRef"
@@ -1325,63 +737,50 @@ function injectCtrlWheelForwarder(_webviewLabel: string): void {
         @submit="onUrlSubmit"
         @toggle-bookmark="toggleBookmark"
       />
-      <button
-        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded hover:opacity-80"
-        :style="{ color: bookmarksPanelVisible ? 'var(--qc-text)' : 'var(--qc-text-dim)' }"
-        title="Bookmarks"
-        @click="bookmarksPanelVisible = !bookmarksPanelVisible; historyPanelVisible = false"
-        @mousedown.stop
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-        </svg>
+      <button v-if="pageZoom !== 1" class="qcb-zoom" title="Page zoom — reset to 100 % (Ctrl+0)" @mousedown.stop @click="setZoom(1)">
+        {{ Math.round(pageZoom * 100) }}%
       </button>
       <button
-        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded hover:opacity-80"
-        :style="{ color: historyPanelVisible ? 'var(--qc-text)' : 'var(--qc-text-dim)' }"
-        title="History"
-        @click="historyPanelVisible = !historyPanelVisible; bookmarksPanelVisible = false"
+        class="qcb-icon"
+        :class="{ on: bookmarksPanelVisible }"
+        title="Bookmarks"
         @mousedown.stop
+        @click="bookmarksPanelVisible = !bookmarksPanelVisible; historyPanelVisible = false"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10" />
-          <polyline points="12 6 12 12 16 14" />
-        </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+      </button>
+      <button
+        class="qcb-icon"
+        :class="{ on: historyPanelVisible }"
+        title="History"
+        @mousedown.stop
+        @click="historyPanelVisible = !historyPanelVisible; bookmarksPanelVisible = false"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
       </button>
     </div>
 
-    <!-- Bookmark Bar -->
-    <BrowserBookmarkBar
-      :bookmarks="browserStore.bookmarks"
-      @navigate="navigateTo"
-      @remove="(id: string) => browserStore.removeBookmark(id)"
-    />
+    <BrowserBookmarkBar :bookmarks="browserStore.bookmarks" @navigate="navigateTo" @remove="(id: string) => browserStore.removeBookmark(id)" />
+    <BrowserProgressBar :loading="loading" />
+    <BrowserFindBar v-if="findBarVisible" v-model="findQuery" @find-next="find(true)" @find-prev="find(false)" @close="closeFind" />
 
-    <!-- Progress Bar -->
-    <BrowserProgressBar :progress="loadProgress" />
-
-    <!-- Find Bar + Webview area + overlay panels -->
-    <div class="relative flex-1 min-h-0">
-      <BrowserFindBar
-        v-if="findBarVisible"
-        v-model="findQuery"
-        @find-next="findNext"
-        @find-prev="findPrev"
-        @close="findBarVisible = false"
-      />
-
-      <!-- Webview placeholder (inset so native webview doesn't cover resize handles) -->
-      <div ref="contentRef" class="absolute inset-0" style="left: 4px; right: 4px; bottom: 4px;">
-        <div
-          v-if="!webviewReady"
-          class="w-full h-full flex items-center justify-center"
-          :style="{ color: 'var(--qc-text-dim)' }"
+    <div class="qcb-body">
+      <!-- The page's area, inset so the live page never covers the window's resize edges. -->
+      <div ref="contentRef" class="qcb-page" :data-mode="mode">
+        <img
+          v-if="picture && picture.tabId === activeTabId"
+          class="qcb-picture"
+          :src="picture.src"
+          :style="{ width: picture.w + 'px', height: picture.h + 'px' }"
+          alt=""
+          draggable="false"
         >
-          <span class="text-xs">Loading browser...</span>
+        <div v-else class="qcb-placeholder">
+          <span v-if="openError" class="qcb-error">{{ openError }}</span>
+          <span v-else>{{ activeTab ? tabTitle(activeTab.title, activeTab.url) : '' }}</span>
         </div>
       </div>
 
-      <!-- History Panel (overlay inside webview area) -->
       <BrowserHistoryPanel
         v-if="historyPanelVisible"
         :history="browserStore.history"
@@ -1389,8 +788,6 @@ function injectCtrlWheelForwarder(_webviewLabel: string): void {
         @close="historyPanelVisible = false"
         @clear="browserStore.clearHistory()"
       />
-
-      <!-- Bookmarks Panel (overlay inside webview area) -->
       <BrowserBookmarkPanel
         v-if="bookmarksPanelVisible"
         :bookmarks="browserStore.bookmarks"
@@ -1403,12 +800,83 @@ function injectCtrlWheelForwarder(_webviewLabel: string): void {
 </template>
 
 <style scoped>
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+.qcb {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--qc-bg);
+  outline: none;
 }
-
-.animate-pulse {
-  animation: pulse 1.5s ease-in-out infinite;
+.qcb-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  flex-shrink: 0;
+  background: var(--qc-bg-header);
+  border-bottom: 1px solid var(--qc-border);
+}
+.qcb-icon {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--qc-text-dim);
+}
+.qcb-icon:hover,
+.qcb-icon.on {
+  color: var(--qc-text);
+  background: color-mix(in srgb, var(--qc-text) 8%, transparent);
+}
+.qcb-zoom {
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--qc-text);
+  background: color-mix(in srgb, var(--qc-text) 10%, transparent);
+}
+.qcb-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.qcb-page {
+  position: absolute;
+  top: 0;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  overflow: hidden;
+  background: var(--qc-bg-surface);
+}
+.qcb-picture {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+}
+.qcb-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--qc-text-dim);
+}
+.qcb-error {
+  color: #f87171;
 }
 </style>

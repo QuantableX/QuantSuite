@@ -39,11 +39,10 @@ onMounted(() => {
 
 <template>
   <div
-    class="absolute top-2 right-2 z-50 flex items-center gap-1 px-2 py-1 rounded-md"
+    class="flex flex-shrink-0 items-center justify-end gap-1 px-2 py-1"
     :style="{
-      background: 'var(--qc-bg-surface)',
-      border: '1px solid var(--qc-border)',
-      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+      background: 'var(--qc-bg-header)',
+      borderBottom: '1px solid var(--qc-border)',
     }"
   >
     <!-- Search input -->

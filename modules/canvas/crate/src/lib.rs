@@ -35,27 +35,30 @@ pub fn init() -> TauriPlugin<Wry> {
             commands::workspace::workspace_storage_dir,
             commands::workspace::load_canvas_state,
             commands::workspace::save_canvas_state,
-            // Browser
-            commands::browser::navigate_browser,
-            commands::browser::eval_browser,
-            commands::browser::get_browser_url,
+            // Browser windows (rework 2026-11-03: tabs made and watched here)
+            commands::browser::browser_tab_open,
+            commands::browser::browser_tab_place,
+            commands::browser::browser_tab_close,
+            commands::browser::browser_tab_navigate,
+            commands::browser::browser_tab_action,
+            commands::browser::browser_tab_capture,
             commands::browser::set_browser_clip_region,
             commands::browser::find_in_browser,
-            commands::browser::browser_request_new_tab,
-            commands::browser::browser_disable_fullscreen,
             // Browser data
             commands::browser_data::load_browser_data,
             commands::browser_data::save_browser_data,
         ]))
         .setup(|app, _api| {
+            use tauri::Manager;
+            app.manage(commands::browser::BrowserTabs::default());
             let dir = qs_core::paths::module_dir("canvas");
             if let Err(e) = std::fs::create_dir_all(&dir) {
                 eprintln!("code: failed to create {}: {e}", dir.display());
             }
             import_legacy_data(&dir);
 
-            // No managed state left: the only thing this plugin held was the PTY
-            // registry, and the terminals moved to `plugin:console` with P4.5.
+            // The browser windows' tabs are the only managed state: the PTY
+            // registry moved to `plugin:console` with P4.5.
 
             qs_core::tray::register_entry(
                 app,
