@@ -47,6 +47,16 @@ pub fn init() -> TauriPlugin<Wry> {
             // Browser data
             commands::browser_data::load_browser_data,
             commands::browser_data::save_browser_data,
+            // Design artboards (round 3, card 06)
+            commands::design::design_list,
+            commands::design::design_read,
+            commands::design::design_write,
+            commands::design::design_comments,
+            commands::design::design_resolve,
+            commands::design::design_comment_add,
+            commands::design::design_comment_status,
+            commands::design::design_comment_delete,
+            commands::design::design_export,
         ]))
         .setup(|app, _api| {
             use tauri::Manager;

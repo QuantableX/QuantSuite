@@ -29,6 +29,15 @@ const COMMANDS: &[&str] = &[
     "find_in_browser",
     "load_browser_data",
     "save_browser_data",
+    "design_list",
+    "design_read",
+    "design_write",
+    "design_comments",
+    "design_resolve",
+    "design_comment_add",
+    "design_comment_status",
+    "design_comment_delete",
+    "design_export",
 ];
 
 fn main() {

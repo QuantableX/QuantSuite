@@ -34,6 +34,15 @@ Default permissions for the canvas module.
 - `allow-find-in-browser`
 - `allow-load-browser-data`
 - `allow-save-browser-data`
+- `allow-design-list`
+- `allow-design-read`
+- `allow-design-write`
+- `allow-design-comments`
+- `allow-design-resolve`
+- `allow-design-comment-add`
+- `allow-design-comment-status`
+- `allow-design-comment-delete`
+- `allow-design-export`
 
 ## Permission Table
 
@@ -248,6 +257,240 @@ Enables the delete_file command without any pre-configured scope.
 <td>
 
 Denies the delete_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-design-comment-add`
+
+</td>
+<td>
+
+Enables the design_comment_add command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-design-comment-add`
+
+</td>
+<td>
+
+Denies the design_comment_add command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-design-comment-delete`
+
+</td>
+<td>
+
+Enables the design_comment_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-design-comment-delete`
+
+</td>
+<td>
+
+Denies the design_comment_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-design-comment-status`
+
+</td>
+<td>
+
+Enables the design_comment_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-design-comment-status`
+
+</td>
+<td>
+
+Denies the design_comment_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-design-comments`
+
+</td>
+<td>
+
+Enables the design_comments command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-design-comments`
+
+</td>
+<td>
+
+Denies the design_comments command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-design-export`
+
+</td>
+<td>
+
+Enables the design_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-design-export`
+
+</td>
+<td>
+
+Denies the design_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-design-list`
+
+</td>
+<td>
+
+Enables the design_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-design-list`
+
+</td>
+<td>
+
+Denies the design_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-design-read`
+
+</td>
+<td>
+
+Enables the design_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-design-read`
+
+</td>
+<td>
+
+Denies the design_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-design-resolve`
+
+</td>
+<td>
+
+Enables the design_resolve command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-design-resolve`
+
+</td>
+<td>
+
+Denies the design_resolve command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-design-write`
+
+</td>
+<td>
+
+Enables the design_write command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-design-write`
+
+</td>
+<td>
+
+Denies the design_write command without any pre-configured scope.
 
 </td>
 </tr>

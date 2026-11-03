@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-design-comment-status"
+description = "Enables the design_comment_status command without any pre-configured scope."
+commands.allow = ["design_comment_status"]
+
+[[permission]]
+identifier = "deny-design-comment-status"
+description = "Denies the design_comment_status command without any pre-configured scope."
+commands.deny = ["design_comment_status"]

@@ -5,9 +5,9 @@ import { useAppStore } from '../../../stores/app'
 import { v4 as uuidv4 } from 'uuid'
 import type { CanvasWindow as CanvasWindowType, WindowType, FilePreviewKind } from '../../../shared/types'
 import { useEventListener } from '@vueuse/core'
-import { inActiveKeepAliveTree } from '@quantsuite/core'
+import { inActiveKeepAliveTree, useTauriEvent } from '@quantsuite/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import { AppWindow, Globe, LayoutDashboard, MessageSquare, Terminal } from 'lucide-vue-next'
+import { AppWindow, Globe, LayoutDashboard, MessageSquare, PenTool, Terminal } from 'lucide-vue-next'
 import { terminalHasFocus } from '../../utils/terminalFocus'
 import { useCanvasActions, useCanvasEdges } from '../../utils/canvasLinks'
 import type { KanbanCard } from '@quantsuite/core'
@@ -337,6 +337,7 @@ function createWindow(type: WindowType, centered = false) {
     browser: 'Browser',
     chat: 'Chat',
     card: 'Card',
+    artboard: 'Artboard',
   }
 
   const sizes: Record<WindowType, { width: number; height: number }> = {
@@ -347,6 +348,7 @@ function createWindow(type: WindowType, centered = false) {
     browser: { width: 700, height: 500 },
     chat: { width: 520, height: 640 },
     card: { width: 280, height: 150 },
+    artboard: { width: 900, height: 640 },
   }
 
   const screenX = centered ? (rect.width - sizes[type].width * scale) / 2 : contextMenu.value.x - rect.left
@@ -371,11 +373,26 @@ function createWindow(type: WindowType, centered = false) {
     // real one the window is meant to re-attach to.
     ...(type === 'browser' ? { browserConfig: { url: 'http://localhost:3000' } } : {}),
     ...(type === 'chat' ? { chatConfig: { threadId: null } } : {}),
+    ...(type === 'artboard' ? { artboardConfig: { artboard: null, device: 'desktop' as const } } : {}),
   }
 
   canvasStore.addWindow(workspaceId.value, win)
   closeContextMenu()
 }
+
+// ---- A new design artboard an agent wrote opens here (round 3, card 06) ----
+useTauriEvent<{ workspace: string; id: string; created: boolean }>('canvas-design-changed', (p) => {
+  const ws = workspaceId.value
+  if (!p.created || !ws || p.workspace !== workspacesStore.contentWorkspace?.path) return
+  const st = canvasStore.activeCanvasState
+  if (st?.windows.some((w) => w.type === 'artboard' && w.artboardConfig?.artboard === p.id)) return
+  let empty = st?.windows.find((w) => w.type === 'artboard' && !w.artboardConfig?.artboard)
+  if (!empty) {
+    createWindow('artboard', true)
+    empty = canvasStore.activeCanvasState?.windows.filter((w) => w.type === 'artboard' && !w.artboardConfig?.artboard).pop()
+  }
+  if (empty) canvasStore.updateWindow(ws, empty.id, { artboardConfig: { artboard: p.id, device: empty.artboardConfig?.device ?? 'desktop' } })
+})
 
 // ---- Open file via system dialog ----
 
@@ -640,6 +657,7 @@ useEventListener(window, 'click', () => {
         <button class="canvas-start-action" @click="createWindow('spec', true)"><LayoutDashboard :size="16" /> Kanban</button>
         <button class="canvas-start-action" @click="createWindow('browser', true)"><Globe :size="16" /> Browser</button>
         <button class="canvas-start-action" @click="createWindow('chat', true)"><MessageSquare :size="16" /> Chat</button>
+        <button class="canvas-start-action" @click="createWindow('artboard', true)"><PenTool :size="16" /> Artboard</button>
       </QEmptyState>
     </div>
 
@@ -742,6 +760,14 @@ useEventListener(window, 'click', () => {
         @click="createWindow('chat')"
       >
         <span class="text-amber-400">&#10077;</span> New QuantPilot Chat
+      </button>
+      <button
+        class="w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 hover:brightness-125"
+        :style="{ color: 'var(--qc-text)' }"
+        title="An HTML mockup an agent writes; pin comments to its elements"
+        @click="createWindow('artboard')"
+      >
+        <span class="text-pink-400">&#9998;</span> New Design Artboard
       </button>
       <button
         class="w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 hover:brightness-125"

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-design-list"
+description = "Enables the design_list command without any pre-configured scope."
+commands.allow = ["design_list"]
+
+[[permission]]
+identifier = "deny-design-list"
+description = "Denies the design_list command without any pre-configured scope."
+commands.deny = ["design_list"]
