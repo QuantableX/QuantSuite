@@ -391,6 +391,114 @@
           "markdownDescription": "Denies the delete_file command without any pre-configured scope."
         },
         {
+          "description": "Enables the design_comment_add command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-design-comment-add",
+          "markdownDescription": "Enables the design_comment_add command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the design_comment_add command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-design-comment-add",
+          "markdownDescription": "Denies the design_comment_add command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the design_comment_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-design-comment-delete",
+          "markdownDescription": "Enables the design_comment_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the design_comment_delete command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-design-comment-delete",
+          "markdownDescription": "Denies the design_comment_delete command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the design_comment_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-design-comment-status",
+          "markdownDescription": "Enables the design_comment_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the design_comment_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-design-comment-status",
+          "markdownDescription": "Denies the design_comment_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the design_comments command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-design-comments",
+          "markdownDescription": "Enables the design_comments command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the design_comments command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-design-comments",
+          "markdownDescription": "Denies the design_comments command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the design_export command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-design-export",
+          "markdownDescription": "Enables the design_export command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the design_export command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-design-export",
+          "markdownDescription": "Denies the design_export command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the design_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-design-list",
+          "markdownDescription": "Enables the design_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the design_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-design-list",
+          "markdownDescription": "Denies the design_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the design_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-design-read",
+          "markdownDescription": "Enables the design_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the design_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-design-read",
+          "markdownDescription": "Denies the design_read command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the design_resolve command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-design-resolve",
+          "markdownDescription": "Enables the design_resolve command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the design_resolve command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-design-resolve",
+          "markdownDescription": "Denies the design_resolve command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the design_write command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-design-write",
+          "markdownDescription": "Enables the design_write command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the design_write command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-design-write",
+          "markdownDescription": "Denies the design_write command without any pre-configured scope."
+        },
+        {
           "description": "Enables the find_in_browser command without any pre-configured scope.",
           "type": "string",
           "const": "allow-find-in-browser",
@@ -655,10 +763,10 @@
           "markdownDescription": "Denies the write_file command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`",
+          "description": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`\n- `allow-design-list`\n- `allow-design-read`\n- `allow-design-write`\n- `allow-design-comments`\n- `allow-design-resolve`\n- `allow-design-comment-add`\n- `allow-design-comment-status`\n- `allow-design-comment-delete`\n- `allow-design-export`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`"
+          "markdownDescription": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`\n- `allow-design-list`\n- `allow-design-read`\n- `allow-design-write`\n- `allow-design-comments`\n- `allow-design-resolve`\n- `allow-design-comment-add`\n- `allow-design-comment-status`\n- `allow-design-comment-delete`\n- `allow-design-export`"
         }
       ]
     }

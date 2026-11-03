@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-design-resolve"
+description = "Enables the design_resolve command without any pre-configured scope."
+commands.allow = ["design_resolve"]
+
+[[permission]]
+identifier = "deny-design-resolve"
+description = "Denies the design_resolve command without any pre-configured scope."
+commands.deny = ["design_resolve"]

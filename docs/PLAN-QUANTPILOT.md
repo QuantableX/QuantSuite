@@ -3211,3 +3211,34 @@ button.
   reload; the viewer opened the tool file; both compare modes worked; deleting
   the file turned its tile "Gone". QA found and fixed a watcher that read the
   compare state before it existed (it blanked the page).
+
+### 06/07 — design artboards in QuantCanvas (card 50d7d22a)
+
+- Canvas window type `artboard` (canvas menu and empty-canvas start): an HTML
+  mockup in a frame sandboxed with scripts but without same origin, with a CSP
+  written before the mockup (`default-src 'none'`, inline style/script, data
+  images) — no network. Desktop 1280 / tablet 820 / phone 390 px, scaled to the
+  window; it reloads when the mockup or its comments change
+  (`canvas-design-changed`). A new artboard an agent writes opens on the
+  canvas by itself (an empty artboard window takes it, else a new window).
+- Comments: Comment mode outlines elements in the frame; a click sends a CSS
+  selector (id, else a tag path with nth-of-type) and the element's text by
+  postMessage — the frame's only way out. Pins sit at the element's corner
+  (the frame reports positions); open/resolved, reopen, delete. "Ask the agent"
+  sends the comment, its selector and the tool names to the chat connected to
+  the artboard by an edge, or opens a chat beside it, connects it and sends.
+- Storage: `<workspace data>/canvas/design/<id>.html` + `<id>.comments.json`
+  (name and comments) — never the project. Export copies a mockup into a
+  picked folder without overwriting (`<id>-2.html`, …).
+- QuantMCP (`modules/canvas/module.json`): `quantsuite.canvas.design_list`,
+  `design_read` (added: an agent must read a mockup before changing it),
+  `design_write`, `design_comments`, `design_resolve`; `workspace` = name,
+  id or folder, default the active one.
+- QA (QA app, Claude Haiku): Haiku created "QA Pricing" with design_write and it
+  opened on the canvas; a real click inside the frame picked `#buy` and the
+  comment was pinned; Ask the agent opened a connected chat beside it, where
+  Haiku used design_read, design_write and design_resolve — the button turned
+  green and the comment resolved with a note. A probe mockup could not read the
+  parent, storage or cookies, could not fetch the app or QuantMCP, and its
+  attempt to call an app command had no effect (Tauri's IPC object is present
+  in every frame, but the frame's CSP and opaque origin leave it inert).

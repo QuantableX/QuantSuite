@@ -33,4 +33,13 @@ permissions = [
   "allow-find-in-browser",
   "allow-load-browser-data",
   "allow-save-browser-data",
+  "allow-design-list",
+  "allow-design-read",
+  "allow-design-write",
+  "allow-design-comments",
+  "allow-design-resolve",
+  "allow-design-comment-add",
+  "allow-design-comment-status",
+  "allow-design-comment-delete",
+  "allow-design-export",
 ]

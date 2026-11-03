@@ -21,6 +21,134 @@
     "spec"
   ],
   "sidecars": [],
-  "capabilities": [],
+  "capabilities": [
+    {
+      "name": "design_list",
+      "command": "plugin:canvas|design_list",
+      "description": "The design artboards (HTML mockups shown in QuantCanvas) of a workspace: id, name, when it changed, and how many comments are open or resolved. Read the open comments with design_comments.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+          }
+        }
+      }
+    },
+    {
+      "name": "design_read",
+      "command": "plugin:canvas|design_read",
+      "description": "One design artboard whole: its HTML and every comment (open and resolved) with the element each points at. Read it before changing a mockup with design_write.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+          },
+          "artboard": {
+            "type": "string",
+            "description": "The artboard id (as design_list shows it)."
+          }
+        },
+        "required": [
+          "artboard"
+        ]
+      }
+    },
+    {
+      "name": "design_write",
+      "command": "plugin:canvas|design_write",
+      "description": "Creates or updates a design artboard: a self-contained HTML mockup (inline CSS and JS; it runs sandboxed in QuantCanvas with no network, so embed images as data URLs). The user sees it on the canvas at desktop, tablet or phone width and pins comments to its elements. Writing an existing artboard keeps its comments; an open artboard window reloads. Stored in the workspace's private QuantSuite folder, not in the project. At most 1 MB.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+          },
+          "name": {
+            "type": "string",
+            "description": "The artboard's name, e.g. \"Landing page\"; a new artboard's id is made from it."
+          },
+          "html": {
+            "type": "string",
+            "description": "The mockup: an HTML document."
+          },
+          "artboard": {
+            "type": "string",
+            "description": "The id of an artboard to replace (default: the id made from the name)."
+          }
+        },
+        "required": [
+          "name",
+          "html"
+        ]
+      }
+    },
+    {
+      "name": "design_comments",
+      "command": "plugin:canvas|design_comments",
+      "description": "The user's comments on design artboards: per comment its artboard, id, the element (a CSS selector inside the mockup and the element's text when it was picked), the comment text and its status. Default: the open comments of every artboard.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+          },
+          "artboard": {
+            "type": "string",
+            "description": "The artboard id (as design_list shows it)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved",
+              "all"
+            ],
+            "description": "Which comments (default open)."
+          }
+        }
+      }
+    },
+    {
+      "name": "design_resolve",
+      "command": "plugin:canvas|design_resolve",
+      "description": "Marks a design comment as resolved, with a short note of what you changed. Update the mockup with design_write first.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+          },
+          "artboard": {
+            "type": "string",
+            "description": "The artboard id (as design_list shows it)."
+          },
+          "comment": {
+            "type": "string",
+            "description": "The comment id (from design_comments)."
+          },
+          "note": {
+            "type": "string",
+            "description": "What was done about it."
+          }
+        },
+        "required": [
+          "artboard",
+          "comment"
+        ]
+      }
+    }
+  ],
   "migrateFrom": "~/.quantcode"
 }

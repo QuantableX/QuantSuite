@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-design-write"
+description = "Enables the design_write command without any pre-configured scope."
+commands.allow = ["design_write"]
+
+[[permission]]
+identifier = "deny-design-write"
+description = "Denies the design_write command without any pre-configured scope."
+commands.deny = ["design_write"]
