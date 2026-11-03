@@ -7,7 +7,7 @@ import type { CanvasWindow as CanvasWindowType, WindowType, FilePreviewKind } fr
 import { useEventListener } from '@vueuse/core'
 import { inActiveKeepAliveTree, useTauriEvent } from '@quantsuite/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import { AppWindow, Globe, LayoutDashboard, MessageSquare, PenTool, Terminal } from 'lucide-vue-next'
+import { AppWindow, Globe, Images, LayoutDashboard, MessageSquare, PenTool, Terminal } from 'lucide-vue-next'
 import { terminalHasFocus } from '../../utils/terminalFocus'
 import { useCanvasActions, useCanvasEdges } from '../../utils/canvasLinks'
 import type { KanbanCard } from '@quantsuite/core'
@@ -338,6 +338,7 @@ function createWindow(type: WindowType, centered = false) {
     chat: 'Chat',
     card: 'Card',
     artboard: 'Artboard',
+    moodboard: 'Moodboard',
   }
 
   const sizes: Record<WindowType, { width: number; height: number }> = {
@@ -349,6 +350,7 @@ function createWindow(type: WindowType, centered = false) {
     chat: { width: 520, height: 640 },
     card: { width: 280, height: 150 },
     artboard: { width: 900, height: 640 },
+    moodboard: { width: 760, height: 560 },
   }
 
   const screenX = centered ? (rect.width - sizes[type].width * scale) / 2 : contextMenu.value.x - rect.left
@@ -374,6 +376,7 @@ function createWindow(type: WindowType, centered = false) {
     ...(type === 'browser' ? { browserConfig: { url: 'http://localhost:3000' } } : {}),
     ...(type === 'chat' ? { chatConfig: { threadId: null } } : {}),
     ...(type === 'artboard' ? { artboardConfig: { artboard: null, device: 'desktop' as const } } : {}),
+    ...(type === 'moodboard' ? { moodboardConfig: { board: null } } : {}),
   }
 
   canvasStore.addWindow(workspaceId.value, win)
@@ -658,6 +661,7 @@ useEventListener(window, 'click', () => {
         <button class="canvas-start-action" @click="createWindow('browser', true)"><Globe :size="16" /> Browser</button>
         <button class="canvas-start-action" @click="createWindow('chat', true)"><MessageSquare :size="16" /> Chat</button>
         <button class="canvas-start-action" @click="createWindow('artboard', true)"><PenTool :size="16" /> Artboard</button>
+        <button class="canvas-start-action" @click="createWindow('moodboard', true)"><Images :size="16" /> Moodboard</button>
       </QEmptyState>
     </div>
 
@@ -768,6 +772,14 @@ useEventListener(window, 'click', () => {
         @click="createWindow('artboard')"
       >
         <span class="text-pink-400">&#9998;</span> New Design Artboard
+      </button>
+      <button
+        class="w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 hover:brightness-125"
+        :style="{ color: 'var(--qc-text)' }"
+        title="Reference images — drop or paste them; agents can see them"
+        @click="createWindow('moodboard')"
+      >
+        <span class="text-teal-400">&#9638;</span> New Moodboard
       </button>
       <button
         class="w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 hover:brightness-125"

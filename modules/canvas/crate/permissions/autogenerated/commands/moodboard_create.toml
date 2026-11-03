@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-moodboard-create"
+description = "Enables the moodboard_create command without any pre-configured scope."
+commands.allow = ["moodboard_create"]
+
+[[permission]]
+identifier = "deny-moodboard-create"
+description = "Denies the moodboard_create command without any pre-configured scope."
+commands.deny = ["moodboard_create"]

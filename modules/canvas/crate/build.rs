@@ -38,6 +38,14 @@ const COMMANDS: &[&str] = &[
     "design_comment_status",
     "design_comment_delete",
     "design_export",
+    "moodboard_list",
+    "moodboard_read",
+    "moodboard_create",
+    "moodboard_add",
+    "moodboard_caption",
+    "moodboard_reorder",
+    "moodboard_remove",
+    "moodboard_image",
 ];
 
 fn main() {

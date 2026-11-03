@@ -2883,6 +2883,47 @@
       }
     },
     {
+      "tool": "quantsuite.canvas.moodboard_list",
+      "module": "canvas",
+      "name": "moodboard_list",
+      "command": "plugin:canvas|moodboard_list",
+      "description": "The moodboards of a workspace: boards of reference images (screenshots of other apps, colours, sketches) the user collected on the QuantCanvas. Per board its id, name and number of images.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+          }
+        }
+      }
+    },
+    {
+      "tool": "quantsuite.canvas.moodboard_read",
+      "module": "canvas",
+      "name": "moodboard_read",
+      "command": "plugin:canvas|moodboard_read",
+      "description": "One moodboard: its images in the user's order, each with the image file's path and the user's caption. Open a path with your file/image reading tool to see the image.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+          },
+          "board": {
+            "type": "string",
+            "description": "The moodboard id (as moodboard_list shows it)."
+          }
+        },
+        "required": [
+          "board"
+        ]
+      }
+    },
+    {
       "tool": "quantsuite.console.run_command",
       "module": "console",
       "name": "run_command",

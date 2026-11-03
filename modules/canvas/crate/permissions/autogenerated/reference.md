@@ -43,6 +43,14 @@ Default permissions for the canvas module.
 - `allow-design-comment-status`
 - `allow-design-comment-delete`
 - `allow-design-export`
+- `allow-moodboard-list`
+- `allow-moodboard-read`
+- `allow-moodboard-create`
+- `allow-moodboard-add`
+- `allow-moodboard-caption`
+- `allow-moodboard-reorder`
+- `allow-moodboard-remove`
+- `allow-moodboard-image`
 
 ## Permission Table
 
@@ -725,6 +733,214 @@ Enables the load_canvas_state command without any pre-configured scope.
 <td>
 
 Denies the load_canvas_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-moodboard-add`
+
+</td>
+<td>
+
+Enables the moodboard_add command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-moodboard-add`
+
+</td>
+<td>
+
+Denies the moodboard_add command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-moodboard-caption`
+
+</td>
+<td>
+
+Enables the moodboard_caption command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-moodboard-caption`
+
+</td>
+<td>
+
+Denies the moodboard_caption command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-moodboard-create`
+
+</td>
+<td>
+
+Enables the moodboard_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-moodboard-create`
+
+</td>
+<td>
+
+Denies the moodboard_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-moodboard-image`
+
+</td>
+<td>
+
+Enables the moodboard_image command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-moodboard-image`
+
+</td>
+<td>
+
+Denies the moodboard_image command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-moodboard-list`
+
+</td>
+<td>
+
+Enables the moodboard_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-moodboard-list`
+
+</td>
+<td>
+
+Denies the moodboard_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-moodboard-read`
+
+</td>
+<td>
+
+Enables the moodboard_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-moodboard-read`
+
+</td>
+<td>
+
+Denies the moodboard_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-moodboard-remove`
+
+</td>
+<td>
+
+Enables the moodboard_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-moodboard-remove`
+
+</td>
+<td>
+
+Denies the moodboard_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-moodboard-reorder`
+
+</td>
+<td>
+
+Enables the moodboard_reorder command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-moodboard-reorder`
+
+</td>
+<td>
+
+Denies the moodboard_reorder command without any pre-configured scope.
 
 </td>
 </tr>

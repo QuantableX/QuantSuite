@@ -57,6 +57,15 @@ pub fn init() -> TauriPlugin<Wry> {
             commands::design::design_comment_status,
             commands::design::design_comment_delete,
             commands::design::design_export,
+            // Moodboards (round 3, card 07)
+            commands::moodboard::moodboard_list,
+            commands::moodboard::moodboard_read,
+            commands::moodboard::moodboard_create,
+            commands::moodboard::moodboard_add,
+            commands::moodboard::moodboard_caption,
+            commands::moodboard::moodboard_reorder,
+            commands::moodboard::moodboard_remove,
+            commands::moodboard::moodboard_image,
         ]))
         .setup(|app, _api| {
             use tauri::Manager;
