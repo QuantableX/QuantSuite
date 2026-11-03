@@ -204,8 +204,9 @@ def aggregates():
         'systemConfigs': {'rot': systems['rotation'], 'other': other,
                           'trio': {**systems['rotation'], 'endDate': '2021-03-31',
                                    'indicator': {'trend': 'aggregate', 'aggregate': ['k_mid2', 'k_fast', 'k_mid']}}}}), encoding='utf-8')
+    # The classic search (research mode): the robust pipeline has its own tests in test_robust_search.
     doc = lab.create({'kind': 'aggregates', 'title': 'Aggregates', 'config': systems['rotation'], 'top': 3, 'budget': 60,
-                      'seed': 3, 'restarts': ['2021-01-01', '2030-01-01'], 'system_name': 'Fixture rotation'})
+                      'pool': 'all', 'robust': False, 'seed': 3, 'restarts': ['2021-01-01', '2030-01-01'], 'system_name': 'Fixture rotation'})
     path = lab.folder(doc['id'])
     compare(path, lab.read(path / 'run.json'))
     doc = {**lab.read(path / 'run.json'), 'status': 'done'}
@@ -213,7 +214,8 @@ def aggregates():
     results = lab.read(path / 'results.json')
     page = render({**doc, 'status': 'done'}, results)
     # A second comparison with the same settings starts from the first one's leaders and keeps them.
-    again = lab.create({'kind': 'aggregates', 'title': 'Again', 'config': systems['rotation'], 'top': 3, 'budget': 20, 'seed': 9})
+    again = lab.create({'kind': 'aggregates', 'title': 'Again', 'config': systems['rotation'], 'top': 3, 'budget': 20,
+                        'pool': 'all', 'robust': False, 'seed': 9})
     compare(lab.folder(again['id']), lab.read(lab.folder(again['id']) / 'run.json'))
     second = lab.read(lab.folder(again['id']) / 'results.json')
     first_top = [tuple(r['members']) for r in sorted(results['rows'], key=lambda r: -r['metrics']['net_return_multiplier'])[:5]]

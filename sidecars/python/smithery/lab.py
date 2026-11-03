@@ -180,7 +180,8 @@ def create(request):
                         # The worker's frozen vault holds the price shelf only: the certified pool is
                         # decided here, where the user's Gauntlet evidence is visible, and recorded.
                         from .robust_search import certified_pool
-                        doc["pool_certified"] = certified_pool(doc["config"], doc.get("indicators") or None)
+                        doc["pool_certified"] = certified_pool(doc["config"], doc.get("indicators") or None,
+                                                              doc.get("reference") or None)
             validate_request(doc)
         save(path / "run.json", doc)
         return summary(path)
