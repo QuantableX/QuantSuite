@@ -24,6 +24,7 @@ import pickle
 import shutil
 import sys
 import time
+from collections import deque
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -422,15 +423,20 @@ class FastSystem:
         state[last < 0] = 0
         return state, g
 
-    def simulate(self, trials):
-        """Equity curves (trials × bars) and holdings of several trials (tuples of keys)."""
+    def simulate(self, trials, delay=0):
+        """Equity curves (trials × bars) and holdings of several trials (tuples of keys).
+
+        ``delay`` holds every decision back that many more bars before it is traded
+        (the robustness check's execution axis); 0 is the engine itself."""
         trials = [tuple(t) for t in trials]
         bad = sorted({k for t in trials for k in t if k in self.failed})
         if bad:
             raise ValueError(f"Unusable candidates: {bad}")
-        return self._simulate_single(trials) if self.single else self._simulate_rotation(trials)
+        if not isinstance(delay, int) or delay < 0:
+            raise ValueError("delay must be a whole number of bars, 0 or more")
+        return self._simulate_single(trials, delay) if self.single else self._simulate_rotation(trials, delay)
 
-    def _simulate_rotation(self, trials):
+    def _simulate_rotation(self, trials, delay=0):
         a = self.rotation
         T, P, N = len(self.dates), len(self.pairs), len(self.assets)
         onehot_a = np.zeros((P, N), dtype=np.float32)
@@ -449,10 +455,14 @@ class FastSystem:
             candidates = np.where(order >= 0, scores[rows, np.maximum(order, 0)], -1.0)
             best[i] = order[np.arange(T), candidates.argmax(axis=1)]  # first maximum = rank tie-break
             gates.append(self.groups[g].gate)
-        return self._walk(best, gates)
+        return self._walk(best, gates, delay)
 
-    def _walk(self, best, gates):
-        """The engine's bar loop, vectorized over trials, same float operations."""
+    def _walk(self, best, gates, delay=0):
+        """The engine's bar loop, vectorized over trials, same float operations.
+
+        With ``delay`` the pick decided at a bar's close waits ``delay`` more bars in a
+        queue before it becomes the pending order; 0 takes it at the next bar, as the
+        engine does."""
         a = self.rotation
         B, T = best.shape
         cash = len(self.assets) - 1
@@ -467,6 +477,7 @@ class FastSystem:
         curve = np.empty((B, T))
         held = np.empty((B, T), dtype=np.int64)
         returns, in_today, first_sym, has_syms = a["returns"], a["in_today"], a["first_sym"], a["has_syms"]
+        queue = deque()
         for t in range(T):
             # A pending coin that left the universe is exited.
             forced = (pending >= 0) & (pending != cash) & ~in_today[t, np.maximum(pending, 0)]
@@ -484,15 +495,20 @@ class FastSystem:
             curve[:, t] = equity
             held[:, t] = current
             if not has_syms[t]:
-                pending = np.full(B, cash, dtype=np.int64) if usd_in else current.copy()
+                decided = np.full(B, cash, dtype=np.int64) if usd_in else current.copy()
+            else:
+                decided = np.where(gated & (gate[:, t] != 1), cash, best[:, t])
+            if not delay:
+                pending = decided
                 continue
-            pending = np.where(gated & (gate[:, t] != 1), cash, best[:, t])
+            queue.append(decided)
+            pending = queue.popleft() if len(queue) > delay else np.full(B, NONE, dtype=np.int64)
         return curve, held
 
-    def _simulate_single(self, trials):
+    def _simulate_single(self, trials, delay=0):
         cost = (1.0 - self.config.fee_rate) * (1.0 - self.config.slippage_rate)
         factor = np.array([1.0, cost ** 1, cost ** 2])
-        prior = self.mpos - 1
+        prior = self.mpos - 1 - delay
         positions = np.zeros((len(trials), len(self.dates)), dtype=np.int64)
         for i, members in enumerate(trials):
             state, g = self.state(members)

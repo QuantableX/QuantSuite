@@ -32,6 +32,9 @@ def render(run, results):
     if kind == "aggregates":
         from .lab_report_aggregates import render as aggregates
         return aggregates(run, results)
+    if kind == "robustness":
+        from .lab_report_robustness import render as robustness
+        return robustness(run, results)
     # Runs written before the report templates keep their original page.
     data = json.dumps({"run": run, **results}, ensure_ascii=True, allow_nan=False).replace("<", "\\u003c")
     return LEGACY_TEMPLATE.replace("__TITLE__", html.escape(run["title"])).replace("__DATA__", data)
