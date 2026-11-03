@@ -1111,7 +1111,7 @@
       "module": "algo",
       "name": "research_gauntlet_overview",
       "command": "plugin:algo|research_gauntlet_overview",
-      "description": "Report tool 1/3: the Gauntlet report of the active library's existing native evidence, without re-testing. Per indicator: Standard and selected-per-track verdicts on 1h/4h/1d, worst-track overall score, p-values, five axes, walk-forward, parameters, CSV export. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. Poll quantsuite.script.research_read; the English report also opens in QuantScript → Forge → Research.",
+      "description": "Report tool 1/4: the Gauntlet report of the active library's existing native evidence, without re-testing. Per indicator: Standard and selected-per-track verdicts on 1h/4h/1d, worst-track overall score, p-values, five axes, walk-forward, parameters, CSV export. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. Poll quantsuite.script.research_read; the English report also opens in QuantScript → Forge → Research.",
       "sideEffects": "write",
       "inputSchema": {
         "type": "object",
@@ -1135,7 +1135,7 @@
       "module": "algo",
       "name": "research_profit_overview",
       "command": "plugin:algo|research_profit_overview",
-      "description": "Report tool 2/3: the most profitable single indicators and aggregates (2+ distinct base indicators) in a saved QuantSystems system, ranked by final capital against its current setup. Bulk evaluation identical to the native engine; every shown candidate is re-run natively. Report: rankings, capital curves, profit vs drawdown, annual returns, method. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. The report also opens in QuantScript → Forge → Research. Large libraries take a while (signals per indicator and pair); poll quantsuite.script.research_read and forge_jobs.",
+      "description": "Report tool 2/4: the most profitable single indicators and aggregates (2+ distinct base indicators) in a saved QuantSystems system, ranked by final capital against its current setup. Bulk evaluation identical to the native engine; every shown candidate is re-run natively. Report: rankings, capital curves, profit vs drawdown, annual returns, method. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. The report also opens in QuantScript → Forge → Research. Large libraries take a while (signals per indicator and pair); poll quantsuite.script.research_read and forge_jobs.",
       "sideEffects": "write",
       "inputSchema": {
         "type": "object",
@@ -1194,7 +1194,7 @@
       "module": "algo",
       "name": "research_aggregate_comparison",
       "command": "plugin:algo|research_aggregate_comparison",
-      "description": "Report tool 3/3: a variable-size aggregate search in a saved QuantSystems system against its current aggregate (or a given reference). Any size from two distinct base indicators; candidates are each indicator's general and 1d (track) version only. Stages fixed before results: the reference, its neighbours and two additions to it, the user's saved systems and the leaders of earlier comparisons with the same settings as starting points, all pairs, growth by size (every one-indicator extension of the best 200 of the size before, while bigger sizes improve), a small random sample, then local search until no single add, remove or swap improves the top 25 or the budget (default 5,000,000) ends; the report says which. Report: new leader vs current (capital and drawdown), top 10, best of each size, independent later starts, search coverage. Bulk evaluation identical to the native engine; the top 10 and the best small sizes are re-run natively. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html, the standalone HTML report's file; when the run is done (report_ready true), give the user that path. The report also opens in QuantScript → Forge → Research.",
+      "description": "Report tool 3/4: a variable-size aggregate search in a saved QuantSystems system, robust by default (docs/ROBUSTNESS.md): only indicators that pass the Indicator Gauntlet on the system's track under the current evaluation; every candidate scored by its WORST price world (saved candles, ±0.03% noise, another exchange, one day of delay) on a search window; its leaders confirmed on the blind years after it against random aggregates of the same size; the System Gauntlet on the best finalists. Only robust finalists are results to save as systems. pool='all' searches every indicator for research only; nothing of it counts as robust. Stages fixed before results: all pairs, growth by size, a small random sample, then local search until stable or the budget (default 5,000,000) ends. Creates a research run and starts it as a forge job; returns the run id at once. The answer, research_list and research_read carry report_html; when the run is done (report_ready true), give the user that path. The report also opens in QuantScript → Forge → Research.",
       "sideEffects": "write",
       "inputSchema": {
         "type": "object",
@@ -1255,9 +1255,80 @@
             },
             "description": "Later start dates for independent runs (default 2023-01-01, 2025-01-01)."
           },
+          "pool": {
+            "type": "string",
+            "enum": [
+              "robust",
+              "all"
+            ],
+            "description": "robust (default): only indicators certified under the current Gauntlet; all: research only, never robust."
+          },
+          "blind_days": {
+            "type": "integer",
+            "description": "Days at the end the search never sees (default 730; a third of a shorter history)."
+          },
+          "gauntlet_top": {
+            "type": "integer",
+            "description": "Walk-forward passers checked with the System Gauntlet (default 3)."
+          },
+          "venues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Other-exchange chain for the venue world (default okx, bybit, kucoin, coinbase; never binance, gate, mexc)."
+          },
           "seed": {
             "type": "integer",
             "description": "Search seed (default 42)."
+          }
+        }
+      }
+    },
+    {
+      "tool": "quantsuite.algo.research_robustness",
+      "module": "algo",
+      "name": "research_robustness",
+      "command": "plugin:algo|research_robustness",
+      "description": "Report tool 4/4: the System Gauntlet (docs/ROBUSTNESS.md) on a saved QuantSystems system or an explicit config — required before a backtest result is trusted, saved or traded. Six axes, each variant a native engine run on the frozen saved data, scored by the share of the base CAGR it keeps: parameters (member parameters ±15%, members left out or added, top N and market-filter lengths), time (later starts, eras, worst rolling two years), exchange (±0.03% candle noise, another exchange's candles), assets (top N ±2, without the largest coin), Monte Carlo (shuffled-days luck test, return bootstrap with 1- and 3-year loss risk) and execution (one-day delay, 2× fee). Verdict: robust, not robust (failed gates listed) or incomplete. fast=true is a quicker, coarser check. Creates a research run and starts it as a forge job; returns the run id at once. research_list carries each run's verdict; report_html is the standalone report, also shown in QuantScript → Forge → Research; the verdict shows in QuantSystems.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Report title, in English."
+          },
+          "system": {
+            "type": "string",
+            "description": "A saved system's name or id (QuantSystems)."
+          },
+          "config": {
+            "type": "object",
+            "description": "An explicit system config instead of a saved system."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD; default the system's start."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD before today; default yesterday."
+          },
+          "fast": {
+            "type": "boolean",
+            "description": "Quicker, coarser check (fewer variants)."
+          },
+          "venues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Other-exchange chain (default okx, bybit, kucoin, coinbase; never binance, gate, mexc)."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Seed (default 42)."
           }
         }
       }

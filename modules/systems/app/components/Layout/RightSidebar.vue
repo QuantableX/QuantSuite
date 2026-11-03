@@ -9,6 +9,7 @@ import { useActiveView } from '#systems/composables/useActiveView'
 import { aggregateName, useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
 import { sortByOptions } from '#systems/utils/indicatorOptions'
 import { effectiveCadence, matchesMarket } from '#systems/utils/systemMode'
+import RobustnessPanel from '#systems/components/Layout/RobustnessPanel.vue'
 
 const app = useAppStore()
 const systems = useSystemsStore()
@@ -83,6 +84,8 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
       <p class="qs-context__desc">{{ system?.description }}</p>
       <span class="qs-context__desc">{{ cfg.mode === 'single_asset' ? 'Single Asset' : 'Evaluation Rotation System' }}</span>
     </section>
+
+    <RobustnessPanel v-if="systemId" :system-id="systemId" />
 
     <section class="qs-context__section">
       <span class="label">Engine</span>

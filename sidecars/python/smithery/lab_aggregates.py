@@ -187,6 +187,10 @@ def run(path, doc):
                             "pool_gated": gated, "pool_excluded": len(excluded), "pool": len(usable),
                             "walk_forward": wf, "finalists": fin,
                             "robust_finalists": [f["members"] for f in fin if f["verdict"]["robust"]]}
+            save(path / "verdict.json", {"status": "robust" if robust_block["robust_finalists"] and gated else "not robust",
+                                         "robust": bool(robust_block["robust_finalists"]) and gated,
+                                         "robust_finalists": robust_block["robust_finalists"], "pool_gated": gated,
+                                         "walk_forward_passed": wf["passed"], "finalists": len(fin)})
             progress(f"Walk-forward: {wf['passed']} of {len(wf['leaders'])} leaders beat random aggregates on the blind "
                      f"window; {len(robust_block['robust_finalists'])} of {len(fin)} finalists are robust")
         verify = [t for t, _ in leaders] + [best[s][0] for s in sorted(best) if s <= 5]

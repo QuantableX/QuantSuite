@@ -106,7 +106,18 @@ def summary(path):
         doc = {**doc, "status": "interrupted", "error": "Worker stopped; partial evidence is preserved."}
     # The standalone HTML report's file: AI tools hand this path to the user once it is ready.
     report = path / "report.html"
-    return {**doc, "report_html": str(report), "report_ready": report.is_file()}
+    out = {**doc, "report_html": str(report), "report_ready": report.is_file()}
+    # A robustness verdict (or a robust search's finalists) travels with the run, so
+    # lists show it without reading the whole results (docs/ROBUSTNESS.md).
+    verdict = path / "verdict.json"
+    try:
+        if verdict.is_file():
+            out["verdict"] = read(verdict)
+        elif doc.get("kind") == "robustness" and (path / "results.json").is_file():
+            out["verdict"] = read(path / "results.json").get("verdict")  # runs from before verdict.json
+    except (OSError, ValueError):
+        pass
+    return out
 
 
 def list_runs():

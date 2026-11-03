@@ -482,6 +482,7 @@ pub fn init() -> TauriPlugin<Wry> {
             smithery::research_gauntlet_overview,
             smithery::research_profit_overview,
             smithery::research_aggregate_comparison,
+            smithery::research_robustness,
             smithery::smithery_cancel,
             smithery::smithery_jobs,
             smithery::smithery_process_logs,
