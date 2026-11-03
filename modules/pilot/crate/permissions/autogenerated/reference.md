@@ -121,6 +121,7 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-icon-clear`
 - `allow-pilot-new-thread-setup`
 - `allow-pilot-thread-apply-setup`
+- `allow-pilot-thread-move-to-project`
 - `allow-pilot-restart-interrupted`
 - `allow-pilot-thread-set-parent`
 - `allow-pilot-agent-crew-dispatch`
@@ -4161,6 +4162,32 @@ Enables the pilot_thread_life command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_life command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-move-to-project`
+
+</td>
+<td>
+
+Enables the pilot_thread_move_to_project command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-move-to-project`
+
+</td>
+<td>
+
+Denies the pilot_thread_move_to_project command without any pre-configured scope.
 
 </td>
 </tr>

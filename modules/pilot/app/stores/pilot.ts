@@ -11,7 +11,7 @@
 import { dailyStorageCleanup } from '#pilot/utils/storage'
 import { defineStore } from 'pinia'
 import { navigateTo } from '#app'
-import { bus } from '@quantsuite/core'
+import { bus, registerWorkspacePath } from '@quantsuite/core'
 import { pilot } from '#pilot/utils/invoke'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
@@ -415,6 +415,26 @@ export const usePilotStore = defineStore('pilot/pilot', {
       const i = this.sessions.findIndex((s) => s.id === meta.id)
       if (i >= 0) this.sessions[i] = meta
       else this.sessions.unshift(meta)
+    },
+
+    /**
+     * Round 3, card 01: a General thread moves into a project (its side
+     * chats with it). `folder` registers a new folder first — without
+     * switching the suite's active workspace. Returns how the conversation
+     * continues, or throws the reason it cannot move.
+     */
+    async moveToProject(id: string, target: { contextId: string } | { folder: string }): Promise<'fresh' | 'kept' | 'recap'> {
+      let contextId = 'contextId' in target ? target.contextId : ''
+      if ('folder' in target) {
+        const ws = await registerWorkspacePath(target.folder)
+        await this.refreshContexts()
+        contextId = ws.id
+      }
+      const moved = await pilot<{ thread: SessionMeta; continuity: 'fresh' | 'kept' | 'recap'; sideChats: SessionMeta[] }>('plugin:pilot|pilot_thread_move_to_project', { id, contextId })
+      if (!moved) throw new Error('QuantPilot is not running.')
+      this.upsertSession(moved.thread)
+      for (const s of moved.sideChats) this.upsertSession(s)
+      return moved.continuity
     },
 
     patchSession(id: string, patch: Partial<SessionMeta>) {

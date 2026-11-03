@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Copy,
   FolderGit2,
+  FolderInput,
   Pencil,
   Pin,
   PinOff,
@@ -30,6 +31,7 @@ import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useThreadStore } from '#pilot/stores/thread'
 import { inHours, parseDuration, parseTags, tomorrowAt, wakeLabel } from '#pilot/utils/sidebar'
 import { threadReference } from '#pilot/utils/format'
+import { pickFolder } from '#pilot/utils/pickFolder'
 import type { SessionMeta } from '#pilot/types'
 
 const props = defineProps<{ thread: SessionMeta; x: number; y: number }>()
@@ -126,6 +128,26 @@ const items = computed<Item[]>(() => {
       children: [
         { id: 'fork-here', label: 'In this checkout', run: () => { const i = forkFrom(); if (i) void useThreadStore().fork(t.id, i, false) } },
         { id: 'fork-worktree', label: 'Into a new worktree', run: () => { const i = forkFrom(); if (i) void useThreadStore().fork(t.id, i, true) } },
+      ],
+    })
+  }
+  // Round 3, card 01: a General thread moves into a project (its side chats with it).
+  if (t.contextId === 'general' && !t.parentId && t.kind === 'chat') {
+    const move = async (target: { contextId: string } | { folder: string }) => {
+      try {
+        await store.moveToProject(t.id, target)
+      } catch (e) {
+        sidebar.error = String(e instanceof Error ? e.message : e)
+      }
+    }
+    const projects = store.contexts.filter((c) => c.kind === 'workspace')
+    list.push({
+      id: 'move',
+      label: 'Move to a project',
+      icon: FolderInput,
+      children: [
+        ...projects.map((c) => ({ id: `move-${c.id}`, label: c.name, run: () => void move({ contextId: c.id }) })),
+        { id: 'move-folder', label: 'Choose a folder…', run: () => void pickFolder('Move the thread into this folder').then((folder) => { if (folder) void move({ folder }) }) },
       ],
     })
   }

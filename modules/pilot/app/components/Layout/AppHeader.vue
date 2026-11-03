@@ -12,7 +12,9 @@ import { computed, nextTick, ref } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useGitStore } from '#pilot/stores/git'
 import { useDrawerStore } from '#pilot/stores/drawer'
-import { SquareKanban, SquareTerminal } from 'lucide-vue-next'
+import { FolderInput, SquareKanban, SquareTerminal } from 'lucide-vue-next'
+import { pickFolder } from '#pilot/utils/pickFolder'
+import { useSidebarStore } from '#pilot/stores/sidebar'
 import { modeLabel } from '#pilot/utils/format'
 import { useKeysStore } from '#pilot/stores/keys'
 import { useAppStore } from '#pilot/stores/app'
@@ -28,6 +30,29 @@ const drawer = useDrawerStore()
 const keys = useKeysStore()
 const prs = computed(() => (session.value ? (git.links[session.value.id] ?? []).filter((l) => l.kind === 'pr' || l.kind === 'issue') : []))
 const session = computed(() => store.active)
+
+// Round 3, card 01: a General thread's project chip moves it into a project.
+const moveOpen = ref(false)
+const canMove = computed(() => session.value?.contextId === 'general' && !session.value?.parentId && session.value?.kind === 'chat')
+const moveOptions = computed(() => [
+  ...store.contexts.filter((c) => c.kind === 'workspace').map((c) => ({ id: c.id, label: c.name, description: c.path })),
+  { id: '__folder', label: 'Choose a folder…' },
+])
+async function moveTo(target: string) {
+  moveOpen.value = false
+  const s = session.value
+  if (!s) return
+  try {
+    if (target === '__folder') {
+      const folder = await pickFolder('Move the thread into this folder')
+      if (folder) await store.moveToProject(s.id, { folder })
+    } else {
+      await store.moveToProject(s.id, { contextId: target })
+    }
+  } catch (e) {
+    useSidebarStore().error = String(e instanceof Error ? e.message : e)
+  }
+}
 const live = computed(() => store.activeLive)
 const cards = computed(() => (session.value ? (git.links[session.value.id] ?? []).filter((l) => l.kind === 'card') : []))
 
@@ -100,7 +125,11 @@ async function end() {
         <button v-else class="qp-title" :title="session.title || 'Untitled — click to rename'" @click="startEdit">
           {{ session.title || 'New thread' }}
         </button>
-        <span class="qp-head-chip" :title="session.cwd">{{ session.contextName }}</span>
+        <span v-if="canMove" class="qp-head-move">
+          <button class="qp-head-chip is-move" :class="{ on: moveOpen }" title="Move this thread into a project" @click="moveOpen = !moveOpen"><FolderInput :size="11" />{{ session.contextName }}</button>
+          <div v-if="moveOpen" class="qp-head-move-pop"><PilotThreadMenuList :options="moveOptions" selected="" title="Move to a project" @pick="moveTo" @close="moveOpen = false" /></div>
+        </span>
+        <span v-else class="qp-head-chip" :title="session.cwd">{{ session.contextName }}</span>
         <span class="qp-head-chip is-provider" :title="live.display || undefined"><PilotAgentIcon :agent="session.provider || null" :size="12" decorative /><span class="qp-head-chip-text">{{ store.adapterLabel(session.provider) }}</span></span>
         <span v-if="model" class="qp-head-chip" :title="`Model: ${model}`">{{ model }}</span>
         <span class="qp-head-chip" title="Permission mode">{{ modeLabel(session.mode) }}</span>
@@ -170,6 +199,11 @@ async function end() {
   width: 280px;
   outline: none;
 }
+.qp-head-move { position: relative; display: inline-flex; }
+.qp-head-move-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; }
+.qp-head-chip.is-move { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; background: transparent; font: inherit; font-size: 11px; }
+.qp-head-chip.is-move:hover,
+.qp-head-chip.is-move.on { color: var(--qss-text, #d4d4d8); border-color: var(--qss-border, #47474f); }
 .qp-head-chip {
   font-size: 11px;
   color: var(--qss-text-secondary, #9a9aa5);

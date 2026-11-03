@@ -638,6 +638,17 @@ impl Database {
         Ok(())
     }
 
+    /// The thread moved into another project (round 3, card 01): its folder,
+    /// in the project's checkout.
+    pub fn set_context_of(&self, id: &str, context_id: &str, context_name: &str, cwd: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE threads SET context_id = ?2, context_name = ?3, cwd = ?4, workspace_mode = 'local', worktree_path = NULL WHERE id = ?1",
+            params![id, context_id, context_name, cwd],
+        )?;
+        Ok(())
+    }
+
     pub fn set_tags(&self, id: &str, tags: &[String]) -> rusqlite::Result<()> {
         let conn = self.lock();
         conn.execute("UPDATE threads SET tags = ?2 WHERE id = ?1", params![id, serde_json::to_string(&clean_tags(tags)).unwrap_or_else(|_| "[]".into())])?;

@@ -1062,6 +1062,7 @@ pub fn init() -> TauriPlugin<Wry> {
             pilot_agent_icon_clear,
             threads::pilot_new_thread_setup,
             threads::pilot_thread_apply_setup,
+            threads::pilot_thread_move_to_project,
             threads::pilot_restart_interrupted,
             threads::pilot_thread_set_parent,
             crew::pilot_agent_crew_dispatch,

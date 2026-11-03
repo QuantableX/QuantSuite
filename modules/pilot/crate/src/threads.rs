@@ -2540,6 +2540,125 @@ fn claude_session_file(sid: &str) -> Option<PathBuf> {
     std::fs::read_dir(root.join("projects")).ok()?.flatten().map(|d| d.path().join(format!("{sid}.jsonl"))).find(|p| p.is_file())
 }
 
+/// Claude Code's folder name for a working directory's sessions: every
+/// character that is not an ASCII letter or digit becomes `-`
+/// (`C:\a b\.x` → `C--a-b--x`).
+pub(crate) fn claude_project_dir(cwd: &str) -> String {
+    cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
+}
+
+/// A Claude session follows its thread into another folder: Claude resumes
+/// from `<config>/projects/<folder of the cwd>/<id>.jsonl`, so the session
+/// file is copied there (the original stays). `false` when there is none.
+fn carry_claude_session(sid: &str, cwd: &str) -> bool {
+    let Some(src) = claude_session_file(sid) else {
+        return false;
+    };
+    let root = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home().join(".claude"));
+    let dir = root.join("projects").join(claude_project_dir(cwd));
+    let dst = dir.join(format!("{sid}.jsonl"));
+    dst.is_file() || (std::fs::create_dir_all(&dir).is_ok() && std::fs::copy(&src, &dst).is_ok())
+}
+
+/// How a moved thread's conversation continues in the new folder.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Continuity {
+    /// Nothing started at the provider yet.
+    Fresh,
+    /// The provider resumes its own session there.
+    Kept,
+    /// A new provider session; the next message brings the conversation (handoff).
+    Recap,
+}
+
+/// Why a thread cannot move (round 3, card 01), if it cannot.
+pub(crate) fn move_refusal(meta: &ThreadMeta, running: bool, tui: bool) -> Option<&'static str> {
+    if meta.context_id != contexts::GENERAL_ID {
+        Some("Only a thread in General moves into a project.")
+    } else if meta.parent_id.is_some() {
+        Some("A side chat goes with its main thread — move that one.")
+    } else if meta.worktree_path.is_some() {
+        Some("A thread in a worktree stays where its worktree is.")
+    } else if running {
+        Some("Wait for the agent to finish (or stop it) before moving the thread.")
+    } else if tui {
+        Some("Close the terminal session first.")
+    } else {
+        None
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Moved {
+    pub thread: ThreadMeta,
+    pub continuity: Continuity,
+    /// Its side chats, moved along.
+    pub side_chats: Vec<ThreadMeta>,
+}
+
+/// Round 3, card 01: a General thread moves into a project. The transcript
+/// stays; the next turn runs in the project folder. Claude's session file is
+/// copied into the folder's session directory and Codex resumes by id; other
+/// agents start a new session there and the next message brings the
+/// conversation along (the handoff of an agent switch). Its side chats follow.
+#[tauri::command(async)]
+pub fn pilot_thread_move_to_project(app: AppHandle, state: State<'_, PilotState>, id: String, context_id: String) -> Result<Moved, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let all = state.db.list_sessions().map_err(|e| e.to_string())?;
+    let sides: Vec<ThreadMeta> = all.into_iter().filter(|t| t.parent_id.as_deref() == Some(id.as_str())).collect();
+    let busy = |t: &ThreadMeta| state.runtime.active_turn(&t.id).is_some();
+    let tui = |t: &ThreadMeta| lock(&state.tui).contains_key(&t.id);
+    if let Some(why) = move_refusal(&meta, busy(&meta), tui(&meta)) {
+        return Err(why.into());
+    }
+    if sides.iter().any(|s| busy(s) || tui(s)) {
+        return Err("A side chat of this thread is still working — wait for it first.".into());
+    }
+    let ctx = contexts::resolve(&app, &context_id)
+        .filter(|c| c.kind == "workspace")
+        .ok_or("That project is not registered.")?;
+    if !Path::new(&ctx.path).is_dir() {
+        return Err(format!("{} is not a folder on this machine.", ctx.path));
+    }
+    let continuity = move_one(&state, &meta, &ctx)?;
+    let mut moved_sides = Vec::new();
+    for side in &sides {
+        move_one(&state, side, &ctx)?;
+        if let Some(t) = state.db.get_session(&side.id).map_err(|e| e.to_string())? {
+            moved_sides.push(t);
+        }
+    }
+    let thread = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    Ok(Moved { thread, continuity, side_chats: moved_sides })
+}
+
+fn move_one(state: &PilotState, meta: &ThreadMeta, ctx: &contexts::Context) -> Result<Continuity, String> {
+    // A warm process still works in the old folder.
+    state.runtime.stop(&meta.id);
+    let sid = meta.provider_session_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let continuity = match (meta.provider.as_str(), sid) {
+        (_, None) => Continuity::Fresh,
+        ("claude", Some(s)) if carry_claude_session(s, &ctx.path) => Continuity::Kept,
+        ("codex", Some(_)) => Continuity::Kept,
+        _ => Continuity::Recap,
+    };
+    state.db.set_context_of(&meta.id, &ctx.id, &ctx.name, &ctx.path).map_err(|e| e.to_string())?;
+    let label = label_of(state, &meta.provider);
+    if continuity == Continuity::Recap && state.db.user_messages(&meta.id).unwrap_or(0) > 0 {
+        let _ = state.db.clear_provider_session(&meta.id);
+        state.db.set_handoff(&meta.id, Some(&json!({ "from": label, "reason": "move" }).to_string())).map_err(|e| e.to_string())?;
+    }
+    let text = match continuity {
+        Continuity::Kept => format!("Moved to {} — the conversation continues there.", ctx.name),
+        Continuity::Recap => format!("Moved to {} — {label} starts a new session there; the next message brings the conversation along.", ctx.name),
+        Continuity::Fresh => format!("Moved to {}.", ctx.name),
+    };
+    state.runtime.append_item(&meta.id, &last_turn(state, &meta.id), ItemKind::Notice, json!({ "text": text }));
+    Ok(continuity)
+}
+
 /// Codex's rollout file: `<home>/sessions/YYYY/MM/DD/rollout-…-<id>.jsonl`, newest days first.
 fn codex_rollout_file(sid: &str) -> Option<PathBuf> {
     let root = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".codex")).join("sessions");
@@ -3223,6 +3342,27 @@ pub fn codex_limits(app: &AppHandle, state: &PilotState) -> Result<Vec<crate::ev
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_names_a_session_folder_after_the_path() {
+        assert_eq!(claude_project_dir("C:\\Projects\\QuantSuite"), "C--Projects-QuantSuite");
+        assert_eq!(claude_project_dir("C:/Users/root/.quantsuite/hello world qa"), "C--Users-root--quantsuite-hello-world-qa");
+        assert_eq!(claude_project_dir("/home/u/my.app"), "-home-u-my-app");
+    }
+
+    #[test]
+    fn only_a_quiet_general_thread_moves_into_a_project() {
+        let general = test_meta();
+        assert_eq!(move_refusal(&general, false, false), None);
+        assert!(move_refusal(&general, true, false).is_some_and(|w| w.contains("finish")));
+        assert!(move_refusal(&general, false, true).is_some_and(|w| w.contains("terminal")));
+        let project = crate::db::ThreadMeta { context_id: "core:workspace:abc".into(), ..test_meta() };
+        assert!(move_refusal(&project, false, false).is_some_and(|w| w.contains("General")));
+        let side = crate::db::ThreadMeta { parent_id: Some("main".into()), ..test_meta() };
+        assert!(move_refusal(&side, false, false).is_some_and(|w| w.contains("main thread")));
+        let wt = crate::db::ThreadMeta { worktree_path: Some("C:/wt".into()), ..test_meta() };
+        assert!(move_refusal(&wt, false, false).is_some_and(|w| w.contains("worktree")));
+    }
 
     #[test]
     fn titles_come_from_the_first_meaningful_line() {

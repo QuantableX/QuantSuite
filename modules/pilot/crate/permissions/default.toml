@@ -120,6 +120,7 @@ permissions = [
   "allow-pilot-agent-icon-clear",
   "allow-pilot-new-thread-setup",
   "allow-pilot-thread-apply-setup",
+  "allow-pilot-thread-move-to-project",
   "allow-pilot-restart-interrupted",
   "allow-pilot-thread-set-parent",
   "allow-pilot-agent-crew-dispatch",
