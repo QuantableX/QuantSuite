@@ -3021,3 +3021,10 @@ global rule leaves alone. Measured: the empty thread with the lively face 1.2 %
 of a core. Also: the inset main area got its top margin (it touched the header).
 Checks: mascot tests 6, test:pilot, check:ts, css, isolation, components; QA
 frames of every quirk in artifacts/mascot-friendly (quirks-sheet2.png).
+
+Follow-up (card a92dd66e): no slight squint while working (eyes stay round, a
+look down at the work; the user: "leicht zukneifen … sehr gruselig"); the
+nod-off closes in one slow move instead of holding half shut. A click is one
+boing (WAAPI, composite add, squash → stretch → settle, ends where it started)
+with ^^ eyes for 1.2 s and no hop; a cheer hops once, so it never stops mid-air
+(the old click snapped back after 0.26 s and cut its second hop).
