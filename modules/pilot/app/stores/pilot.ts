@@ -115,6 +115,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
     terminalShown: {} as Record<string, boolean>,
     /** The user's own agents' images, id → data URL (round 2, card 01). */
     agentImages: {} as Record<string, string>,
+    /** Where Settings opens from the agent menu: the agent's card, a project's settings (round 2, card 02). */
+    settingsFocus: null as { agent?: string; project?: string } | null,
   }),
 
   getters: {
@@ -137,6 +139,15 @@ export const usePilotStore = defineStore('pilot/pilot', {
         const s = state.settings
         if (!s) return null
         return (contextId ? s.projects?.[contextId]?.provider : null) || s.defaultProvider || 'claude'
+      }
+    },
+    /** The model and effort a new thread with `agent` gets in `contextId`: the project's pin, else the remembered one. */
+    newThreadSetup(state): (contextId: string | null | undefined, agent: string) => { model: string; effort: string } {
+      return (contextId, agent) => {
+        const s = state.settings
+        const model = (contextId ? s?.projects?.[contextId]?.model?.[agent] : '') || s?.model?.[agent] || ''
+        // Only Claude Code and Codex take an effort; the others ignore it (round 2, card 02).
+        return { model, effort: agent === 'claude' || agent === 'codex' ? s?.effort ?? '' : '' }
       }
     },
     adapterReady(): (id: string) => boolean {
@@ -233,6 +244,13 @@ export const usePilotStore = defineStore('pilot/pilot', {
       return saved
     },
 
+    /** Settings → Providers on `agent`, or a project's own settings ("Off in this project"). */
+    openAgentSettings(agent?: string, project?: string | null) {
+      this.settingsFocus = { agent, project: project ?? undefined }
+      const section = project ? 'general' : 'providers'
+      window.dispatchEvent(new CustomEvent('qss:settings', { detail: { module: 'pilot', section } }))
+    },
+
     async loadAgentImages() {
       const map = await pilot<Record<string, string>>('plugin:pilot|pilot_agent_icons')
       if (map) this.agentImages = map
@@ -276,6 +294,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
         title?: string
         provider?: string
         model?: string
+        effort?: string
+        fast?: boolean
         workspaceMode?: 'local' | 'worktree'
         baseBranch?: string
         worktreePath?: string
@@ -416,7 +436,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
 
     /** Title, model, effort or mode; model, effort and mode apply from the next turn. */
-    async update(id: string, patch: { title?: string; provider?: string; model?: string; effort?: string; mode?: Mode }) {
+    async update(id: string, patch: { title?: string; provider?: string; model?: string; effort?: string; mode?: Mode; fast?: boolean }) {
       try {
         const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_update', { id, ...patch })
         if (meta) this.upsertSession(meta)

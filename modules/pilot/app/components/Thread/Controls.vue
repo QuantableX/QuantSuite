@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * The controls row under the message box (docs/PLAN-QUANTPILOT.md §6,
- * card 5): agent and model (Ctrl+Shift+M), effort (Ctrl+Shift+E),
+ * card 5): agent, model, effort and fast mode in the agent menu (round 2,
+ * card 02; Ctrl+Shift+M), effort alone (Ctrl+Shift+E),
  * permission mode (Ctrl+Shift+A), the context meter (click: Compact
  * context) and the usage-limit chip.
  *
@@ -17,7 +18,8 @@ import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useKeysStore } from '#pilot/stores/keys'
 import { useCommands } from '#pilot/utils/commands'
-import { compactTokens, effortsFor, MODES, modesFor, type MenuOption, type ProviderOption } from '#pilot/utils/models'
+import { compactTokens, effortsFor, MODES, modesFor, type MenuOption } from '#pilot/utils/models'
+import type { AgentSetup } from '#pilot/utils/agentMenu'
 import { formatDuration } from '#pilot/utils/timeline'
 import type { Mode, ProviderCatalog } from '#pilot/types'
 
@@ -59,19 +61,9 @@ async function loadCatalog(id = provider.value, refresh = false) {
 
 /** Another agent takes an idle conversation along (card 15); a running one keeps its agent. */
 const started = computed(() => Boolean(thread.value?.providerSessionId) || running.value || Boolean(view.value?.items.some((i) => i.kind === 'user')))
-const providers = computed<ProviderOption[]>(() =>
-  store.adapters
-    // Every agent with a chat protocol (card 20): Claude, Codex, the ACP agents, pi and omp.
-    .filter((a) => a.chat ?? (a.id === 'claude' || a.id === 'codex'))
-    .filter((a) => a.id === provider.value || !store.settings?.providers?.[a.id]?.disabled)
-    .map((a) => {
-      if (a.found === false) return { id: a.id, label: a.label, available: false, reason: `${a.label} is not installed` }
-      if (running.value && a.id !== provider.value) {
-        return { id: a.id, label: a.label, available: false, reason: `${store.adapterLabel(provider.value)} is working — switch when it is done` }
-      }
-      return { id: a.id, label: a.label, available: true }
-    })
-)
+/** While a turn runs the thread keeps its agent; the menu says why the others wait. */
+const locked = computed(() => (running.value ? 'Working — switch when done' : null))
+const modelBtn = ref<HTMLElement | null>(null)
 
 /** The agents of a fan-out (card 10), one logo each in the control. */
 const fanAgents = computed(() => [...new Set((threads.fanout[props.threadId] ?? []).map((m) => m.provider))])
@@ -145,17 +137,25 @@ function close() {
   emit('done')
 }
 
-async function pickModel(picked: string, model: string) {
+/** The agent menu's pick: agent, model, effort and fast mode in one update. */
+async function pickSetup(s: AgentSetup) {
   close()
-  if (!thread.value) return
-  const switching = picked !== provider.value
-  if (!switching && model === thread.value.model) return
-  if (await store.update(props.threadId, switching ? { provider: picked, model } : { model })) {
+  const t = thread.value
+  if (!t) return
+  const switching = s.provider !== provider.value
+  const patch: { provider?: string; model?: string; effort?: string; fast?: boolean } = {}
+  if (switching) patch.provider = s.provider
+  if (switching || s.model !== t.model) patch.model = s.model
+  if (s.effort !== (t.effort || '')) patch.effort = s.effort
+  if (s.fast !== Boolean(t.fast)) patch.fast = s.fast
+  if (!Object.keys(patch).length) return
+  if (await store.update(props.threadId, patch)) {
+    // A new model or effort is also remembered for new threads (not fast mode: it costs more).
     const remembered = { ...(store.settings?.model ?? {}) }
-    if (model) remembered[picked] = model
-    else delete remembered[picked]
-    void store.saveSettings({ model: remembered }, { quiet: true })
-    if (switching) await loadCatalog(picked)
+    if (s.model) remembered[s.provider] = s.model
+    else delete remembered[s.provider]
+    void store.saveSettings({ model: remembered, ...(patch.effort !== undefined ? { effort: s.effort } : {}) }, { quiet: true })
+    if (switching) await loadCatalog(s.provider)
   }
 }
 
@@ -179,6 +179,8 @@ async function compact() {
 
 function onDocDown(e: MouseEvent) {
   if (!open.value) return
+  // The agent menu is teleported to the body; it closes itself.
+  if ((e.target as Element | null)?.closest?.('[data-agent-menu], [data-agent-submenu]')) return
   if (root.value && !root.value.contains(e.target as Node)) open.value = null
 }
 /** `/model` and `/permissions` in the composer open these pickers. */
@@ -208,7 +210,7 @@ useCommands({
 <template>
   <div ref="root" class="qp-ctl">
     <span class="qp-ctl-anchor">
-      <button class="qp-ctl-btn" :class="{ on: open === 'model' }" :title="keys.hint('modelPicker.toggle', 'Model')" @click.stop="toggle('model')">
+      <button ref="modelBtn" class="qp-ctl-btn" :class="{ on: open === 'model' }" :title="keys.hint('modelPicker.toggle', 'Agent and model')" aria-haspopup="menu" :aria-expanded="open === 'model'" @click.stop="toggle('model')">
         <span v-if="fanAgents.length > 1" class="qp-ctl-stack">
           <PilotAgentIcon v-for="id in fanAgents" :key="id" :agent="id" :size="13" />
         </span>
@@ -216,25 +218,26 @@ useCommands({
         <span class="qp-ctl-text">{{ store.adapterLabel(provider) }}</span>
         <span class="qp-ctl-sep">·</span>
         <span class="qp-ctl-text">{{ modelLabel }}</span>
+        <span v-if="thread?.fast" class="qp-ctl-fast" title="Fast mode">Fast</span>
         <ChevronDown :size="12" />
       </button>
-      <div v-if="open === 'model'" class="qp-ctl-pop">
-        <PilotThreadModelPicker
-          :providers="providers"
-          :provider="provider"
-          :model="thread?.model ?? ''"
-          :catalog="catalog"
-          :loading="catalogLoading"
-          :error="catalogError"
-          @pick="pickModel"
-          @close="close"
-          @provider="(id: string) => loadCatalog(id)"
-          :multi="threads.fanout[threadId] ?? []"
-          :allow-multi="!started"
-          @multi="setFanout"
-          @refresh="loadCatalog(provider, true)"
-        />
-      </div>
+      <PilotAgentMenu
+        v-if="open === 'model'"
+        :anchor="modelBtn"
+        prefer="above"
+        title="Agent and model"
+        :provider="provider"
+        :model="thread?.model ?? ''"
+        :effort="thread?.effort ?? ''"
+        :fast="Boolean(thread?.fast)"
+        :project="thread?.contextId ?? null"
+        :locked="locked"
+        :allow-multi="!started"
+        :multi="threads.fanout[threadId] ?? []"
+        @multi="setFanout"
+        @pick="pickSetup"
+        @close="close"
+      />
     </span>
 
     <span v-if="efforts === null || efforts.length" class="qp-ctl-anchor">
@@ -318,6 +321,7 @@ useCommands({
 .qp-ctl-text { overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .qp-ctl-sep { opacity: 0.6; }
 .qp-ctl-stack { display: inline-flex; align-items: center; gap: 2px; }
+.qp-ctl-fast { font-size: 10.5px; padding: 0 5px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--qss-warning, #d29a3f) 60%, transparent); color: var(--qss-warning, #d29a3f); }
 .qp-ctl-spacer { flex: 1; }
 .qp-ctl-limit {
   font-size: 11px;

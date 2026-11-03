@@ -8,12 +8,14 @@
  * it instead of leaving the canvas.
  */
 import { computed, onMounted, ref, watch } from 'vue'
+import { ChevronDown } from 'lucide-vue-next'
 import { v4 as uuidv4 } from 'uuid'
 import { invoke } from '@tauri-apps/api/core'
 import type { CanvasWindow, FilePreviewKind } from '../../../shared/types'
 import { useCanvasStore } from '../../../stores/canvas'
 import { useWorkspacesStore } from '../../../stores/workspaces'
 import { usePilotStore } from '#pilot/stores/pilot'
+import type { AgentSetup } from '#pilot/utils/agentMenu'
 
 const props = defineProps<{ window: CanvasWindow }>()
 const canvasStore = useCanvasStore()
@@ -56,11 +58,15 @@ function attach(id: string | null) {
   canvasStore.updateWindow(workspaceId.value, props.window.id, { chatConfig: { threadId: id } })
 }
 
-async function newThread() {
+/** ▾ beside "New thread": QuantPilot's agent menu (round 2, card 02). */
+const newMore = ref<HTMLElement | null>(null)
+const menuOpen = ref(false)
+async function newThread(setup?: AgentSetup) {
+  menuOpen.value = false
   busy.value = true
   error.value = ''
   try {
-    const t = await invoke<{ id: string }>('plugin:pilot|pilot_thread_create', { req: { contextId: context.value } })
+    const t = await invoke<{ id: string }>('plugin:pilot|pilot_thread_create', { req: { contextId: context.value, ...(setup ?? {}) } })
     await pilot.refreshSessions()
     attach(t.id)
   } catch (e) {
@@ -110,7 +116,11 @@ function keepKeys(e: KeyboardEvent) {
     <PilotEmbedChat v-if="threadId && !missing" :thread-id="threadId" :host="host" />
     <div v-else class="canvas-chat__pick">
       <p v-if="missing" class="canvas-chat__note">The thread of this window no longer exists. Start another or pick one.</p>
-      <button class="canvas-chat__new" :disabled="busy" @click="newThread">{{ busy ? 'Starting…' : 'New thread in this workspace' }}</button>
+      <span class="canvas-chat__newgroup">
+        <button class="canvas-chat__new" :disabled="busy" @click="newThread()">{{ busy ? 'Starting…' : 'New thread in this workspace' }}</button>
+        <button ref="newMore" class="canvas-chat__new canvas-chat__more" :disabled="busy" title="With another agent or model" aria-haspopup="menu" :aria-expanded="menuOpen" @click.stop="menuOpen = !menuOpen"><ChevronDown :size="13" /></button>
+      </span>
+      <PilotAgentMenu v-if="menuOpen" :anchor="newMore" title="New thread with" :project="context" @pick="newThread" @close="menuOpen = false" />
       <p v-if="error" class="canvas-chat__err">{{ error }}</p>
       <input v-model="filter" class="canvas-chat__filter" placeholder="Or pick a QuantPilot thread…" aria-label="Find a thread" />
       <div class="canvas-chat__list" role="listbox">
@@ -129,6 +139,9 @@ function keepKeys(e: KeyboardEvent) {
 .canvas-chat__pick { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px; font-size: 12.5px; color: var(--qss-text, #d4d4d8); }
 .canvas-chat__new { align-self: flex-start; padding: 6px 12px; border: 1px solid var(--qss-accent, #7aa2f7); border-radius: 7px; background: transparent; color: var(--qss-text, #d4d4d8); font: inherit; cursor: pointer; }
 .canvas-chat__new:disabled { opacity: 0.5; cursor: default; }
+.canvas-chat__newgroup { display: inline-flex; align-self: flex-start; }
+.canvas-chat__newgroup .canvas-chat__new:first-child { border-radius: 7px 0 0 7px; }
+.canvas-chat__more { display: inline-flex; align-items: center; padding: 6px 8px; border-left: none; border-radius: 0 7px 7px 0; }
 .canvas-chat__filter { height: 28px; padding: 0 8px; border: 1px solid var(--qss-border, #47474f); border-radius: 6px; background: var(--qss-bg, #18181e); color: inherit; font: inherit; }
 .canvas-chat__list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 .canvas-chat__row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 8px; border: none; border-radius: 6px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }

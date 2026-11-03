@@ -30,6 +30,8 @@ export interface SessionMeta {
   /** `chat` = a V3 thread; `terminal` = a V2 session row (continues as a chat on its first message). */
   kind: 'chat' | 'terminal'
   effort: string
+  /** Claude Code's fast mode (round 2, card 02). */
+  fast?: boolean
   titleSource: 'auto' | 'user'
   /** The last known state, saved: `idle` | `running` | `waiting` | `error` | `interrupted` | `limited`. */
   state: string
@@ -749,6 +751,8 @@ export interface ModelInfo {
   description: string
   resolvedModel: string | null
   efforts: string[]
+  /** The CLI offers its fast mode for this model (round 2, card 02). */
+  fast?: boolean
 }
 
 export interface CommandInfo {

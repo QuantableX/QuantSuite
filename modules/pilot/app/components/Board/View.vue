@@ -16,6 +16,7 @@ import { useAppStore } from '#pilot/stores/app'
 import { useGitStore } from '#pilot/stores/git'
 import { cardPrompt, GENERAL_BOARD, threadsByCard } from '#pilot/utils/board'
 import { pilot } from '#pilot/utils/invoke'
+import type { AgentSetup } from '#pilot/utils/agentMenu'
 import { saveDrafts, useDrafts } from '#pilot/utils/drafts'
 
 const store = usePilotStore()
@@ -53,12 +54,12 @@ const drafts = useDrafts()
 
 const starting = ref<string | null>(null)
 const error = ref('')
-async function start(card: KanbanCard) {
+async function start(card: KanbanCard, setup?: AgentSetup) {
   if (starting.value) return
   starting.value = card.id
   error.value = ''
   try {
-    const meta = await store.createThread({ contextId: card.workspace_id, title: card.title })
+    const meta = await store.createThread({ contextId: card.workspace_id, title: card.title, ...(setup ?? {}) })
     if (!meta) {
       error.value = store.lastError || 'The thread could not be created.'
       return
@@ -102,7 +103,7 @@ onMounted(() => {
             :open-id="panelId"
             :starting="starting === card.id"
             @open="(id: string) => { app.boardCard = card.id; openPanel(id) }"
-            @start="start(card)"
+            @start="(setup?: AgentSetup) => start(card, setup)"
           />
         </template>
       </QDrawerKanban>
