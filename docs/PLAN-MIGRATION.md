@@ -32,7 +32,7 @@ Measured 2026-11-03: the data root holds over 200 GB, and almost all of it is `w
 | QuantMCP: kanban boards, agent runs, server list | `modules/mcp/` (`kanban.db`, `agent-runs.db`, `mcps.json`) | Must; `indexes/` optional (rebuildable); `*.legacy*`, `*.bak` never |
 | Memory vaults | `modules/memory/` (`memory.db`, `vault/`, `workspaces/`) | Must; `engine/` per machine (1.3 GB) |
 | QuantCanvas | `modules/canvas/` (`workspaces.json`, `browser-data.json`) | Must; `bin/` per machine |
-| Per-workspace private data | `workspaces/<id>/` | Must (small); `artifacts/` optional, off by default — over 250 GB of agent scratch here, re-creatable; ticked per workspace or per subfolder |
+| Per-workspace private data | `workspaces/<id>/` | Must (small); `artifacts/` optional, off by default — over 250 GB here, nearly all re-creatable agent scratch; ticked per workspace or per subfolder. Worth ticking: the small folders that hold kept tools and revert points (`indicator-versions/`, `aggregate-playbook/`, `qa-native/`, `quantmcp-http-client/`, under 600 MB together) |
 | Logs | `logs/` | Optional, off by default |
 | Secrets | the vault ([PLAN-AUTO-EXECUTION.md](PLAN-AUTO-EXECUTION.md) §2.1) | Must, re-encrypted |
 | Release signing key | `signing/quantsuite.key` | Never by default; opt-in only if releases are built on the new machine |
