@@ -63,11 +63,17 @@ const agents = computed(() =>
   }),
 )
 
-/** What picking the agent's row starts with: the thread's own setup, else a new thread's. */
+/** What picking the agent's row starts with: the thread's own setup, else a new thread's (the one resolver, card 03). */
 function setupOf(id: string): AgentSetup {
   if (id === props.provider && props.model !== undefined) return { provider: id, model: props.model, effort: props.effort ?? '', fast: props.fast }
   const s = store.newThreadSetup(props.project, id)
   return { provider: id, model: s.model, effort: s.effort, fast: false }
+}
+/** The project pins this agent or its model: shown as the project's. */
+function pinnedHere(id: string): boolean {
+  if (id === props.provider && props.model !== undefined) return false
+  const s = store.setups[props.project || 'general']
+  return Boolean(s?.agents[id]?.modelPinned || (s?.provider === id && s.pinned.includes('provider')))
 }
 function names(id: string): Record<string, string> {
   const out: Record<string, string> = {}
@@ -339,6 +345,7 @@ onMounted(() => {
   document.addEventListener('pointerdown', onDocDown, true)
   window.addEventListener('resize', onResize)
   if (!store.status) void store.refreshStatus()
+  void store.loadSetup(props.project)
   // The rows' setups name models: the catalogs of the usable agents load in the background (cached).
   for (const r of agents.value) if (r.state.usable && (r.setup.model || r.a.id === props.provider)) void loadCatalog(r.a.id)
   void nextTick(async () => {
@@ -381,6 +388,7 @@ onBeforeUnmount(() => {
           <Check v-if="r.a.id === provider && r.state.usable" class="qp-am-check" :size="13" />
           <template v-if="r.state.usable">
             <span class="qp-am-setup" :title="setupText(r.setup)">{{ setupText(r.setup) }}</span>
+            <span v-if="pinnedHere(r.a.id)" class="qp-am-pin" title="This project's setting (Settings → General → this project)">project</span>
             <button class="qp-am-more" tabindex="-1" :aria-label="`${r.a.label}: models and effort`" @click.stop="openSub(r.a.id, true)">
               <ChevronRight :size="13" />
             </button>
@@ -510,6 +518,7 @@ onBeforeUnmount(() => {
 .qp-am-check { flex-shrink: 0; color: var(--qss-accent, #7aa2f7); }
 .qp-am-setup,
 .qp-am-reason { flex: 1; min-width: 0; text-align: right; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-am-pin { flex-shrink: 0; padding: 0 5px; border-radius: 999px; border: 1px solid var(--qss-border-subtle, #35353d); font-size: 10.5px; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-am-reason { color: color-mix(in srgb, var(--qss-warning, #d29a3f) 80%, var(--qss-text-muted, #6e6e7a)); }
 .qp-am-more,
 .qp-am-fix {

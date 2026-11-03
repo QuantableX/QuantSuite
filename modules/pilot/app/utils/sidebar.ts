@@ -31,6 +31,20 @@ export interface Sections {
 }
 
 /** A saved thread state (`state`) as the row's status. */
+/**
+ * A thread New thread may open again instead of making another (round 2,
+ * card 03): a chat nobody wrote in, not titled, not settled or snoozed.
+ */
+export function isUntouchedDraft(
+  t: { kind: string; providerSessionId: string | null; title: string; settledAt: number | null; snoozedUntil: number | null },
+  view: { loaded: boolean; items: unknown[] } | undefined,
+  now: number,
+): boolean {
+  if (t.kind !== 'chat' || t.providerSessionId || t.title.trim() || t.settledAt) return false
+  if (t.snoozedUntil && t.snoozedUntil > now) return false
+  return !view?.loaded || view.items.length === 0
+}
+
 export function rowStatus(state: string | null | undefined): RowStatus {
   switch (state) {
     case 'running':

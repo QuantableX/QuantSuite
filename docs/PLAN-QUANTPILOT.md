@@ -2327,3 +2327,70 @@ high window (menu above the composer, submenu full height with scroll);
 fan-out of three models by Shift-click; the QuantCanvas chat window's ▾.
 A live turn with fast mode was not run (it bills at a higher rate) — the
 flag is covered by the launch-argument test.
+
+## 38. Round 2 · 03/12: new threads keep the last setup (bug)
+
+Card 81db2359. New thread, its menu, Start on a board card and the
+QuantCanvas chat window started with Settings' defaults, and New thread
+reopened an empty draft with whatever it was made with — never with what
+the user had just picked.
+
+**One resolver.** `Settings::new_thread_setup(project, available, label)`
+(settings.rs) answers "what does a new thread here start with", value by
+value: the project's pin → the user's last pick → Settings → General. It
+returns agent, model and effort (both per agent), permissions, Local or
+Worktree and the base branch (per project), which values the project
+pins, every agent's model/effort (the agent menu's rows) and a notice
+when the agent wanted is not available. `threads::create` uses it for
+every way in (sidebar +, its ▾ menu, Ctrl+N, Ctrl+Alt+N, board Start,
+GitHub issue/PR starters, QuantCanvas, fork and agent `start_thread` —
+explicit values in a request still win); the menus read it through
+`pilot_new_thread_setup`, so they show exactly what the thread gets.
+
+**The last pick (`Settings.sticky`).** Recorded by the app itself, not the
+page: `pilot_thread_update` (agent, model and effort per agent,
+permissions), `pilot_thread_set_workspace` (Local/Worktree, the base per
+project) and a menu pick that creates a thread (`remember`). Fast mode is
+never carried over. Saving Settings keeps the app's record (the page's
+copy may be older) — but a default changed in Settings → General
+(agent, permissions, Work in) or a default model/effort in Providers
+starts over from that value, so the change shows on the next thread
+(`Settings::merged_into`). General explains it in one line.
+
+**Drafts.** New thread opens an untouched draft (a chat nobody wrote in,
+untitled, not settled, not snoozed — `isUntouchedDraft`) instead of making
+another, and `pilot_thread_apply_setup` first gives it the current setup
+or the one just picked, so it never shows stale choices; a thread that
+has started is never changed. There is no "move a draft to another
+project" in QuantPilot; a new thread in another project gets the same
+last pick.
+
+**Fallback.** When the agent wanted is not installed, turned off in
+Settings, off in this project or gone, the thread starts with the
+default (or the first offered agent) and its composer says so until the
+first message: "pi is turned off in Settings — this thread starts with
+Claude Code." (Dismiss). The project's own values carry a *project* tag in
+the agent menu.
+
+**Agents starting threads.** `quantsuite.pilot.start_thread` keeps its
+rule — the caller's agent and permissions, no more — and takes the model
+and effort for that agent from the resolver.
+
+**Checks.** clippy clean; pilot `cargo test` 233 passed (new: the layered
+resolver incl. per-agent model/effort and per-project base, pins named;
+fallback reasons and notices; saving Settings keeps or restarts the last
+pick); `npm run check:ts`; `npm run test:pilot` 106 passed (draft reuse
+rules).
+
+**Native QA matrix** (isolated QA app, `artifacts/quantpilot-r2-03/`):
+thread A in "hello world qa" changed to Sonnet + high, Plan, Worktree →
+sidebar +, the ▾ menu (row and pick), Ctrl+N, Ctrl+Alt+N (no project),
+board Start and the QuantCanvas chat window all started with Sonnet ·
+high · Plan · Worktree; + twice reopened the same untouched draft; after
+picking Opus + medium in A the draft opened with Opus + medium; a project
+pin (Claude · Haiku · Supervised) won and showed *project*; pi as the last
+agent, then turned off → Claude with the notice in the composer; a full
+app restart gave the identical setup and notice. GitHub starters use the
+same `create` (the QA project has no GitHub remote) and `start_thread`
+needs a running agent's token; both are covered by the shared path, not
+run natively. The QA profile was set back afterwards.

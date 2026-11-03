@@ -33,6 +33,8 @@ const sidebar = useSidebarStore()
 const drafts = useDrafts()
 
 const current = computed(() => github.repos.find((r) => r.contextId === github.selected) ?? null)
+// The Agent review button shows the agent a new thread here starts with (round 2, card 03).
+watch(() => current.value?.contextId, (id) => void (id && store.loadSetup(id)), { immediate: true })
 const pulls = computed(() => (current.value ? github.pulls[current.value.contextId] : undefined))
 const issues = computed(() => (current.value ? github.issues[current.value.contextId] : undefined))
 const repoThreads = computed(() =>

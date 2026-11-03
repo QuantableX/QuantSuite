@@ -119,6 +119,8 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-icons`
 - `allow-pilot-agent-icon-set`
 - `allow-pilot-agent-icon-clear`
+- `allow-pilot-new-thread-setup`
+- `allow-pilot-thread-apply-setup`
 - `allow-pilot-provider-update`
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
@@ -2329,6 +2331,32 @@ Denies the pilot_messages_search command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-new-thread-setup`
+
+</td>
+<td>
+
+Enables the pilot_new_thread_setup command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-new-thread-setup`
+
+</td>
+<td>
+
+Denies the pilot_new_thread_setup command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-open-data-dir`
 
 </td>
@@ -3518,6 +3546,32 @@ Enables the pilot_thread_answer command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_answer command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-apply-setup`
+
+</td>
+<td>
+
+Enables the pilot_thread_apply_setup command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-apply-setup`
+
+</td>
+<td>
+
+Denies the pilot_thread_apply_setup command without any pre-configured scope.
 
 </td>
 </tr>

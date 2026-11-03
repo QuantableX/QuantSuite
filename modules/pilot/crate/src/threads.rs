@@ -48,6 +48,37 @@ pub struct CreateThread {
     pub(crate) base_branch: Option<String>,
     /// An existing worktree to work in ("New thread in this worktree").
     pub(crate) worktree_path: Option<String>,
+    /// The user picked this setup in a menu: new threads start with it from
+    /// now on (round 2, card 03).
+    pub(crate) remember: Option<bool>,
+}
+
+/// Whether an agent's CLI can start here (installed or set in Settings).
+fn agent_available(settings: &Settings, id: &str) -> bool {
+    adapters::find(settings, id).is_some_and(|a| providers::resolve(&a, settings).is_some())
+}
+
+fn agent_label(settings: &Settings, id: &str) -> String {
+    adapters::find(settings, id).map(|a| a.label).unwrap_or_else(|| id.to_string())
+}
+
+/// The one defaults resolver (round 2, card 03): what a new thread in
+/// `project` starts with — the project's pin, else the user's last choice,
+/// else Settings.
+pub(crate) fn new_setup(settings: &Settings, project: &str) -> settings::NewSetup {
+    settings.new_thread_setup(project, &|id| agent_available(settings, id), &|id| agent_label(settings, id))
+}
+
+/// Keep the user's choice for the next new thread (round 2, card 03).
+pub(crate) fn remember(state: &PilotState, f: impl FnOnce(&mut settings::Sticky)) {
+    let mut s = lock(&state.settings);
+    let before = s.sticky.clone();
+    f(&mut s.sticky);
+    if s.sticky != before {
+        if let Err(e) = settings::write(&state.data_dir, &s) {
+            eprintln!("[pilot] could not save the last setup: {e}");
+        }
+    }
 }
 
 #[tauri::command(async)]
@@ -60,11 +91,25 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
     let settings = lock(&state.settings).clone();
     let context_id = req.context_id.unwrap_or_else(|| contexts::GENERAL_ID.into());
     let ctx = contexts::resolve(app, &context_id).ok_or_else(|| format!("unknown context '{context_id}'"))?;
-    // What the request leaves open comes from the settings: default → project (card 19).
-    let defaults = settings.defaults_for(&ctx.id);
-    let provider = req.provider.unwrap_or_else(|| defaults.provider.clone());
+    // What the request leaves open: the project's pin, else the user's last
+    // choice, else Settings — one resolver for every way in (round 2, card 03).
+    let setup = new_setup(&settings, &ctx.id);
+    let explicit = req.provider.is_some();
+    let provider = req.provider.clone().unwrap_or_else(|| setup.provider.clone());
     if !settings.is_chat_provider(&provider) {
         return Err(format!("'{provider}' cannot run a chat thread yet"));
+    }
+    let own = setup.agent(&provider);
+    if req.remember == Some(true) {
+        remember(state, |st| {
+            st.provider = provider.clone();
+            if let Some(m) = req.model.as_deref() {
+                st.model.insert(provider.clone(), m.trim().to_string());
+            }
+            if let Some(e) = req.effort.as_deref() {
+                st.effort.insert(provider.clone(), e.trim().to_string());
+            }
+        });
     }
     let stamp = now();
     let title = req.title.unwrap_or_default().trim().to_string();
@@ -74,7 +119,13 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         (Some(_), _) => "worktree".to_string(),
         (None, _) if !in_repo => "local".to_string(),
         (None, Some(m)) if matches!(m, "local" | "worktree") => m.to_string(),
-        (None, _) => defaults.workspace.clone(),
+        (None, _) => setup.workspace.clone(),
+    };
+    // A new worktree starts from the base the user chose last in this project.
+    let base_branch = match req.base_branch.as_deref().map(str::trim) {
+        Some(b) => b.to_string(),
+        None if workspace_mode == "worktree" && worktree.is_none() => setup.base_branch.clone(),
+        None => String::new(),
     };
     let wt_branch = worktree.as_deref().and_then(|p| git::repo_info(Path::new(p))).map(|r| r.branch).unwrap_or_default();
     // Fast mode only where the agent has it: Claude Code (round 2, card 02).
@@ -85,12 +136,13 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         provider_session_id: None,
         title_source: if title.is_empty() { "auto".into() } else { "user".into() },
         fast,
+        notice: None,
         title,
         context_id: ctx.id,
         context_name: ctx.name,
         cwd: worktree.clone().unwrap_or(ctx.path),
-        model: req.model.unwrap_or_default().trim().to_string(),
-        mode: req.mode.filter(|m| settings::valid_mode(m)).unwrap_or(defaults.mode),
+        model: req.model.map(|m| m.trim().to_string()).unwrap_or(own.model),
+        mode: req.mode.filter(|m| settings::valid_mode(m)).unwrap_or(setup.mode),
         created_at: stamp,
         updated_at: stamp,
         cost_usd: 0.0,
@@ -98,7 +150,7 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         output_tokens: 0,
         last_error: None,
         kind: "chat".into(),
-        effort: req.effort.unwrap_or_default().trim().to_string(),
+        effort: req.effort.map(|e| e.trim().to_string()).unwrap_or(own.effort),
         state: "idle".into(),
         context_tokens: None,
         context_window: None,
@@ -109,12 +161,77 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         snoozed_until: None,
         auto_settle: true,
         workspace_mode,
-        base_branch: req.base_branch.unwrap_or_default().trim().to_string(),
+        base_branch,
         branch: wt_branch,
         worktree_path: worktree,
     };
     state.db.insert_session(&meta).map_err(|e| e.to_string())?;
-    Ok(meta)
+    // The fallback is said where it happened: in the new thread's composer.
+    Ok(ThreadMeta { notice: if explicit { None } else { setup.notice }, ..meta })
+}
+
+/// What a new thread in `context_id` starts with (round 2, card 03): the
+/// menus show it, so they never claim another setup than the thread gets.
+#[tauri::command(async)]
+pub fn pilot_new_thread_setup(app: AppHandle, state: State<'_, PilotState>, context_id: Option<String>) -> Result<settings::NewSetup, String> {
+    let settings = lock(&state.settings).clone();
+    let id = context_id.unwrap_or_else(|| contexts::GENERAL_ID.into());
+    let ctx = contexts::resolve(&app, &id).ok_or_else(|| format!("unknown context '{id}'"))?;
+    Ok(new_setup(&settings, &ctx.id))
+}
+
+/// An untouched draft that New thread opens again takes the current setup —
+/// the user's last choice and the project's pins — plus what the request
+/// names (round 2, card 03). A thread that has started is never changed.
+#[tauri::command(async)]
+pub fn pilot_thread_apply_setup(state: State<'_, PilotState>, id: String, req: CreateThread) -> Result<ThreadMeta, String> {
+    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    if meta.kind != "chat" || meta.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty()) || state.runtime.active_turn(&id).is_some() || state.db.user_messages(&id).unwrap_or(0) > 0 {
+        return Err("This thread has started — start a new one for another setup.".into());
+    }
+    let settings = lock(&state.settings).clone();
+    let setup = new_setup(&settings, &meta.context_id);
+    let explicit = req.provider.is_some();
+    let provider = req.provider.clone().unwrap_or_else(|| setup.provider.clone());
+    if !settings.is_chat_provider(&provider) {
+        return Err(format!("'{provider}' cannot run a chat thread yet"));
+    }
+    let own = setup.agent(&provider);
+    let model = req.model.as_deref().map(str::trim).map(str::to_string).unwrap_or(own.model);
+    let effort = req.effort.as_deref().map(str::trim).map(str::to_string).unwrap_or(own.effort);
+    let mode = req.mode.clone().filter(|m| settings::valid_mode(m)).unwrap_or(setup.mode.clone());
+    let fast = req.fast.unwrap_or(false) && provider == "claude";
+    let db = |r: rusqlite::Result<()>| r.map_err(|e| e.to_string());
+    state.db.set_provider(&id, &provider).map_err(|e| e.to_string())?;
+    db(state.db.set_model(&id, &model))?;
+    db(state.db.set_effort(&id, &effort))?;
+    db(state.db.set_mode(&id, &mode))?;
+    db(state.db.set_fast(&id, fast))?;
+    // Local or worktree, and the base, unless the draft already works in a worktree.
+    if meta.worktree_path.is_none() {
+        let project = context_of(&meta).path;
+        if git::repo_info(Path::new(&project)).is_some() {
+            let ws = req.workspace_mode.clone().filter(|w| matches!(w.as_str(), "local" | "worktree")).unwrap_or(setup.workspace.clone());
+            let base = if ws == "worktree" { req.base_branch.clone().unwrap_or(setup.base_branch.clone()) } else { String::new() };
+            if ws != meta.workspace_mode || base.trim() != meta.base_branch.trim() {
+                let cwd = (ws == "local").then_some(project.as_str());
+                db(state.db.set_workspace(&id, &ws, base.trim(), "", None, cwd))?;
+            }
+        }
+    }
+    if req.remember == Some(true) {
+        remember(&state, |st| {
+            st.provider = provider.clone();
+            if req.model.is_some() {
+                st.model.insert(provider.clone(), model.clone());
+            }
+            if req.effort.is_some() {
+                st.effort.insert(provider.clone(), effort.clone());
+            }
+        });
+    }
+    let after = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    Ok(ThreadMeta { notice: if explicit { None } else { setup.notice }, ..after })
 }
 
 #[derive(Serialize)]
@@ -1130,6 +1247,17 @@ pub fn pilot_thread_set_workspace(
         .db
         .set_workspace(&id, &mode, base_branch.as_deref().unwrap_or("").trim(), &branch, reuse.as_deref(), cwd.as_deref())
         .map_err(|e| e.to_string())?;
+    // Local or worktree, and the base in this project, for the next new thread (round 2, card 03).
+    if reuse.is_none() {
+        remember(&state, |st| {
+            st.workspace = mode.clone();
+            if mode == "worktree" {
+                if let Some(b) = base_branch.as_deref() {
+                    st.base_branch.insert(meta.context_id.clone(), b.trim().to_string());
+                }
+            }
+        });
+    }
     state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or_else(|| "unknown thread".into())
 }
 
@@ -2736,6 +2864,23 @@ pub fn pilot_thread_update(
         state.db.set_mode(&id, m).map_err(|e| e.to_string())?;
     }
     let after = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    // What the user picks here is what the next new thread starts with (round 2, card 03).
+    if provider.is_some() || model.is_some() || effort.is_some() || mode.is_some() {
+        remember(&state, |st| {
+            if provider.is_some() {
+                st.provider = after.provider.clone();
+            }
+            if let Some(m) = model.as_deref() {
+                st.model.insert(after.provider.clone(), m.trim().to_string());
+            }
+            if let Some(e) = effort.as_deref() {
+                st.effort.insert(after.provider.clone(), e.trim().to_string());
+            }
+            if let Some(m) = mode.as_deref() {
+                st.mode = m.to_string();
+            }
+        });
+    }
     let new_mode = mode.as_deref().filter(|m| *m != before.mode);
     let new_model = model.as_deref().map(str::trim).filter(|m| *m != before.model.trim());
     // Effort cannot switch live: a process started with the old one must not

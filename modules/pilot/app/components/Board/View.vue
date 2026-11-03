@@ -59,7 +59,7 @@ async function start(card: KanbanCard, setup?: AgentSetup) {
   starting.value = card.id
   error.value = ''
   try {
-    const meta = await store.createThread({ contextId: card.workspace_id, title: card.title, ...(setup ?? {}) })
+    const meta = await store.createThread({ contextId: card.workspace_id, title: card.title, ...(setup ?? {}), remember: Boolean(setup) })
     if (!meta) {
       error.value = store.lastError || 'The thread could not be created.'
       return

@@ -15,6 +15,7 @@ import { useGitStore } from '#pilot/stores/git'
 import {
   dropExpired,
   inverse,
+  isUntouchedDraft,
   latestUndo,
   needsRespacing,
   pushUndo,
@@ -345,14 +346,8 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
     emptyDraft(contextId: string): SessionMeta | null {
       const store = usePilotStore()
       const threads = useThreadStore()
-      return (
-        store.sessions.find((s) => {
-          if (s.contextId !== contextId || s.kind !== 'chat' || this.hidden[s.id]) return false
-          if (s.providerSessionId || s.title.trim() || s.settledAt) return false
-          const v = threads.views[s.id]
-          return !v?.loaded || v.items.length === 0
-        }) ?? null
-      )
+      const now = Date.now()
+      return store.sessions.find((s) => s.contextId === contextId && !this.hidden[s.id] && isUntouchedDraft(s, threads.views[s.id], now)) ?? null
     },
 
     /** Ctrl+N: the filtered project, else the open thread's; Ctrl+Alt+N: General (no project). */
@@ -364,13 +359,14 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
         : opts.contextId ?? this.projectFilter ?? store.active?.contextId ?? 'general'
       const draft = this.emptyDraft(contextId)
       if (draft) {
-        // The untouched draft takes the picked setup instead of a second empty thread.
-        if (opts.setup) await store.update(draft.id, opts.setup)
+        // The untouched draft never shows stale choices: it takes the current
+        // setup, or the one just picked (round 2, card 03).
+        const meta = await store.applySetup(draft.id, opts.setup)
         await store.openSession(draft.id)
-        return draft
+        return meta ?? draft
       }
-      // Agent, permissions and workspace come from the settings: default → project (card 19).
-      return store.createThread({ contextId, ...(opts.setup ?? {}) })
+      // The one resolver: the project's pins, else the last choice, else Settings (round 2, card 03).
+      return store.createThread({ contextId, ...(opts.setup ?? {}), remember: Boolean(opts.setup) })
     },
 
     /** Open the thread `step` rows away in screen order (Ctrl+Shift+[ / ]). */
