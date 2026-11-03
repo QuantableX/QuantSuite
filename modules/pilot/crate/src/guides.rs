@@ -337,7 +337,7 @@ fn ask(settings: &Settings, provider: &str, model: &str, instance: &str, prompt:
     }
     let mut cmd = providers::base_cmd(Path::new(&exe.program));
     cmd.args(&exe.prefix).args(&args).current_dir(&tmp);
-    cmd.envs(settings.launch_env_for(provider, instance));
+    let mut cmd = providers::with_env(cmd, &settings.launch_env_for(provider, instance));
     cmd.env("PATH", qs_core::system_path::current());
     let r = providers::run_with_input(cmd, Some(prompt.to_string()), TIMEOUT);
     let answer = if provider == "codex" { std::fs::read_to_string(&out_file).unwrap_or_default() } else { String::new() };

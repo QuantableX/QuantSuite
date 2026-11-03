@@ -30,6 +30,22 @@ pub fn current() -> OsString {
     std::env::var_os("PATH").unwrap_or_default()
 }
 
+/// A variable as the system has it — the user's value, else the machine's,
+/// expanded — not as this process inherited it. A terminal that started the
+/// suite may have set its own (Orca points `CODEX_HOME` at its account
+/// folders); an agent's sign-in must not follow that. Elsewhere it is the
+/// inherited value.
+#[cfg(windows)]
+pub fn system_var(name: &str) -> Option<String> {
+    let var = |n: &str| std::env::var(n).ok();
+    registry::user_var(name).or_else(|| registry::machine_var(name)).map(|v| expand(&v, var)).filter(|v| !v.trim().is_empty())
+}
+
+#[cfg(not(windows))]
+pub fn system_var(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
 #[cfg(windows)]
 mod registry {
     const MACHINE: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
@@ -40,6 +56,14 @@ mod registry {
 
     pub(super) fn user_path() -> Option<String> {
         windows_registry::CURRENT_USER.open("Environment").and_then(|key| key.get_string("Path")).ok()
+    }
+
+    pub(super) fn user_var(name: &str) -> Option<String> {
+        windows_registry::CURRENT_USER.open("Environment").and_then(|key| key.get_string(name)).ok()
+    }
+
+    pub(super) fn machine_var(name: &str) -> Option<String> {
+        windows_registry::LOCAL_MACHINE.open(MACHINE).and_then(|key| key.get_string(name)).ok()
     }
 }
 

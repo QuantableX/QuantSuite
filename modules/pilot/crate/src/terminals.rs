@@ -124,6 +124,7 @@ impl Drawer {
         label: &str,
         program: &str,
         args: Vec<String>,
+        env: Vec<(String, String)>,
         size: (Option<u16>, Option<u16>),
     ) -> Result<DrawerTerm, String> {
         let console = app.try_state::<ConsoleState>().ok_or("the console is not running")?;
@@ -138,7 +139,7 @@ impl Drawer {
                 rows: size.1,
                 owner: Some(OWNER.into()),
                 args,
-                env: vec![("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned())],
+                env,
             },
         )?;
         let term = DrawerTerm {

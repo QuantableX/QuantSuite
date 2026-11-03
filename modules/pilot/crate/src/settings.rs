@@ -212,6 +212,32 @@ pub struct Instance {
     pub home: String,
 }
 
+/// What the default account's login folder variable must be, given what the
+/// suite inherited and what the system has: nothing to do when they agree;
+/// else the system's value, or the inherited one removed (`-NAME`). A
+/// terminal that started the suite (Orca sets `CODEX_HOME` to its own
+/// account folders) must not decide which login an agent uses.
+pub fn home_fix(var: &str, inherited: Option<&str>, system: Option<&str>) -> Option<(String, String)> {
+    let inherited = inherited.map(str::trim).filter(|v| !v.is_empty());
+    let system = system.map(str::trim).filter(|v| !v.is_empty());
+    if inherited.map(|v| v.replace('/', "\\").to_lowercase()) == system.map(|v| v.replace('/', "\\").to_lowercase()) {
+        return None;
+    }
+    Some(match system {
+        Some(v) => (var.to_string(), v.to_string()),
+        None => (format!("-{var}"), String::new()),
+    })
+}
+
+/// [`home_fix`] for this process, both variables (agents started without
+/// the settings' environment: helper runs, title writing).
+pub fn system_homes() -> Vec<(String, String)> {
+    ["CODEX_HOME", "CLAUDE_CONFIG_DIR"]
+        .into_iter()
+        .filter_map(|v| home_fix(v, std::env::var(v).ok().as_deref(), qs_core::system_path::system_var(v).as_deref()))
+        .collect()
+}
+
 /// The variable that points an agent's CLI at another config home.
 pub fn home_var(provider: &str) -> Option<&'static str> {
     match provider {
@@ -727,12 +753,18 @@ impl Settings {
     }
 
     /// A thread's environment: the agent's, plus its account's config home.
-    /// The default account keeps whatever the suite's environment says.
+    /// The default account signs in as the PC does: its login folder variable
+    /// as the system has it (see [`home_fix`]), unless set in these settings.
     pub fn launch_env_for(&self, provider: &str, instance: &str) -> Vec<(String, String)> {
         let mut env = self.launch_env(provider);
-        if let (Some(var), Some(i)) = (home_var(provider), self.instance(provider, instance)) {
+        let Some(var) = home_var(provider) else {
+            return env;
+        };
+        if let Some(i) = self.instance(provider, instance) {
             env.retain(|(k, _)| k != var);
             env.push((var.to_string(), i.home.clone()));
+        } else if !env.iter().any(|(k, _)| k == var) {
+            env.extend(home_fix(var, std::env::var(var).ok().as_deref(), qs_core::system_path::system_var(var).as_deref()));
         }
         env
     }
@@ -788,6 +820,25 @@ mod tests {
     }
 
     #[test]
+    fn the_default_account_signs_in_as_the_pc_does() {
+        // A terminal that started the suite pointed CODEX_HOME at an empty folder: the agent gets it removed.
+        assert_eq!(home_fix("CODEX_HOME", Some("C:/orca/acc/home"), None), Some(("-CODEX_HOME".into(), String::new())));
+        // The user set it for Windows: the agent gets that, whatever the terminal had.
+        assert_eq!(home_fix("CODEX_HOME", Some("C:/orca/acc/home"), Some("D:/codex")), Some(("CODEX_HOME".into(), "D:/codex".into())));
+        assert_eq!(home_fix("CODEX_HOME", None, Some("D:/codex")), Some(("CODEX_HOME".into(), "D:/codex".into())));
+        // Inherited and system agree (slashes and case aside), or neither is set: nothing to change.
+        assert_eq!(home_fix("CODEX_HOME", Some("d:\\Codex"), Some("D:/codex")), None);
+        assert_eq!(home_fix("CLAUDE_CONFIG_DIR", None, None), None);
+        assert_eq!(home_fix("CLAUDE_CONFIG_DIR", Some("  "), None), None);
+        // A value set in QuantPilot's settings wins over the system's.
+        let mut s = Settings::default();
+        s.env.insert("CODEX_HOME".into(), "E:/mine".into());
+        let env = s.launch_env_for("codex", "");
+        assert_eq!(env.iter().filter(|(k, _)| k.trim_start_matches('-') == "CODEX_HOME").count(), 1);
+        assert!(env.contains(&("CODEX_HOME".to_string(), "E:/mine".to_string())));
+    }
+
+    #[test]
     fn instances_need_an_agent_with_a_home_and_point_it_there() {
         let s = Settings {
             instances: vec![
@@ -804,7 +855,7 @@ mod tests {
         assert_eq!(s.instances[0], Instance { id: "work".into(), provider: "claude".into(), label: "work".into(), home: "C:/claude-work".into() });
         assert!(s.launch_env_for("claude", "work").contains(&("CLAUDE_CONFIG_DIR".to_string(), "C:/claude-work".to_string())));
         assert!(s.launch_env_for("codex", "work").contains(&("CODEX_HOME".to_string(), "C:/codex-work".to_string())));
-        assert!(!s.launch_env_for("claude", "").iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"), "the default account keeps the suite's environment");
+        assert!(!s.launch_env_for("claude", "").iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"), "the default account keeps the system's login folder");
         assert!(!s.launch_env_for("claude", "gone").iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"), "an unknown account is the default one");
         assert_eq!(home_var("pi"), None);
 

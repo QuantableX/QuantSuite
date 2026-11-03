@@ -2545,7 +2545,9 @@ pub fn pilot_thread_tui(
     state.runtime.stop(&id);
     let mut args = exe.prefix.clone();
     args.extend(lifecycle::tui_args(provider, &sid, &meta.mode));
-    let term = state.drawer.open_program(&app, webview.label(), &id, &meta.cwd, &format!("{} (terminal)", adapter.label), &exe.program, args, (cols, rows))?;
+    // The thread's account and the PC's login folders, as in the chat (round 3, card 02).
+    let env = agent_env(&settings, provider, &meta.instance, vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())]);
+    let term = state.drawer.open_program(&app, webview.label(), &id, &meta.cwd, &format!("{} (terminal)", adapter.label), &exe.program, args, env, (cols, rows))?;
     lock(&state.tui).insert(id, term.pty_id.clone());
     Ok(term)
 }
