@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { GENERAL_BOARD_ID } from '@quantsuite/core'
+import { GENERAL_BOARD_ID, type KanbanCard } from '@quantsuite/core'
 import type { CanvasWindow } from '../../../shared/types'
 import { useWorkspacesStore } from '../../../stores/workspaces'
 
@@ -17,12 +17,18 @@ const boardId = computed(() => {
 })
 
 watch(boardId, () => { showLegacy.value = false })
+
+/** A card dragged out of the board (round 2, card 09): the canvas places it, connected to its thread. */
+function onDragOut(card: KanbanCard, x: number, y: number) {
+  if (!boardId.value) return
+  window.dispatchEvent(new CustomEvent('qc-card-drop', { detail: { card, boardId: boardId.value, x, y } }))
+}
 </script>
 
 <template>
   <div class="canvas-kanban">
     <div class="canvas-kanban__toolbar">
-      <span>{{ showLegacy ? 'Legacy spec files' : 'Shared workspace kanban' }}</span>
+      <span>{{ showLegacy ? 'Legacy spec files' : 'Shared workspace kanban · drag a card onto the canvas to connect it' }}</span>
       <button
         v-if="workspaces.contentWorkspace"
         type="button"
@@ -33,7 +39,7 @@ watch(boardId, () => { showLegacy.value = false })
     </div>
     <div class="canvas-kanban__body">
       <CanvasWindowsSpecWindow v-if="showLegacy" :key="boardId ?? 'loading'" :window="window" />
-      <QDrawerKanban v-else-if="boardId" :board-id="boardId" />
+      <QDrawerKanban v-else-if="boardId" :board-id="boardId" drag-out @drag-out="onDragOut" />
       <p v-else class="canvas-kanban__loading">Loading workspace…</p>
     </div>
   </div>

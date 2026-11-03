@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useWorkspacesStore } from './workspaces'
-import type { CanvasState, CanvasTransform, CanvasWindow, WindowPosition } from '../shared/types'
+import type { CanvasEdge, CanvasState, CanvasTransform, CanvasWindow, WindowPosition } from '../shared/types'
 
 function createDefaultCanvasState(workspaceId: string): CanvasState {
   return {
@@ -94,8 +94,32 @@ export const useCanvasStore = defineStore('canvas/canvas', () => {
     const index = state.windows.findIndex(w => w.id === windowId)
     if (index !== -1) {
       state.windows.splice(index, 1)
+      // Its connections go with it (round 2, card 09).
+      if (state.edges) state.edges = state.edges.filter(e => e.from !== windowId && e.to !== windowId)
       saveCanvasState(workspaceId)
     }
+  }
+
+  /** Connect two windows; one edge per pair and direction (round 2, card 09). */
+  function addEdge(workspaceId: string, from: string, to: string, kind: CanvasEdge['kind'] = 'manual'): CanvasEdge | null {
+    const state = canvasStates.value.get(workspaceId)
+    if (!state || from === to) return null
+    if (!state.windows.some(w => w.id === from) || !state.windows.some(w => w.id === to)) return null
+    state.edges ??= []
+    const existing = state.edges.find(e => (e.from === from && e.to === to) || (e.from === to && e.to === from))
+    if (existing) return existing
+    const edge: CanvasEdge = { id: `e-${Math.random().toString(36).slice(2, 10)}`, from, to, kind }
+    state.edges.push(edge)
+    saveCanvasState(workspaceId)
+    return edge
+  }
+
+  function removeEdge(workspaceId: string, edgeId: string): void {
+    const state = canvasStates.value.get(workspaceId)
+    if (!state?.edges) return
+    const before = state.edges.length
+    state.edges = state.edges.filter(e => e.id !== edgeId)
+    if (state.edges.length !== before) saveCanvasState(workspaceId)
   }
 
   function updateWindow(workspaceId: string, windowId: string, updates: Partial<Omit<CanvasWindow, 'id'>>): void {
@@ -177,6 +201,8 @@ export const useCanvasStore = defineStore('canvas/canvas', () => {
     updateTransform,
     addWindow,
     removeWindow,
+    addEdge,
+    removeEdge,
     updateWindow,
     updateWindowPosition,
     bringToFront,

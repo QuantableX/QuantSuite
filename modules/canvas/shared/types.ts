@@ -30,7 +30,7 @@ export interface WindowPosition {
   height: number
 }
 
-export type WindowType = 'terminal' | 'diff' | 'spec' | 'file' | 'browser' | 'chat'
+export type WindowType = 'terminal' | 'diff' | 'spec' | 'file' | 'browser' | 'chat' | 'card'
 
 /** Shell flavour a terminal window runs. Re-exported from `stores/app`. */
 export type ShellType = 'powershell' | 'cmd' | 'bash' | 'wsl' | 'git-bash'
@@ -94,6 +94,38 @@ export interface CanvasWindow {
   browserConfig?: BrowserConfig
   /** A QuantPilot chat window: only its thread id is kept (pre-1.1.0). */
   chatConfig?: ChatConfig
+  /** A kanban card on the canvas (round 2, card 09). */
+  cardConfig?: CardConfig
+  /** A diff of another checkout than the workspace's — a thread's worktree (round 2, card 09). */
+  diffConfig?: DiffConfig
+  /** A crew worker's chat: the orchestrator thread it belongs to (round 2, card 09). */
+  crewOf?: string
+  /** An orchestrator's chat: its workers fold into one node. */
+  crewCollapsed?: boolean
+}
+
+export interface CardConfig {
+  cardId: string
+  boardId: string
+  title: string
+}
+
+export interface DiffConfig {
+  repoPath: string
+  /** Compare with this branch's merge base (a worktree's own commits), else the uncommitted changes. */
+  base?: string
+}
+
+/**
+ * A connection between two windows (round 2, card 09). `link` edges are
+ * made by QuantCanvas (a card's thread, a thread's diff and preview),
+ * `manual` ones by the user from a window's port. Saved with the canvas.
+ */
+export interface CanvasEdge {
+  id: string
+  from: string
+  to: string
+  kind: 'link' | 'manual'
 }
 
 export interface ChatConfig {
@@ -105,6 +137,8 @@ export interface CanvasState {
   transform: CanvasTransform
   windows: CanvasWindow[]
   nextZIndex: number
+  /** Connections between windows (round 2, card 09). */
+  edges?: CanvasEdge[]
 }
 
 // ============= Spec Types =============

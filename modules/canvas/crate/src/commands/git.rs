@@ -187,7 +187,24 @@ pub fn git_diff(
         .ok()
         .and_then(|h| h.peel_to_tree().ok());
 
+    // `base:<branch>` (round 2, card 09): a worktree's own work — its commits
+    // since it left `<branch>` plus what is not committed yet.
+    let base_tree = effective_mode.strip_prefix("base:").map(str::trim).filter(|b| !b.is_empty()).and_then(|branch| {
+        let head = repo.head().ok()?.peel_to_commit().ok()?;
+        let base = repo
+            .revparse_single(branch)
+            .or_else(|_| repo.revparse_single(&format!("origin/{branch}")))
+            .ok()?
+            .peel_to_commit()
+            .ok()?;
+        let fork = repo.merge_base(base.id(), head.id()).ok()?;
+        repo.find_commit(fork).ok()?.tree().ok()
+    });
+
     let diff = match effective_mode {
+        _ if base_tree.is_some() => repo
+            .diff_tree_to_workdir_with_index(base_tree.as_ref(), Some(&mut opts))
+            .map_err(|e| format!("Failed to diff against the base: {}", e))?,
         "staged" => {
             // Staged diff: compare HEAD tree to index
             repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))

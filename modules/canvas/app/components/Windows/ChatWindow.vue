@@ -35,6 +35,14 @@ onMounted(() => {
 
 const thread = computed(() => (threadId.value ? pilot.sessions.find((s) => s.id === threadId.value) ?? null : null))
 const missing = computed(() => Boolean(threadId.value) && pilot.loaded && !thread.value)
+// A thread made since the list was read (a crew worker, round 2 card 09): read it again once before calling it gone.
+let refreshed = false
+watch(missing, (m) => {
+  if (m && !refreshed) {
+    refreshed = true
+    void pilot.refreshSessions()
+  }
+}, { immediate: true })
 // The window is titled after its thread.
 watch(
   () => thread.value?.title,

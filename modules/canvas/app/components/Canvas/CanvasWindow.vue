@@ -8,6 +8,8 @@ import { useWorkspacesStore } from '../../../stores/workspaces'
 import { useCanvasStore } from '../../../stores/canvas'
 import { useAppStore } from '../../../stores/app'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useCrewStore } from '#pilot/stores/crew'
+import { connecting, useCanvasActions } from '../../utils/canvasLinks'
 import type { CanvasWindow as CanvasWindowType, WindowPosition, WindowStatus } from '../../../shared/types'
 
 const props = defineProps<{
@@ -87,6 +89,7 @@ const typeIcon = computed(() => {
     file: '\u25A0',
     browser: '\u260D',
     chat: '\u275D',
+    card: '\u25A4',
   }
   return icons[props.window.type] ?? '\u25C7'
 })
@@ -96,6 +99,55 @@ const windowGridLabel = computed(() => {
   const rows = Math.max(1, Math.round(props.window.position.height / GRID_SIZE))
   return `${columns}×${rows}`
 })
+
+// ── The connected board (round 2, card 09) ──
+const linkActions = useCanvasActions()
+const crewStore = useCrewStore()
+const chatThread = computed(() => (props.window.type === 'chat' ? props.window.chatConfig?.threadId ?? null : null))
+/** This chat's thread leads a crew: its workers can fold into one node. */
+const leadsCrew = computed(() => {
+  const t = chatThread.value
+  const s = t ? crewStore.ofThread(t) : null
+  return Boolean(s && s.crew.orchestratorId === t)
+})
+function toggleCrew() {
+  canvasStore.updateWindow(workspaceId.value, props.window.id, { crewCollapsed: !props.window.crewCollapsed })
+}
+const canvasRef = inject<Ref<HTMLElement | null>>('canvasRef', ref(null))
+function toWorld(cx: number, cy: number) {
+  const r = canvasRef.value?.getBoundingClientRect()
+  const t = canvasStore.activeCanvasState?.transform ?? { x: 0, y: 0, scale: 1 }
+  return { x: (cx - (r?.left ?? 0) - t.x) / t.scale, y: (cy - (r?.top ?? 0) - t.y) / t.scale }
+}
+/** Drag from the port to another window to connect them (pointer events). */
+function startConnect(e: PointerEvent) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  e.stopPropagation()
+  const el = e.currentTarget as HTMLElement
+  try {
+    el.setPointerCapture(e.pointerId)
+  } catch {
+    /* synthetic pointer */
+  }
+  connecting.value = { from: props.window.id, ...toWorld(e.clientX, e.clientY) }
+  const move = (ev: PointerEvent) => {
+    connecting.value = { from: props.window.id, ...toWorld(ev.clientX, ev.clientY) }
+  }
+  const up = (ev: PointerEvent) => {
+    el.removeEventListener('pointermove', move)
+    el.removeEventListener('pointerup', up)
+    el.removeEventListener('pointercancel', up)
+    connecting.value = null
+    if (ev.type !== 'pointerup') return
+    const target = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest('[data-window-id]') as HTMLElement | null
+    const to = target?.dataset.windowId
+    if (to && to !== props.window.id && !to.startsWith('cluster:')) canvasStore.addEdge(workspaceId.value, props.window.id, to, 'manual')
+  }
+  el.addEventListener('pointermove', move)
+  el.addEventListener('pointerup', up)
+  el.addEventListener('pointercancel', up)
+}
 
 function bringToFront() {
   canvasStore.bringToFront(workspaceId.value, props.window.id)
@@ -405,6 +457,13 @@ provide('canvasWindowActions', { close: closeWindow, toggleZoom })
       </span>
 
       <div class="ml-auto flex items-center gap-1">
+        <!-- A chat's linked windows (round 2, card 09) -->
+        <template v-if="window.type === 'chat' && chatThread">
+          <button class="cv-head-btn" title="This thread's changes, connected" @mousedown.stop @click.stop="linkActions.threadDiff(window)">Diff</button>
+          <button class="cv-head-btn" title="A preview browser, connected" @mousedown.stop @click.stop="linkActions.preview(window)">Preview</button>
+          <button v-if="leadsCrew" class="cv-head-btn" :title="window.crewCollapsed ? 'Show the workers\' windows' : 'Fold the workers into one node'" @mousedown.stop @click.stop="toggleCrew">{{ window.crewCollapsed ? 'Unfold crew' : 'Fold crew' }}</button>
+        </template>
+        <button v-if="window.type === 'diff'" class="cv-head-btn" title="A preview browser, connected" @mousedown.stop @click.stop="linkActions.preview(window)">Preview</button>
         <!-- Attach file (terminal only) -->
         <button
           v-if="window.type === 'terminal'"
@@ -500,7 +559,20 @@ provide('canvasWindowActions', { close: closeWindow, toggleZoom })
         v-else-if="window.type === 'chat'"
         :window="window"
       />
+      <CanvasWindowsCardWindow
+        v-else-if="window.type === 'card'"
+        :window="window"
+      />
     </div>
+
+    <!-- The port: drag from here to another window to connect them (round 2, card 09) -->
+    <span
+      class="cv-port"
+      :class="{ on: connecting?.from === window.id }"
+      title="Drag to another window to connect them"
+      @pointerdown="startConnect"
+      @mousedown.stop
+    />
 
     <!-- Resize handles (hidden when minimized). 12px straddling each edge —
          half outside, half inside — and above every window overlay (the shell
@@ -519,3 +591,10 @@ provide('canvasWindowActions', { close: closeWindow, toggleZoom })
     </template>
   </div>
 </template>
+
+<style scoped>
+.cv-head-btn { height: 20px; padding: 0 7px; border: 1px solid var(--qc-border); border-radius: 5px; background: transparent; color: var(--qc-text-muted); font-size: 10.5px; cursor: pointer; }
+.cv-head-btn:hover { color: var(--qc-text); background: var(--qc-bg-surface); }
+.cv-port { position: absolute; right: -7px; top: 50%; z-index: 40; width: 12px; height: 12px; margin-top: -6px; border: 2px solid var(--qc-bg-window); border-radius: 50%; background: #7aa2f7; opacity: 0; cursor: crosshair; transition: opacity 0.12s ease; touch-action: none; }
+.group:hover > .cv-port, .cv-port.on { opacity: 1; }
+</style>
