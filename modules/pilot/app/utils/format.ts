@@ -45,6 +45,19 @@ const BUILT_IN_LABELS: Record<string, string> = {
   omp: 'omp',
   opencode: 'OpenCode',
   gemini: 'Gemini CLI',
+  copilot: 'GitHub Copilot',
+  // Round 2, card 11.
+  'cursor-agent': 'Cursor',
+  kilo: 'Kilo Code',
+  hermes: 'Hermes',
+  openclaw: 'OpenClaw',
+  freebuff: 'Freebuff',
+  grok: 'Grok',
+  agy: 'Antigravity',
+  'kiro-cli': 'Kiro',
+  droid: 'Droid',
+  cline: 'Cline',
+  devin: 'Devin',
 }
 
 /** A row's agent: the adapter started in its terminal, or just the terminal. */

@@ -2394,3 +2394,58 @@ app restart gave the identical setup and notice. GitHub starters use the
 same `create` (the QA project has no GitHub remote) and `start_thread`
 needs a running agent's token; both are covered by the shared path, not
 run natively. The QA profile was set back afterwards.
+
+## 39. Round 2 · 11/12: every agent installed here
+
+Card f13a144b. Orca listed Cursor, Kilo, Hermes, OpenClaw and Freebuff
+on this machine besides the agents QuantPilot had; T3 and PandaCode added
+Grok, Antigravity, Kiro, Droid, Cline and Devin.
+
+**One table instead of code per agent.** `adapters::EXTRAS` describes each
+added agent: executable names, the ACP arguments when verified, what a
+terminal session starts it with, its npm package or self-update, where to
+get it and its own sign-in command. Ids avoid the editors' commands inside
+the session terminal (`cursor-agent`, `kiro-cli`, `agy`). A user's own
+agent with one of these ids is kept as `<id>-own` instead of vanishing.
+
+**Protocols, checked against the installed binaries (2026-11-03).**
+
+| Agent | Installed | Protocol | Seen |
+| --- | --- | --- | --- |
+| Kilo Code 7.0.37 | yes | ACP (`kilo acp`) | initialize + session/new with its model list |
+| Hermes 0.21.0 | yes | ACP (`hermes acp`) | initialize; session/new asks for setup |
+| OpenClaw 2026.2.9 | yes | ACP (`openclaw acp`) | initialize + session/new |
+| Cursor 2026.02.13 | yes | terminal session | only a per-turn `--print` mode, no session protocol |
+| Freebuff 0.0.174 | yes | terminal session | no protocol |
+| Grok, Antigravity (`agy`), Kiro (`kiro-cli`), Droid, Cline, Devin | no | terminal session until verified | — |
+
+**Menu and settings.** Every agent appears in the agent menu with its logo
+(installed ones first, the rest greyed with *Not installed* and *Set up…*)
+and in Settings → Providers with path, version, Update (npm, or the CLI's
+own `update`) and a line saying how it runs and which command signs in.
+QuantPilot starts no login probe for them (some open a browser) and never
+handles credentials. An agent without a chat protocol is *Terminal
+session* in the New-thread and board-Start menus: picking it makes a
+terminal session that starts the agent right away (PowerShell and bash;
+in cmd the user types the name) — the session row carries the agent's
+logo. A chat thread cannot switch to such an agent (*Terminal session
+only*).
+
+**Errors say why.** ACP errors now carry the agent's own details
+(`error.data`) instead of "Internal error".
+
+**Native QA** (isolated QA app, `artifacts/quantpilot-r2-11/`): status of
+all 18 agents; the New-thread menu (screenshot); real prompts — **none of
+the three ACP agents could answer on this machine, each for a setup reason
+outside QuantPilot**: Kilo accepts the session but its prompt never returns
+(`kilo run` itself fails with "no providers found" — `kilo auth login`),
+OpenClaw answers "gateway not connected" (its gateway is not running —
+`openclaw gateway`), Hermes "No LLM provider configured. Run `hermes model`
+… or `hermes setup`". Cursor and Freebuff opened their terminal sessions
+and started (Cursor shows its own "Press any key to log in" there; nothing
+was pressed). The test sessions were ended afterwards.
+
+**Checks.** clippy clean; pilot `cargo test` (the table's protocols,
+update plans, autostart only for a plain command name, `-own` renames,
+error details); `npm run check:ts`; `npm run test:pilot` (terminal rows,
+installed-first order, marks for every new id).

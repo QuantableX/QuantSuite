@@ -71,6 +71,22 @@ fn npm_package(kind: Kind) -> Option<&'static str> {
     })
 }
 
+/// Update for any adapter: the round-2 agents from their table row, the rest by kind.
+pub fn update_plan_for(adapter: &Adapter, found: &Path) -> Option<UpdatePlan> {
+    let Some(e) = adapter.extra else { return update_plan(adapter.kind, found) };
+    let path = found.to_string_lossy().replace('/', "\\");
+    let lower = path.to_ascii_lowercase();
+    if let Some(pkg) = e.npm.filter(|_| lower.contains("\\npm\\") || lower.contains("\\node_modules\\")) {
+        return Some(UpdatePlan { method: "npm".into(), display: format!("npm install -g {pkg}@latest"), program: "npm".into(), args: vec!["install".into(), "-g".into(), format!("{pkg}@latest")] });
+    }
+    e.self_update.then(|| UpdatePlan {
+        method: "cli".into(),
+        display: format!("{} update", e.exe[0]),
+        program: path.clone(),
+        args: vec!["update".into()],
+    })
+}
+
 pub fn update_plan(kind: Kind, found: &Path) -> Option<UpdatePlan> {
     let path = found.to_string_lossy().replace('/', "\\");
     let lower = path.to_ascii_lowercase();
@@ -234,6 +250,7 @@ pub fn resolve(adapter: &Adapter, settings: &Settings) -> Option<Launchable> {
         Kind::Opencode => opencode_native().or_else(|| which("opencode")),
         Kind::Gemini => which("gemini"),
         Kind::Copilot => which("copilot"),
+        Kind::Extra => adapter.extra.and_then(|e| e.exe.iter().find_map(|n| which(n))),
         Kind::Custom => {
             let exe = adapter.custom.as_ref().map(|c| c.exe.as_str()).unwrap_or("");
             override_path(exe)
@@ -413,8 +430,11 @@ fn codex_login(exe: &Path, env: &[(String, String)], status: &mut AdapterStatus)
     }
 }
 
-fn install_hint(kind: Kind) -> &'static str {
-    match kind {
+fn install_hint(adapter: &Adapter) -> String {
+    if let Some(e) = adapter.extra {
+        return format!("not installed — {} or set the path in Settings", e.install);
+    }
+    match adapter.kind {
         Kind::Claude => "not found — install Claude Code or set the path in Settings",
         Kind::Codex => "not found — `npm i -g @openai/codex` or set the path in Settings",
         Kind::Pi => "not found — `npm i -g @earendil-works/pi-coding-agent` or set the path in Settings",
@@ -423,7 +443,9 @@ fn install_hint(kind: Kind) -> &'static str {
         Kind::Gemini => "not found — `npm i -g @google/gemini-cli` or set the path in Settings",
         Kind::Copilot => "not found — `npm i -g @github/copilot` or set the path in Settings",
         Kind::Custom => "not found — check the executable in Settings",
+        Kind::Extra => "not installed",
     }
+    .into()
 }
 
 fn status_one(adapter: &Adapter, settings: &Settings) -> AdapterStatus {
@@ -436,7 +458,7 @@ fn status_one(adapter: &Adapter, settings: &Settings) -> AdapterStatus {
         ..Default::default()
     };
     let Some(exe) = resolve(adapter, settings) else {
-        status.detail = Some(install_hint(adapter.kind).into());
+        status.detail = Some(install_hint(adapter));
         return status;
     };
     let found = PathBuf::from(&exe.found);
@@ -444,10 +466,17 @@ fn status_one(adapter: &Adapter, settings: &Settings) -> AdapterStatus {
     status.path = Some(exe.found.clone());
     status.version = version_of(&found);
     let env = settings.launch_env(&adapter.id);
-    status.update = update_plan(adapter.kind, &found).map(|p| p.method);
+    status.update = update_plan_for(adapter, &found).map(|p| p.method);
     match adapter.kind {
         Kind::Claude => claude_login(&found, &env, &mut status),
         Kind::Codex => codex_login(&found, &env, &mut status),
+        // Their sign-in stays in their own CLI; QuantPilot does not start a
+        // login probe (some open a browser) — the hint names the command.
+        Kind::Extra => {
+            let how = adapter.extra.and_then(|e| e.sign_in).map(|c| format!(" — sign in or set up with `{c}` in a terminal if it asks")).unwrap_or_default();
+            let what = if adapter.protocol().is_some() { "chat threads (ACP)" } else { "a terminal session" };
+            status.detail = Some(format!("found · runs {what}{how}"));
+        }
         _ => status.detail = Some(if status.version.is_some() { "found".into() } else { "found, version unreadable".into() }),
     }
     status

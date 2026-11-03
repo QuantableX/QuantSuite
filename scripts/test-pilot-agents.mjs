@@ -85,3 +85,8 @@ test('no two-letter marks are left in the thread rows', () => {
   assert.doesNotMatch(row, /MARKS|'Cl'|'Cx'/)
   assert.match(row, /<PilotAgentIcon /)
 })
+
+test('the agents round 2 adds have their marks under their ids', () => {
+  for (const id of ['cursor-agent', 'kilo', 'hermes', 'openclaw', 'freebuff', 'grok', 'agy', 'kiro-cli', 'droid', 'cline', 'devin']) assert.ok(agentMark(id), id)
+  assert.equal(agentMark('agy')?.file, 'antigravity.png')
+})

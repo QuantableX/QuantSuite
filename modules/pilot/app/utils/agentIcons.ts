@@ -45,6 +45,7 @@ const ALIASES: Record<string, string> = {
   'kilo-code': 'kilo',
   factory: 'droid',
   'kiro-cli': 'kiro',
+  agy: 'antigravity',
 }
 
 /** The bundled mark of an adapter id, or null (custom, unknown, not loaded). */

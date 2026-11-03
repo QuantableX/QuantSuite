@@ -445,6 +445,11 @@ impl Settings {
                 if c.protocol != "acp" {
                     c.protocol = "terminal".into();
                 }
+                // A user's own agent named like one round 2 adds keeps
+                // working under its own id instead of vanishing (card 11).
+                if crate::adapters::extra(&c.id).is_some() {
+                    c.id = format!("{}-own", c.id);
+                }
                 if c.id.is_empty() || c.exe.is_empty() || crate::adapters::is_built_in(&c.id) || !seen.insert(c.id.clone()) {
                     return None;
                 }
@@ -466,9 +471,15 @@ impl Settings {
         self.projects.get(project).and_then(|p| p.model.get(adapter)).map(String::as_str).filter(|m| !m.is_empty()).or_else(|| self.model_for(adapter))
     }
 
-    /// Every agent a chat thread can run: the built-ins and the user's ACP agents.
+    /// Every agent a chat thread can run: the built-ins, the round-2 agents
+    /// that speak ACP (card 11) and the user's ACP agents.
     pub fn chat_providers(&self) -> Vec<String> {
-        CHAT_PROVIDERS.iter().map(|c| c.to_string()).chain(self.custom.iter().filter(|c| c.protocol == "acp").map(|c| c.id.clone())).collect()
+        CHAT_PROVIDERS
+            .iter()
+            .map(|c| c.to_string())
+            .chain(crate::adapters::EXTRAS.iter().filter(|e| e.acp.is_some()).map(|e| e.id.to_string()))
+            .chain(self.custom.iter().filter(|c| c.protocol == "acp").map(|c| c.id.clone()))
+            .collect()
     }
 
     pub fn is_chat_provider(&self, id: &str) -> bool {
@@ -723,6 +734,25 @@ mod tests {
             "codex" => "Codex".into(),
             other => other.into(),
         }
+    }
+
+    /// Round 2, card 11: the ACP agents round 2 adds run chat threads; a
+    /// user's own agent with one of their ids is kept under another.
+    #[test]
+    fn round_two_agents_chat_and_own_agents_keep_their_place() {
+        let s = Settings {
+            custom: vec![CustomAdapter { id: "kilo".into(), exe: "my-kilo".into(), protocol: "acp".into(), ..Default::default() }],
+            ..Default::default()
+        }
+        .normalized();
+        for id in ["kilo", "hermes", "openclaw"] {
+            assert!(s.is_chat_provider(id), "{id}");
+        }
+        for id in ["cursor-agent", "freebuff", "grok", "agy", "kiro-cli", "droid", "cline", "devin"] {
+            assert!(!s.is_chat_provider(id), "{id} runs as a terminal session");
+        }
+        assert_eq!(s.custom[0].id, "kilo-own");
+        assert!(s.is_chat_provider("kilo-own"));
     }
 
     /// Round 2, card 03: project pin → last choice → Settings, per value.

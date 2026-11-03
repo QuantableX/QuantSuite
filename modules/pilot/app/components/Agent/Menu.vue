@@ -13,11 +13,11 @@
  * the window so it fits short windows too.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Check, ChevronRight, Loader2, RefreshCw, Search, Settings2 } from 'lucide-vue-next'
+import { Check, ChevronRight, Loader2, RefreshCw, Search, Settings2, SquareTerminal } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { effortsFor, modelRows, type ModelRow } from '#pilot/utils/models'
-import { agentRowState, filterAgents, orderModels, placeMenu, placeSubmenu, pushRecent, setupLabel, type AgentSetup, type RecentModels } from '#pilot/utils/agentMenu'
+import { agentRowState, filterAgents, installedFirst, orderModels, placeMenu, placeSubmenu, pushRecent, setupLabel, type AgentSetup, type RecentModels } from '#pilot/utils/agentMenu'
 import type { ModelInfo } from '#pilot/types'
 
 const props = withDefaults(
@@ -36,8 +36,10 @@ const props = withDefaults(
     title?: string
     allowMulti?: boolean
     multi?: { provider: string; model: string }[]
+    /** Agents without a chat protocol start as a terminal session (new threads only; round 2, card 11). */
+    allowTerminal?: boolean
   }>(),
-  { prefer: 'below', provider: null, model: undefined, effort: undefined, fast: false, project: null, locked: null, title: 'Agent', allowMulti: false, multi: () => [] },
+  { prefer: 'below', provider: null, model: undefined, effort: undefined, fast: false, project: null, locked: null, title: 'Agent', allowMulti: false, multi: () => [], allowTerminal: false },
 )
 const emit = defineEmits<{
   pick: [setup: AgentSetup]
@@ -52,14 +54,16 @@ const threads = useThreadStore()
 const query = ref('')
 const projectPrefs = computed(() => (props.project ? store.settings?.projects?.[props.project] : undefined))
 const agents = computed(() =>
-  filterAgents(store.adapters, query.value).map((a) => {
+  filterAgents(installedFirst(store.adapters), query.value).map((a) => {
     const state = agentRowState(a, {
       disabled: Boolean(store.settings?.providers?.[a.id]?.disabled),
       projectEnabled: projectPrefs.value?.enabled ?? null,
       locked: props.locked,
       current: props.provider,
+      allowTerminal: props.allowTerminal,
     })
-    return { a, state, setup: setupOf(a.id) }
+    const setup = state.terminal ? { provider: a.id, model: '', effort: '', fast: false, terminal: true } : setupOf(a.id)
+    return { a, state, setup }
   }),
 )
 
@@ -81,6 +85,7 @@ function names(id: string): Record<string, string> {
   return out
 }
 function setupText(s: AgentSetup): string {
+  if (s.terminal) return 'Terminal session'
   return setupLabel(s.model, s.effort, names(s.provider)) + (s.fast ? ' · fast' : '')
 }
 
@@ -161,7 +166,7 @@ function chipOn(id: string, chip: { kind: 'effort' | 'fast'; value: string }): b
 
 function openSub(id: string, focus = false) {
   const row = agents.value.find((r) => r.a.id === id)
-  if (!row?.state.usable) {
+  if (!row?.state.usable || row.state.terminal) {
     sub.value = null
     return
   }
@@ -245,7 +250,7 @@ function onKey(e: KeyboardEvent) {
     if (sub.value && agents.value[active.value]?.a.id !== sub.value) sub.value = null
   } else if (e.key === 'ArrowRight' && (search.value?.selectionStart ?? 0) >= query.value.length) {
     const r = agents.value[active.value]
-    if (r?.state.usable) {
+    if (r?.state.usable && !r.state.terminal) {
       e.preventDefault()
       openSub(r.a.id, true)
     }
@@ -300,7 +305,7 @@ function onRowEnter(i: number) {
   if (hoverTimer) clearTimeout(hoverTimer)
   const r = agents.value[i]
   hoverTimer = setTimeout(() => {
-    if (r?.state.usable) openSub(r.a.id)
+    if (r?.state.usable && !r.state.terminal) openSub(r.a.id)
     else sub.value = null
   }, 140)
 }
@@ -387,11 +392,12 @@ onBeforeUnmount(() => {
           <span class="qp-am-name">{{ r.a.label }}</span>
           <Check v-if="r.a.id === provider && r.state.usable" class="qp-am-check" :size="13" />
           <template v-if="r.state.usable">
-            <span class="qp-am-setup" :title="setupText(r.setup)">{{ setupText(r.setup) }}</span>
+            <span class="qp-am-setup" :class="{ terminal: r.state.terminal }" :title="r.state.terminal ? `${r.a.label} has no chat protocol here — it starts in a terminal session` : setupText(r.setup)">{{ setupText(r.setup) }}</span>
             <span v-if="pinnedHere(r.a.id)" class="qp-am-pin" title="This project's setting (Settings → General → this project)">project</span>
-            <button class="qp-am-more" tabindex="-1" :aria-label="`${r.a.label}: models and effort`" @click.stop="openSub(r.a.id, true)">
+            <button v-if="!r.state.terminal" class="qp-am-more" tabindex="-1" :aria-label="`${r.a.label}: models and effort`" @click.stop="openSub(r.a.id, true)">
               <ChevronRight :size="13" />
             </button>
+            <SquareTerminal v-else class="qp-am-term" :size="13" aria-hidden="true" />
           </template>
           <template v-else>
             <span class="qp-am-reason" :title="r.state.reason ?? undefined">{{ r.state.reason }}</span>
@@ -534,6 +540,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .qp-am-more { padding: 3px; }
+.qp-am-term { flex-shrink: 0; margin: 0 3px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-am-fix { padding: 2px 6px; border: 1px solid var(--qss-border-subtle, #35353d); color: var(--qss-text-secondary, #9a9aa5); }
 .qp-am-more:hover,
 .qp-am-fix:hover { background: var(--qss-bg-card, #292930); color: var(--qss-text, #d4d4d8); }

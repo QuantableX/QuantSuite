@@ -264,6 +264,21 @@ export const usePilotStore = defineStore('pilot/pilot', {
       }
     },
 
+    /** A terminal session that starts `provider` (agents without a chat protocol; round 2, card 11). */
+    async createTerminalSession(contextId: string, provider: string) {
+      this.lastError = ''
+      try {
+        const meta = await pilot<SessionMeta>('plugin:pilot|pilot_session_create', { req: { contextId, provider } })
+        if (!meta) return null
+        this.upsertSession(meta)
+        await this.openTerminal(meta.id)
+        return meta
+      } catch (e) {
+        this.lastError = e instanceof Error ? e.message : String(e)
+        return null
+      }
+    },
+
     dismissSetupNotice(id: string) {
       const { [id]: _gone, ...rest } = this.setupNotices
       this.setupNotices = rest

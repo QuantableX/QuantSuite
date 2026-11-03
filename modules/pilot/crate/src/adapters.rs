@@ -31,7 +31,54 @@ pub enum Kind {
     Gemini,
     /// GitHub Copilot CLI (card 20).
     Copilot,
+    /// An agent from [`EXTRAS`] (round 2, card 11).
+    Extra,
     Custom,
+}
+
+/// The agents round 2 adds (card 11), described by data instead of code.
+/// `acp` is set only where the installed binary was seen answering ACP's
+/// `initialize` and `session/new` (2026-11-03: kilo 7.0.37, hermes 0.21.0,
+/// openclaw 2026.2.9). The others run as a terminal session behind the same
+/// menu entry: cursor-agent 2026.02.13 has only a per-turn print mode,
+/// freebuff 0.0.174 no protocol, and grok, agy, kiro-cli, droid, cline and
+/// devin are not installed here, so nothing about their protocol is claimed.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Extra {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Executable names on PATH, first found wins.
+    pub exe: &'static [&'static str],
+    /// The arguments that start ACP mode, when verified.
+    pub acp: Option<&'static [&'static str]>,
+    /// What a terminal session starts it with, after the executable.
+    pub terminal_args: &'static [&'static str],
+    /// Its npm package, for Update when npm installed it.
+    pub npm: Option<&'static str>,
+    /// It updates itself with `<exe> update`.
+    pub self_update: bool,
+    /// Where to get it (shown while it is not installed).
+    pub install: &'static str,
+    /// The agent's own sign-in, run by the user in a terminal.
+    pub sign_in: Option<&'static str>,
+}
+
+pub const EXTRAS: [Extra; 11] = [
+    Extra { id: "cursor-agent", label: "Cursor", exe: &["cursor-agent"], acp: None, terminal_args: &[], npm: None, self_update: true, install: "the Cursor CLI installer (cursor.com/cli)", sign_in: Some("cursor-agent login") },
+    Extra { id: "kilo", label: "Kilo Code", exe: &["kilo", "kilocode"], acp: Some(&["acp"]), terminal_args: &[], npm: Some("@kilocode/cli"), self_update: false, install: "`npm i -g @kilocode/cli`", sign_in: Some("kilo auth login") },
+    Extra { id: "hermes", label: "Hermes", exe: &["hermes"], acp: Some(&["acp"]), terminal_args: &["--tui"], npm: None, self_update: true, install: "the Hermes Agent installer (hermes-agent.nousresearch.com)", sign_in: Some("hermes setup") },
+    Extra { id: "openclaw", label: "OpenClaw", exe: &["openclaw"], acp: Some(&["acp"]), terminal_args: &[], npm: Some("openclaw"), self_update: false, install: "`npm i -g openclaw`", sign_in: Some("openclaw setup") },
+    Extra { id: "freebuff", label: "Freebuff", exe: &["freebuff"], acp: None, terminal_args: &[], npm: Some("freebuff"), self_update: false, install: "`npm i -g freebuff`", sign_in: None },
+    Extra { id: "grok", label: "Grok", exe: &["grok"], acp: None, terminal_args: &[], npm: None, self_update: false, install: "the Grok CLI", sign_in: None },
+    Extra { id: "agy", label: "Antigravity", exe: &["agy"], acp: None, terminal_args: &[], npm: None, self_update: false, install: "Google Antigravity (antigravity.google)", sign_in: None },
+    Extra { id: "kiro-cli", label: "Kiro", exe: &["kiro-cli"], acp: None, terminal_args: &["chat", "--tui"], npm: None, self_update: false, install: "the Kiro CLI (kiro.dev/cli)", sign_in: None },
+    Extra { id: "droid", label: "Droid", exe: &["droid"], acp: None, terminal_args: &[], npm: None, self_update: false, install: "Factory's Droid CLI (factory.ai)", sign_in: None },
+    Extra { id: "cline", label: "Cline", exe: &["cline"], acp: None, terminal_args: &[], npm: None, self_update: false, install: "the Cline CLI (cline.bot)", sign_in: None },
+    Extra { id: "devin", label: "Devin", exe: &["devin"], acp: None, terminal_args: &[], npm: None, self_update: false, install: "the Devin CLI (devin.ai)", sign_in: None },
+];
+
+pub fn extra(id: &str) -> Option<&'static Extra> {
+    EXTRAS.iter().find(|e| e.id == id)
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +87,8 @@ pub struct Adapter {
     pub label: String,
     pub kind: Kind,
     pub custom: Option<CustomAdapter>,
+    /// The table row of an [`Kind::Extra`] agent.
+    pub extra: Option<&'static Extra>,
 }
 
 const BUILT_IN: [(&str, &str, Kind); 7] = [
@@ -53,16 +102,19 @@ const BUILT_IN: [(&str, &str, Kind); 7] = [
 ];
 
 pub fn is_built_in(id: &str) -> bool {
-    BUILT_IN.iter().any(|(b, _, _)| *b == id)
+    BUILT_IN.iter().any(|(b, _, _)| *b == id) || extra(id).is_some()
 }
 
 pub fn all(settings: &Settings) -> Vec<Adapter> {
     let mut out: Vec<Adapter> = BUILT_IN
         .iter()
-        .map(|(id, label, kind)| Adapter { id: (*id).into(), label: (*label).into(), kind: *kind, custom: None })
+        .map(|(id, label, kind)| Adapter { id: (*id).into(), label: (*label).into(), kind: *kind, custom: None, extra: None })
         .collect();
+    for e in &EXTRAS {
+        out.push(Adapter { id: e.id.into(), label: e.label.into(), kind: Kind::Extra, custom: None, extra: Some(e) });
+    }
     for c in &settings.custom {
-        out.push(Adapter { id: c.id.clone(), label: c.label.clone(), kind: Kind::Custom, custom: Some(c.clone()) });
+        out.push(Adapter { id: c.id.clone(), label: c.label.clone(), kind: Kind::Custom, custom: Some(c.clone()), extra: None });
     }
     out
 }
@@ -86,6 +138,7 @@ impl Adapter {
             Kind::Codex => Some(Protocol::Codex),
             Kind::Pi | Kind::Omp => Some(Protocol::PiRpc),
             Kind::Gemini | Kind::Opencode | Kind::Copilot => Some(Protocol::Acp),
+            Kind::Extra => self.extra.and_then(|e| e.acp).map(|_| Protocol::Acp),
             Kind::Custom => self.custom.as_ref().filter(|c| c.protocol == "acp").map(|_| Protocol::Acp),
         }
     }
@@ -97,6 +150,7 @@ impl Adapter {
             Kind::Gemini => vec!["--experimental-acp".into()],
             Kind::Opencode => vec!["acp".into()],
             Kind::Copilot => vec!["--acp".into()],
+            Kind::Extra => self.extra.and_then(|e| e.acp).map(|a| a.iter().map(|s| s.to_string()).collect()).unwrap_or_default(),
             Kind::Custom => self.custom.as_ref().map(|c| split_template(&c.args)).unwrap_or_default(),
             _ => Vec::new(),
         }
@@ -154,7 +208,7 @@ impl Adapter {
         match self.kind {
             Kind::Pi | Kind::Custom => Some(session_id.to_string()),
             Kind::Opencode | Kind::Gemini | Kind::Copilot => Some("latest".to_string()),
-            Kind::Claude | Kind::Codex | Kind::Omp => None,
+            Kind::Claude | Kind::Codex | Kind::Omp | Kind::Extra => None,
         }
     }
 }
@@ -422,6 +476,11 @@ pub fn adapter_args(adapter: &Adapter, input: &LaunchInput<'_>) -> (Vec<String>,
                 args.extend(["--model".into(), model.clone()]);
             }
         }
+        Kind::Extra => {
+            if let Some(e) = adapter.extra {
+                args.extend(e.terminal_args.iter().map(|a| a.to_string()));
+            }
+        }
         Kind::Custom => {
             let custom = adapter.custom.clone().unwrap_or_default();
             let template = if bound.is_some() && !custom.resume_args.is_empty() {
@@ -592,5 +651,55 @@ mod tests {
         assert_eq!(split_template("a \"b c\" d"), vec!["a", "b c", "d"]);
         assert_eq!(split_template("  "), Vec::<String>::new());
         assert_eq!(split_template("x \"\" y"), vec!["x", "", "y"]);
+    }
+}
+
+/// Round 2, card 11: the table of added agents.
+#[cfg(test)]
+mod round_two {
+    use super::*;
+    use crate::providers::update_plan_for;
+    use crate::shell::{with_start, ShellKind};
+
+    #[test]
+    fn added_agents_speak_what_their_binary_was_seen_to_speak() {
+        let all = all(&Settings::default());
+        let get = |id: &str| all.iter().find(|a| a.id == id).cloned().unwrap();
+        for id in ["kilo", "hermes", "openclaw"] {
+            let a = get(id);
+            assert_eq!(a.protocol(), Some(Protocol::Acp), "{id}");
+            assert_eq!(a.acp_args(), vec!["acp".to_string()], "{id}");
+        }
+        for id in ["cursor-agent", "freebuff", "grok", "agy", "kiro-cli", "droid", "cline", "devin"] {
+            assert_eq!(get(id).protocol(), None, "{id} runs as a terminal session");
+        }
+        assert_eq!(get("cursor-agent").label, "Cursor");
+        assert!(is_built_in("kilo") && is_built_in("devin"));
+        // Ids never shadow an editor's own command inside the session terminal.
+        assert!(EXTRAS.iter().all(|e| !matches!(e.id, "cursor" | "kiro" | "antigravity" | "code")));
+    }
+
+    #[test]
+    fn updates_follow_the_install() {
+        let kilo = find(&Settings::default(), "kilo").unwrap();
+        let npm = update_plan_for(&kilo, Path::new(r"C:\Users\me\AppData\Roaming\npm\kilo.cmd")).unwrap();
+        assert_eq!((npm.method.as_str(), npm.display.as_str()), ("npm", "npm install -g @kilocode/cli@latest"));
+        let cursor = find(&Settings::default(), "cursor-agent").unwrap();
+        let cli = update_plan_for(&cursor, Path::new(r"C:\Users\me\AppData\Local\cursor-agent\cursor-agent.cmd")).unwrap();
+        assert_eq!((cli.method.as_str(), cli.display.as_str()), ("cli", "cursor-agent update"));
+        let freebuff = find(&Settings::default(), "freebuff").unwrap();
+        assert!(update_plan_for(&freebuff, Path::new(r"D:\tools\freebuff.exe")).is_none(), "no known way: no button");
+        // The old agents keep their rules.
+        let claude = find(&Settings::default(), "claude").unwrap();
+        assert_eq!(update_plan_for(&claude, Path::new(r"C:\Users\me\.local\bin\claude.exe")).unwrap().method, "native");
+    }
+
+    #[test]
+    fn a_session_made_for_one_agent_starts_it() {
+        let s = with_start(ShellKind::PowerShell, "init\n".into(), "freebuff");
+        assert!(s.ends_with("init\nfreebuff\n"));
+        assert!(with_start(ShellKind::Bash, String::new(), "cursor-agent").ends_with("cursor-agent\n"));
+        assert_eq!(with_start(ShellKind::Cmd, "x".into(), "freebuff"), "x", "cmd: typed by the user");
+        assert_eq!(with_start(ShellKind::PowerShell, "x".into(), "a; rm -r"), "x", "only a plain command name");
     }
 }

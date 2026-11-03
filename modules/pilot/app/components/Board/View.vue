@@ -59,6 +59,13 @@ async function start(card: KanbanCard, setup?: AgentSetup) {
   starting.value = card.id
   error.value = ''
   try {
+    // An agent without a chat protocol works the card in its terminal session (round 2, card 11).
+    if (setup?.terminal) {
+      const term = await store.createTerminalSession(card.workspace_id, setup.provider)
+      if (!term) error.value = store.lastError || 'The terminal session could not be created.'
+      else await pilot('plugin:pilot|pilot_card_link', { id: term.id, cardId: card.id, title: card.title })
+      return
+    }
     const meta = await store.createThread({ contextId: card.workspace_id, title: card.title, ...(setup ?? {}), remember: Boolean(setup) })
     if (!meta) {
       error.value = store.lastError || 'The thread could not be created.'

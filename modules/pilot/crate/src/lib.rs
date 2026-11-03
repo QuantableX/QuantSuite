@@ -99,6 +99,8 @@ pub struct PilotState {
     tui: Mutex<HashMap<String, String>>,
     /// Wakes the scheduled-resume task when a schedule changes (card 15).
     wake: Arc<tokio::sync::Notify>,
+    /// Terminal sessions that start their agent at the first launch (round 2, card 11).
+    autostart: Mutex<std::collections::HashSet<String>>,
     /// Thread → the token in its QuantMCP URL; it names the caller of a `quantsuite.pilot.*` tool (card 22).
     mcp_tokens: Mutex<HashMap<String, String>>,
     /// The thread on screen with its inspector, as the frontend reports it.
@@ -312,7 +314,7 @@ fn pilot_provider_update(state: State<'_, PilotState>, id: String, dry_run: Opti
     let adapter = adapters::find(&settings, &id).ok_or_else(|| format!("unknown agent '{id}'"))?;
     let exe = providers::resolve(&adapter, &settings).ok_or_else(|| format!("{} is not installed", adapter.label))?;
     let found = std::path::PathBuf::from(&exe.found);
-    let plan = providers::update_plan(adapter.kind, &found).ok_or_else(|| format!("{} has no update command QuantPilot knows", adapter.label))?;
+    let plan = providers::update_plan_for(&adapter, &found).ok_or_else(|| format!("{} has no update command QuantPilot knows", adapter.label))?;
     let before = providers::version_of(&found);
     if dry_run.unwrap_or(true) {
         return Ok(UpdateResult { plan, ran: false, ok: true, before, after: None, output: String::new() });
@@ -475,6 +477,9 @@ struct CreateSession {
     context_id: Option<String>,
     mode: Option<String>,
     title: Option<String>,
+    /// Start this agent in the new terminal right away (round 2, card 11:
+    /// agents without a chat protocol, from the agent menu).
+    provider: Option<String>,
 }
 
 /// A new row: a terminal in a context. Which agent runs in it is decided
@@ -484,11 +489,17 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
     let settings = lock(&state.settings).clone();
     let context_id = req.context_id.unwrap_or_else(|| contexts::GENERAL_ID.into());
     let ctx = contexts::resolve(&app, &context_id).ok_or_else(|| format!("unknown context '{context_id}'"))?;
-    let mode = req.mode.filter(|m| settings::valid_mode(m)).unwrap_or(settings.default_mode);
+    let mode = req.mode.filter(|m| settings::valid_mode(m)).unwrap_or_else(|| settings.default_mode.clone());
+    let start = req.provider.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
+    if let Some(p) = &start {
+        if adapters::find(&settings, p).is_none() {
+            return Err(format!("unknown agent '{p}'"));
+        }
+    }
     let stamp = now();
     let meta = SessionMeta {
         id: uuid::Uuid::new_v4().to_string(),
-        provider: String::new(),
+        provider: start.clone().unwrap_or_default(),
         provider_session_id: None,
         title: req.title.unwrap_or_default().trim().to_string(),
         context_id: ctx.id,
@@ -522,6 +533,9 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
         worktree_path: None,
     };
     state.db.insert_session(&meta).map_err(|e| e.to_string())?;
+    if start.is_some() {
+        lock(&state.autostart).insert(meta.id.clone());
+    }
     Ok(meta)
 }
 
@@ -661,7 +675,12 @@ fn pilot_session_launch(
     let args = match shell::init_file_name(kind) {
         Some(name) => {
             let init = dir.join(name);
-            std::fs::write(&init, shell::init_script(kind, &id, state.relay_port, &wrappers, &hint))
+            // A session made for one agent starts it at its first launch (round 2, card 11).
+            let mut script = shell::init_script(kind, &id, state.relay_port, &wrappers, &hint);
+            if lock(&state.autostart).remove(&id) && wrappers.iter().any(|w| w.command == meta.provider) {
+                script = shell::with_start(kind, script, &meta.provider);
+            }
+            std::fs::write(&init, script)
                 .map_err(|e| format!("{name}: {e}"))?;
             shell::shell_args(kind, &init, &hint)
         }
@@ -894,6 +913,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 drawer: terminals::Drawer::default(),
                 tui: Mutex::new(HashMap::new()),
                 wake: Arc::new(tokio::sync::Notify::new()),
+                autostart: Mutex::new(Default::default()),
                 mcp_tokens: Mutex::new(HashMap::new()),
                 ui_visible: Mutex::new(None),
             });
