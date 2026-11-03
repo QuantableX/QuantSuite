@@ -141,15 +141,24 @@ export const usePilotStore = defineStore('pilot/pilot', {
     adapterLabel(): (id: string) => string {
       return (id) => providerLabel(id, this.adapters)
     },
-    /** An agent's other accounts with whether they are signed in (round 3, card 02). */
+    /**
+     * An agent's other accounts with whether they are signed in (round 3,
+     * card 02). The saved ones show at once; their sign-in state comes with
+     * the status probe (unknown until it ran).
+     */
     instancesOf(state): (provider: string) => InstanceStatus[] {
-      return (provider) => (state.status?.instances ?? []).filter((i) => i.provider === provider)
+      return (provider) => {
+        const probed = (state.status?.instances ?? []).filter((i) => i.provider === provider)
+        const saved = (state.settings?.instances ?? []).filter((i) => i.provider === provider)
+        if (!saved.length) return probed
+        return saved.map((i) => probed.find((p) => p.id === i.id) ?? { ...i, loggedIn: null, detail: null, signIn: '' })
+      }
     },
     /** "Claude Code · Work" for a thread on an account, the agent's label otherwise. */
     accountLabel(): (provider: string, instance?: string | null) => string {
       return (provider, instance) => {
         const base = providerLabel(provider, this.adapters)
-        const acc = instance ? (this.status?.instances ?? []).find((i) => i.provider === provider && i.id === instance) : null
+        const acc = instance ? this.instancesOf(provider).find((i) => i.id === instance) : null
         return acc ? `${base} · ${acc.label}` : base
       }
     },

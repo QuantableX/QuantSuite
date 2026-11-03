@@ -308,10 +308,10 @@ function addCustom() {
             <div class="qp-acc-status">
               <template v-if="statusOf(r.i)">
                 <span :class="{ warn: statusOf(r.i)?.loggedIn === false }">{{ statusOf(r.i)?.detail }}</span>
-                <template v-if="statusOf(r.i)?.loggedIn !== true && statusOf(r.i)?.signIn">
-                  <code class="qp-acc-cmd">{{ statusOf(r.i)?.signIn }}</code>
+                <span v-if="statusOf(r.i)?.loggedIn !== true && statusOf(r.i)?.signIn" class="qp-acc-cmdline">
+                  <code class="qp-acc-cmd" :title="statusOf(r.i)?.signIn">{{ statusOf(r.i)?.signIn }}</code>
                   <button class="qp-btn qp-btn-sm" @click="copySignIn(`${a.id}@${r.i.id}`, statusOf(r.i)?.signIn ?? '')">{{ copied === `${a.id}@${r.i.id}` ? 'Copied' : 'Copy' }}</button>
-                </template>
+                </span>
               </template>
               <span v-else>Save, then sign it in with the command that shows here.</span>
             </div>
@@ -424,7 +424,8 @@ function addCustom() {
 .qp-acc-home { flex: 1; min-width: 0; }
 .qp-acc-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-left: 15px; font-size: 11.5px; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-acc-status .warn { color: var(--qss-warning, #d29a3f); }
-.qp-acc-cmd { max-width: 100%; overflow-x: auto; white-space: nowrap; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; background: var(--qss-bg-card, #292930); padding: 2px 6px; border-radius: 4px; user-select: all; }
+.qp-acc-cmdline { display: flex; align-items: center; gap: 6px; flex: 1 1 100%; min-width: 0; }
+.qp-acc-cmd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; background: var(--qss-bg-card, #292930); padding: 2px 6px; border-radius: 4px; user-select: all; }
 .qp-settings-actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .qp-settings-notice { color: var(--qss-text-secondary, #9a9aa5); }
 </style>

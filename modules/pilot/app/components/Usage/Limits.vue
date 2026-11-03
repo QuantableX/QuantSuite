@@ -37,7 +37,7 @@ const clock = (at: number) => {
   const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
   return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${time}`
 }
-const label = (key: string) => accountKeyLabel(key, store.adapterLabel, store.status?.instances ?? [])
+const label = (key: string) => accountKeyLabel(key, store.adapterLabel, [...(store.settings?.instances ?? []), ...(store.status?.instances ?? [])])
 const level = (pct: number | null) => (pct === null ? 'none' : pct >= 100 ? 'out' : pct >= 90 ? 'high' : 'ok')
 </script>
 

@@ -558,7 +558,7 @@ fn instance_status(adapters: &[Adapter], settings: &Settings, i: &Instance) -> I
         _ => {}
     }
     out.logged_in = probe.logged_in;
-    out.detail = probe.detail.map(|d| d.replace("run `claude auth login` in a terminal", "sign in with the command below").replace("run `codex login` in a terminal", "sign in with the command below"));
+    out.detail = probe.detail.map(|d| d.replace("run `claude auth login` in a terminal", "run the command below in a terminal").replace("run `codex login` in a terminal", "run the command below in a terminal"));
     out
 }
 

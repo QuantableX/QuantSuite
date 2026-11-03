@@ -79,7 +79,7 @@ const money = (v: number) => formatMoney(v, 'USD', { maximumFractionDigits: v !=
 const pct = (v: number) => (v > 0 && v < 0.005 ? '<1%' : `${Math.round(v * 100)}%`)
 const unpricedShare = computed(() => (sum.value.tokens ? sum.value.unpricedTokens / sum.value.tokens : 0))
 function providerLabel(key: string): string {
-  return accountKeyLabel(key, store.adapterLabel, store.status?.instances ?? [])
+  return accountKeyLabel(key, store.adapterLabel, [...(store.settings?.instances ?? []), ...(store.status?.instances ?? [])])
 }
 /** A row's agent, for its icon: `claude@work` is Claude Code's. */
 const agentOf = (key: string) => splitAccountKey(key).provider
