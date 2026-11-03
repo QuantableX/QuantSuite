@@ -143,8 +143,10 @@ async function pickSetup(s: AgentSetup) {
   const t = thread.value
   if (!t) return
   const switching = s.provider !== provider.value
-  const patch: { provider?: string; model?: string; effort?: string; fast?: boolean } = {}
+  const patch: { provider?: string; model?: string; effort?: string; fast?: boolean; instance?: string } = {}
   if (switching) patch.provider = s.provider
+  // Another account of the agent (round 3, card 02).
+  if ((s.instance ?? '') !== (t.instance ?? '')) patch.instance = s.instance ?? ''
   if (switching || s.model !== t.model) patch.model = s.model
   if (s.effort !== (t.effort || '')) patch.effort = s.effort
   if (s.fast !== Boolean(t.fast)) patch.fast = s.fast
@@ -210,7 +212,7 @@ useCommands({
           <PilotAgentIcon v-for="id in fanAgents" :key="id" :agent="id" :size="13" />
         </span>
         <PilotAgentIcon v-else :agent="provider" :size="13" decorative />
-        <span class="qp-ctl-text">{{ store.adapterLabel(provider) }}</span>
+        <span class="qp-ctl-text">{{ store.accountLabel(provider, thread?.instance) }}</span>
         <span class="qp-ctl-sep">·</span>
         <span class="qp-ctl-text">{{ modelLabel }}</span>
         <span v-if="thread?.fast" class="qp-ctl-fast" title="Fast mode">Fast</span>
@@ -222,6 +224,7 @@ useCommands({
         prefer="above"
         title="Agent and model"
         :provider="provider"
+        :instance="thread?.instance ?? ''"
         :model="thread?.model ?? ''"
         :effort="thread?.effort ?? ''"
         :fast="Boolean(thread?.fast)"

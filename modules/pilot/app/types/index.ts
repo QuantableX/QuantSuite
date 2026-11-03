@@ -38,6 +38,8 @@ export interface SessionMeta {
   tags?: string[]
   /** A side chat's main thread (round 2, card 10). */
   parentId?: string | null
+  /** The agent account (round 3, card 02); "" = the default account. */
+  instance?: string
   titleSource: 'auto' | 'user'
   /** The last known state, saved: `idle` | `running` | `waiting` | `error` | `interrupted` | `limited`. */
   state: string
@@ -104,8 +106,24 @@ export interface AdapterStatus {
   chat?: boolean
 }
 
+/** Another account of an agent (round 3, card 02). */
+export interface Instance {
+  id: string
+  provider: string
+  label: string
+  home: string
+}
+
+export interface InstanceStatus extends Instance {
+  loggedIn: boolean | null
+  detail: string | null
+  /** The terminal line that signs this account in (run by the user). */
+  signIn: string
+}
+
 export interface PilotStatus {
   adapters: AdapterStatus[]
+  instances?: InstanceStatus[]
   /** The shell a new terminal opens with, resolved. */
   shell: string
   mcpUrl: string
@@ -159,6 +177,7 @@ export interface PilotSettings {
   attachQuantmcp: boolean
   includeGeneralVault: boolean
   custom: CustomAdapter[]
+  instances?: Instance[]
   /** `enter` | `modEnterMultiline` | `modEnter` */
   sendShortcut: SendShortcut
   /** What a message sent while the agent works does. */

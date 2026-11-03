@@ -15,6 +15,7 @@ import { usePilotStore } from '#pilot/stores/pilot'
 import { useUsageStore, type UsageTab } from '#pilot/stores/usage'
 import { useKeysStore } from '#pilot/stores/keys'
 import { byModel, compact, filterRows, series, totals } from '#pilot/utils/usage'
+import { accountKeyLabel, splitAccountKey } from '#pilot/utils/agentMenu'
 import type { UsagePeriod } from '#pilot/types'
 import type { Series } from './Chart.vue'
 
@@ -39,6 +40,8 @@ const PROVIDERS: Series[] = [
   { id: 'codex', label: 'Codex', color: 'var(--qp-viz-1)' },
   { id: 'claude', label: 'Claude Code', color: 'var(--qp-viz-2)' },
 ]
+/** Another account (`claude@work`, round 3, card 02) takes the next free slots. */
+const ACCOUNT_COLORS = ['var(--qp-viz-3)', 'var(--qp-viz-4)', 'var(--qp-viz-5)']
 const KINDS: Series[] = [
   { id: 'input', label: 'Input', color: 'var(--qp-viz-1)' },
   { id: 'cacheRead', label: 'Cache read', color: 'var(--qp-viz-3)' },
@@ -56,7 +59,12 @@ const filterModels = computed(() => [...new Set(filterRows(rawReport.value?.rows
 function setProvider(p: string | null) {
   usage.filter = { provider: p, model: null }
 }
-const providersShown = computed(() => PROVIDERS.filter((p) => report.value?.rows.some((r) => r.provider === p.id)))
+/** The default accounts in their fixed slots, then every other account in the report. */
+const allSeries = computed<Series[]>(() => {
+  const accounts = [...new Set((rawReport.value?.rows ?? []).map((r) => r.provider))].filter((p) => p.includes('@')).sort()
+  return [...PROVIDERS, ...accounts.map((id, i) => ({ id, label: providerLabel(id), color: ACCOUNT_COLORS[i % ACCOUNT_COLORS.length]! }))]
+})
+const providersShown = computed(() => allSeries.value.filter((p) => report.value?.rows.some((r) => r.provider === p.id)))
 const chart = computed(() => (report.value ? series(report.value, usage.tab === 'tokens' ? 'kind' : 'provider') : []))
 const selected = computed(() => models.value.find((m) => m.model === usage.model) ?? null)
 const trend = computed(() => (report.value && selected.value ? series(report.value, selected.value.cost === null ? 'kind' : 'provider', selected.value.model) : []))
@@ -64,13 +72,17 @@ const trendSeries = computed<Series[]>(() => {
   const m = selected.value
   if (!m) return []
   if (m.cost === null) return KINDS
-  return PROVIDERS.filter((p) => p.id === m.provider)
+  return allSeries.value.filter((p) => p.id === m.provider)
 })
 
 const money = (v: number) => formatMoney(v, 'USD', { maximumFractionDigits: v !== 0 && Math.abs(v) < 1 ? 3 : 2, minimumFractionDigits: 2 })
 const pct = (v: number) => (v > 0 && v < 0.005 ? '<1%' : `${Math.round(v * 100)}%`)
 const unpricedShare = computed(() => (sum.value.tokens ? sum.value.unpricedTokens / sum.value.tokens : 0))
-const providerLabel = (id: string) => store.adapterLabel(id)
+function providerLabel(key: string): string {
+  return accountKeyLabel(key, store.adapterLabel, [...(store.settings?.instances ?? []), ...(store.status?.instances ?? [])])
+}
+/** A row's agent, for its icon: `claude@work` is Claude Code's. */
+const agentOf = (key: string) => splitAccountKey(key).provider
 
 watch(
   () => usage.tab,
@@ -136,7 +148,7 @@ watch(
           <div class="qp-seg" role="radiogroup" aria-label="Agent">
             <button class="qp-seg-btn" role="radio" :class="{ on: !usage.filter.provider }" :aria-checked="!usage.filter.provider" @click="setProvider(null)">All agents</button>
             <button v-for="p in filterProviders" :key="p" class="qp-seg-btn qp-usage-fp" role="radio" :class="{ on: usage.filter.provider === p }" :aria-checked="usage.filter.provider === p" @click="setProvider(p)">
-              <PilotAgentIcon :agent="p" :size="12" decorative />{{ providerLabel(p) }}
+              <PilotAgentIcon :agent="agentOf(p)" :size="12" decorative />{{ providerLabel(p) }}
             </button>
           </div>
           <select class="qp-usage-fm" :value="usage.filter.model ?? ''" aria-label="Model" @change="usage.filter = { ...usage.filter, model: ($event.target as HTMLSelectElement).value || null }">
@@ -219,7 +231,7 @@ watch(
                 >
                   <td>
                     <span class="qp-models-name">{{ m.model }}</span>
-                    <span class="qp-models-prov"><PilotAgentIcon :agent="m.provider" :size="11" decorative />{{ providerLabel(m.provider) }}</span>
+                    <span class="qp-models-prov"><PilotAgentIcon :agent="agentOf(m.provider)" :size="11" decorative />{{ providerLabel(m.provider) }}</span>
                   </td>
                   <td class="num">{{ m.cost === null ? 'unpriced' : money(m.cost) }}</td>
                   <td class="num">{{ m.cost === null ? '—' : pct(m.share) }}</td>

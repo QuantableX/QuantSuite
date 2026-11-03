@@ -32,7 +32,7 @@ pub use storage::{log_run as log_storage_run, Category as StorageCategory, Clean
 /// 18: thread tags (round 2, card 12).
 /// 19: side chats name their main thread (round 2, card 10).
 /// 20: crews — tasks, members and their message log (round 2, card 07).
-pub const SCHEMA_VERSION: i64 = 20;
+pub const SCHEMA_VERSION: i64 = 21;
 
 #[path = "queue.rs"]
 mod queue;
@@ -78,6 +78,9 @@ pub struct ThreadMeta {
     /// A side chat's main thread (round 2, card 10); `None` for a thread of its own.
     #[serde(default)]
     pub parent_id: Option<String>,
+    /// The agent account (round 3, card 02): an instance id of the provider, `""` = the default account.
+    #[serde(default)]
+    pub instance: String,
     /// `auto` until the user renames the thread, then `user`.
     pub title_source: String,
     /// `idle` | `running` | `waiting` | `error` | `interrupted` | `limited` — last known.
@@ -151,7 +154,7 @@ pub fn clean_tags(tags: &[String]) -> Vec<String> {
 const THREAD_COLS: &str = "id, provider, provider_session_id, title, context_id, context_name, cwd, model, mode, \
     created_at, updated_at, cost_usd, input_tokens, output_tokens, last_error, kind, effort, title_source, state, \
     context_tokens, context_window, last_activity_at, pinned, sort_key, settled_at, snoozed_until, auto_settle, workspace_mode, base_branch, \
-    branch, worktree_path, fast, tags, parent_id";
+    branch, worktree_path, fast, tags, parent_id, instance";
 
 fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
     Ok(ThreadMeta {
@@ -190,6 +193,7 @@ fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
         notice: None,
         tags: serde_json::from_str(&r.get::<_, String>(32)?).unwrap_or_default(),
         parent_id: r.get(33)?,
+        instance: r.get(34)?,
     })
 }
 
@@ -584,6 +588,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     // Schema 20 (round 2, card 07): crews.
     tx.execute_batch(crew_db::CREW_TABLES)?;
+    // Schema 21 (round 3, card 02): the agent account a thread runs under.
+    if !column_exists(&tx, "threads", "instance")? {
+        tx.execute_batch("ALTER TABLE threads ADD COLUMN instance TEXT NOT NULL DEFAULT '';")?;
+    }
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;
@@ -649,6 +657,12 @@ impl Database {
         Ok(())
     }
 
+    pub fn set_instance(&self, id: &str, instance: &str) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET instance = ?2 WHERE id = ?1", params![id, instance])?;
+        Ok(())
+    }
+
     pub fn set_tags(&self, id: &str, tags: &[String]) -> rusqlite::Result<()> {
         let conn = self.lock();
         conn.execute("UPDATE threads SET tags = ?2 WHERE id = ?1", params![id, serde_json::to_string(&clean_tags(tags)).unwrap_or_else(|_| "[]".into())])?;
@@ -694,7 +708,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO threads ({THREAD_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, \
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)"
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35)"
             ),
             params![
                 m.id,
@@ -730,7 +744,8 @@ impl Database {
                 m.worktree_path,
                 m.fast as i64,
                 serde_json::to_string(&clean_tags(&m.tags)).unwrap_or_else(|_| "[]".into()),
-                m.parent_id
+                m.parent_id,
+                m.instance
             ],
         )?;
         Ok(())
@@ -1631,7 +1646,7 @@ pub(crate) mod tests {
             fast: false,
             notice: None,
             tags: Vec::new(),
-            parent_id: None,
+            instance: String::new(), parent_id: None,
             state: "idle".into(),
             context_tokens: None,
             context_window: None,

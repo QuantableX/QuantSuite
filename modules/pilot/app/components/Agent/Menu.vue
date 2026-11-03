@@ -17,7 +17,7 @@ import { Check, ChevronRight, Loader2, RefreshCw, Search, Settings2, SquareTermi
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { effortsFor, modelRows, type ModelRow } from '#pilot/utils/models'
-import { agentRowState, filterAgents, installedFirst, orderModels, placeMenu, placeSubmenu, pushRecent, setupLabel, type AgentSetup, type RecentModels } from '#pilot/utils/agentMenu'
+import { accountKey, agentRowState, filterAgents, installedFirst, orderModels, placeMenu, placeSubmenu, pushRecent, setupLabel, splitAccountKey, type AgentSetup, type RecentModels } from '#pilot/utils/agentMenu'
 import type { ModelInfo } from '#pilot/types'
 
 const props = withDefaults(
@@ -26,6 +26,8 @@ const props = withDefaults(
     prefer?: 'below' | 'above'
     /** The agent in use (thread) — checked, and the one other rows are compared with. */
     provider?: string | null
+    /** Its account (round 3, card 02); "" = the default one. */
+    instance?: string | null
     model?: string
     effort?: string
     fast?: boolean
@@ -39,7 +41,7 @@ const props = withDefaults(
     /** Agents without a chat protocol start as a terminal session (new threads only; round 2, card 11). */
     allowTerminal?: boolean
   }>(),
-  { prefer: 'below', provider: null, model: undefined, effort: undefined, fast: false, project: null, locked: null, title: 'Agent', allowMulti: false, multi: () => [], allowTerminal: false },
+  { prefer: 'below', provider: null, instance: null, model: undefined, effort: undefined, fast: false, project: null, locked: null, title: 'Agent', allowMulti: false, multi: () => [], allowTerminal: false },
 )
 const emit = defineEmits<{
   pick: [setup: AgentSetup]
@@ -54,18 +56,32 @@ const threads = useThreadStore()
 const query = ref('')
 const projectPrefs = computed(() => (props.project ? store.settings?.projects?.[props.project] : undefined))
 const agents = computed(() =>
-  filterAgents(installedFirst(store.adapters), query.value).map((a) => {
-    const state = agentRowState(a, {
+  filterAgents(installedFirst(store.adapters), query.value).flatMap((a) => {
+    const ctx = {
       disabled: Boolean(store.settings?.providers?.[a.id]?.disabled),
       projectEnabled: projectPrefs.value?.enabled ?? null,
       locked: props.locked,
-      current: props.provider,
       allowTerminal: props.allowTerminal,
-    })
+    }
+    // A working thread keeps its own agent and account; every other row waits.
+    const state = agentRowState(a, { ...ctx, current: isOwnRow(a.id) ? a.id : null })
     const setup = state.terminal ? { provider: a.id, model: '', effort: '', fast: false, terminal: true } : setupOf(a.id)
-    return { a, state, setup }
+    const rows = [{ a, key: a.id, label: a.label, instance: '', state, setup }]
+    // Round 3, card 02: each other account of the agent is a row of its own,
+    // signed in or not by its own login.
+    if (!state.terminal) {
+      for (const i of store.instancesOf(a.id)) {
+        rows.push({ a, key: accountKey(a.id, i.id), label: `${a.label} · ${i.label}`, instance: i.id, state: agentRowState({ ...a, loggedIn: i.loggedIn }, { ...ctx, current: isOwnRow(accountKey(a.id, i.id)) ? a.id : null }), setup: { ...setupOf(a.id), instance: i.id } })
+      }
+    }
+    return rows
   }),
 )
+/** The submenu's agent and account (`sub` is a row key). */
+const subProvider = computed(() => (sub.value ? splitAccountKey(sub.value).provider : ''))
+const subInstance = computed(() => (sub.value ? splitAccountKey(sub.value).instance : ''))
+/** The row of the thread's own agent and account. */
+const isOwnRow = (key: string) => key === accountKey(props.provider ?? '', props.instance)
 
 /** What picking the agent's row starts with: the thread's own setup, else a new thread's (the one resolver, card 03). */
 function setupOf(id: string): AgentSetup {
@@ -131,12 +147,12 @@ function remember(s: AgentSetup) {
 }
 
 // ── The submenu's models ──
-const subAgent = computed(() => agents.value.find((r) => r.a.id === sub.value) ?? null)
-const subModels = computed<ModelInfo[]>(() => (sub.value ? threads.catalogs[sub.value]?.models ?? [] : []))
+const subAgent = computed(() => agents.value.find((r) => r.key === sub.value) ?? null)
+const subModels = computed<ModelInfo[]>(() => (sub.value ? threads.catalogs[subProvider.value]?.models ?? [] : []))
 const subRows = computed(() => {
   const rows = modelRows(subModels.value, subQuery.value)
   if (subQuery.value.trim()) return { recent: [] as ModelRow[], rest: rows }
-  return orderModels(rows, recent.value[sub.value ?? ''] ?? [])
+  return orderModels(rows, recent.value[subProvider.value] ?? [])
 })
 const flatRows = computed(() => [...subRows.value.recent, ...subRows.value.rest])
 function infoOf(id: string): ModelInfo | undefined {
@@ -145,11 +161,11 @@ function infoOf(id: string): ModelInfo | undefined {
 function effortsOf(id: string): string[] {
   return effortsFor(subModels.value, id)
 }
-const isCurrent = (id: string) => sub.value === props.provider && props.model !== undefined && id === props.model
-const inMulti = (id: string) => props.multi.some((m) => m.provider === sub.value && m.model === id)
+const isCurrent = (id: string) => !!sub.value && isOwnRow(sub.value) && props.model !== undefined && id === props.model
+const inMulti = (id: string) => props.multi.some((m) => m.provider === subProvider.value && m.model === id)
 /** The effort a model takes when its row (not a chip) is picked: the current one if it has it. */
 function carriedEffort(id: string): string {
-  const want = sub.value === props.provider ? props.effort ?? '' : setupOf(sub.value ?? '').effort
+  const want = sub.value && isOwnRow(sub.value) ? props.effort ?? '' : setupOf(subProvider.value).effort
   return want && effortsOf(id).includes(want) ? want : ''
 }
 function chipsOf(id: string): { kind: 'effort' | 'fast'; value: string }[] {
@@ -165,7 +181,7 @@ function chipOn(id: string, chip: { kind: 'effort' | 'fast'; value: string }): b
 }
 
 function openSub(id: string, focus = false) {
-  const row = agents.value.find((r) => r.a.id === id)
+  const row = agents.value.find((r) => r.key === id)
   if (!row?.state.usable || row.state.terminal) {
     sub.value = null
     return
@@ -174,7 +190,7 @@ function openSub(id: string, focus = false) {
     sub.value = id
     subQuery.value = ''
     subCol.value = -1
-    void loadCatalog(id)
+    void loadCatalog(row.a.id)
   }
   void nextTick(async () => {
     const cur = flatRows.value.findIndex((r) => isCurrent(r.id))
@@ -208,19 +224,19 @@ function pickModel(id: string, chip?: { kind: 'effort' | 'fast'; value: string }
   if (!sub.value) return
   const current = isCurrent(id)
   let effort = carriedEffort(id)
-  let fast = Boolean(infoOf(id)?.fast) && (sub.value === props.provider ? props.fast : false)
+  let fast = Boolean(infoOf(id)?.fast) && (isOwnRow(sub.value) ? props.fast : false)
   if (chip?.kind === 'effort') effort = current && (props.effort ?? '') === chip.value ? '' : chip.value
   if (chip?.kind === 'fast') fast = !(current && props.fast)
-  pick({ provider: sub.value, model: id, effort, fast })
+  pick({ provider: subProvider.value, model: id, effort, fast, instance: subInstance.value })
 }
 /** Shift: several models for a new thread's first message (card 10). */
 function toggleMulti(id: string) {
   if (!props.allowMulti || !sub.value) return false
   const list = [...props.multi]
   if (!list.length && props.provider) list.push({ provider: props.provider, model: props.model ?? '' })
-  const at = list.findIndex((m) => m.provider === sub.value && m.model === id)
+  const at = list.findIndex((m) => m.provider === subProvider.value && m.model === id)
   if (at >= 0) list.splice(at, 1)
-  else list.push({ provider: sub.value, model: id })
+  else list.push({ provider: subProvider.value, model: id })
   emit('multi', list)
   return true
 }
@@ -247,12 +263,12 @@ function onKey(e: KeyboardEvent) {
     e.preventDefault()
     if (!n) return
     active.value = (active.value + (e.key === 'ArrowDown' ? 1 : -1) + n) % n
-    if (sub.value && agents.value[active.value]?.a.id !== sub.value) sub.value = null
+    if (sub.value && agents.value[active.value]?.key !== sub.value) sub.value = null
   } else if (e.key === 'ArrowRight' && (search.value?.selectionStart ?? 0) >= query.value.length) {
     const r = agents.value[active.value]
     if (r?.state.usable && !r.state.terminal) {
       e.preventDefault()
-      openSub(r.a.id, true)
+      openSub(r.key, true)
     }
   } else if (e.key === 'Enter') {
     e.preventDefault()
@@ -305,7 +321,7 @@ function onRowEnter(i: number) {
   if (hoverTimer) clearTimeout(hoverTimer)
   const r = agents.value[i]
   hoverTimer = setTimeout(() => {
-    if (r?.state.usable && !r.state.terminal) openSub(r.a.id)
+    if (r?.state.usable && !r.state.terminal) openSub(r.key)
     else sub.value = null
   }, 140)
 }
@@ -377,24 +393,24 @@ onBeforeUnmount(() => {
       <div class="qp-am-list">
         <div
           v-for="(r, i) in agents"
-          :key="r.a.id"
+          :key="r.key"
           class="qp-am-row"
           role="menuitem"
           :aria-disabled="!r.state.usable"
           :aria-haspopup="r.state.usable ? 'menu' : undefined"
-          :aria-expanded="r.state.usable ? sub === r.a.id : undefined"
-          :data-agent-row="r.a.id"
-          :class="{ active: i === active, off: !r.state.usable, open: sub === r.a.id }"
+          :aria-expanded="r.state.usable ? sub === r.key : undefined"
+          :data-agent-row="r.key"
+          :class="{ active: i === active, off: !r.state.usable, open: sub === r.key }"
           @mouseenter="onRowEnter(i)"
           @click="pickAgent(i)"
         >
           <PilotAgentIcon :agent="r.a.id" :size="16" decorative />
-          <span class="qp-am-name">{{ r.a.label }}</span>
-          <Check v-if="r.a.id === provider && r.state.usable" class="qp-am-check" :size="13" />
+          <span class="qp-am-name">{{ r.label }}</span>
+          <Check v-if="isOwnRow(r.key) && r.state.usable" class="qp-am-check" :size="13" />
           <template v-if="r.state.usable">
             <span class="qp-am-setup" :class="{ terminal: r.state.terminal }" :title="r.state.terminal ? `${r.a.label} has no chat protocol here — it starts in a terminal session` : setupText(r.setup)">{{ setupText(r.setup) }}</span>
             <span v-if="pinnedHere(r.a.id)" class="qp-am-pin" title="This project's setting (Settings → General → this project)">project</span>
-            <button v-if="!r.state.terminal" class="qp-am-more" tabindex="-1" :aria-label="`${r.a.label}: models and effort`" @click.stop="openSub(r.a.id, true)">
+            <button v-if="!r.state.terminal" class="qp-am-more" tabindex="-1" :aria-label="`${r.a.label}: models and effort`" @click.stop="openSub(r.key, true)">
               <ChevronRight :size="13" />
             </button>
             <SquareTerminal v-else class="qp-am-term" :size="13" aria-hidden="true" />
@@ -413,7 +429,7 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <div v-if="sub && subAgent" ref="subEl" class="qp-am qp-am-sub" role="menu" :aria-label="`${subAgent.a.label} models`" :style="subStyle" data-agent-submenu>
+    <div v-if="sub && subAgent" ref="subEl" class="qp-am qp-am-sub" role="menu" :aria-label="`${subAgent.label} models`" :style="subStyle" data-agent-submenu>
       <div class="qp-am-search">
         <Search :size="13" />
         <input ref="subSearch" v-model="subQuery" placeholder="Search models or type an id" spellcheck="false" aria-label="Search models" @keydown="onSubKey" />
@@ -423,7 +439,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div class="qp-am-list">
-        <div v-if="loading[sub] && !subModels.length" class="qp-am-empty">Asking {{ subAgent.a.label }} for its models…</div>
+        <div v-if="loading[subProvider] && !subModels.length" class="qp-am-empty">Asking {{ subAgent.a.label }} for its models…</div>
         <div v-else-if="failed[sub] && !flatRows.length" class="qp-am-empty">The CLI did not report its models. You can still type a model id.</div>
         <template v-for="(group, g) in [subRows.recent, subRows.rest]" :key="g">
           <div v-if="g === 0 && group.length" class="qp-am-group">Recent</div>
@@ -463,7 +479,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="multi.length > 1" class="qp-am-note">{{ multi.length }} models — sending starts one thread and worktree each</div>
       <div v-else-if="allowMulti" class="qp-am-note">Shift-click to send to several models at once</div>
-      <div v-else-if="threads.catalogs[sub]?.version" class="qp-am-note">{{ subAgent.a.label }} {{ threads.catalogs[sub]?.version }}</div>
+      <div v-else-if="threads.catalogs[subProvider]?.version" class="qp-am-note">{{ subAgent.a.label }} {{ threads.catalogs[subProvider]?.version }}</div>
     </div>
   </Teleport>
 </template>

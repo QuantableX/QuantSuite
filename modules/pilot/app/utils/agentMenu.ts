@@ -14,6 +14,30 @@ export interface AgentSetup {
   fast: boolean
   /** An agent without a chat protocol: a terminal session that starts it (round 2, card 11). */
   terminal?: boolean
+  /** The agent account (round 3, card 02); absent or "" = the default account. */
+  instance?: string
+}
+
+/** A menu row's key: the agent, or `agent@account` for another account (round 3, card 02). */
+export function accountKey(provider: string, instance?: string | null): string {
+  return instance ? `${provider}@${instance}` : provider
+}
+
+export function splitAccountKey(key: string): { provider: string; instance: string } {
+  const at = key.indexOf('@')
+  return at < 0 ? { provider: key, instance: '' } : { provider: key.slice(0, at), instance: key.slice(at + 1) }
+}
+
+/**
+ * A usage or limits key's label: `claude` → "Claude Code", `claude@work` →
+ * "Claude Code · Work". A removed account keeps its id, so its past usage
+ * never reads as the default account's.
+ */
+export function accountKeyLabel(key: string, agentLabel: (id: string) => string, instances: { provider: string; id: string; label: string }[]): string {
+  const { provider, instance } = splitAccountKey(key)
+  if (!instance) return agentLabel(provider)
+  const acc = instances.find((i) => i.provider === provider && i.id === instance)
+  return `${agentLabel(provider)} · ${acc?.label ?? instance}`
 }
 
 /** What the menu needs of an adapter (AdapterStatus). */

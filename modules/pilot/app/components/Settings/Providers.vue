@@ -9,23 +9,26 @@
  * or the CLI's own `update`, after showing exactly what will run, and reads
  * the version again. "Prefer saved Claude login" drops inherited API keys,
  * tokens and endpoints from new Claude processes. Each agent shows its
- * logo; the user's own agents can take an image (round 2, card 01).
+ * logo; the user's own agents can take an image (round 2, card 01). Claude
+ * Code and Codex take more accounts, each in its own config folder with its
+ * own login (round 3, card 02).
  */
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { pilot } from '#pilot/utils/invoke'
 import { agentSlug } from '#pilot/utils/agentIcons'
-import type { CustomAdapter, PilotSettings, ProviderPrefs } from '#pilot/types'
+import { pickFolder } from '#pilot/utils/pickFolder'
+import type { CustomAdapter, Instance, PilotSettings, ProviderPrefs } from '#pilot/types'
 
 const store = usePilotStore()
 /** Agents that run chat threads get the launch options (card 20 adds ACP agents, pi and omp). */
 const chatIds = computed(() => store.adapters.filter((a) => a.chat ?? (a.id === 'claude' || a.id === 'codex')).map((a) => a.id))
 const CHAT = { includes: (id: string) => chatIds.value.includes(id) }
 
-type Owned = Pick<PilotSettings, 'exe' | 'model' | 'effort' | 'providers' | 'env' | 'preferSavedClaudeLogin' | 'custom'>
+type Owned = Pick<PilotSettings, 'exe' | 'model' | 'effort' | 'providers' | 'env' | 'preferSavedClaudeLogin' | 'custom'> & { instances: Instance[] }
 const blank = (): ProviderPrefs => ({ args: '', env: {}, models: [], disabled: false })
-const draft = reactive<Owned>({ exe: {}, model: {}, effort: '', providers: { claude: blank(), codex: blank() }, env: {}, preferSavedClaudeLogin: false, custom: [] })
+const draft = reactive<Owned>({ exe: {}, model: {}, effort: '', providers: { claude: blank(), codex: blank() }, env: {}, preferSavedClaudeLogin: false, custom: [], instances: [] })
 /** Own model ids as typed, one per line. */
 const modelText = reactive<Record<string, string>>({})
 /** Bumped on pull so the env editors start from the saved rows. */
@@ -48,6 +51,7 @@ function pull() {
   draft.env = { ...(s.env ?? {}) }
   draft.preferSavedClaudeLogin = s.preferSavedClaudeLogin ?? false
   draft.custom = (s.custom ?? []).map((c) => ({ ...c }))
+  draft.instances = (s.instances ?? []).map((i) => ({ ...i }))
   for (const a of store.adapters) modelText[a.id] = (s.providers?.[a.id]?.models ?? []).join('\n')
   epoch.value++
 }
@@ -79,6 +83,14 @@ const adapters = computed(() => store.adapters.filter((a) => !a.custom))
 const busy = ref(false)
 const notice = ref('')
 async function save() {
+  // A new account takes its id from its name; two of one agent may not share it.
+  for (const i of draft.instances) if (!i.id.trim()) i.id = accountSlug(i.label)
+  const clash = draft.instances.find((i, at) => !i.id || draft.instances.findIndex((o) => o.provider === i.provider && accountSlug(o.id) === accountSlug(i.id)) !== at)
+  if (clash) {
+    notice.value = clash.id ? `Two ${store.adapterLabel(clash.provider)} accounts are both called "${accountSlug(clash.id)}".` : `Give the new ${store.adapterLabel(clash.provider)} account a name.`
+    return
+  }
+  const accountsChanged = JSON.stringify(draft.instances) !== JSON.stringify(store.settings?.instances ?? [])
   busy.value = true
   notice.value = ''
   try {
@@ -86,7 +98,9 @@ async function save() {
       const models = (modelText[a.id] ?? '').split(/[\n,]/).map((m) => m.trim()).filter(Boolean)
       if (models.length || draft.providers[a.id]) prefs(a.id).models = models
     }
-    await store.saveSettings({ ...draft, providers: JSON.parse(JSON.stringify(draft.providers)), custom: draft.custom.map((c) => ({ ...c })) })
+    await store.saveSettings({ ...draft, providers: JSON.parse(JSON.stringify(draft.providers)), custom: draft.custom.map((c) => ({ ...c })), instances: draft.instances.map((i) => ({ ...i })) })
+    // The accounts' sign-in states come with the status.
+    if (accountsChanged) void store.refreshStatus()
     notice.value = 'Saved. New agent processes use it; running ones keep theirs until their next start.'
   } catch (e) {
     notice.value = e instanceof Error ? e.message : String(e)
@@ -151,6 +165,39 @@ async function clearIcon(i: number, c: CustomAdapter) {
     await store.clearAgentImage(agentSlug(c.id))
   } catch (e) {
     iconError[i] = e instanceof Error ? e.message : String(e)
+  }
+}
+
+// ── More accounts of Claude Code and Codex (round 3, card 02) ──
+/** The variable that points the CLI at an account's folder. */
+const HOME_VAR: Record<string, string> = { claude: 'CLAUDE_CONFIG_DIR', codex: 'CODEX_HOME' }
+const accountSlug = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+const accountsOf = (provider: string) => draft.instances.map((i, at) => ({ i, at })).filter((r) => r.i.provider === provider)
+/** Signed in or not — known for saved accounts once the status is read. */
+const statusOf = (i: Instance) => (i.id ? store.instancesOf(i.provider).find((s) => s.id === i.id) ?? null : null)
+/** Where an account without a chosen folder keeps its login and sessions. */
+function defaultHome(provider: string, i: Instance): string {
+  const dir = store.status?.dataDir
+  const id = accountSlug(i.id || i.label) || '<name>'
+  if (!dir) return `QuantPilot's data folder/accounts/${provider}-${id}`
+  const sep = dir.includes('\\') ? '\\' : '/'
+  return `${dir}${sep}accounts${sep}${provider}-${id}`
+}
+function addAccount(provider: string) {
+  draft.instances.push({ id: '', provider, label: '', home: '' })
+}
+async function browseHome(i: Instance) {
+  const picked = await pickFolder(`A folder for the ${i.label || 'new'} account`)
+  if (picked) i.home = picked
+}
+const copied = ref('')
+async function copySignIn(key: string, text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    copied.value = key
+    setTimeout(() => (copied.value === key ? (copied.value = '') : undefined), 1400)
+  } catch {
+    notice.value = 'The clipboard is not available.'
   }
 }
 
@@ -240,6 +287,37 @@ function addCustom() {
           <input v-model="draft.preferSavedClaudeLogin" type="checkbox" />
           <span>Prefer the saved Claude login <em>— new Claude processes ignore inherited ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, custom endpoints and model overrides (variables set above still apply)</em></span>
         </label>
+        <div v-if="HOME_VAR[a.id]" class="qp-acc" :data-accounts="a.id">
+          <div class="qp-acc-head">
+            <span class="qp-acc-title">Other accounts</span>
+            <em>
+              Each signs in on its own and keeps its own sessions and usage: QuantPilot points {{ HOME_VAR[a.id] }} at the account's folder, and the
+              login stays in there — QuantPilot never reads it. A thread picks its account in the agent menu.
+            </em>
+          </div>
+          <div v-for="r in accountsOf(a.id)" :key="r.at" class="qp-acc-row" :data-account="r.i.id || 'new'">
+            <div class="qp-acc-line">
+              <span class="qp-dot" :class="{ ok: statusOf(r.i)?.loggedIn === true, bad: statusOf(r.i)?.loggedIn === false }" />
+              <input v-model="r.i.label" class="qp-input qp-acc-name" placeholder="Name, e.g. Work" spellcheck="false" aria-label="Account name" />
+              <span class="qp-settings-inline qp-acc-home">
+                <input v-model="r.i.home" class="qp-input" :placeholder="defaultHome(a.id, r.i)" :title="r.i.home || defaultHome(a.id, r.i)" spellcheck="false" aria-label="Account folder" />
+                <button class="qp-btn qp-btn-sm" @click="browseHome(r.i)">Browse</button>
+              </span>
+              <button class="qp-btn qp-btn-sm qp-btn-danger" title="Its threads go back to the default account; its folder stays where it is" @click="draft.instances.splice(r.at, 1)">Remove</button>
+            </div>
+            <div class="qp-acc-status">
+              <template v-if="statusOf(r.i)">
+                <span :class="{ warn: statusOf(r.i)?.loggedIn === false }">{{ statusOf(r.i)?.detail }}</span>
+                <span v-if="statusOf(r.i)?.loggedIn !== true && statusOf(r.i)?.signIn" class="qp-acc-cmdline">
+                  <code class="qp-acc-cmd" :title="statusOf(r.i)?.signIn">{{ statusOf(r.i)?.signIn }}</code>
+                  <button class="qp-btn qp-btn-sm" @click="copySignIn(`${a.id}@${r.i.id}`, statusOf(r.i)?.signIn ?? '')">{{ copied === `${a.id}@${r.i.id}` ? 'Copied' : 'Copy' }}</button>
+                </span>
+              </template>
+              <span v-else>Save, then sign it in with the command that shows here.</span>
+            </div>
+          </div>
+          <div><button class="qp-btn qp-btn-sm" @click="addAccount(a.id)">Add an account</button></div>
+        </div>
       </template>
     </section>
 
@@ -336,6 +414,18 @@ function addCustom() {
 .qp-input:focus { border-color: var(--qss-accent, #a0a0a8); }
 .qp-input::placeholder { color: var(--qss-text-muted, #6e6e7a); }
 .qp-check { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+.qp-acc { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--qss-border-subtle, #35353d); }
+.qp-acc-head { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; }
+.qp-acc-head em { font-style: normal; color: var(--qss-text-muted, #6e6e7a); line-height: 1.45; }
+.qp-acc-title { font-size: 12px; font-weight: 600; }
+.qp-acc-row { display: flex; flex-direction: column; gap: 4px; }
+.qp-acc-line { display: flex; align-items: center; gap: 8px; }
+.qp-acc-name { width: 160px; flex-shrink: 0; }
+.qp-acc-home { flex: 1; min-width: 0; }
+.qp-acc-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-left: 15px; font-size: 11.5px; color: var(--qss-text-secondary, #9a9aa5); }
+.qp-acc-status .warn { color: var(--qss-warning, #d29a3f); }
+.qp-acc-cmdline { display: flex; align-items: center; gap: 6px; flex: 1 1 100%; min-width: 0; }
+.qp-acc-cmd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; background: var(--qss-bg-card, #292930); padding: 2px 6px; border-radius: 4px; user-select: all; }
 .qp-settings-actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .qp-settings-notice { color: var(--qss-text-secondary, #9a9aa5); }
 </style>

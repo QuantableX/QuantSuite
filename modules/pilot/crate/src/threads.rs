@@ -53,6 +53,8 @@ pub struct CreateThread {
     pub(crate) remember: Option<bool>,
     /// A side chat of this thread (round 2, card 10).
     pub(crate) parent_id: Option<String>,
+    /// The agent account (round 3, card 02); absent or unknown = the default account.
+    pub(crate) instance: Option<String>,
 }
 
 /// Whether an agent's CLI can start here (installed or set in Settings).
@@ -132,6 +134,7 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
     let wt_branch = worktree.as_deref().and_then(|p| git::repo_info(Path::new(p))).map(|r| r.branch).unwrap_or_default();
     // Fast mode only where the agent has it: Claude Code (round 2, card 02).
     let fast = req.fast.unwrap_or(false) && provider == "claude";
+    let instance = req.instance.as_deref().map(str::trim).filter(|i| settings.instance(&provider, i).is_some()).unwrap_or_default().to_string();
     let meta = ThreadMeta {
         id: uuid::Uuid::new_v4().to_string(),
         provider,
@@ -140,6 +143,7 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         fast,
         notice: None,
         tags: Vec::new(),
+        instance,
         parent_id: None,
         title,
         context_id: ctx.id,
@@ -219,6 +223,9 @@ pub fn pilot_thread_apply_setup(state: State<'_, PilotState>, id: String, req: C
     db(state.db.set_effort(&id, &effort))?;
     db(state.db.set_mode(&id, &mode))?;
     db(state.db.set_fast(&id, fast))?;
+    // The account (round 3, card 02): one this agent has, else the default.
+    let instance = req.instance.as_deref().map(str::trim).filter(|i| settings.instance(&provider, i).is_some()).unwrap_or_default();
+    db(state.db.set_instance(&id, instance))?;
     // Local or worktree, and the base, unless the draft already works in a worktree.
     if meta.worktree_path.is_none() {
         let project = context_of(&meta).path;
@@ -389,8 +396,9 @@ pub fn title_from_prompt(text: &str) -> String {
 /// What decides whether a warm process can take the next turn.
 fn plan_key(meta: &ThreadMeta, settings: &Settings) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}@{}|{}|{}|{}|{}|{}|{}|{}",
         meta.provider,
+        meta.instance,
         effective_model(meta, settings),
         effective_effort(meta, settings),
         meta.fast,
@@ -408,10 +416,11 @@ fn effective_model(meta: &ThreadMeta, settings: &Settings) -> String {
     settings.model_in(&meta.context_id, &meta.provider).unwrap_or_default().to_string()
 }
 
-/// The base environment of an agent process plus what the settings add (card 19).
-fn agent_env(settings: &Settings, provider: &str, base: Vec<(String, String)>) -> Vec<(String, String)> {
+/// The base environment of an agent process plus what the settings add
+/// (card 19) and the account's config home (round 3, card 02; `""` = default).
+fn agent_env(settings: &Settings, provider: &str, instance: &str, base: Vec<(String, String)>) -> Vec<(String, String)> {
     let mut env = base;
-    env.extend(settings.launch_env(provider));
+    env.extend(settings.launch_env_for(provider, instance));
     env
 }
 
@@ -500,6 +509,7 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
         env: agent_env(
             settings,
             "claude",
+            &meta.instance,
             vec![
                 ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
                 ("QS_PILOT_THREAD".into(), meta.id.clone()),
@@ -555,6 +565,7 @@ fn codex_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: 
         env: agent_env(
             settings,
             "codex",
+            &meta.instance,
             vec![
                 ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
                 ("QS_PILOT_THREAD".into(), meta.id.clone()),
@@ -612,6 +623,7 @@ fn acp_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: &S
         env: agent_env(
             settings,
             &meta.provider,
+            &meta.instance,
             vec![
                 ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
                 ("QS_PILOT_THREAD".into(), meta.id.clone()),
@@ -652,6 +664,7 @@ fn pi_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings: &Se
         env: agent_env(
             settings,
             &meta.provider,
+            &meta.instance,
             vec![
                 ("PATH".into(), qs_core::system_path::current().to_string_lossy().into_owned()),
                 ("QS_PILOT_THREAD".into(), meta.id.clone()),
@@ -2237,6 +2250,15 @@ pub fn pilot_listeners() -> Result<Vec<Listener>, String> {
 
 // ── Thread lifecycle (card 15) ──
 
+/// "Claude Code · Work" for an account, the agent's label for the default one.
+fn account_label(state: &PilotState, provider: &str, instance: &str) -> String {
+    let base = label_of(state, provider);
+    match lock(&state.settings).instance(provider, instance) {
+        Some(i) => format!("{base} · {}", i.label),
+        None => base,
+    }
+}
+
 fn label_of(state: &PilotState, provider: &str) -> String {
     let settings = lock(&state.settings).clone();
     adapters::find(&settings, if provider.is_empty() { "claude" } else { provider }).map(|a| a.label.to_string()).unwrap_or_else(|| provider.to_string())
@@ -2534,9 +2556,20 @@ fn home() -> PathBuf {
     std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_default()
 }
 
+/// An agent's config home for a thread: its account's (round 3, card 02),
+/// else what the suite's environment names, else the CLI's default.
+fn config_home(state: &PilotState, provider: &str, instance: &str) -> PathBuf {
+    if let Some(i) = lock(&state.settings).instance(provider, instance) {
+        return PathBuf::from(&i.home);
+    }
+    match provider {
+        "codex" => std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".codex")),
+        _ => std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home().join(".claude")),
+    }
+}
+
 /// Claude Code's session file: `<config>/projects/<project>/<id>.jsonl`.
-fn claude_session_file(sid: &str) -> Option<PathBuf> {
-    let root = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home().join(".claude"));
+fn claude_session_file(root: &Path, sid: &str) -> Option<PathBuf> {
     std::fs::read_dir(root.join("projects")).ok()?.flatten().map(|d| d.path().join(format!("{sid}.jsonl"))).find(|p| p.is_file())
 }
 
@@ -2550,11 +2583,10 @@ pub(crate) fn claude_project_dir(cwd: &str) -> String {
 /// A Claude session follows its thread into another folder: Claude resumes
 /// from `<config>/projects/<folder of the cwd>/<id>.jsonl`, so the session
 /// file is copied there (the original stays). `false` when there is none.
-fn carry_claude_session(sid: &str, cwd: &str) -> bool {
-    let Some(src) = claude_session_file(sid) else {
+fn carry_claude_session(root: &Path, sid: &str, cwd: &str) -> bool {
+    let Some(src) = claude_session_file(root, sid) else {
         return false;
     };
-    let root = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home().join(".claude"));
     let dir = root.join("projects").join(claude_project_dir(cwd));
     let dst = dir.join(format!("{sid}.jsonl"));
     dst.is_file() || (std::fs::create_dir_all(&dir).is_ok() && std::fs::copy(&src, &dst).is_ok())
@@ -2640,7 +2672,7 @@ fn move_one(state: &PilotState, meta: &ThreadMeta, ctx: &contexts::Context) -> R
     let sid = meta.provider_session_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let continuity = match (meta.provider.as_str(), sid) {
         (_, None) => Continuity::Fresh,
-        ("claude", Some(s)) if carry_claude_session(s, &ctx.path) => Continuity::Kept,
+        ("claude", Some(s)) if carry_claude_session(&config_home(state, "claude", &meta.instance), s, &ctx.path) => Continuity::Kept,
         ("codex", Some(_)) => Continuity::Kept,
         _ => Continuity::Recap,
     };
@@ -2660,8 +2692,8 @@ fn move_one(state: &PilotState, meta: &ThreadMeta, ctx: &contexts::Context) -> R
 }
 
 /// Codex's rollout file: `<home>/sessions/YYYY/MM/DD/rollout-…-<id>.jsonl`, newest days first.
-fn codex_rollout_file(sid: &str) -> Option<PathBuf> {
-    let root = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".codex")).join("sessions");
+fn codex_rollout_file(codex_home: &Path, sid: &str) -> Option<PathBuf> {
+    let root = codex_home.join("sessions");
     let desc = |p: &Path| {
         let mut v: Vec<PathBuf> = std::fs::read_dir(p).map(|r| r.flatten().map(|d| d.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default();
         v.sort();
@@ -2697,11 +2729,11 @@ fn import_tui(state: &PilotState, id: &str) -> usize {
     };
     let read = |p: PathBuf| std::fs::read_to_string(p).map(|t| t.lines().map(str::to_string).collect::<Vec<_>>()).unwrap_or_default();
     let turns = if meta.provider == "codex" {
-        let lines = codex_rollout_file(&sid).map(read).unwrap_or_default();
+        let lines = codex_rollout_file(&config_home(state, "codex", &meta.instance), &sid).map(read).unwrap_or_default();
         lifecycle::codex_tail(&lifecycle::codex_messages(&lines), state.db.user_messages(id).unwrap_or(0))
     } else {
         let after = state.db.turn_refs(id).unwrap_or_default().into_iter().rev().find_map(|(_, r)| r);
-        let lines = claude_session_file(&sid).map(read).unwrap_or_default();
+        let lines = claude_session_file(&config_home(state, "claude", &meta.instance), &sid).map(read).unwrap_or_default();
         lifecycle::claude_tail(&lines, after.as_deref())
     };
     for t in &turns {
@@ -3098,6 +3130,7 @@ pub fn pilot_thread_update(
     mode: Option<String>,
     fast: Option<bool>,
     tags: Option<Vec<String>>,
+    instance: Option<String>,
 ) -> Result<ThreadMeta, String> {
     if let Some(m) = mode.as_deref() {
         if !settings::valid_mode(m) {
@@ -3134,6 +3167,42 @@ pub fn pilot_thread_update(
             );
         }
         before.provider = p.to_string();
+        // The old account belongs to the old agent.
+        if !before.instance.is_empty() {
+            state.db.set_instance(&id, "").map_err(|e| e.to_string())?;
+            before.instance = String::new();
+        }
+    }
+    // Round 3, card 02: another account of the same agent. Sessions never
+    // cross accounts, so it starts fresh and gets the history with the next
+    // message — like an agent switch.
+    if let Some(want) = instance.as_deref().map(str::trim) {
+        let want = if lock(&state.settings).instance(&before.provider, want).is_some() { want } else { "" };
+        if want != before.instance {
+            if state.runtime.active_turn(&id).is_some() {
+                return Err("wait for the agent to finish (or stop it) before switching accounts".into());
+            }
+            if lock(&state.tui).contains_key(&id) {
+                return Err("close the terminal session first".into());
+            }
+            let started = before.provider_session_id.as_deref().is_some_and(|s| !s.trim().is_empty());
+            let has_history = state.db.user_messages(&id).unwrap_or(0) > 0;
+            state.runtime.stop(&id);
+            state.db.set_instance(&id, want).map_err(|e| e.to_string())?;
+            if started || has_history {
+                let (from, to) = (account_label(&state, &before.provider, &before.instance), account_label(&state, &before.provider, want));
+                let _ = state.db.clear_provider_session(&id);
+                let _ = state.db.set_rewind(&id, None);
+                state.db.set_handoff(&id, Some(&json!({ "from": from, "reason": "account" }).to_string())).map_err(|e| e.to_string())?;
+                state.runtime.append_item(
+                    &id,
+                    &last_turn(&state, &id),
+                    ItemKind::Notice,
+                    json!({ "text": format!("Conversation carried forward from {from} — the next message brings it to {to}.") }),
+                );
+            }
+            before.instance = want.to_string();
+        }
     }
     if let Some(t) = title.as_deref().map(str::trim) {
         if !t.is_empty() {
@@ -3283,7 +3352,7 @@ pub fn pilot_provider_catalog(app: AppHandle, state: State<'_, PilotState>, prov
     }
     let cwd = contexts::general_vault(&app);
     let _ = std::fs::create_dir_all(&cwd);
-    let env = agent_env(&settings, &provider, vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())]);
+    let env = agent_env(&settings, &provider, "", vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())]);
     if provider == "codex" {
         let adapter = adapters::find(&settings, "codex").ok_or("Codex is not a known adapter")?;
         let exe = providers::resolve(&adapter, &settings).ok_or("Codex was not found")?;
@@ -3324,14 +3393,15 @@ pub fn pilot_provider_catalog(app: AppHandle, state: State<'_, PilotState>, prov
 }
 
 /// Codex's subscription windows without a turn (card 18): a discovery run
-/// answers `account/rateLimits/read`.
-pub fn codex_limits(app: &AppHandle, state: &PilotState) -> Result<Vec<crate::events::RateWindow>, String> {
+/// answers `account/rateLimits/read` — for the default account or another
+/// one (round 3, card 02).
+pub fn codex_limits(app: &AppHandle, state: &PilotState, instance: &str) -> Result<Vec<crate::events::RateWindow>, String> {
     let settings = lock(&state.settings).clone();
     let adapter = adapters::find(&settings, "codex").ok_or("Codex is not a known adapter")?;
     let exe = providers::resolve(&adapter, &settings).ok_or("Codex is not installed")?;
     let cwd = contexts::general_vault(app);
     let _ = std::fs::create_dir_all(&cwd);
-    let env = agent_env(&settings, "codex", vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())]);
+    let env = agent_env(&settings, "codex", instance, vec![("PATH".to_string(), qs_core::system_path::current().to_string_lossy().into_owned())]);
     let mut args = exe.prefix.clone();
     args.extend(settings.extra_args("codex"));
     args.extend(codex::launch_args());
@@ -3478,7 +3548,7 @@ mod tests {
             id: "t".into(), provider: "claude".into(), provider_session_id: None, title: String::new(), context_id: "general".into(),
             context_name: "General".into(), cwd: ".".into(), model: String::new(), mode: "full".into(), created_at: 0, updated_at: 0,
             cost_usd: 0.0, input_tokens: 0, output_tokens: 0, last_error: None, kind: "chat".into(), effort: String::new(),
-            title_source: "auto".into(), fast: false, notice: None, tags: Vec::new(), parent_id: None, state: "idle".into(), context_tokens: None,
+            title_source: "auto".into(), fast: false, notice: None, tags: Vec::new(), instance: String::new(), parent_id: None, state: "idle".into(), context_tokens: None,
             context_window: None, last_activity_at: 0, pinned: false, sort_key: 0.0, settled_at: None, snoozed_until: None,
             auto_settle: true, workspace_mode: "local".into(), base_branch: String::new(), branch: String::new(), worktree_path: None,
         }

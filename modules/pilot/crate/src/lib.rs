@@ -205,6 +205,8 @@ fn on_launched(state: &PilotState, session_id: &str, adapter_id: &str) {
 #[serde(rename_all = "camelCase")]
 struct PilotStatus {
     adapters: Vec<AdapterStatus>,
+    /// More accounts of Claude Code and Codex (round 3, card 02).
+    instances: Vec<providers::InstanceStatus>,
     shell: String,
     mcp_url: String,
     general_path: String,
@@ -218,6 +220,7 @@ fn pilot_status(app: AppHandle, state: State<'_, PilotState>) -> PilotStatus {
     let adapters = adapters::all(&settings);
     PilotStatus {
         adapters: providers::status_all(&adapters, &settings),
+        instances: providers::instances_status(&adapters, &settings),
         shell: shell::resolve(&settings.shell),
         mcp_url: mcp_url(),
         general_path: contexts::general_vault(&app).to_string_lossy().into_owned(),
@@ -239,7 +242,12 @@ fn pilot_settings_get(state: State<'_, PilotState>) -> Settings {
 #[tauri::command(async)]
 fn pilot_settings_set(state: State<'_, PilotState>, settings: Settings) -> Result<Settings, String> {
     // The last choices stay the app's own record (round 2, card 03).
-    let settings = settings.normalized().merged_into(&lock(&state.settings));
+    let settings = settings.with_account_homes(&state.data_dir).normalized().merged_into(&lock(&state.settings));
+    // An account's folder exists before its CLI is pointed at it (Codex
+    // refuses a CODEX_HOME that does not); what is inside stays the CLI's.
+    for i in &settings.instances {
+        std::fs::create_dir_all(&i.home).map_err(|e| format!("could not create the folder of the account {}: {e}", i.label))?;
+    }
     settings::write(&state.data_dir, &settings)?;
     agent_icons::prune(&state.data_dir, &custom_ids(&settings));
     github::set_enabled(settings.github);
@@ -522,7 +530,7 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
         fast: false,
         notice: None,
         tags: Vec::new(),
-        parent_id: None,
+        instance: String::new(), parent_id: None,
         state: "idle".into(),
         context_tokens: None,
         context_window: None,

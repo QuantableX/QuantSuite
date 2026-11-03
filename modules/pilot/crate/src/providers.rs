@@ -10,7 +10,7 @@
 //! `cmd.exe` and its quoting between us and the program.
 
 use crate::adapters::{Adapter, Kind};
-use crate::settings::Settings;
+use crate::settings::{self, Instance, Settings};
 use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -506,9 +506,81 @@ pub fn status_all(adapters: &[Adapter], settings: &Settings) -> Vec<AdapterStatu
     })
 }
 
+/// An account of an agent and whether it is signed in (round 3, card 02).
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InstanceStatus {
+    pub id: String,
+    pub provider: String,
+    pub label: String,
+    pub home: String,
+    /// `None` = could not tell.
+    pub logged_in: Option<bool>,
+    pub detail: Option<String>,
+    /// What the user runs in a terminal to sign this account in — QuantPilot
+    /// never starts a login itself (it opens a browser) or touches credentials.
+    pub sign_in: String,
+}
+
+/// Every account's status, asked in parallel like the agents'.
+pub fn instances_status(adapters: &[Adapter], settings: &Settings) -> Vec<InstanceStatus> {
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = settings.instances.iter().map(|i| scope.spawn(move || instance_status(adapters, settings, i))).collect();
+        handles.into_iter().filter_map(|h| h.join().ok()).collect()
+    })
+}
+
+fn instance_status(adapters: &[Adapter], settings: &Settings, i: &Instance) -> InstanceStatus {
+    let var = settings::home_var(&i.provider).unwrap_or_default();
+    let login = if i.provider == "codex" { "codex login" } else { "claude auth login" };
+    let mut out = InstanceStatus {
+        id: i.id.clone(),
+        provider: i.provider.clone(),
+        label: i.label.clone(),
+        home: i.home.clone(),
+        sign_in: sign_in_command(var, &i.home, login, cfg!(windows)),
+        ..Default::default()
+    };
+    let Some(adapter) = adapters.iter().find(|a| a.id == i.provider) else {
+        out.detail = Some("not available".into());
+        return out;
+    };
+    let Some(exe) = resolve(adapter, settings) else {
+        out.detail = Some(install_hint(adapter));
+        return out;
+    };
+    let found = PathBuf::from(&exe.found);
+    let env = settings.launch_env_for(&i.provider, &i.id);
+    let mut probe = AdapterStatus::default();
+    match adapter.kind {
+        Kind::Claude => claude_login(&found, &env, &mut probe),
+        Kind::Codex => codex_login(&found, &env, &mut probe),
+        _ => {}
+    }
+    out.logged_in = probe.logged_in;
+    out.detail = probe.detail.map(|d| d.replace("run `claude auth login` in a terminal", "run the command below in a terminal").replace("run `codex login` in a terminal", "run the command below in a terminal"));
+    out
+}
+
+/// The terminal line that points the CLI at the account's home and signs in.
+pub fn sign_in_command(var: &str, home: &str, login: &str, powershell: bool) -> String {
+    if powershell {
+        format!("$env:{var} = '{}'; {login}", home.replace('\'', "''"))
+    } else {
+        format!("{var}='{}' {login}", home.replace('\'', "'\\''"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_account_signs_in_with_its_own_home() {
+        assert_eq!(sign_in_command("CLAUDE_CONFIG_DIR", "C:/acc/work", "claude auth login", true), "$env:CLAUDE_CONFIG_DIR = 'C:/acc/work'; claude auth login");
+        assert_eq!(sign_in_command("CODEX_HOME", "C:/it's", "codex login", true), "$env:CODEX_HOME = 'C:/it''s'; codex login");
+        assert_eq!(sign_in_command("CODEX_HOME", "/home/u/it's", "codex login", false), "CODEX_HOME='/home/u/it'\\''s' codex login");
+    }
 
     /// Card 19: Update goes through the installer that put the CLI there.
     #[test]

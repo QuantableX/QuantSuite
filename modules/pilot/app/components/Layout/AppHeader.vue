@@ -130,7 +130,7 @@ async function end() {
           <div v-if="moveOpen" class="qp-head-move-pop"><PilotThreadMenuList :options="moveOptions" selected="" title="Move to a project" @pick="moveTo" @close="moveOpen = false" /></div>
         </span>
         <span v-else class="qp-head-chip" :title="session.cwd">{{ session.contextName }}</span>
-        <span class="qp-head-chip is-provider" :title="live.display || undefined"><PilotAgentIcon :agent="session.provider || null" :size="12" decorative /><span class="qp-head-chip-text">{{ store.adapterLabel(session.provider) }}</span></span>
+        <span class="qp-head-chip is-provider" :title="live.display || undefined"><PilotAgentIcon :agent="session.provider || null" :size="12" decorative /><span class="qp-head-chip-text">{{ store.accountLabel(session.provider, session.instance) }}</span></span>
         <span v-if="model" class="qp-head-chip" :title="`Model: ${model}`">{{ model }}</span>
         <span class="qp-head-chip" title="Permission mode">{{ modeLabel(session.mode) }}</span>
         <PilotGitPrChip v-for="l in prs" :key="l.url" :link="l" />

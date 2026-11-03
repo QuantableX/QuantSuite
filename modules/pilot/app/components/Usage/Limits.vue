@@ -10,7 +10,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useUsageStore } from '#pilot/stores/usage'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { countdown, windowName } from '#pilot/utils/usage'
+import { accountKeyLabel, splitAccountKey } from '#pilot/utils/agentMenu'
 
+/** `provider` is an agent or `agent@account` (round 3, card 02). */
 const props = defineProps<{ provider?: string; compact?: boolean }>()
 const usage = useUsageStore()
 const store = usePilotStore()
@@ -35,6 +37,7 @@ const clock = (at: number) => {
   const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
   return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${time}`
 }
+const label = (key: string) => accountKeyLabel(key, store.adapterLabel, [...(store.settings?.instances ?? []), ...(store.status?.instances ?? [])])
 const level = (pct: number | null) => (pct === null ? 'none' : pct >= 100 ? 'out' : pct >= 90 ? 'high' : 'ok')
 </script>
 
@@ -43,7 +46,7 @@ const level = (pct: number | null) => (pct === null ? 'none' : pct >= 100 ? 'out
     <div v-if="!usage.limits && usage.limitsLoading" class="qp-limits-empty">Asking for the current windows…</div>
     <section v-for="l in shown" :key="l.provider" class="qp-limits-card">
       <header class="qp-limits-head">
-        <span class="qp-limits-name"><PilotAgentIcon :agent="l.provider" :size="14" decorative />{{ store.adapterLabel(l.provider) }}</span>
+        <span class="qp-limits-name"><PilotAgentIcon :agent="splitAccountKey(l.provider).provider" :size="14" decorative />{{ label(l.provider) }}</span>
         <span v-if="l.at" class="qp-limits-age">reported {{ ago(l.at) }}</span>
       </header>
       <div v-for="w in l.windows" :key="w.kind" class="qp-limit" :class="`is-${level(w.usedPct)}`">

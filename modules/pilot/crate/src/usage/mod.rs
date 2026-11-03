@@ -87,16 +87,18 @@ pub fn period_start(hours: i64, now: chrono::DateTime<Local>) -> i64 {
 
 /// The rows of a period: per bucket, provider and model, priced per size class.
 pub fn report_rows(ledger: &Ledger, prices: &PriceList, since_ms: i64, hourly: bool) -> Vec<UsageRow> {
-    let mut rows: BTreeMap<(i64, &'static str, String), UsageRow> = BTreeMap::new();
-    for (provider, r) in ledger.records(since_ms.div_euclid(3_600_000)) {
+    let mut rows: BTreeMap<(i64, String, String), UsageRow> = BTreeMap::new();
+    for (provider, account, r) in ledger.records_by_account(since_ms.div_euclid(3_600_000)) {
+        // An account's rows go under `claude@work` (round 3, card 02).
+        let who = if account.is_empty() { provider.id().to_string() } else { format!("{}@{account}", provider.id()) };
         let bucket = if hourly { r.hour * 3_600_000 } else { local_day(r.hour) };
         // A zone with a half-hour offset starts its day inside an hour.
         if bucket < since_ms {
             continue;
         }
-        let row = rows.entry((bucket, provider.id(), r.model.clone())).or_insert_with(|| UsageRow {
+        let row = rows.entry((bucket, who.clone(), r.model.clone())).or_insert_with(|| UsageRow {
             bucket,
-            provider: provider.id().into(),
+            provider: who.clone(),
             model: r.model.clone(),
             cost: prices.lookup(&r.model).map(|_| Cost::default()),
             ..Default::default()
@@ -174,12 +176,20 @@ async fn prices(dir: &Path, refresh: bool) -> (PriceList, String) {
 #[tauri::command]
 pub async fn pilot_usage_report(state: State<'_, PilotState>, period: String, refresh: Option<bool>) -> Result<UsageReport, String> {
     let (prices, source) = prices(&state.data_dir, refresh.unwrap_or(false)).await;
+    let instances = crate::lock(&state.settings).instances.clone();
     let hours = period_hours(&period);
     tauri::async_runtime::spawn_blocking(move || {
         let started = Instant::now();
-        let roots = scan::roots();
+        let accounts = scan::account_roots(&instances);
+        let mut roots = scan::roots();
+        for (p, d, _) in &accounts {
+            if !roots.iter().any(|(_, r)| r == d) {
+                roots.push((*p, d.clone()));
+            }
+        }
         let files = scan::files(&roots);
         let mut ledger = ledger().lock().unwrap_or_else(|e| e.into_inner());
+        ledger.set_accounts(&accounts);
         let stats = ledger.refresh(&files);
         let since = period_start(hours, Local::now());
         let rows = report_rows(&ledger, &prices, since, hours <= 24);
@@ -217,24 +227,28 @@ const CODEX_MIN_AGE_MS: i64 = 5 * 60_000;
 
 /// The subscription windows: Codex answers `account/rateLimits/read` without
 /// a turn; Claude reports its windows during turns, and the last report stays.
+/// Every other account has its own (`claude@work`, round 3, card 02).
 #[tauri::command(async)]
 pub fn pilot_usage_limits(app: AppHandle, state: State<'_, PilotState>, refresh: Option<bool>) -> Result<Vec<ProviderLimits>, String> {
     let now = chrono::Utc::now().timestamp_millis();
     let stored = state.db.limits().map_err(|e| e.to_string())?;
     let mut out = Vec::new();
-    for provider in ["claude", "codex"] {
+    let accounts: Vec<(String, String)> = crate::lock(&state.settings).instances.iter().map(|i| (i.provider.clone(), i.id.clone())).collect();
+    let keys = ["claude", "codex"].into_iter().map(|p| (p.to_string(), String::new())).chain(accounts);
+    for (provider, instance) in keys {
+        let key = if instance.is_empty() { provider.clone() } else { format!("{provider}@{instance}") };
         let (windows, at) = stored
             .iter()
-            .find(|(p, _, _)| p == provider)
+            .find(|(p, _, _)| *p == key)
             .map(|(_, w, at)| (serde_json::from_str::<Vec<RateWindow>>(w).unwrap_or_default(), Some(*at)))
             .unwrap_or_default();
-        let mut limits = ProviderLimits { provider: provider.into(), windows, at, error: None };
+        let mut limits = ProviderLimits { provider: key.clone(), windows, at, error: None };
         let max_age = if refresh.unwrap_or(false) { 0 } else { CODEX_MIN_AGE_MS };
         let stale = at.map_or(true, |t| now - t > max_age);
         if provider == "codex" && stale {
-            match crate::threads::codex_limits(&app, &state) {
+            match crate::threads::codex_limits(&app, &state, &instance) {
                 Ok(windows) => {
-                    let _ = state.db.set_limits("codex", &serde_json::to_string(&windows).unwrap_or_default(), now);
+                    let _ = state.db.set_limits(&key, &serde_json::to_string(&windows).unwrap_or_default(), now);
                     limits.windows = windows;
                     limits.at = Some(now);
                 }

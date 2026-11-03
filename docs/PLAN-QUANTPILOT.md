@@ -3086,3 +3086,39 @@ the roadmap card.
 - QA (Claude Haiku): a General thread learned a code word, moved into the QA
   project, then named the word and the project folder as its working directory.
   Not tried live: the handoff path (only Claude answers on this machine) and Codex.
+
+### 02/07 — several accounts per agent (card d8573e27)
+
+- An account (`settings.instances`: id, agent, name, folder) is Claude Code or
+  Codex pointed at its own config folder — `CLAUDE_CONFIG_DIR` / `CODEX_HOME`
+  (`settings::home_var`). Other agents have no such variable and stay one account.
+  The default account is today's behaviour: no variable set. Saved without a
+  folder, an account gets `<pilot data>/accounts/<agent>-<id>`; the folder is
+  created on save (Codex refuses a missing CODEX_HOME). QuantPilot never reads,
+  copies or writes the login inside it.
+- Settings → Providers, in the Claude Code and Codex cards: "Other accounts" —
+  add (the id comes from the name), rename, pick a folder, remove (its threads go
+  back to the default account; the folder stays). Each shows its sign-in state
+  (the CLI's own status with that folder) and, when signed out, the terminal line
+  that signs it in, with Copy. The user runs it; there is no thread-less terminal
+  in Settings to run it in.
+- Threads store `instance` (schema 21). The agent menu lists each account as a
+  row of its own ("Claude Code · Work", with Not signed in / Sign in…); the
+  header, the thread controls and the board panel show the account. Launch,
+  resume, the warm-process key and the catalog use the thread's account.
+  Switching account works like an agent switch: the process stops, the session
+  is cleared (sessions never cross accounts) and the next message carries the
+  conversation. A working thread keeps its account until the turn ends.
+- Usage and limits per account: each account folder's logs count for
+  `claude@<id>` / `codex@<id>` (own series, filter chip, model rows), Claude's
+  reported windows are stored per account, Codex is asked per account. Import
+  lists each account's sessions and keeps the account on the imported thread.
+- Saved accounts show at once after a start; their sign-in state follows the
+  status probe.
+- QA (QA app, no login performed): an account added through the settings gets
+  its folder and shows "not logged in" with the command; its thread runs Claude
+  with that folder (the session log was written there) and answers "Not logged
+  in · Please run /login"; a default thread answered and, switched to the account
+  and back, still knew its code word; usage showed the account's fixture log
+  apart; a Codex account without a folder got `accounts/codex-side` and its own
+  status.
