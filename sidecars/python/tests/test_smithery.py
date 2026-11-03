@@ -121,12 +121,14 @@ class EvidenceTests(unittest.TestCase):
                 gauntlet.axis_exchange = lambda: np.nan
                 gauntlet.axis_parameter = lambda _: 100
                 gauntlet.axis_temporal = lambda _: 100
+                gauntlet.axis_windows = lambda _: 100
                 def mc(_):
                     gauntlet.perm_p = .01
                     return 100
                 gauntlet.axis_monte_carlo = mc
                 result = gauntlet.run()
-                self.assertEqual(result["score"], 80)
+                # six equal axes: the missing exchange axis costs its sixth, nothing is reweighted
+                self.assertAlmostEqual(result["score"], 500 / 6)
                 self.assertFalse(result["certified"])
                 self.assertNotIn("Battle-Ready", Path(result["report"]).read_text(encoding="utf-8"))
 

@@ -314,19 +314,48 @@ class OptimizeJobTests(unittest.TestCase):
         shelf.mkdir(parents=True)
         synthetic_frame(1200).rename_axis("timestamp").to_csv(shelf / "BINANCE_BTCUSDT_1d.csv")
 
-    def forge(self, *argv):
+    def forge(self, *argv, certify=False):
+        path = ENGINE
+        if certify:
+            # A three-simulation run can never certify; this stands in for a certifying one.
+            hook = self.lib.root / "certify-hook"
+            hook.mkdir(exist_ok=True)
+            (hook / "sitecustomize.py").write_text(
+                "from smithery import robustness\n"
+                "_run = robustness.Gauntlet.run\n"
+                "def run(self):\n"
+                "    out = _run(self)\n"
+                "    out.update(certified=True, reasons=[])\n"
+                "    return out\n"
+                "robustness.Gauntlet.run = run\n", encoding="utf-8")
+            path = str(hook) + os.pathsep + ENGINE
         env = {**os.environ, "QUANTSCRIPT_INDICATORS_DIR": str(self.lib.folder),
                "SMITHERY_VAULT": str(self.lib.root / "vault"), "SMITHERY_WORKERS": "2",
-               "PYTHONPATH": ENGINE, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"}
+               "PYTHONPATH": path, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"}
         proc = subprocess.run([sys.executable, "-m", "smithery.forge", "optimize", *argv], env=env,
                               capture_output=True, text=True, encoding="utf-8", timeout=300)
         events = [json.loads(line) for line in proc.stdout.splitlines() if line.startswith("{")]
         return proc.returncode, events, proc.stderr
 
-    def test_the_job_writes_the_timeframe_version_and_keeps_the_general_params(self):
+    def test_an_uncertified_result_writes_no_timeframe_version(self):
         general = self.lib.write("alpha", "optimized", {"band": 0.4})
         code, events, err = self.forge("--indicator", "alpha", "--timeframes", "1d", "--folds", "2",
                                        "--perm", "3", "--boot", "3", "--garch", "3")
+        self.assertEqual(code, 0, err + json.dumps([e for e in events if e["event"] == "error"]))
+        decision = next(e for e in events if e["event"] == "decision")
+        self.assertEqual(decision["decision"], "not_certified")
+        self.assertFalse(decision["written"])
+        self.assertFalse(decision["certified"])
+        self.assertFalse((self.lib.folder / "versions" / "alpha" / "alpha_opt_1d.json").exists())
+        # The evidence of the existing versions is still refreshed, their params stay.
+        after = json.loads((self.lib.folder / "versions" / "alpha" / "alpha_opt.json").read_text(encoding="utf-8"))
+        self.assertEqual(after["params"], general["params"])
+        self.assertIn("1d", after["evidence"]["timeframes"])
+
+    def test_the_job_writes_the_timeframe_version_and_keeps_the_general_params(self):
+        general = self.lib.write("alpha", "optimized", {"band": 0.4})
+        code, events, err = self.forge("--indicator", "alpha", "--timeframes", "1d", "--folds", "2",
+                                       "--perm", "3", "--boot", "3", "--garch", "3", certify=True)
         self.assertEqual(code, 0, err + json.dumps([e for e in events if e["event"] == "error"]))
         decision = next(e for e in events if e["event"] == "decision")
         self.assertEqual(decision["key"], "alpha_opt_1d")
@@ -347,7 +376,7 @@ class OptimizeJobTests(unittest.TestCase):
         # The new key loads, and a second run with --resume has nothing to do.
         self.assertIn("alpha_opt_1d", self.lib.registry()["keys"])
         code, events, err = self.forge("--indicator", "all", "--timeframes", "1d", "--resume",
-                                       "--perm", "3", "--boot", "3", "--garch", "3")
+                                       "--perm", "3", "--boot", "3", "--garch", "3", certify=True)
         self.assertEqual(code, 0, err)
         self.assertFalse([e for e in events if e["event"] == "decision"])
         self.assertTrue(any("current — skipped" in e.get("message", "") for e in events if e["event"] == "log"))
