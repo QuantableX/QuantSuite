@@ -94,7 +94,9 @@ function toggleNewMenu() {
 }
 async function newThreadWith(setup: AgentSetup) {
   newMenu.value = false
-  await sb.newThread({ contextId: newProject.value, setup })
+  // An agent without a chat protocol: its terminal session (round 2, card 11).
+  if (setup.terminal) await store.createTerminalSession(newProject.value, setup.provider)
+  else await sb.newThread({ contextId: newProject.value, setup })
 }
 
 // ── Menu ──
@@ -637,7 +639,7 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
         <button ref="newMoreBtn" class="qp-new-more" title="New thread with an agent, model or project…" aria-haspopup="menu" :aria-expanded="newMenu" @click="toggleNewMenu">
           <ChevronDown :size="12" />
         </button>
-        <PilotAgentMenu v-if="newMenu" :anchor="newMoreBtn" title="New thread" :project="newProject" @pick="newThreadWith" @close="newMenu = false">
+        <PilotAgentMenu v-if="newMenu" :anchor="newMoreBtn" title="New thread" :project="newProject" allow-terminal @pick="newThreadWith" @close="newMenu = false">
           <template #header>
             <label class="qp-new-in">
               <span>New thread in</span>

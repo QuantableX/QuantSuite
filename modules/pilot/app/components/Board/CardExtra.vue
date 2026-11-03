@@ -76,7 +76,7 @@ const STATUS: Record<string, string> = { working: 'Working', waiting: 'Needs you
       >
         <ChevronDown :size="10" />
       </button>
-      <PilotAgentMenu v-if="menuOpen" :anchor="startMore" title="Start thread with" :project="card.workspace_id" @pick="startWith" @close="menuOpen = false" />
+      <PilotAgentMenu v-if="menuOpen" :anchor="startMore" title="Start thread with" :project="card.workspace_id" allow-terminal @pick="startWith" @close="menuOpen = false" />
     </span>
   </div>
 </template>

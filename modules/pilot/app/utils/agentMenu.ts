@@ -12,6 +12,8 @@ export interface AgentSetup {
   model: string
   effort: string
   fast: boolean
+  /** An agent without a chat protocol: a terminal session that starts it (round 2, card 11). */
+  terminal?: boolean
 }
 
 /** What the menu needs of an adapter (AdapterStatus). */
@@ -30,6 +32,8 @@ export interface AgentRowState {
   reason: string | null
   /** A one-click fix: Settings → Providers on that agent. */
   fix: string | null
+  /** Usable as a terminal session (no chat protocol). */
+  terminal?: boolean
 }
 
 export function canChat(a: MenuAdapter): boolean {
@@ -50,15 +54,22 @@ export function agentRowState(
     /** The thread's agent is working: no other agent until it is done. */
     locked?: string | null
     current?: string | null
+    /** New threads may start agents without a chat protocol as a terminal session (round 2, card 11). */
+    allowTerminal?: boolean
   } = {},
 ): AgentRowState {
   if (!a.found) return { usable: false, reason: 'Not installed', fix: 'Set up…' }
-  if (!canChat(a)) return { usable: false, reason: 'No chat on this host', fix: null }
+  if (!canChat(a)) return ctx.allowTerminal ? { usable: true, reason: null, fix: null, terminal: true } : { usable: false, reason: 'Terminal session only', fix: null }
   if (a.loggedIn === false) return { usable: false, reason: 'Not signed in', fix: 'Sign in…' }
   if (ctx.disabled) return { usable: false, reason: 'Off in Settings', fix: 'Turn on…' }
   if (ctx.projectEnabled && !ctx.projectEnabled.includes(a.id)) return { usable: false, reason: 'Off in this project', fix: 'Project settings…' }
   if (ctx.locked && a.id !== ctx.current) return { usable: false, reason: ctx.locked, fix: null }
   return { usable: true, reason: null, fix: null }
+}
+
+/** Installed agents first, in their order; the ones not installed after them (round 2, card 11). */
+export function installedFirst<T extends { found: boolean }>(list: T[]): T[] {
+  return [...list.filter((a) => a.found), ...list.filter((a) => !a.found)]
 }
 
 /** Agents whose name or id has every typed word. */

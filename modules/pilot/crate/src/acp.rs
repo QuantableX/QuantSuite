@@ -257,7 +257,7 @@ impl AcpDriver {
             return Vec::new();
         };
         let result = msg.get("result").cloned().unwrap_or(Value::Null);
-        let error = msg.get("error").map(|e| s(e, "message").unwrap_or("the agent refused").to_string());
+        let error = msg.get("error").map(error_text);
         let mut out = Vec::new();
         match call {
             Call::Initialize => {
@@ -684,6 +684,23 @@ impl Driver for AcpDriver {
     }
 }
 
+/// An ACP error as the user should read it: the message, and what the
+/// agent put in `data` (round 2, card 11: "Internal error" alone hid
+/// Hermes' "No LLM provider configured. Run `hermes model` …").
+fn error_text(e: &Value) -> String {
+    let message = s(e, "message").unwrap_or("the agent refused").trim().to_string();
+    let data = e.get("data");
+    let detail = data
+        .and_then(|d| d.as_str().map(str::to_string).or_else(|| ["details", "message", "error"].iter().find_map(|k| s(d, k).map(str::to_string))))
+        .map(|d| d.trim().to_string())
+        .filter(|d| !d.is_empty() && *d != message);
+    match detail {
+        Some(d) if message.eq_ignore_ascii_case("internal error") || message.is_empty() => d,
+        Some(d) => format!("{message}: {d}"),
+        None => message,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -896,5 +913,15 @@ mod live {
             }
         }
         assert!(failed.is_empty(), "installed but not answering: {failed:?}");
+    }
+
+    /// Round 2, card 11: the agent's own reason reaches the thread.
+    #[test]
+    fn errors_carry_the_agents_details() {
+        let hermes = json!({ "code": -32603, "message": "Internal error", "data": { "details": "No LLM provider configured. Run `hermes model` to select a provider." } });
+        assert_eq!(error_text(&hermes), "No LLM provider configured. Run `hermes model` to select a provider.");
+        assert_eq!(error_text(&json!({ "code": 1, "message": "Auth required", "data": "run kilo auth login" })), "Auth required: run kilo auth login");
+        assert_eq!(error_text(&json!({ "code": 1, "message": "mode not allowed" })), "mode not allowed");
+        assert_eq!(error_text(&json!({ "code": 1 })), "the agent refused");
     }
 }

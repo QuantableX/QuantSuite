@@ -14,7 +14,7 @@ const ok = { id: 'claude', label: 'Claude Code', found: true, loggedIn: true, ch
 test('an agent row is usable or says why not, in the order a user fixes it', () => {
   assert.deepEqual(agentRowState(ok), { usable: true, reason: null, fix: null })
   assert.equal(agentRowState({ ...ok, found: false, loggedIn: false }).reason, 'Not installed')
-  assert.equal(agentRowState({ ...ok, id: 'mine', chat: false }).reason, 'No chat on this host')
+  assert.equal(agentRowState({ ...ok, id: 'mine', chat: false }).reason, 'Terminal session only')
   assert.equal(agentRowState({ ...ok, loggedIn: false }).reason, 'Not signed in')
   // An unknown sign-in state (null) is not a problem.
   assert.equal(agentRowState({ ...ok, loggedIn: null }).usable, true)
@@ -111,4 +111,15 @@ test('one agent menu: the old model picker is gone and every chooser uses the me
     'modules/pilot/app/components/Board/CardExtra.vue',
     'modules/canvas/app/components/Windows/ChatWindow.vue',
   ]) assert.match(read(p), /<PilotAgentMenu\b/, p)
+})
+
+// Round 2, card 11: agents without a chat protocol, and the order of the rows.
+test('an agent without chat starts as a terminal session where new threads are made', async () => {
+  const { agentRowState, installedFirst } = await import('../modules/pilot/app/utils/agentMenu.ts')
+  const freebuff = { id: 'freebuff', label: 'Freebuff', found: true, loggedIn: null, chat: false }
+  assert.deepEqual(agentRowState(freebuff, { allowTerminal: true }), { usable: true, reason: null, fix: null, terminal: true })
+  assert.equal(agentRowState(freebuff).reason, 'Terminal session only', 'a chat thread cannot switch to it')
+  assert.equal(agentRowState({ ...freebuff, found: false }, { allowTerminal: true }).reason, 'Not installed')
+  const list = [{ id: 'a', found: false }, { id: 'b', found: true }, { id: 'c', found: false }, { id: 'd', found: true }]
+  assert.deepEqual(installedFirst(list).map((x) => x.id), ['b', 'd', 'a', 'c'])
 })

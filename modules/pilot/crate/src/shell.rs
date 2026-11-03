@@ -195,6 +195,18 @@ pub fn init_script(kind: ShellKind, session_id: &str, relay_port: u16, wrappers:
     }
 }
 
+/// The init script, then the agent's own command (round 2, card 11): a
+/// terminal session made for one agent starts it. `cmd` has no place to run
+/// a command after its macros, so there the user types it.
+pub fn with_start(kind: ShellKind, mut script: String, command: &str) -> String {
+    let safe = !command.is_empty() && command.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if safe && matches!(kind, ShellKind::PowerShell | ShellKind::Bash) {
+        script.push_str(command);
+        script.push('\n');
+    }
+    script
+}
+
 /// Where a session's generated files live.
 pub fn session_dir(data_dir: &Path, session_id: &str) -> PathBuf {
     data_dir.join("sessions").join(session_id)
