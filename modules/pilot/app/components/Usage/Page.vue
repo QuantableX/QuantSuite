@@ -129,7 +129,7 @@ watch(
     <template v-else>
       <div v-if="!report" class="qp-usage-loading">
         <span class="qp-usage-skel" /><span class="qp-usage-skel" /><span class="qp-usage-skel" />
-        <p>Reading the Claude Code and Codex logs…</p>
+        <p>Reading the agents' logs…</p>
       </div>
       <div v-else class="qp-usage-body" :class="{ stale: usage.loading }">
         <div v-if="filterProviders.length" class="qp-usage-filter" role="group" aria-label="Filter">

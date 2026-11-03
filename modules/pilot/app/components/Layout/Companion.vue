@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * The mascot as a companion (round 2, card 05; Settings → Appearance →
- * Mascot → Companion): a small one over QuantPilot that shows the open
- * thread's mood. Drag it anywhere (pointer events); it leans into the drag
- * and stays where it is put (kept as fractions of the window, so a resize
- * keeps it on screen).
+ * Bob as a companion (round 2, card 05; Settings → Appearance → Bob The
+ * Blob → Companion): a small Bob over QuantPilot that shows the open
+ * thread's mood. Drag him anywhere (pointer events): he leans into the drag,
+ * is wide-eyed while held and > < when swung fast, lands with a squash and
+ * stays where he is put (kept as fractions of the window, so a resize keeps
+ * him on screen).
  */
 import { computed, ref } from 'vue'
 import { useMascotStore } from '#pilot/stores/mascot'
@@ -69,6 +70,8 @@ function onUp(e: PointerEvent) {
   const y = (d.y - h.top + SIZE / 2) / h.height
   mascot.set({ companionAt: { x, y } })
 }
+/** Held, or swung fast: Bob reacts (Face.vue). */
+const carried = computed(() => (drag.value ? (Math.abs(drag.value.lean) > 15 ? 'fast' : 'held') : 'no'))
 const style = computed(() => {
   const d = drag.value
   if (d) {
@@ -84,14 +87,15 @@ const style = computed(() => {
     ref="root"
     class="qp-companion"
     :class="{ dragging: !!drag }"
+    :data-own-motion="mascot.prefs.motion === 'still' ? undefined : ''"
     :style="style"
-    title="Drag me anywhere"
+    :title="`${mascot.prefs.name || 'Bob'} — drag me anywhere`"
     @pointerdown="onDown"
     @pointermove="onMove"
     @pointerup="onUp"
     @pointercancel="onUp"
   >
-    <PilotFace :state="state" :cheer="view?.cheer ?? 0" :busy="busy" :agent="store.active?.provider ?? null" :nod="store.activeId ? mascot.nods[store.activeId] ?? 0 : 0" />
+    <PilotFace :state="state" :cheer="view?.cheer ?? 0" :busy="busy" :agent="store.active?.provider ?? null" :nod="store.activeId ? mascot.nods[store.activeId] ?? 0 : 0" :carried="carried" />
   </div>
 </template>
 
