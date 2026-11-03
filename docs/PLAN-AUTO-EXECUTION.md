@@ -1,0 +1,173 @@
+# QuantAlgo trading automation — Manual and Automated trade by themselves
+
+Status: plan, 2026-11-03. Nothing here is built yet. Cards "QuantAlgo Automation 1/5" to "5/5" on the QuantSuite board. Where orders go is [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md); running it 24/7 is [PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md).
+
+## In short
+
+- **Today:** Manual (the QuantSystems systems such as LCES) only *tells* you what to hold. You trade by hand after the daily candle closes at 00:00 UTC, which is 01:00 in winter and 02:00 in summer in Germany. Automated (bots) can trade, but the live path exists only for Binance spot and Bybit spot, and it has only been tested in paper.
+- **Goal:** both modes place their own trades, on the exchange you choose, with hard safety limits and a full record of every decision. You sleep; in the morning QuantSuite shows what it did.
+- **How it gets safe:** paper first, then the exchanges' test networks, then a small live amount, then the real amount. QuantSuite never withdraws money, and stopping never sells.
+- **One weakness to fix first:** the exchange API keys are encrypted with a key anyone can recompute from the public source code. Card 1 moves them into a real vault before any more live trading is built.
+
+## 1. What the code does today
+
+| Area | Where | What it does |
+|---|---|---|
+| Manual systems | `modules/systems` (shown as `/algo/manual`), Python `rotation_lab.rpc` | `live` returns `best`: the coin to hold, or `USD` (rotation mode); single-asset mode returns `position` long / short / cash. Nothing places orders. |
+| Automated bots | `modules/algo/crate/src/bot.rs` | One `python -m quantalgo.runner` per bot. A feed thread polls the exchange's public candles and calls `on_candle`; the strategy answers with orders. |
+| Fill engine | `runtime.rs` | Tauri-free; turns orders into `Effect`s. Paper uses the fee and slippage settings; live books what the venue reports. |
+| Live routing | `broker.rs` (`Broker` trait) | Binance spot and Bybit spot only, long-only, market orders. `exchanges.sandbox` routes private calls to Binance spot testnet / Bybit demo. |
+| Restart | `lib.rs` | A bot that was running when the suite exited is marked `stopped` ("suite restarted"). Bots are never restarted on their own. |
+| API keys | `exchanges.rs` | AES-256-GCM in `quantalgo.db`, but the key is `SHA-256("quantalgo:v2:<USERNAME>:<data dir>")`, with a fallback to a constant legacy key written in the source. The source is public, the username and data dir are easy to guess, so a copy of `quantalgo.db` is enough to read the keys. The key also changes with the username or folder, so the keys cannot move to another machine (see [PLAN-MIGRATION.md](PLAN-MIGRATION.md)). `docs/ARCHITECTURE.md` §5 "Secrets" planned the OS keychain; it never happened for QuantAlgo. |
+| Scheduling | — | There is no scheduler for Manual. QuantPilot's scheduled prompts (card "QuantPilot round 3 03/07") are the first timer of this kind in the suite. |
+| Notifications | — | No OS notifications yet (no notification plugin). |
+
+## 2. The design
+
+### 2.1 Secret vault (card 1)
+
+One vault for every secret the suite keeps: exchange API keys, wallet keys (venues), the server's identity key and paired devices (server), and the migration passphrase step.
+
+- A random 256-bit master key, stored in the OS keystore through the `keyring` crate: Windows Credential Manager (DPAPI), macOS Keychain, Linux Secret Service. Where no keystore exists (a headless Linux server later), a passphrase-protected key file (Argon2id).
+- Each secret: AES-256-GCM under the master key, with the secret's id as associated data, so a ciphertext cannot be swapped onto another row.
+- Write-only: the frontend can set, test, replace and delete a secret, and sees a masked fingerprint (`…7f3a`). It never receives the value back.
+- One-time migration on first start: every `config_encrypted` row is decrypted with today's derivation (or the legacy key), re-encrypted into the vault and verified, then the old column is cleared. After that the legacy key is removed from the code.
+- Tests: round trip, wrong associated data fails, migration of rows written with both old keys, a missing keystore falls back to the passphrase file.
+
+### 2.2 Execution core (card 2)
+
+One engine for Manual and Automated. Input: a **target** ("hold 100% ETH", "flat", "long BTC") and an **account**. It makes the target true on the venue and records everything.
+
+1. **Lock:** one run per account at a time.
+2. **Read the venue:** balances, positions, open orders.
+3. **Plan:** the difference between now and the target, inside the system's own budget (2.4). Sell first, then buy. Route through the account's quote asset (USDT on Binance/Bybit, USDC on DEXs). Round to the lot step; a leg below the venue's minimum stays as dust and is logged.
+4. **Guards** — every one must pass, or the run stops with the reason:
+   - data freshness (the signal is from the candle that just closed);
+   - price sanity: the venue's price is within 2% of the signal's reference price (catches a wrong instrument mapping or a broken book);
+   - max slippage per order (default 0.5%);
+   - max order value and daily turnover cap (set by the user);
+   - the global kill switch is off;
+   - the account belongs to this system;
+   - live is armed (2.3).
+5. **Execute:** each order carries a client order id made from the run id and the leg. After a crash or restart the engine looks the id up on the venue before it sends anything again, so an order is never sent twice. "Market" orders go out as immediate-or-cancel limit orders at the slippage cap where the venue supports it, so a thin book cannot fill at an absurd price.
+6. **Confirm:** fills are read back from the venue. A partial fill retries the rest up to three times, then stops and reports.
+7. **Book:** journal rows (`trades` gains a source: bot id or system run id), fees in the asset the venue charged, equity.
+8. **Report:** a run record with the signal snapshot, plan, guard results, orders, fills, errors and timings, plus a notification (2.5).
+
+`Broker` becomes `ExecutionVenue`: capabilities (spot, perp, IOC limit, client order ids, sub-accounts), instruments, balances, positions, place / cancel / query by client id, fee schedule. Binance spot and Bybit spot are ported with unchanged behaviour; today's broker tests stay green. Hyperliquid, Jupiter and Lighter plug in later ([PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md)).
+
+**Paper** uses the same core with a `PaperVenue`: fills at the real venue's current best bid/ask plus the configured fee and slippage, balances persisted per system. Paper and live share every step except the final API call.
+
+### 2.3 Manual systems trade by themselves (card 3)
+
+A new **Execution** section in every Manual system's settings:
+
+| Setting | Values | Default |
+|---|---|---|
+| Mode | Off / Paper / Live | Off |
+| Venue, account, market type | from [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md) | Spot |
+| Capital | fixed amount / % of the account's quote balance / the whole (sub-)account | — |
+| Run time | after the daily close + delay | 00:15 UTC |
+| Retry window | until N hours after the close | 6 h |
+| If the suite was off at run time | run once if still inside the retry window, else skip | — |
+
+**Timing.** The engine works in UTC, so summer time does not matter: the daily candle closes at 00:00 UTC, the run starts at 00:15 UTC (01:15 winter / 02:15 summer in Germany). The delay gives the exchanges and the daily Top-N ranking time to publish.
+
+**Data freshness.** The run uses the snapshot as of the candle that just closed. It checks that this candle exists for every coin of the day's universe and that the day's ranking exists. If not, it retries every 5 minutes until the retry window ends, then skips and reports. It never trades on yesterday's data.
+
+**The decision.** Rotation: `best` (a coin or USD). Single asset: long or cash on spot; short only on a perp market ([PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md) §6).
+
+**A coin the venue does not list.** Before Live can be armed, the coverage check shows which coins of the universe the venue can trade. If one is missing, the user picks:
+- (a) restrict the universe to tradable coins — the backtest honours the same restriction, so backtest = live (recommended);
+- (b) hold USD when the pick is not tradable — live-only behaviour, flagged "backtest ≠ live".
+
+**Exactly once.** One run per (system, close date), kept in a runs table; a restart in the middle resumes through the client order ids (2.2) instead of starting over.
+
+**Scheduler.** In-process, persisted, it sleeps until the next due time (no per-second polling) — the same design as QuantPilot's scheduled prompts. It runs only while QuantSuite runs: on this PC the PC must be on and awake at 00:15 UTC. On the server ([PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md)) it runs 24/7.
+
+**Arming Live** needs all of:
+1. at least one completed paper run of this system;
+2. a successful account test on the venue (balance read, a test order where the venue offers one);
+3. the system's robustness verdict ([ROBUSTNESS.md](ROBUSTNESS.md), card "Robustness 4/5"). A missing or failing verdict is shown, and Live then needs the user's own tick "I know this system is not robust" — the same rule as the save gate there.
+
+**Runs tab** per system: date, decision, orders, fills, cost, status, and achieved vs Live Eval's expected result.
+
+### 2.4 Budget: what a system may touch
+
+A system only trades what it owns: the capital assigned to it and the coins it bought with it. Other holdings on the same account are never sold. The clean setup — and the recommendation in the UI — is **one sub-account per system** (Binance and Bybit sub-accounts, Hyperliquid sub-accounts, or a separate wallet). Then "the whole account" is simply right, and one system's mistake cannot touch another's money.
+
+### 2.5 Notifications
+
+In-app (Trading overview, the system's Runs tab) and Windows notifications (`tauri-plugin-notification`) for: trade done, run skipped, guard stopped a run, error. One line each, e.g. "LCES: BTC → ETH, 2 orders, fees 13.98$".
+
+### 2.6 Automated bots run unattended (card 4)
+
+- **Resume after restart**, opt-in per bot (off by default for live). On start the bot reconciles with the venue: positions and open orders must match its books. A mismatch keeps it stopped with a clear message; it never trades to "fix" it.
+- **Health:** no new candle for two bar lengths → pause and notify; three order errors in a row → pause and notify; a heartbeat per bot on the Trading overview.
+- **Kill switch** "Stop all trading" for bots and Manual execution: cancels open orders and disarms. It never sells (today's rule). "Close positions" stays a separate confirmed action.
+- Bots route their live orders through the execution core, so they get every new venue and guard.
+
+### 2.7 Verification ladder (card 5)
+
+| Step | What | Passes when |
+|---|---|---|
+| Paper | Manual paper runs every night, bots in paper | 7 nights without an error; paper result within fees of Live Eval |
+| Test networks | Binance spot testnet, Bybit demo, Hyperliquid testnet | A switch, a partial fill, a rejected order, a restart mid-run and the kill switch all behave as specified |
+| Canary | Live, small amount (e.g. 50–100$) per venue | 7 nights; fees and fills match the venue's statements |
+| Full | The real amount | User's decision |
+
+The agent never places a live order and never starts a live bot (AGENT.md: `quantsuite.algo.start_bot` is the user's call). The user triggers each step; the agent reads the run records and logs and reports.
+
+## 3. Safety rules (always true)
+
+- Everything starts **Off**. Live is armed per system and per bot, by the user.
+- QuantSuite never withdraws and never asks for withdrawal rights. Exchange keys: trade permission only, withdrawals disabled, IP whitelist set to the executing machine (the UI says how per exchange).
+- Stopping never sells.
+- Every decision is logged and the logs are kept.
+- Limits are enforced in code, not in prompts.
+- MCP: any tool that arms, trades or closes is `external` — never auto-approved.
+
+## 4. Worked example
+
+LCES, Live on Hyperliquid spot, 10,000$ in its own sub-account. Yesterday it held BTC.
+
+| UTC | What happens |
+|---|---|
+| 00:00 | Daily candle closes. |
+| 00:15 | Run starts. Every coin's candle and today's ranking are there. |
+| 00:15 | Decision: ETH. Plan: sell 0.1 UBTC → ≈10,000 USDC, buy ≈9,993$ of UETH. Guards pass. |
+| 00:16 | Both orders filled. Fees 7.00$ + 6.99$. Notification: "LCES: BTC → ETH, 2 orders, fees 13.99$". |
+
+The same night with missing data:
+
+| UTC | What happens |
+|---|---|
+| 00:15 | SOL's candle is missing on the data source. Retry every 5 minutes. |
+| 03:05 | Still missing … |
+| 06:00 | Retry window over. Skip. Notification: "LCES: skipped — no SOL candle for 2026-11-10. Still holding BTC." |
+
+## 5. Cards
+
+| Card | What | Blocked by |
+|---|---|---|
+| QuantAlgo Automation 1/5 | Secret vault, migration of today's keys | — |
+| QuantAlgo Automation 2/5 | Execution core, `ExecutionVenue`, PaperVenue, CEX ported | 1 |
+| QuantAlgo Automation 3/5 | Manual systems execute (settings, scheduler, runs, notifications) | 2 |
+| QuantAlgo Automation 4/5 | Automated bots unattended (resume, health, kill switch) | 2 |
+| QuantAlgo Automation 5/5 | Verification ladder with the user | 3, 4 |
+
+## 6. Decisions taken (change them on the card if you disagree)
+
+| Decision | Default | Why |
+|---|---|---|
+| Run time | 00:15 UTC, retry until 06:00 UTC | Candles are final at 00:00; the delay covers late data; six hours later the signal is stale. |
+| Order type | IOC limit at the slippage cap | A plain market order in a thin book can fill far from the price. |
+| Live arming | Paper run + account test + robustness verdict or explicit acknowledgement | Matches the robustness rule without blocking a system the user already trades by hand. |
+| Restart of live bots | Opt-in per bot, reconcile first | A silent restart after a crash must not trade on a wrong state. |
+
+## 7. Options — not planned unless you ask
+
+- "Ask me first": the plan is ready at 00:15 and a one-click notification executes it.
+- Push to the phone (Telegram, ntfy) — most useful with the server.
+- Wake this PC from sleep at 00:10 UTC with Windows Task Scheduler, until the server exists.
+- TWAP or limit-order execution for large amounts.
