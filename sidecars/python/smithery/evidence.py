@@ -41,13 +41,47 @@ def code_fingerprint() -> str:
 
 
 _EVALUATOR: dict[tuple, str] = {}
+GAUNTLET_MODULE = "robustness"
+
+
+def evaluator_files() -> list[Path]:
+    """The Gauntlet's own code: robustness.py and every smithery module it imports, followed
+    through relative imports (function-level ones included). A research report, the lab or the
+    aggregate search is not part of it, so editing those leaves every certification standing."""
+    import ast
+    root = Path(__file__).resolve().parent
+
+    def source(module: str) -> Path | None:
+        for path in (root / f"{module.replace('.', '/')}.py", root / module.replace(".", "/") / "__init__.py"):
+            if path.is_file():
+                return path
+        return None
+
+    seen: dict[str, Path] = {}
+    todo = [GAUNTLET_MODULE]
+    while todo:
+        module = todo.pop()
+        path = source(module)
+        if module in seen or path is None:
+            continue
+        seen[module] = path
+        package = module.split(".") if path.name == "__init__.py" else module.split(".")[:-1]
+        for node in ast.walk(ast.parse(path.read_bytes())):
+            if not isinstance(node, ast.ImportFrom) or not node.level:
+                continue
+            base = package[:len(package) - node.level + 1] if node.level > 1 else package
+            target = [*base, *(node.module.split(".") if node.module else [])]
+            if node.module:
+                todo.append(".".join(target))
+            todo.extend(".".join([*target, alias.name]) for alias in node.names)
+    return sorted(seen.values())
 
 
 def evaluator_fingerprint() -> str:
-    """The forge's own code (the smithery package, without the library):
+    """The Gauntlet's own code (evaluator_files, without the library):
     a change to the evaluator invalidates every indicator's current runs."""
     root = Path(__file__).resolve().parent
-    files = sorted(p for p in root.rglob("*.py") if "tests" not in p.parts and "__pycache__" not in p.parts)
+    files = evaluator_files()
     state = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in files)
     if state not in _EVALUATOR:
         digest = hashlib.sha256()

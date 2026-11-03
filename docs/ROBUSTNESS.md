@@ -72,6 +72,8 @@ Certification needs a score of 70 or more, no failed gate, full Monte Carlo coun
 - **Universal optimization:** the forge's walk-forward chooses parameters on the basket's median (`smithery/universal.py`), not on BTC alone. An explicitly chosen single series stays possible for research.
 - **Certification is a gate:** the forge writes an `optimized_<tf>` version only when it certifies. A failing result is recorded as evidence. An existing version stays loadable so saved systems keep working, but its evidence says it is not robust.
 - **Strict lookup:** `registry.robust_on_track(key, tf)` counts only verdicts from the current evaluation. The aggregate search uses it for its pool.
+- **What a verdict depends on:** the indicator's own script (with its `REQUIRES`) and the Gauntlet's code, meaning `robustness.py` and every smithery module it imports (`evidence.evaluator_files`). Editing one of those turns the affected verdicts into history and calls for a re-certification. Editing the lab, a report or the aggregate search does not.
+- **Recorded pool:** a research run's frozen vault holds the price shelf only, so a robust search decides its certified pool when the run is created and records it in `run.json` (`pool_certified`).
 
 ## Grade and verdict
 

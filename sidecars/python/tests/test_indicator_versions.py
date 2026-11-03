@@ -239,6 +239,17 @@ class RoleVersionTests(unittest.TestCase):
         self.assertIsNone(got)
 
 
+class EvaluatorFingerprintTests(unittest.TestCase):
+    def test_the_evaluator_is_the_gauntlets_own_import_closure(self):
+        from smithery import evidence
+        root = Path(evidence.__file__).resolve().parent
+        names = {p.relative_to(root).as_posix() for p in evidence.evaluator_files()}
+        self.assertLessEqual({"robustness.py", "universal.py", "monte_carlo.py", "evidence.py",
+                              "indicators/__init__.py"}, names)
+        # Editing the lab, a report or the aggregate search keeps every certification standing.
+        self.assertFalse(names & {"lab.py", "lab_aggregates.py", "robust_search.py", "lab_report.py", "forge.py"})
+
+
 class IsolatedCheckTests(unittest.TestCase):
     def test_isolated_check_carries_the_declared_closure_only(self):
         lib = Library(self)
