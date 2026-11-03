@@ -191,6 +191,10 @@ pub struct ProjectAction {
     pub key: String,
     pub run_on_worktree_create: bool,
     pub run_on_settle: bool,
+    /// After a turn that changed files: run it, and when it fails queue one
+    /// repair for the agent (round 2, card 12).
+    #[serde(default)]
+    pub check_after_turn: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,6 +270,9 @@ pub struct Settings {
     pub storage: crate::db::StoragePolicy,
     /// What the user chose last; new threads start with it (round 2, card 03).
     pub sticky: Sticky,
+    /// While recording the screen, threads with one of these tags are
+    /// hidden from the lists (round 2, card 12).
+    pub hide_tags_while_recording: Vec<String>,
 }
 
 impl Default for Settings {
@@ -303,6 +310,7 @@ impl Default for Settings {
             render_math: true,
             projects: BTreeMap::new(),
             sticky: Sticky::default(),
+            hide_tags_while_recording: vec!["private".into()],
         }
     }
 }
@@ -350,6 +358,7 @@ impl Settings {
         self.sticky.model = trim_map(std::mem::take(&mut self.sticky.model));
         self.sticky.effort = trim_map(std::mem::take(&mut self.sticky.effort));
         self.sticky.base_branch = trim_map(std::mem::take(&mut self.sticky.base_branch));
+        self.hide_tags_while_recording = crate::db::clean_tags(&self.hide_tags_while_recording);
         self.env = clean_env(std::mem::take(&mut self.env));
         self.providers = std::mem::take(&mut self.providers)
             .into_iter()

@@ -23,7 +23,8 @@
  *   device's storage.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowUp, Ban, CornerDownRight, FileText, Folder, ListPlus, Loader2, Paperclip, Play, Plus, Square, X } from 'lucide-vue-next'
+import { ArrowUp, Ban, CornerDownRight, FileText, Folder, ListPlus, Loader2, Mic, Paperclip, Play, Plus, Square, X } from 'lucide-vue-next'
+import { useTauriEvent } from '@quantsuite/core'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useKeysStore } from '#pilot/stores/keys'
@@ -1145,6 +1146,67 @@ function focus() {
   box.value?.focus()
 }
 
+// ── Dictation through QuantVoice (round 2, card 12) ──
+// The suite's own speech engine (faster-whisper in the HUD module): click
+// to record, click again to transcribe; the words land at the caret. No
+// second speech stack. Escape while recording cancels.
+type Dictation = 'idle' | 'starting' | 'recording' | 'transcribing'
+const dictation = ref<Dictation>('idle')
+const dictationTitle = computed(() =>
+  dictation.value === 'recording' ? 'Stop and transcribe' : dictation.value === 'transcribing' ? 'Transcribing…' : dictation.value === 'starting' ? 'Starting QuantVoice…' : 'Dictate with QuantVoice',
+)
+async function hudInvoke<T>(run: (invoke: <R>(cmd: string, args?: Record<string, unknown>) => Promise<R>) => Promise<T>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return run(invoke)
+}
+async function toggleDictation() {
+  note.value = ''
+  try {
+    if (dictation.value === 'recording') {
+      dictation.value = 'transcribing'
+      await hudInvoke((invoke) => invoke('plugin:hud|speech_stop'))
+      return
+    }
+    if (dictation.value !== 'idle') return
+    const status = await hudInvoke((invoke) => invoke<{ installed: boolean }>('plugin:hud|speech_status'))
+    if (!status?.installed) {
+      note.value = 'Dictation uses QuantVoice — set it up once under Settings → Voice.'
+      return
+    }
+    dictation.value = 'starting'
+    await hudInvoke((invoke) => invoke('plugin:hud|speech_start'))
+    dictation.value = 'recording'
+  } catch (e) {
+    dictation.value = 'idle'
+    note.value = `Dictation: ${e instanceof Error ? e.message : String(e)}`
+  }
+}
+async function cancelDictation() {
+  if (dictation.value !== 'recording' && dictation.value !== 'starting') return
+  dictation.value = 'idle'
+  await hudInvoke((invoke) => invoke('plugin:hud|speech_cancel')).catch(() => undefined)
+}
+/** The words where the caret is, with a space before them when needed (undo keeps working). */
+function insertDictated(words: string) {
+  const el = box.value
+  const text = words.trim()
+  if (!el || !text) return
+  el.focus()
+  const before = el.value.slice(0, el.selectionStart ?? el.value.length)
+  const glue = before && !/\s$/.test(before) ? ' ' : ''
+  if (!document.execCommand('insertText', false, glue + text)) el.setRangeText(glue + text, el.selectionStart, el.selectionEnd, 'end')
+}
+useTauriEvent<{ text?: string; viaHotkey?: boolean }>('speech-result', (p) => {
+  if (dictation.value === 'idle' || p.viaHotkey) return
+  dictation.value = 'idle'
+  insertDictated(String(p.text ?? ''))
+})
+useTauriEvent<{ message?: string }>('speech-error', (p) => {
+  if (dictation.value === 'idle') return
+  dictation.value = 'idle'
+  note.value = `Dictation: ${p.message ?? 'QuantVoice reported an error.'}`
+})
+
 </script>
 
 <template>
@@ -1247,6 +1309,18 @@ function focus() {
             <button class="qp-c-plus-row" role="menuitem" @click="pickFromDisk(true)"><Folder :size="13" /> Folder…</button>
           </div>
         </span>
+        <button
+          class="qp-c-mic"
+          :class="`is-${dictation}`"
+          :title="dictationTitle"
+          :aria-label="dictationTitle"
+          :aria-pressed="dictation === 'recording'"
+          @click.stop="toggleDictation"
+          @keydown.esc.stop.prevent="cancelDictation"
+        >
+          <Loader2 v-if="dictation === 'starting' || dictation === 'transcribing'" class="qp-c-mic-spin" :size="13" />
+          <Mic v-else :size="14" />
+        </button>
         <PilotThreadControls :thread-id="threadId" @done="focus" />
         <span v-if="counter" class="qp-c-count" :class="{ over: tooLong }">{{ counter }}</span>
         <button
@@ -1325,6 +1399,15 @@ function focus() {
 .qp-c-spin { animation: qp-c-spin 900ms linear infinite; }
 @keyframes qp-c-spin { to { transform: rotate(360deg); } }
 .qp-c-plus-anchor { position: relative; display: inline-flex; }
+.qp-c-mic { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: none; border-radius: 7px; background: transparent; color: var(--qss-text-muted, #6e6e7a); cursor: pointer; }
+.qp-c-mic:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
+.qp-c-mic.is-recording { color: var(--qss-error, #f87171); background: color-mix(in srgb, var(--qss-error, #f87171) 14%, transparent); animation: qp-c-mic-pulse 1.2s ease-in-out infinite; }
+.qp-c-mic-spin { animation: qp-c-mic-spin 0.9s linear infinite; }
+@keyframes qp-c-mic-pulse { 50% { background: color-mix(in srgb, var(--qss-error, #f87171) 26%, transparent); } }
+@keyframes qp-c-mic-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .qp-c-mic.is-recording, .qp-c-mic-spin { animation: none; }
+}
 .qp-c-plus {
   display: inline-flex;
   align-items: center;

@@ -29,7 +29,8 @@ pub use storage::{log_run as log_storage_run, Category as StorageCategory, Clean
 /// 12: revision-bound history chunks and indexed full-history pagination (parity 02).
 /// 13: versioned queue payloads and recoverable delivery state (parity 04).
 /// 17: threads remember fast mode (round 2, card 02).
-pub const SCHEMA_VERSION: i64 = 17;
+/// 18: thread tags (round 2, card 12).
+pub const SCHEMA_VERSION: i64 = 18;
 
 #[path = "queue.rs"]
 mod queue;
@@ -66,6 +67,9 @@ pub struct ThreadMeta {
     /// the agent wanted was not available. Not stored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notice: Option<String>,
+    /// The user's tags (round 2, card 12): lowercase words, at most eight.
+    #[serde(default)]
+    pub tags: Vec<String>,
     /// `auto` until the user renames the thread, then `user`.
     pub title_source: String,
     /// `idle` | `running` | `waiting` | `error` | `interrupted` | `limited` — last known.
@@ -117,12 +121,29 @@ fn some_option<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<i
 
 pub struct Database {
     conn: Mutex<Connection>,
+    /// The threads that were working when the app last closed (round 2,
+    /// card 12): offered for Resume once, then forgotten.
+    interrupted: Mutex<Vec<String>>,
+}
+
+/// Tags as the app keeps them: trimmed, lowercase, no duplicates, at most
+/// eight of at most 24 characters (round 2, card 12).
+pub fn clean_tags(tags: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for t in tags {
+        let t: String = t.trim().trim_start_matches('#').to_lowercase().chars().filter(|c| !c.is_control()).take(24).collect();
+        let t = t.trim().to_string();
+        if !t.is_empty() && !out.contains(&t) && out.len() < 8 {
+            out.push(t);
+        }
+    }
+    out
 }
 
 const THREAD_COLS: &str = "id, provider, provider_session_id, title, context_id, context_name, cwd, model, mode, \
     created_at, updated_at, cost_usd, input_tokens, output_tokens, last_error, kind, effort, title_source, state, \
     context_tokens, context_window, last_activity_at, pinned, sort_key, settled_at, snoozed_until, auto_settle, workspace_mode, base_branch, \
-    branch, worktree_path, fast";
+    branch, worktree_path, fast, tags";
 
 fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
     Ok(ThreadMeta {
@@ -159,6 +180,7 @@ fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
         worktree_path: r.get(30)?,
         fast: r.get::<_, i64>(31)? != 0,
         notice: None,
+        tags: serde_json::from_str(&r.get::<_, String>(32)?).unwrap_or_default(),
     })
 }
 
@@ -543,6 +565,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !column_exists(&tx, "threads", "fast")? {
         tx.execute_batch("ALTER TABLE threads ADD COLUMN fast INTEGER NOT NULL DEFAULT 0;")?;
     }
+    // Schema 18 (round 2, card 12): tags per thread.
+    if !column_exists(&tx, "threads", "tags")? {
+        tx.execute_batch("ALTER TABLE threads ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';")?;
+    }
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;
@@ -558,9 +584,12 @@ impl Database {
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode = WAL;")?;
         migrate(&conn)?;
-        let db = Self { conn: Mutex::new(conn) };
-        // Nothing runs before the app does: what was live is over.
+        let db = Self { conn: Mutex::new(conn), interrupted: Mutex::new(Vec::new()) };
+        // Nothing runs before the app does: what was live is over. Which
+        // threads were working is kept for the Resume offer (card 12).
+        let working = db.working_threads()?;
         db.settle_after_restart()?;
+        *db.interrupted.lock().unwrap_or_else(|p| p.into_inner()) = working;
         Ok(db)
     }
 
@@ -568,11 +597,29 @@ impl Database {
     pub fn open_in_memory() -> rusqlite::Result<Self> {
         let conn = Connection::open_in_memory()?;
         migrate(&conn)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self { conn: Mutex::new(conn), interrupted: Mutex::new(Vec::new()) })
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn working_threads(&self) -> rusqlite::Result<Vec<String>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT id FROM threads WHERE kind = 'chat' AND state IN ('running', 'waiting', 'starting') ORDER BY last_activity_at DESC")?;
+        let ids = stmt.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(ids)
+    }
+
+    /// The threads the last close interrupted — once (round 2, card 12).
+    pub fn take_interrupted(&self) -> Vec<String> {
+        std::mem::take(&mut *self.interrupted.lock().unwrap_or_else(|p| p.into_inner()))
+    }
+
+    pub fn set_tags(&self, id: &str, tags: &[String]) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET tags = ?2 WHERE id = ?1", params![id, serde_json::to_string(&clean_tags(tags)).unwrap_or_else(|_| "[]".into())])?;
+        Ok(())
     }
 
     /// A process that was running when the app ended cannot answer a
@@ -614,7 +661,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO threads ({THREAD_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, \
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)"
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33)"
             ),
             params![
                 m.id,
@@ -648,7 +695,8 @@ impl Database {
                 m.base_branch,
                 m.branch,
                 m.worktree_path,
-                m.fast as i64
+                m.fast as i64,
+                serde_json::to_string(&clean_tags(&m.tags)).unwrap_or_else(|_| "[]".into())
             ],
         )?;
         Ok(())
@@ -1546,6 +1594,7 @@ mod tests {
             title_source: "auto".into(),
             fast: false,
             notice: None,
+            tags: Vec::new(),
             state: "idle".into(),
             context_tokens: None,
             context_window: None,
@@ -2028,5 +2077,33 @@ mod tests {
         drop(db);
         let again = Database::open(&path).unwrap();
         assert_eq!(snap(&again.lock()).1.len(), before.1.len(), "opening twice changes nothing");
+    }
+
+    /// Round 2, card 12: tags are kept clean; a restart remembers which
+    /// threads were working, once.
+    #[test]
+    fn tags_and_the_threads_a_restart_interrupted() {
+        assert_eq!(clean_tags(&[" Private ".into(), "#private".into(), "".into(), "Work".into()]), vec!["private", "work"]);
+        assert_eq!(clean_tags(&(0..12).map(|i| format!("t{i}")).collect::<Vec<_>>()).len(), 8);
+        let dir = std::env::temp_dir().join(format!("qp-r212-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pilot.db");
+        {
+            let db = Database::open(&path).unwrap();
+            db.insert_session(&ThreadMeta { state: "running".into(), ..thread("busy") }).unwrap();
+            db.insert_session(&ThreadMeta { state: "waiting".into(), ..thread("asking") }).unwrap();
+            db.insert_session(&thread("idle")).unwrap();
+            db.set_tags("idle", &["Private".into()]).unwrap();
+            assert!(db.take_interrupted().is_empty(), "nothing was working at this open");
+        }
+        let db = Database::open(&path).unwrap();
+        let mut ids = db.take_interrupted();
+        ids.sort();
+        assert_eq!(ids, vec!["asking".to_string(), "busy".to_string()]);
+        assert!(db.take_interrupted().is_empty(), "offered once");
+        assert_eq!(db.get_session("busy").unwrap().unwrap().state, "interrupted");
+        assert_eq!(db.get_session("idle").unwrap().unwrap().tags, vec!["private".to_string()]);
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

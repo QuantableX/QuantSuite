@@ -23,11 +23,12 @@ import {
   Trash2,
   GitFork,
   RotateCcw,
+  Tag,
 } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useThreadStore } from '#pilot/stores/thread'
-import { inHours, parseDuration, tomorrowAt, wakeLabel } from '#pilot/utils/sidebar'
+import { inHours, parseDuration, parseTags, tomorrowAt, wakeLabel } from '#pilot/utils/sidebar'
 import { threadReference } from '#pilot/utils/format'
 import type { SessionMeta } from '#pilot/types'
 
@@ -83,6 +84,7 @@ const items = computed<Item[]>(() => {
         { id: 'auto-off', label: 'Disabled', checked: !t.autoSettle, run: () => sidebar.setAutoSettle(t.id, false) },
       ],
     },
+    { id: 'tags', label: (t.tags ?? []).length ? `Tags · ${(t.tags ?? []).map((x) => `#${x}`).join(' ')}` : 'Tags…', icon: Tag, run: () => void openPanel('tags') },
     {
       id: 'regenerate',
       label: regenerating.value ? 'Writing a title…' : 'Regenerate title',
@@ -148,7 +150,14 @@ const root = ref<HTMLElement | null>(null)
 const active = ref(0)
 const open = ref<number | null>(null)
 const subActive = ref(0)
-const panel = ref<'menu' | 'custom' | 'delete'>('menu')
+const panel = ref<'menu' | 'custom' | 'delete' | 'tags'>('menu')
+// Tags (round 2, card 12): typed, comma or space separated.
+const tagsText = ref('')
+const tagsInput = ref<HTMLInputElement | null>(null)
+async function saveTags() {
+  await store.update(props.thread.id, { tags: parseTags(tagsText.value) })
+  emit('close')
+}
 
 function enabledFrom(list: Item[], from: number, dir: 1 | -1): number {
   const n = list.length
@@ -264,11 +273,13 @@ const customText = ref('')
 const customAt = ref('')
 const customInput = ref<HTMLInputElement | null>(null)
 const customError = ref('')
-async function openPanel(p: 'custom' | 'delete') {
+async function openPanel(p: 'custom' | 'delete' | 'tags') {
   panel.value = p
   open.value = null
+  if (p === 'tags') tagsText.value = (props.thread.tags ?? []).join(', ')
   await nextTick()
-  if (p === 'custom') customInput.value?.focus()
+  if (p === 'tags') tagsInput.value?.focus()
+  else if (p === 'custom') customInput.value?.focus()
   else root.value?.querySelector<HTMLButtonElement>('.qp-tm-danger-btn')?.focus()
   place()
 }
@@ -381,6 +392,16 @@ function confirmDelete() {
         <div class="qp-tm-actions">
           <button type="button" class="qp-tm-btn" @click="panel = 'menu'">Back</button>
           <button type="submit" class="qp-tm-btn primary">Snooze</button>
+        </div>
+      </form>
+
+      <form v-else-if="panel === 'tags'" class="qp-tm-form" @submit.prevent="saveTags">
+        <div class="qp-tm-form-title">Tags</div>
+        <input ref="tagsInput" v-model="tagsText" class="qp-tm-input" placeholder="private, client-x" aria-label="Tags, separated by commas" spellcheck="false" />
+        <div class="qp-tm-note">While recording, threads tagged {{ (store.settings?.hideTagsWhileRecording ?? ['private']).map((x) => `#${x}`).join(', ') }} stay out of the lists.</div>
+        <div class="qp-tm-actions">
+          <button type="button" class="qp-tm-btn" @click="panel = 'menu'">Back</button>
+          <button type="submit" class="qp-tm-btn primary">Save</button>
         </div>
       </form>
 

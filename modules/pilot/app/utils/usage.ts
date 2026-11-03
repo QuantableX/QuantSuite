@@ -159,3 +159,8 @@ const WINDOW_NAMES: Record<string, string> = {
 export function windowName(kind: string): string {
   return WINDOW_NAMES[kind] ?? kind.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 }
+
+/** The rows of one agent and/or model (round 2, card 12: Usage filters). */
+export function filterRows<T extends { provider: string; model: string }>(rows: T[], f: { provider: string | null; model: string | null }): T[] {
+  return rows.filter((r) => (!f.provider || r.provider === f.provider) && (!f.model || r.model === f.model))
+}

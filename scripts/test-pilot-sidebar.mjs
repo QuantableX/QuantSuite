@@ -181,3 +181,28 @@ test('New thread reopens only an untouched draft: not settled, snoozed, titled, 
   assert.equal(isUntouchedDraft({ ...draft, providerSessionId: 'abc' }, undefined, now), false)
   assert.equal(isUntouchedDraft({ ...draft, kind: 'terminal' }, undefined, now), false)
 })
+
+// Round 2, card 12: project pins and archive, recording privacy, elapsed time, tags.
+test('the project filter lists pinned projects first and keeps archived ones apart', async () => {
+  const { orderProjects } = await import('../modules/pilot/app/utils/sidebar.ts')
+  const o = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]
+  const r = orderProjects(o, ['c', 'gone', 'a'], ['d'])
+  assert.deepEqual(r.pinned.map((x) => x.id), ['c', 'a'], 'in the order pinned; a removed one is skipped')
+  assert.deepEqual(r.rest.map((x) => x.id), ['b'])
+  assert.deepEqual(r.archived.map((x) => x.id), ['d'])
+  assert.deepEqual(orderProjects(o, ['d'], ['d']).pinned, [], 'archived wins over pinned')
+})
+
+test('while recording, threads with a hidden tag stay out', async () => {
+  const { hiddenWhileRecording, parseTags, elapsedLabel } = await import('../modules/pilot/app/utils/sidebar.ts')
+  assert.equal(hiddenWhileRecording(['private'], ['private']), true)
+  assert.equal(hiddenWhileRecording(['work'], ['private']), false)
+  assert.equal(hiddenWhileRecording(undefined, ['private']), false)
+  assert.equal(hiddenWhileRecording([], []), false)
+  assert.deepEqual(parseTags('#Private, client-x  work, work'), ['private', 'client-x', 'work'])
+  assert.equal(parseTags('a b c d e f g h i j').length, 8)
+  assert.equal(elapsedLabel(45_000), '45s')
+  assert.equal(elapsedLabel(185_000), '3m 05s')
+  assert.equal(elapsedLabel(4_320_000), '1h 12m')
+  assert.equal(elapsedLabel(-5), '0s')
+})

@@ -2449,3 +2449,47 @@ was pressed). The test sessions were ended afterwards.
 update plans, autostart only for a plain command name, `-own` renames,
 error details); `npm run check:ts`; `npm run test:pilot` (terminal rows,
 installed-first order, marks for every new id).
+
+## 40. Round 2 · 12/12: smaller workflow gaps
+
+Card 773d7338. Each item was checked against the current behavior first.
+
+| # | Item | Outcome |
+| --- | --- | --- |
+| 1 | Marker when model/effort change mid-thread | Done: a centered divider "Model: haiku → sonnet · Effort: default → high" (also fast mode on/off) once the thread has messages (`setup_change`). |
+| 2 | Thread tags + hide while recording | Done: tags in the thread menu (comma separated, ≤ 8, lowercase; schema 18), `#tag` on the row; the sidebar's **Record** switch hides threads tagged as set in Settings → General → While recording (default `private`) from the list, the palette and Needs you. |
+| 3 | Pin/archive projects in the filter | Done: the filter is a menu; pinned projects first, archived ones folded under *Archived* (threads stay). Per machine. |
+| 4 | Elapsed runtime on working rows | Done: "working 3m 05s", a one-second clock only while a row works. |
+| 5 | Sent-message shapes | Done: images and videos above the bubble (videos as tiles), a message of only files as file cards without a bubble, long pasted text (> 14 lines or > 1,500 characters) folded as *Pasted text · N lines*, picked elements as *Snapshot*. Voice notes do not exist here — dictation (8) writes text. |
+| 6 | Rich text ⇄ Markdown toggle | **Dropped**: the composer already edits Markdown source with live highlighting; there is no rich-text mode to switch to, and a WYSIWYG editor is not a small gap. |
+| 7 | Usage filter by agent and model | Done: *All agents / Claude Code / Codex* and a model choice narrow totals, chart and the model table. |
+| 8 | Dictation via QuantVoice | Done: a microphone in the composer uses the HUD's speech engine (`speech_start`/`speech_stop`/`speech-result`); the words land at the caret; Escape cancels; without QuantVoice set up it says so. QuantVoice's own push-to-talk takes stay its own. |
+| 9 | Resume after restart | Done: the threads that were working when the app closed (recorded before the startup cleanup) are offered once, grouped by project — Resume all / the ticked ones, or Not now. |
+| 10 | Thinking fold | Done: a reasoning item with text is a fold in the activity (one line closed, the whole text open). Claude Code 2.1.317 sends its thinking without text here, so it shows only where an agent sends the text. |
+| 11 | Turn-end project checks, one repair | Done: a project action can be *Check after each turn*; after a turn that changed files it runs (captured, 10 min limit); a failure leaves a notice with the output and queues one repair message — never a second in a row; a repair turn that changes nothing ends the repair. |
+| 12 | Mouse back/forward | Done: the mouse's back/forward buttons walk the thread history and no longer navigate the page. |
+
+**Also fixed here:** eight synchronous Tauri commands that `check:isolation`
+and `check:commands` flagged on `main` (import cancel, attention badge,
+browser profiles, document cancel) now run off the main thread.
+
+**Checks.** pilot `cargo test` 241 passed (marker text, one-repair rule and
+output tail, tags clean-up, interrupted threads offered once); clippy clean;
+`npm run check:ts`; `npm run test:pilot` 111 passed; `check:isolation`,
+`check:commands`, module manifests green.
+
+**Native QA** (isolated QA app, `artifacts/quantpilot-r2-12/`): a thread
+with image + video, a files-only message and a 31-line paste (shapes as
+described; file cards ellipsize in a narrow column); the model/effort
+marker; tags and the Record switch (thread hidden from the list and the
+palette, back when switched off; the switch survives a reload off); the
+project filter with a pinned and an archived project; "working 5s → 7s"
+on a running row; the thinking fold (an injected reasoning text — the
+agents here send none); Usage filtered to Codex and one model; dictation
+— without QuantVoice set up the composer says so, and a `speech-result`
+event landed "summarize the last commit" after "Please" (the engine's
+own recording was not used: no microphone in QA); a failing check
+(`exit 1`) queued exactly one repair, the repair turn changed nothing and
+nothing more was queued; the app killed during a turn and restarted →
+the Resume dialog, Resume all continued the turn (then stopped);
+mouse back/forward between two threads stayed on `/pilot`.

@@ -45,6 +45,10 @@ async function fork(worktree: boolean) {
 }
 
 const userText = computed(() => plainText(String(props.block.user?.data.text ?? '')))
+const userAttachments = computed<{ kind: string; name?: string; path?: string }[]>(() => props.block.user?.data.attachments ?? [])
+const isVideo = (a: { name?: string; path?: string }) => /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(a.name ?? a.path ?? '')
+const userMedia = computed(() => userAttachments.value.some((a) => a.kind === 'image' || (a.kind === 'file' && isVideo(a))))
+const userBody = computed(() => Boolean(userText.value.trim()) || userAttachments.value.some((a) => a.kind === 'folder' || a.kind === 'chip' || (a.kind === 'file' && !isVideo(a))))
 const showActivity = computed(() => props.block.activity.length > 0 || (props.running && !props.block.answer))
 
 async function copyUser() {
@@ -79,8 +83,10 @@ async function revert(files: boolean) {
   <section class="qp-turn" :data-turn="block.turnId">
     <div v-if="block.user && resumed" class="qp-resumed" :data-item-id="block.user.id">↻ Resumed<template v-if="otherAgent"> · {{ otherAgent }}</template></div>
     <div v-else-if="block.user" class="qp-user" :data-item-id="block.user.id">
-      <div class="qp-user-bubble">
-        <PilotThreadUserMessage :item="block.user" @notice="(t: string) => emit('notice', t)" />
+      <!-- Images and videos above the bubble; a message of only files is cards without one (round 2, card 12). -->
+      <PilotThreadUserMessage v-if="userMedia" :item="block.user" part="media" class="qp-user-media" @notice="(t: string) => emit('notice', t)" />
+      <div v-if="userBody" class="qp-user-bubble" :class="{ bare: !userText }">
+        <PilotThreadUserMessage :item="block.user" part="body" @notice="(t: string) => emit('notice', t)" />
       </div>
       <div class="qp-user-tools" :class="{ on: editing }">
         <button v-if="idle" class="qp-user-copy" title="Rewind the thread to before this message and edit it" @click="editing = !editing">Edit from here</button>
@@ -129,6 +135,11 @@ async function revert(files: boolean) {
         <AlertTriangle :size="14" />
         <span class="qp-error-text">{{ o.data.text }}</span>
       </div>
+      <div v-else-if="o.kind === 'notice' && o.data.marker === 'setup'" class="qp-marker" role="note"><span>{{ o.data.text }}</span></div>
+      <details v-else-if="o.kind === 'notice' && o.data.detail" class="qp-notice-fold">
+        <summary class="qp-notice"><Info :size="12" />{{ o.data.text }}</summary>
+        <pre class="qp-notice-pre">{{ o.data.detail }}</pre>
+      </details>
       <div v-else-if="o.kind === 'notice'" class="qp-notice"><Info :size="12" />{{ o.data.text }}</div>
       <PilotThreadPlanCard v-else-if="o.kind === 'plan'" :item="o" @notice="(t: string) => emit('notice', t)" />
       <PilotThreadPage v-else-if="o.kind === 'page'" :item="o" />
@@ -147,6 +158,8 @@ async function revert(files: boolean) {
   border: 1px solid var(--qss-border-subtle, #35353d);
 }
 .qp-user-bubble :deep(.qp-md) { font-size: 13.5px; }
+.qp-user-bubble.bare { padding: 0; background: transparent; border: none; min-width: 0; width: min(86%, 420px); }
+.qp-user-media { max-width: min(86%, 640px); align-items: flex-end; }
 .qp-user-att { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); margin-bottom: 4px; }
 .qp-user.is-steer { margin: 4px 0 10px; }
 .qp-user.is-steer .qp-user-bubble { border-style: dashed; }
@@ -206,4 +219,11 @@ async function revert(files: boolean) {
 }
 .qp-error-text { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; color: var(--qss-text, #d4d4d8); }
 .qp-notice { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 12px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-notice-fold > summary { cursor: pointer; list-style: none; }
+.qp-notice-fold > summary::-webkit-details-marker { display: none; }
+.qp-notice-pre { margin: 2px 0 6px 18px; max-height: 220px; overflow: auto; padding: 6px 8px; border-radius: 6px; background: var(--qss-bg-raised, #1f1f25); font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; white-space: pre-wrap; color: var(--qss-text-secondary, #9a9aa5); }
+/* A model, effort or fast-mode change in the middle of a thread (round 2, card 12). */
+.qp-marker { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-marker::before,
+.qp-marker::after { content: ''; flex: 1; height: 1px; background: var(--qss-border-subtle, #35353d); }
 </style>

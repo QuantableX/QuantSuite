@@ -34,6 +34,8 @@ export interface SessionMeta {
   fast?: boolean
   /** Only in the answer that created or set up a draft: the agent wanted was not available (round 2, card 03). */
   notice?: string
+  /** The user's tags (round 2, card 12). */
+  tags?: string[]
   titleSource: 'auto' | 'user'
   /** The last known state, saved: `idle` | `running` | `waiting` | `error` | `interrupted` | `limited`. */
   state: string
@@ -197,6 +199,8 @@ export interface PilotSettings {
   projects: Record<string, ProjectPrefs>
   /** GitHub through `gh` (card 23); off = no `gh` process at all. */
   github?: boolean
+  /** While recording, threads with one of these tags are hidden (round 2, card 12). */
+  hideTagsWhileRecording?: string[]
 }
 
 // ── GitHub (card 23) ──
@@ -289,6 +293,8 @@ export interface ProjectAction {
   key: string
   runOnWorktreeCreate: boolean
   runOnSettle: boolean
+  /** After a turn that changed files; a failure queues one repair (round 2, card 12). */
+  checkAfterTurn?: boolean
 }
 
 export interface DirEntry {

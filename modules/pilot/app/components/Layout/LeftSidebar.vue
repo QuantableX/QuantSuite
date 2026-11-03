@@ -28,6 +28,7 @@ import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import type { AgentSetup } from '#pilot/utils/agentMenu'
 import {
+  orderProjects,
   arrangementFor,
   canDrop,
   dropAction,
@@ -78,6 +79,21 @@ const filterModel = computed({
   get: () => sb.projectFilter ?? '',
   set: (v: string) => sb.setFilter(v || null),
 })
+// ── The project filter (round 2, card 12): pinned projects first, archived ones apart ──
+const filterOpen = ref(false)
+const showArchived = ref(false)
+const ordered = computed(() => orderProjects(filterOptions.value, sb.projects.pins, sb.projects.archived))
+const filterLabel = computed(() => filterOptions.value.find((o) => o.id === sb.projectFilter)?.name ?? 'All projects')
+function pickFilter(id: string) {
+  filterModel.value = id
+  filterOpen.value = false
+}
+function onFilterKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    e.stopPropagation()
+    filterOpen.value = false
+  }
+}
 const newMenu = ref(false)
 /** The import dialog (parity 08). */
 const importing = ref(false)
@@ -593,6 +609,7 @@ function rowProps(t: SidebarThread, section: Section) {
     source: drag.value?.started === true && drag.value.id === t.id,
     inRange: rangeIds.value.has(t.id),
     now: sb.clock,
+    startedAt: t.status === 'working' ? t.sentAt : null,
     'data-section': section,
   }
 }
@@ -622,16 +639,46 @@ const badgeIcon = computed(() => {
       return null
   }
 })
-const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!sb.projectFilter || s.contextId === sb.projectFilter)))
+const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && !sb.isPrivate(s) && (!sb.projectFilter || s.contextId === sb.projectFilter)))
+const hiddenTags = computed(() => (store.settings?.hideTagsWhileRecording ?? ['private']).map((t) => `#${t}`).join(', ') || '(none set)')
 </script>
 
 <template>
   <div class="qp-side" :class="{ dragging }">
     <div class="qp-side-head">
-      <select v-model="filterModel" class="qp-filter" aria-label="Project">
-        <option value="">All projects</option>
-        <option v-for="o in filterOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
-      </select>
+      <div class="qp-filter-wrap" @keydown="onFilterKey">
+        <button class="qp-filter" aria-haspopup="listbox" :aria-expanded="filterOpen" aria-label="Project" @click="filterOpen = !filterOpen">
+          <span class="qp-filter-label">{{ filterLabel }}</span>
+          <ChevronDown :size="12" />
+        </button>
+        <div v-if="filterOpen" class="qp-filter-veil" @pointerdown="filterOpen = false" />
+        <div v-if="filterOpen" class="qp-filter-menu" role="listbox" aria-label="Projects">
+          <button class="qp-filter-row" role="option" :aria-selected="!sb.projectFilter" :class="{ on: !sb.projectFilter }" @click="pickFilter('')">All projects</button>
+          <template v-for="(group, g) in [ordered.pinned, ordered.rest]" :key="g">
+            <div v-for="o in group" :key="o.id" class="qp-filter-item" :class="{ on: sb.projectFilter === o.id }">
+              <button class="qp-filter-row" role="option" :aria-selected="sb.projectFilter === o.id" @click="pickFilter(o.id)">
+                <Pin v-if="g === 0" class="qp-filter-pinned" :size="11" />
+                <span>{{ o.name }}</span>
+              </button>
+              <button class="qp-filter-act" :title="g === 0 ? 'Unpin' : 'Pin to the top'" :aria-label="g === 0 ? `Unpin ${o.name}` : `Pin ${o.name}`" @click="sb.togglePinProject(o.id)">
+                <PinOff v-if="g === 0" :size="12" /><Pin v-else :size="12" />
+              </button>
+              <button class="qp-filter-act" title="Archive — out of this list, threads stay" :aria-label="`Archive ${o.name}`" @click="sb.toggleArchiveProject(o.id)"><Archive :size="12" /></button>
+            </div>
+          </template>
+          <template v-if="ordered.archived.length">
+            <button class="qp-filter-sep" :aria-expanded="showArchived" @click="showArchived = !showArchived">
+              <ChevronRight :size="11" :class="{ open: showArchived }" /> Archived · {{ ordered.archived.length }}
+            </button>
+            <template v-if="showArchived">
+              <div v-for="o in ordered.archived" :key="o.id" class="qp-filter-item archived" :class="{ on: sb.projectFilter === o.id }">
+                <button class="qp-filter-row" role="option" :aria-selected="sb.projectFilter === o.id" @click="pickFilter(o.id)"><span>{{ o.name }}</span></button>
+                <button class="qp-filter-act" title="Restore" :aria-label="`Restore ${o.name}`" @click="sb.toggleArchiveProject(o.id)"><ArchiveRestore :size="12" /></button>
+              </div>
+            </template>
+          </template>
+        </div>
+      </div>
       <div class="qp-new">
         <button class="qp-new-btn" :title="`${keys.hint('chat.new', 'New thread')} — ${keys.hint('chat.newWithoutProject', 'without a project')}`" @click="newThread()">
           <Plus :size="14" />
@@ -729,9 +776,20 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
       <button class="qp-side-error-x" aria-label="Dismiss" @click="sb.error = ''; store.lastError = ''">×</button>
     </div>
 
-    <button class="qp-side-usage" :class="{ on: store.page === 'usage' }" :title="keys.hint('usage.open', 'Usage and limits')" @click="runCommand('usage.open')">
-      <ChartColumn :size="13" /> Usage
-    </button>
+    <div class="qp-side-foot">
+      <button class="qp-side-usage" :class="{ on: store.page === 'usage' }" :title="keys.hint('usage.open', 'Usage and limits')" @click="runCommand('usage.open')">
+        <ChartColumn :size="13" /> Usage
+      </button>
+      <button
+        class="qp-side-rec"
+        :class="{ on: sb.recording }"
+        :aria-pressed="sb.recording"
+        :title="sb.recording ? 'Recording: threads tagged ' + hiddenTags + ' are hidden — click to show them' : 'Recording the screen? Hide threads tagged ' + hiddenTags"
+        @click="sb.setRecording(!sb.recording)"
+      >
+        <span class="qp-side-rec-dot" /> {{ sb.recording ? 'Recording' : 'Record' }}
+      </button>
+    </div>
 
     <PilotLayoutThreadMenu v-if="menu && menuThread" :thread="menuThread" :x="menu.x" :y="menu.y" @close="closeMenu" @rename="renameFromMenu" />
     <Teleport to="body">
@@ -778,7 +836,65 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
   padding: 8px 8px 8px 10px;
   border-bottom: 1px solid var(--qss-border-subtle, #35353d);
 }
+.qp-filter-wrap { position: relative; flex: 1; min-width: 0; display: flex; }
+.qp-filter-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-filter-veil { position: fixed; inset: 0; z-index: 30; }
+.qp-filter-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 31;
+  width: 236px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--qss-border, #47474f);
+  border-radius: 8px;
+  background: var(--qss-bg-raised, #1f1f25);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+.qp-filter-item { display: flex; align-items: center; border-radius: 5px; }
+.qp-filter-item:hover,
+.qp-filter-item.on { background: var(--qss-bg-hover, #313139); }
+.qp-filter-item.archived .qp-filter-row { color: var(--qss-text-secondary, #9a9aa5); }
+.qp-filter-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--qss-text, #d4d4d8);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.qp-filter-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-filter-row:hover,
+.qp-filter-row.on { background: var(--qss-bg-hover, #313139); }
+.qp-filter-pinned { flex-shrink: 0; color: var(--qss-text-secondary, #9a9aa5); }
+.qp-filter-act { flex-shrink: 0; display: inline-flex; padding: 4px; margin-right: 2px; border: none; border-radius: 5px; background: transparent; color: var(--qss-text-muted, #6e6e7a); cursor: pointer; opacity: 0; }
+.qp-filter-item:hover .qp-filter-act,
+.qp-filter-act:focus-visible { opacity: 1; }
+.qp-filter-act:hover { background: var(--qss-bg-card, #292930); color: var(--qss-text, #d4d4d8); }
+.qp-filter-sep { display: flex; align-items: center; gap: 4px; width: 100%; margin-top: 4px; padding: 5px 8px; border: none; border-top: 1px solid var(--qss-border-subtle, #35353d); background: transparent; color: var(--qss-text-muted, #6e6e7a); font: inherit; font-size: 11px; text-align: left; cursor: pointer; }
+.qp-filter-sep .open { transform: rotate(90deg); }
+.qp-side-foot { flex-shrink: 0; display: flex; align-items: center; gap: 4px; margin: 4px 8px 8px; }
+.qp-side-foot .qp-side-usage { flex: 1; margin: 0; }
+.qp-side-rec { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: none; border-radius: 6px; background: transparent; color: var(--qss-text-muted, #6e6e7a); font: inherit; font-size: 12px; cursor: pointer; }
+.qp-side-rec:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
+.qp-side-rec-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor; }
+.qp-side-rec.on { color: var(--qss-error, #f87171); }
+.qp-side-rec.on .qp-side-rec-dot { background: currentColor; }
 .qp-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex: 1;
   min-width: 0;
   background: transparent;

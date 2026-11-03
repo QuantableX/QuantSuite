@@ -137,6 +137,7 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         title_source: if title.is_empty() { "auto".into() } else { "user".into() },
         fast,
         notice: None,
+        tags: Vec::new(),
         title,
         context_id: ctx.id,
         context_name: ctx.name,
@@ -855,9 +856,10 @@ fn pending_rewind(state: &PilotState, id: &str) -> Option<Value> {
 /// tracked captures and reported edits, each frozen when it was written),
 /// with a "changes" item under the answer. The after-checkpoint is still
 /// taken inside Git — reverting and rewinding restore from it.
-fn record_changes(state: &PilotState, thread_id: &str) {
+/// Saves the turn's changes; true when it changed files.
+fn record_changes(state: &PilotState, thread_id: &str) -> bool {
     let Some(turn) = state.db.turn_refs(thread_id).ok().and_then(|t| t.last().map(|x| x.0.clone())) else {
-        return;
+        return false;
     };
     if let Ok(Some((root, _, None))) = state.db.checkpoint(&turn) {
         let root = PathBuf::from(root);
@@ -868,10 +870,10 @@ fn record_changes(state: &PilotState, thread_id: &str) {
         }
     }
     let Some(finished) = crate::tracking::finish(&turn) else {
-        return;
+        return false;
     };
     if finished.files.is_empty() && finished.notes.is_empty() {
-        return;
+        return false;
     }
     let _ = state.db.save_captured(&turn, thread_id, &finished.files);
     let changed: Vec<FileChange> = finished.files.iter().map(|f| f.change.clone()).collect();
@@ -884,6 +886,7 @@ fn record_changes(state: &PilotState, thread_id: &str) {
         ItemKind::Changes,
         json!({ "files": changed, "added": added, "removed": removed, "partial": finished.partial(), "notes": finished.notes }),
     );
+    !changed.is_empty()
 }
 
 // ── Follow-ups: queue and steer (card 4) ──
@@ -935,7 +938,14 @@ pub fn after_turn(app: &AppHandle, thread_id: &str, status: TurnStatus) {
     let Some(state) = app.try_state::<PilotState>() else {
         return;
     };
-    record_changes(&state, thread_id);
+    let changed = record_changes(&state, thread_id);
+    if status == TurnStatus::Completed && changed {
+        start_checks(app, thread_id);
+    } else if status == TurnStatus::Completed {
+        // A repair turn that changed nothing ends the repair: the next
+        // failing check may queue one again.
+        lock(&state.repairs).remove(thread_id);
+    }
     link_agent_prs(&state, thread_id);
     after_turn_life(&state, thread_id, status);
     let _ = state.db.queue_settle(thread_id);
@@ -953,6 +963,110 @@ pub fn after_turn(app: &AppHandle, thread_id: &str, status: TurnStatus) {
         return;
     }
     let _ = send_next(app, &state, thread_id);
+}
+
+// ── Turn-end project checks (round 2, card 12) ──
+
+const CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+const CHECK_OUTPUT_LINES: usize = 60;
+
+/// The last lines of a check's output, for the notice and the repair.
+pub(crate) fn check_tail(output: &str) -> String {
+    let lines: Vec<&str> = output.lines().collect();
+    let from = lines.len().saturating_sub(CHECK_OUTPUT_LINES);
+    let tail = lines[from..].join("\n");
+    let tail: String = tail.chars().rev().take(6000).collect::<Vec<_>>().into_iter().rev().collect();
+    tail.trim().to_string()
+}
+
+/// The one repair a failed check queues.
+pub(crate) fn repair_message(name: &str, command: &str, output: &str) -> String {
+    format!(
+        "The project check \"{name}\" (`{command}`) failed after your last turn:\n\n```\n{}\n```\n\nFix the cause. QuantPilot runs the check again after this turn and queues no further repair.",
+        check_tail(output)
+    )
+}
+
+/// What to do after the checks of a turn: `None` when they passed.
+pub(crate) fn check_outcome(failed: &[(String, String, String)], was_repair: bool) -> (String, Option<String>) {
+    match failed.first() {
+        None => ("Project checks passed.".to_string(), None),
+        Some((name, command, output)) if !was_repair => (
+            format!("Project check \"{name}\" failed — one repair is queued."),
+            Some(repair_message(name, command, output)),
+        ),
+        Some((name, _, _)) => (format!("Project check \"{name}\" still fails after the repair — no further repair is queued."), None),
+    }
+}
+
+fn run_check(shell: &str, cwd: &str, command: &str) -> (bool, String) {
+    let kind = shell::kind_of(shell);
+    let mut cmd = std::process::Command::new(shell);
+    match kind {
+        shell::ShellKind::PowerShell => {
+            cmd.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command]);
+        }
+        shell::ShellKind::Cmd => {
+            cmd.args(["/D", "/C", command]);
+        }
+        _ => {
+            cmd.args(["-lc", command]);
+        }
+    }
+    cmd.current_dir(cwd);
+    cmd.env("PATH", qs_core::system_path::current());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    match providers::run_capture(cmd, CHECK_TIMEOUT) {
+        Ok((ok, out)) => (ok, out),
+        Err(e) => (false, e),
+    }
+}
+
+/// Runs the project's after-turn checks in the background; a failure
+/// queues one repair (never a second in a row) and every run leaves a
+/// notice in the thread.
+fn start_checks(app: &AppHandle, thread_id: &str) {
+    let Some(state) = app.try_state::<PilotState>() else { return };
+    let Ok(Some(meta)) = state.db.get_session(thread_id) else { return };
+    let settings = lock(&state.settings).clone();
+    let checks: Vec<(String, String)> = terminals::actions_of(&settings, &meta.context_id)
+        .iter()
+        .filter(|a| a.check_after_turn && !a.command.trim().is_empty())
+        .map(|a| (a.name.clone(), a.command.clone()))
+        .collect();
+    if checks.is_empty() || !Path::new(&meta.cwd).is_dir() {
+        return;
+    }
+    let shell = shell::resolve(&settings.shell);
+    let (app, id) = (app.clone(), thread_id.to_string());
+    std::thread::spawn(move || {
+        let Some(state) = app.try_state::<PilotState>() else { return };
+        let turn = last_turn(&state, &id);
+        state.runtime.append_item(&id, &turn, ItemKind::Notice, json!({ "text": format!("Running project checks: {}…", checks.iter().map(|c| c.0.as_str()).collect::<Vec<_>>().join(", ")), "marker": "checks" }));
+        let mut failed = Vec::new();
+        for (name, command) in &checks {
+            let (ok, out) = run_check(&shell, &meta.cwd, command);
+            if !ok {
+                failed.push((name.clone(), command.clone(), out));
+                break;
+            }
+        }
+        let was_repair = lock(&state.repairs).remove(&id);
+        let (text, repair) = check_outcome(&failed, was_repair);
+        let detail = failed.first().map(|f| check_tail(&f.2)).unwrap_or_default();
+        state.runtime.append_item(&id, &turn, ItemKind::Notice, json!({ "text": text, "detail": detail, "marker": "checks" }));
+        if let Some(message) = repair {
+            lock(&state.repairs).insert(id.clone());
+            if let Err(e) = enqueue(&app, &state, &id, QueuePayload::text(&message)) {
+                lock(&state.repairs).remove(&id);
+                state.runtime.append_item(&id, &turn, ItemKind::Notice, json!({ "text": format!("The repair could not be queued: {e}") }));
+            }
+        }
+    });
 }
 
 fn validate_payload(payload: &QueuePayload) -> Result<(), String> {
@@ -1985,7 +2099,7 @@ pub async fn pilot_browser_open(app: AppHandle, webview: tauri::Webview, url: St
 
 // ── Browser profiles (parity 18) ──
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pilot_browser_profiles(app: AppHandle, webview: tauri::Webview) -> Result<Value, String> {
     browser::guard(&webview)?;
     let data_dir = app.state::<PilotState>().data_dir.clone();
@@ -1993,20 +2107,20 @@ pub fn pilot_browser_profiles(app: AppHandle, webview: tauri::Webview) -> Result
     Ok(json!({ "profiles": store.profiles, "defaults": store.defaults, "active": browser::active_profile(&app) }))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pilot_browser_profile_create(app: AppHandle, webview: tauri::Webview, name: String) -> Result<browser_profiles::Profile, String> {
     browser::guard(&webview)?;
     browser_profiles::create(&app.state::<PilotState>().data_dir, &name, now())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pilot_browser_profile_rename(app: AppHandle, webview: tauri::Webview, id: String, name: String) -> Result<browser_profiles::Profile, String> {
     browser::guard(&webview)?;
     browser_profiles::rename(&app.state::<PilotState>().data_dir, &id, &name)
 }
 
 /// A project's profile; `None` makes its page temporary again.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pilot_browser_profile_default(app: AppHandle, webview: tauri::Webview, context: String, id: Option<String>) -> Result<(), String> {
     browser::guard(&webview)?;
     browser_profiles::set_default(&app.state::<PilotState>().data_dir, &context, id.as_deref().filter(|i| !i.is_empty()))
@@ -2046,7 +2160,7 @@ pub async fn pilot_browser_profile_delete(app: AppHandle, webview: tauri::Webvie
 }
 
 /// Other browsers on this machine and why their sessions cannot be imported.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pilot_browser_import_sources(webview: tauri::Webview) -> Result<Vec<browser_profiles::ImportSource>, String> {
     browser::guard(&webview)?;
     let local = dirs::data_local_dir().ok_or("no local app data folder")?;
@@ -2201,6 +2315,36 @@ pub async fn resume_scheduler(app: AppHandle) {
             _ = wake.notified() => {}
         }
     }
+}
+
+/// "Model: sonnet → opus · Effort: high → low · Fast mode on" — what changed
+/// between two states of a thread, for its timeline (round 2, card 12).
+pub(crate) fn setup_change(before: &ThreadMeta, after: &ThreadMeta) -> Option<String> {
+    let name = |v: &str| if v.trim().is_empty() { "default".to_string() } else { v.trim().to_string() };
+    let mut parts = Vec::new();
+    if before.model.trim() != after.model.trim() {
+        parts.push(format!("Model: {} → {}", name(&before.model), name(&after.model)));
+    }
+    if before.effort.trim() != after.effort.trim() {
+        parts.push(format!("Effort: {} → {}", name(&before.effort), name(&after.effort)));
+    }
+    if before.fast != after.fast {
+        parts.push(if after.fast { "Fast mode on".to_string() } else { "Fast mode off".to_string() });
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+/// The threads that were working when the app last closed, once — for the
+/// Resume offer after a restart (round 2, card 12).
+#[tauri::command(async)]
+pub fn pilot_restart_interrupted(state: State<'_, PilotState>) -> Vec<ThreadMeta> {
+    state
+        .db
+        .take_interrupted()
+        .into_iter()
+        .filter_map(|id| state.db.get_session(&id).ok().flatten())
+        .filter(|m| m.state == "interrupted" && m.settled_at.is_none())
+        .collect()
 }
 
 fn last_turn(state: &PilotState, id: &str) -> String {
@@ -2592,7 +2736,7 @@ pub fn pilot_document_extract(state: State<'_, PilotState>, path: String, name: 
 }
 
 /// Stops reading a document that left the composer.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pilot_document_cancel(path: String) -> bool {
     documents::cancel(&path)
 }
@@ -2808,6 +2952,7 @@ pub fn pilot_thread_update(
     effort: Option<String>,
     mode: Option<String>,
     fast: Option<bool>,
+    tags: Option<Vec<String>>,
 ) -> Result<ThreadMeta, String> {
     if let Some(m) = mode.as_deref() {
         if !settings::valid_mode(m) {
@@ -2860,10 +3005,19 @@ pub fn pilot_thread_update(
     if let Some(f) = fast {
         state.db.set_fast(&id, f).map_err(|e| e.to_string())?;
     }
+    if let Some(t) = tags.as_deref() {
+        state.db.set_tags(&id, t).map_err(|e| e.to_string())?;
+    }
     if let Some(m) = mode.as_deref() {
         state.db.set_mode(&id, m).map_err(|e| e.to_string())?;
     }
     let after = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    // A change in the middle of a conversation is marked where it happened (round 2, card 12).
+    if after.provider == before.provider && state.db.user_messages(&id).unwrap_or(0) > 0 {
+        if let Some(text) = setup_change(&before, &after) {
+            state.runtime.append_item(&id, &last_turn(&state, &id), ItemKind::Notice, json!({ "text": text, "marker": "setup" }));
+        }
+    }
     // What the user picks here is what the next new thread starts with (round 2, card 03).
     if provider.is_some() || model.is_some() || effort.is_some() || mode.is_some() {
         remember(&state, |st| {
@@ -3129,5 +3283,38 @@ mod tests {
         let many: Vec<Value> = (0..11).map(|_| file("image", "shot.png", &shot)).collect();
         assert!(refuse("Anything else?", json!(many)).contains("At most 10 files"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Round 2, card 12: a mid-thread change is named in the timeline.
+    #[test]
+    fn a_setup_change_reads_as_a_marker() {
+        let base = crate::db::ThreadMeta { model: "sonnet".into(), effort: "high".into(), ..test_meta() };
+        let after = crate::db::ThreadMeta { model: "opus".into(), effort: String::new(), fast: true, ..base.clone() };
+        assert_eq!(setup_change(&base, &after).as_deref(), Some("Model: sonnet → opus · Effort: high → default · Fast mode on"));
+        assert_eq!(setup_change(&base, &base), None);
+    }
+
+    /// Round 2, card 12: one repair per failure, never a second in a row.
+    #[test]
+    fn a_failed_check_queues_one_repair() {
+        let failed = vec![("Tests".to_string(), "npm test".to_string(), (1..=100).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n"))];
+        let (text, repair) = check_outcome(&failed, false);
+        assert_eq!(text, "Project check \"Tests\" failed — one repair is queued.");
+        let repair = repair.unwrap();
+        assert!(repair.contains("`npm test`") && repair.contains("line 100") && !repair.contains("line 40\n"), "the last 60 lines");
+        let (text, repair) = check_outcome(&failed, true);
+        assert!(text.contains("still fails") && repair.is_none());
+        assert_eq!(check_outcome(&[], true), ("Project checks passed.".to_string(), None));
+    }
+
+    fn test_meta() -> crate::db::ThreadMeta {
+        crate::db::ThreadMeta {
+            id: "t".into(), provider: "claude".into(), provider_session_id: None, title: String::new(), context_id: "general".into(),
+            context_name: "General".into(), cwd: ".".into(), model: String::new(), mode: "full".into(), created_at: 0, updated_at: 0,
+            cost_usd: 0.0, input_tokens: 0, output_tokens: 0, last_error: None, kind: "chat".into(), effort: String::new(),
+            title_source: "auto".into(), fast: false, notice: None, tags: Vec::new(), state: "idle".into(), context_tokens: None,
+            context_window: None, last_activity_at: 0, pinned: false, sort_key: 0.0, settled_at: None, snoozed_until: None,
+            auto_settle: true, workspace_mode: "local".into(), base_branch: String::new(), branch: String::new(), worktree_path: None,
+        }
     }
 }

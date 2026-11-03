@@ -31,6 +31,40 @@ export interface Sections {
 }
 
 /** A saved thread state (`state`) as the row's status. */
+/** The project filter's order (round 2, card 12): pinned first, archived apart. */
+export function orderProjects<T extends { id: string }>(options: T[], pins: string[], archived: string[]): { pinned: T[]; rest: T[]; archived: T[] } {
+  const pinned = pins.map((id) => options.find((o) => o.id === id)).filter((o): o is T => Boolean(o) && !archived.includes(o!.id))
+  return {
+    pinned,
+    rest: options.filter((o) => !pins.includes(o.id) && !archived.includes(o.id)),
+    archived: options.filter((o) => archived.includes(o.id)),
+  }
+}
+
+/** While recording, a thread with one of these tags stays out of the lists (round 2, card 12). */
+export function hiddenWhileRecording(tags: string[] | undefined, hide: string[]): boolean {
+  return Boolean(tags?.length) && tags!.some((t) => hide.includes(t))
+}
+
+/** "45s", "3m 05s", "1h 12m" — how long a turn has been working (round 2, card 12). */
+export function elapsedLabel(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
+}
+
+/** Tags as typed: "#Private, work" → ["private", "work"] (the app cleans them again). */
+export function parseTags(text: string): string[] {
+  const out: string[] = []
+  for (const raw of text.split(/[,\s]+/)) {
+    const t = raw.trim().replace(/^#+/, '').toLowerCase().slice(0, 24)
+    if (t && !out.includes(t) && out.length < 8) out.push(t)
+  }
+  return out
+}
+
 /**
  * A thread New thread may open again instead of making another (round 2,
  * card 03): a chat nobody wrote in, not titled, not settled or snoozed.
