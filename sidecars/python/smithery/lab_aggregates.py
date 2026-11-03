@@ -29,7 +29,7 @@ def run(path, doc):
     from rotation_lab.rpc import _build_config
     from .lab_compare import frozen_engine, validate_request, within_saved_data
     from .lab_fast import FastSystem, unsupported_reason
-    from .lab_search import Search, ordered
+    from .lab_search import Search, objective_score, ordered
     from .registry import describe_all
 
     validate_request(doc)
@@ -115,8 +115,10 @@ def run(path, doc):
         n_bases = len({bases[k] for k in usable})
         max_size = min(max(sizes) if sizes else n_bases, n_bases)
         allowed = (lambda s: s in sizes) if sizes else (lambda s: 2 <= s <= max_size)
-        plan = {"objective": ("worst price world's final capital on the search window, any aggregate size" if robust
-                              else "historical final capital, any aggregate size"), "seed": seed, "budget": budget, "top": top,
+        objective = doc.get("objective") or "capital"
+        measure = "final capital" if objective == "capital" else "CAGR per max drawdown"
+        plan = {"objective": (f"worst price world's {measure} on the search window, any aggregate size" if robust
+                              else f"historical {measure}, any aggregate size"), "seed": seed, "budget": budget, "top": top,
                 "reference": list(reference), "candidates": usable, "bases": n_bases, "sizes": sizes or [2, max_size],
                 "saved": [{"name": n, "members": list(m)} for m, n in seeds],
                 "stages": ["Control: the reference",
@@ -138,7 +140,10 @@ def run(path, doc):
                 "validation": "Retrospective search on examined history; no claim of out-of-sample performance or a global optimum."}
         save(path / "plan.json", plan)
         evaluate = (lambda trials: worlds.evaluate(trials, cut)) if robust else evaluator.evaluate
-        search = Search(evaluate, usable, {k: bases[k] for k in [*usable, *reference]}, seed=seed, budget=budget, progress=progress)
+        dates = evaluator.dates
+        years = max((dates[(cut if robust else len(dates)) - 1] - dates[0]).days / 365.25, 1 / 365.25)
+        search = Search(evaluate, usable, {k: bases[k] for k in [*usable, *reference]}, seed=seed, budget=budget,
+                        progress=progress, score=objective_score(objective, years))
         # A gated pool may not hold the reference's members: it is scored as a control only.
         search.run("Control: the reference", [reference], control=gated)
         if seeds:

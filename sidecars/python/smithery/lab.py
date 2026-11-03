@@ -165,8 +165,13 @@ def create(request):
                 pool = request.get("pool", "robust")
                 if pool not in ("robust", "all"):
                     raise ValueError("pool must be 'robust' or 'all'")
+                from .lab_search import OBJECTIVES
+                objective = request.get("objective", "capital")
+                if objective not in OBJECTIVES:
+                    raise ValueError("objective must be one of: " + ", ".join(OBJECTIVES))
                 doc.update(pool=pool, robust=pool == "robust" or bool(request.get("robust", True)),
-                           blind_days=request.get("blind_days"), gauntlet_top=request.get("gauntlet_top", 3))
+                           blind_days=request.get("blind_days"), gauntlet_top=request.get("gauntlet_top", 3),
+                           objective=objective)
             if kind in ("robustness", "aggregates"):
                 from .prices import DEFAULT_VENUES, NEVER_VENUES
                 venues = request.get("venues") or list(DEFAULT_VENUES)

@@ -41,6 +41,20 @@ class SearchTests(unittest.TestCase):
             self.assertEqual(trial, tuple(sorted(trial)))
         self.assertEqual(sum(st["tested"] for st in s.stages if st["stage"] != "Single indicators"), s.aggregates)
 
+    def test_the_calmar_objective_prefers_return_per_drawdown(self):
+        from smithery.lab_search import objective_score
+        values = {("a", "b"): (100.0, 60.0), ("a", "c"): (50.0, 20.0)}
+        evaluate = lambda trials: [values[t] for t in trials]
+        bases = {"a": "a", "b": "b", "c": "c"}
+        for objective, first in (("capital", ("a", "b")), ("calmar", ("a", "c"))):
+            s = Search(evaluate, ["a", "b", "c"], bases, seed=1, budget=10, score=objective_score(objective, 5.0))
+            s.run("Pairs", list(values))
+            self.assertEqual(s.leaders(1)[0][0], first, objective)
+            self.assertEqual(s.best_by_size()[2][0], first, objective)
+        self.assertEqual(objective_score("calmar", 5.0)((0.0, 10.0)), float("-inf"))
+        with self.assertRaises(ValueError):
+            objective_score("sharpe", 5.0)
+
     def test_a_control_is_scored_but_never_built_on(self):
         # A gated search's reference holds members outside the pool ('z' is not certified).
         s = Search(fake_evaluate, self.keys, {**self.bases, "z_opt": "z"}, seed=1, budget=10_000)
