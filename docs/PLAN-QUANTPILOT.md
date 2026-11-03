@@ -2987,3 +2987,18 @@ history panel and a card window over the live page; pan/zoom 75 %; module
 switch; back/forward; `_blank` link and `window.open` → tab; reload of the
 suite page reconnects the tabs without duplicates. Not tried: fullscreen
 video, a sign-in popup, downloads.
+
+## 49. The mascot, friendly again (2026-11-03)
+
+Card d537d3e4. The user on the round-2 mascot (§47): "super gruselig" — the old face
+was better in principle, but forward, not back. The glossy 3D ball (radial light,
+a specular shine, inset shading, a ground shadow) with a permanent little smile
+and cheeks read like a doll. Now the face is the old flat glyph again — a dark
+body (Night darker than the panel), a soft outline, a faint glow — and at rest
+just the two eyes. A mouth only for cheering, calling and worried, cheeks only
+for cheering and nodding. The worried brows now lift at the inner ends (they read
+angry before), the working ones barely tilt. Closed round eyes are a line in the
+face's ink. Moods, gaze, blink, skins, eye styles, accessories, the companion
+and the performance rules of §47 are unchanged. Before/after in
+`artifacts/mascot-friendly/`. Checks: mascot tests, test:pilot, check:ts, css,
+isolation, components.
