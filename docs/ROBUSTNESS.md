@@ -116,6 +116,8 @@ A system that makes no money on its own history has nothing to protect and is no
 4. **System Gauntlet:** the best leaders that passed, three by default, go through the System Gauntlet in fast mode on the whole history. Only robust finalists are candidates for saved systems.
 5. **No seeding from the whole history:** a robust search never starts from the saved aggregates or earlier leaders, because they were found on the whole history.
 
+**Objective:** `objective: "capital"` (default) ranks by the worst world's final capital; `"calmar"` ranks by the worst world's CAGR per unit of max drawdown, for lower-drawdown systems. The walk-forward and the System Gauntlet judge both the same way.
+
 **Speed:** every world is an engine-identical bulk evaluator. When PyTorch with CUDA is importable (`smithery/lab_gpu.py`, checked bit-identical against the CPU evaluator), the GPU scores the worlds. `SMITHERY_GPU=0` turns it off.
 
 ## Running it

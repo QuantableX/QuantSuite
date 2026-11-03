@@ -18,9 +18,29 @@ def ordered(trials, salt):
     return sorted(trials, key=lambda t: hashlib.sha256((salt + "|" + "+".join(t)).encode()).digest())
 
 
+OBJECTIVES = ("capital", "calmar")
+
+
+def objective_score(objective: str, years: float):
+    """The ranking key on (capital multiple, max drawdown %): the final capital, or ``calmar``,
+    the CAGR per unit of max drawdown over ``years`` (a lost capital ranks last)."""
+    if objective == "capital":
+        return lambda v: v[0]
+    if objective != "calmar":
+        raise ValueError("objective must be one of: " + ", ".join(OBJECTIVES))
+
+    def calmar(v):
+        capital, drawdown = v
+        if not capital or capital <= 0:
+            return float("-inf")
+        return (capital ** (1 / years) - 1) / max(drawdown / 100, 0.01)
+    return calmar
+
+
 class Search:
-    def __init__(self, evaluate, keys, bases, *, seed, budget, progress=None):
+    def __init__(self, evaluate, keys, bases, *, seed, budget, progress=None, score=None):
         self.evaluate = evaluate          # list of trials -> list of (capital multiple, max drawdown %) or None
+        self.score = score or (lambda v: v[0])  # the ranking key on a value (objective_score)
         self.keys = sorted(keys)
         # Every base it is given: a control trial may hold members outside the searched keys.
         self.bases = dict(bases)
@@ -81,14 +101,14 @@ class Search:
 
     def leaders(self, n, min_size=2, size=None):
         rows = self.results(size, min_size)
-        rows.sort(key=lambda r: (-r[1][0], len(r[0]), r[0]))
+        rows.sort(key=lambda r: (-self.score(r[1]), len(r[0]), r[0]))
         return rows[:n]
 
     def best_by_size(self):
         best = {}
         for trial, value in self.results(min_size=2):
             size = len(trial)
-            if size not in best or (-value[0], trial) < (-best[size][1][0], best[size][0]):
+            if size not in best or (-self.score(value), trial) < (-self.score(best[size][1]), best[size][0]):
                 best[size] = (trial, value)
         return dict(sorted(best.items()))
 
@@ -180,7 +200,7 @@ class Search:
             tested += done
             self.grown = size
             top = self.leaders(1, size=size)
-            value = top[0][1][0] if top else None
+            value = self.score(top[0][1]) if top else None
             if value is not None and (best is None or value > best):
                 best, since = value, 0
             else:
