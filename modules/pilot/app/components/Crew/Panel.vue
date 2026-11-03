@@ -11,6 +11,7 @@ import { useCrewStore } from '#pilot/stores/crew'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useAppStore } from '#pilot/stores/app'
 import { counts, iconStatus, STATUS_LABEL, settled, statusTone, taskDetail } from '#pilot/utils/crew'
+import { crewGraph } from '#pilot/utils/crewGraph'
 import type { AgentSetup } from '#pilot/utils/agentMenu'
 import type { CrewTask } from '#pilot/types'
 
@@ -24,6 +25,8 @@ const crew = computed(() => snap.value?.crew ?? null)
 const tasks = computed(() => snap.value?.tasks ?? [])
 const c = computed(() => counts(tasks.value))
 const isLead = computed(() => crew.value?.orchestratorId === props.threadId)
+/** The compact live graph (round 2, card 08). */
+const graph = computed(() => (snap.value ? crewGraph(snap.value, (id) => store.sessions.find((s) => s.id === id)?.provider) : null))
 const leadTitle = computed(() => (crew.value ? snap.value?.titles[crew.value.orchestratorId] || 'Orchestrator' : ''))
 const canResume = computed(() => crew.value && (crew.value.status === 'stopped' || (crew.value.status === 'running' && c.value.running === 0 && tasks.value.some((t) => t.status === 'waiting'))))
 
@@ -68,6 +71,7 @@ function pct(t: CrewTask): number {
       Worker of <button class="qp-link" :title="`Open ${leadTitle}`" @click="open(crew.orchestratorId)">{{ leadTitle }}</button>
     </div>
     <div v-if="crew.status === 'stopped'" class="qp-crew-state">Stopped</div>
+    <PilotCrewGraph v-if="graph && tasks.length" :graph="graph" :snap="snap" compact @open="open" />
 
     <div v-for="t in tasks" :key="t.id" class="qp-ctask" :class="[`is-${statusTone(t.status)}`, { me: t.workerId === threadId }]">
       <button class="qp-ctask-main" :disabled="!t.workerId" :title="t.workerId ? `Open ${t.key}'s thread` : t.note || t.spec" @click="open(t.workerId)">
@@ -76,7 +80,7 @@ function pct(t: CrewTask): number {
         <span class="qp-ctask-state">{{ STATUS_LABEL[t.status] }}</span>
         <span v-if="t.status === 'running' || t.status === 'asking' || t.status === 'stalled' || t.status === 'done'" class="qp-ctask-pct mono">{{ pct(t) }}%</span>
       </button>
-      <div v-if="!settled(t.status) && t.status !== 'waiting'" class="qp-ctask-bar"><span :style="{ width: `${pct(t)}%` }" /></div>
+      <div v-if="!settled(t.status) && t.status !== 'waiting'" class="qp-ctask-bar"><span :style="{ transform: `scaleX(${pct(t) / 100})` }" /></div>
       <div v-if="taskDetail(t)" class="qp-ctask-note" :title="taskDetail(t)">{{ taskDetail(t) }}</div>
       <div class="qp-ctask-actions">
         <span v-if="t.attempts > 1" class="qp-ctask-try">attempt <span class="mono">{{ t.attempts }}</span></span>
@@ -96,6 +100,7 @@ function pct(t: CrewTask): number {
 
     <div v-if="crews.error" class="qp-crew-error">{{ crews.error }}</div>
     <div class="qp-actions">
+      <button class="qp-mini" title="The crew as a live graph with its message bus" @click="app.setView('crew')">Crew view</button>
       <button class="qp-mini" :title="`Every message of this crew (${snap.messageCount})`" @click="crews.logOpen = crew.id">Message log</button>
       <button v-if="canResume" class="qp-mini" title="Start the tasks that are ready" :disabled="busy === 'crew'" @click="act('crew', () => crews.resume(crew!.id))">Resume</button>
       <button
@@ -135,7 +140,7 @@ function pct(t: CrewTask): number {
 .is-bad .qp-ctask-state { color: var(--qss-error, #f87171); }
 .qp-ctask-pct { flex: none; width: 34px; text-align: right; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-ctask-bar { height: 3px; border-radius: 2px; background: var(--qss-border-subtle, #35353d); overflow: hidden; margin-left: 19px; }
-.qp-ctask-bar span { display: block; height: 100%; background: var(--qss-accent, #7aa2f7); transition: width 0.3s ease; }
+.qp-ctask-bar span { display: block; height: 100%; background: var(--qss-accent, #7aa2f7); transform-origin: left; transition: transform 0.3s ease; }
 .is-wait .qp-ctask-bar span,
 .is-warn .qp-ctask-bar span { background: var(--qss-warning, #d29a3f); }
 .qp-ctask-note { margin-left: 19px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
