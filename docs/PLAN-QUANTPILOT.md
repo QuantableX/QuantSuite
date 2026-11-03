@@ -3122,3 +3122,14 @@ the roadmap card.
   and back, still knew its code word; usage showed the account's fixture log
   apart; a Codex account without a folder got `accounts/codex-side` and its own
   status.
+
+### Also before the next release — the canvas chat window's start screen (card be857b27)
+
+The user: "dieser anfangsbildschirm vom chat sieht kinda shit aus". An empty Chat
+window on the canvas now looks like QuantPilot's empty thread: Bob (when the
+mascot is on), "Chat in <workspace>", one primary New thread button naming the
+agent and model it gets (▾ opens the agent menu), then "or continue a thread" —
+a search (arrows + Enter) and the threads grouped "This workspace" / "Elsewhere"
+with agent icon, project and age. Side chats are not offered. A short window
+drops Bob and the line (container query); a deleted thread is said above the
+button.
