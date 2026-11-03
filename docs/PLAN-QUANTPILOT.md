@@ -3242,3 +3242,24 @@ button.
   parent, storage or cookies, could not fetch the app or QuantMCP, and its
   attempt to call an app command had no effect (Tauri's IPC object is present
   in every frame, but the frame's CSP and opaque origin leave it inert).
+
+### 07/07 — moodboards in QuantCanvas (card d1ec7b16)
+
+- Canvas window type `moodboard`: reference images dropped from the system,
+  pasted (Ctrl+V) or added from files — PNG, JPEG, GIF, WebP only; nothing is
+  downloaded. Captions; reorder by drag with pointer events (left/right half of
+  a card = before/after it, a line marks the gap); remove.
+- Storage: `<workspace data>/canvas/moodboards/<id>/board.json` (name, items in
+  order with caption and source name) plus a copy of each image — never the
+  project.
+- Agents: `quantsuite.canvas.moodboard_list` and `moodboard_read` (each
+  image's file path and caption; the agent opens the file with its own reading
+  tool). A chat connected to the board by an edge gets "All to chat" and a
+  per-image attach button: the images go into that chat's composer as
+  attachments for the next message.
+- QA (QA app, Claude Haiku): a board made in the window; one image pasted, two
+  dropped (a text file in the same drop refused); a caption; a real mouse drag
+  moved the third image to the front; order and caption survived a reload;
+  "All to chat" put three image chips into the connected chat's composer; Haiku
+  used moodboard_list, moodboard_read and Read and described the first image
+  correctly.

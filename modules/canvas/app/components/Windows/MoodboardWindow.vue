@@ -355,7 +355,7 @@ function keepKeys(e: KeyboardEvent) {
 .qc-mood-card.before::before { left: -8px; }
 .qc-mood-card.after::after { right: -8px; }
 .qc-mood-img { position: relative; aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid var(--qss-border-subtle, #35353d); border-radius: 8px; background: repeating-conic-gradient(#232329 0% 25%, #1c1c21 0% 50%) 50% / 16px 16px; }
-.qc-mood-img img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.qc-mood-img img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .qc-mood-wait { width: 40%; height: 3px; border-radius: 2px; background: var(--qss-border, #47474f); }
 .qc-mood-x,
 .qc-mood-att { position: absolute; top: 5px; display: none; padding: 3px; border: none; border-radius: 5px; background: rgba(0, 0, 0, 0.6); color: #fff; cursor: pointer; }
