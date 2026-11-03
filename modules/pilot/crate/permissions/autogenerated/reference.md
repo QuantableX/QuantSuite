@@ -122,6 +122,7 @@ Default permissions for the pilot module.
 - `allow-pilot-new-thread-setup`
 - `allow-pilot-thread-apply-setup`
 - `allow-pilot-restart-interrupted`
+- `allow-pilot-thread-set-parent`
 - `allow-pilot-provider-update`
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
@@ -3911,6 +3912,32 @@ Enables the pilot_thread_send command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-thread-set-parent`
+
+</td>
+<td>
+
+Enables the pilot_thread_set_parent command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-thread-set-parent`
+
+</td>
+<td>
+
+Denies the pilot_thread_set_parent command without any pre-configured scope.
 
 </td>
 </tr>

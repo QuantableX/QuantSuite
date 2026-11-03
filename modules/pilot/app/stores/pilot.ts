@@ -343,6 +343,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
         fast?: boolean
         /** Picked in a menu: new threads start with it from now on (round 2, card 03). */
         remember?: boolean
+        /** A side chat of this thread (round 2, card 10). */
+        parentId?: string
         workspaceMode?: 'local' | 'worktree'
         baseBranch?: string
         worktreePath?: string

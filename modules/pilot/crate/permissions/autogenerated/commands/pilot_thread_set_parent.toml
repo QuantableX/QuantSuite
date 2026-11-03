@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-thread-set-parent"
+description = "Enables the pilot_thread_set_parent command without any pre-configured scope."
+commands.allow = ["pilot_thread_set_parent"]
+
+[[permission]]
+identifier = "deny-pilot-thread-set-parent"
+description = "Denies the pilot_thread_set_parent command without any pre-configured scope."
+commands.deny = ["pilot_thread_set_parent"]

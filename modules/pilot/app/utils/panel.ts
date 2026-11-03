@@ -4,12 +4,13 @@
  * node tests import it.
  */
 
-export const PANEL_SECTIONS = ['agents', 'thread', 'changes', 'branch', 'tasks', 'crew', 'servers'] as const
+export const PANEL_SECTIONS = ['agents', 'thread', 'side', 'changes', 'branch', 'tasks', 'crew', 'servers'] as const
 export type PanelSection = (typeof PANEL_SECTIONS)[number]
 
 export const SECTION_LABELS: Record<PanelSection, string> = {
   agents: 'Agents now',
   thread: 'This thread',
+  side: 'Side chats',
   changes: 'Changes',
   branch: 'Branch and PR',
   tasks: 'Tasks',

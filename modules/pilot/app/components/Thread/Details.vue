@@ -25,6 +25,7 @@ import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
 import { useAppStore } from '#pilot/stores/app'
 import { useInspectorStore } from '#pilot/stores/inspector'
+import { useSideStore } from '#pilot/stores/side'
 import { serverUrls, useDrawerStore, type DevServer } from '#pilot/stores/drawer'
 import { pilot } from '#pilot/utils/invoke'
 import { basename, dirname, fmtCost, fmtTokens } from '#pilot/utils/format'
@@ -172,6 +173,10 @@ async function compact() {
   if (props.threadId && canCompact.value) await threads.send(props.threadId, '/compact')
 }
 
+// ── Side chats (round 2, card 10) ──
+const side = useSideStore()
+const sideChats = computed(() => (props.threadId && !thread.value?.parentId ? side.of(props.threadId) : []))
+
 // ── Changes ──
 const changes = computed(() => aggregateChanges(view.value?.items ?? []).slice(0, 40))
 /** Before any saved change: the files the agent's tools wrote. */
@@ -302,13 +307,15 @@ async function confirmStop() {
 }
 
 // ── Which sections show ──
-const NEEDS_THREAD: PanelSection[] = ['thread', 'changes', 'branch', 'tasks', 'crew', 'servers']
+const NEEDS_THREAD: PanelSection[] = ['thread', 'side', 'changes', 'branch', 'tasks', 'crew', 'servers']
 function hasContent(s: PanelSection): boolean {
   switch (s) {
     case 'agents':
       return true
     case 'thread':
       return Boolean(thread.value)
+    case 'side':
+      return Boolean(thread.value) && !thread.value?.parentId
     case 'changes':
       return changes.value.length > 0 || written.value.length > 0
     case 'branch':
@@ -466,6 +473,25 @@ const dropLine = computed(() => {
           </div>
         </template>
 
+        <!-- Side chats: ask beside the main run (card 10) -->
+        <template v-else-if="s === 'side'">
+          <button
+            v-for="c in sideChats"
+            :key="c.id"
+            class="qp-side-row"
+            :class="{ on: side.open?.sideId === c.id }"
+            :title="`${c.title} — open beside the conversation`"
+            @click="side.show(threadId!, c.id)"
+          >
+            <PilotAgentIcon :agent="c.provider || null" :size="12" :status="sb.statusOf(c.id)" />
+            <span class="qp-side-title">{{ c.title.replace(/^Side: /, '') || 'Side chat' }}</span>
+          </button>
+          <div v-if="!sideChats.length" class="qp-pn-empty">Ask something without touching this run: /btw &lt;question&gt;.</div>
+          <div class="qp-actions">
+            <button class="qp-mini" title="A side chat beside this thread — same project, agent and checkout" @click="side.startNew(threadId!)">New side chat</button>
+          </div>
+        </template>
+
         <!-- Changes -->
         <template v-else-if="s === 'changes'">
           <button v-for="f in changes" :key="f.path" class="qp-file" :title="`${f.path} — open the diff`" @click="inspector.showDiff('turn', f.turnId, f.path)">
@@ -613,6 +639,10 @@ const dropLine = computed(() => {
 .qp-file-num { flex-shrink: 0; }
 .qp-file-dir { font-size: 10.5px; color: var(--qss-text-muted, #6e6e7a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .qp-links { display: flex; flex-wrap: wrap; gap: 4px; }
+.qp-side-row { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border: none; border-radius: 6px; background: transparent; color: var(--qss-text, #d4d4d8); text-align: left; cursor: pointer; min-width: 0; }
+.qp-side-row:hover,
+.qp-side-row.on { background: var(--qss-bg-hover, #313139); }
+.qp-side-title { min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-tasklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
 .qp-tasklist li { position: relative; padding-left: 14px; font-size: 12px; line-height: 1.4; color: var(--qss-text, #d4d4d8); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-tasklist li::before { content: ''; position: absolute; left: 1px; top: 5px; width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--qss-text-muted, #6e6e7a); }

@@ -29,6 +29,7 @@ import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useKeysStore } from '#pilot/stores/keys'
 import { useUsageStore } from '#pilot/stores/usage'
+import { useSideStore } from '#pilot/stores/side'
 import { useCommands } from '#pilot/utils/commands'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
@@ -342,6 +343,14 @@ async function runAppCommand(name: string, arg: string): Promise<boolean> {
     case 'tui':
       await threads.openTui(id)
       return true
+    case 'btw': {
+      // A side chat beside this thread; the main run is not touched (round 2, card 10).
+      if (thread.value?.parentId) {
+        showNote('This is a side chat already — ask here directly.')
+        return false
+      }
+      return useSideStore().ask(id, arg)
+    }
     case 'usage': {
       // The last reading, as Usage → Limits has it; nothing runs (card 18).
       const usage = useUsageStore()

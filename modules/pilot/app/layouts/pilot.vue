@@ -18,6 +18,7 @@ import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useGitStore } from '#pilot/stores/git'
+import { useSideStore } from '#pilot/stores/side'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { useDrawerStore } from '#pilot/stores/drawer'
 import { useKeysStore } from '#pilot/stores/keys'
@@ -34,6 +35,7 @@ import type { PilotEnvelope, SessionMeta, ThreadEnvelope } from '#pilot/types'
 
 const app = useAppStore()
 const store = usePilotStore()
+const side = useSideStore()
 const threads = useThreadStore()
 const sidebar = useSidebarStore()
 const git = useGitStore()
@@ -322,6 +324,7 @@ function onFileDrop(e: DragEvent) {
         <PilotPalette v-if="keys.paletteOpen" />
         <PilotLayoutWorktreeCleanup />
         <PilotLayoutResumeDialog v-if="store.restartOffer.length" />
+        <PilotLayoutSideChat v-if="side.open && side.open.mainId === store.activeId && app.view === 'conversation'" />
       </main>
       <QRightPanel :model-value="app.sidebarRightOpen && app.view === 'conversation'" storage-key="pilot.right">
         <PilotLayoutRightSidebar />
