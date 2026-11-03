@@ -3057,5 +3057,5 @@ flat glyph, eyes only, no half-shut holds, every animation ends where it started
 
 Measured: empty thread with panel + hero Bob lively 1.4 % of a core. Checks:
 mascot tests 8, test:pilot, check:ts, css, isolation, components. QA frames in
- (settings, gallery, tricks, dizzy/petting/sparkle,
+`artifacts/bob-allout/` (settings, gallery, tricks, dizzy/petting/sparkle,
 companion carried and landing, skins and accessories).
