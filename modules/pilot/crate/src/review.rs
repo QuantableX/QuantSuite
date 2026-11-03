@@ -379,6 +379,11 @@ fn repo_for(app: &AppHandle, context_id: &str) -> Result<Repo, String> {
     host_of(Path::new(&ctx.path)).map(|(_, r)| r).ok_or_else(|| format!("{} has no GitHub remote.", ctx.name))
 }
 
+/// A pull request as GitHub has it now, without drafts (review guides, round 3, card 04).
+pub(crate) fn load_pr(app: &AppHandle, context_id: &str, number: i64) -> Result<Loaded, String> {
+    load(&repo_for(app, context_id)?, number, Vec::new())
+}
+
 #[tauri::command(async)]
 pub fn pilot_review_load(app: AppHandle, state: State<'_, PilotState>, context_id: String, number: i64) -> Result<Loaded, String> {
     let repo = repo_for(&app, &context_id)?;

@@ -140,6 +140,8 @@ const COMMANDS: &[&str] = &[
     "pilot_schedule_delete",
     "pilot_schedule_run_now",
     "pilot_schedule_runs",
+    "pilot_guide_get",
+    "pilot_guide_write",
     "pilot_provider_update",
     "pilot_gh_status",
     "pilot_diagnostics",

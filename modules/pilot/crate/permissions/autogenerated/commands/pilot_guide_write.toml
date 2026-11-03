@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-guide-write"
+description = "Enables the pilot_guide_write command without any pre-configured scope."
+commands.allow = ["pilot_guide_write"]
+
+[[permission]]
+identifier = "deny-pilot-guide-write"
+description = "Denies the pilot_guide_write command without any pre-configured scope."
+commands.deny = ["pilot_guide_write"]

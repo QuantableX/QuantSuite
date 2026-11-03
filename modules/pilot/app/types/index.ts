@@ -1073,3 +1073,34 @@ export interface Schedule {
   nextDue: number | null
   lastRun: ScheduleRun | null
 }
+
+// ── Review guides (round 3, card 04, crate/src/guides.rs) ──
+
+export type GuideTarget = { kind: 'thread'; id: string; scope: string; turn: string | null } | { kind: 'pr'; contextId: string; number: number }
+
+export interface GuideFile {
+  path: string
+  what: string
+  /** `low` | `medium` | `high`; '' when the agent did not cover the file. */
+  risk: string
+  check: string[]
+  line: number | null
+}
+
+export interface Guide {
+  summary: string
+  groups: { title: string; files: GuideFile[] }[]
+  questions: string[]
+  missing: string[]
+  cut: string[]
+  key: string
+  provider: string
+  model: string
+  createdAt: number
+}
+
+export interface GuideState {
+  guide: Guide | null
+  stale: boolean
+  files: number
+}

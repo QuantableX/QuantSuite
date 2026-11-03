@@ -156,6 +156,12 @@ function selection(): { startLine: number; endLine: number; text: string } | nul
 defineExpose({
   layout: () => editor.value?.layout(),
   selection,
+  /** Show a line of the right side (a review guide's jump). */
+  reveal: (line: number) => {
+    const right = editor.value?.getModifiedEditor()
+    right?.revealLineInCenter(line)
+    right?.setPosition({ lineNumber: line, column: 1 })
+  },
 })
 </script>
 

@@ -3162,3 +3162,29 @@ button.
   project and answered; Run now added a manual run; two one-offs whose slot
   passed while the app was closed: "run once" ran once after the start, "skip"
   was recorded as missed, and a second restart ran nothing more.
+
+### 04/07 — review guides (card df9982c0)
+
+- "Write guide" in the Diff tab (the book button: the guide replaces the file
+  list, the diff stays below) and in a pull request's review (the right
+  column's Guide tab). One read-only run of Claude Code (`-p --tools ""`, no
+  session, hooks or MCP) or Codex (`exec -s read-only --ephemeral`), chosen in
+  the panel's agent menu and remembered; the prompt goes in on stdin from the
+  temp folder — no repository access.
+- The answer is JSON: summary, groups by concern in reading order, per file
+  what changed, risk (low/medium/high) and what to check plus a line to look at
+  first, and questions for the author. Paths are matched to the diff's (exact,
+  else the one path they end); a file the agent left out is listed under "Not
+  covered by the guide", never dropped. Each patch is cut at 12,000 characters
+  and the diffs at 160,000 together; cut or left-out files are named in the
+  prompt and marked "cut" in the guide.
+- Kept per target (`review_guides`, schema 23: a PR, or a thread's scope)
+  with a key over the head/range and every patch; a changed diff shows the
+  guide as stale until it is written again. Entries open their file and line
+  (QDiffEditor.reveal; the PR view scrolls to the row and flashes it). Nothing
+  is posted.
+- QA (QA app, Claude Haiku, the QA project's uncommitted diff of five files):
+  the guide came back in 12 s and named the deliberate `h > 24` slip in a
+  question; its clock.js entry opened the file at its line; an edit plus
+  Refresh marked it stale; Write again cleared that. Not tried live: a pull
+  request's guide (no test PR) and Codex (not signed in here).
