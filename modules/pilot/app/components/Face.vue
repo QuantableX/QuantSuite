@@ -13,8 +13,8 @@
  * glance a fresh spot and pause — a loop would read as a GIF); while calm it
  * does a quirk every few seconds (look around, roll its eyes, tilt, wink,
  * hop, wiggle, giggle > <, stretch, nod off after a long quiet spell, and an
- * "oh, hi" when the pointer comes back); hover perks it up, a click squishes
- * it and it says something. The user's look: skin, eye style, an accessory,
+ * "oh, hi" when the pointer comes back); hover perks it up, a click gives a
+ * boing and a ^^ and it says something. The user's look: skin, eye style, an accessory,
  * a name, an agent tint.
  *
  * Built from plain elements: every motion is `transform`/`opacity`, so the
@@ -66,7 +66,8 @@ const reduced = computed(() => prefs.value.motion === 'still')
 // ── Events: cheer, nod, click ──
 const cheering = ref(false)
 const nodding = ref(false)
-const squish = ref(false)
+/** ^^ for a moment after a click — the eyes only, no hop. */
+const glee = ref(false)
 const timers = new Set<ReturnType<typeof setTimeout>>()
 function later(fn: () => void, ms: number) {
   const t = setTimeout(() => {
@@ -145,7 +146,7 @@ function onPointer(e: PointerEvent) {
     frame = 0
     const el = root.value
     const p = pendingPointer
-    if (!el || !p || mood.value === 'sleep' || mood.value === 'cheer') return
+    if (!el || !p || mood.value === 'sleep' || mood.value === 'cheer' || glee.value) return
     const r = el.getBoundingClientRect()
     gaze.value = gazeToward(p.x - (r.left + r.width / 2), p.y - (r.top + r.height / 2))
     followUntil = Date.now() + 2500
@@ -161,6 +162,8 @@ function scheduleGlance() {
       if (md === 'sleep') gaze.value = { x: rand(-0.01, 0.01), y: 0.02 }
       else if (md === 'call') gaze.value = { x: 0, y: 0 }
       else if (md === 'think') gaze.value = { x: rand(0.02, 0.05) * (Math.random() < 0.5 ? -1 : 1), y: -0.04 }
+      // Working: round eyes (a slight squint read as suspicious), a look down at the work.
+      else if (md === 'focus' || md === 'juggle') gaze.value = { x: rand(-0.03, 0.03), y: rand(0.015, 0.035) }
       else if (Math.random() < 0.3) gaze.value = { x: 0, y: 0 }
       else gaze.value = { x: rand(-0.05, 0.05), y: rand(-0.035, 0.03) }
     }
@@ -169,7 +172,7 @@ function scheduleGlance() {
 }
 function scheduleBlink() {
   later(() => {
-    if (!cheering.value && !quirk.value && mood.value !== 'sleep') {
+    if (!cheering.value && !quirk.value && !glee.value && mood.value !== 'sleep') {
       blink.value = true
       later(() => {
         blink.value = false
@@ -220,7 +223,7 @@ function runQuirk(q: Quirk) {
 }
 function scheduleQuirk() {
   later(() => {
-    if (!reduced.value && mood.value === 'calm' && !squish.value) runQuirk(pickQuirk(lastQuirk, Date.now() - lastPointerAt))
+    if (!reduced.value && mood.value === 'calm' && !glee.value && !boing) runQuirk(pickQuirk(lastQuirk, Date.now() - lastPointerAt))
     scheduleQuirk()
   }, quirkPause())
 }
@@ -237,6 +240,8 @@ function start() {
 function stop() {
   clearTimers()
   quirk.value = null
+  glee.value = false
+  boing?.cancel()
   window.removeEventListener('pointermove', onPointer)
   if (frame) cancelAnimationFrame(frame)
   frame = 0
@@ -266,12 +271,37 @@ onBeforeUnmount(() => {
 // ── Hover and click ──
 const hover = ref(false)
 const lineSeed = ref(Math.floor(Math.random() * 100))
+/**
+ * A click: one boing — squash, stretch, settle — that ends exactly where it
+ * started, so nothing snaps back. Played with WAAPI on top of whatever the
+ * body does (composite add: hover's scale stays), never twice at once. A
+ * quirk in progress keeps going; otherwise the eyes go ^^ for a moment.
+ */
+let boing: Animation | null = null
 function poke() {
   if (!props.interactive) return
   lineSeed.value++
-  squish.value = true
-  later(() => (squish.value = false), 260)
-  if (mood.value === 'calm' || mood.value === 'sleep') cheerFor(1200)
+  const body = root.value?.querySelector<HTMLElement>('.qp-m-body')
+  if (body && !reduced.value && !boing) {
+    boing = body.animate(
+      [
+        { transform: 'translateY(0) scale(1, 1)', easing: 'ease-out' },
+        { transform: 'translateY(7%) scale(1.17, 0.83)', offset: 0.18, easing: 'ease-in-out' },
+        { transform: 'translateY(-6%) scale(0.92, 1.1)', offset: 0.46, easing: 'ease-in-out' },
+        { transform: 'translateY(1.5%) scale(1.04, 0.97)', offset: 0.72, easing: 'ease-out' },
+        { transform: 'translateY(0) scale(1, 1)' },
+      ],
+      { duration: 720, composite: 'add' },
+    )
+    const done = () => (boing = null)
+    boing.onfinish = done
+    boing.oncancel = done
+  }
+  if (quirk.value || cheering.value || glee.value) return
+  if (mood.value === 'calm' || mood.value === 'sleep') {
+    glee.value = true
+    later(() => (glee.value = false), 1200)
+  }
 }
 
 // ── Look ──
@@ -295,7 +325,7 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
     v-if="prefs.on || $props.mood !== null"
     ref="root"
     class="qp-mascot"
-    :class="[`m-${mood}`, `eyes-${prefs.eyes}`, `skin-${prefs.skin}`, quirk ? `q-${quirk} side-${side}` : '', { hover: hover && interactive, squish, blink, still: reduced }]"
+    :class="[`m-${mood}`, `eyes-${prefs.eyes}`, `skin-${prefs.skin}`, quirk ? `q-${quirk} side-${side}` : '', { hover: hover && interactive, glee, blink, still: reduced }]"
     :data-own-motion="reduced ? undefined : ''"
     :style="vars"
     role="img"
@@ -447,8 +477,6 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 .m-think .qp-m-halo,
 .m-focus .qp-m-halo,
 .m-juggle .qp-m-halo { opacity: 0.6; }
-.m-focus .qp-m-eye,
-.m-juggle .qp-m-eye { transform: scaleY(0.72); }
 .m-focus .qp-m-brow,
 .m-juggle .qp-m-brow { opacity: 0.55; }
 .m-focus .qp-m-brow.l { transform: translateY(30%) rotate(4deg); }
@@ -474,11 +502,14 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 .m-cheer .qp-m-eye { background: transparent; box-shadow: none; border-top: 1.7cqw solid var(--m-ink); border-radius: 50%; transform: translateY(14%) scaleX(1.15); }
 .m-cheer .qp-m-eye b,
 .m-cheer .qp-m-eye s { opacity: 0; }
-.m-cheer .qp-m-bob { animation: qp-m-jump 0.9s var(--m-spring) 2; }
+.m-cheer .qp-m-bob { animation: qp-m-jump 0.9s var(--m-spring) 1; }
 .m-nod .qp-m-bob { animation: qp-m-nod 0.5s ease-in-out 2; }
 .hover .qp-m-body { transform: scale(1.05); }
 .hover .qp-m-eye { transform: scale(1.08); }
-.squish .qp-m-body { transform: scale(1.12, 0.86) translateY(6%); transition-duration: 0.12s; }
+/* ^^ after a click: the cheer eyes without the hop. */
+.qp-mascot.glee .qp-m-eye { background: transparent; box-shadow: none; border-top: 1.7cqw solid var(--m-ink); border-radius: 50%; transform: translateY(14%) scaleX(1.15); }
+.qp-mascot.glee .qp-m-eye b,
+.qp-mascot.glee .qp-m-eye s { opacity: 0; }
 
 /* ── Extras ── */
 .qp-m-hand {
@@ -549,7 +580,8 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 @keyframes qp-q-roll { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 50% { transform: rotate(0) translateY(-3%); } 75% { transform: rotate(5deg); } }
 @keyframes qp-q-stretch { 0%, 100% { transform: scale(1, 1); } 35%, 55% { transform: translateY(-5%) scale(0.92, 1.12); } 75% { transform: scale(1.07, 0.93); } 88% { transform: scale(0.98, 1.02); } }
 @keyframes qp-q-shut { 0%, 100% { transform: scaleY(1); } 22%, 66% { transform: scaleY(0.1); } }
-@keyframes qp-q-drowsy { 0% { transform: scaleY(1); } 22% { transform: scaleY(0.5); } 40% { transform: scaleY(0.42); } 62% { transform: scaleY(0.1); } 70% { transform: scaleY(0.1); } 76% { transform: scale(1.3); } 88%, 100% { transform: scale(1); } }
+/* One slow, complete close — never held half shut (that read as a squint). */
+@keyframes qp-q-drowsy { 0% { transform: scaleY(1); } 50%, 68% { transform: scaleY(0.1); } 76% { transform: scale(1.3); } 88%, 100% { transform: scale(1); } }
 @keyframes qp-q-nodoff { 0%, 100% { transform: translateY(0) rotate(0); } 60%, 70% { transform: translateY(5%) rotate(-4deg); } 76% { transform: translateY(-4%) rotate(0); } 88% { transform: translateY(0); } }
 @keyframes qp-q-giggle { 0%, 100% { transform: rotate(0) translateY(0); } 15% { transform: rotate(-4deg) translateY(-2%); } 30% { transform: rotate(4deg); } 45% { transform: rotate(-4deg) translateY(-2%); } 60% { transform: rotate(4deg); } 75% { transform: rotate(-2deg); } }
 
