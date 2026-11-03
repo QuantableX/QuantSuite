@@ -93,11 +93,19 @@ function requestLine(kind: string, data: Record<string, any>): string {
         <div v-else-if="e.item.kind === 'assistant'" class="qp-act-text" :class="{ sub: e.item.parent }" :data-item-id="e.item.id">
           <PilotThreadMarkdown :source="String(e.item.data.text ?? '')" :streaming="Boolean(e.item.data.streaming)" :cite="{ threadId: e.item.threadId, itemId: e.item.id }" @notice="(t: string) => emit('notice', t)" />
         </div>
+        <details v-else-if="e.item.kind === 'reasoning' && e.item.data.text" class="qp-act-think" :data-item-id="e.item.id">
+          <summary class="qp-act-line">
+            <Brain :size="12" />
+            <span>{{ e.item.data.streaming ? 'Thinking…' : 'Thought' }}</span>
+            <span v-if="e.item.data.estimatedTokens" class="qp-act-num">{{ e.item.data.estimatedTokens }} tokens</span>
+            <span class="qp-act-reason">{{ e.item.data.text }}</span>
+          </summary>
+          <div class="qp-act-think-body">{{ e.item.data.text }}</div>
+        </details>
         <div v-else-if="e.item.kind === 'reasoning'" class="qp-act-line">
           <Brain :size="12" />
           <span>{{ e.item.data.streaming ? 'Thinking…' : 'Thought' }}</span>
           <span v-if="e.item.data.estimatedTokens" class="qp-act-num">{{ e.item.data.estimatedTokens }} tokens</span>
-          <span v-if="e.item.data.text" class="qp-act-reason">{{ e.item.data.text }}</span>
         </div>
         <div v-else-if="e.item.kind === 'approval' || e.item.kind === 'question'" class="qp-act-line is-muted">
           {{ requestLine(e.item.kind, e.item.data) }}
@@ -155,4 +163,10 @@ function requestLine(kind: string, data: Record<string, any>): string {
 .qp-spin { animation: qp-spin 0.9s linear infinite; flex-shrink: 0; }
 @keyframes qp-spin { to { transform: rotate(360deg); } }
 .qp-act-files { margin: 2px 0 4px 18px; }
+/* The thinking fold (round 2, card 12): a line closed, the whole text open. */
+.qp-act-think > summary { list-style: none; cursor: pointer; }
+.qp-act-think > summary::-webkit-details-marker { display: none; }
+.qp-act-think[open] > summary .qp-act-reason { display: none; }
+.qp-act-think .qp-act-num { white-space: nowrap; }
+.qp-act-think-body { margin: 2px 0 6px 18px; padding-left: 10px; border-left: 2px solid var(--qss-border-subtle, #35353d); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--qss-text-secondary, #9a9aa5); }
 </style>

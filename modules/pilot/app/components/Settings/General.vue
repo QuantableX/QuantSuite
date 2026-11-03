@@ -11,6 +11,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { qs, type ConsoleShell } from '@quantsuite/core'
 import { usePilotStore } from '#pilot/stores/pilot'
 import type { PilotSettings } from '#pilot/types'
+import { parseTags } from '#pilot/utils/sidebar'
 
 const store = usePilotStore()
 
@@ -32,6 +33,7 @@ type Owned = Pick<
   | 'limitSnooze'
   | 'attachQuantmcp'
   | 'includeGeneralVault'
+  | 'hideTagsWhileRecording'
 >
 const draft = reactive<Owned>({
   shell: '',
@@ -49,6 +51,7 @@ const draft = reactive<Owned>({
   limitSnooze: false,
   attachQuantmcp: true,
   includeGeneralVault: true,
+  hideTagsWhileRecording: ['private'],
 })
 const notice = ref('')
 const busy = ref(false)
@@ -117,6 +120,12 @@ const status = computed(() => store.status)
     <PilotSettingsProjectScope v-if="scope" :project="scope" />
 
     <template v-else>
+      <h3 class="qp-settings-title">While recording</h3>
+      <label class="qp-settings-field">
+        <span>Hide threads tagged <em>(comma separated; the sidebar's Record button turns it on)</em></span>
+        <input :value="(draft.hideTagsWhileRecording ?? ['private']).join(', ')" class="qp-input" spellcheck="false" placeholder="private" @change="draft.hideTagsWhileRecording = parseTags(($event.target as HTMLInputElement).value)" />
+      </label>
+
       <h3 class="qp-settings-title">New threads</h3>
       <p class="qp-settings-desc">
         A new thread starts with what you picked last — agent, its model and effort, permissions, Local or Worktree. These are the values

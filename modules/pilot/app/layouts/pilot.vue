@@ -184,10 +184,21 @@ const onFocusIn = (e: FocusEvent) => shell.value && noteFocus(e.target, shell.va
 function armKeys() {
   window.addEventListener('keydown', onKeyCapture, true)
   window.addEventListener('keydown', onKey)
+  window.addEventListener('mousedown', onMouseNav, true)
+  window.addEventListener('mouseup', onMouseNav, true)
 }
 function disarmKeys() {
   window.removeEventListener('keydown', onKeyCapture, true)
   window.removeEventListener('keydown', onKey)
+  window.removeEventListener('mousedown', onMouseNav, true)
+  window.removeEventListener('mouseup', onMouseNav, true)
+}
+/** The mouse's back and forward buttons walk the thread history (round 2, card 12), not the page's. */
+function onMouseNav(e: MouseEvent) {
+  if (e.button !== 3 && e.button !== 4) return
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.type === 'mouseup') void store.goHistory(e.button === 3 ? -1 : 1)
 }
 onMounted(() => {
   if (!inActiveKeepAliveTree()) return
@@ -310,6 +321,7 @@ function onFileDrop(e: DragEvent) {
         <PilotLayoutUndoToast />
         <PilotPalette v-if="keys.paletteOpen" />
         <PilotLayoutWorktreeCleanup />
+        <PilotLayoutResumeDialog v-if="store.restartOffer.length" />
       </main>
       <QRightPanel :model-value="app.sidebarRightOpen && app.view === 'conversation'" storage-key="pilot.right">
         <PilotLayoutRightSidebar />

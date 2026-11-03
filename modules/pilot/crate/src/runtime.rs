@@ -1419,6 +1419,7 @@ mod tests {
             title_source: "auto".into(),
             fast: false,
             notice: None,
+            tags: Vec::new(),
             state: "idle".into(),
             context_tokens: None,
             context_window: None,

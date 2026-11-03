@@ -37,6 +37,8 @@ export const useUsageStore = defineStore('pilot/usage', {
     limitsLoading: false,
     /** The model whose trend the breakdown shows. */
     model: null as string | null,
+    /** Totals, chart and models of one agent and/or model (round 2, card 12). */
+    filter: { provider: null as string | null, model: null as string | null },
     /** `/usage` in a thread: its agent's limits above the message box. */
     inline: null as string | null,
   }),

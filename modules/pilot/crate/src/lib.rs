@@ -101,6 +101,8 @@ pub struct PilotState {
     wake: Arc<tokio::sync::Notify>,
     /// Terminal sessions that start their agent at the first launch (round 2, card 11).
     autostart: Mutex<std::collections::HashSet<String>>,
+    /// Threads whose current turn is the one repair a failed check queued (round 2, card 12).
+    repairs: Mutex<std::collections::HashSet<String>>,
     /// Thread → the token in its QuantMCP URL; it names the caller of a `quantsuite.pilot.*` tool (card 22).
     mcp_tokens: Mutex<HashMap<String, String>>,
     /// The thread on screen with its inspector, as the frontend reports it.
@@ -428,7 +430,7 @@ fn pilot_storage_clean(state: State<'_, PilotState>, policy: db::StoragePolicy, 
 }
 
 /// The taskbar badge (parity 20): how many threads wait on the user.
-#[tauri::command]
+#[tauri::command(async)]
 fn pilot_attention_badge(app: AppHandle, count: u32) -> Result<(), String> {
     notify::set_badge(&app, count)
 }
@@ -518,6 +520,7 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
         title_source: "auto".into(),
         fast: false,
         notice: None,
+        tags: Vec::new(),
         state: "idle".into(),
         context_tokens: None,
         context_window: None,
@@ -914,6 +917,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 tui: Mutex::new(HashMap::new()),
                 wake: Arc::new(tokio::sync::Notify::new()),
                 autostart: Mutex::new(Default::default()),
+                repairs: Mutex::new(Default::default()),
                 mcp_tokens: Mutex::new(HashMap::new()),
                 ui_visible: Mutex::new(None),
             });
@@ -1049,6 +1053,7 @@ pub fn init() -> TauriPlugin<Wry> {
             pilot_agent_icon_clear,
             threads::pilot_new_thread_setup,
             threads::pilot_thread_apply_setup,
+            threads::pilot_restart_interrupted,
             pilot_provider_update,
             pilot_gh_status,
             pilot_diagnostics,

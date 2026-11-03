@@ -122,6 +122,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
     setups: {} as Record<string, NewSetup>,
     /** A new thread's fallback notice ("Codex is not installed — …"), until its first message. */
     setupNotices: {} as Record<string, string>,
+    /** The threads the last close interrupted, offered for Resume once (round 2, card 12). */
+    restartOffer: [] as SessionMeta[],
   }),
 
   getters: {
@@ -158,7 +160,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
     /** Every session whose agent is waiting on the user, wherever it is. */
     needsYou(state): SessionMeta[] {
-      return state.sessions.filter((s) => state.live[s.id]?.state === 'waiting')
+      const sb = useSidebarStore()
+      return state.sessions.filter((s) => state.live[s.id]?.state === 'waiting' && !sb.isPrivate(s))
     },
     sessionOfPty(state): Record<string, string> {
       const out: Record<string, string> = {}
@@ -188,6 +191,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
       await Promise.all([this.refreshContexts(), this.refreshSessions(), this.loadSettings(), this.loadAgentImages()])
       await this.syncRuntime()
       this.loaded = true
+      // What was working when the app closed: offered once (round 2, card 12).
+      void pilot<SessionMeta[]>('plugin:pilot|pilot_restart_interrupted').then((list) => (this.restartOffer = list ?? [])).catch(() => undefined)
       void this.refreshStatus()
     },
 
@@ -479,7 +484,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
 
     /** Title, model, effort or mode; model, effort and mode apply from the next turn. */
-    async update(id: string, patch: { title?: string; provider?: string; model?: string; effort?: string; mode?: Mode; fast?: boolean }) {
+    async update(id: string, patch: { title?: string; provider?: string; model?: string; effort?: string; mode?: Mode; fast?: boolean; tags?: string[] }) {
       try {
         const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_update', { id, ...patch })
         if (meta) this.upsertSession(meta)

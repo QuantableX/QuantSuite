@@ -121,6 +121,7 @@ Default permissions for the pilot module.
 - `allow-pilot-agent-icon-clear`
 - `allow-pilot-new-thread-setup`
 - `allow-pilot-thread-apply-setup`
+- `allow-pilot-restart-interrupted`
 - `allow-pilot-provider-update`
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
@@ -2766,6 +2767,32 @@ Enables the pilot_queue_update command without any pre-configured scope.
 <td>
 
 Denies the pilot_queue_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-restart-interrupted`
+
+</td>
+<td>
+
+Enables the pilot_restart_interrupted command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-restart-interrupted`
+
+</td>
+<td>
+
+Denies the pilot_restart_interrupted command without any pre-configured scope.
 
 </td>
 </tr>

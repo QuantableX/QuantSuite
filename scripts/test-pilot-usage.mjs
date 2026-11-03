@@ -68,3 +68,13 @@ test('numbers and countdowns read short', () => {
   assert.equal(U.windowName('seven_day_opus'), 'Weekly · Opus')
   assert.equal(U.windowName('monthly_credits'), 'Monthly credits')
 })
+
+// Round 2, card 12: totals by agent and model.
+test('usage rows filter by agent and model', async () => {
+  const { filterRows } = await import('../modules/pilot/app/utils/usage.ts')
+  const rows = [{ provider: 'claude', model: 'opus' }, { provider: 'claude', model: 'haiku' }, { provider: 'codex', model: 'gpt-a' }]
+  assert.equal(filterRows(rows, { provider: null, model: null }).length, 3)
+  assert.deepEqual(filterRows(rows, { provider: 'claude', model: null }).map((r) => r.model), ['opus', 'haiku'])
+  assert.deepEqual(filterRows(rows, { provider: 'claude', model: 'haiku' }).map((r) => r.model), ['haiku'])
+  assert.deepEqual(filterRows(rows, { provider: null, model: 'gpt-a' }).map((r) => r.provider), ['codex'])
+})

@@ -59,7 +59,8 @@ const actionsOnly = computed(() => query.value.startsWith('>'))
 const text = computed(() => (actionsOnly.value ? query.value.slice(1) : query.value).trim())
 
 const paletteThreads = computed<PaletteThread[]>(() =>
-  store.sessions.map((s) => {
+  // Threads hidden while recording stay out of the palette too (round 2, card 12).
+  store.sessions.filter((s) => !sidebar.isPrivate(s)).map((s) => {
     const pr = (git.links[s.id] ?? []).filter((l) => l.kind === 'pr').at(-1)
     return { id: s.id, title: s.title, branch: s.branch ?? '', project: s.contextName ?? '', pr: pr ? `#${pr.number} ${pr.title}` : '', lastActivityAt: s.lastActivityAt ?? 0 }
   })

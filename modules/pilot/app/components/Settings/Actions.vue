@@ -160,6 +160,7 @@ async function save() {
           <div class="qp-act-line">
             <label class="qp-settings-check"><input v-model="a.runOnWorktreeCreate" type="checkbox" /> <span>Run when a worktree is created</span></label>
             <label class="qp-settings-check"><input v-model="a.runOnSettle" type="checkbox" /> <span>Run when a thread settles</span></label>
+            <label class="qp-settings-check" title="After a turn that changed files: run it; if it fails, the agent gets one repair message"><input v-model="a.checkAfterTurn" type="checkbox" /> <span>Check after each turn (one repair if it fails)</span></label>
           </div>
         </div>
       </div>

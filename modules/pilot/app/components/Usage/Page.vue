@@ -14,7 +14,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useUsageStore, type UsageTab } from '#pilot/stores/usage'
 import { useKeysStore } from '#pilot/stores/keys'
-import { byModel, compact, series, totals } from '#pilot/utils/usage'
+import { byModel, compact, filterRows, series, totals } from '#pilot/utils/usage'
 import type { UsagePeriod } from '#pilot/types'
 import type { Series } from './Chart.vue'
 
@@ -46,9 +46,16 @@ const KINDS: Series[] = [
   { id: 'output', label: 'Output', color: 'var(--qp-viz-5)' },
 ]
 
-const report = computed(() => usage.report)
+const rawReport = computed(() => usage.report)
+/** The report narrowed to the filter's agent and model (round 2, card 12). */
+const report = computed(() => (rawReport.value ? { ...rawReport.value, rows: filterRows(rawReport.value.rows, usage.filter) } : null))
 const sum = computed(() => totals(report.value?.rows ?? []))
 const models = computed(() => byModel(report.value?.rows ?? []))
+const filterProviders = computed(() => [...new Set((rawReport.value?.rows ?? []).map((r) => r.provider))])
+const filterModels = computed(() => [...new Set(filterRows(rawReport.value?.rows ?? [], { provider: usage.filter.provider, model: null }).map((r) => r.model))].sort())
+function setProvider(p: string | null) {
+  usage.filter = { provider: p, model: null }
+}
 const providersShown = computed(() => PROVIDERS.filter((p) => report.value?.rows.some((r) => r.provider === p.id)))
 const chart = computed(() => (report.value ? series(report.value, usage.tab === 'tokens' ? 'kind' : 'provider') : []))
 const selected = computed(() => models.value.find((m) => m.model === usage.model) ?? null)
@@ -125,6 +132,19 @@ watch(
         <p>Reading the Claude Code and Codex logs…</p>
       </div>
       <div v-else class="qp-usage-body" :class="{ stale: usage.loading }">
+        <div v-if="filterProviders.length" class="qp-usage-filter" role="group" aria-label="Filter">
+          <div class="qp-seg" role="radiogroup" aria-label="Agent">
+            <button class="qp-seg-btn" role="radio" :class="{ on: !usage.filter.provider }" :aria-checked="!usage.filter.provider" @click="setProvider(null)">All agents</button>
+            <button v-for="p in filterProviders" :key="p" class="qp-seg-btn qp-usage-fp" role="radio" :class="{ on: usage.filter.provider === p }" :aria-checked="usage.filter.provider === p" @click="setProvider(p)">
+              <PilotAgentIcon :agent="p" :size="12" decorative />{{ providerLabel(p) }}
+            </button>
+          </div>
+          <select class="qp-usage-fm" :value="usage.filter.model ?? ''" aria-label="Model" @change="usage.filter = { ...usage.filter, model: ($event.target as HTMLSelectElement).value || null }">
+            <option value="">All models</option>
+            <option v-for="m in filterModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+          <button v-if="usage.filter.provider || usage.filter.model" class="qp-usage-fclear" @click="usage.filter = { provider: null, model: null }">Clear</button>
+        </div>
         <section class="qp-usage-tiles">
           <template v-if="usage.tab === 'cost'">
             <div class="qp-tile hero">
@@ -291,6 +311,12 @@ watch(
 .qp-models tbody tr:focus-visible { background: var(--qss-bg-hover, #313139); }
 .qp-models tbody tr.on { background: var(--qss-bg-card, #292930); }
 .qp-models-name { margin-right: 8px; }
+.qp-usage-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.qp-usage-fp { display: inline-flex; align-items: center; gap: 5px; }
+.qp-usage-fm { height: 26px; padding: 0 6px; border: 1px solid var(--qss-border-subtle, #35353d); border-radius: 6px; background: var(--qss-bg-card, #292930); color: var(--qss-text, #d4d4d8); font: inherit; font-size: 12px; }
+.qp-usage-fm option { background: var(--qss-bg-raised, #1f1f25); }
+.qp-usage-fclear { padding: 3px 8px; border: none; border-radius: 6px; background: transparent; color: var(--qss-text-secondary, #9a9aa5); font: inherit; font-size: 12px; cursor: pointer; }
+.qp-usage-fclear:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
 .qp-models-prov { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-models-empty { text-align: center; color: var(--qss-text-muted, #6e6e7a); cursor: default; }
 .qp-model-detail { flex-shrink: 0; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--qss-border-subtle, #35353d); }

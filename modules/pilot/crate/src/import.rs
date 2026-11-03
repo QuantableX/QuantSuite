@@ -566,7 +566,7 @@ impl SearchMatch for Option<&String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pilot_import_cancel() {
     cancel();
 }
@@ -656,6 +656,7 @@ fn import_one(app: &tauri::AppHandle, state: &crate::PilotState, provider: &str,
         title_source: "auto".into(),
         fast: false,
         notice: None,
+        tags: Vec::new(),
         title: summary.title.clone(),
         context_id: ctx.id.clone(),
         context_name: ctx.name.clone(),

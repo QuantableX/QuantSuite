@@ -7,10 +7,10 @@
  * settles, un-settles or wakes; drag it across rows to do several at once.
  * Files dropped from Explorer open the thread with them attached.
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Archive, ArchiveRestore, Ellipsis, Pin, Sunrise } from 'lucide-vue-next'
 import { timeAgo } from '#pilot/utils/format'
-import { wakeLabel, type RowStatus, type Section } from '#pilot/utils/sidebar'
+import { elapsedLabel, wakeLabel, type RowStatus, type Section } from '#pilot/utils/sidebar'
 import { useGitStore } from '#pilot/stores/git'
 import { openPr } from '#pilot/utils/gitActions'
 import type { SessionMeta } from '#pilot/types'
@@ -32,6 +32,8 @@ const props = defineProps<{
   source: boolean
   inRange: boolean
   now: number
+  /** The working turn's start (round 2, card 12: elapsed time on the row). */
+  startedAt?: number | null
 }>()
 
 const git = useGitStore()
@@ -54,9 +56,28 @@ const isDraft = computed(() => props.thread.kind === 'chat' && !props.thread.pro
 /** A V2 terminal row may have no agent yet (''); a chat thread without one is not known yet. */
 const agent = computed(() => (props.thread.kind === 'terminal' ? props.thread.provider : props.thread.provider || null))
 
+// A one-second clock only while this row works (round 2, card 12).
+const tick = ref(Date.now())
+let ticker: ReturnType<typeof setInterval> | null = null
+watch(
+  () => props.status === 'working' && Boolean(props.startedAt),
+  (on) => {
+    if (ticker) clearInterval(ticker)
+    ticker = on ? setInterval(() => (tick.value = Date.now()), 1000) : null
+    tick.value = Date.now()
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => ticker && clearInterval(ticker))
+const elapsed = computed(() => (props.status === 'working' && props.startedAt ? elapsedLabel(tick.value - props.startedAt) : ''))
+
 const sub = computed(() => {
   const parts: string[] = []
   if (props.project) parts.push(props.project)
+  if (elapsed.value) {
+    parts.push(`working ${elapsed.value}`)
+    return parts.join(' · ')
+  }
   if (props.section === 'snoozed' && props.thread.snoozedUntil) parts.push(`until ${wakeLabel(props.thread.snoozedUntil, props.now)}`)
   else if (isDraft.value) parts.push('Draft')
   else parts.push(timeAgo(props.thread.lastActivityAt || props.thread.updatedAt))
@@ -174,6 +195,7 @@ function openMenuFromButton(e: MouseEvent) {
       <span class="qp-row-sub">
         <Pin v-if="section === 'pinned'" class="qp-row-pin" :size="10" />
         <span class="qp-row-sub-text">{{ sub }}</span>
+        <span v-for="tag in (thread.tags ?? []).slice(0, 3)" :key="tag" class="qp-row-tag">#{{ tag }}</span>
         <PilotGitPrChip v-if="pr" :link="pr" compact />
         <span v-if="status === 'limited'" class="qp-row-flag warn">Limited</span>
         <span v-else-if="status === 'error'" class="qp-row-flag err">Failed</span>
@@ -254,6 +276,7 @@ function openMenuFromButton(e: MouseEvent) {
 }
 .qp-row-sub { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-row-sub-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-row-tag { flex-shrink: 0; font-size: 10.5px; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-row-pin { flex-shrink: 0; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-row-flag { flex-shrink: 0; font-size: 10.5px; }
 .qp-row-flag.warn { color: var(--qss-warning, #d29a3f); }

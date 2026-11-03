@@ -15,6 +15,7 @@ import { useGitStore } from '#pilot/stores/git'
 import {
   dropExpired,
   inverse,
+  hiddenWhileRecording,
   isUntouchedDraft,
   latestUndo,
   needsRespacing,
@@ -67,6 +68,10 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
   state: () => ({
     /** A context id, or null for every project. */
     projectFilter: load<{ id: string | null }>('pilot.sidebar.filter.v1', { id: null }).id,
+    /** The project filter's pinned and archived projects (round 2, card 12). */
+    projects: load<{ pins: string[]; archived: string[] }>('pilot.sidebar.projects.v1', { pins: [], archived: [] }),
+    /** Recording the screen: threads with a private tag stay out of the lists (round 2, card 12). */
+    recording: load<{ on: boolean }>('pilot.recording.v2', { on: false }).on,
     shelves: load<Shelves>('pilot.sidebar.shelves.v1', { working: false, settled: false, snoozed: false }),
     undo: [] as Undo[],
     /** Deleted rows during their undo window. */
@@ -83,6 +88,10 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
 
   getters: {
     /** A row's status from whatever knows best: the loaded thread, the saved state, or a V2 terminal's signals. */
+    /** Hidden while recording: a tag the settings name (round 2, card 12). */
+    isPrivate(state): (t: { tags?: string[] }) => boolean {
+      return (t) => state.recording && hiddenWhileRecording(t.tags, usePilotStore().settings?.hideTagsWhileRecording ?? ['private'])
+    },
     statusOf(): (id: string) => RowStatus {
       const store = usePilotStore()
       const threads = useThreadStore()
@@ -106,7 +115,7 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
       const store = usePilotStore()
       const threads = useThreadStore()
       return store.sessions
-        .filter((s) => !this.hidden[s.id])
+        .filter((s) => !this.hidden[s.id] && !this.isPrivate(s))
         .map((s) => {
           const v = threads.views[s.id]
           const started = v?.turnId ? v.turns[v.turnId]?.startedAt : undefined
@@ -145,6 +154,24 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
   actions: {
     tick() {
       this.clock = Date.now()
+    },
+
+    togglePinProject(id: string) {
+      const pins = this.projects.pins.includes(id) ? this.projects.pins.filter((p) => p !== id) : [...this.projects.pins, id]
+      this.projects = { pins, archived: this.projects.archived.filter((a) => a !== id) }
+      save('pilot.sidebar.projects.v1', this.projects)
+    },
+
+    toggleArchiveProject(id: string) {
+      const archived = this.projects.archived.includes(id) ? this.projects.archived.filter((a) => a !== id) : [...this.projects.archived, id]
+      this.projects = { pins: this.projects.pins.filter((p) => p !== id), archived }
+      save('pilot.sidebar.projects.v1', this.projects)
+    },
+
+    setRecording(on: boolean) {
+      this.recording = on
+      // An object: `load` merges objects, a bare boolean would come back as `{}` (truthy).
+      save('pilot.recording.v2', { on })
     },
 
     setFilter(id: string | null) {

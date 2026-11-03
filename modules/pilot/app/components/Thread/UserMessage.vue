@@ -11,7 +11,7 @@
  * shows as unavailable instead of failing silently.
  */
 import { computed, onMounted, ref } from 'vue'
-import { ChevronRight, FileText, Folder } from 'lucide-vue-next'
+import { ChevronRight, ClipboardPaste, FileText, Film, Folder } from 'lucide-vue-next'
 import { pilot } from '#pilot/utils/invoke'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { usePilotStore } from '#pilot/stores/pilot'
@@ -20,7 +20,14 @@ import { highlightQuote, parseQuotePath } from '#pilot/utils/quote'
 import { CHIP_OPEN, segments } from '#pilot/utils/mentions'
 import type { ThreadItem } from '#pilot/types'
 
-const props = defineProps<{ item: ThreadItem }>()
+const props = withDefaults(
+  defineProps<{
+    item: ThreadItem
+    /** Round 2, card 12: `media` (images, videos — above the bubble), `body` (the rest), `all`. */
+    part?: 'all' | 'media' | 'body'
+  }>(),
+  { part: 'all' },
+)
 const emit = defineEmits<{ notice: [text: string] }>()
 const inspector = useInspectorStore()
 
@@ -38,7 +45,21 @@ interface Shown {
 const text = computed(() => String(props.item.data.text ?? ''))
 const shown = computed<Shown[]>(() => props.item.data.attachments ?? [])
 const images = computed(() => shown.value.filter((a) => a.kind === 'image'))
-const files = computed(() => shown.value.filter((a) => a.kind === 'file' || a.kind === 'folder'))
+const VIDEO = /\.(mp4|webm|mov|m4v|mkv|avi)$/i
+const videos = computed(() => shown.value.filter((a) => a.kind === 'file' && VIDEO.test(a.name ?? a.path ?? '')))
+const files = computed(() => shown.value.filter((a) => (a.kind === 'file' && !VIDEO.test(a.name ?? a.path ?? '')) || a.kind === 'folder'))
+const media = computed(() => props.part !== 'body')
+const body = computed(() => props.part !== 'media')
+/** A message of only files shows them as cards (round 2, card 12). */
+const cards = computed(() => !text.value.trim() && files.value.length > 0)
+// Pasted text: a long message folds to its first lines (round 2, card 12).
+const PASTE_LINES = 14
+const PASTE_CHARS = 1500
+const lineCount = computed(() => text.value.split('\n').length)
+const pasted = computed(() => !hasChips.value && (lineCount.value > PASTE_LINES || text.value.length > PASTE_CHARS))
+const expanded = ref(false)
+const shownText = computed(() => (pasted.value && !expanded.value ? text.value.split('\n').slice(0, 8).join('\n').slice(0, 900) : text.value))
+const folderOf = (p?: string) => (p ? p.replace(/[\\/][^\\/]*$/, '') : '')
 const chips = computed(() => shown.value.filter((a) => a.kind === 'chip'))
 /** What the chips carried — a skill carries only its name. */
 const context = computed(() => chips.value.filter((c) => c.content && c.chipKind !== 'skill'))
@@ -151,7 +172,21 @@ const chipTitle = (label: string) => {
 
 <template>
   <div class="qp-um">
-    <div v-if="images.length" class="qp-um-images">
+    <div v-if="media && videos.length" class="qp-um-images">
+      <button
+        v-for="(v, i) in videos"
+        :key="`v${i}`"
+        class="qp-um-video"
+        :class="{ gone: gone(v) }"
+        :title="gone(v) ? `No longer at ${v.path}` : `${v.path} — open the video`"
+        @click="openFile(v)"
+        @contextmenu.prevent="openMenu(v, $event)"
+      >
+        <Film :size="18" />
+        <span>{{ v.name }}</span>
+      </button>
+    </div>
+    <div v-if="media && images.length" class="qp-um-images">
       <button
         v-for="(im, i) in images"
         :key="i"
@@ -167,7 +202,7 @@ const chipTitle = (label: string) => {
         <span v-else class="qp-um-count">{{ im.name ?? 'image' }}</span>
       </button>
     </div>
-    <div v-if="files.length" class="qp-um-files">
+    <div v-if="body && files.length" class="qp-um-files" :class="{ cards }">
       <button
         v-for="(f, i) in files"
         :key="i"
@@ -178,9 +213,13 @@ const chipTitle = (label: string) => {
         @contextmenu.prevent="openMenu(f, $event)"
         @keydown.shift.f10.prevent="openMenu(f, $event)"
       >
-        <Folder v-if="f.kind === 'folder'" :size="12" />
-        <FileText v-else :size="12" />
-        {{ f.name }}<span v-if="gone(f)" class="qp-um-gone">unavailable</span>
+        <Folder v-if="f.kind === 'folder'" :size="cards ? 16 : 12" />
+        <FileText v-else :size="cards ? 16 : 12" />
+        <span v-if="cards" class="qp-um-card-text">
+          <span class="qp-um-card-name">{{ f.name }}</span>
+          <span class="qp-um-card-dir">{{ folderOf(f.path) }}</span>
+        </span>
+        <template v-else>{{ f.name }}</template><span v-if="gone(f)" class="qp-um-gone">unavailable</span>
       </button>
     </div>
     <PilotThreadMediaViewer v-if="viewing !== null" :thread-id="item.threadId" :images="images.filter((im) => im.path).map((im) => ({ path: im.path!, name: im.name }))" :start="viewing" @close="closeViewer" />
@@ -193,18 +232,23 @@ const chipTitle = (label: string) => {
         <button v-if="menu.a.kind !== 'folder'" role="menuitem" :disabled="gone(menu.a)" @click="menuAction('save')">Save a copy…</button>
       </div>
     </Teleport>
-    <div v-if="hasChips" class="qp-um-text">
+    <div v-if="body && hasChips" class="qp-um-text">
       <template v-for="(p, i) in parts" :key="i">
         <button v-if="p.chip && isQuote(p.text)" type="button" class="qp-um-chip qp-um-quote" :title="`Quoted reply — open it\n${(chipOf(p.text)?.content ?? '').slice(0, 300)}${chipOf(p.text)?.comment ? `\nComment: ${chipOf(p.text)?.comment}` : ''}`" @click="openQuote(p.text)">{{ p.text }}</button>
         <span v-else-if="p.chip" class="qp-um-chip" :title="chipTitle(p.text)">{{ p.text }}</span>
         <template v-else>{{ p.text }}</template>
       </template>
     </div>
-    <PilotThreadMarkdown v-else-if="text" :source="text" @notice="(t: string) => emit('notice', t)" />
-    <details v-if="context.length" class="qp-um-context">
+    <div v-else-if="body && pasted" class="qp-um-paste">
+      <div class="qp-um-paste-head"><ClipboardPaste :size="12" /> Pasted text · {{ lineCount.toLocaleString('en-US') }} lines</div>
+      <pre class="qp-um-paste-body" :class="{ open: expanded }">{{ shownText }}</pre>
+      <button class="qp-um-paste-more" @click="expanded = !expanded">{{ expanded ? 'Show less' : 'Show all' }}</button>
+    </div>
+    <PilotThreadMarkdown v-else-if="body && text" :source="text" @notice="(t: string) => emit('notice', t)" />
+    <details v-if="body && context.length" class="qp-um-context">
       <summary><ChevronRight class="qp-um-caret" :size="12" /> Attached context · {{ context.length }}</summary>
       <div v-for="(c, i) in context" :key="i" class="qp-um-block">
-        <div class="qp-um-block-head">{{ c.chipKind === 'quote' ? `Quote ${c.label}` : c.label }}</div>
+        <div class="qp-um-block-head">{{ c.chipKind === 'quote' ? `Quote ${c.label}` : c.chipKind === 'element' ? `Snapshot · ${c.label}` : c.label }}</div>
         <div v-if="c.comment" class="qp-um-comment">Comment: {{ c.comment }}</div>
         <pre class="qp-um-pre">{{ c.content }}</pre>
       </div>
@@ -244,6 +288,20 @@ const chipTitle = (label: string) => {
   font-size: 12px;
   line-height: 1.6;
 }
+.qp-um-video { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 120px; height: 80px; padding: 6px; border: 1px solid var(--qss-border-subtle, #35353d); border-radius: 8px; background: var(--qss-bg-raised, #1f1f25); color: var(--qss-text-secondary, #9a9aa5); font: inherit; font-size: 11px; cursor: pointer; }
+.qp-um-video > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-um-video:hover { border-color: var(--qss-accent, #7aa2f7); }
+.qp-um-files.cards { flex-direction: column; align-items: stretch; min-width: 0; max-width: 100%; }
+.qp-um-files.cards .qp-um-file { min-width: 0; max-width: 100%; overflow: hidden; }
+.qp-um-files.cards .qp-um-file { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; background: var(--qss-bg-card, #292930); border-color: var(--qss-border-subtle, #35353d); text-align: left; }
+.qp-um-card-text { display: flex; flex-direction: column; min-width: 0; }
+.qp-um-card-name { font-size: 12.5px; color: var(--qss-text, #d4d4d8); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-um-card-dir { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-um-paste { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.qp-um-paste-head { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-um-paste-body { margin: 0; max-height: 180px; overflow: hidden; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--qss-text-secondary, #9a9aa5); mask-image: linear-gradient(#000 70%, transparent); }
+.qp-um-paste-body.open { max-height: none; mask-image: none; }
+.qp-um-paste-more { align-self: flex-start; padding: 0; border: none; background: transparent; color: var(--qss-accent, #7aa2f7); font: inherit; font-size: 11.5px; cursor: pointer; }
 .qp-um-text { font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .qp-um-context { font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-um-context summary { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; list-style: none; }
