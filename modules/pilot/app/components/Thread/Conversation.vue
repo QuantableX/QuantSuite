@@ -72,6 +72,7 @@ const faceState = computed(() => {
       </div>
       <div v-if="notice" class="qp-conv-banner is-notice">{{ notice }}</div>
       <PilotThreadLifecycle :thread-id="threadId" />
+      <PilotCrewBar :thread-id="threadId" />
       <PilotThreadApprovals :thread-id="threadId" @done="composer?.focus()" />
       <PilotThreadComposer ref="composer" :thread-id="threadId" />
     </div>

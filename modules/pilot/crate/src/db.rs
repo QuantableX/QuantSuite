@@ -31,11 +31,15 @@ pub use storage::{log_run as log_storage_run, Category as StorageCategory, Clean
 /// 17: threads remember fast mode (round 2, card 02).
 /// 18: thread tags (round 2, card 12).
 /// 19: side chats name their main thread (round 2, card 10).
-pub const SCHEMA_VERSION: i64 = 19;
+/// 20: crews — tasks, members and their message log (round 2, card 07).
+pub const SCHEMA_VERSION: i64 = 20;
 
 #[path = "queue.rs"]
 mod queue;
 pub use queue::{QueueItem, QueuePayload};
+#[path = "crew_db.rs"]
+mod crew_db;
+pub use crew_db::{Crew, CrewMember, CrewMessage, CrewTask, TaskPatch};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -578,6 +582,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !column_exists(&tx, "threads", "parent_id")? {
         tx.execute_batch("ALTER TABLE threads ADD COLUMN parent_id TEXT;")?;
     }
+    // Schema 20 (round 2, card 07): crews.
+    tx.execute_batch(crew_db::CREW_TABLES)?;
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;
@@ -1587,11 +1593,11 @@ impl Database {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serde_json::json;
 
-    fn thread(id: &str) -> ThreadMeta {
+    pub(crate) fn thread(id: &str) -> ThreadMeta {
         ThreadMeta {
             id: id.into(),
             provider: "claude".into(),

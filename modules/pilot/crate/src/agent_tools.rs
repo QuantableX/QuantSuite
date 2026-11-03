@@ -39,7 +39,7 @@ pub fn thread_mcp_url(state: &PilotState, thread_id: &str) -> String {
     format!("{}?pilot={}", mcp_url(), token_for(state, thread_id))
 }
 
-fn caller(state: &PilotState, token: Option<String>) -> Result<ThreadMeta, String> {
+pub(crate) fn caller(state: &PilotState, token: Option<String>) -> Result<ThreadMeta, String> {
     let tokens = lock(&state.mcp_tokens).clone();
     caller_in(&tokens, &state.db, token)
 }
@@ -764,6 +764,8 @@ pub fn pilot_agent_message_thread(
     if message.trim().is_empty() {
         return Err("The message is empty.".into());
     }
+    // A crew worker talks to its coordinator, not to the other workers (round 2, card 07).
+    crate::crew::check_worker_message(&state.db, &me, &target, message.trim())?;
     let from = if me.title.trim().is_empty() { "another thread" } else { me.title.as_str() };
     let text = format!("{}\n\n(Sent by the thread \"{from}\" through QuantMCP.)", message.trim());
     threads::enqueue(&app, &state, &target.id, crate::db::QueuePayload::text(&text))?;

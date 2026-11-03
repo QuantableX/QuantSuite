@@ -12,6 +12,8 @@ import { Archive, ArchiveRestore, Ellipsis, Pin, Sunrise } from 'lucide-vue-next
 import { timeAgo } from '#pilot/utils/format'
 import { elapsedLabel, wakeLabel, type RowStatus, type Section } from '#pilot/utils/sidebar'
 import { useGitStore } from '#pilot/stores/git'
+import { useCrewStore } from '#pilot/stores/crew'
+import { countLabel, pendingGates } from '#pilot/utils/crew'
 import { openPr } from '#pilot/utils/gitActions'
 import type { SessionMeta } from '#pilot/types'
 
@@ -39,6 +41,13 @@ const props = defineProps<{
 const git = useGitStore()
 /** The thread's open pull request, else its latest one. */
 const pr = computed(() => openPr(git.links[props.thread.id]) ?? (git.links[props.thread.id] ?? []).filter((l) => l.kind === 'pr').at(-1) ?? null)
+/** The crew this thread leads (round 2, card 07): done of all, and a decision waiting. */
+const crews = useCrewStore()
+const team = computed(() => {
+  const s = crews.ofThread(props.thread.id)
+  if (!s || s.crew.orchestratorId !== props.thread.id) return null
+  return { label: countLabel(s.tasks), gates: pendingGates(s).length }
+})
 
 const emit = defineEmits<{
   open: []
@@ -197,6 +206,8 @@ function openMenuFromButton(e: MouseEvent) {
         <span class="qp-row-sub-text">{{ sub }}</span>
         <span v-for="tag in (thread.tags ?? []).slice(0, 3)" :key="tag" class="qp-row-tag">#{{ tag }}</span>
         <PilotGitPrChip v-if="pr" :link="pr" compact />
+        <span v-if="team" class="qp-row-crew" :title="`Leads a crew: ${team.label} tasks done`">crew <span class="mono">{{ team.label }}</span></span>
+        <span v-if="team?.gates" class="qp-row-flag warn">Decision</span>
         <span v-if="status === 'limited'" class="qp-row-flag warn">Limited</span>
         <span v-else-if="status === 'error'" class="qp-row-flag err">Failed</span>
       </span>
@@ -277,6 +288,7 @@ function openMenuFromButton(e: MouseEvent) {
 .qp-row-sub { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-row-sub-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-row-tag { flex-shrink: 0; font-size: 10.5px; color: var(--qss-text-secondary, #9a9aa5); }
+.qp-row-crew { flex-shrink: 0; font-size: 10.5px; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-row-pin { flex-shrink: 0; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-row-flag { flex-shrink: 0; font-size: 10.5px; }
 .qp-row-flag.warn { color: var(--qss-warning, #d29a3f); }

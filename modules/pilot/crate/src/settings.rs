@@ -273,6 +273,12 @@ pub struct Settings {
     /// While recording the screen, threads with one of these tags are
     /// hidden from the lists (round 2, card 12).
     pub hide_tags_while_recording: Vec<String>,
+    /// Crews (round 2, card 07): workers running at once per crew.
+    pub crew_parallel: u32,
+    /// Minutes a crew worker may work on its task before it is stopped; 0 = no limit.
+    pub crew_timeout_minutes: u32,
+    /// Crew workers start in their own git worktree.
+    pub crew_worktrees: bool,
 }
 
 impl Default for Settings {
@@ -311,6 +317,9 @@ impl Default for Settings {
             projects: BTreeMap::new(),
             sticky: Sticky::default(),
             hide_tags_while_recording: vec!["private".into()],
+            crew_parallel: 4,
+            crew_timeout_minutes: 60,
+            crew_worktrees: true,
         }
     }
 }

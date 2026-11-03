@@ -24,6 +24,7 @@ mod claude;
 mod codex;
 mod context;
 mod contexts;
+mod crew;
 mod db;
 mod documents;
 mod driver;
@@ -752,6 +753,8 @@ fn pilot_session_stop(app: AppHandle, state: State<'_, PilotState>, id: String) 
 
 #[tauri::command(async)]
 fn pilot_session_delete(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<(), String> {
+    // A crew goes with its orchestrator; a worker's task fails (round 2, card 07).
+    crew::on_thread_deleted(&app, &state, &id);
     stop_live(&app, &state, &id);
     state.runtime.stop(&id);
     // The thread's checkpoints go with it (card 11).
@@ -923,6 +926,11 @@ pub fn init() -> TauriPlugin<Wry> {
                 ui_visible: Mutex::new(None),
             });
             tauri::async_runtime::spawn(threads::resume_scheduler(app.clone()));
+            // Crews (round 2, card 07): workers the close interrupted are stalled; timeouts.
+            if let Some(state) = app.try_state::<PilotState>() {
+                crew::after_restart(&state.db);
+            }
+            tauri::async_runtime::spawn(crew::watchdog(app.clone()));
             app.manage(browser::BrowserState::default());
 
             qs_core::tray::register_entry(
@@ -1056,6 +1064,21 @@ pub fn init() -> TauriPlugin<Wry> {
             threads::pilot_thread_apply_setup,
             threads::pilot_restart_interrupted,
             threads::pilot_thread_set_parent,
+            crew::pilot_agent_crew_dispatch,
+            crew::pilot_agent_crew_ask,
+            crew::pilot_agent_crew_reply,
+            crew::pilot_agent_crew_report,
+            crew::pilot_agent_crew_done,
+            crew::pilot_agent_crew_wait,
+            crew::pilot_agent_crew_gate,
+            crew::pilot_agent_crew_retry,
+            crew::pilot_agent_crew_stop,
+            crew::pilot_crews,
+            crew::pilot_crew_log,
+            crew::pilot_crew_decide,
+            crew::pilot_crew_retry,
+            crew::pilot_crew_stop,
+            crew::pilot_crew_resume,
             pilot_provider_update,
             pilot_gh_status,
             pilot_diagnostics,

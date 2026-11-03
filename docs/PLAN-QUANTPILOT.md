@@ -2580,3 +2580,110 @@ kept working throughout; each side message showed the context chip;
 full app restart both side chats were still listed under the main thread
 and absent from the sidebar; *Open as full thread* moved one into the
 sidebar and opened it.
+
+## 43. Round 2 · 07/12: orchestrator and worker crews
+
+Card 607d54dd; roadmap area 1 (architect/worker teams), adopted 2026-11-03
+on the user's request (roadmap card 91212da8). An orchestrator thread splits
+work into tasks and starts worker threads; they report back over one
+message log. Ideas from Orca's orchestration (coordinator loop, task DAGs,
+ask/reply, decision gates, retry breaker) and PandaCode's architect and
+workers; no code copied.
+
+- **Agent tools** (`quantsuite.pilot.crew_*`, `crate/src/crew.rs`, the
+  caller-thread token checks of the other pilot tools):
+  - orchestrator: `crew_dispatch` (tasks with key, spec, deps, agent or
+    several `agents`, model, kanban `card`, `worktree`, `timeoutMinutes`;
+    `maxParallel`, `peers`), `crew_reply` (answer a question or steer),
+    `crew_retry` (new worker, optionally another agent or model — the swap),
+    `crew_stop` (one task or the whole crew), `crew_gate` (a named decision
+    for the user), `crew_wait` (the state; may wait up to 300 s for a change);
+  - worker: `crew_report` (progress %, note), `crew_ask`, `crew_done`
+    (summary, result, `failed`).
+  Starting and steering threads are `write` (prompt in strict mode, like
+  `start_thread`/`message_thread`); a worker's own bookkeeping and gates are
+  `compute`, `crew_wait` is `read`.
+- **No polling of agents:** after a dispatch the orchestrator ends its turn;
+  QuantPilot wakes it — a message in its queue — with every question,
+  result, failure, timeout and decision ("[Crew] …" with what to do next and
+  the crew's state line). A worker that asks ends its turn and is woken with
+  the answer. A worker whose turn ends without `crew_done` is *stalled* (or
+  *failed* when its turn failed) and the orchestrator is told, with the
+  worker's last words — a failed worker is never hidden.
+- **Workers:** a new thread per attempt, the orchestrator's permission mode
+  (never more), any installed chat agent, its own git worktree by default
+  (Settings → General → Crews; the composer's fan-out path — `agents: [a, b]`
+  runs one task once per agent, side by side, to compare and keep the
+  winner). A task linked to a kanban card uses AGENT.md's card workflow
+  instead of a second worktree; a worker without a worktree shares the
+  orchestrator's checkout. Results merge through git (the orchestrator
+  merges the branches, resolving conflicts per AGENT.md) or the card flow.
+- **Graph and limits:** dependencies by key, checked for unknown keys and
+  cycles; a task starts when its dependencies are done and a slot is free
+  (Settings: 4 workers at once per crew; an atomic claim, so two settling
+  workers never start one task twice); a waiting task says why (*waits for
+  db*, *blocked: db did not finish*, *waits for a free slot*). Timeouts
+  (Settings: 60 min; per task) stop a worker and fail its task. After three
+  starts of one task only the user can retry it.
+- **Rules:** workers talk to the orchestrator; `message_thread` from a
+  worker to another worker or an outside thread is refused unless the crew
+  allows peers (then it is logged as a peer message). A worker cannot lead
+  a crew of its own.
+- **The user's side:** the panel's *Crew* section (`Crew/Panel.vue`) shows
+  the crew for the orchestrator and for each worker: objective, done of all,
+  each task with its agent, state, progress bar and latest note or outcome;
+  Retry, Swap agent (the agent menu), Stop per task; Message log, Resume,
+  Stop crew (the cascade: every worker and the orchestrator's turn). Above
+  the orchestrator's message box (`Crew/Bar.vue`): a decision gate with
+  Approve / Reject and a note the orchestrator hears, and every worker
+  waiting on an approval or question, answered right there with that
+  worker's own request panel (T3 #28516). The log (`Crew/Log.vue`) lists
+  every message whole — time, sender → receiver, kind — filter by task,
+  Copy. Worker threads leave the sidebar (they are in the crew panel and
+  the palette); the orchestrator's row says *crew 2/3* and *Decision* while
+  a gate waits; gates count in the rail badge and send the "needs you"
+  notification.
+- **Data:** schema 20 — `crews`, `crew_tasks`, `crew_members` (the
+  orchestrator and every worker attempt with its outcome), `crew_messages`
+  (the log). Everything survives a restart; workers that were running when
+  the app closed are *stalled* with a note, nothing restarts on its own
+  (card 12's rule), the orchestrator or the user picks up (Retry, a reply,
+  Resume). Deleting the orchestrator stops its workers and removes the crew
+  (the workers stay as threads of their own); deleting a worker fails its
+  task.
+- **The `pilot-crew` event** carries a crew's snapshot after every change —
+  card 08's live graph and message bus build on it.
+
+**Checks.** pilot `cargo test` 253 passed (new: keys, the batch — duplicate
+keys, unknown deps, cycles, compared agents, card tasks —, readiness and
+wait notes, the turn-end rule, wake texts, the worker prompt, persistence
+across a restart with the running → stalled rule, the schema 19 → 20
+migration, the worker messaging rule); clippy clean; `npm run check:ts`;
+`npm run test:pilot` 123 passed (new `scripts/test-pilot-crew.mjs`);
+`check:isolation`, `check:commands`, `validate-modules`.
+
+**Native QA with real agents** (isolated QA app, `artifacts/quantpilot-r2-07/`):
+a Claude Haiku orchestrator in the QA git project dispatched three tasks with
+one `crew_dispatch` call — greet (Claude), count (OpenCode), word (Claude),
+each in its own worktree. OpenCode's process failed for real (its own
+database error on this machine) → the orchestrator was woken, retried
+*count* with Claude (the swap); *word* asked "Which word should word.txt
+contain?" and the orchestrator answered "banana"; *greet* reported 50 %;
+all three committed on their branches and reported done; the orchestrator
+opened the gate *merge*. The QA app was then killed and restarted: crew,
+tasks, results and the open gate were all there. Approve (with a note) in
+the gate bar → the orchestrator merged the three branches (`git log` in the
+QA repo: greet, count, word plus two merge commits). The log held all 16
+messages in order. Controls: Stop crew stopped both workers and the
+orchestrator; Resume started both again (attempt 2); Stop and Retry on one
+row; the Swap agent menu opened; a 1-minute timeout failed *sleeper* and
+woke the orchestrator — found here: after Stop crew the orchestrator's
+queue stayed held, so the wakes waited; Resume, a user retry and a gate
+decision now release it (verified: both held wakes were delivered).
+Approvals: an orchestrator and worker in Supervised mode — the worker's MCP
+request showed in the orchestrator's thread ("check waits for you"), was
+allowed there, the worker finished and the orchestrator was woken. Only
+Claude could answer on this machine: Codex is not signed in, OpenCode fails
+on its own database, Gemini CLI is not installed, pi has no API key, omp
+cannot reach its model server — so the demo's second agent was a real
+failure, not a second success.

@@ -34,6 +34,9 @@ type Owned = Pick<
   | 'attachQuantmcp'
   | 'includeGeneralVault'
   | 'hideTagsWhileRecording'
+  | 'crewParallel'
+  | 'crewTimeoutMinutes'
+  | 'crewWorktrees'
 >
 const draft = reactive<Owned>({
   shell: '',
@@ -52,6 +55,9 @@ const draft = reactive<Owned>({
   attachQuantmcp: true,
   includeGeneralVault: true,
   hideTagsWhileRecording: ['private'],
+  crewParallel: 4,
+  crewTimeoutMinutes: 60,
+  crewWorktrees: true,
 })
 const notice = ref('')
 const busy = ref(false)
@@ -222,6 +228,22 @@ const status = computed(() => store.status)
       <label class="qp-settings-check">
         <input v-model="draft.workingSection" type="checkbox" />
         <span>Fold working threads into a Working section <em>(they come back on top when they finish, fail or need you)</em></span>
+      </label>
+
+      <h3 class="qp-settings-title">Crews</h3>
+      <div class="qp-settings-grid">
+        <label class="qp-settings-field">
+          <span>Workers at once <em>(per crew; an orchestrator may ask for fewer or more)</em></span>
+          <input v-model.number="draft.crewParallel" class="qp-input" type="number" min="1" max="16" step="1" />
+        </label>
+        <label class="qp-settings-field">
+          <span>Stop a worker after <em>(minutes on one task; 0 = no limit)</em></span>
+          <input v-model.number="draft.crewTimeoutMinutes" class="qp-input" type="number" min="0" max="1440" step="5" />
+        </label>
+      </div>
+      <label class="qp-settings-check">
+        <input v-model="draft.crewWorktrees" type="checkbox" />
+        <span>Workers start in their own worktree <em>(git projects; the orchestrator merges their branches)</em></span>
       </label>
 
       <h3 class="qp-settings-title">The suite as context</h3>

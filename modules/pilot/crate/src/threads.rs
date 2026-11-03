@@ -961,6 +961,8 @@ pub fn after_turn(app: &AppHandle, thread_id: &str, status: TurnStatus) {
     after_turn_life(&state, thread_id, status);
     let _ = state.db.queue_settle(thread_id);
     emit_queue(&state, thread_id);
+    // A crew worker that stopped without reporting wakes its orchestrator (round 2, card 07).
+    crate::crew::after_turn(app, &state, thread_id, status);
     let queue = state.db.queue(thread_id).unwrap_or_default();
     if queue.is_empty() {
         return;

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-agent-crew-report"
+description = "Enables the pilot_agent_crew_report command without any pre-configured scope."
+commands.allow = ["pilot_agent_crew_report"]
+
+[[permission]]
+identifier = "deny-pilot-agent-crew-report"
+description = "Denies the pilot_agent_crew_report command without any pre-configured scope."
+commands.deny = ["pilot_agent_crew_report"]

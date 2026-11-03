@@ -29,7 +29,8 @@ import type { AnswerFile, ComposerAttachment, ThreadItem } from '#pilot/types'
 import { pruneRequestDrafts, requestDraft, type RequestDraft } from '#pilot/utils/requestDrafts'
 import { DOCUMENT, cancelDocument, docLabel, readDocument } from '#pilot/utils/documents'
 
-const props = defineProps<{ threadId: string }>()
+/** `foreign`: shown in another thread (a crew worker's requests in its orchestrator, round 2 card 07) — that thread's message box is not this one's. */
+const props = defineProps<{ threadId: string; foreign?: boolean }>()
 const emit = defineEmits<{ done: [] }>()
 const threads = useThreadStore()
 const store = usePilotStore()
@@ -326,7 +327,7 @@ function showPlan() {
           Allow for this session
         </button>
         <button class="qp-btn qp-btn-sm qp-ap-deny" :disabled="busy === a.id" @click="answer(a, { decision: 'deny' })">Deny</button>
-        <span v-if="i === 0" class="qp-ap-hint">or write why in the box below to decline with feedback</span>
+        <span v-if="i === 0 && !foreign" class="qp-ap-hint">or write why in the box below to decline with feedback</span>
       </div>
     </div>
     <div v-if="approvals.length > 1" class="qp-ap-all">

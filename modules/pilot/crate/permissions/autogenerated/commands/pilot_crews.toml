@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-crews"
+description = "Enables the pilot_crews command without any pre-configured scope."
+commands.allow = ["pilot_crews"]
+
+[[permission]]
+identifier = "deny-pilot-crews"
+description = "Denies the pilot_crews command without any pre-configured scope."
+commands.deny = ["pilot_crews"]

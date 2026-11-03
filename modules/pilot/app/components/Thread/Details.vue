@@ -11,7 +11,8 @@
  *   Changes       the files this thread changed with +/−; a click opens
  *                 the diff
  *   Branch and PR the branch, its pull requests; the GitHub view
- *   Tasks, Crew (subagents), Servers (open, stop)
+ *   Tasks, Crew (the QuantPilot crew this thread leads or works in —
+ *                 round 2 card 07 — then its own subagents), Servers
  * Without a thread only Agents now shows. Sans labels, mono only for
  * numbers (the agent-UI register); no polling beyond the dev-server probe
  * and a one-second clock while something works.
@@ -26,6 +27,7 @@ import { useGitStore } from '#pilot/stores/git'
 import { useAppStore } from '#pilot/stores/app'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { useSideStore } from '#pilot/stores/side'
+import { useCrewStore } from '#pilot/stores/crew'
 import { serverUrls, useDrawerStore, type DevServer } from '#pilot/stores/drawer'
 import { pilot } from '#pilot/utils/invoke'
 import { basename, dirname, fmtCost, fmtTokens } from '#pilot/utils/format'
@@ -232,6 +234,8 @@ function copyTasks() {
 // ── Crew ──
 const CREW_SHOWN = 8
 const crew = computed(() => subagents(view.value?.items ?? []))
+const crews = useCrewStore()
+const team = computed(() => crews.ofThread(props.threadId))
 
 // ── Servers (card 13) ──
 const drawer = useDrawerStore()
@@ -323,7 +327,7 @@ function hasContent(s: PanelSection): boolean {
     case 'tasks':
       return tasks.value.length > 0
     case 'crew':
-      return crew.value.length > 0
+      return crew.value.length > 0 || Boolean(team.value)
     case 'servers':
       return servers.value.length > 0
   }
@@ -535,8 +539,10 @@ const dropLine = computed(() => {
           </div>
         </template>
 
-        <!-- Crew: subagents (cards 07/08 add workers) -->
+        <!-- Crew: the QuantPilot crew (round 2, card 07), then subagents -->
         <template v-else-if="s === 'crew'">
+          <PilotCrewPanel v-if="team && threadId" :thread-id="threadId" />
+          <div v-if="team && crew.length" class="qp-pn-sub">Subagents</div>
           <button
             v-for="a in crew.slice(0, CREW_SHOWN)"
             :key="a.callId"
@@ -639,6 +645,7 @@ const dropLine = computed(() => {
 .qp-file-num { flex-shrink: 0; }
 .qp-file-dir { font-size: 10.5px; color: var(--qss-text-muted, #6e6e7a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .qp-links { display: flex; flex-wrap: wrap; gap: 4px; }
+.qp-pn-sub { margin-top: 6px; font-size: 11px; font-weight: 600; color: var(--qss-text-muted, #6e6e7a); }
 .qp-side-row { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border: none; border-radius: 6px; background: transparent; color: var(--qss-text, #d4d4d8); text-align: left; cursor: pointer; min-width: 0; }
 .qp-side-row:hover,
 .qp-side-row.on { background: var(--qss-bg-hover, #313139); }
