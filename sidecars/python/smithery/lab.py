@@ -24,9 +24,10 @@ PROTOCOL = dict(seed=42, perm=120, boot=200, garch=100, folds=4,
                 timeframes=["1h", "4h", "1d"], fast=False)
 # gauntlet: new candidates through the native Gauntlet; gauntlet_overview: the
 # library's existing evidence as one report; profit: the most profitable singles and
-# aggregates in a saved system; aggregates: a variable-size search against its aggregate.
-KINDS = ("gauntlet", "gauntlet_overview", "profit", "aggregates")
-SYSTEM_KINDS = ("profit", "aggregates")  # run inside a saved system: frozen systems cache
+# aggregates in a saved system; aggregates: a variable-size search against its aggregate;
+# robustness: the System Gauntlet on a saved system (docs/ROBUSTNESS.md).
+KINDS = ("gauntlet", "gauntlet_overview", "profit", "aggregates", "robustness")
+SYSTEM_KINDS = ("profit", "aggregates", "robustness")  # run inside a saved system: frozen systems cache
 
 
 def root() -> Path:
@@ -147,6 +148,12 @@ def create(request):
                 from .lab_profit import earlier_leaders, saved_aggregates
                 doc["seeds"] = saved_aggregates(doc["config"])
                 doc["earlier"] = earlier_leaders(doc["config"])
+            if kind == "robustness":
+                from .prices import DEFAULT_VENUES, NEVER_VENUES
+                venues = request.get("venues") or list(DEFAULT_VENUES)
+                if not isinstance(venues, list) or not all(isinstance(v, str) for v in venues) or NEVER_VENUES & set(venues):
+                    raise ValueError("venues must list other exchanges than Binance, Gate.io and MEXC")
+                doc.update(fast=bool(request.get("fast")), venues=venues)
             validate_request(doc)
         save(path / "run.json", doc)
         return summary(path)
@@ -379,11 +386,34 @@ def freeze(path, kind="gauntlet"):
         with closing(sqlite3.connect(cache.as_uri() + "?mode=ro", uri=True)) as src, \
                 closing(sqlite3.connect(path / "cache.sqlite")) as dst:
             src.backup(dst)
-    files = [f for directory in ("engine", "library", "vault/Price History")
+    # The robustness check's other-venue candles, next to the frozen cache like the saved ones.
+    venues = cache.parent / "venues"
+    if kind == "robustness" and venues.is_dir():
+        for source in venues.glob("*.sqlite"):
+            (path / "venues").mkdir(exist_ok=True)
+            with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src, \
+                    closing(sqlite3.connect(path / "venues" / source.name)) as dst:
+                src.backup(dst)
+    files = [f for directory in ("engine", "library", "vault/Price History", "venues")
              for f in (path / directory).rglob("*") if f.is_file()]
     if (path / "cache.sqlite").exists():
         files.append(path / "cache.sqlite")
     save(path / "inputs.json", {str(f.relative_to(path)): digest(f) for f in files})
+
+
+def prepare_venues(path, doc):
+    """Load the other-venue candles the robustness check compares against (before freezing).
+
+    Offline or a failing exchange leaves the venue check unmeasured: the verdict is then
+    'incomplete', never robust."""
+    from dataclasses import replace
+    from rotation_lab.rpc import _build_config
+    from .prices import prepare_venue
+    try:
+        config = replace(_build_config(doc["config"]), compare_trends=())
+        prepare_venue(config, tuple(doc.get("venues") or ()), progress=lambda m: emit(path, "progress", message=m))
+    except Exception as exc:  # noqa: BLE001
+        emit(path, "progress", message=f"Could not load other-venue candles ({exc}); the venue check stays unmeasured")
 
 
 def emit(path, event, **values):
@@ -408,6 +438,8 @@ def run(run_id):
         if frozen:
             if doc["kind"] in SYSTEM_KINDS:
                 update_saved_data(path, doc)
+            if doc["kind"] == "robustness":
+                prepare_venues(path, doc)
             emit(path, "progress", message="Freezing engine, private library and market inputs")
             freeze(path, doc["kind"])
         command = [sys.executable, "-u", "-m", "smithery.lab", "worker", "--path", str(path)]
@@ -524,6 +556,7 @@ def context():
                 "Report tool: quantsuite.algo.research_gauntlet_overview compiles the library's existing Gauntlet evidence (no re-test) into the English Gauntlet report in one call.",
                 "Report tool: quantsuite.algo.research_aggregate_comparison searches aggregates of any size (2+ distinct bases) against the system's current aggregate: all pairs, growth by size, the saved systems and earlier leaders as starting points, local search until no single step improves the top 25; top 10, best of each size and independent later starts, verified natively.",
                 "Report tool: quantsuite.algo.research_profit_overview ranks every candidate alone and aggregates of 2+ distinct bases in a saved system by final capital (bulk evaluation identical to the engine, shown candidates verified natively).",
+                "Robustness is required (docs/ROBUSTNESS.md): kind=robustness with system runs the System Gauntlet on a saved system (parameters, time, exchange, assets, Monte Carlo, execution); a search or backtest result without a robust verdict is not a result. fast=true for a quicker, coarser check.",
                 "Research runs preserve sources and evidence privately. Use research_install only for selected, track-certified results; then create_strategy_from_indicator.",
                 "Do not start a bot or publish private sources to a public repository. Past inspected history is retrospective, not pristine out-of-sample."],
             "runs": list_runs()[:20]}
@@ -572,6 +605,9 @@ def main():
     elif doc["kind"] == "aggregates":
         from .lab_aggregates import run as aggregates
         aggregates(args.path, doc)
+    elif doc["kind"] == "robustness":
+        from .lab_robustness import run as robustness
+        robustness(args.path, doc)
     else:
         from .lab_profit import run as profit
         profit(args.path, doc)
