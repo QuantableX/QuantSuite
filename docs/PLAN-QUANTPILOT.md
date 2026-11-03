@@ -3188,3 +3188,26 @@ button.
   question; its clock.js entry opened the file at its line; an edit plus
   Refresh marked it stale; Write again cleared that. Not tried live: a pull
   request's guide (no test PR) and Codex (not signed in here).
+
+### 05/07 — visual progress (card 3614f012)
+
+- The inspector's Progress tab: every image of the thread, turn by turn, each
+  labelled with its turn and source — `you` (attachments), `browser` (a
+  Browser-tab capture, saved as screenshot.png), `page` (images embedded in a
+  page the agent rendered) and `tool` (an image file a tool read or wrote,
+  found by its path in the tool's input; relative paths against the thread's
+  folder, one tile per file). The pixels a tool returned inline are not kept by
+  the timeline and cannot be shown.
+- `progress.rs` scans the timeline on demand; an image is a key
+  (`<item id>#<n>`), never a copy. Thumbnails (360 px box) and full images
+  are read by key — which lets the media viewer open tool files and page
+  images that are not attachments; a gone file shows as gone.
+- Pins (schema 24, `thread_pins`) keep references first, with the thread.
+  Compare picks two (the earlier is "before"): slider (drag the divider with
+  pointer events, ← / →) or side by side.
+- QA (QA app, Claude Haiku): a thread with two attached mockups, a capture and
+  a turn where Haiku read a PNG of the project: four tiles with thumbnails
+  (Turn 1 · you, Turn 2 · you / browser, Turn 3 · tool); a pin survived a
+  reload; the viewer opened the tool file; both compare modes worked; deleting
+  the file turned its tile "Gone". QA found and fixed a watcher that read the
+  compare state before it existed (it blanked the page).

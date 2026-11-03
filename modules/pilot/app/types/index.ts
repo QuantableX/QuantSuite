@@ -1104,3 +1104,23 @@ export interface GuideState {
   stale: boolean
   files: number
 }
+
+// ── Visual progress (round 3, card 05, crate/src/progress.rs) ──
+
+export interface ProgressImage {
+  /** `<item id>#<n>`. */
+  key: string
+  itemId: string
+  /** 1-based; 0 when unknown. */
+  turn: number
+  source: 'you' | 'browser' | 'page' | 'tool'
+  name: string
+  path: string | null
+  gone: boolean
+  at: number
+}
+
+export interface Progress {
+  images: ProgressImage[]
+  pins: string[]
+}

@@ -4,13 +4,15 @@
  * thumbnail, loaded only when shown. Fit or 1:1, zoom (+ / − / Ctrl+wheel),
  * ← / → between the message's images, Save a copy (a native dialog), Copy
  * path, Esc closes and focus goes back to the thumbnail that opened it. A
- * moved or deleted file says so instead of showing nothing.
+ * moved or deleted file says so instead of showing nothing. Visual progress
+ * (round 3, card 05) opens images by their progress key: tool files and the
+ * images in pages, which have no attachment path.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, Copy, Download, Maximize, X, ZoomIn, ZoomOut } from 'lucide-vue-next'
 import { pilot } from '#pilot/utils/invoke'
 
-const props = defineProps<{ threadId: string; images: { path: string; name?: string }[]; start: number }>()
+const props = defineProps<{ threadId: string; images: { path?: string; name?: string; key?: string }[]; start: number }>()
 const emit = defineEmits<{ close: [] }>()
 const index = ref(props.start)
 const src = ref('')
@@ -30,7 +32,10 @@ async function load() {
   const im = current.value
   if (!im) return
   try {
-    const m = await pilot<{ mime: string; data: string; size: number; width: number | null; height: number | null }>('plugin:pilot|pilot_attachment_media', { id: props.threadId, path: im.path })
+    type M = { mime: string; data: string; size: number; width: number | null; height: number | null }
+    const m = im.key
+      ? await pilot<M>('plugin:pilot|pilot_progress_image', { id: props.threadId, key: im.key })
+      : await pilot<M>('plugin:pilot|pilot_attachment_media', { id: props.threadId, path: im.path })
     if (!m || current.value !== im) return
     src.value = `data:${m.mime};base64,${m.data}`
     meta.value = { width: m.width, height: m.height, size: m.size, mime: m.mime }
@@ -78,7 +83,7 @@ function onWheel(e: WheelEvent) {
 
 async function saveCopy() {
   const im = current.value
-  if (!im) return
+  if (!im?.path) return
   try {
     const { save } = await import('@tauri-apps/plugin-dialog')
     const name = im.path.split(/[\\/]/).pop() ?? 'image.png'
@@ -92,7 +97,7 @@ async function saveCopy() {
 }
 async function copyPath() {
   const im = current.value
-  if (!im) return
+  if (!im?.path) return
   await navigator.clipboard.writeText(im.path).then(
     () => (notice.value = 'Path copied.'),
     () => (error.value = 'The clipboard is not available.')
@@ -105,7 +110,7 @@ const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB
   <Teleport to="body">
     <div ref="root" class="qp-mv" role="dialog" aria-modal="true" :aria-label="`Image ${index + 1} of ${images.length}`" tabindex="-1" @keydown="onKey" @pointerdown.self="emit('close')">
       <header class="qp-mv-bar">
-        <span class="qp-mv-name" :title="current?.path">{{ current?.name || current?.path.split(/[\\/]/).pop() }}</span>
+        <span class="qp-mv-name" :title="current?.path">{{ current?.name || current?.path?.split(/[\\/]/).pop() }}</span>
         <span v-if="meta" class="qp-mv-dim">{{ meta.width && meta.height ? `${meta.width}×${meta.height}` : '' }} · {{ kb(meta.size) }}</span>
         <span v-if="images.length > 1" class="qp-mv-dim">{{ index + 1 }} / {{ images.length }}</span>
         <div class="qp-mv-spacer" />
@@ -113,8 +118,8 @@ const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB
         <button class="qp-mv-btn qp-mv-z" title="Fit (0) / actual size (1)" @click="setZoom(zoom === 'fit' ? 1 : 'fit')">{{ zoom === 'fit' ? 'Fit' : `${Math.round(zoomNumber * 100)}%` }}</button>
         <button class="qp-mv-btn" title="Zoom in (+)" @click="zoomBy(1.25)"><ZoomIn :size="14" /></button>
         <button class="qp-mv-btn" title="Fit" @click="setZoom('fit')"><Maximize :size="14" /></button>
-        <button class="qp-mv-btn" title="Copy path" @click="copyPath"><Copy :size="14" /></button>
-        <button class="qp-mv-btn" title="Save a copy" :disabled="!!error" @click="saveCopy"><Download :size="14" /></button>
+        <button v-if="current?.path" class="qp-mv-btn" title="Copy path" @click="copyPath"><Copy :size="14" /></button>
+        <button v-if="current?.path" class="qp-mv-btn" title="Save a copy" :disabled="!!error" @click="saveCopy"><Download :size="14" /></button>
         <button class="qp-mv-btn" title="Close (Esc)" @click="emit('close')"><X :size="15" /></button>
       </header>
       <div class="qp-mv-stage" @wheel="onWheel">

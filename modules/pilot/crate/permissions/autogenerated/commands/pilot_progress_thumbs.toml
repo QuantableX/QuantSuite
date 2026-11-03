@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-progress-thumbs"
+description = "Enables the pilot_progress_thumbs command without any pre-configured scope."
+commands.allow = ["pilot_progress_thumbs"]
+
+[[permission]]
+identifier = "deny-pilot-progress-thumbs"
+description = "Denies the pilot_progress_thumbs command without any pre-configured scope."
+commands.deny = ["pilot_progress_thumbs"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-progress"
+description = "Enables the pilot_progress command without any pre-configured scope."
+commands.allow = ["pilot_progress"]
+
+[[permission]]
+identifier = "deny-pilot-progress"
+description = "Denies the pilot_progress command without any pre-configured scope."
+commands.deny = ["pilot_progress"]
