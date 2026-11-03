@@ -12,8 +12,16 @@ BODY = r'''
  <div><div class="eyebrow">QuantSuite · Aggregate comparison</div><h1 id="headline"></h1><p class="lede" id="lede"></p><div class="chips" id="chips"></div></div>
  <div class="hero"><div class="label">New leader · final capital</div><div class="figure" id="hero"></div><div class="sub" id="hero-sub"></div></div>
 </header>
-<nav class="nav" aria-label="Sections"><div class="nav-inner"><a href="#leader">Leader and current</a><a href="#top">Top 10</a><a href="#restarts">Later starts</a><a href="#sizes">By size</a><a href="#method">Search and method</a></div></nav>
+<nav class="nav" aria-label="Sections"><div class="nav-inner"><a href="#robust">Robustness</a><a href="#leader">Leader and current</a><a href="#top">Top 10</a><a href="#restarts">Later starts</a><a href="#sizes">By size</a><a href="#method">Search and method</a></div></nav>
 <div class="tiles" id="tiles"></div>
+<section class="panel" id="robust" hidden>
+ <div class="panel-head"><div><div class="kicker">Robustness · docs/ROBUSTNESS.md</div><h2 id="robust-title">Which results hold up</h2><div class="sub" id="robust-sub"></div></div></div>
+ <div class="tiles" id="robust-tiles"></div>
+ <h3 style="margin-top:16px">Finalists through the System Gauntlet</h3>
+ <div class="table-wrap"><table class="data"><thead><tr><th>Finalist</th><th class="num">Size</th><th>Verdict</th><th class="num">Grade · score</th><th>Failed gates</th></tr></thead><tbody id="robust-final"></tbody></table></div>
+ <h3 style="margin-top:16px">Walk-forward: the search's leaders on the blind window</h3>
+ <div class="table-wrap tall"><table class="data"><thead><tr><th class="num">#</th><th>Members</th><th class="num">Size</th><th class="num">Search window · worst world ×</th><th class="num">Blind · worst-world CAGR</th><th class="num">Random same size · median CAGR</th><th class="num">Beats random</th><th>Passed</th></tr></thead><tbody id="robust-wf"></tbody></table></div>
+</section>
 <section class="panel" id="leader">
  <div class="panel-head"><div><div class="kicker">01 · Same period, same data</div><h2>The new leader against the current aggregate</h2><div class="sub">Capital on a logarithmic scale, and the fall from the previous peak below it. Hover or use the arrow keys for a day's values.</div></div>
   <div class="controls" style="margin:0"><label class="field">Start capital<input id="capital" type="number" min="1" step="100" value="1000"></label></div></div>
@@ -44,6 +52,7 @@ BODY = r'''
 </section>
 <footer class="footer"><span id="foot-left"></span><span>One offline HTML file · all data embedded</span></footer>
 <style>
+td.wrap{white-space:normal;min-width:220px;max-width:520px}
 .cand{all:unset;cursor:pointer;font-weight:600;color:var(--ink)}.cand:hover{color:var(--accent);text-decoration:underline}.cand:focus-visible{outline:2px solid var(--accent)}
 .up{color:var(--good-ink)}.down{color:var(--bad-ink)}
 .coverage{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}.coverage div{border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--ink-2)}.coverage b{display:block;font-size:22px;color:var(--ink);font-weight:640}
@@ -64,7 +73,7 @@ let capital=1000;
 const gain=lead&&ref?(lead.metrics.net_return_multiplier/ref.metrics.net_return_multiplier-1)*100:null;
 const beaten=gain!=null&&gain>0&&lead.members.join()!==ref.members.join();
 $('headline').textContent=!lead?'No aggregate completed':beaten?`A ${lead.members.length}-member aggregate earned ${Q.signed(gain,1).replace('+','')} more than the current aggregate`:'The current aggregate remains the most profitable one found';
-$('lede').textContent=`A variable-size search over aggregates of two or more distinct indicators in ${sys.name||'the saved system'}, with the same data, universe, filter and costs, ranked by historical final capital. The current aggregate is ${ref?short(ref,4):'—'}.`;
+$('lede').textContent=`A variable-size search over aggregates of two or more distinct indicators in ${sys.name||'the saved system'}, with the same data, universe, filter and costs, ranked by ${DATA.robust?'its worst price world on a search window, then checked on blind years (see Robustness)':'historical final capital'}. The current aggregate is ${ref?short(ref,4):'—'}.`;
 $('chips').innerHTML=[`${sys.start} to ${sys.end}`,sys.description,sys.filter,`${int(COV.aggregates)} aggregates tested`].filter(Boolean).map(c=>'<span class="chip">'+esc(c)+'</span>').join('');
 $('hero').textContent=lead?mult(lead.metrics.net_return_multiplier):'—';
 $('hero-sub').innerHTML=lead?(lead.names||lead.members).slice(0,4).map(esc).join('<br>')+(lead.members.length>4?'<br>+ '+(lead.members.length-4)+' more':''):'';
@@ -102,6 +111,14 @@ function sizeChart(){const host=$('size-chart');host.innerHTML='';host.classList
   g.addEventListener('pointermove',show);g.addEventListener('pointerleave',Q.hideTip);g.addEventListener('focus',()=>show());g.addEventListener('blur',Q.hideTip)}}
 $('coverage').innerHTML=[['Aggregates tested',int(COV.aggregates),`budget ${int(COV.budget)}`],['Usable indicators',int(COV.usable),`${int(COV.bases)} base indicators, ${int(Object.keys(COV.unsupported||{}).length)} not evaluable`],['Re-run natively',int(COV.verified_passed)+' of '+int(COV.verified),'identical holdings on every bar'],['Search time',int(COV.seconds)+' s',COV.evaluator==='bulk'?'bulk evaluation, native checks':'native evaluation'],...(COV.growth&&COV.growth.up_to?[['Growth by size','up to '+int(COV.growth.up_to),'every extension of the best '+int(COV.growth.beam)+' of each size']]:[]),...(COV.local_search?[['Local search',COV.local_search.stable?'stable':'budget',COV.local_search.stable?'no single add, remove or swap improves the top '+int(COV.local_search.top)+' ('+int(COV.local_search.rounds)+' rounds)':'stopped at the budget after '+int(COV.local_search.rounds)+' rounds']]:[])].map(c=>'<div><b>'+esc(c[1])+'</b>'+esc(c[0])+'<br>'+esc(c[2])+'</div>').join('');
 $('stages').innerHTML='<thead><tr><th>Stage</th><th class="num">Proposed</th><th class="num">Tested</th></tr></thead><tbody>'+(COV.stages||[]).map(s=>'<tr><td>'+esc(s.stage)+'</td><td class="num">'+int(s.proposed)+'</td><td class="num">'+int(s.tested)+'</td></tr>').join('')+'</tbody>'+Q.unsupported(COV.unsupported,3);
+const R=DATA.robust;
+if(R){const wf=R.walk_forward||{},F=R.finalists||[],ok=R.robust_finalists||[];$('robust').hidden=false;
+ $('robust-title').textContent=ok.length?`${ok.length} robust finalist${ok.length>1?'s':''}`:'No robust result in this search';
+ $('robust-sub').textContent=`Each candidate is scored by its worst price world (${(R.worlds||[]).join(', ')}) on the search window ${wf.start} → ${wf.cut}. The leaders then run on the blind window ${wf.cut} → ${wf.end}, which the search never saw, against random aggregates of the same size. The best that pass go through the System Gauntlet.`+(R.pool_gated?` Pool: ${int(R.pool)} indicators that pass the Indicator Gauntlet (${int(R.pool_excluded)} excluded).`:' Pool not gated (research only): no result here counts as robust.')+(R.venue_measured?'':' Another exchange was not measured: the venue world is missing.');
+ $('robust-tiles').innerHTML=[['Pool',int(R.pool)+(R.pool_gated?' certified':' ungated')],['Leaders that beat random on the blind window',int(wf.passed)+' of '+int((wf.leaders||[]).length)],['Finalists checked',int(F.length)],['Robust finalists',int(ok.length)]]
+  .map(([l,v])=>`<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('');
+ $('robust-final').innerHTML=F.map((f,i)=>`<tr><td class="wrap">${esc(f.members.join(' + '))}</td><td class="num">${int(f.members.length)}</td><td>${f.verdict.robust&&R.pool_gated?'<span class="badge pass">Robust</span>':f.verdict.robust?'<span class="badge warn">Passed, pool not gated</span>':'<span class="badge bad">'+esc(f.verdict.status)+'</span>'}</td><td class="num">${esc(f.verdict.grade)} · ${num(f.verdict.score,0)}</td><td class="wrap">${esc((f.verdict.failures||[]).join('; '))||'—'}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No leader beat random aggregates on the blind window, so none was checked.</td></tr>';
+ $('robust-wf').innerHTML=(wf.leaders||[]).map((r,i)=>`<tr><td class="num">${i+1}</td><td class="wrap">${esc(r.members.join(' + '))}</td><td class="num">${int(r.size)}</td><td class="num">${mult(r.search_capital)}</td><td class="num">${pct(r.blind_worst_cagr*100,1)}</td><td class="num">${r.random_median_cagr==null?'—':pct(r.random_median_cagr*100,1)}</td><td class="num">${r.percentile==null?'—':pct(r.percentile,0)}</td><td>${r.passed?'<span class="badge pass">Yes</span>':'<span class="badge fail">No</span>'}</td></tr>`).join('');}
 const P=DATA.plan||{};
 $('method-cols').innerHTML=[['The rule',P.rule||''],['Fixed before the results',`Stages, budgets and the seed (${P.seed}) were written to the plan before any result was seen; local search starts from the leaders of the stages before it and runs until a full round leaves the top 25 unchanged or the budget ends.`],['Limits',`A finite, retrospective search on history that was already examined. Large sizes are sampled, not enumerated; the best aggregate overall may lie outside the tested set. Final capital is not a forecast.`]].map(m=>'<div><h3>'+esc(m[0])+'</h3><p>'+esc(m[1])+'</p></div>').join('');
 function detail(id){const s=byId[id];if(!s)return;const m=s.metrics;let h='<dl class="kv" style="margin-bottom:12px"><dt>Final capital</dt><dd><b>'+mult(m.net_return_multiplier)+'</b> · '+money(capital*m.net_return_multiplier)+' from '+money(capital,0)+'</dd><dt>Maximum drawdown</dt><dd>'+pct(m.max_drawdown_pct)+'</dd><dt>CAGR</dt><dd>'+pct(m.cagr_pct,1)+'</dd><dt>Sharpe · Sortino · Omega</dt><dd>'+num(m.sharpe)+' · '+num(m.sortino)+' · '+num(m.omega)+'</dd><dt>Versus current</dt><dd>'+versus(s)+'</dd><dt>Cash share</dt><dd>'+pct(s.cash_pct,1)+' of bars</dd></dl>';
