@@ -375,11 +375,22 @@ function cutBoxes(): Box[] {
   const cuts: Box[] = []
   const me = props.window
   for (const w of canvasStore.activeCanvasState?.windows ?? []) {
-    if (w.id === me.id || w.minimized || w.zIndex <= me.zIndex) continue
+    // A folded window stays on the canvas as its title bar: cut that.
+    if (w.id === me.id || w.zIndex <= me.zIndex) continue
     const el = document.querySelector(`[data-window-id="${w.id}"]`)
-    if (el) cuts.push(box(el.getBoundingClientRect()))
+    if (!el) continue
+    cuts.push(box(el.getBoundingClientRect()))
+    // Its resize handles and port straddle its edges.
+    for (const child of el.children) cuts.push(box(child.getBoundingClientRect()))
   }
   for (const el of canvasEl.value?.querySelectorAll('[data-canvas-overlay]') ?? []) cuts.push(box(el.getBoundingClientRect()))
+  // This window's own frame — its resize handles straddle the edges and its
+  // connection port sits on one: cut out, so they stay usable over a live page.
+  const root = contentRef.value?.closest('.qcb')
+  const frame = root?.closest('[data-window-id]')
+  if (root && frame) {
+    for (const child of frame.children) if (!child.contains(root)) cuts.push(box(child.getBoundingClientRect()))
+  }
   return cuts
 }
 
@@ -482,6 +493,7 @@ function markMoving(): void {
     moving = false
     clipKey = ''
     requestSync()
+    setTimeout(requestSync, 260)
   }, 160)
 }
 
@@ -520,7 +532,9 @@ watch(() => (canvasStore.activeCanvasState?.windows ?? [])
   others = now
   if (touched) markMoving()
   else requestSync()
-})
+  // A window that opens or folds animates its size: cut again once it has.
+  setTimeout(requestSync, 260)
+}, { immediate: true })
 
 // ---- The picture ----
 
@@ -693,7 +707,9 @@ onUnmounted(() => {
     persistTimer = null
   }
   for (const fn of unlisten.splice(0)) fn()
-  for (const tabId of [...opened]) closePage(tabId)
+  // Every tab, not only those opened since this mount: a reload of the suite
+  // page keeps the pages of tabs it never showed again, hidden but running.
+  for (const t of tabs.value) closePage(t.id)
   if (picture.value) URL.revokeObjectURL(picture.value.src)
 })
 </script>

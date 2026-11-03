@@ -30,6 +30,24 @@ pub const NEW_TAB_EVENT: &str = "canvas-browser-new-tab";
 const FULLSCREEN_EVENT: &str = "browser-fullscreen-changed";
 const LABEL_PREFIX: &str = "browser-";
 
+/// Links that open a new window (`target="_blank"`) open a tab in the same
+/// browser window. The suite's shell plugin puts a link handler into every
+/// webview, these pages included: it would take the click, ask the app to
+/// open the link — which a web page may not — and the link would do nothing.
+/// Taken first here, the click becomes a plain `window.open`, which
+/// `on_new_window` turns into a tab.
+const NEW_TAB_LINKS: &str = r#"(() => {
+  window.addEventListener('click', (e) => {
+    if (e.button !== 0 || e.defaultPrevented) return;
+    const t = e.composedPath ? e.composedPath()[0] : e.target;
+    const a = t instanceof Element ? t.closest('a[href]') : null;
+    if (!a || a.target !== '_blank' || !/^https?:/i.test(a.href)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(a.href, '_blank', 'noopener');
+  }, true);
+})();"#;
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
 pub struct Bounds {
     pub x: f64,
@@ -259,6 +277,7 @@ pub fn browser_tab_open(
     let opener_app = app.clone();
     let builder = tauri::webview::WebviewBuilder::new(&label, tauri::WebviewUrl::External(start))
         .zoom_hotkeys_enabled(false)
+        .initialization_script(NEW_TAB_LINKS)
         .on_navigation(move |u| {
             if !current(&nav_app, &nav, generation) {
                 return false;
