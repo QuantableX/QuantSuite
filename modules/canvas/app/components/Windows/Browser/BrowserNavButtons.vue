@@ -9,6 +9,7 @@ const emit = defineEmits<{
   back: []
   forward: []
   reload: []
+  stop: []
 }>()
 </script>
 
@@ -44,15 +45,19 @@ const emit = defineEmits<{
       </svg>
     </button>
 
-    <!-- Reload -->
+    <!-- Reload, or stop while the page loads -->
     <button
       class="w-5 h-5 flex items-center justify-center rounded transition-colors hover:brightness-125"
       :style="{ color: 'var(--qc-text-dim)' }"
-      title="Reload"
+      :title="isLoading ? 'Stop' : 'Reload'"
       @mousedown.stop
-      @click.stop="emit('reload')"
+      @click.stop="isLoading ? emit('stop') : emit('reload')"
     >
-      <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': isLoading }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <svg v-if="isLoading" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 6L6 18" />
+        <path d="M6 6l12 12" />
+      </svg>
+      <svg v-else class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
         <path d="M21 3v5h-5" />
       </svg>
