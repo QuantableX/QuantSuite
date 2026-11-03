@@ -54,6 +54,18 @@ function check(name, cond, detail = '') {
 function section(title) {
   console.log(`\n── ${title} ──`)
 }
+// The board's approval mode as the user sets it in the UI: the core.db row the
+// MCP server reads on every kanban call (settings scope 'mcp').
+let coreDb = null
+if (CORE_DB) {
+  const { DatabaseSync } = await import('node:sqlite')
+  coreDb = new DatabaseSync(CORE_DB)
+}
+function setModeAsUser(mode) {
+  coreDb.prepare(
+    "INSERT INTO settings (scope, key, value) VALUES ('mcp', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value",
+  ).run(`workspace.${b36}.approval_mode`, JSON.stringify(mode))
+}
 
 // ── MCP client (streamable HTTP, plain JSON responses) ────────────────────
 let sessionId = null
@@ -143,12 +155,12 @@ async function main() {
   })
   check('initialize returns serverInfo QuantMCP', init?.result?.serverInfo?.name === 'QuantMCP', JSON.stringify(init))
   check('initialize returns a session id', !!sessionId)
-  // The connect-time brief (MCP `instructions`): the global AGENT.md — the
-  // operator's rules for every agent — which the clients put into the system
-  // prompt, so an agent reaches for the tools without being told about them.
+  // The connect-time brief (MCP `instructions`): a short pointer that sends
+  // the agent to get_instructions first. The full global AGENT.md comes from
+  // that tool (or the client's own import), so it is never loaded twice.
   const brief = init?.result?.instructions ?? ''
-  check('initialize carries the global AGENT.md as `instructions`',
-    brief.length > 500 && brief.includes('QuantMCP') && brief.includes('Call get_instructions now'), brief.slice(0, 200))
+  check('initialize points the agent at get_instructions',
+    brief.includes('Call get_instructions now') && brief.includes('include_global') && brief.length < 2000, brief.slice(0, 200))
   await rpc('notifications/initialized', {})
 
   // ── tools/list ──
@@ -171,7 +183,9 @@ async function main() {
     tools.every((t) => !(t.inputSchema?.required ?? []).includes('project_name')))
   const bridge = tools.filter((t) => t.name.startsWith('quantsuite.'))
   check('bridge catalogue served (quantsuite.*)', bridge.length >= 20, `got ${bridge.length}`)
-  check('quantsuite.memory.* present (13 tools)', bridge.filter((t) => t.name.startsWith('quantsuite.memory.')).length === 13)
+  const memoryCaps = JSON.parse(fs.readFileSync(new URL('../modules/memory/module.json', import.meta.url), 'utf8')).capabilities.length
+  const memoryTools = bridge.filter((t) => t.name.startsWith('quantsuite.memory.')).length
+  check(`quantsuite.memory.* present (${memoryCaps} tools, as modules/memory/module.json declares)`, memoryTools === memoryCaps, `got ${memoryTools}`)
 
   // ── codebase index + auto-register ──
   section('codebase index (auto-register, search, reindex)')
@@ -248,11 +262,14 @@ async function main() {
   const modeOf = (text) => text.match(/approval mode: (\w+)/)?.[1] ?? null
   const modeDefault = await call('get_kanban_approval_mode', { workspace: WS_NAME })
   check('approval mode defaults to auto_apply (fresh board)', modeOf(modeDefault.text) === 'auto_apply', modeDefault.text)
-  if (modeOf(modeDefault.text) !== 'auto_apply') {
+  if (modeOf(modeDefault.text) !== 'auto_apply' && coreDb) {
     // A run that died between the approval section and its reset leaves the
     // row behind (cleanup drops it now); carry on from the state this needs.
-    await call('set_kanban_approval_mode', { workspace: WS_NAME, mode: 'auto_apply' })
+    setModeAsUser('auto_apply')
   }
+  const setByAgent = await call('set_kanban_approval_mode', { workspace: WS_NAME, mode: 'approval' })
+  check('set_kanban_approval_mode refused for agents (the user switches it in the UI)',
+    setByAgent.isError && setByAgent.text.includes('Only the user changes the board approval mode'), setByAgent.text)
 
   const cardA = await mkCard('Test card A (auto merge)')
   const listWs = await call('list_kanban_cards', { workspace: WS_NAME })
@@ -298,16 +315,30 @@ async function main() {
 
   // ── kanban: approval lifecycle ──
   section('kanban (approval: complete → review → reject → approve)')
-  const setMode = await call('set_kanban_approval_mode', { workspace: WS_NAME, mode: 'approval' })
-  check('set_kanban_approval_mode → approval', !setMode.isError && setMode.text.includes("'approval'"), setMode.text)
-
+  // Agents cannot switch the mode, so this section stands in for the user's
+  // switch in the UI by writing the same core.db setting the UI writes. It
+  // needs --core-db; without it the section is skipped, not failed.
+  if (!coreDb || !b36) {
+    console.log("  skip  approval lifecycle needs --core-db <the running instance's core.db>")
+  } else {
+  // Card B is claimed while the board is still auto_apply (in approval mode a
+  // claim needs the user's "Approve work" click, which no agent can give);
+  // then the user switches the board to approval mode mid-work.
   const cardB = await mkCard('Test card B (review flow)')
+  const cardD = await mkCard('Test card D (needs work approval)')
   const claimB = await call('claim_kanban_card', { card_id: cardB, agent_id: 'test-agent' })
   const worktreeB = claimB.text.match(/Worktree: (.+)/)?.[1]?.trim() ?? null
   check('claim card B', !claimB.isError && !!worktreeB, claimB.text)
+  if (!worktreeB) throw new Error('card B has no worktree; the approval section cannot go on')
   fs.writeFileSync(path.join(worktreeB, 'feature_b.md'), '# delivered by test-agent (card B)\n')
   git(worktreeB, 'add', '-A')
   git(worktreeB, 'commit', '-m', 'card B work')
+
+  setModeAsUser('approval')
+  const modeNow = await call('get_kanban_approval_mode', { workspace: WS_NAME })
+  check('the board reads approval mode once the user switched it', modeOf(modeNow.text) === 'approval', modeNow.text)
+  const claimD = await call('claim_kanban_card', { card_id: cardD, agent_id: 'test-agent' })
+  check('approval mode: a claim waits for the user\'s "Approve work"', claimD.isError && claimD.text.includes('Start approval required'), claimD.text)
 
   const doneB = await call('complete_kanban_card', { card_id: cardB })
   check('complete parks in review in approval mode', !doneB.isError && doneB.text.includes('AWAITING_REVIEW'), doneB.text)
@@ -317,11 +348,18 @@ async function main() {
     !rejB.isError && rejB.text.includes('IN_PROGRESS') && fs.existsSync(worktreeB), rejB.text)
 
   const doneB2 = await call('complete_kanban_card', { card_id: cardB })
+  check('complete parks it in review again', !doneB2.isError && doneB2.text.includes('AWAITING_REVIEW'), doneB2.text)
+  const selfAppr = await call('approve_kanban_card', { card_id: cardB })
+  check('an agent cannot approve its own result in approval mode',
+    selfAppr.isError && selfAppr.text.includes('Approval mode') && fs.existsSync(worktreeB), selfAppr.text)
+
+  // Back to auto_apply (the user's switch): approve is then the merge retry.
+  setModeAsUser('auto_apply')
   const apprB = await call('approve_kanban_card', { card_id: cardB })
   check('approve merges and cleans up', !apprB.isError && apprB.text.includes('MERGED') && fs.existsSync(path.join(WS_DIR, 'feature_b.md')) && !fs.existsSync(worktreeB), apprB.text)
-
-  const modeBack = await call('set_kanban_approval_mode', { workspace: WS_NAME, mode: 'auto_apply' })
-  check('approval mode back to auto_apply', !modeBack.isError, modeBack.text)
+  const modeBack = await call('get_kanban_approval_mode', { workspace: WS_NAME })
+  check('approval mode back to auto_apply', modeOf(modeBack.text) === 'auto_apply', modeBack.text)
+  }
 
   // ── kanban: cancel ──
   section('kanban (cancel cleans up)')
@@ -332,7 +370,8 @@ async function main() {
   check('cancel removes worktree and branch', !cancC.isError && cancC.text.includes('CANCELLED') && (!worktreeC || !fs.existsSync(worktreeC)), cancC.text)
 
   const log = await call('get_kanban_activity_log', { limit: 50 })
-  check('activity log recorded the lifecycle', ['claimed', 'completed', 'approved', 'cancelled'].every((a) => log.text.includes(a)), log.text.slice(0, 200))
+  const lifecycle = coreDb && b36 ? ['claimed', 'completed', 'approved', 'cancelled'] : ['claimed', 'completed', 'cancelled']
+  check('activity log recorded the lifecycle', lifecycle.every((a) => log.text.includes(a)), log.text.slice(0, 200))
 
   // ── kanban: the General board (PLAN-KANBAN-UNIFY) ──
   section('kanban (General board: no folder, move to workspace to claim)')
@@ -351,9 +390,7 @@ async function main() {
   const apprModeG = await call('get_kanban_approval_mode', { workspace: 'general' })
   check("approval mode readable on board 'General'", !apprModeG.isError && apprModeG.text.includes("Board 'General'"), apprModeG.text)
   const setModeG = await call('set_kanban_approval_mode', { workspace: 'general', mode: 'approval' })
-  check('approval mode settable on General', !setModeG.isError && setModeG.text.includes("'approval'"), setModeG.text)
-  const setModeGBack = await call('set_kanban_approval_mode', { workspace: 'general', mode: 'auto_apply' })
-  check('…and back to auto_apply', !setModeGBack.isError, setModeGBack.text)
+  check('approval mode on General refused for agents too', setModeG.isError && setModeG.text.includes('Only the user changes the board approval mode'), setModeG.text)
 
   const mvG = await call('move_kanban_card_to_workspace', { card_id: cardG, workspace: WS_NAME })
   check('move_kanban_card_to_workspace re-homes it', !mvG.isError && mvG.text.includes(`board '${WS_NAME}'`), mvG.text)
