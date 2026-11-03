@@ -530,7 +530,7 @@ mod tests {
             fast: false,
             notice: None,
             tags: Vec::new(),
-            parent_id: None,
+            instance: String::new(), parent_id: None,
             state: "idle".into(),
             context_tokens: None,
             context_window: None,

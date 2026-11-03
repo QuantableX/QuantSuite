@@ -197,6 +197,30 @@ pub struct ProjectAction {
     pub check_after_turn: bool,
 }
 
+/// Another account of an agent (round 3, card 02): the CLI pointed at its
+/// own config home, so its login, sessions and usage stay apart from the
+/// default account's. QuantPilot never reads or writes the credentials in it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Instance {
+    /// Lowercase letters, digits and dashes; unique per agent.
+    pub id: String,
+    /// `claude` or `codex` — the agents whose CLI takes a config home.
+    pub provider: String,
+    pub label: String,
+    /// The account's config home (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`).
+    pub home: String,
+}
+
+/// The variable that points an agent's CLI at another config home.
+pub fn home_var(provider: &str) -> Option<&'static str> {
+    match provider {
+        "claude" => Some("CLAUDE_CONFIG_DIR"),
+        "codex" => Some("CODEX_HOME"),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -219,6 +243,8 @@ pub struct Settings {
     /// Workspace sessions also get the general vault as a readable directory.
     pub include_general_vault: bool,
     pub custom: Vec<CustomAdapter>,
+    /// More accounts of Claude Code and Codex (round 3, card 02).
+    pub instances: Vec<Instance>,
     /// The composer's send key: `enter` (Enter sends), `modEnterMultiline`
     /// (Ctrl+Enter once the message has several lines), `modEnter` (always Ctrl+Enter).
     pub send_shortcut: String,
@@ -293,6 +319,7 @@ impl Default for Settings {
             attach_quantmcp: true,
             include_general_vault: true,
             custom: Vec::new(),
+            instances: Vec::new(),
             send_shortcut: "enter".into(),
             follow_up: "queue".into(),
             notify: "unfocused".into(),
@@ -448,6 +475,25 @@ impl Settings {
             .into_iter()
             .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
             .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+            .collect();
+
+        let mut seen_instances = std::collections::BTreeSet::new();
+        self.instances = self
+            .instances
+            .into_iter()
+            .filter_map(|mut i| {
+                i.id = slug(&i.id);
+                i.provider = i.provider.trim().to_string();
+                i.label = i.label.trim().to_string();
+                i.home = i.home.trim().to_string();
+                if i.id.is_empty() || i.home.is_empty() || home_var(&i.provider).is_none() || !seen_instances.insert((i.provider.clone(), i.id.clone())) {
+                    return None;
+                }
+                if i.label.is_empty() {
+                    i.label = i.id.clone();
+                }
+                Some(i)
+            })
             .collect();
 
         let mut seen = std::collections::BTreeSet::new();
@@ -660,6 +706,37 @@ impl Settings {
         out
     }
 
+    /// An account saved without a folder gets its own under QuantPilot's
+    /// data folder: `accounts/<agent>-<id>`.
+    pub fn with_account_homes(mut self, data_dir: &Path) -> Settings {
+        for i in &mut self.instances {
+            let id = slug(&i.id);
+            if i.home.trim().is_empty() && !id.is_empty() {
+                i.home = data_dir.join("accounts").join(format!("{}-{id}", i.provider.trim())).to_string_lossy().into_owned();
+            }
+        }
+        self
+    }
+
+    /// An account of an agent; `""` is the default account (no instance).
+    pub fn instance(&self, provider: &str, id: &str) -> Option<&Instance> {
+        if id.is_empty() {
+            return None;
+        }
+        self.instances.iter().find(|i| i.provider == provider && i.id == id)
+    }
+
+    /// A thread's environment: the agent's, plus its account's config home.
+    /// The default account keeps whatever the suite's environment says.
+    pub fn launch_env_for(&self, provider: &str, instance: &str) -> Vec<(String, String)> {
+        let mut env = self.launch_env(provider);
+        if let (Some(var), Some(i)) = (home_var(provider), self.instance(provider, instance)) {
+            env.retain(|(k, _)| k != var);
+            env.push((var.to_string(), i.home.clone()));
+        }
+        env
+    }
+
     /// The agent's extra launch arguments.
     pub fn extra_args(&self, adapter: &str) -> Vec<String> {
         self.providers.get(adapter).map(|p| crate::adapters::split_template(&p.args)).unwrap_or_default()
@@ -708,6 +785,33 @@ mod tests {
         assert_eq!((list[0].name.as_str(), list[0].command.as_str()), ("Dev server", "npm run dev"));
         assert_eq!(list[1].icon, "play", "an unknown icon falls back");
         assert!(!s.actions.contains_key("ws2"), "a project without valid actions is dropped");
+    }
+
+    #[test]
+    fn instances_need_an_agent_with_a_home_and_point_it_there() {
+        let s = Settings {
+            instances: vec![
+                Instance { id: " Work ".into(), provider: "claude".into(), label: "".into(), home: " C:/claude-work ".into() },
+                Instance { id: "work".into(), provider: "claude".into(), label: "dup".into(), home: "C:/x".into() },
+                Instance { id: "work".into(), provider: "codex".into(), label: "Work".into(), home: "C:/codex-work".into() },
+                Instance { id: "gem".into(), provider: "gemini".into(), label: "".into(), home: "C:/g".into() },
+                Instance { id: "nohome".into(), provider: "claude".into(), label: "".into(), home: "  ".into() },
+            ],
+            ..Default::default()
+        }
+        .normalized();
+        assert_eq!(s.instances.len(), 2, "a duplicate, an agent without a home variable and an empty home go");
+        assert_eq!(s.instances[0], Instance { id: "work".into(), provider: "claude".into(), label: "work".into(), home: "C:/claude-work".into() });
+        assert!(s.launch_env_for("claude", "work").contains(&("CLAUDE_CONFIG_DIR".to_string(), "C:/claude-work".to_string())));
+        assert!(s.launch_env_for("codex", "work").contains(&("CODEX_HOME".to_string(), "C:/codex-work".to_string())));
+        assert!(!s.launch_env_for("claude", "").iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"), "the default account keeps the suite's environment");
+        assert!(!s.launch_env_for("claude", "gone").iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"), "an unknown account is the default one");
+        assert_eq!(home_var("pi"), None);
+
+        let homed = Settings { instances: vec![Instance { id: "Side".into(), provider: "codex".into(), label: "".into(), home: " ".into() }], ..Default::default() }
+            .with_account_homes(Path::new("D:/pilot"))
+            .normalized();
+        assert_eq!(Path::new(&homed.instances[0].home), Path::new("D:/pilot").join("accounts").join("codex-side"), "an account without a folder gets its own");
     }
 
     #[test]

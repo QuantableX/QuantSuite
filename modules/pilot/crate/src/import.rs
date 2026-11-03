@@ -426,13 +426,19 @@ fn home_of(provider: Provider, path: &Path) -> PathBuf {
 }
 
 /// Every importable log of `provider`, newest first, with what could not be read.
-pub fn discover(provider: &str) -> (Vec<Summary>, Vec<String>) {
+pub fn discover(provider: &str, instances: &[crate::settings::Instance]) -> (Vec<Summary>, Vec<String>) {
     let want = match provider {
         "claude" => Provider::Claude,
         "codex" => Provider::Codex,
         _ => return (Vec::new(), vec!["Import from Claude Code or Codex.".into()]),
     };
-    let roots: Vec<(Provider, PathBuf)> = scan::roots().into_iter().filter(|(p, _)| *p == want).collect();
+    // The default homes and every account's (round 3, card 02).
+    let mut roots: Vec<(Provider, PathBuf)> = scan::roots().into_iter().filter(|(p, _)| *p == want).collect();
+    for (p, d, _) in scan::account_roots(instances) {
+        if p == want && !roots.iter().any(|(_, r)| *r == d) {
+            roots.push((p, d));
+        }
+    }
     let mut files: Vec<(PathBuf, std::time::SystemTime)> = scan::files(&roots)
         .into_iter()
         .filter(|(_, p)| match want {
@@ -526,7 +532,8 @@ pub async fn pilot_import_list(app: tauri::AppHandle, webview: tauri::Webview, p
     tauri::async_runtime::spawn_blocking(move || {
         use tauri::Manager;
         let state = app.state::<crate::PilotState>();
-        let (all, problems) = discover(&provider);
+        let instances = crate::lock(&app.state::<crate::PilotState>().settings).instances.clone();
+        let (all, problems) = discover(&provider, &instances);
         let matching: Vec<Summary> = all
             .into_iter()
             .filter(|s| search.as_ref().is_none_or_match(&[&s.title, &s.cwd, &s.session_id]))
@@ -657,6 +664,13 @@ fn import_one(app: &tauri::AppHandle, state: &crate::PilotState, provider: &str,
         fast: false,
         notice: None,
         tags: Vec::new(),
+        // A log from an account's home resumes under that account.
+        instance: settings
+            .instances
+            .iter()
+            .find(|i| i.provider == provider && std::path::Path::new(&summary.home) == std::path::Path::new(&i.home))
+            .map(|i| i.id.clone())
+            .unwrap_or_default(),
         parent_id: None,
         title: summary.title.clone(),
         context_id: ctx.id.clone(),

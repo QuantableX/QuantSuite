@@ -481,8 +481,13 @@ impl Projector {
                 self.emit(self.usage_totals());
             }
             Emit::RateLimit { windows } => {
-                // The Usage page shows the last windows each provider reported (card 18).
-                let _ = self.db.set_limits(provider, &serde_json::to_string(&windows).unwrap_or_default(), now_ms());
+                // The Usage page shows the last windows each provider reported (card 18),
+                // each account's apart (`claude@work`, round 3, card 02).
+                let key = match self.db.get_session(&self.thread_id) {
+                    Ok(Some(meta)) if !meta.instance.is_empty() => format!("{provider}@{}", meta.instance),
+                    _ => provider.to_string(),
+                };
+                let _ = self.db.set_limits(&key, &serde_json::to_string(&windows).unwrap_or_default(), now_ms());
                 self.windows = windows.clone();
                 self.emit(ThreadEvent::RateLimit { windows });
             }
@@ -1420,7 +1425,7 @@ mod tests {
             fast: false,
             notice: None,
             tags: Vec::new(),
-            parent_id: None,
+            instance: String::new(), parent_id: None,
             state: "idle".into(),
             context_tokens: None,
             context_window: None,
@@ -1528,6 +1533,29 @@ mod tests {
         assert_eq!(item.data["reply"], "no");
         assert_eq!(db.get_session("t1").unwrap().unwrap().state, "running");
         assert!(lock(&log).iter().any(|(_, e)| matches!(e, ThreadEvent::State { state, .. } if state == "waiting")));
+    }
+
+    #[test]
+    fn each_account_keeps_its_own_limits() {
+        // Round 3, card 02: another account's windows never overwrite the default account's.
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        thread(&db, "t1");
+        thread(&db, "t2");
+        db.set_instance("t2", "work").unwrap();
+        let info = |n: &str, i: &Value| ClaudeDriver::new().tool_info(n, i);
+        let window = |pct: f64| vec![crate::events::RateWindow { kind: "five_hour".into(), used_pct: Some(pct), resets_at: None, status: None }];
+        for (id, pct) in [("t1", 10.0), ("t2", 80.0)] {
+            let (sink, _) = sink();
+            let mut proj = Projector::new(db.clone(), sink, Arc::new(Seqs::default()), id);
+            proj.apply(Emit::RateLimit { windows: window(pct) }, &info, "claude");
+        }
+        let limits = db.limits().unwrap();
+        let used = |key: &str| {
+            let (_, w, _) = limits.iter().find(|(k, _, _)| k == key).unwrap_or_else(|| panic!("no limits for {key}"));
+            serde_json::from_str::<Vec<crate::events::RateWindow>>(w).unwrap()[0].used_pct
+        };
+        assert_eq!(used("claude"), Some(10.0));
+        assert_eq!(used("claude@work"), Some(80.0));
     }
 
     #[test]

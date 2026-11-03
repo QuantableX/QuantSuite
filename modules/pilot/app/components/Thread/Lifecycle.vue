@@ -15,6 +15,7 @@ import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useUsageStore } from '#pilot/stores/usage'
 import { fmtTokens } from '#pilot/utils/format'
+import { accountKey } from '#pilot/utils/agentMenu'
 import { formatDuration } from '#pilot/utils/timeline'
 
 const props = defineProps<{ threadId: string }>()
@@ -130,7 +131,7 @@ function snoozeUntilReset() {
     </div>
 
     <div v-if="usage.inline === threadId" class="qp-life-row qp-life-usage">
-      <PilotUsageLimits :provider="thread?.provider || 'claude'" compact />
+      <PilotUsageLimits :provider="accountKey(thread?.provider || 'claude', thread?.instance)" compact />
       <button class="qp-life-x" aria-label="Close" @click="usage.inline = null"><X :size="12" /></button>
     </div>
 

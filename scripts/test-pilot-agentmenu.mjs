@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const { agentRowState, canChat, filterAgents, pushRecent, orderModels, setupLabel, placeMenu, placeSubmenu, RECENT_MAX } = await import('../modules/pilot/app/utils/agentMenu.ts')
+const { agentRowState, canChat, filterAgents, pushRecent, orderModels, setupLabel, placeMenu, placeSubmenu, RECENT_MAX, accountKey, splitAccountKey, accountKeyLabel } = await import('../modules/pilot/app/utils/agentMenu.ts')
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 const ok = { id: 'claude', label: 'Claude Code', found: true, loggedIn: true, chat: true }
@@ -122,4 +122,19 @@ test('an agent without chat starts as a terminal session where new threads are m
   assert.equal(agentRowState({ ...freebuff, found: false }, { allowTerminal: true }).reason, 'Not installed')
   const list = [{ id: 'a', found: false }, { id: 'b', found: true }, { id: 'c', found: false }, { id: 'd', found: true }]
   assert.deepEqual(installedFirst(list).map((x) => x.id), ['b', 'd', 'a', 'c'])
+})
+
+// Round 3, card 02: other accounts of an agent are rows and usage keys of their own.
+test('an account is agent@id, labelled with its name, and a removed one keeps its id', () => {
+  assert.equal(accountKey('claude', ''), 'claude')
+  assert.equal(accountKey('claude', null), 'claude')
+  assert.equal(accountKey('claude', 'work'), 'claude@work')
+  assert.deepEqual(splitAccountKey('codex@side'), { provider: 'codex', instance: 'side' })
+  assert.deepEqual(splitAccountKey('codex'), { provider: 'codex', instance: '' })
+  const label = (id) => ({ claude: 'Claude Code', codex: 'Codex' })[id] ?? id
+  const accounts = [{ provider: 'claude', id: 'work', label: 'Work' }]
+  assert.equal(accountKeyLabel('claude', label, accounts), 'Claude Code')
+  assert.equal(accountKeyLabel('claude@work', label, accounts), 'Claude Code · Work')
+  assert.equal(accountKeyLabel('codex@work', label, accounts), 'Codex · work', 'an account belongs to one agent')
+  assert.equal(accountKeyLabel('claude@gone', label, accounts), 'Claude Code · gone', 'past usage never reads as the default account')
 })

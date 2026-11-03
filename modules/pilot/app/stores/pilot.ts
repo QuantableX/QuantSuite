@@ -28,6 +28,7 @@ import type {
   PilotSettings,
   PilotSignal,
   PilotStatus,
+  InstanceStatus,
   RuntimeInfo,
   SessionLive,
   SessionMeta,
@@ -139,6 +140,18 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
     adapterLabel(): (id: string) => string {
       return (id) => providerLabel(id, this.adapters)
+    },
+    /** An agent's other accounts with whether they are signed in (round 3, card 02). */
+    instancesOf(state): (provider: string) => InstanceStatus[] {
+      return (provider) => (state.status?.instances ?? []).filter((i) => i.provider === provider)
+    },
+    /** "Claude Code · Work" for a thread on an account, the agent's label otherwise. */
+    accountLabel(): (provider: string, instance?: string | null) => string {
+      return (provider, instance) => {
+        const base = providerLabel(provider, this.adapters)
+        const acc = instance ? (this.status?.instances ?? []).find((i) => i.provider === provider && i.id === instance) : null
+        return acc ? `${base} · ${acc.label}` : base
+      }
     },
     /** The agent a new thread in `contextId` starts with: the project's pin, else the default; null until settings load. */
     newThreadAgent(state): (contextId: string | null | undefined) => string | null {
@@ -258,7 +271,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
 
     /** An untouched draft takes the current setup (and what `setup` names, remembered as the user's pick). */
-    async applySetup(id: string, setup?: { provider: string; model: string; effort: string; fast: boolean }) {
+    async applySetup(id: string, setup?: { provider: string; model: string; effort: string; fast: boolean; instance?: string }) {
       try {
         const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_apply_setup', { id, req: setup ? { ...setup, remember: true } : {} })
         if (meta) this.upsertSession(meta)
@@ -345,6 +358,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
         remember?: boolean
         /** A side chat of this thread (round 2, card 10). */
         parentId?: string
+        /** The agent account (round 3, card 02). */
+        instance?: string
         workspaceMode?: 'local' | 'worktree'
         baseBranch?: string
         worktreePath?: string
@@ -506,7 +521,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
 
     /** Title, model, effort or mode; model, effort and mode apply from the next turn. */
-    async update(id: string, patch: { title?: string; provider?: string; model?: string; effort?: string; mode?: Mode; fast?: boolean; tags?: string[] }) {
+    async update(id: string, patch: { title?: string; provider?: string; model?: string; effort?: string; mode?: Mode; fast?: boolean; tags?: string[]; instance?: string }) {
       try {
         const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_update', { id, ...patch })
         if (meta) this.upsertSession(meta)

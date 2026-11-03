@@ -219,6 +219,24 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>, keep: &dyn Fn(&str) ->
     }
 }
 
+/// Each account's homes (round 3, card 02), with its id: read like the
+/// default homes, attributed to the account.
+pub fn account_roots(instances: &[crate::settings::Instance]) -> Vec<(Provider, PathBuf, String)> {
+    let mut out = Vec::new();
+    for i in instances {
+        let home = PathBuf::from(&i.home);
+        match i.provider.as_str() {
+            "claude" => out.push((Provider::Claude, home.join("projects"), i.id.clone())),
+            "codex" => {
+                out.push((Provider::Codex, home.join("sessions"), i.id.clone()));
+                out.push((Provider::Codex, home.join("archived_sessions"), i.id.clone()));
+            }
+            _ => {}
+        }
+    }
+    out.into_iter().filter(|(_, p, _)| p.is_dir()).collect()
+}
+
 /// Every log file. A Codex rollout counts once even when two homes share it
 /// (hard links, archived copies), the uncompressed copy first.
 pub fn files(roots: &[(Provider, PathBuf)]) -> Vec<(Provider, PathBuf)> {
@@ -268,6 +286,8 @@ struct FileEntry {
 #[derive(Debug, Default)]
 pub struct Ledger {
     files: HashMap<PathBuf, FileEntry>,
+    /// Account homes: a file under one counts for that account (round 3, card 02).
+    accounts: Vec<(PathBuf, String)>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -362,7 +382,43 @@ impl Ledger {
         stats
     }
 
-    /// Everything since `since_hour`, each Claude request once.
+    /// The account homes the next records are attributed by.
+    pub fn set_accounts(&mut self, roots: &[(Provider, PathBuf, String)]) {
+        self.accounts = roots.iter().map(|(_, p, id)| (p.clone(), id.clone())).collect();
+    }
+
+    /// The account a log belongs to; `""` is the default account.
+    pub fn account_of(&self, path: &Path) -> &str {
+        self.accounts.iter().find(|(root, _)| path.starts_with(root)).map(|(_, id)| id.as_str()).unwrap_or("")
+    }
+
+    /// Everything since `since_hour` with its account, each Claude request once.
+    pub fn records_by_account(&self, since_hour: i64) -> Vec<(Provider, &str, &Record)> {
+        let mut seen = HashSet::new();
+        let mut paths: Vec<&PathBuf> = self.files.keys().collect();
+        paths.sort();
+        let mut out = Vec::new();
+        for p in paths {
+            let e = &self.files[p];
+            let Some(provider) = e.provider else { continue };
+            let account = self.account_of(p);
+            for r in &e.records {
+                if r.hour < since_hour {
+                    continue;
+                }
+                if let Some(k) = r.key {
+                    if !seen.insert(k) {
+                        continue;
+                    }
+                }
+                out.push((provider, account, r));
+            }
+        }
+        out
+    }
+
+    /// Everything since `since_hour`, each Claude request once (the tests' view).
+    #[cfg(test)]
     pub fn records(&self, since_hour: i64) -> Vec<(Provider, &Record)> {
         let mut seen = HashSet::new();
         let mut paths: Vec<&PathBuf> = self.files.keys().collect();

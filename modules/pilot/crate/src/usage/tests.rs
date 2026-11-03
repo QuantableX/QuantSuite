@@ -248,3 +248,23 @@ fn live_local_logs() {
     let unpriced: std::collections::BTreeSet<_> = rows.iter().filter(|r| r.cost.is_none()).map(|r| r.model.clone()).collect();
     println!("unpriced: {unpriced:?}");
 }
+
+#[test]
+fn an_accounts_logs_count_for_that_account() {
+    let default_home = temp("acct-default");
+    let work_home = temp("acct-work");
+    write(&default_home.join("p/a.jsonl"), &[claude("m1", "r1", "2026-10-29T10:00:00Z", "claude-opus-5-5", 100, 0, 0, 0, 10)]);
+    write(&work_home.join("projects/p/b.jsonl"), &[claude("m2", "r2", "2026-10-29T10:10:00Z", "claude-opus-5-5", 50, 0, 0, 0, 5)]);
+    let instances = vec![crate::settings::Instance { id: "work".into(), provider: "claude".into(), label: "Work".into(), home: work_home.to_string_lossy().into_owned() }];
+    let accounts = scan::account_roots(&instances);
+    assert_eq!(accounts.len(), 1, "only homes that exist are read");
+    let mut roots = vec![(Provider::Claude, default_home.clone())];
+    roots.push((accounts[0].0, accounts[0].1.clone()));
+    let mut ledger = Ledger::default();
+    ledger.set_accounts(&accounts);
+    ledger.refresh(&scan::files(&roots));
+    let rows = report_rows(&ledger, &PriceList::bundled(), 0, true);
+    let by: std::collections::BTreeMap<&str, u64> = rows.iter().map(|r| (r.provider.as_str(), r.input)).collect();
+    assert_eq!(by.get("claude"), Some(&100));
+    assert_eq!(by.get("claude@work"), Some(&50));
+}
