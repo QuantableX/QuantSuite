@@ -43,7 +43,15 @@ def pool_gate(keys, timeframe: str, certified=None):
     return kept, [k for k in keys if k not in set(kept)]
 
 
-def certified_pool(raw_config: dict, indicators=None) -> dict:
+def gate_candidates(keys, reference, timeframe: str, certified=None):
+    """(kept, pool, excluded) for a robust search. The reference is the control and is always
+    evaluated; its members, like every other key, are searched only when they pass themselves."""
+    pool, excluded = pool_gate(keys, timeframe, certified)
+    allowed = set(pool)
+    return [k for k in keys if k in allowed or k in reference], pool, excluded
+
+
+def certified_pool(raw_config: dict, indicators=None, reference=None) -> dict:
     """The candidates a robust search may use, decided where the user's evidence is visible."""
     from dataclasses import replace
     from rotation_lab.rpc import _build_config
@@ -52,7 +60,8 @@ def certified_pool(raw_config: dict, indicators=None) -> dict:
     from .registry import describe_all, robust_on_track
     config = replace(_build_config(raw_config), compare_trends=())
     rows = describe_all()["indicators"]
-    keys = list(indicators or default_keys(rows, config))
+    saved = config.indicator.aggregate if config.indicator.trend == "aggregate" else (config.indicator.trend,)
+    keys = list(dict.fromkeys([*(indicators or default_keys(rows, config)), *(reference or saved)]))
     timeframe = config.single_asset.timeframe if config.mode == "single_asset" else config.cadence.value
     track = TRACKS.get(timeframe, "1d")
     return {"track": track, "evaluation": EVALUATION_VERSION, "candidates": len(keys),

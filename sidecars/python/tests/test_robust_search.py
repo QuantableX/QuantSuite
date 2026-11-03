@@ -43,6 +43,14 @@ class PoolGate(unittest.TestCase):
         self.assertEqual(kept, ["b_opt"])
         self.assertEqual(excluded, ["a_opt", "c_opt_1d"])
 
+    def test_certified_reference_members_join_the_pool(self):
+        # The reference stays whole as the control; only its certified members are searched.
+        kept, pool, excluded = rs.gate_candidates(["a_opt", "b_opt", "r1_opt", "r2_opt"], ("r1_opt", "r2_opt"), "1d",
+                                                  certified=["a_opt", "r1_opt"])
+        self.assertEqual(pool, ["a_opt", "r1_opt"])
+        self.assertEqual(kept, ["a_opt", "r1_opt", "r2_opt"])
+        self.assertEqual(excluded, ["b_opt", "r2_opt"])
+
 
 class FakeSystem:
     def __init__(self, factor):

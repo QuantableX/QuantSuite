@@ -61,19 +61,18 @@ def run(path, doc):
     gated, excluded = robust and doc.get("pool", "robust") == "robust", []
     if gated:
         from .lab_profit import TRACKS
-        from .robust_search import pool_gate
+        from .robust_search import gate_candidates
         from .evidence import EVALUATION_VERSION
         timeframe = config.single_asset.timeframe if config.mode == "single_asset" else config.cadence.value
         track = TRACKS.get(timeframe, "1d")
         recorded = (doc.get("pool_certified") or {}).get("keys")
-        searchable, excluded = pool_gate([k for k in keys if k not in reference], track, recorded)
+        keys, searchable, excluded = gate_candidates(keys, reference, track, recorded)
         progress(f"{len(searchable)} of {len(searchable) + len(excluded)} indicators pass the Indicator Gauntlet "
                  f"on the {track} track ({EVALUATION_VERSION})")
         if len(searchable) < 2:
             raise ValueError(f"Only {len(searchable)} indicators pass the Indicator Gauntlet on the {track} track under "
                              f"the current evaluation ({EVALUATION_VERSION}). Re-certify the library in QuantScript's "
                              "forge first, or run with pool='all' for research (its results are marked not robust).")
-        keys = [k for k in keys if k in set(searchable) or k in reference]
     seeds = list({m: n for n, m in ((n, tuple(sorted({duplicates.get(k, k) for k in m}))) for n, m in seeds)}.items())
     saved_as = {m: n for m, n in seeds}
     earlier = list(dict.fromkeys(tuple(sorted({duplicates.get(k, k) for k in m})) for m in earlier))
@@ -111,7 +110,7 @@ def run(path, doc):
             raise ValueError("The bulk evaluator differs from the native engine; nothing was ranked")
         usable = [k for k in keys if k not in evaluator.failed]
         if gated:
-            usable = [k for k in usable if k not in reference]
+            usable = [k for k in usable if k in set(searchable)]
         sizes = sorted(set(doc.get("sizes") or [])) or None
         n_bases = len({bases[k] for k in usable})
         max_size = min(max(sizes) if sizes else n_bases, n_bases)
@@ -147,7 +146,7 @@ def run(path, doc):
                        [t for m, _ in seeds for t in search.neighbors(m) if allowed(len(t))])
         if earlier:
             search.run("Leaders of your earlier comparisons", [m for m in earlier if allowed(len(m))])
-        if not gated:  # a gated pool does not hold the reference's members: it is the control only
+        if not gated:  # the reference was found on the whole history: a gated search never starts from it
             search.run("Reference neighbours", [t for t in search.neighbors(reference) if allowed(len(t))])
         ref_bases = {bases[k] for k in reference}
         additions = [k for k in usable if bases[k] not in ref_bases]
