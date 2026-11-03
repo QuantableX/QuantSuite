@@ -80,7 +80,8 @@ const agentName = computed(() => (session.value ? store.adapterLabel(session.val
 </script>
 
 <template>
-  <PilotThreadDetails v-if="session && !store.terminalShown[session.id]" :thread-id="session.id" />
+  <!-- The working panel, with or without a thread (round 2, card 04); a V2 terminal row keeps its own. -->
+  <PilotThreadDetails v-if="!session || !store.terminalShown[session.id]" :thread-id="session?.id ?? null" />
   <template v-else>
   <div class="qp-panel">
     <div class="qp-hero">
