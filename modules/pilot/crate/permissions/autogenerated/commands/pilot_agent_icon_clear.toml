@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-agent-icon-clear"
+description = "Enables the pilot_agent_icon_clear command without any pre-configured scope."
+commands.allow = ["pilot_agent_icon_clear"]
+
+[[permission]]
+identifier = "deny-pilot-agent-icon-clear"
+description = "Denies the pilot_agent_icon_clear command without any pre-configured scope."
+commands.deny = ["pilot_agent_icon_clear"]

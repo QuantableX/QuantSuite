@@ -60,7 +60,7 @@ onBeforeUnmount(() => stopResize?.())
     <div class="qp-bpanel-edge" title="Drag to resize" @pointerdown="startResize" />
     <header class="qp-bpanel-head">
       <span class="qp-bpanel-title" :title="thread?.title || undefined">{{ thread?.title || 'New thread' }}</span>
-      <span v-if="thread" class="qp-bpanel-chip">{{ store.adapterLabel(thread.provider) }}</span>
+      <span v-if="thread" class="qp-bpanel-chip"><PilotAgentIcon :agent="thread.provider || null" :size="12" decorative />{{ store.adapterLabel(thread.provider) }}</span>
       <div class="qp-bpanel-spacer" />
       <button class="qp-bpanel-icon" title="Open in the conversation view" aria-label="Open in the conversation view" @click="app.setView('conversation')">
         <Maximize2 :size="13" />
@@ -118,6 +118,9 @@ onBeforeUnmount(() => stopResize?.())
   font-weight: 600;
 }
 .qp-bpanel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   flex-shrink: 0;
   font-size: 11px;
   color: var(--qss-text-secondary, #9a9aa5);

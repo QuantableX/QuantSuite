@@ -733,6 +733,7 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
         :class="{ invalid: !dropValid }"
         :style="{ left: `${drag.x - drag.offsetX}px`, top: `${drag.y - drag.offsetY}px`, width: `${drag.width}px` }"
       >
+        <PilotAgentIcon :agent="dragMeta.kind === 'terminal' ? dragMeta.provider : dragMeta.provider || null" :size="14" decorative />
         <span class="qp-ghost-title">{{ dragMeta.title || 'New thread' }}</span>
         <span v-if="dragAction" class="qp-ghost-badge">
           <component :is="badgeIcon" v-if="badgeIcon" :size="11" />

@@ -33,6 +33,8 @@ interface Row {
   key: string
   section: string
   icon: unknown
+  /** A thread row: its agent's logo instead of the icon. */
+  agent?: string | null
   title: string
   sub: string
   hint: string
@@ -94,6 +96,7 @@ const rows = computed<Row[]>(() => {
         key: `t:${t.id}`,
         section: q ? 'Threads' : 'Recent threads',
         icon: MessageSquare,
+        agent: store.sessions.find((s) => s.id === t.id)?.provider || null,
         title: t.title || 'New thread',
         sub: [t.project, t.branch, t.pr].filter(Boolean).join(' · '),
         hint: t.id === store.activeId ? 'open' : '',
@@ -246,7 +249,8 @@ onBeforeUnmount(() => {
         <template v-for="(r, i) in rows" :key="r.key">
           <div v-if="sections[i]" class="qp-pal-section">{{ sections[i] }}</div>
           <div :id="`qp-pal-${i}`" class="qp-pal-row" :class="{ on: i === active }" role="option" :aria-selected="i === active" @pointermove="active = i" @click="pick(i)">
-            <component :is="r.icon" :size="14" class="qp-pal-icon" />
+            <PilotAgentIcon v-if="r.agent !== undefined" :agent="r.agent" :size="14" class="qp-pal-icon" />
+            <component :is="r.icon" v-else :size="14" class="qp-pal-icon" />
             <span class="qp-pal-text">
               <span class="qp-pal-title">{{ r.title }}</span>
               <span v-if="r.sub" class="qp-pal-sub">{{ r.sub }}</span>

@@ -101,7 +101,7 @@ const agentName = computed(() => (session.value ? store.adapterLabel(session.val
         @click="store.openSession(s.id)"
       >
         <span class="qp-need-title">{{ s.title || 'New session' }}</span>
-        <span class="qp-need-sub">{{ store.adapterLabel(s.provider) }} · {{ s.contextName }}</span>
+        <span class="qp-need-sub"><PilotAgentIcon :agent="s.provider || null" :size="11" decorative />{{ store.adapterLabel(s.provider) }} · {{ s.contextName }}</span>
         <span v-if="store.live[s.id]?.detail" class="qp-need-detail">{{ store.live[s.id]?.detail }}</span>
       </button>
     </section>
@@ -221,7 +221,7 @@ const agentName = computed(() => (session.value ? store.adapterLabel(session.val
 .qp-need:hover { background: color-mix(in srgb, var(--qss-warning, #d29a3f) 12%, transparent); }
 .qp-need.active { border-color: var(--qss-warning, #d29a3f); }
 .qp-need-title { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qp-need-sub { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-need-sub { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-need-detail { font-size: 11px; color: var(--qss-warning, #d29a3f); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .qp-vital { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }

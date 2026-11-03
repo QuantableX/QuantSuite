@@ -199,7 +199,7 @@ watch(
                 >
                   <td>
                     <span class="qp-models-name">{{ m.model }}</span>
-                    <span class="qp-models-prov">{{ providerLabel(m.provider) }}</span>
+                    <span class="qp-models-prov"><PilotAgentIcon :agent="m.provider" :size="11" decorative />{{ providerLabel(m.provider) }}</span>
                   </td>
                   <td class="num">{{ m.cost === null ? 'unpriced' : money(m.cost) }}</td>
                   <td class="num">{{ m.cost === null ? '—' : pct(m.share) }}</td>
@@ -291,7 +291,7 @@ watch(
 .qp-models tbody tr:focus-visible { background: var(--qss-bg-hover, #313139); }
 .qp-models tbody tr.on { background: var(--qss-bg-card, #292930); }
 .qp-models-name { margin-right: 8px; }
-.qp-models-prov { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-models-prov { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-models-empty { text-align: center; color: var(--qss-text-muted, #6e6e7a); cursor: default; }
 .qp-model-detail { flex-shrink: 0; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--qss-border-subtle, #35353d); }
 .qp-model-detail-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; font-size: 12px; color: var(--qss-text-muted, #6e6e7a); }

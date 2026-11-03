@@ -8,12 +8,14 @@
  * installer that put the CLI there (npm, winget, Claude's native installer)
  * or the CLI's own `update`, after showing exactly what will run, and reads
  * the version again. "Prefer saved Claude login" drops inherited API keys,
- * tokens and endpoints from new Claude processes.
+ * tokens and endpoints from new Claude processes. Each agent shows its
+ * logo; the user's own agents can take an image (round 2, card 01).
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { pilot } from '#pilot/utils/invoke'
+import { agentSlug } from '#pilot/utils/agentIcons'
 import type { CustomAdapter, PilotSettings, ProviderPrefs } from '#pilot/types'
 
 const store = usePilotStore()
@@ -115,6 +117,29 @@ async function checkUpdate(id: string, run: boolean) {
   }
 }
 
+// ── A custom agent's icon: an image file, else its letter ──
+const iconError = reactive<Record<number, string>>({})
+async function pickIcon(i: number, c: CustomAdapter) {
+  const id = agentSlug(c.id)
+  if (!id) return
+  iconError[i] = ''
+  try {
+    const dialog = await import('@tauri-apps/plugin-dialog')
+    const picked = await dialog.open({ multiple: false, title: `An icon for ${c.label || id}`, filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
+    if (typeof picked === 'string') await store.setAgentImage(id, picked)
+  } catch (e) {
+    iconError[i] = e instanceof Error ? e.message : String(e)
+  }
+}
+async function clearIcon(i: number, c: CustomAdapter) {
+  iconError[i] = ''
+  try {
+    await store.clearAgentImage(agentSlug(c.id))
+  } catch (e) {
+    iconError[i] = e instanceof Error ? e.message : String(e)
+  }
+}
+
 function addCustom() {
   draft.custom.push({ id: '', label: '', exe: '', args: '', resumeArgs: '', protocol: 'acp' } satisfies CustomAdapter)
 }
@@ -130,6 +155,7 @@ function addCustom() {
     <section v-for="a in adapters" :key="a.id" class="qp-prov" :class="{ off: draft.providers[a.id]?.disabled }">
       <header class="qp-prov-head">
         <span class="qp-dot" :class="{ ok: store.adapterReady(a.id), bad: !store.adapterReady(a.id) }" />
+        <PilotAgentIcon :agent="a.id" :size="16" decorative />
         <span class="qp-prov-name">{{ a.label }}</span>
         <span class="qp-prov-ver">{{ a.version || (a.found ? 'found' : 'not found') }}</span>
         <label v-if="CHAT.includes(a.id)" class="qp-check qp-prov-on">
@@ -215,6 +241,15 @@ function addCustom() {
       <code>{model}</code> <code>{vault}</code>.
     </p>
     <div v-for="(c, i) in draft.custom" :key="i" class="qp-prov">
+      <div class="qp-prov-icon">
+        <PilotAgentIcon :agent="agentSlug(c.id) || null" :size="20" :label="c.label || c.id || 'New agent'" custom />
+        <button class="qp-btn qp-btn-sm" :disabled="!agentSlug(c.id)" :title="agentSlug(c.id) ? 'PNG, JPEG or WebP, at most 256 KB' : 'Give the agent an id first'" @click="pickIcon(i, c)">
+          {{ store.agentImages[agentSlug(c.id)] ? 'Change icon…' : 'Icon…' }}
+        </button>
+        <button v-if="store.agentImages[agentSlug(c.id)]" class="qp-btn qp-btn-sm" @click="clearIcon(i, c)">Use the letter</button>
+        <span class="qp-prov-hint">PNG, JPEG or WebP, at most 256 KB; without one it shows its first letter.</span>
+        <span v-if="iconError[i]" class="qp-prov-err" role="alert">{{ iconError[i] }}</span>
+      </div>
       <div class="qp-settings-grid">
         <label class="qp-settings-field"><span>Id</span><input v-model="c.id" class="qp-input" placeholder="my-agent" spellcheck="false" /></label>
         <label class="qp-settings-field"><span>Name</span><input v-model="c.label" class="qp-input" placeholder="My Agent" spellcheck="false" /></label>
@@ -255,6 +290,9 @@ function addCustom() {
 .qp-dot.ok { background: var(--qss-success, #34d399); }
 .qp-dot.bad { background: var(--qss-error, #f87171); }
 .qp-prov-name { font-weight: 600; }
+.qp-prov-icon { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.qp-prov-hint { font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-prov-err { flex-basis: 100%; font-size: 11.5px; color: var(--qss-error, #f87171); }
 .qp-prov-ver { font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-prov-on { margin-left: auto; font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-prov-status { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--qss-text-secondary, #9a9aa5); }

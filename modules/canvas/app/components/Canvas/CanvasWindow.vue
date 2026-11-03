@@ -7,6 +7,7 @@ import { pictureDir, join } from '@tauri-apps/api/path'
 import { useWorkspacesStore } from '../../../stores/workspaces'
 import { useCanvasStore } from '../../../stores/canvas'
 import { useAppStore } from '../../../stores/app'
+import { usePilotStore } from '#pilot/stores/pilot'
 import type { CanvasWindow as CanvasWindowType, WindowPosition, WindowStatus } from '../../../shared/types'
 
 const props = defineProps<{
@@ -69,6 +70,13 @@ const statusColor = computed(() => {
     minimized: '#57606f',
   }
   return colors[props.window.status]
+})
+
+/** A chat window (QuantPilot embed) shows its thread's agent instead of a type glyph. */
+const pilot = usePilotStore()
+const chatAgent = computed(() => {
+  const id = props.window.type === 'chat' ? props.window.chatConfig?.threadId : null
+  return id ? pilot.sessions.find((s) => s.id === id)?.provider || null : null
 })
 
 const typeIcon = computed(() => {
@@ -379,7 +387,8 @@ provide('canvasWindowActions', { close: closeWindow, toggleZoom })
     >
       <!-- Icon + Title -->
       <div class="min-w-0 max-w-[calc(50%-56px)] flex items-center gap-2">
-        <span class="text-xs text-[#a0a0a8] flex-shrink-0">{{ typeIcon }}</span>
+        <PilotAgentIcon v-if="window.type === 'chat' && chatAgent" :agent="chatAgent" :size="13" />
+        <span v-else class="text-xs text-[#a0a0a8] flex-shrink-0">{{ typeIcon }}</span>
         <span class="text-xs font-medium truncate" :style="{ color: 'var(--qc-text)' }">{{ window.type === 'spec' && window.title === 'Spec Dashboard' ? 'Workspace Kanban' : window.title }}</span>
       </div>
 

@@ -6,12 +6,16 @@
  * 32 KiB. Picked from Agents in the thread details or a subagent's call.
  */
 import { computed } from 'vue'
-import { Bot, Brain, Loader2 } from 'lucide-vue-next'
+import { Bot, Brain } from 'lucide-vue-next'
+import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useInspectorStore } from '#pilot/stores/inspector'
 import { AGENT_TOOLS_MAX, bounded, descendants, subagents } from '#pilot/utils/timeline'
 
 const props = defineProps<{ threadId: string }>()
+/** A subagent runs inside its thread's agent: it carries that agent's logo. */
+const store = usePilotStore()
+const provider = computed(() => store.sessions.find((s) => s.id === props.threadId)?.provider || null)
 const threads = useThreadStore()
 const inspector = useInspectorStore()
 
@@ -50,8 +54,7 @@ const transcript = computed(() => {
     </div>
     <template v-else>
       <div class="qp-agentv-head">
-        <Loader2 v-if="agent.status === 'running'" class="qp-spin" :size="13" />
-        <Bot v-else :size="13" />
+        <PilotAgentIcon :agent="provider" :size="13" :status="agent.status === 'running' ? 'working' : agent.status === 'failed' ? 'error' : null" />
         <span class="qp-agentv-title" :title="agent.title">{{ agent.title }}</span>
         <span class="qp-agentv-meta"><template v-if="agent.type">{{ agent.type }} · </template><span class="mono">{{ agent.tools }}</span> tool{{ agent.tools === 1 ? '' : 's' }}</span>
       </div>

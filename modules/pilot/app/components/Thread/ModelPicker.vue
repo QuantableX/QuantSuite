@@ -149,7 +149,7 @@ onMounted(() => void nextTick(() => search.value?.focus()))
         :title="p.available ? p.label : p.reason"
         @click="chooseProvider(i)"
       >
-        <span class="qp-mp-dot" :data-provider="p.id" />
+        <PilotAgentIcon :agent="p.id" :size="14" decorative />
         <span class="qp-mp-provider-name">{{ p.label }}</span>
       </button>
     </div>
@@ -238,9 +238,6 @@ onMounted(() => void nextTick(() => search.value?.focus()))
 .qp-mp-provider:hover:not(.disabled) { background: var(--qss-bg-hover, #313139); }
 .qp-mp-provider.on { background: var(--qss-bg-card, #292930); color: var(--qss-text, #d4d4d8); }
 .qp-mp-provider.disabled { opacity: 0.4; cursor: default; }
-.qp-mp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--qss-text-muted, #6e6e7a); flex-shrink: 0; }
-.qp-mp-dot[data-provider='claude'] { background: #d97757; }
-.qp-mp-dot[data-provider='codex'] { background: #e5e7eb; }
 .qp-mp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .qp-mp-search { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--qss-border-subtle, #35353d); color: var(--qss-text-muted, #6e6e7a); }
 .qp-mp-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--qss-text, #d4d4d8); font-size: 12.5px; }

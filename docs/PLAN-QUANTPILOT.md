@@ -2188,3 +2188,71 @@ No unexplained failures. Measured performance (§32) and the provider matrix
   (version, checks, package) — only with the user's release go-ahead; not
   1.1.0.
 - The QuantSuite 1.1.0 UI overhaul stays its own future milestone.
+
+## 36. Round 2 · 01/12: agent logos instead of letter marks
+
+Card 6aacbda1. The sidebar's two-letter marks (`Cl`, `Cx`, `Oc`, `G`, `π`,
+`om`, else the first letter) are gone; an agent is identified by its logo
+everywhere QuantPilot names one.
+
+**One component.** `PilotAgentIcon` (`components/AgentIcon.vue`) takes an
+adapter id, a size and an optional status. `utils/agentIcons.ts` (pure,
+node-tested) decides the glyph: a bundled mark for a known agent, the user's
+image for a custom agent that has one, else the custom agent's first letter;
+an id that is still unknown (status not loaded, nothing reported) shows a
+neutral `?` — never another agent's logo; a V2 terminal row without an agent
+shows a terminal glyph. `mono` marks (Codex/OpenAI, OpenCode, Copilot, pi)
+are drawn as a mask in the text color; the others keep their colors and
+their own tiles. The status is a ring *around* the logo: working = a turning
+green arc (static under reduced motion), waiting = amber, limited = dashed
+amber, error = red.
+
+**Marks.** 18 local files in `modules/pilot/app/assets/agents/` — Claude,
+Codex, Gemini, OpenCode, Copilot, pi, omp and the agents of round-2 card 11
+(Cursor, Kilo, Hermes, OpenClaw, Freebuff, Grok, Antigravity, Kiro, Droid,
+Cline, Devin). All from Orca (MIT, commit `1d2e7f6f`): its JSX glyphs
+converted to plain SVG, its bundled favicons copied; `NOTICE.md` there lists
+the source of every file and the license, and says how to add one. Nothing
+is fetched from the network.
+
+**Where.** Sidebar rows (and the drag ghost), the composer's agent control
+(one logo per agent of a fan-out), the model picker's agent list, the thread
+header chip, Settings → Providers (each agent's header) and a project's
+"Agents offered", the board (the chip beside the board and every thread chip
+on a card), GitHub thread rows and the Agent review button (the agent a new
+thread there starts with: the project's pin, else the default), Usage
+(limits cards, the models table), both Needs-you lists, the Vitals agent,
+subagent rows in the details and the inspector, a turn another agent
+answered, the import dialog's sources, threads in the command palette, and
+the header of a QuantPilot chat window in QuantCanvas. The New-thread menu
+lists projects only; card 02 adds the agent picker there.
+
+**Custom agents.** Settings → Providers → Your own agents: *Icon…* picks a
+PNG, JPEG or WebP (at most 256 KB, 1024 px a side; decoded once to check
+it), stored as `<data>/agent-icons/<id>.<ext>`; *Use the letter* removes
+it. Commands `pilot_agent_icons` (id → data URL for existing custom agents),
+`pilot_agent_icon_set`, `pilot_agent_icon_clear`; saving the settings
+deletes the images of removed agents. Ids are the settings' slugs, so an
+image can never be written outside that folder.
+
+**Checks.** `cargo clippy -p tauri-plugin-pilot --all-targets -D warnings`
+clean; `cargo test` (agent_icons: valid image stored and listed, non-image /
+oversized / too large refused, path-like ids refused, a new format replaces
+the old, prune on removal); `npm run check:ts`; `npm run test:pilot` 96
+passed (new `scripts/test-pilot-agents.mjs`: every mark has its file and a
+NOTICE row, files are small and inert SVG, aliases, the neutral glyph,
+custom image/letter, slug parity with `settings.rs`, no `MARKS` left).
+
+**Native QA** (isolated QA app, monitor 2, screenshots in
+`artifacts/quantpilot-r2-01/`), at 100 % and 150 % device scale: a gallery
+of all 18 marks at 12/14/16/20 px on dark and light surfaces; sidebar with a
+real running Claude turn (working ring), waiting and limited rows
+(client-side states for the shot) and failed rows; custom agents with an
+image and with a letter (rows, picker, palette, board, settings); a refused
+non-image and a refused `../` id; the image survives a reload and is pruned
+when the agent is removed; composer, picker, header, Vitals, Needs you,
+Usage limits and models, board chips with rings, the QuantCanvas chat
+header. The suite has one theme (dark, decision 2026-08-14), so "both
+themes" was checked with the light-surface gallery. Not exercised natively:
+the GitHub view (the QA project has no GitHub remote — type-checked) and
+the drag ghost.

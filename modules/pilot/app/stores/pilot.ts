@@ -113,6 +113,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
     stage: null as { cols: number; rows: number } | null,
     /** Rows whose V2 terminal is in front instead of the conversation. */
     terminalShown: {} as Record<string, boolean>,
+    /** The user's own agents' images, id → data URL (round 2, card 01). */
+    agentImages: {} as Record<string, string>,
   }),
 
   getters: {
@@ -128,6 +130,14 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
     adapterLabel(): (id: string) => string {
       return (id) => providerLabel(id, this.adapters)
+    },
+    /** The agent a new thread in `contextId` starts with: the project's pin, else the default; null until settings load. */
+    newThreadAgent(state): (contextId: string | null | undefined) => string | null {
+      return (contextId) => {
+        const s = state.settings
+        if (!s) return null
+        return (contextId ? s.projects?.[contextId]?.provider : null) || s.defaultProvider || 'claude'
+      }
     },
     adapterReady(): (id: string) => boolean {
       return (id) => {
@@ -168,7 +178,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
     // ── Loading ──
 
     async load() {
-      await Promise.all([this.refreshContexts(), this.refreshSessions(), this.loadSettings()])
+      await Promise.all([this.refreshContexts(), this.refreshSessions(), this.loadSettings(), this.loadAgentImages()])
       await this.syncRuntime()
       this.loaded = true
       void this.refreshStatus()
@@ -217,8 +227,27 @@ export const usePilotStore = defineStore('pilot/pilot', {
       const next = { ...(this.settings ?? {}), ...patch } as PilotSettings
       const saved = await pilot<PilotSettings>('plugin:pilot|pilot_settings_set', { settings: next })
       if (saved) this.settings = saved
+      // Saving prunes the images of removed agents; a renamed one shows its letter.
+      if (saved && patch.custom) void this.loadAgentImages()
       if (!opts.quiet) void this.refreshStatus()
       return saved
+    },
+
+    async loadAgentImages() {
+      const map = await pilot<Record<string, string>>('plugin:pilot|pilot_agent_icons')
+      if (map) this.agentImages = map
+    },
+
+    /** A custom agent's own image (≤256 KB PNG, JPEG or WebP); throws the reason it was refused. */
+    async setAgentImage(id: string, path: string) {
+      const url = await pilot<string>('plugin:pilot|pilot_agent_icon_set', { id, path })
+      if (url) this.agentImages = { ...this.agentImages, [id]: url }
+    },
+
+    async clearAgentImage(id: string) {
+      await pilot('plugin:pilot|pilot_agent_icon_clear', { id })
+      const { [id]: _gone, ...rest } = this.agentImages
+      this.agentImages = rest
     },
 
     /** After a webview reload the CLIs kept running — find their PTYs again. */

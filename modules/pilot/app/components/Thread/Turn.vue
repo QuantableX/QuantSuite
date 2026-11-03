@@ -31,10 +31,11 @@ const reverting = ref(false)
 const worktree = computed(() => Boolean(store.sessions.find((s) => s.id === props.threadId)?.worktreePath))
 const thread = computed(() => store.sessions.find((s) => s.id === props.threadId) ?? null)
 /** After a provider switch, earlier turns say which agent answered them (card 15). */
-const otherAgent = computed(() => {
+const otherProvider = computed(() => {
   const p = String(props.block.user?.data.provider ?? '')
-  return p && p !== (thread.value?.provider || 'claude') ? store.adapterLabel(p) : ''
+  return p && p !== (thread.value?.provider || 'claude') ? p : ''
 })
+const otherAgent = computed(() => (otherProvider.value ? store.adapterLabel(otherProvider.value) : ''))
 const resumed = computed(() => Boolean(props.block.user?.data.resume))
 const forking = ref(false)
 async function fork(worktree: boolean) {
@@ -86,7 +87,7 @@ async function revert(files: boolean) {
         <button class="qp-user-copy" title="Copy message" @click="copyUser">Copy</button>
         <button v-if="idle" class="qp-user-copy" title="A new thread from here, with this conversation up to this turn" @click="forking = !forking">Fork</button>
         <span v-if="block.user.data.fromTerminal" class="qp-user-tag">from the terminal</span>
-        <span v-if="otherAgent" class="qp-user-tag">{{ otherAgent }}</span>
+        <span v-if="otherAgent" class="qp-user-tag is-agent"><PilotAgentIcon :agent="otherProvider" :size="11" decorative />{{ otherAgent }}</span>
       </div>
       <div v-if="forking" class="qp-rewind" role="dialog" aria-label="Fork">
         <div class="qp-rewind-text">A new thread with this conversation up to here; this one stays as it is.</div>
@@ -165,6 +166,7 @@ async function revert(files: boolean) {
 .qp-user-copy:focus-visible { opacity: 1; }
 .qp-resumed { align-self: flex-end; margin-bottom: 10px; font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-user-tag { font-size: 11px; color: var(--qss-text-muted, #6e6e7a); padding: 1px 4px; }
+.qp-user-tag.is-agent { display: inline-flex; align-items: center; gap: 4px; }
 .qp-rewind {
   max-width: min(86%, 640px);
   margin-top: 4px;
