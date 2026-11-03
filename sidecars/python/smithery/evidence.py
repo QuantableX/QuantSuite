@@ -8,7 +8,9 @@ import math
 from pathlib import Path
 import uuid
 
-EVALUATION_VERSION = "smithery-2026-09-09.1"
+# 2026-11-03: six axes (optimization windows), universal optimization and hard gates
+# (docs/ROBUSTNESS.md). Older verdicts are history, not certifications under this policy.
+EVALUATION_VERSION = "smithery-2026-11-03.1"
 MIN_MC_COUNTS = {"perm": 120, "boot": 200, "garch": 100}
 
 

@@ -54,6 +54,25 @@ The user named the first five. The tests of 2026-11-03 added the execution axis,
 
 Groups run against their own base. Member drops, additions and delays use the bulk evaluator (`smithery/lab_fast.py`, engine-identical). Everything else is a native engine run on the saved data, changed in one way.
 
+## Indicator Gauntlet (single indicators)
+
+`smithery/robustness.py` certifies one indicator per track (1d, 4h, 1h) on the Forge's price shelf. Since evaluation `smithery-2026-11-03.1` it has six equally weighted axes:
+
+| Axis | What it measures | Hard gate |
+|---|---|---|
+| Asset | BTC, ETH, XRP, BNB, SOL, plus the ratio pairs ETH/BTC, BNB/BTC and SOL/ETH (the systems trade indicators on ratios). | Fewer than 60% of the basket profitable. |
+| Exchange | BTC on every venue of the shelf: signal agreement and Sharpe spread. | Profitable on one venue, losing on another. |
+| Parameter | Each parameter ×0.5 … ×1.5: plateau and signal stability. | A ±10–25% change turns a profitable edge into a losing one. |
+| Temporal | Two-year eras and rolling one-year Sharpe with fixed parameters. | — |
+| Optimization windows | Parameters re-optimized (plateau medoid, basket median) on rolling three-year windows: how far they move, and the basket Sharpe in the year after each window. | The year after loses money in more than half the windows. |
+| Monte Carlo | Permutation (luck), stationary bootstrap, GARCH synthetic charts, noise injection. | Permutation p > 0.10 (as before). |
+
+Certification needs a score of 70 or more, no failed gate, full Monte Carlo counts and complete coverage.
+
+- **Universal optimization:** the forge's walk-forward chooses parameters on the basket's median (`smithery/universal.py`), not on BTC alone. An explicitly chosen single series stays possible for research.
+- **Certification is a gate:** the forge writes an `optimized_<tf>` version only when it certifies. A failing result is recorded as evidence. An existing version stays loadable so saved systems keep working, but its evidence says it is not robust.
+- **Strict lookup:** `registry.robust_on_track(key, tf)` counts only verdicts from the current evaluation. The aggregate search uses it for its pool.
+
 ## Grade and verdict
 
 - **Axis score:** the mean of its groups' scores.

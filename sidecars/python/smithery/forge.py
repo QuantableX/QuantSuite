@@ -326,7 +326,13 @@ def run_walkforward(args) -> int:
         try:
             from .variants import create_variant, source_signature
             source_before = source_signature(key)
-            res = walk_forward(ind, df, cost, n_folds=args.folds)
+            if args.series:  # an explicitly chosen series: that series alone
+                res = walk_forward(ind, df, cost, n_folds=args.folds)
+            else:  # the default is universal (docs/ROBUSTNESS.md): the basket's median
+                from .robustness import basket_frames
+                from .universal import walk_forward_universal
+                basket, costs = basket_frames(series, args.timeframe)
+                res = walk_forward_universal(ind, basket, costs, series, n_folds=args.folds)
             from .evidence import frame_fingerprint
             variant = create_variant(key, res["final_choice"], {
                 "kind": "walkforward", "series": series, "timeframe": args.timeframe,
@@ -339,7 +345,7 @@ def run_walkforward(args) -> int:
                  oos_sharpe=round(float(res["oos_sharpe"]), 3),
                  is_sharpe_mean=round(float(res["is_sharpe_mean"]), 3),
                  wfe=(None if res["wfe"] != res["wfe"] else round(float(res["wfe"]), 3)),
-                 oos_total_log_ret=round(float(res["oos_total_log_ret"]), 4),
+                 oos_total_log_ret=(round(float(res["oos_total_log_ret"]), 4) if "oos_total_log_ret" in res else None),
                  final_choice=res["final_choice"], defaults=ind.params, variant=variant,
                  oos_metrics=res.get("oos_metrics"), objective=res.get("objective"),
                  elapsed_s=round(time.time() - t0, 1))
@@ -381,9 +387,9 @@ def run_optimize(args) -> int:
     from .data import ROOT, asset_class, load
     from .evidence import EVALUATION_VERSION, frame_fingerprint
     from .indicators import REGISTRY, VARIANTS
-    from .optimize import walk_forward
     from .registry import certification_table
-    from .robustness import Gauntlet, find_primary
+    from .robustness import Gauntlet, basket_frames, find_primary
+    from .universal import walk_forward_universal
     from .variants import source_signature, update_evidence, version_key, write_version
 
     requested = _keys(args.indicator)
@@ -449,7 +455,9 @@ def run_optimize(args) -> int:
                     update_evidence(key, {"timeframes": {tf: v_standard}})
                 wf_summary = None
                 try:
-                    wf = walk_forward(REGISTRY[key](), df, cost, n_folds=args.folds)
+                    # Universal (2026-11-03): parameters are chosen on the basket's median, not BTC alone.
+                    basket, costs = basket_frames(primary, tf)
+                    wf = walk_forward_universal(REGISTRY[key](), basket, costs, primary, n_folds=args.folds)
                     wfe = None if wf["wfe"] != wf["wfe"] else round(float(wf["wfe"]), 3)
                     wf_summary = {"timeframe": tf, "series": primary, "folds": args.folds, "wfe": wfe,
                                   "oos_sharpe": round(float(wf["oos_sharpe"]), 3),
@@ -477,11 +485,24 @@ def run_optimize(args) -> int:
                                            for name, params, v in candidates],
                             "primary": primary, "data_sha256": frame_fingerprint(df), "seed": args.seed,
                             "evaluation_version": EVALUATION_VERSION}
+                # Certification is a gate, not a label (docs/ROBUSTNESS.md): only a certified
+                # candidate becomes the optimized version. A failing one is recorded as evidence;
+                # an existing version stays loadable for saved systems, but its evidence now says
+                # it is not robust, so no search, comparison or install offers it.
+                certified = bool(best[2].get("certified"))
+                written = False
                 if not args.fast:
-                    write_version(key, role, best[1], evidence, expected_source=signature)
+                    if certified:
+                        write_version(key, role, best[1], evidence, expected_source=signature)
+                        written = True
+                    else:
+                        decision = "not_certified"
+                        if version_key(key, role) in REGISTRY:
+                            update_evidence(version_key(key, role), {**evidence, "decision": decision})
                 emit("decision", indicator=key, name=standard_ind.name, timeframe=tf, role=role,
                      key=version_key(key, role), decision=decision, params=best[1], score=best[2]["score"],
-                     grade=best[2]["grade"], candidates=evidence["candidates"], written=not args.fast)
+                     grade=best[2]["grade"], candidates=evidence["candidates"], written=written,
+                     certified=certified)
             emit("log", message=f"{key}: done in {time.time() - t0:.0f}s")
         except Exception as e:  # noqa: BLE001 — the next indicator still runs
             failures += 1

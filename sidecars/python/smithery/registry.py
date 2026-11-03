@@ -149,6 +149,23 @@ def overall_verdict(key: str) -> dict | None:
     }
 
 
+def robust_on_track(key: str, timeframe: str) -> bool:
+    """Certified on a track under the CURRENT evaluation (docs/ROBUSTNESS.md).
+
+    Stricter than ``verdict_for``: reference-ledger and older-evaluation verdicts do
+    not count, only a current run or a version's evidence written by the current
+    evaluator. The aggregate search takes only indicators that pass this."""
+    from .evidence import EVALUATION_VERSION
+    from .variants import VERSION_DOCS
+    current = _current_runs().get(timeframe, {}).get(key)
+    if current is not None:
+        return is_certified(current)
+    doc = VERSION_DOCS.get(key) or {}
+    verdict = ((doc.get("evidence") or {}).get("timeframes") or {}).get(timeframe)
+    return bool(isinstance(verdict, dict) and verdict.get("evaluation_version") == EVALUATION_VERSION
+                and is_certified(verdict))
+
+
 def certified_keys(timeframe: str = "all") -> list[str]:
     """Registry keys certified on a track — or, by default, on EVERY track
     (the overall verdict) — best score first."""
