@@ -80,6 +80,8 @@ The system sells BTC, buys ETH, and holds ETH for 10 days. Taker fees, entry tie
 | Holding 10 days | 0$ | 0$ | Funding, paid hourly. At the base rate (0.01% per 8 h, longs pay) ≈ **30$**; negative in some phases, much higher in hype phases | 0$ |
 | Total | **20$** | **14$** | **≈ 39$** | depends on the route |
 
+Where a venue lists a direct pair (on Binance for example ETH/BTC), the switch can be one trade: 10$ instead of 20$ plus the pair's spread. The execution core takes the cheaper route per switch ([PLAN-AUTO-EXECUTION.md](PLAN-AUTO-EXECUTION.md) §2.2, "Route choice"). Hyperliquid spot and every perp have no such pairs, so their numbers above stay.
+
 Hyperliquid funding: interest part fixed at 0.01% per 8 hours, paid every hour at one eighth, capped at 0.5% per hour. Over a year at the base rate that is ≈ 11% of the position for a long.
 
 **Rule of thumb:** a perp is cheaper only when the holding period is short (about two days or less at the base rate) or when the system needs to be short. Manual rotation systems hold for days → spot by default. Perp is a choice, shown with this cost preview.
@@ -105,6 +107,7 @@ The trading fee is the same as for any pair (14$ on 10,000$ in the table). The c
 - Order-book venues (Binance, Bybit, Hyperliquid, Lighter): immediate-or-cancel limit orders at the slippage cap.
 - Jupiter: quote → swap transaction with a slippage cap (default 50 bps) and a price-impact cap; a quote older than 10 s is refreshed; the transaction is simulated before it is sent; confirmation by signature status; priority fee from recent fees.
 - Every venue: the price-sanity guard compares the venue price with the signal's reference price ([PLAN-AUTO-EXECUTION.md](PLAN-AUTO-EXECUTION.md) §2.2).
+- Switches: a direct pair or through the quote asset, whichever costs less for the size by fees and the live book; through USD when unsure ([PLAN-AUTO-EXECUTION.md](PLAN-AUTO-EXECUTION.md) §2.2, "Route choice"). The instrument mapping (§2) therefore also lists a venue's direct pairs between mapped coins.
 
 ## 8. Keys and accounts per venue
 
@@ -126,7 +129,7 @@ The trading fee is the same as for any pair (14$ on 10,000$ in the table). The c
 
 ## 10. UI
 
-- **Manual system → Execution:** venue dropdown (connected accounts only, like `AlgoExchangeSelect`), Spot | Perp (Perp shows leverage and the funding estimate), coverage badge ("17 / 20 coins tradable" with the list), cost preview per switch and per 30 days of holding, from live fee schedules and quotes.
+- **Manual system → Execution:** venue dropdown (connected accounts only, like `AlgoExchangeSelect`), Spot | Perp (Perp shows leverage and the funding estimate), coverage badge ("17 / 20 coins tradable" with the list), cost preview per switch (with the route it would take, direct or through USD) and per 30 days of holding, from live fee schedules and quotes.
 - **Bot create modal:** "Data" (exchange + pair) and "Execution" (venue + account + market type) as two groups; for a CEX the default is "same as data".
 - **Exchange page (`/algo/exchange`):** add DEX accounts (wallet kinds), test (balance read), API-wallet expiry, sub-account, exposure per venue.
 

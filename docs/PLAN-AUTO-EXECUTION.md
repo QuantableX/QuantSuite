@@ -40,7 +40,7 @@ One engine for Manual and Automated. Input: a **target** ("hold 100% ETH", "flat
 
 1. **Lock:** one run per account at a time.
 2. **Read the venue:** balances, positions, open orders.
-3. **Plan:** the difference between now and the target, inside the system's own budget (2.4). Sell first, then buy. Route through the account's quote asset (USDT on Binance/Bybit, USDC on DEXs). Round to the lot step; a leg below the venue's minimum stays as dust and is logged.
+3. **Plan:** the difference between now and the target, inside the system's own budget (2.4). A switch takes the cheaper route: a direct pair, or sell to the account's quote asset and buy (USDT on Binance/Bybit, USDC on DEXs) — see "Route choice" below. Through the quote asset it sells first, then buys. Round to the lot step; a leg below the venue's minimum stays as dust and is logged.
 4. **Guards** — every one must pass, or the run stops with the reason:
    - data freshness (the signal is from the candle that just closed);
    - price sanity: the venue's price is within 2% of the signal's reference price (catches a wrong instrument mapping or a broken book);
@@ -55,6 +55,26 @@ One engine for Manual and Automated. Input: a **target** ("hold 100% ETH", "flat
 8. **Report:** a run record with the signal snapshot, plan, guard results, orders, fills, errors and timings, plus a notification (2.5).
 
 `Broker` becomes `ExecutionVenue`: capabilities (spot, perp, IOC limit, client order ids, sub-accounts), instruments, balances, positions, place / cancel / query by client id, fee schedule. Binance spot and Bybit spot are ported with unchanged behaviour; today's broker tests stay green. Hyperliquid, Jupiter and Lighter plug in later ([PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md)).
+
+**Route choice for a switch** (user decision 2026-11-03: take the cheaper way, not always through USD).
+
+| Route | Trades | When it exists |
+|---|---|---|
+| Through the quote asset: sell X → USD, buy Y | 2 | Always |
+| Direct pair X/Y (or Y/X) | 1 | Only where the venue lists the pair — on a CEX for some coins, mostly against BTC, ETH or BNB; not on Hyperliquid spot or any perp |
+| One aggregator swap (Jupiter) | 1 transaction | Always on Jupiter; its quote already is its best route, so there is nothing to choose |
+
+- For exactly this switch size, the engine estimates both routes: the fee per leg from the venue's fee schedule (the account's tier), plus spread and slippage from walking the live order book for that size — not just the top price.
+- The direct pair is taken only when it is cheaper by at least 0.02% of the switch value; otherwise, and whenever the estimate is unsure, it goes through USD.
+- The direct order passes the same guards: its price is checked against the cross price of the signal's references (X in USD ÷ Y in USD), plus max slippage and the venue's minimums.
+- If the direct order is rejected or only partly filled, the rest goes through USD.
+- The run record keeps the chosen route, both estimates and the actual cost.
+- Paper takes the same decision (the PaperVenue walks the real book).
+- Perp switches are always close + open; Hyperliquid spot quotes everything in USDC. The check still runs there, so a direct pair a venue adds later is used without a code change.
+
+Example, 10,000$ BTC → ETH on Binance spot: through USDT 0.10% × 2 = 20$; direct on ETH/BTC 0.10% = 10$ plus a very small spread → direct. For a thin cross pair the spread and slippage can cost more than the 10$ saved → through USD.
+
+The backtest stays conservative: it charges two legs per switch (`rotation_lab` `_switch_legs`, `fee_rate` 0.1% per side). A cheaper live route can only make live better than the backtest, never worse.
 
 **Paper** uses the same core with a `PaperVenue`: fills at the real venue's current best bid/ask plus the configured fee and slippage, balances persisted per system. Paper and live share every step except the final API call.
 
@@ -135,7 +155,7 @@ LCES, Live on Hyperliquid spot, 10,000$ in its own sub-account. Yesterday it hel
 |---|---|
 | 00:00 | Daily candle closes. |
 | 00:15 | Run starts. Every coin's candle and today's ranking are there. |
-| 00:15 | Decision: ETH. Plan: sell 0.1 UBTC → ≈10,000 USDC, buy ≈9,993$ of UETH. Guards pass. |
+| 00:15 | Decision: ETH. Route: Hyperliquid spot has no UBTC/UETH pair → through USDC. Plan: sell 0.1 UBTC → ≈10,000 USDC, buy ≈9,993$ of UETH. Guards pass. |
 | 00:16 | Both orders filled. Fees 7.00$ + 6.99$. Notification: "LCES: BTC → ETH, 2 orders, fees 13.99$". |
 
 The same night with missing data:
@@ -162,6 +182,7 @@ The same night with missing data:
 |---|---|---|
 | Run time | 00:15 UTC, retry until 06:00 UTC | Candles are final at 00:00; the delay covers late data; six hours later the signal is stale. |
 | Order type | IOC limit at the slippage cap | A plain market order in a thin book can fill far from the price. |
+| Switch route | The cheaper of direct pair and through USD, from fees + the live book for the size; through USD unless direct saves ≥ 0.02% | One trade instead of two saves up to 0.1% per switch on a CEX; a thin cross pair's spread can cost more than that (user decision 2026-11-03). |
 | Live arming | Paper run + account test + robustness verdict or explicit acknowledgement | Matches the robustness rule without blocking a system the user already trades by hand. |
 | Restart of live bots | Opt-in per bot, reconcile first | A silent restart after a crash must not trade on a wrong state. |
 
