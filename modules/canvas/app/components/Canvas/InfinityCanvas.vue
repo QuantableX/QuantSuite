@@ -9,6 +9,8 @@ import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { AppWindow, Globe, LayoutDashboard, MessageSquare, Terminal } from 'lucide-vue-next'
 import { terminalHasFocus } from '../../utils/terminalFocus'
+import { useCanvasActions, useCanvasEdges } from '../../utils/canvasLinks'
+import type { KanbanCard } from '@quantsuite/core'
 
 const workspacesStore = useWorkspacesStore()
 const canvasStore = useCanvasStore()
@@ -45,6 +47,38 @@ const contextMenuEl = ref<HTMLElement | null>(null)
 const canvasState = computed(() => canvasStore.activeCanvasState)
 const transform = computed(() => canvasState.value?.transform ?? { x: 0, y: 0, scale: 1 })
 const windows = computed(() => canvasState.value?.windows ?? [])
+// The connected board (round 2, card 09): crew workers folded into their cluster are not drawn.
+const links = useCanvasEdges()
+const actions = useCanvasActions()
+const shownWindows = computed(() => windows.value.filter((w) => !links.hidden.value.has(w.id)))
+const linkError = ref('')
+function toWorld(clientX: number, clientY: number) {
+  const rect = canvasRef.value?.getBoundingClientRect()
+  const t = transform.value
+  return { x: (clientX - (rect?.left ?? 0) - t.x) / t.scale, y: (clientY - (rect?.top ?? 0) - t.y) / t.scale }
+}
+// A kanban card dragged out of a Kanban window and released over the canvas.
+useEventListener(window, 'qc-card-drop', (async (e: CustomEvent<{ card: KanbanCard; boardId: string; x: number; y: number }>) => {
+  const d = e.detail
+  const rect = canvasRef.value?.getBoundingClientRect()
+  if (!d || !rect || d.x < rect.left || d.x > rect.right || d.y < rect.top || d.y > rect.bottom) return
+  linkError.value = ''
+  try {
+    await actions.dropCard(d.card, d.boardId, toWorld(d.x - 20, d.y - 20))
+  } catch (err) {
+    linkError.value = err instanceof Error ? err.message : String(err)
+  }
+}) as unknown as EventListener)
+async function newCrew() {
+  const at = toWorld(contextMenu.value.x, contextMenu.value.y)
+  closeContextMenu()
+  linkError.value = ''
+  try {
+    await actions.newCrew(at)
+  } catch (err) {
+    linkError.value = err instanceof Error ? err.message : String(err)
+  }
+}
 const workspaceId = computed(() => workspacesStore.contentWorkspaceId)
 const zoomPercent = computed(() => Math.round(transform.value.scale * 100))
 const tileCount = computed(() => windows.value.length)
@@ -302,6 +336,7 @@ function createWindow(type: WindowType, centered = false) {
     file: 'File',
     browser: 'Browser',
     chat: 'Chat',
+    card: 'Card',
   }
 
   const sizes: Record<WindowType, { width: number; height: number }> = {
@@ -311,6 +346,7 @@ function createWindow(type: WindowType, centered = false) {
     file: { width: 500, height: 400 },
     browser: { width: 700, height: 500 },
     chat: { width: 520, height: 640 },
+    card: { width: 280, height: 150 },
   }
 
   const screenX = centered ? (rect.width - sizes[type].width * scale) / 2 : contextMenu.value.x - rect.left
@@ -502,6 +538,8 @@ function pasteWindow() {
     ...(source.type === 'browser' && source.browserConfig
       ? { browserConfig: { ...source.browserConfig } }
       : {}),
+    ...(source.type === 'card' && source.cardConfig ? { cardConfig: { ...source.cardConfig } } : {}),
+    ...(source.type === 'diff' && source.diffConfig ? { diffConfig: { ...source.diffConfig } } : {}),
   }
 
   canvasStore.addWindow(workspaceId.value, win)
@@ -644,11 +682,19 @@ useEventListener(window, 'click', () => {
         </svg>
       </div>
 
+      <!-- Connections under the windows, crews folded into one node (round 2, card 09) -->
+      <CanvasCanvasEdges :scale="transform.scale" />
+      <CanvasCanvasCrewClusters />
+
       <CanvasCanvasWindow
-        v-for="win in windows"
+        v-for="win in shownWindows"
         :key="win.id"
         :window="win"
       />
+    </div>
+
+    <div v-if="linkError" class="canvas-link-error" role="alert" @mousedown.stop>
+      {{ linkError }} <button @click="linkError = ''">Dismiss</button>
     </div>
 
     <!-- Minimap -->
@@ -697,6 +743,14 @@ useEventListener(window, 'click', () => {
       >
         <span class="text-amber-400">&#10077;</span> New QuantPilot Chat
       </button>
+      <button
+        class="w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 hover:brightness-125"
+        :style="{ color: 'var(--qc-text)' }"
+        title="A chat that leads a crew: its workers appear beside it, connected"
+        @click="newCrew"
+      >
+        <span class="text-blue-400">&#10022;</span> New Crew
+      </button>
       <div :style="{ borderTop: '1px solid var(--qc-border)', margin: '4px 0' }" />
       <button
         class="w-full text-left px-4 py-2 text-xs transition-colors flex items-center gap-2 hover:brightness-125"
@@ -723,6 +777,8 @@ useEventListener(window, 'click', () => {
 .canvas-start { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); z-index: 2; width: min(500px, calc(100% - 48px)); border: 1px solid var(--qc-border); border-radius: 20px; background: var(--qc-bg-header); box-shadow: 0 18px 60px rgb(0 0 0 / .12); }
 .canvas-start-action { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--qc-border); border-radius: 9px; background: var(--qc-bg-surface); color: var(--qc-text); font-size: 12px; cursor: pointer; }
 .canvas-start-action:hover { background: var(--qss-bg-hover); }
+.canvas-link-error { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 10px; align-items: center; padding: 6px 12px; border: 1px solid #f87171; border-radius: 8px; background: var(--qc-bg-header); color: #f87171; font-size: 12px; }
+.canvas-link-error button { border: 1px solid var(--qc-border); border-radius: 6px; background: transparent; color: var(--qc-text); font-size: 11px; padding: 2px 8px; cursor: pointer; }
 .canvas-status { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 10px; padding: 6px 12px; border: 1px solid var(--qc-border-subtle); border-radius: 8px; background: var(--qc-bg-header); color: var(--qc-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 </style>
 

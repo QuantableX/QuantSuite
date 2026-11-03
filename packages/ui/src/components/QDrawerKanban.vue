@@ -58,8 +58,15 @@ import {
 
 // Canvas binds its workspace board; the drawer keeps its suite-wide picker.
 // A bound board never follows or changes another surface's board selection.
-const props = defineProps<{ boardId?: string; selectedCardId?: string | null }>()
-const emit = defineEmits<{ select: [card: KanbanCard] }>()
+/**
+ * `dragOut` (QuantCanvas, round 2 card 09): a card dragged out of the board
+ * follows the pointer as a ghost and, released outside, is handed over with
+ * the pointer position (`dragOut` event) instead of being moved. A claimed
+ * card may leave too (it links its agent's thread); it still never moves
+ * between columns.
+ */
+const props = defineProps<{ boardId?: string; selectedCardId?: string | null; dragOut?: boolean }>()
+const emit = defineEmits<{ select: [card: KanbanCard]; dragOut: [card: KanbanCard, x: number, y: number] }>()
 const available = kanbanAvailable()
 const boardElement = ref<HTMLElement | null>(null)
 
@@ -268,6 +275,16 @@ function resetDragState() {
   removePointerListeners()
   draggingCardId.value = null
   dropTarget.value = null
+  ghost.value = null
+}
+
+/** The card outside the board, following the pointer (dragOut). */
+const ghost = ref<{ title: string; x: number; y: number } | null>(null)
+function outsideBoard(x: number, y: number): boolean {
+  const el = boardElement.value
+  if (!el || typeof el.getBoundingClientRect !== 'function') return false
+  const r = el.getBoundingClientRect()
+  return x < r.left || x > r.right || y < r.top || y > r.bottom
 }
 
 function findDropTargetAtPoint(x: number, y: number, draggingId: string) {
@@ -304,7 +321,8 @@ function findDropTargetAtPoint(x: number, y: number, draggingId: string) {
 }
 
 function onCardPointerDown(e: PointerEvent, card: KanbanCard) {
-  if (e.button !== 0 || cardClaimed(card)) return
+  const claimed = cardClaimed(card)
+  if (e.button !== 0 || (claimed && !props.dragOut)) return
   const target = e.target as HTMLElement | null
   if (target?.closest('button, a, input, textarea, [data-no-drag]')) return
   e.preventDefault()
@@ -319,12 +337,23 @@ function onCardPointerDown(e: PointerEvent, card: KanbanCard) {
       pointerDidMove = true
       draggingCardId.value = card.id
     }
+    const out = Boolean(props.dragOut) && outsideBoard(ev.clientX, ev.clientY)
+    ghost.value = out ? { title: card.title, x: ev.clientX, y: ev.clientY } : null
+    if (out || claimed) {
+      dropTarget.value = null
+      return
+    }
     findDropTargetAtPoint(ev.clientX, ev.clientY, card.id)
   }
   pointerUpHandler = async (ev: PointerEvent) => {
-    const target = pointerDidMove ? findDropTargetAtPoint(ev.clientX, ev.clientY, card.id) : null
+    const out = pointerDidMove && Boolean(props.dragOut) && outsideBoard(ev.clientX, ev.clientY) && ev.type === 'pointerup'
+    const target = pointerDidMove && !out && !claimed ? findDropTargetAtPoint(ev.clientX, ev.clientY, card.id) : null
     if (pointerDidMove) dragEndedAt = Date.now()
     resetDragState()
+    if (out) {
+      emit('dragOut', card, ev.clientX, ev.clientY)
+      return
+    }
     if (!target) return
     if (target.column === card.column && target.beforeId === null && byColumn(card.column).at(-1)?.id === card.id)
       return
@@ -622,10 +651,29 @@ onUnmounted(() => {
         @archive="archiveCard"
       />
     </template>
+    <Teleport v-if="ghost" to="body">
+      <div class="dkb-ghost" :style="{ left: `${ghost.x + 12}px`, top: `${ghost.y + 10}px` }" aria-hidden="true">{{ ghost.title }}</div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
+.dkb-ghost {
+  position: fixed;
+  z-index: 10000;
+  max-width: 240px;
+  padding: 7px 10px;
+  border: 1px solid var(--qss-accent, #7aa2f7);
+  border-radius: 8px;
+  background: var(--qss-bg-raised, #1f1f25);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  color: var(--qss-text, #d4d4d8);
+  font-size: 12px;
+  pointer-events: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dkb {
   display: flex;
   flex-direction: column;

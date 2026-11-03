@@ -2,6 +2,7 @@
 import { useCanvasStore } from '../../../stores/canvas'
 import { useWorkspacesStore } from '../../../stores/workspaces'
 import { useAppStore } from '../../../stores/app'
+import { useCanvasEdges } from '../../utils/canvasLinks'
 
 const canvasStore = useCanvasStore()
 const workspacesStore = useWorkspacesStore()
@@ -131,6 +132,17 @@ const windowRects = computed(() =>
   })
 )
 
+// Connections (round 2, card 09): a line between the two ends.
+const { edges: drawnEdges, hidden } = useCanvasEdges()
+const EDGE_COLORS: Record<string, string> = { working: '#7aa2f7', waiting: '#d29a3f', error: '#f87171', done: '#34d399', idle: 'color-mix(in srgb, var(--qc-text) 45%, transparent)' }
+const edgeLines = computed(() =>
+  drawnEdges.value.map((e) => {
+    const a = toMinimapCoords(e.geometry.points[0]!.x, e.geometry.points[0]!.y)
+    const b = toMinimapCoords(e.geometry.end.x, e.geometry.end.y)
+    return { id: e.id, x1: a.x, y1: a.y, x2: b.x, y2: b.y, color: EDGE_COLORS[e.state] ?? EDGE_COLORS.idle }
+  })
+)
+
 // Viewport rectangle
 const viewportRect = computed(() => {
   const scale = transform.value.scale
@@ -243,9 +255,14 @@ function centerOrigin() {
         &#10005;
       </button>
 
+      <!-- Connections -->
+      <svg class="absolute inset-0 pointer-events-none" :width="MINIMAP_W" :height="MINIMAP_H">
+        <line v-for="l in edgeLines" :key="l.id" :x1="l.x1" :y1="l.y1" :x2="l.x2" :y2="l.y2" :stroke="l.color" stroke-width="1" stroke-linecap="round" />
+      </svg>
+
       <!-- Window rectangles -->
       <div
-        v-for="wr in windowRects"
+        v-for="wr in windowRects.filter((r) => !hidden.has(r.id))"
         :key="wr.id"
         class="absolute rounded-sm opacity-70"
         :style="{

@@ -2760,3 +2760,76 @@ with the find bar on "teal" (3 matches). A Haiku thread that started two
 Task subagents drew them live and done. 20 workers: two rings, no overlap,
 zoom and pan. Reduced motion (emulated): no particle, the edge lit for
 0.6 s. Switching crews in the picker animates nothing old.
+
+## 45. Round 2 · 09/12: QuantCanvas, a connected board
+
+Card fa90e574. The user's reel ("a whole board like QuantCanvas with
+orchestration and our kanban, visually connected"); ideas from AgentGrid and
+Cline's Kanban (cards linked to agents and their worktrees), no code copied.
+
+- **Connections** (`Canvas/Edges.vue`, `utils/edges.ts`, `utils/canvasLinks.ts`):
+  a curve between two windows from the sides that face each other (it never
+  cuts through either), drawn under the windows, the same width at every
+  zoom, a dot at the receiving end. State: working = a dot flows along it,
+  waiting = amber, error = red, done = calm green, idle = dashed. A window's
+  state is its thread's (QuantPilot), its card's (claimed = working, review
+  = waiting, done/merged = done, rejected = error) or a crew task's; an
+  edge shows the more pressing end. Crew messages travel their edge like in
+  the crew graph (card 08). Saved edges (`state.edges`, per canvas
+  workspace, with the windows) are `link` (made by QuantCanvas) or
+  `manual`; crew edges are derived live from the crews.
+- **Ports:** every window has a port on its right edge (on hover); drag it
+  to another window to connect them (pointer events; a dashed line follows
+  the pointer). A click selects an edge; *Disconnect* or Delete removes a
+  saved one. Closing a window removes its edges.
+- **Kanban cards onto the canvas:** a card dragged out of a Kanban window
+  follows the pointer as a ghost (the shared board's new `dragOut`; claimed
+  cards may leave too, they still never move between columns) and,
+  released over the canvas, becomes a **card node** (`Windows/CardWindow.vue`:
+  title, column, priority, the agent holding it, live from the kanban bus)
+  connected to its **thread's chat window**: the newest thread linked to
+  the card, else a new thread linked to it with the card's prompt in its box
+  (QuantPilot's board prompt: claim per AGENT.md; nothing starts until the
+  user sends). Its **diff window** follows once work exists.
+- **Chat windows** gain *Diff* (the thread's changes, connected — a card's
+  thread shows the card's worktree against the project's branch, a worktree
+  thread its branch against its base, others the uncommitted changes) and
+  *Preview* (a browser, connected); diff windows gain *Preview*: card →
+  thread → diff → browser. `git_diff` learned `base:<branch>` (the merge
+  base against the working tree).
+- **Crews** (`Canvas/CrewClusters.vue`): when a chat window's thread leads a
+  crew (card 07), each worker gets a chat window, placed in a cluster right
+  of the orchestrator (two rows), connected; windows the user moved stay.
+  *Fold crew* on the orchestrator turns the cluster into one node — the
+  crew's compact live graph, done of all, *Expand*; one edge leads to it.
+  *New Crew* (canvas menu) opens an orchestrator chat whose box asks for the
+  work.
+- **Minimap** draws the edges in their state colours.
+- Fixed on the way: chat windows on the canvas did not hear about threads
+  made elsewhere (a crew's workers showed "no longer exists" until reload) —
+  the canvas listens for new threads and reads the list once more before
+  calling one gone.
+
+**Checks.** `npm run check:ts`; new `npm run test:canvas` (the existing
+`test-canvas-kanban.mjs`, now in a script, plus `test-canvas-edges.mjs`:
+facing sides, curves that stay out of both windows, states, cluster slots);
+`test:pilot` 129 passed; `check:isolation`, `check:components`,
+`check:commands`; clippy for the canvas crate.
+
+**Native QA** (`artifacts/quantpilot-r2-09/`): three new cards on the QA
+board dragged out of a Kanban window with pointer events (ghost shown) →
+three card nodes → three chat windows (new threads, card prompts in their
+boxes) → their diff (the three share the project checkout, so one diff
+window) → a preview browser: 7 edges. *New Crew* from the canvas menu; its
+Claude Haiku orchestrator dispatched four workers → four chat windows in a
+2×2 cluster, connected, flowing while they worked, green when done; a page
+reload kept all 14 windows, the 7 saved edges and the 4 crew edges; Fold
+showed one node with the compact graph (4/4 done) and one edge, Expand
+brought the windows back. A port drag from a card node to the Kanban
+window made a manual edge; selecting it and Disconnect removed it. 30
+windows and 40 edges: panning ~112 fps (95th percentile 13 ms), dragging a
+window with its edges ~220 fps. Idle CPU with the 16 card nodes and 40
+edges alone: ~1 % of a core; the existing browser window (its webview
+follows the canvas with a requestAnimationFrame loop, ~15 %) and embedded
+chats showing the animated empty-thread face (~16 % for ten) cost far more
+— not changed here.

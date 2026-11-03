@@ -35,7 +35,9 @@ function filterStatusFiles(files: GitStatusFile[], scope: 'all' | 'staged' | 'un
 }
 
 async function loadGitDiff() {
-  const workspace = workspacesStore.contentWorkspace
+  // A diff window of a thread shows that thread's checkout (round 2, card 09).
+  const own = props.window.diffConfig
+  const workspace = own ? { path: own.repoPath } : workspacesStore.contentWorkspace
   if (!workspace) {
     errorMsg.value = 'No workspace open'
     return
@@ -48,7 +50,7 @@ async function loadGitDiff() {
     const [diffText, statusResult] = await Promise.all([
       invoke<string>('plugin:canvas|git_diff', {
         repoPath: workspace.path,
-        mode: diffScope.value,
+        mode: own?.base && diffScope.value === 'all' ? `base:${own.base}` : diffScope.value,
       }),
       invoke<GitStatus>('plugin:canvas|git_status', {
         repoPath: workspace.path,
