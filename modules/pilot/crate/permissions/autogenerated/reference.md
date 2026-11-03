@@ -139,6 +139,12 @@ Default permissions for the pilot module.
 - `allow-pilot-crew-retry`
 - `allow-pilot-crew-stop`
 - `allow-pilot-crew-resume`
+- `allow-pilot-schedules`
+- `allow-pilot-schedule-save`
+- `allow-pilot-schedule-set-enabled`
+- `allow-pilot-schedule-delete`
+- `allow-pilot-schedule-run-now`
+- `allow-pilot-schedule-runs`
 - `allow-pilot-provider-update`
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
@@ -3356,6 +3362,162 @@ Enables the pilot_runtime_state command without any pre-configured scope.
 <td>
 
 Denies the pilot_runtime_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-schedule-delete`
+
+</td>
+<td>
+
+Enables the pilot_schedule_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-schedule-delete`
+
+</td>
+<td>
+
+Denies the pilot_schedule_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-schedule-run-now`
+
+</td>
+<td>
+
+Enables the pilot_schedule_run_now command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-schedule-run-now`
+
+</td>
+<td>
+
+Denies the pilot_schedule_run_now command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-schedule-runs`
+
+</td>
+<td>
+
+Enables the pilot_schedule_runs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-schedule-runs`
+
+</td>
+<td>
+
+Denies the pilot_schedule_runs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-schedule-save`
+
+</td>
+<td>
+
+Enables the pilot_schedule_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-schedule-save`
+
+</td>
+<td>
+
+Denies the pilot_schedule_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-schedule-set-enabled`
+
+</td>
+<td>
+
+Enables the pilot_schedule_set_enabled command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-schedule-set-enabled`
+
+</td>
+<td>
+
+Denies the pilot_schedule_set_enabled command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-schedules`
+
+</td>
+<td>
+
+Enables the pilot_schedules command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-schedules`
+
+</td>
+<td>
+
+Denies the pilot_schedules command without any pre-configured scope.
 
 </td>
 </tr>

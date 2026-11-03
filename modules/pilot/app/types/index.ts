@@ -1030,3 +1030,46 @@ export interface CrewSnapshot {
   maxParallel: number
   titles: Record<string, string>
 }
+
+// ── Schedules (round 3, card 03, crate/src/schedules.rs) ──
+
+/** Local wall-clock times: `HH:MM`, `YYYY-MM-DDTHH:MM`; days 1 = Monday … 7 = Sunday. */
+export type Recurrence =
+  | { kind: 'once'; at: string }
+  | { kind: 'daily'; time: string }
+  | { kind: 'weekdays'; time: string }
+  | { kind: 'days'; days: number[]; time: string }
+  | { kind: 'hours'; every: number; from: string }
+
+export interface ScheduleRun {
+  id: string
+  scheduleId: string
+  slot: number
+  at: number
+  status: 'starting' | 'started' | 'skipped' | 'missed' | 'failed'
+  threadId: string | null
+  note: string
+  manual: boolean
+}
+
+export interface Schedule {
+  id: string
+  name: string
+  prompt: string
+  contextId: string
+  provider: string
+  model: string
+  effort: string
+  mode: string
+  instance: string
+  recurrence: Recurrence
+  enabled: boolean
+  missed: 'skip' | 'once'
+  target: 'new' | 'same'
+  threadId: string | null
+  lastSlot: number | null
+  createdAt: number
+  updatedAt: number
+  nextDue: number | null
+  lastRun: ScheduleRun | null
+}

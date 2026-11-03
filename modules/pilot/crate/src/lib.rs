@@ -44,6 +44,7 @@ mod relay;
 mod review;
 mod run_project;
 mod runtime;
+mod schedules;
 mod settings;
 mod shell;
 mod skills;
@@ -108,6 +109,8 @@ pub struct PilotState {
     mcp_tokens: Mutex<HashMap<String, String>>,
     /// The thread on screen with its inspector, as the frontend reports it.
     ui_visible: Mutex<Option<String>>,
+    /// Wakes the schedule engine when a schedule changes (round 3, card 03).
+    schedule_wake: Arc<tokio::sync::Notify>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -932,6 +935,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 repairs: Mutex::new(Default::default()),
                 mcp_tokens: Mutex::new(HashMap::new()),
                 ui_visible: Mutex::new(None),
+                schedule_wake: Arc::new(tokio::sync::Notify::new()),
             });
             tauri::async_runtime::spawn(threads::resume_scheduler(app.clone()));
             // Crews (round 2, card 07): workers the close interrupted are stalled; timeouts.
@@ -939,6 +943,8 @@ pub fn init() -> TauriPlugin<Wry> {
                 crew::after_restart(&state.db);
             }
             tauri::async_runtime::spawn(crew::watchdog(app.clone()));
+            // Scheduled prompts (round 3, card 03): one task, asleep until the next slot.
+            tauri::async_runtime::spawn(schedules::scheduler(app.clone()));
             app.manage(browser::BrowserState::default());
 
             qs_core::tray::register_entry(
@@ -1087,6 +1093,12 @@ pub fn init() -> TauriPlugin<Wry> {
             crew::pilot_crew_decide,
             crew::pilot_crew_retry,
             crew::pilot_crew_stop,
+            schedules::pilot_schedules,
+            schedules::pilot_schedule_save,
+            schedules::pilot_schedule_set_enabled,
+            schedules::pilot_schedule_delete,
+            schedules::pilot_schedule_run_now,
+            schedules::pilot_schedule_runs,
             crew::pilot_crew_resume,
             pilot_provider_update,
             pilot_gh_status,
