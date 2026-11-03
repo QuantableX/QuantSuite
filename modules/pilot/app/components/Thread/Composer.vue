@@ -1465,11 +1465,12 @@ useTauriEvent<{ message?: string }>('speech-error', (p) => {
   max-width: 780px;
   margin: 0 auto;
   padding: 10px 10px 8px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--qss-border, #47474f);
+  border-radius: 16px;
+  border: 1px solid var(--qp-glass-edge, var(--qss-border, #47474f));
   background: var(--qss-bg-raised, #1f1f25);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 1px 0 color-mix(in srgb, #fff 4%, transparent) inset;
   cursor: text;
-  transition: border-color 0.12s ease;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .qp-composer-box:focus-within { border-color: color-mix(in srgb, var(--qss-text, #d4d4d8) 45%, var(--qss-border, #47474f)); }
 .qp-composer-box.editing { border-style: dashed; border-color: var(--qss-accent, #7aa2f7); }

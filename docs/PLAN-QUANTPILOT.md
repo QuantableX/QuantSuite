@@ -2833,3 +2833,52 @@ edges alone: ~1 % of a core; the existing browser window (its webview
 follows the canvas with a requestAnimationFrame loop, ~15 %) and embedded
 chats showing the animated empty-thread face (~16 % for ten) cost far more
 — not changed here.
+
+## 46. Round 2 · 06/12: look and motion (a pre-1.1.0 Pilot pass)
+
+Card 3a926934, run as a QuantPilot pass before 1.1.0 (the user's choice;
+the 1.1.0 card 25de874a is untouched). Studied PandaCode 0.3.91 (a9be2ce;
+MIT with attribution — ideas only, no code or assets): its design doc,
+inset shell, action dock and screenshots, against QuantPilot in the same
+states. Pilot-only; the suite header and the shared sidebars stay as they
+are (1.1.0's job).
+
+- **Inset shell:** the sidebars sit on the suite's darkest tone
+  (`--qss-bg-chrome`); the main area (conversation and inspector, board,
+  GitHub, crew) is an inset panel — 6 px from the frame, 12 px radius, a
+  hairline edge and a soft shadow.
+- **Transcript:** fades out under the panel's top edge and into the
+  composer (two still gradients over the scroller — nothing repaints while
+  scrolling).
+- **The user's message** is a soft pill (18 px radius, a tone step, no
+  outline); a steer keeps its dashed outline.
+- **Composer** floats: 16 px radius, a soft shadow, a hairline edge.
+- **Glass toasts:** translucent surface with blur and saturation, 12 px
+  radius; arrive in 170 ms, leave in 110 ms. Reduced transparency or more
+  contrast: solid.
+- **Menus** (model list, thread menu, link menu, message menu) arrive from
+  their trigger in 170 ms (fade, 4 px lift, a hint of scale); input works
+  at once; reduced motion: a 100 ms fade. The agent menu kept its own.
+- **Press feedback:** buttons give way (scale 0.97) under the pointer;
+  reduced motion: none.
+- **Sidebar rows:** 8 px pills on a tone step, a calm hover.
+- Tokens in the module's CSS (`--qp-frame`, `--qp-panel-edge`, `--qp-glass*`,
+  `--qp-ease-out`, `--qp-press`), with reduced-transparency and
+  increased-contrast fallbacks. Fixed on the way: the quote highlight rule
+  was the one unscoped selector in the module CSS (`check:css` failed on
+  main).
+
+**Before/after** (`artifacts/quantpilot-r2-06/shots/compare_*.png`): empty
+thread, tool-heavy conversation, approval, model picker, board, streaming.
+Waits for the user's approval.
+
+**Performance** (parity 21's run, `artifacts/quantpilot-parity-21/r206-before`
+and `r206-after`, same machine and build mode): ten streams frames p95 / max
+29.2 / 50.1 → 25.2 / 41.7 ms, input p95 5.1 → 6.5 ms (budget 25), stream to
+paint p95 59.6 → 61.3 ms, no long tasks either way; scrolling through all
+1,200 messages p95 / max 33.4 / 179.6 → 29.3 / 179.5 ms; idle CPU of the
+app's processes 1.6 → 2.1 % of a core (20-second samples) — within noise,
+every budget met.
+
+**Checks.** `npm run check:ts`; `npm run test:pilot` 129 passed;
+`check:css`, `check:isolation`.

@@ -91,4 +91,49 @@
 }
 
 /* Parity 14: a quote's source, highlighted when opened from the quote. */
-::highlight(qp-quote) { background-color: color-mix(in srgb, var(--qss-accent, #7aa2f7) 40%, transparent); color: inherit; }
+[data-module="pilot"] ::highlight(qp-quote) { background-color: color-mix(in srgb, var(--qss-accent, #7aa2f7) 40%, transparent); color: inherit; }
+
+/* ── Look and motion (round 2, card 06; ideas from PandaCode, no code) ──
+ * One frame tone the sidebars sit on, the conversation an inset panel;
+ * glass only for things that float (toasts, the floating composer);
+ * immediate press feedback; menus that arrive in 170 ms and never block
+ * input; reduced motion and reduced transparency honoured. */
+[data-module="pilot"] {
+  --qp-frame: var(--qss-bg-chrome, #171717);
+  --qp-panel-edge: color-mix(in srgb, var(--qss-text, #d4d4d8) 9%, transparent);
+  --qp-glass: color-mix(in srgb, var(--qss-bg-raised, #1f1f25) 74%, transparent);
+  --qp-glass-edge: color-mix(in srgb, var(--qss-text, #d4d4d8) 12%, transparent);
+  --qp-glass-blur: blur(18px) saturate(140%);
+  --qp-ease-out: cubic-bezier(0.2, 0.9, 0.25, 1);
+  --qp-press: 0.97;
+}
+@media (prefers-reduced-transparency: reduce) {
+  [data-module="pilot"] { --qp-glass: var(--qss-bg-raised, #1f1f25); --qp-glass-blur: none; }
+}
+@media (prefers-contrast: more) {
+  [data-module="pilot"] { --qp-panel-edge: var(--qss-border, #47474f); --qp-glass: var(--qss-bg-raised, #1f1f25); --qp-glass-blur: none; }
+}
+/* Press feedback: buttons give way under the pointer at once. */
+[data-module="pilot"] .qp-btn:not(:disabled),
+[data-module="pilot"] .qp-mini:not(:disabled),
+[data-module="pilot"] .qp-icon-btn:not(:disabled),
+[data-module="pilot"] .qp-composer-send:not(:disabled) { transition: transform 90ms ease, background-color 120ms ease, color 120ms ease, border-color 120ms ease; }
+@media (prefers-reduced-motion: no-preference) {
+  [data-module="pilot"] .qp-btn:not(:disabled):active,
+  [data-module="pilot"] .qp-mini:not(:disabled):active,
+  [data-module="pilot"] .qp-icon-btn:not(:disabled):active,
+  [data-module="pilot"] .qp-composer-send:not(:disabled):active { transform: scale(var(--qp-press)); }
+}
+/* Menus arrive from their trigger: fade, a little lift and scale; input works at once. */
+@keyframes qp-pop-in { from { opacity: 0; transform: translateY(-4px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes qp-fade-in { from { opacity: 0; } to { opacity: 1; } }
+[data-module="pilot"] .qp-menu,
+[data-module="pilot"] .qp-tm,
+[data-module="pilot"] .qp-lm,
+[data-module="pilot"] .qp-um-menu { animation: qp-pop-in 170ms var(--qp-ease-out); transform-origin: top left; }
+@media (prefers-reduced-motion: reduce) {
+  [data-module="pilot"] .qp-menu,
+  [data-module="pilot"] .qp-tm,
+  [data-module="pilot"] .qp-lm,
+  [data-module="pilot"] .qp-um-menu { animation: qp-fade-in 100ms linear; }
+}

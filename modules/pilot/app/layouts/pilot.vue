@@ -353,6 +353,8 @@ function onFileDrop(e: DragEvent) {
   display: flex;
   flex: 1;
   min-height: 0;
+  /* The frame (round 2, card 06): the sidebars sit on it, the main area is an inset panel. */
+  background: var(--qp-frame);
 }
 .qp-main {
   position: relative;
@@ -360,6 +362,10 @@ function onFileDrop(e: DragEvent) {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  margin: 0 6px 6px;
+  border: 1px solid var(--qp-panel-edge);
+  border-radius: 12px;
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 3%, transparent) inset, 0 8px 24px rgba(0, 0, 0, 0.18);
   background: var(--qss-bg, #18181e);
   display: flex;
   flex-direction: column;
