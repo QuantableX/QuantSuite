@@ -2493,3 +2493,45 @@ own recording was not used: no microphone in QA); a failing check
 nothing more was queued; the app killed during a turn and restarted →
 the Resume dialog, Resume all continued the turn (then stopped);
 mouse back/forward between two threads stayed on `/pilot`.
+
+## 41. Round 2 · 04/12: a right panel that earns its space
+
+Card 9423269a. The panel was a large face, one word, and read-only facts
+that repeated the composer. `Thread/Details.vue` is now a working panel in
+the same 220 px QRightPanel (shared geometry, no override):
+
+- **Header:** a small face, the state and the live step, a ⋯ menu.
+- **Agents now** (also without an open thread): every thread working or
+  waiting, anywhere — who needs you first, then who works (elapsed time,
+  live step), then finished results not seen yet. A pending approval is
+  answered inline (Allow / Deny); a question or plan offers Answer; a
+  click opens the thread. Threads hidden while recording stay out.
+- **This thread:** agent and model, the context meter against the model's
+  real window ("54k / 1M"), the 5-hour and weekly windows with their reset,
+  cost, tokens, the last error; **Compact** (idle Claude threads),
+  **Usage**, **Copy error**.
+- **Changes:** every file the thread changed with summed +/−, newest first;
+  a click opens its diff at the turn that changed it; **All changes**
+  (branch for a worktree, else uncommitted). Before any saved change, the
+  files the tools wrote.
+- **Branch and PR:** branch or worktree, its pull requests and issues;
+  **GitHub** opens the GitHub view (CI checks live there).
+- **Tasks** (Copy as list), **Crew** (subagents → inspector; cards 07/08
+  add workers), **Servers** (Open, Stop).
+
+The ⋯ menu shows or hides each section; a section's title drags it to a
+new place (pointer events; the order and hidden set are kept per machine).
+Sections without content stay out. No new polling: the dev-server probe as
+before, and a one-second clock only while a row works.
+
+**Checks.** `npm run check:ts`; `npm run test:pilot` (new
+`scripts/test-pilot-panel.mjs`: layout made whole, moves, drop slots,
+Agents now buckets, changes summed, token pairs).
+
+**Native QA** (isolated QA app, `artifacts/quantpilot-r2-04/`): empty
+(no thread, nothing running), one running thread, five agents (three
+working with elapsed times, one waiting on a Bash approval with Allow/Deny,
+one on a question — states set client-side for the shot) plus a failed
+Hermes thread with its error; Changes → the diff of `r212-check.txt`;
+"Branch and PR" dragged above "Agents now" and kept; "This thread" hidden
+and shown again. Side chats (card 10) will join as a section.
