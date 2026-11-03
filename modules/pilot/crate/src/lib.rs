@@ -39,6 +39,7 @@ mod lifecycle;
 mod gitops;
 mod notify;
 mod pi;
+mod progress;
 mod prompt;
 mod providers;
 mod relay;
@@ -1102,6 +1103,10 @@ pub fn init() -> TauriPlugin<Wry> {
             schedules::pilot_schedule_runs,
             guides::pilot_guide_get,
             guides::pilot_guide_write,
+            progress::pilot_progress,
+            progress::pilot_progress_thumbs,
+            progress::pilot_progress_image,
+            progress::pilot_progress_pin,
             crew::pilot_crew_resume,
             pilot_provider_update,
             pilot_gh_status,

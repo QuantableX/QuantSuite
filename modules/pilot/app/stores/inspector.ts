@@ -9,9 +9,9 @@
 import { defineStore } from 'pinia'
 
 export type DiffScope = 'turn' | 'uncommitted' | 'branch'
-export type InspectorTab = 'diff' | 'files' | 'browser' | 'agent'
+export type InspectorTab = 'diff' | 'files' | 'browser' | 'agent' | 'progress'
 
-const TABS: InspectorTab[] = ['diff', 'files', 'browser', 'agent']
+const TABS: InspectorTab[] = ['diff', 'files', 'browser', 'progress', 'agent']
 const DEFAULT_WIDTH = 560
 
 function load<T>(key: string, fallback: T): T {

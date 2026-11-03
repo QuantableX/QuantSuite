@@ -8,7 +8,7 @@
  * Wide content lives here, never in the 220 px side panels.
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Bot, FolderTree, GitCompare, Globe, X } from 'lucide-vue-next'
+import { Bot, FolderTree, GitCompare, Globe, Images, X } from 'lucide-vue-next'
 import { pilot } from '#pilot/utils/invoke'
 import { useInspectorStore, type InspectorTab } from '#pilot/stores/inspector'
 import { useKeysStore } from '#pilot/stores/keys'
@@ -24,6 +24,7 @@ const META: Record<string, { label: string; icon: unknown; key: string; command?
   files: { label: 'Files', icon: FolderTree, key: 'Ctrl+P picks a file', command: 'filePicker.toggle' },
   browser: { label: 'Browser', icon: Globe, key: 'Ctrl+Shift+J', command: 'preview.toggle' },
   agent: { label: 'Agent', icon: Bot, key: 'Agents in the thread details' },
+  progress: { label: 'Progress', icon: Images, key: 'the thread’s images' },
 }
 const tabs = computed(() => inspector.tabs.filter((t) => t in META))
 // The Agent tab comes back only for a thread with an agent picked.
@@ -92,6 +93,7 @@ watch(
       <PilotInspectorFiles v-else-if="inspector.tab === 'files'" :thread-id="threadId" />
       <PilotInspectorBrowser v-else-if="inspector.tab === 'browser'" :thread-id="threadId" />
       <PilotInspectorAgent v-else-if="inspector.tab === 'agent'" :thread-id="threadId" />
+      <PilotInspectorProgress v-else-if="inspector.tab === 'progress'" :thread-id="threadId" />
     </div>
   </aside>
 </template>

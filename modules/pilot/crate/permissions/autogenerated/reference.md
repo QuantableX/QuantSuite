@@ -147,6 +147,10 @@ Default permissions for the pilot module.
 - `allow-pilot-schedule-runs`
 - `allow-pilot-guide-get`
 - `allow-pilot-guide-write`
+- `allow-pilot-progress`
+- `allow-pilot-progress-thumbs`
+- `allow-pilot-progress-image`
+- `allow-pilot-progress-pin`
 - `allow-pilot-provider-update`
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
@@ -3026,6 +3030,110 @@ Enables the pilot_pr_refresh command without any pre-configured scope.
 <td>
 
 Denies the pilot_pr_refresh command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-progress`
+
+</td>
+<td>
+
+Enables the pilot_progress command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-progress`
+
+</td>
+<td>
+
+Denies the pilot_progress command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-progress-image`
+
+</td>
+<td>
+
+Enables the pilot_progress_image command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-progress-image`
+
+</td>
+<td>
+
+Denies the pilot_progress_image command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-progress-pin`
+
+</td>
+<td>
+
+Enables the pilot_progress_pin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-progress-pin`
+
+</td>
+<td>
+
+Denies the pilot_progress_pin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-progress-thumbs`
+
+</td>
+<td>
+
+Enables the pilot_progress_thumbs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-progress-thumbs`
+
+</td>
+<td>
+
+Denies the pilot_progress_thumbs command without any pre-configured scope.
 
 </td>
 </tr>
