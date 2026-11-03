@@ -40,7 +40,7 @@ onBeforeUnmount(() => {
 // The mascot (round 2, card 05): its size and a line in character, empty threads only.
 const mascot = useMascotStore()
 const heroSize = computed(() => MASCOT_SIZES.find((s) => s.id === mascot.prefs.size)?.px ?? 120)
-const heroLine = computed(() => lineFor(faceState.value === 'waiting' ? 'call' : faceState.value === 'error' ? 'worried' : 'calm', mascot.prefs.name, props.threadId.length))
+const heroLine = computed(() => lineFor(faceState.value === 'waiting' ? 'call' : faceState.value === 'error' ? 'worried' : 'calm', mascot.prefs.name, props.threadId.length + new Date().getMinutes(), new Date().getHours()))
 const faceState = computed(() => {
   switch (view.value?.state) {
     case 'running':
