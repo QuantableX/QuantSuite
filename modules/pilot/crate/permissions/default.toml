@@ -121,6 +121,7 @@ permissions = [
   "allow-pilot-new-thread-setup",
   "allow-pilot-thread-apply-setup",
   "allow-pilot-restart-interrupted",
+  "allow-pilot-thread-set-parent",
   "allow-pilot-provider-update",
   "allow-pilot-gh-status",
   "allow-pilot-diagnostics",

@@ -2535,3 +2535,48 @@ one on a question — states set client-side for the shot) plus a failed
 Hermes thread with its error; Changes → the diff of `r212-check.txt`;
 "Branch and PR" dragged above "Agents now" and kept; "This thread" hidden
 and shown again. Side chats (card 10) will join as a section.
+
+## 42. Round 2 · 10/12: side chats (/btw) beside the main thread
+
+Card 223bc29e. Ask something on the side while the main agent keeps
+working — without queuing into or steering its run.
+
+- **Start:** `/btw <question>` in a thread's composer (a QuantPilot command)
+  or **New side chat** in the panel's *Side chats* section. A side chat is a
+  normal thread with `parent_id` set (schema 19): same project, agent,
+  model, effort and permissions as the main thread; a worktree thread's side
+  chat works in the same worktree. It has its own composer, model and
+  effort controls, queue, approvals and Stop.
+- **Where:** a sheet over the right edge of the conversation
+  (`Layout/SideChat.vue`, the QuantCanvas embed component inside). Side
+  chats are not in the sidebar or the palette; the main thread's panel lists
+  them under *Side chats* (a click opens one). Agents now still shows them
+  while they work.
+- **Main thread context:** every side message carries a chip *Main thread
+  context*: the main thread's title and state and the user and agent
+  messages since the side chat last asked (an answer still being written is
+  marked), newest kept, about 24 KB at most, saying how many earlier
+  messages were left out (`utils/side.ts`). Which main messages a side chat
+  has seen is kept per machine.
+- **Actions** (on the latest answer, sheet header): *Insert into main* — a
+  quote chip in the main composer (parity 14's quoting); *Open as full
+  thread* — it leaves the main thread, joins the sidebar and opens; *New
+  side chat*; *Close* (it stays listed). Escape returns to the main
+  composer and stops nothing. `/btw` inside a side chat says to ask there
+  directly.
+- **Lineage:** kept across restarts; deleting the main thread makes its side
+  chats threads of their own.
+
+**Checks.** pilot `cargo test` 242 passed (the link survives a restart,
+detaches, goes with the main thread); `npm run check:ts`; `npm run
+test:pilot` (new `scripts/test-pilot-side.mjs`: the context block, what it
+leaves out, titles).
+
+**Native QA with real Claude Haiku** (`artifacts/quantpilot-r2-10/`): the
+main thread wrote 500 numbers in words; meanwhile `/btw` asked for its
+secret codeword → "PELICAN", a second side question → "500"; the main thread
+kept working throughout; each side message showed the context chip;
+*Insert into main* put "“500”" into the main composer as a quote; after a
+full app restart both side chats were still listed under the main thread
+and absent from the sidebar; *Open as full thread* moved one into the
+sidebar and opened it.

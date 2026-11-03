@@ -51,6 +51,8 @@ pub struct CreateThread {
     /// The user picked this setup in a menu: new threads start with it from
     /// now on (round 2, card 03).
     pub(crate) remember: Option<bool>,
+    /// A side chat of this thread (round 2, card 10).
+    pub(crate) parent_id: Option<String>,
 }
 
 /// Whether an agent's CLI can start here (installed or set in Settings).
@@ -138,6 +140,7 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         fast,
         notice: None,
         tags: Vec::new(),
+        parent_id: None,
         title,
         context_id: ctx.id,
         context_name: ctx.name,
@@ -167,6 +170,14 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         worktree_path: worktree,
     };
     state.db.insert_session(&meta).map_err(|e| e.to_string())?;
+    if let Some(parent) = req.parent_id.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        if state.db.get_session(parent).map_err(|e| e.to_string())?.is_none() {
+            let _ = state.db.delete_session(&meta.id);
+            return Err("the main thread of this side chat is gone".into());
+        }
+        state.db.set_parent(&meta.id, Some(parent)).map_err(|e| e.to_string())?;
+    }
+    let meta = state.db.get_session(&meta.id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
     // The fallback is said where it happened: in the new thread's composer.
     Ok(ThreadMeta { notice: if explicit { None } else { setup.notice }, ..meta })
 }
@@ -2334,6 +2345,19 @@ pub(crate) fn setup_change(before: &ThreadMeta, after: &ThreadMeta) -> Option<St
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
+/// A side chat becomes a thread of its own, or joins a main thread (round 2, card 10).
+#[tauri::command(async)]
+pub fn pilot_thread_set_parent(state: State<'_, PilotState>, id: String, parent_id: Option<String>) -> Result<ThreadMeta, String> {
+    let parent = parent_id.as_deref().map(str::trim).filter(|p| !p.is_empty());
+    if let Some(p) = parent {
+        if p == id || state.db.get_session(p).map_err(|e| e.to_string())?.is_none() {
+            return Err("no such main thread".into());
+        }
+    }
+    state.db.set_parent(&id, parent).map_err(|e| e.to_string())?;
+    state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or_else(|| "unknown thread".into())
+}
+
 /// The threads that were working when the app last closed, once — for the
 /// Resume offer after a restart (round 2, card 12).
 #[tauri::command(async)]
@@ -3312,7 +3336,7 @@ mod tests {
             id: "t".into(), provider: "claude".into(), provider_session_id: None, title: String::new(), context_id: "general".into(),
             context_name: "General".into(), cwd: ".".into(), model: String::new(), mode: "full".into(), created_at: 0, updated_at: 0,
             cost_usd: 0.0, input_tokens: 0, output_tokens: 0, last_error: None, kind: "chat".into(), effort: String::new(),
-            title_source: "auto".into(), fast: false, notice: None, tags: Vec::new(), state: "idle".into(), context_tokens: None,
+            title_source: "auto".into(), fast: false, notice: None, tags: Vec::new(), parent_id: None, state: "idle".into(), context_tokens: None,
             context_window: None, last_activity_at: 0, pinned: false, sort_key: 0.0, settled_at: None, snoozed_until: None,
             auto_settle: true, workspace_mode: "local".into(), base_branch: String::new(), branch: String::new(), worktree_path: None,
         }

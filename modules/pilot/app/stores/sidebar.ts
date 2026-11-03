@@ -115,7 +115,8 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
       const store = usePilotStore()
       const threads = useThreadStore()
       return store.sessions
-        .filter((s) => !this.hidden[s.id] && !this.isPrivate(s))
+        // Side chats live under their main thread (round 2, card 10).
+        .filter((s) => !this.hidden[s.id] && !this.isPrivate(s) && !s.parentId)
         .map((s) => {
           const v = threads.views[s.id]
           const started = v?.turnId ? v.turns[v.turnId]?.startedAt : undefined

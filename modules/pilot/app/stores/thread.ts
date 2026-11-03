@@ -18,6 +18,7 @@ import { usePilotStore } from '#pilot/stores/pilot'
 import { useUsageStore } from '#pilot/stores/usage'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useDrawerStore } from '#pilot/stores/drawer'
+import { useSideStore } from '#pilot/stores/side'
 import type {
   Answer,
   ProviderCatalog,
@@ -486,6 +487,12 @@ export const useThreadStore = defineStore('pilot/thread', {
     async send(id: string, text: string, extras: MessageExtras = {}): Promise<boolean> {
       const view = this.ensure(id)
       view.error = null
+      // A side chat's message carries the main thread's latest context (round 2, card 10).
+      const side = usePilotStore().sessions.find((s) => s.id === id)?.parentId ? useSideStore().contextFor(id) : null
+      if (side) {
+        text = `${side.token} ${text}`
+        extras = { ...extras, chips: [...(extras.chips ?? []), side.chip] }
+      }
       try {
         await pilot<string>('plugin:pilot|pilot_thread_send', { id, text, ...extras })
         this.wrote(id)

@@ -140,6 +140,7 @@ export const APP_COMMANDS: CommandRow[] = [
   { name: 'restart', description: 'Restart the agent session (after changing skills or MCP)', argumentHint: '', source: 'app' },
   { name: 'tui', description: "Open this conversation in the agent's own terminal UI", argumentHint: '', source: 'app' },
   { name: 'usage', description: "Show this agent's usage limits", argumentHint: '', source: 'app' },
+  { name: 'btw', description: 'Ask on the side — a side chat that leaves this run alone', argumentHint: '<question>', source: 'app' },
 ]
 
 /** App commands first when they match, then the provider's; prefix matches before substrings. */

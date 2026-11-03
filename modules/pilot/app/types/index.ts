@@ -36,6 +36,8 @@ export interface SessionMeta {
   notice?: string
   /** The user's tags (round 2, card 12). */
   tags?: string[]
+  /** A side chat's main thread (round 2, card 10). */
+  parentId?: string | null
   titleSource: 'auto' | 'user'
   /** The last known state, saved: `idle` | `running` | `waiting` | `error` | `interrupted` | `limited`. */
   state: string
