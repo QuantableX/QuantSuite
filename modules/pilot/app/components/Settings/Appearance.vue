@@ -7,6 +7,8 @@
  */
 import { computed, onMounted } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useMascotStore } from '#pilot/stores/mascot'
+import { ACCESSORIES, EYES, MOOD_LABEL, MOODS, SIZES as MASCOT_SIZES, SKINS } from '#pilot/utils/mascot'
 import type { PilotSettings } from '#pilot/types'
 
 const store = usePilotStore()
@@ -19,6 +21,10 @@ const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduce
 function set(patch: Partial<PilotSettings>) {
   void store.saveSettings(patch, { quiet: true })
 }
+// The mascot (round 2, card 05): kept on this machine; the gallery shows every mood.
+const mascot = useMascotStore()
+const m = computed(() => mascot.prefs)
+
 const SIZES: { id: PilotSettings['textSize']; label: string }[] = [
   { id: 'small', label: 'Small' },
   { id: 'default', label: 'Default' },
@@ -46,6 +52,56 @@ const SIZES: { id: PilotSettings['textSize']; label: string }[] = [
       <input type="checkbox" :checked="s.renderMath" @change="set({ renderMath: ($event.target as HTMLInputElement).checked })" />
       <span>Render math <em>— <code>$…$</code> and <code>$$…$$</code> in replies become formulas</em></span>
     </label>
+
+    <h3 class="qp-sub">Mascot</h3>
+    <label class="qp-check">
+      <input type="checkbox" :checked="m.on" @change="mascot.set({ on: ($event.target as HTMLInputElement).checked })" />
+      <span>Show the mascot <em>— in the panel, empty threads and the crew view</em></span>
+    </label>
+    <template v-if="m.on">
+      <div class="qp-row">
+        <span class="qp-row-k">Name</span>
+        <input class="qp-text" :value="m.name" maxlength="24" placeholder="No name" aria-label="Mascot name" @change="mascot.set({ name: ($event.target as HTMLInputElement).value })" />
+      </div>
+      <div class="qp-row">
+        <span class="qp-row-k">Skin</span>
+        <span class="qp-swatches" role="radiogroup" aria-label="Skin">
+          <button v-for="k in SKINS" :key="k.id" role="radio" class="qp-swatch" :class="{ on: m.skin === k.id }" :aria-checked="m.skin === k.id" :title="k.label" :style="{ background: `radial-gradient(circle at 35% 30%, ${k.light}, ${k.base})` }" @click="mascot.set({ skin: k.id })" />
+        </span>
+      </div>
+      <div class="qp-row">
+        <span class="qp-row-k">Eyes</span>
+        <span class="qp-seg" role="radiogroup" aria-label="Eyes">
+          <button v-for="e in EYES" :key="e.id" role="radio" class="qp-seg-btn" :class="{ on: m.eyes === e.id }" :aria-checked="m.eyes === e.id" @click="mascot.set({ eyes: e.id })">{{ e.label }}</button>
+        </span>
+      </div>
+      <div class="qp-row">
+        <span class="qp-row-k">Accessory</span>
+        <span class="qp-seg" role="radiogroup" aria-label="Accessory">
+          <button v-for="a in ACCESSORIES" :key="a.id" role="radio" class="qp-seg-btn" :class="{ on: m.accessory === a.id }" :aria-checked="m.accessory === a.id" @click="mascot.set({ accessory: a.id })">{{ a.label }}</button>
+        </span>
+      </div>
+      <div class="qp-row">
+        <span class="qp-row-k">Size in empty threads</span>
+        <span class="qp-seg" role="radiogroup" aria-label="Size">
+          <button v-for="z in MASCOT_SIZES" :key="z.id" role="radio" class="qp-seg-btn" :class="{ on: m.size === z.id }" :aria-checked="m.size === z.id" @click="mascot.set({ size: z.id })">{{ z.label }}</button>
+        </span>
+      </div>
+      <label class="qp-check">
+        <input type="checkbox" :checked="m.agentTint" @change="mascot.set({ agentTint: ($event.target as HTMLInputElement).checked })" />
+        <span>Tint it with the thread's agent <em>— Claude warm, Gemini blue, …</em></span>
+      </label>
+      <label class="qp-check">
+        <input type="checkbox" :checked="m.companion" @change="mascot.set({ companion: ($event.target as HTMLInputElement).checked })" />
+        <span>Companion <em>— a small one you can drag anywhere in QuantPilot; it stays where you leave it</em></span>
+      </label>
+      <div class="qp-gallery" aria-label="Every mood">
+        <figure v-for="mood in MOODS" :key="mood" class="qp-gallery-item">
+          <div class="qp-gallery-face"><PilotFace state="idle" :mood="mood" :interactive="false" /></div>
+          <figcaption>{{ MOOD_LABEL[mood] }}</figcaption>
+        </figure>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -63,4 +119,13 @@ const SIZES: { id: PilotSettings['textSize']; label: string }[] = [
 .qp-check { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
 .qp-check em { font-style: normal; color: var(--qss-text-muted, #6e6e7a); }
 .qp-check code { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11.5px; }
+.qp-sub { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--qss-text, #d4d4d8); }
+.qp-text { width: 220px; height: 26px; padding: 0 8px; border: 1px solid var(--qss-border, #47474f); border-radius: 6px; background: var(--qss-bg, #18181e); color: var(--qss-text, #d4d4d8); font: inherit; font-size: 12.5px; }
+.qp-swatches { display: inline-flex; gap: 8px; }
+.qp-swatch { width: 22px; height: 22px; padding: 0; border: 2px solid transparent; border-radius: 50%; cursor: pointer; }
+.qp-swatch.on { border-color: var(--qss-text, #d4d4d8); }
+.qp-gallery { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 8px; margin-top: 4px; }
+.qp-gallery-item { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 0; }
+.qp-gallery-face { width: 72px; }
+.qp-gallery-item figcaption { font-size: 11.5px; color: var(--qss-text-secondary, #9a9aa5); }
 </style>

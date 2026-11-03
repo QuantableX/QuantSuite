@@ -17,13 +17,19 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { CENTER_COLOR, elapsed, fitScale, radialLayout, STATE_LABEL, travelOf, type Graph, type GraphNode, type NodeState } from '#pilot/utils/crewGraph'
-import type { CrewSnapshot } from '#pilot/types'
+import { useMascotStore } from '#pilot/stores/mascot'
+import type { CrewSnapshot, LiveState } from '#pilot/types'
 
 const props = defineProps<{ graph: Graph; snap?: CrewSnapshot | null; compact?: boolean }>()
+/** The mascot leads the crew (round 2, card 05): it juggles when three or more work. */
+const mascot = useMascotStore()
+function faceOf(s: NodeState): LiveState {
+  return s === 'working' ? 'working' : s === 'waiting' ? 'waiting' : s === 'error' ? 'error' : 'idle'
+}
 const emit = defineEmits<{ open: [threadId: string] }>()
 
 const NODE = computed(() => (props.compact ? { w: 46, h: 46 } : { w: 176, h: 78 }))
-const CENTER = computed(() => (props.compact ? { w: 54, h: 54 } : { w: 232, h: 70 }))
+const CENTER = computed(() => (props.compact ? { w: 54, h: 54 } : { w: 268, h: 70 }))
 
 // ── Size, layout, zoom and pan ──
 const stage = ref<HTMLElement | null>(null)
@@ -277,6 +283,9 @@ onBeforeUnmount(() => {
       <!-- The orchestrator -->
       <button class="qp-gc" :class="{ hot: centerHot, [`s-${graph.center.state}`]: true }" :style="centerStyle" :title="`${graph.center.title} — ${graph.center.sub}`" @click="open(graph.center.threadId)">
         <PilotAgentIcon :agent="graph.center.provider || null" :size="compact ? 18 : 18" :status="iconStatus(graph.center.state)" />
+        <span v-if="!compact && mascot.prefs.on" class="qp-gc-face" aria-hidden="true">
+          <PilotFace :state="faceOf(graph.center.state)" :busy="graph.nodes.filter((n) => n.state === 'working').length" :agent="graph.center.provider || null" :interactive="false" />
+        </span>
         <span v-if="!compact" class="qp-gc-text">
           <span class="qp-gc-title">{{ graph.center.title }}</span>
           <span class="qp-gc-sub">{{ graph.center.sub }}</span>
@@ -353,6 +362,7 @@ onBeforeUnmount(() => {
 .qp-gc.hot { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c) 28%, transparent), 0 8px 24px rgba(0, 0, 0, 0.35); }
 .compact .qp-gc { justify-content: center; padding: 0; border-radius: 50%; }
 .qp-gc-text { display: flex; flex-direction: column; min-width: 0; }
+.qp-gc-face { flex: none; width: 34px; margin: -6px -4px -6px -6px; }
 .qp-gc-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-gc-sub { font-size: 11.5px; color: var(--qss-text-secondary, #9a9aa5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

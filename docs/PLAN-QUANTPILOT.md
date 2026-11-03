@@ -2882,3 +2882,50 @@ every budget met.
 
 **Checks.** `npm run check:ts`; `npm run test:pilot` 129 passed;
 `check:css`, `check:isolation`.
+
+## 47. Round 2 · 05/12: the mascot, the same blob with more of everything
+
+Card 11360934. The user kept the blob ("so wie jetzt, aber mit mehr allem")
+instead of a new character, which settled the card's concept step.
+
+- **Moods** (`utils/mascot.ts`): sleeping (offline), calm (idle), thinking,
+  focused (working), juggling (working while three or more agents work —
+  three coloured balls circle its head), tired (a run past eight minutes:
+  half-lidded, a drop of sweat), calling (waiting on you: eyes on you, brows
+  up, an amber ring and halo, a waving hand), worried (error: tilted brows,
+  a wavy mouth, a red ring, a shiver), cheering (a turn finished: ^^ eyes,
+  blush, a squash-and-stretch jump), nodding (an approval was granted).
+  Eyes, brows, mouth, cheeks and body all take part.
+- **Depth:** a shaded body (radial light, a dark lower edge), a highlight,
+  a rim ring, cheeks and a soft shadow; it breathes.
+- **Movement:** the eyes follow the pointer, otherwise glance about (a
+  fresh spot and pause each time, never a loop); it blinks, sometimes
+  twice; hover perks it up; a click squishes it and it says something new;
+  springy transitions between expressions.
+- **Your look** (Settings → Appearance → Mascot, kept on this machine):
+  on/off, a name (default Pip), six skins (Night is today's look), dots /
+  round / sparkle eyes, a cap, glasses, a headset or a bow, its size in
+  empty threads, a tint from the thread's agent, and a **companion** — a
+  small one you drag anywhere over QuantPilot (pointer events); it leans
+  into the drag and stays where it is put. The section shows every mood
+  live — the QA page.
+- **Character:** short lines per mood in its tooltip and under the empty
+  thread's question ("Pip: Ready when you are."), never in the transcript.
+- **Where:** the panel head, the empty thread, the crew view's orchestrator
+  node (it juggles with three busy workers), the companion.
+- **Performance:** plain elements instead of SVG with a blur filter; motion
+  is `transform`/`opacity`; timers, the pointer listener and the long-run
+  check run only while the face is on screen (an active page, a visible
+  document). Reduced motion keeps every expression and drops the
+  continuous motion. Measured (CDP, renderer main thread): the empty thread
+  with panel and companion 8.8 % of a core with the old face → 1.8 % with
+  the new one; another module open 0.25 %; all ten moods animating at once
+  in the settings gallery 9.7 %.
+
+**Checks.** `npm run check:ts`; `npm run test:pilot` 133 passed (new
+`scripts/test-pilot-mascot.mjs`: moods and their priorities, lines,
+preferences, gaze); `check:css`, `check:isolation`, `check:components`.
+Native QA (`artifacts/quantpilot-r2-05/`): the gallery in Night/Dots,
+Mint/Round/Cap and Violet/Sparkle/Headset; the panel, the empty thread with
+its line, the companion, the crew view's orchestrator node. The suite is
+dark only, so there is no second theme to check.

@@ -7,6 +7,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useThreadStore } from '#pilot/stores/thread'
 import { usePilotStore } from '#pilot/stores/pilot'
+import { useMascotStore } from '#pilot/stores/mascot'
+import { lineFor, SIZES as MASCOT_SIZES } from '#pilot/utils/mascot'
 
 const props = defineProps<{ threadId: string }>()
 const threads = useThreadStore()
@@ -35,6 +37,10 @@ onBeforeUnmount(() => {
   if (noticeTimer) clearTimeout(noticeTimer)
 })
 
+// The mascot (round 2, card 05): its size and a line in character, empty threads only.
+const mascot = useMascotStore()
+const heroSize = computed(() => MASCOT_SIZES.find((s) => s.id === mascot.prefs.size)?.px ?? 120)
+const heroLine = computed(() => lineFor(faceState.value === 'waiting' ? 'call' : faceState.value === 'error' ? 'worried' : 'calm', mascot.prefs.name, props.threadId.length))
 const faceState = computed(() => {
   switch (view.value?.state) {
     case 'running':
@@ -53,8 +59,11 @@ const faceState = computed(() => {
 <template>
   <div class="qp-conv">
     <div v-if="empty" class="qp-hero">
-      <div class="qp-hero-face"><PilotFace :state="faceState" :cheer="view?.cheer ?? 0" /></div>
+      <div v-if="mascot.prefs.on" class="qp-hero-face" :style="{ width: `${heroSize}px` }">
+        <PilotFace :state="faceState" :cheer="view?.cheer ?? 0" :nod="mascot.nods[threadId] ?? 0" :agent="thread?.provider ?? null" />
+      </div>
       <h2 class="qp-hero-title">What should we build in {{ thread?.contextName || 'General' }}?</h2>
+      <p v-if="mascot.prefs.on && mascot.prefs.name" class="qp-hero-line">{{ heroLine }}</p>
       <p v-if="isTerminalRow" class="qp-hero-text">
         This session started in the terminal. Its earlier messages stay in {{ store.adapterLabel(thread?.provider || 'claude') }}'s own history — write here and the agent continues with them, or open the terminal again.
         <button class="qp-link" @click="store.openTerminal(threadId)">Open terminal</button>
@@ -93,6 +102,7 @@ const faceState = computed(() => {
   text-align: center;
 }
 .qp-hero-face { width: 120px; margin-bottom: 4px; }
+.qp-hero-line { margin: -2px 0 0; font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-hero-title { margin: 0; font-size: 18px; font-weight: 600; color: var(--qss-text, #d4d4d8); }
 .qp-hero-text { margin: 0; max-width: 520px; font-size: 12.5px; line-height: 1.55; color: var(--qss-text-muted, #6e6e7a); overflow-wrap: anywhere; }
 .qp-conv-foot { flex-shrink: 0; }

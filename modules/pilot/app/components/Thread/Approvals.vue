@@ -24,6 +24,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { Bot, ChevronRight, FileText, Globe, ImageIcon, ListChecks, Loader2, Paperclip, Pencil, Plug, SquareTerminal, Wrench, X } from 'lucide-vue-next'
 import { useThreadStore } from '#pilot/stores/thread'
+import { useMascotStore } from '#pilot/stores/mascot'
 import { usePilotStore } from '#pilot/stores/pilot'
 import type { AnswerFile, ComposerAttachment, ThreadItem } from '#pilot/types'
 import { pruneRequestDrafts, requestDraft, type RequestDraft } from '#pilot/utils/requestDrafts'
@@ -82,6 +83,8 @@ async function answer(item: ThreadItem, a: Parameters<typeof threads.answer>[2])
   busy.value = item.id
   await threads.answer(props.threadId, String(item.data.requestId), a)
   busy.value = null
+  // Granted: the face nods (round 2, card 05).
+  if ('decision' in a && (a.decision === 'allow' || a.decision === 'allowSession')) useMascotStore().nod(props.threadId)
 }
 
 async function approveAll() {

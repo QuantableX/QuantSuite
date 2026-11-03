@@ -1,248 +1,532 @@
 <script setup lang="ts">
 /**
- * The pilot — the orchestrator face from QuantControl's org chart, kept.
+ * The pilot — still the blob from QuantControl's org chart, with more of
+ * everything (round 2, card 05).
  *
- * Two dots that look around, blink, doze off when there is nothing to talk
- * to, and go ^^ when a turn finishes. Not a keyframe loop: a loop repeats,
- * and a face that repeats reads as a GIF. Each glance picks a fresh spot
- * and a fresh pause, with a bias back to center so it looks attentive
- * rather than shifty.
+ * Moods for what the agent does (utils/mascot.ts): sleeping, calm,
+ * thinking, focused, juggling when several agents work, tired on a long
+ * run, calling you (eyes on you, a wave), worried, cheering when a turn
+ * finishes, nodding when an approval is granted. Depth: a shaded body with
+ * a highlight, a rim, cheeks and a soft shadow that breathes with it.
+ * Movement: the eyes follow the pointer, otherwise glance about (each
+ * glance a fresh spot and pause — a loop would read as a GIF); hover perks
+ * it up, a click squishes it and it says something. Springy transitions.
+ * The user's look: skin, eye style, an accessory, a name, an agent tint.
  *
- * The old version gated all of this on `prefers-reduced-motion`, which
- * Windows reports whenever "animation effects" is off — so on this machine
- * the eyes never moved at all. A glance and a blink are state changes, not
- * motion; they run regardless. Only the continuous halo pulse honours the
- * setting (CSS).
+ * Built from plain elements: every motion is `transform`/`opacity`, so the
+ * compositor runs it. Timers and the pointer listener live only while the
+ * face is on screen (an active page, a visible document). Reduced motion
+ * keeps every expression but drops the continuous motion (breathing, bob,
+ * orbit, wave, pulse) — Windows reports reduced motion whenever animation
+ * effects are off, so expressions never depend on it.
  */
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { inActiveKeepAliveTree } from '@quantsuite/core'
+import { useMascotStore } from '#pilot/stores/mascot'
+import { agentTint, gazeToward, lineFor, moodOf, MOOD_LABEL, SKINS, type Mood } from '#pilot/utils/mascot'
 import type { LiveState } from '#pilot/types'
 
 const props = withDefaults(
   defineProps<{
     state: LiveState
-    /** Bump whenever a turn finished; the face goes ^^ for a moment. */
+    /** Bump whenever a turn finished: it cheers. */
     cheer?: number
+    /** Bump when an approval was granted: it nods. */
+    nod?: number
+    /** Agents working anywhere: three or more and it juggles. */
+    busy?: number
+    /** When the running turn started: a long run tires it. */
+    startedAt?: number | null
+    /** The thread's agent, for the outfit tint. */
+    agent?: string | null
+    /** Show this mood regardless (Settings' gallery). */
+    mood?: Mood | null
+    /** Follow the pointer, react to hover and clicks. */
+    interactive?: boolean
   }>(),
-  { cheer: 0 }
+  { cheer: 0, nod: 0, busy: 0, startedAt: null, agent: null, mood: null, interactive: true }
 )
 
-const gaze = ref({ x: 0, y: 0 })
-const blink = ref(false)
-const happy = ref(false)
+const mascot = useMascotStore()
+const prefs = computed(() => mascot.prefs)
 
-let gazeTimer: ReturnType<typeof setTimeout> | null = null
-let blinkTimer: ReturnType<typeof setTimeout> | null = null
-let happyTimer: ReturnType<typeof setTimeout> | null = null
-let happyEnd: ReturnType<typeof setTimeout> | null = null
+// ── On screen? Timers and listeners only then ──
+const root = ref<HTMLElement | null>(null)
+const active = ref(false)
+const pageVisible = ref(typeof document === 'undefined' ? true : !document.hidden)
+const live = computed(() => active.value && pageVisible.value)
+const onVisibility = () => (pageVisible.value = !document.hidden)
+const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
-function rand(min: number, max: number): number {
-  return min + Math.random() * (max - min)
+// ── Events: cheer, nod, click ──
+const cheering = ref(false)
+const nodding = ref(false)
+const squish = ref(false)
+const timers = new Set<ReturnType<typeof setTimeout>>()
+function later(fn: () => void, ms: number) {
+  const t = setTimeout(() => {
+    timers.delete(t)
+    fn()
+  }, ms)
+  timers.add(t)
 }
-
-const awake = () => props.state !== 'offline'
-
-function scheduleGaze() {
-  const s = props.state
-  const delay =
-    s === 'offline' ? rand(6000, 11000)
-    : s === 'working' ? rand(700, 1600)
-    : s === 'thinking' ? rand(1100, 2600)
-    : s === 'waiting' ? rand(4000, 7000)
-    : rand(2800, 6500)
-  gazeTimer = setTimeout(() => {
-    if (happy.value) {
-      // ^^ holds still; a moving smile reads as a twitch.
-    } else if (s === 'offline') {
-      gaze.value = { x: rand(-1.5, 1.5), y: rand(0.5, 2) } // dozing: a slow drift down
-    } else if (s === 'waiting') {
-      gaze.value = { x: rand(-0.6, 0.6), y: rand(-0.6, 0.6) } // looking at you
-    } else if (Math.random() < 0.3) {
-      gaze.value = { x: 0, y: 0 }
-    } else {
-      gaze.value = { x: rand(-5, 5), y: rand(-3.5, 3) }
-    }
-    scheduleGaze()
-  }, delay)
+function clearTimers() {
+  for (const t of timers) clearTimeout(t)
+  timers.clear()
 }
-
-function scheduleBlink() {
-  blinkTimer = setTimeout(() => {
-    if (!happy.value) {
-      blink.value = true
-      setTimeout(() => {
-        blink.value = false
-        // A double blink now and then — the thing every real face does.
-        if (Math.random() < 0.18) {
-          setTimeout(() => {
-            blink.value = true
-            setTimeout(() => {
-              blink.value = false
-            }, 120)
-          }, 200)
-        }
-      }, 140)
-    }
-    scheduleBlink()
-  }, awake() ? rand(4000, 9000) : rand(12000, 20000))
-}
-
-/** ^^ for a moment: eyes to center, dots fade into arcs, then back. */
-function beHappy(ms = 1800) {
-  if (!awake()) return
-  gaze.value = { x: 0, y: 0 }
-  happy.value = true
-  if (happyEnd) clearTimeout(happyEnd)
-  happyEnd = setTimeout(() => {
-    happy.value = false
+let cheerEnd = 0
+function cheerFor(ms: number) {
+  cheering.value = true
+  const until = Date.now() + ms
+  cheerEnd = until
+  later(() => {
+    if (cheerEnd === until) cheering.value = false
   }, ms)
 }
-
-function scheduleHappy() {
-  happyTimer = setTimeout(() => {
-    if (props.state === 'idle') beHappy(rand(1500, 2400))
-    scheduleHappy()
-  }, rand(18000, 40000))
-}
-
-onMounted(() => {
-  scheduleGaze()
-  scheduleBlink()
-  scheduleHappy()
-})
-onBeforeUnmount(() => {
-  for (const t of [gazeTimer, blinkTimer, happyTimer, happyEnd]) if (t) clearTimeout(t)
-})
-
 watch(
   () => props.cheer,
   (now, before) => {
-    if (before === undefined || (now ?? 0) <= (before ?? 0)) return
-    beHappy(2200)
+    if (before !== undefined && now > before && props.state !== 'error') cheerFor(2200)
   }
 )
-// Waking up: look up and around at once instead of waiting out a doze.
 watch(
-  () => props.state,
-  (s, was) => {
-    if (was === 'offline' && s !== 'offline') gaze.value = { x: rand(-3, 3), y: -2 }
-    if (s === 'waiting') gaze.value = { x: 0, y: 0 }
+  () => props.nod,
+  (now, before) => {
+    if (before === undefined || now <= before) return
+    nodding.value = true
+    later(() => (nodding.value = false), 1100)
   }
 )
+
+// A long run: checked twice a minute while working and on screen.
+const now = ref(Date.now())
+let longTimer: ReturnType<typeof setInterval> | null = null
+function syncLong() {
+  const want = live.value && props.state === 'working' && Boolean(props.startedAt)
+  if (want && !longTimer) {
+    now.value = Date.now()
+    longTimer = setInterval(() => (now.value = Date.now()), 30_000)
+  } else if (!want && longTimer) {
+    clearInterval(longTimer)
+    longTimer = null
+  }
+}
+
+const mood = computed<Mood>(
+  () =>
+    props.mood ??
+    moodOf({
+      state: props.state,
+      busy: props.busy,
+      elapsedMs: props.startedAt ? now.value - props.startedAt : 0,
+      cheering: cheering.value,
+      nodding: nodding.value,
+    })
+)
+
+// ── Gaze: the pointer, else a glance now and then ──
+const gaze = ref({ x: 0, y: 0 })
+const blink = ref(false)
+let followUntil = 0
+let pendingPointer: { x: number; y: number } | null = null
+let frame = 0
+function onPointer(e: PointerEvent) {
+  pendingPointer = { x: e.clientX, y: e.clientY }
+  if (frame) return
+  frame = requestAnimationFrame(() => {
+    frame = 0
+    const el = root.value
+    const p = pendingPointer
+    if (!el || !p || mood.value === 'sleep' || mood.value === 'cheer') return
+    const r = el.getBoundingClientRect()
+    gaze.value = gazeToward(p.x - (r.left + r.width / 2), p.y - (r.top + r.height / 2))
+    followUntil = Date.now() + 2500
+  })
+}
+const rand = (a: number, b: number) => a + Math.random() * (b - a)
+function scheduleGlance() {
+  const m = mood.value
+  const delay = m === 'sleep' ? rand(6000, 11000) : m === 'focus' || m === 'juggle' ? rand(1400, 3000) : m === 'think' ? rand(1100, 2600) : m === 'call' ? rand(4000, 7000) : rand(2800, 6500)
+  later(() => {
+    if (Date.now() >= followUntil && !cheering.value) {
+      const md = mood.value
+      if (md === 'sleep') gaze.value = { x: rand(-0.01, 0.01), y: 0.02 }
+      else if (md === 'call') gaze.value = { x: 0, y: 0 }
+      else if (md === 'think') gaze.value = { x: rand(0.02, 0.05) * (Math.random() < 0.5 ? -1 : 1), y: -0.04 }
+      else if (Math.random() < 0.3) gaze.value = { x: 0, y: 0 }
+      else gaze.value = { x: rand(-0.05, 0.05), y: rand(-0.035, 0.03) }
+    }
+    scheduleGlance()
+  }, delay)
+}
+function scheduleBlink() {
+  later(() => {
+    if (!cheering.value && mood.value !== 'sleep') {
+      blink.value = true
+      later(() => {
+        blink.value = false
+        if (Math.random() < 0.18) later(() => {
+          blink.value = true
+          later(() => (blink.value = false), 110)
+        }, 190)
+      }, 130)
+    }
+    scheduleBlink()
+  }, mood.value === 'sleep' ? rand(12000, 20000) : rand(3500, 8500))
+}
+function scheduleIdleSmile() {
+  later(() => {
+    if (props.state === 'idle' && !props.mood) cheerFor(rand(1400, 2200))
+    scheduleIdleSmile()
+  }, rand(20000, 45000))
+}
+
+function start() {
+  if (!live.value) return
+  clearTimers()
+  scheduleGlance()
+  scheduleBlink()
+  scheduleIdleSmile()
+  if (props.interactive) window.addEventListener('pointermove', onPointer, { passive: true })
+  syncLong()
+}
+function stop() {
+  clearTimers()
+  window.removeEventListener('pointermove', onPointer)
+  if (frame) cancelAnimationFrame(frame)
+  frame = 0
+  if (longTimer) clearInterval(longTimer)
+  longTimer = null
+}
+watch(live, (v) => (v ? start() : stop()))
+watch(() => [props.state, props.startedAt], syncLong)
+// Waking up: look around at once instead of waiting out a doze.
+watch(mood, (m, was) => {
+  if (was === 'sleep' && m !== 'sleep') gaze.value = { x: rand(-0.03, 0.03), y: -0.02 }
+  if (m === 'call') gaze.value = { x: 0, y: 0 }
+})
+
+onMounted(() => {
+  active.value = inActiveKeepAliveTree()
+  document.addEventListener('visibilitychange', onVisibility)
+  start()
+})
+onActivated(() => (active.value = true))
+onDeactivated(() => (active.value = false))
+onBeforeUnmount(() => {
+  stop()
+  document.removeEventListener('visibilitychange', onVisibility)
+})
+
+// ── Hover and click ──
+const hover = ref(false)
+const lineSeed = ref(Math.floor(Math.random() * 100))
+function poke() {
+  if (!props.interactive) return
+  lineSeed.value++
+  squish.value = true
+  later(() => (squish.value = false), 260)
+  if (mood.value === 'calm' || mood.value === 'sleep') cheerFor(1200)
+}
+
+// ── Look ──
+const skin = computed(() => SKINS.find((s) => s.id === prefs.value.skin) ?? SKINS[0]!)
+const vars = computed(() => {
+  const tint = prefs.value.agentTint ? agentTint(props.agent) : null
+  const base = tint ? `color-mix(in srgb, ${tint} 70%, ${skin.value.base})` : skin.value.base
+  return {
+    '--m-base': base,
+    '--m-light': tint ? `color-mix(in srgb, ${tint} 45%, ${skin.value.light})` : skin.value.light,
+    '--m-ink': skin.value.ink,
+    '--m-gx': `${gaze.value.x * 100}%`,
+    '--m-gy': `${gaze.value.y * 100}%`,
+  }
+})
+const MOUTH: Record<Mood, string> = {
+  calm: 'M8 5 Q12 8.2 16 5',
+  think: 'M10.4 6 Q12 4.6 13.6 6 Q12 7.4 10.4 6',
+  focus: 'M9 6 Q12 6.6 15 6',
+  juggle: 'M8 5 Q12 9 16 5',
+  tired: 'M8.5 7 Q12 5.6 15.5 6.4',
+  call: 'M10 5 Q12 3.2 14 5 Q12 8.8 10 5',
+  worried: 'M7.5 7 Q9.8 5 12 7 Q14.2 9 16.5 7',
+  cheer: 'M6.5 4 Q12 12 17.5 4 Q12 6.4 6.5 4',
+  nod: 'M8 5 Q12 8.6 16 5',
+  sleep: 'M10 6 Q12 7.2 14 6',
+}
+const filled = computed(() => mood.value === 'cheer' || mood.value === 'call' || mood.value === 'think')
+const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.value))
 </script>
 
 <template>
-  <svg viewBox="0 0 120 120" class="qp-face" :class="[`is-${state}`, { happy }]" aria-hidden="true">
-    <defs>
-      <filter id="qp-face-glow" x="-60%" y="-60%" width="220%" height="220%">
-        <feGaussianBlur stdDeviation="5" result="b" />
-        <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-      </filter>
-    </defs>
-    <circle class="qp-face-halo" cx="60" cy="60" r="46" filter="url(#qp-face-glow)" />
-    <circle class="qp-face-body" cx="60" cy="60" r="36" />
-    <!-- brows: only the waiting face has them, raised -->
-    <path class="qp-face-brow" d="M40.5 44 Q48 39 55.5 44" />
-    <path class="qp-face-brow" d="M64.5 44 Q72 39 79.5 44" />
-    <g class="qp-face-eyes" :style="{ transform: `translate(${gaze.x}px, ${gaze.y}px)` }">
-      <circle class="qp-face-eye" :class="{ blink }" cx="48" cy="57" r="5.4" />
-      <circle class="qp-face-eye" :class="{ blink }" cx="72" cy="57" r="5.4" />
-      <!-- the happy face: dots give way to two little arcs -->
-      <path class="qp-face-smile" d="M41.5 60 Q48 50 54.5 60" />
-      <path class="qp-face-smile" d="M65.5 60 Q72 50 78.5 60" />
-    </g>
-  </svg>
+  <div
+    v-if="prefs.on || $props.mood !== null"
+    ref="root"
+    class="qp-mascot"
+    :class="[`m-${mood}`, `eyes-${prefs.eyes}`, `skin-${prefs.skin}`, { hover: hover && interactive, squish, blink, still: reduced }]"
+    :style="vars"
+    role="img"
+    :aria-label="`${prefs.name || 'Mascot'} — ${MOOD_LABEL[mood]}`"
+    :title="label"
+    @pointerenter="hover = true"
+    @pointerleave="hover = false"
+    @click="poke"
+  >
+    <div class="qp-m-shadow" />
+    <div class="qp-m-bob">
+      <div class="qp-m-halo" />
+      <div class="qp-m-body">
+        <div class="qp-m-shine" />
+        <div class="qp-m-cheek l" /><div class="qp-m-cheek r" />
+        <div class="qp-m-brow l" /><div class="qp-m-brow r" />
+        <div class="qp-m-eyes">
+          <i class="qp-m-eye l"><b /><s /></i>
+          <i class="qp-m-eye r"><b /><s /></i>
+        </div>
+        <svg class="qp-m-mouth" viewBox="0 0 24 12" aria-hidden="true">
+          <path :d="MOUTH[mood]" :class="{ filled }" />
+        </svg>
+        <!-- accessories ride on the body -->
+        <svg v-if="prefs.accessory !== 'none'" class="qp-m-acc" viewBox="0 0 100 100" aria-hidden="true">
+          <g v-if="prefs.accessory === 'cap'">
+            <path d="M14 18 Q50 -30 86 18 Q50 8 14 18 Z" class="acc-fill" />
+            <path d="M12 18 Q50 6 88 18" class="acc-band" />
+            <circle cx="50" cy="-13" r="6" class="acc-fill" />
+          </g>
+          <g v-else-if="prefs.accessory === 'glasses'" class="acc-line">
+            <circle cx="33" cy="46" r="12" />
+            <circle cx="67" cy="46" r="12" />
+            <path d="M45 46 Q50 42 55 46 M21 44 L6 40 M79 44 L94 40" />
+          </g>
+          <g v-else-if="prefs.accessory === 'headset'">
+            <path d="M6 54 Q4 -6 50 -2 Q96 -6 94 54" class="acc-line thick" />
+            <rect x="-2" y="42" width="12" height="22" rx="5" class="acc-dark" />
+            <rect x="90" y="42" width="12" height="22" rx="5" class="acc-dark" />
+            <path d="M96 62 Q92 84 66 78" class="acc-line" />
+            <circle cx="64" cy="78" r="4" class="acc-dark" />
+          </g>
+          <g v-else-if="prefs.accessory === 'bow'" class="acc-fill">
+            <path d="M70 6 L56 -4 L58 16 Z M70 6 L84 -4 L82 16 Z" />
+            <circle cx="70" cy="6" r="5" />
+          </g>
+        </svg>
+      </div>
+      <div v-if="mood === 'call'" class="qp-m-hand" />
+      <div v-if="mood === 'juggle'" class="qp-m-juggle"><i /><i /><i /></div>
+      <div v-if="mood === 'tired'" class="qp-m-sweat" />
+      <div v-if="mood === 'sleep'" class="qp-m-zzz">z<span>z</span></div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.qp-face {
-  display: block;
+.qp-mascot {
+  --m-base: #2a2a31;
+  --m-light: #4a4a55;
+  --m-ink: #e4e4e7;
+  --m-ring: color-mix(in srgb, var(--m-ink) 80%, transparent);
+  --m-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+  position: relative;
   width: 100%;
-  height: auto;
-  overflow: visible;
+  aspect-ratio: 1;
+  container-type: inline-size;
+  user-select: none;
+  cursor: default;
 }
-.qp-face-halo {
-  fill: var(--qss-text, #d4d4d8);
-  opacity: 0.1;
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: opacity 0.6s ease;
+/* ── Shadow, bob, body ── */
+.qp-m-shadow {
+  position: absolute;
+  left: 26%;
+  bottom: 9%;
+  width: 48%;
+  height: 7%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.45), transparent 70%);
 }
-.is-offline .qp-face-halo { opacity: 0; }
-.is-thinking .qp-face-halo,
-.is-working .qp-face-halo {
-  opacity: 0.16;
-  animation: qp-face-pulse 2.4s ease-in-out infinite;
+.qp-m-bob { position: absolute; inset: 0; animation: qp-m-breathe 4.2s ease-in-out infinite; transform-origin: 50% 80%; }
+.qp-m-body {
+  position: absolute;
+  left: 20%;
+  top: 18%;
+  width: 60%;
+  height: 60%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 28%, var(--m-light) 0%, var(--m-base) 52%, color-mix(in srgb, var(--m-base), #000 45%) 100%);
+  box-shadow:
+    inset 0 -2.2cqw 4.5cqw rgba(0, 0, 0, 0.35),
+    inset 0 1.2cqw 2.5cqw color-mix(in srgb, #fff 10%, transparent),
+    0 0 0 1.3cqw var(--m-ring);
+  transition: transform 0.35s var(--m-spring), box-shadow 0.4s ease;
 }
-.is-working .qp-face-halo { animation-duration: 1.3s; }
-.is-waiting .qp-face-halo { fill: var(--qss-warning, #d29a3f); opacity: 0.22; }
-.is-error .qp-face-halo { fill: var(--qss-error, #f87171); opacity: 0.18; }
-
-.qp-face-body {
-  fill: color-mix(in srgb, var(--qss-bg, #18181e) 40%, #000);
-  stroke: var(--qss-text, #d4d4d8);
-  stroke-width: 1.6;
-  transition: stroke 0.4s ease;
+.skin-night .qp-m-body { --m-ring: color-mix(in srgb, var(--m-ink) 82%, transparent); }
+.skin-mint .qp-m-body,
+.skin-sky .qp-m-body,
+.skin-violet .qp-m-body,
+.skin-peach .qp-m-body,
+.skin-lemon .qp-m-body { --m-ring: color-mix(in srgb, var(--m-light) 55%, transparent); }
+.qp-m-shine {
+  position: absolute;
+  left: 18%;
+  top: 9%;
+  width: 36%;
+  height: 22%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.42), transparent 70%);
+  transform: rotate(-18deg);
 }
-.is-offline .qp-face-body { stroke: var(--qss-text-muted, #6e6e7a); }
-.is-waiting .qp-face-body { stroke: var(--qss-warning, #d29a3f); }
-.is-error .qp-face-body { stroke: var(--qss-error, #f87171); }
-
-.qp-face-eyes { transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.is-working .qp-face-eyes { transition-duration: 0.35s; }
-.is-thinking .qp-face-eyes { transition-duration: 0.45s; }
-
-.qp-face-eye {
-  fill: var(--qss-text, #d4d4d8);
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 0.12s ease-in, opacity 0.25s ease, fill 0.4s ease;
-}
-.qp-face-eye.blink { transform: scaleY(0.08); }
-/* Dozing: half-lidded and dim. */
-.is-offline .qp-face-eye { transform: scaleY(0.42); opacity: 0.55; fill: var(--qss-text-muted, #6e6e7a); }
-.is-offline .qp-face-eye.blink { transform: scaleY(0.08); }
-/* Waiting: wide open, straight at you. */
-.is-waiting .qp-face-eye { transform: scale(1.18); }
-.is-waiting .qp-face-eye.blink { transform: scale(1.18) scaleY(0.08); }
-/* Working: a slight squint of concentration. */
-.is-working .qp-face-eye { transform: scaleY(0.78); }
-.is-working .qp-face-eye.blink { transform: scaleY(0.08); }
-/* Error: flat. */
-.is-error .qp-face-eye { transform: scaleY(0.22); fill: var(--qss-error, #f87171); }
-
-.qp-face-brow {
-  fill: none;
-  stroke: var(--qss-warning, #d29a3f);
-  stroke-width: 2;
-  stroke-linecap: round;
+.qp-m-halo {
+  position: absolute;
+  left: 13%;
+  top: 11%;
+  width: 74%;
+  height: 74%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--m-ink) 22%, transparent) 55%, transparent 72%);
   opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-  transform: translateY(3px);
-  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 0.5s ease;
 }
-.is-waiting .qp-face-brow { opacity: 1; transform: translateY(0); }
-
-/* ^^ */
-.qp-face-smile {
-  fill: none;
-  stroke: var(--qss-text, #d4d4d8);
-  stroke-width: 2.6;
-  stroke-linecap: round;
+/* ── Face parts (in the body's own percentages) ── */
+.qp-m-eyes { position: absolute; inset: 0; transform: translate(var(--m-gx), var(--m-gy)); transition: transform 0.55s var(--m-spring); }
+.qp-m-eye {
+  position: absolute;
+  top: 39%;
+  width: 15%;
+  height: 15%;
+  border-radius: 50%;
+  background: var(--m-ink);
+  transform-origin: center;
+  transition: transform 0.16s ease, border-radius 0.25s ease, opacity 0.2s ease, clip-path 0.3s ease;
+}
+.qp-m-eye.l { left: 25.5%; }
+.qp-m-eye.r { left: 59.5%; }
+.qp-m-eye b,
+.qp-m-eye s { position: absolute; border-radius: 50%; background: #fff; opacity: 0; text-decoration: none; }
+.qp-m-eye b { right: 16%; top: 14%; width: 32%; height: 32%; }
+.qp-m-eye s { left: 22%; bottom: 18%; width: 18%; height: 18%; }
+.eyes-round .qp-m-eye { top: 36%; width: 20%; height: 20%; background: #f4f4f5; box-shadow: inset 0 -0.6cqw 0 rgba(0, 0, 0, 0.12); }
+.eyes-round .qp-m-eye.l { left: 23%; }
+.eyes-round .qp-m-eye.r { left: 57%; }
+.eyes-round .qp-m-eye b { right: 24%; top: 24%; width: 52%; height: 52%; background: #18181e; opacity: 1; }
+.eyes-sparkle .qp-m-eye b,
+.eyes-sparkle .qp-m-eye s { opacity: 0.95; }
+.skin-night.eyes-sparkle .qp-m-eye b,
+.skin-night.eyes-sparkle .qp-m-eye s { background: #18181e; opacity: 0.6; }
+.qp-m-brow {
+  position: absolute;
+  top: 27%;
+  width: 18%;
+  height: 4%;
+  border-radius: 2cqw;
+  background: var(--m-ink);
   opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-  transform: translateY(2px) scale(0.85);
-  transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 0.25s ease, transform 0.35s var(--m-spring);
 }
-.happy .qp-face-eye { opacity: 0; }
-.happy .qp-face-smile { opacity: 1; transform: translateY(0) scale(1); }
+.qp-m-brow.l { left: 24%; }
+.qp-m-brow.r { left: 58%; }
+.qp-m-mouth { position: absolute; left: 33%; top: 59%; width: 34%; height: 17%; overflow: visible; }
+.qp-m-mouth path { fill: none; stroke: var(--m-ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: d 0.3s var(--m-spring); }
+.qp-m-mouth path.filled { fill: color-mix(in srgb, var(--m-ink) 85%, transparent); }
+.qp-m-cheek { position: absolute; top: 55%; width: 15%; height: 9%; border-radius: 50%; background: radial-gradient(ellipse, rgba(255, 120, 140, 0.55), transparent 70%); opacity: 0.25; transition: opacity 0.3s ease; }
+.qp-m-cheek.l { left: 12%; }
+.qp-m-cheek.r { right: 12%; }
+.qp-m-acc { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.acc-fill { fill: #f87171; }
+.acc-band { fill: none; stroke: #b91c1c; stroke-width: 5; stroke-linecap: round; }
+.acc-line { fill: none; stroke: var(--m-ink); stroke-width: 3; stroke-linecap: round; }
+.acc-line.thick { stroke-width: 6; stroke: #3f3f46; }
+.acc-dark { fill: #3f3f46; }
+.skin-night .acc-line.thick { stroke: #71717a; }
+.skin-night .acc-dark { fill: #71717a; }
 
-@keyframes qp-face-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.12; }
-  50% { transform: scale(1.06); opacity: 0.22; }
+/* ── Moods ── */
+.m-sleep .qp-m-eye { transform: scaleY(0.12); opacity: 0.7; }
+.m-sleep .qp-m-body { transform: scaleY(0.95) translateY(2%); }
+.m-sleep .qp-m-cheek { opacity: 0; }
+.m-sleep .qp-m-bob { animation-duration: 6.5s; }
+.m-think .qp-m-brow { opacity: 0.8; }
+.m-think .qp-m-brow.l { transform: translateY(-20%) rotate(-8deg); }
+.m-think .qp-m-brow.r { transform: translateY(-45%) rotate(10deg); }
+.m-think .qp-m-halo,
+.m-focus .qp-m-halo,
+.m-juggle .qp-m-halo { opacity: 0.6; }
+.m-focus .qp-m-eye,
+.m-juggle .qp-m-eye { transform: scaleY(0.72); }
+.m-focus .qp-m-brow,
+.m-juggle .qp-m-brow { opacity: 0.85; }
+.m-focus .qp-m-brow.l { transform: translateY(35%) rotate(10deg); }
+.m-focus .qp-m-brow.r { transform: translateY(35%) rotate(-10deg); }
+.m-focus .qp-m-bob,
+.m-juggle .qp-m-bob { animation-duration: 2.2s; }
+.m-tired .qp-m-eye { clip-path: inset(48% 0 0 0); }
+.m-tired .qp-m-brow { opacity: 0.6; }
+.m-tired .qp-m-brow.l { transform: translateY(40%) rotate(-12deg); }
+.m-tired .qp-m-brow.r { transform: translateY(40%) rotate(12deg); }
+.m-tired .qp-m-body { transform: scaleY(0.96) translateY(2%); }
+.m-call .qp-m-eye { transform: scale(1.18); }
+.m-call .qp-m-brow { opacity: 1; background: var(--qss-warning, #d29a3f); }
+.m-call .qp-m-brow.l,
+.m-call .qp-m-brow.r { transform: translateY(-35%); }
+.m-call .qp-m-body { box-shadow: inset 0 -2.2cqw 4.5cqw rgba(0, 0, 0, 0.35), inset 0 1.2cqw 2.5cqw color-mix(in srgb, #fff 10%, transparent), 0 0 0 1.3cqw var(--qss-warning, #d29a3f); }
+.m-call .qp-m-halo { opacity: 1; background: radial-gradient(circle, color-mix(in srgb, var(--qss-warning, #d29a3f) 35%, transparent) 55%, transparent 72%); animation: qp-m-pulse 1.6s ease-in-out infinite; }
+.m-worried .qp-m-eye { transform: scale(0.9); }
+.m-worried .qp-m-brow { opacity: 1; background: var(--qss-error, #f87171); }
+.m-worried .qp-m-brow.l { transform: translateY(-10%) rotate(18deg); }
+.m-worried .qp-m-brow.r { transform: translateY(-10%) rotate(-18deg); }
+.m-worried .qp-m-body { box-shadow: inset 0 -2.2cqw 4.5cqw rgba(0, 0, 0, 0.35), inset 0 1.2cqw 2.5cqw color-mix(in srgb, #fff 10%, transparent), 0 0 0 1.3cqw var(--qss-error, #f87171); animation: qp-m-shiver 0.5s ease-in-out 2; }
+.m-cheer .qp-m-eye { background: transparent; box-shadow: none; border-top: 1.7cqw solid var(--m-ink); border-radius: 50%; transform: translateY(14%) scaleX(1.15); }
+.m-cheer .qp-m-eye b,
+.m-cheer .qp-m-eye s { opacity: 0; }
+.m-cheer .qp-m-cheek,
+.m-nod .qp-m-cheek { opacity: 0.85; }
+.m-cheer .qp-m-bob { animation: qp-m-jump 0.9s var(--m-spring) 2; }
+.m-nod .qp-m-bob { animation: qp-m-nod 0.5s ease-in-out 2; }
+.hover .qp-m-body { transform: scale(1.05); }
+.hover .qp-m-eye { transform: scale(1.08); }
+.squish .qp-m-body { transform: scale(1.12, 0.86) translateY(6%); transition-duration: 0.12s; }
+
+/* ── Extras ── */
+.qp-m-hand {
+  position: absolute;
+  right: 8%;
+  top: 46%;
+  width: 14%;
+  height: 14%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--m-light), var(--m-base));
+  box-shadow: 0 0 0 1cqw var(--m-ring);
+  transform-origin: -60% 60%;
+  animation: qp-m-wave 0.9s ease-in-out infinite;
 }
-@media (prefers-reduced-motion: reduce) {
-  .qp-face-halo { animation: none !important; }
-}
+.qp-m-juggle { position: absolute; left: 30%; top: -6%; width: 40%; height: 40%; animation: qp-m-orbit 1.6s linear infinite; }
+.qp-m-juggle i { position: absolute; width: 22%; height: 22%; border-radius: 50%; }
+.qp-m-juggle i:nth-child(1) { left: 39%; top: 0; background: #34d399; }
+.qp-m-juggle i:nth-child(2) { left: 0; top: 60%; background: #7aa2f7; }
+.qp-m-juggle i:nth-child(3) { right: 0; top: 60%; background: #f472b6; }
+.qp-m-sweat { position: absolute; right: 22%; top: 22%; width: 7%; height: 10%; border-radius: 50% 50% 50% 50% / 65% 65% 35% 35%; background: #7dd3fc; opacity: 0.9; animation: qp-m-drip 2.6s ease-in infinite; }
+.qp-m-zzz { position: absolute; right: 8%; top: 4%; font-size: 13cqw; font-weight: 700; color: var(--qss-text-muted, #8a8a95); animation: qp-m-float 3.2s ease-in-out infinite; }
+.qp-m-zzz span { font-size: 70%; margin-left: 2cqw; }
+
+@keyframes qp-m-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.025, 0.975); } }
+@keyframes qp-m-jump { 0% { transform: translateY(0) scale(1, 1); } 25% { transform: translateY(0) scale(1.1, 0.88); } 55% { transform: translateY(-12%) scale(0.94, 1.08); } 80% { transform: translateY(0) scale(1.06, 0.94); } 100% { transform: translateY(0) scale(1, 1); } }
+@keyframes qp-m-nod { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(5%) scale(1.02, 0.97); } }
+@keyframes qp-m-pulse { 0%, 100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.07); opacity: 0.9; } }
+@keyframes qp-m-shiver { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-2%); } 75% { transform: translateX(2%); } }
+@keyframes qp-m-wave { 0%, 100% { transform: rotate(-12deg); } 50% { transform: rotate(22deg); } }
+@keyframes qp-m-orbit { to { transform: rotate(360deg); } }
+@keyframes qp-m-drip { 0%, 30% { transform: translateY(0); opacity: 0; } 40% { opacity: 0.9; } 100% { transform: translateY(160%); opacity: 0; } }
+@keyframes qp-m-float { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-14%); opacity: 1; } }
+
+/* A blink closes the eyes whatever the mood. */
+.qp-mascot.blink .qp-m-eye { transform: scaleY(0.1); }
+
+/* Reduced motion: every expression, no continuous motion. */
+.still .qp-m-shadow,
+.still .qp-m-bob,
+.still .qp-m-halo,
+.still .qp-m-hand,
+.still .qp-m-juggle,
+.still .qp-m-sweat,
+.still .qp-m-zzz,
+.still .qp-m-body { animation: none !important; }
 </style>
