@@ -6,7 +6,7 @@
  */
 import type { ForgeEvent, ForgeJob, IndicatorInfo, VersionRole } from '#script/types'
 
-export const AXES = ['asset', 'exchange', 'parameter', 'temporal', 'monte_carlo'] as const
+export const AXES = ['asset', 'exchange', 'parameter', 'temporal', 'windows', 'monte_carlo'] as const
 export type AxisKey = (typeof AXES)[number]
 
 export const AXIS_LABELS: Record<AxisKey, string> = {
@@ -14,6 +14,7 @@ export const AXIS_LABELS: Record<AxisKey, string> = {
   exchange: 'Exchange',
   parameter: 'Parameter',
   temporal: 'Temporal',
+  windows: 'Opt. windows',
   monte_carlo: 'Monte Carlo',
 }
 
@@ -88,6 +89,7 @@ function emptyAxes(): Record<AxisKey, AxisProgress> {
     exchange: { status: 'pending', score: null, elapsed: null },
     parameter: { status: 'pending', score: null, elapsed: null },
     temporal: { status: 'pending', score: null, elapsed: null },
+    windows: { status: 'pending', score: null, elapsed: null },
     monte_carlo: { status: 'pending', score: null, elapsed: null },
   }
 }

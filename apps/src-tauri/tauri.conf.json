@@ -118,7 +118,13 @@
       "../../sidecars/python/smithery/lab_profit.py": "sidecars/python/smithery/lab_profit.py",
       "../../sidecars/python/smithery/lab_report_profit.py": "sidecars/python/smithery/lab_report_profit.py",
       "../../sidecars/python/smithery/lab_aggregates.py": "sidecars/python/smithery/lab_aggregates.py",
-      "../../sidecars/python/smithery/lab_report_aggregates.py": "sidecars/python/smithery/lab_report_aggregates.py"
+      "../../sidecars/python/smithery/lab_report_aggregates.py": "sidecars/python/smithery/lab_report_aggregates.py",
+      "../../sidecars/python/smithery/lab_robustness.py": "sidecars/python/smithery/lab_robustness.py",
+      "../../sidecars/python/smithery/lab_report_robustness.py": "sidecars/python/smithery/lab_report_robustness.py",
+      "../../sidecars/python/smithery/prices.py": "sidecars/python/smithery/prices.py",
+      "../../sidecars/python/smithery/robust_policy.py": "sidecars/python/smithery/robust_policy.py",
+      "../../sidecars/python/smithery/system_gauntlet.py": "sidecars/python/smithery/system_gauntlet.py",
+      "../../sidecars/python/smithery/universal.py": "sidecars/python/smithery/universal.py"
     },
     "icon": [
       "icons/32x32.png",

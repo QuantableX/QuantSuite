@@ -13,7 +13,7 @@ from smithery import lab
 from smithery.lab_gauntlet import build, from_run, overview, vault_reports
 from smithery.lab_report import payload, render
 
-AXES = {"asset": 80.0, "exchange": 90.0, "parameter": 70.0, "temporal": 60.0, "monte_carlo": 75.0}
+AXES = {"asset": 80.0, "exchange": 90.0, "parameter": 70.0, "temporal": 60.0, "windows": 65.0, "monte_carlo": 75.0}
 
 
 def entry(score, p, certified, report):

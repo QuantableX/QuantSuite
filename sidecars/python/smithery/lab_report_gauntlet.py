@@ -54,7 +54,7 @@ BODY = r'''
 
 
 SCRIPT = r'''
-const T=['1h','4h','1d'],AX=['asset','exchange','parameter','temporal','monte_carlo'],AXL={asset:'Asset',exchange:'Exchange',parameter:'Parameter',temporal:'Temporal',monte_carlo:'Monte Carlo'};
+const T=['1h','4h','1d'],AX=['asset','exchange','parameter','temporal','windows','monte_carlo'],AXL={asset:'Asset',exchange:'Exchange',parameter:'Parameter',temporal:'Temporal',windows:'Opt. windows',monte_carlo:'Monte Carlo'};
 const {esc,num,int,$}=Q,S=DATA.summary||{},R=DATA.rows||[],run=DATA.run||{},isRun=DATA.source==='run';
 const yes=b=>b?'<span class="badge pass">✓ Certified</span>':'<span class="badge fail">Uncertified</span>';
 $('title').textContent=run.title||'Gauntlet';

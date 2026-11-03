@@ -52,10 +52,11 @@ for (const name of readdirSync(resolve(pythonRoot, 'codebase_index')).filter(nam
   assert.equal(config.bundle.resources[`../../sidecars/python/codebase_index/${name}`],
     `sidecars/python/codebase_index/${name}`, `Missing code-index runtime resource: ${name}`)
 }
-for (const name of ['lab.py', 'lab_compare.py', 'lab_install.py', 'lab_report.py', 'lab_gauntlet.py', 'lab_report_gauntlet.py', 'lab_fast.py',
-  'lab_search.py', 'lab_profit.py', 'lab_report_profit.py', 'lab_aggregates.py', 'lab_report_aggregates.py']) {
+// Every Smithery module, not a hand-kept list: research, robustness and forge code
+// imports its siblings at runtime, and a forgotten one only fails in installed builds.
+for (const name of readdirSync(resolve(pythonRoot, 'smithery')).filter(name => name.endsWith('.py'))) {
   assert.equal(config.bundle.resources[`../../sidecars/python/smithery/${name}`],
-    `sidecars/python/smithery/${name}`, `Missing research runtime resource: ${name}`)
+    `sidecars/python/smithery/${name}`, `Missing Smithery runtime resource: ${name}`)
 }
 for (const name of ['tauri.conf.json', 'tauri.windows.conf.json', 'tauri.dev.conf.json']) {
   const resources = readConfig(name).bundle?.resources

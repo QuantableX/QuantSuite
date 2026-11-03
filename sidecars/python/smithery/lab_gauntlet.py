@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 
 TRACKS = ("1h", "4h", "1d")
-AXES = ("asset", "exchange", "parameter", "temporal", "monte_carlo")
+AXES = ("asset", "exchange", "parameter", "temporal", "windows", "monte_carlo")
 # The native report fields worth keeping as evidence (each report is ~1 KB).
 REPORT_FIELDS = ("version", "run_id", "kind", "name", "params", "timeframe", "primary", "primary_sha256",
                  "code_sha256", "indicator_sha256", "seed", "counts", "score", "grade", "scores", "perm_p",

@@ -1,8 +1,14 @@
-"""The Robustness Gauntlet — five axes, one score. See Docs/01.
+"""The Robustness Gauntlet — six axes, one score. See Docs/01 and docs/ROBUSTNESS.md.
 
-Axes: asset · exchange · parameter · temporal · Monte Carlo.
+Axes: asset · exchange · parameter · temporal · optimization windows · Monte Carlo.
 Each axis returns (sub_score 0-100, markdown table rows). Aggregate is the
-doc-specified weighted mean; permutation p > 0.10 hard-caps the grade at B.
+weighted mean; permutation p > 0.10 hard-caps the grade at B.
+
+Hard gates (2026-11-03, user rule: a change must not break an indicator): a ±10–25%
+parameter change, another exchange or the asset basket must not turn a profitable
+edge into a losing one, and parameters re-optimized on rolling windows must make
+money in most of the years after them. A failed gate refuses certification whatever
+the score.
 
 Certification tracks: the gauntlet runs per TIMEFRAME — `1d`
 is the reference track, `4h` and `1h` are the intraday tracks — on that
@@ -25,8 +31,13 @@ from .data import DOCS_DIR, OUTPUT_DIR, asset_class, available, load
 from .evidence import (EVALUATION_VERSION, artifact_id, certification_gates,
                        code_fingerprint, frame_fingerprint, indicator_fingerprint, write_json)
 
-WEIGHTS = {"asset": 0.20, "exchange": 0.20,
-           "parameter": 0.20, "temporal": 0.20, "monte_carlo": 0.20}
+WEIGHTS = {"asset": 1 / 6, "exchange": 1 / 6, "parameter": 1 / 6,
+           "temporal": 1 / 6, "windows": 1 / 6, "monte_carlo": 1 / 6}
+# Ratio pairs of the asset axis: the systems run indicators on A/B ratio series.
+RATIO_PAIRS = [("ETHUSDT", "BTCUSDT"), ("BNBUSDT", "BTCUSDT"), ("SOLUSDT", "ETHUSDT")]
+GATE_PARAM_MULTS = (0.75, 0.9, 1.1, 1.25)   # perturbations that must not flip the edge
+GATE_ASSET_BREADTH = 0.6                      # at least 3 of 5 assets profitable
+GATE_WINDOWS_POSITIVE = 0.5                   # re-optimized parameters profitable in most years after
 VENUE_PREF = ["BINANCE", "OKX", "BYBIT", "KUCOIN", "BITSTAMP", "COINBASE", "KRAKEN"]
 # Asset axis shelf: top-5 crypto by market cap, stablecoins & staked versions
 # excluded — BTC (primary) + these four. Nothing else is ever tested.
@@ -81,6 +92,34 @@ def available_timeframes() -> list[str]:
     return out
 
 
+def series_key(symbol: str, timeframe: str) -> str | None:
+    """The shelf key of a symbol on a track, from the preferred venue that has it."""
+    avail = available()
+    for ex in VENUE_PREF:
+        k = f"{ex}_{symbol}_{timeframe}"
+        if k in avail:
+            return k
+    return None
+
+
+def basket_frames(primary: str, timeframe: str) -> tuple[dict, dict]:
+    """The universal basket on a track: the primary BTC series plus ASSET_SYMBOLS, with their costs."""
+    keys = [primary] + [k for k in (series_key(sym, timeframe) for sym in ASSET_SYMBOLS) if k]
+    return {k: load(k) for k in keys}, {k: cost_for(k) for k in keys}
+
+
+def ratio_frame(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
+    """An A/B ratio series as the systems build it: open and close ratios, high/low around them."""
+    idx = a.index.intersection(b.index)
+    o = a.loc[idx, "open"] / b.loc[idx, "open"]
+    c = a.loc[idx, "close"] / b.loc[idx, "close"]
+    out = pd.DataFrame({"open": o, "close": c}, index=idx)
+    out["high"] = np.maximum(o, c)
+    out["low"] = np.minimum(o, c)
+    out["volume"] = a.loc[idx, "volume"] if "volume" in a.columns else 0.0
+    return out[["open", "high", "low", "close", "volume"]].dropna()
+
+
 def grade(score: float, perm_p: float | None) -> str:
     g = "S" if score >= 85 else "A" if score >= 70 else "B" if score >= 55 else \
         "C" if score >= 40 else "F"
@@ -113,6 +152,7 @@ class Gauntlet:
         # printed lines stay — the vault scripts read them.
         self.progress = progress
         self.coverage_complete = True
+        self.gate_reasons: list[str] = []
 
     def _report(self, **payload) -> None:
         if self.progress is not None:
@@ -171,14 +211,35 @@ class Gauntlet:
                          "⚠️ catastrophic-dd" if catastrophic else "ok"])
         breadth = float(np.mean([s > 0 for s in sharpes]))
         med = float(np.median(sharpes))
+        # Ratio pairs: the systems trade these indicators on A/B ratio series.
+        ratios, ratio_rows = [], []
+        for a_sym, b_sym in RATIO_PAIRS:
+            ka, kb = series_key(a_sym, self.timeframe), series_key(b_sym, self.timeframe)
+            if not ka or not kb:
+                continue
+            rf = ratio_frame(load(ka), load(kb))
+            if len(rf) < 250:
+                continue
+            rb = self._bt(rf, max(cost_for(ka), cost_for(kb)))
+            ratios.append(rb["sharpe"])
+            ratio_rows.append([f"{a_sym[:-4]}/{b_sym[:-4]}", len(rf), rb["sharpe"], rb["max_dd"]])
+        ratio_breadth = float(np.mean([s > 0 for s in ratios])) if ratios else float("nan")
         score = float(np.clip(50 * breadth + 0.5 * s_map(med) - cat_pen, 0, 100))
+        if ratio_breadth == ratio_breadth:
+            score = 0.8 * score + 20 * ratio_breadth
+        if breadth < GATE_ASSET_BREADTH:
+            self.gate_reasons.append(f"Asset gate: only {breadth:.0%} of the basket is profitable "
+                                     f"(at least {GATE_ASSET_BREADTH:.0%} required)")
         miss_note = (f"\n\n⚠️ missing from shelf (run `fetch_data.py`): "
                      + ", ".join(missing)) if missing else ""
+        ratio_md = ("\n\n**Ratio pairs** (how the systems use it)\n\n"
+                    + self._md_table(["pair", "bars", "sharpe", "maxDD"], ratio_rows)
+                    + f"\n\nratio breadth (Sharpe>0): **{ratio_breadth:.0%}**") if ratio_rows else ""
         self.sections.append(
             "## Axis 1 — Asset robustness\n\n"
             + self._md_table(["series", "bars", "sharpe", "b&h sharpe", "maxDD",
                               "b&h maxDD", "flips/yr", "flag"], rows)
-            + miss_note
+            + miss_note + ratio_md
             + f"\n\nbreadth (Sharpe>0): **{breadth:.0%}** · median Sharpe: **{med:.2f}**"
               f" · catastrophe penalty: −{cat_pen} → **{score:.0f}/100**")
         return score
@@ -208,6 +269,9 @@ class Gauntlet:
                 rows.append([f"{a} vs {b}", pa, abs(sharpes[a] - sharpes[b])])
         mean_agr = float(np.mean(agr))
         spread = float(max(sharpes.values()) - min(sharpes.values()))
+        if max(sharpes.values()) > 0 > min(sharpes.values()):
+            losers = ", ".join(k for k, v in sharpes.items() if v < 0)
+            self.gate_reasons.append(f"Exchange gate: the edge turns negative on {losers}")
         score = float(75 * np.clip((mean_agr - 0.70) / 0.25, 0, 1)
                       + 25 * (1 - np.clip(spread / 1.5, 0, 1)))
         self.sections.append(
@@ -230,13 +294,16 @@ class Gauntlet:
                 v = float(np.clip(base_v * mult, lo, hi))
                 if isinstance(base_v, int):
                     v = int(round(v))
-                perts.append((pname, base_v, v))
+                perts.append((pname, base_v, v, mult))
         results = par.pmap(
             par.eval_sharpe_signal,
-            [(self.ind.with_params(**{pn: v}), df, cost) for pn, _, v in perts])
+            [(self.ind.with_params(**{pn: v}), df, cost) for pn, _, v, _m in perts])
         by_param: dict[str, tuple[list, list]] = {}
-        for (pname, base_v, v), (sh, arr, idx) in zip(perts, results):
+        flips = []
+        for (pname, base_v, v, mult), (sh, arr, idx) in zip(perts, results):
             ag = agreement(base_sig, par.rehydrate(arr, idx))
+            if base_sharpe > 0 and sh < 0 and mult in GATE_PARAM_MULTS and v != base_v:
+                flips.append(f"{pname} {base_v} → {v}")
             by_param.setdefault(pname, ([base_sharpe], []))
             by_param[pname][0].append(sh)
             by_param[pname][1].append(ag)
@@ -248,6 +315,9 @@ class Gauntlet:
             stabs.append(float(np.mean(agrs)))
         plateau = float(np.mean(plateaus)) if plateaus else 1.0
         stab = float(np.mean(stabs)) if stabs else 1.0
+        if flips:
+            self.gate_reasons.append("Parameter gate: a ±10–25% change turns the edge negative ("
+                                     + "; ".join(flips[:4]) + ")")
         score = float(np.clip(50 * plateau + 50 * np.clip((stab - 0.6) / 0.4, 0, 1), 0, 100))
         self.sections.append(
             "## Axis 3 — Parameter robustness\n\n"
@@ -284,6 +354,30 @@ class Gauntlet:
             + f"\n\neras non-negative: **{np.mean(era_pos):.0%}** · worst era Sharpe: "
               f"**{min(era_sh):.2f}** · rolling-1y Sharpe > 0: **{frac_roll:.0%}**"
               f" → **{score:.0f}/100**")
+        return score
+
+    def axis_windows(self, primary: str) -> float:
+        """Re-optimized on rolling 3-year windows of the universal basket: drift and the year after."""
+        from .universal import window_stability
+        frames, costs = basket_frames(primary, self.timeframe)
+        res = window_stability(self.ind, frames, costs, primary)
+        rows = [[w["start"] + " → " + w["end"], w["choice"] if w["choice"] else "—",
+                 w.get("is_basket_sharpe"), w.get("oos_sharpe")] for w in res["windows"]]
+        if not rows or not np.isfinite(res["oos_positive"]):
+            self.sections.append("## Axis 5 — Optimization windows\n\n_Incomplete: fewer than two windows "
+                                 "with a following year on this track._")
+            return np.nan
+        drift, pos = res["drift"], res["oos_positive"]
+        score = float(np.clip(50 * (1 - (drift if np.isfinite(drift) else 1) / 0.35), 0, 50) + 50 * pos)
+        if pos < GATE_WINDOWS_POSITIVE:
+            self.gate_reasons.append(f"Windows gate: parameters re-optimized on a window lose money in "
+                                     f"{1 - pos:.0%} of the years after it")
+        self.sections.append(
+            "## Axis 5 — Optimization windows (universal basket)\n\n"
+            + self._md_table(["window", "chosen parameters", "basket Sharpe in window", "basket Sharpe the year after"], rows)
+            + f"\n\nparameter drift between windows: **{drift:.2f}** (0 = same, 1 = across the whole range) · "
+              f"years after with Sharpe > 0: **{pos:.0%}** · median Sharpe the year after: "
+              f"**{res['oos_median_sharpe']:.2f}** → **{score:.0f}/100**")
         return score
 
     def axis_monte_carlo(self, primary: str) -> float:
@@ -344,7 +438,7 @@ class Gauntlet:
         score = float(0.35 * sc_perm + 0.20 * sc_boot + 0.25 * sc_garch + 0.20 * sc_noise)
         curve_str = " · ".join(f"{int(a*100)}%→{v:.0%}" for a, v in curve)
         self.sections.append(
-            f"## Axis 5 — Monte Carlo robustness{lowpower}\n\n"
+            f"## Axis 6 — Monte Carlo robustness{lowpower}\n\n"
             + self._md_table(
                 ["ordeal", "n", "result", "sub-score"],
                 [["permutation test", self.perm_n, f"p = {p:.3f}", sc_perm],
@@ -363,6 +457,7 @@ class Gauntlet:
         t0 = time.time()
         self.sections, self.scores, self.perm_p = [], {}, None
         self.coverage_complete = True
+        self.gate_reasons = []
         self.rng = np.random.default_rng(self.seed)
         primary = find_primary(self.timeframe)
         df = load(primary)
@@ -379,6 +474,7 @@ class Gauntlet:
                 ("exchange", self.axis_exchange),
                 ("parameter", lambda: self.axis_parameter(primary)),
                 ("temporal", lambda: self.axis_temporal(primary)),
+                ("windows", lambda: self.axis_windows(primary)),
                 ("monte_carlo", lambda: self.axis_monte_carlo(primary))]
         for name, fn in axes:
             self._report(stage="axis", axis=name, status="running", weight=WEIGHTS[name])
@@ -404,6 +500,7 @@ class Gauntlet:
                                       coverage=self.coverage_complete, required_axes=WEIGHTS)
         if total < 70:
             reasons.append("Robustness score is below 70/100")
+        reasons += self.gate_reasons
         certified = not reasons
         g = grade(total, self.perm_p)
 
