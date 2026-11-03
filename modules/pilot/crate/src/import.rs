@@ -442,7 +442,7 @@ pub fn discover(provider: &str) -> (Vec<Summary>, Vec<String>) {
         })
         .filter_map(|(_, p)| std::fs::metadata(&p).and_then(|m| m.modified()).ok().map(|t| (p, t)))
         .collect();
-    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.sort_by_key(|a| std::cmp::Reverse(a.1));
     let mut out: Vec<Summary> = Vec::new();
     let mut problems = Vec::new();
     for (path, _) in files.into_iter().take(SCAN_LIMIT) {
@@ -458,7 +458,7 @@ pub fn discover(provider: &str) -> (Vec<Summary>, Vec<String>) {
             Err(e) => problems.push(format!("{}: {e}", path.display())),
         }
     }
-    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    out.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     (out, problems)
 }
 
