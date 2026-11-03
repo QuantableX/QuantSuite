@@ -534,7 +534,7 @@ impl CodexDriver {
                     .unwrap_or_default();
                 let mut models: Vec<ModelInfo> = list
                     .iter()
-                    .map(|m| ModelInfo {
+                    .map(|m| ModelInfo { fast: false,
                                 id: s(m, "id").unwrap_or_default().to_string(),
                                 display_name: s(m, "displayName").unwrap_or_default().to_string(),
                                 description: s(m, "description").unwrap_or_default().to_string(),
@@ -551,7 +551,7 @@ impl CodexDriver {
                     let d = models[pos].clone();
                     models.insert(
                         0,
-                        ModelInfo {
+                        ModelInfo { fast: false,
                             id: "default".into(),
                             display_name: "Default".into(),
                             description: "Codex's own choice".into(),
@@ -1918,7 +1918,7 @@ mod tests {
         assert!(start["params"].get("model").is_none(), "{start}");
         // A session that took a bad id goes back to Codex's own model by name.
         d.thread = Some("t-1".into());
-        d.models = Some(vec![ModelInfo { id: "default".into(), display_name: "Default".into(), description: String::new(), resolved_model: Some("gpt-a".into()), efforts: vec![] }]);
+        d.models = Some(vec![ModelInfo { fast: false, id: "default".into(), display_name: "Default".into(), description: String::new(), resolved_model: Some("gpt-a".into()), efforts: vec![] }]);
         let line = d.set_model("default").unwrap();
         let msg: Value = serde_json::from_str(&line).unwrap();
         assert_eq!((msg["method"].as_str(), msg["params"]["model"].as_str()), (Some("thread/settings/update"), Some("gpt-a")));

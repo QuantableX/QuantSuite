@@ -55,6 +55,16 @@ const busy = ref(false)
 const shells = ref<ConsoleShell[]>([])
 /** `''` = every project; a context id = that project's overrides. */
 const scope = ref('')
+// "Off in this project" in the agent menu opens that project's settings (round 2, card 02).
+watch(
+  () => store.settingsFocus,
+  (f) => {
+    if (!f?.project) return
+    scope.value = f.project
+    store.settingsFocus = null
+  },
+  { immediate: true },
+)
 
 function pull() {
   const s = store.settings

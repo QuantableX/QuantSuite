@@ -468,6 +468,7 @@ mod tests {
             kind: "terminal".into(),
             effort: String::new(),
             title_source: "auto".into(),
+            fast: false,
             state: "idle".into(),
             context_tokens: None,
             context_window: None,

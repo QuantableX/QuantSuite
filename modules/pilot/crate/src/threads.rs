@@ -39,6 +39,8 @@ pub struct CreateThread {
     pub(crate) provider: Option<String>,
     pub(crate) model: Option<String>,
     pub(crate) effort: Option<String>,
+    /// Claude Code's fast mode (round 2, card 02).
+    pub(crate) fast: Option<bool>,
     pub(crate) mode: Option<String>,
     pub(crate) title: Option<String>,
     /// `local` | `worktree`; absent = the setting (Local outside git).
@@ -75,11 +77,14 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         (None, _) => defaults.workspace.clone(),
     };
     let wt_branch = worktree.as_deref().and_then(|p| git::repo_info(Path::new(p))).map(|r| r.branch).unwrap_or_default();
+    // Fast mode only where the agent has it: Claude Code (round 2, card 02).
+    let fast = req.fast.unwrap_or(false) && provider == "claude";
     let meta = ThreadMeta {
         id: uuid::Uuid::new_v4().to_string(),
         provider,
         provider_session_id: None,
         title_source: if title.is_empty() { "auto".into() } else { "user".into() },
+        fast,
         title,
         context_id: ctx.id,
         context_name: ctx.name,
@@ -255,10 +260,11 @@ pub fn title_from_prompt(text: &str) -> String {
 /// What decides whether a warm process can take the next turn.
 fn plan_key(meta: &ThreadMeta, settings: &Settings) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}",
         meta.provider,
         effective_model(meta, settings),
         effective_effort(meta, settings),
+        meta.fast,
         meta.mode,
         settings.attach_quantmcp,
         settings.include_general_vault,
@@ -349,6 +355,7 @@ fn claude_plan(app: &AppHandle, state: &PilotState, meta: &ThreadMeta, settings:
         session,
         model: effective_model(meta, settings),
         effort: effective_effort(meta, settings),
+        fast: meta.fast,
         mode: meta.mode.clone(),
         mcp_config: mcp_file,
         append_prompt_file: Some(context_file),
@@ -2672,6 +2679,7 @@ pub fn pilot_thread_update(
     model: Option<String>,
     effort: Option<String>,
     mode: Option<String>,
+    fast: Option<bool>,
 ) -> Result<ThreadMeta, String> {
     if let Some(m) = mode.as_deref() {
         if !settings::valid_mode(m) {
@@ -2721,6 +2729,9 @@ pub fn pilot_thread_update(
     if let Some(e) = effort.as_deref() {
         state.db.set_effort(&id, e.trim()).map_err(|e| e.to_string())?;
     }
+    if let Some(f) = fast {
+        state.db.set_fast(&id, f).map_err(|e| e.to_string())?;
+    }
     if let Some(m) = mode.as_deref() {
         state.db.set_mode(&id, m).map_err(|e| e.to_string())?;
     }
@@ -2729,7 +2740,7 @@ pub fn pilot_thread_update(
     let new_model = model.as_deref().map(str::trim).filter(|m| *m != before.model.trim());
     // Effort cannot switch live: a process started with the old one must not
     // count as started with the new key.
-    let effort_changed = effort.as_deref().map(str::trim).is_some_and(|e| e != before.effort.trim());
+    let effort_changed = effort.as_deref().map(str::trim).is_some_and(|e| e != before.effort.trim()) || fast.is_some_and(|f| f != before.fast);
     if (new_mode.is_some() || new_model.is_some()) && !effort_changed {
         let settings = lock(&state.settings).clone();
         let model_value = new_model.map(|_| effective_model(&after, &settings));

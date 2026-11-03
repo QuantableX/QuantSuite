@@ -6,14 +6,22 @@
  * the board — and Start thread. The agent is
  * the shared board's own badge.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { KanbanCard } from '@quantsuite/core'
-import { GitBranch, Play } from 'lucide-vue-next'
+import { ChevronDown, GitBranch, Play } from 'lucide-vue-next'
+import type { AgentSetup } from '#pilot/utils/agentMenu'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 
 const props = defineProps<{ card: KanbanCard; threadIds: string[]; openId: string | null; starting: boolean }>()
-const emit = defineEmits<{ open: [threadId: string]; start: [] }>()
+const emit = defineEmits<{ open: [threadId: string]; start: [setup?: AgentSetup] }>()
+/** ▾ beside Start: the agent menu (round 2, card 02). */
+const startMore = ref<HTMLElement | null>(null)
+const menuOpen = ref(false)
+function startWith(setup: AgentSetup) {
+  menuOpen.value = false
+  emit('start', setup)
+}
 const store = usePilotStore()
 const sidebar = useSidebarStore()
 
@@ -47,16 +55,29 @@ const STATUS: Record<string, string> = { working: 'Working', waiting: 'Needs you
       <PilotAgentIcon :agent="t.provider" :size="11" :status="t.status" decorative />
       <span class="qp-bc-clip">{{ t.title }}</span>
     </button>
-    <button
-      v-if="card.column !== 'done'"
-      class="qp-bc-start"
-      :disabled="starting"
-      title="A new thread in this card's workspace, its first message prefilled with the card"
-      @click="emit('start')"
-    >
-      <Play :size="10" />
-      {{ starting ? 'Starting…' : 'Start thread' }}
-    </button>
+    <span v-if="card.column !== 'done'" class="qp-bc-startgroup">
+      <button
+        class="qp-bc-start"
+        :disabled="starting"
+        title="A new thread in this card's workspace, its first message prefilled with the card"
+        @click="emit('start')"
+      >
+        <Play :size="10" />
+        {{ starting ? 'Starting…' : 'Start thread' }}
+      </button>
+      <button
+        ref="startMore"
+        class="qp-bc-start qp-bc-start-more"
+        :disabled="starting"
+        title="Start with another agent or model"
+        aria-haspopup="menu"
+        :aria-expanded="menuOpen"
+        @click.stop="menuOpen = !menuOpen"
+      >
+        <ChevronDown :size="10" />
+      </button>
+      <PilotAgentMenu v-if="menuOpen" :anchor="startMore" title="Start thread with" :project="card.workspace_id" @pick="startWith" @close="menuOpen = false" />
+    </span>
   </div>
 </template>
 
@@ -100,6 +121,8 @@ const STATUS: Record<string, string> = { working: 'Working', waiting: 'Needs you
 .qp-bc-thread:hover,
 .qp-bc-start:hover:not(:disabled) { background: var(--qss-bg-hover, #313139); border-color: var(--qss-border, #47474f); color: var(--qss-text, #d4d4d8); }
 .qp-bc-thread.on { border-color: color-mix(in srgb, var(--qss-accent, #7c8cff) 60%, var(--qss-border, #47474f)); }
-.qp-bc-start { margin-left: auto; }
+.qp-bc-startgroup { display: inline-flex; margin-left: auto; }
+.qp-bc-startgroup .qp-bc-start { border-radius: 999px 0 0 999px; }
+.qp-bc-startgroup .qp-bc-start-more { padding: 0 5px; border-left: none; border-radius: 0 999px 999px 0; }
 .qp-bc-start:disabled { opacity: 0.5; cursor: default; }
 </style>

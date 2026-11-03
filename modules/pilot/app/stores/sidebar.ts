@@ -30,6 +30,7 @@ import {
   type UndoEntry,
 } from '#pilot/utils/sidebar'
 import type { SessionMeta } from '#pilot/types'
+import type { AgentSetup } from '#pilot/utils/agentMenu'
 
 interface Undo extends UndoEntry {
   run: () => Promise<void> | void
@@ -355,18 +356,21 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
     },
 
     /** Ctrl+N: the filtered project, else the open thread's; Ctrl+Alt+N: General (no project). */
-    async newThread(opts: { contextId?: string; noProject?: boolean } = {}) {
+    /** `setup`: the agent, model, effort and fast mode picked in the agent menu (round 2, card 02). */
+    async newThread(opts: { contextId?: string; noProject?: boolean; setup?: AgentSetup } = {}) {
       const store = usePilotStore()
       const contextId = opts.noProject
         ? 'general'
         : opts.contextId ?? this.projectFilter ?? store.active?.contextId ?? 'general'
       const draft = this.emptyDraft(contextId)
       if (draft) {
+        // The untouched draft takes the picked setup instead of a second empty thread.
+        if (opts.setup) await store.update(draft.id, opts.setup)
         await store.openSession(draft.id)
         return draft
       }
       // Agent, permissions and workspace come from the settings: default → project (card 19).
-      return store.createThread({ contextId })
+      return store.createThread({ contextId, ...(opts.setup ?? {}) })
     },
 
     /** Open the thread `step` rows away in screen order (Ctrl+Shift+[ / ]). */

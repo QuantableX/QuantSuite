@@ -183,7 +183,7 @@ impl PiDriver {
                         a.iter()
                             .filter_map(|m| {
                                 let id = format!("{}/{}", s(m, "provider")?, s(m, "id")?);
-                                Some(ModelInfo { display_name: s(m, "name").map(str::to_string).unwrap_or_else(|| id.clone()), id, ..Default::default() })
+                                Some(ModelInfo { fast: false, display_name: s(m, "name").map(str::to_string).unwrap_or_else(|| id.clone()), id, ..Default::default() })
                             })
                             .collect()
                     })

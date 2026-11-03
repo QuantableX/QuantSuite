@@ -2256,3 +2256,74 @@ header. The suite has one theme (dark, decision 2026-08-14), so "both
 themes" was checked with the light-surface gallery. Not exercised natively:
 the GitHub view (the QA project has no GitHub remote — type-checked) and
 the drag ghost.
+
+## 37. Round 2 · 02/12: one agent menu — logos, install state, model + effort
+
+Card da158b14. The composer's model picker (two panes), the New-thread
+menu (projects only) and the starters on board cards and in QuantCanvas
+were separate choosers that listed only the enabled agents. Now there is
+one menu, `PilotAgentMenu` (`components/Agent/Menu.vue`), in the style of
+Orca's agent menu.
+
+**Rows.** Every agent with its logo (card 01). A usable agent shows the
+setup a pick really starts with — the thread's own model · effort · fast,
+or for a new thread the project's pinned model, else the remembered one,
+with the effort only where the agent takes one (Claude Code, Codex). The
+others stay visible, greyed, with the reason and a one-click fix:
+*Not installed* (Set up…), *No chat on this host*, *Not signed in* (Sign
+in…), *Off in Settings* (Turn on…), *Off in this project* (Project
+settings…), and *Working — switch when done* while the thread's turn runs.
+Fixes open Settings → Providers scrolled to that agent's card (or the
+project's own settings). Footer: *Agent settings…* on the highlighted
+agent. Rules in `utils/agentMenu.ts` (pure, tested).
+
+**Submenu.** A row's chevron (or hover, Right) opens the agent's models
+beside the menu: recently used first (per machine, five per agent), then
+the catalog; each model row carries its effort levels as chips (`low med
+high xhigh max`) and a *Fast* chip where the catalog says the model has
+fast mode. A row click keeps the current effort when the model has it; a
+chip picks model + effort (again = back to default). Typed model ids still
+work; the CLI version and a refresh sit in the submenu.
+
+**Fast mode.** Claude Code reports `supportsFastMode` per model; the
+catalog keeps it (`ModelInfo.fast`), a thread stores `fast` (schema 17,
+column added with every thread off), a Claude launch adds `--fast-mode on`
+(the CLI's own option for teammates), and a change starts a fresh process
+on the next turn like effort. Never remembered for new threads (it costs
+more). The composer shows a *Fast* tag while it is on.
+
+**Keys.** Typing filters agents; Up/Down; Right or the chevron into the
+submenu; Enter picks (on a greyed row: its fix); in the submenu Up/Down,
+Left/Right across the effort chips (Left from the model returns to the
+agents), Enter, Ctrl+1…9, Shift+Enter / Shift-click for a fan-out; Escape
+goes back, then closes. The menu is placed by its anchor (below, or above
+for the composer, flipping when there is more room) and in a short window
+it and the submenu take the full height and scroll.
+
+**Where.** The composer's agent control (Ctrl+Shift+M; `Thread/ModelPicker.vue`
+removed), New thread ▾ in the sidebar (a *New thread in* project choice on
+top, *Import from Claude Code or Codex…* below; the + button and Ctrl+N stay
+one click), *Start thread* ▾ on board cards, *New thread in this workspace*
+▾ in a QuantCanvas chat window; fan-out lives in the composer's submenu.
+`sidebar.newThread({ setup })` gives an untouched draft the picked setup
+instead of making a second empty thread (the sticky setup is card 03).
+
+**Checks.** clippy clean; pilot `cargo test` 230 passed (fast mode in the
+catalog and the launch arguments, schema 16 → 17 keeps threads with fast
+off); `npm run check:ts`; `npm run test:pilot` 105 passed (new
+`scripts/test-pilot-agentmenu.mjs`: reasons and fixes in order, filter,
+recent models, setup labels, placement incl. a short window, one menu
+everywhere).
+
+**Native QA** (isolated QA app, screenshots in
+`artifacts/quantpilot-r2-02/`): composer menu with this machine's real
+states (Codex not signed in, Gemini not installed); keyboard only from the
+search to Sonnet 5.5 + low effort; Recent group after picks; Fast chip on
+Opus 5.5 set `fast` and the composer tag, Haiku turned it off again (no
+message was sent with fast mode); Sign in… on Codex opened Settings →
+Providers on Codex; New thread ▾ in "hello world qa" with Sonnet + high;
+Start thread ▾ on a board card with pi (prefilled, not sent); a 420 px
+high window (menu above the composer, submenu full height with scroll);
+fan-out of three models by Shift-click; the QuantCanvas chat window's ▾.
+A live turn with fast mode was not run (it bills at a higher rate) — the
+flag is covered by the launch-argument test.

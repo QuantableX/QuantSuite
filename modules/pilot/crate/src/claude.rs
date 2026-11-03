@@ -72,6 +72,8 @@ pub struct LaunchOptions {
     pub session: SessionRef,
     pub model: String,
     pub effort: String,
+    /// `--fast-mode on` (round 2, card 02): the thread asked for fast mode.
+    pub fast: bool,
     pub mode: String,
     pub mcp_config: Option<PathBuf>,
     pub append_prompt_file: Option<PathBuf>,
@@ -113,6 +115,9 @@ pub fn launch_args(o: &LaunchOptions) -> Vec<String> {
     }
     if !o.effort.trim().is_empty() && o.effort != "default" {
         args.extend(["--effort".into(), o.effort.trim().to_string()]);
+    }
+    if o.fast {
+        args.extend(["--fast-mode".into(), "on".into()]);
     }
     if let Some(p) = &o.mcp_config {
         args.extend(["--mcp-config".into(), path_arg(p)]);
@@ -394,6 +399,7 @@ impl ClaudeDriver {
                                 .and_then(Value::as_array)
                                 .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
                                 .unwrap_or_default(),
+                            fast: m.get("supportsFastMode").and_then(Value::as_bool).unwrap_or(false),
                             id,
                         })
                     })
@@ -1372,12 +1378,25 @@ mod tests {
         assert!(out.iter().any(|e| matches!(e, Emit::MessageStart { parent: None, .. })), "the parent's text in between stays top level");
     }
 
+    /// Round 2, card 02: the catalog says which models offer fast mode.
+    #[test]
+    fn catalog_marks_fast_mode_models() {
+        let c = ClaudeDriver::catalog(&serde_json::json!({ "models": [
+            { "value": "opus", "displayName": "Opus", "supportsFastMode": true, "supportedEffortLevels": ["low", "high"] },
+            { "value": "haiku", "displayName": "Haiku" }
+        ] }));
+        assert!(c.models[0].fast);
+        assert!(!c.models[1].fast);
+        assert_eq!(c.models[0].efforts, vec!["low", "high"]);
+    }
+
     #[test]
     fn launch_args_carry_session_mode_and_files() {
         let o = LaunchOptions {
             session: SessionRef::New("11111111-2222-3333-4444-555555555555".into()),
             model: "opus".into(),
             effort: "high".into(),
+            fast: false,
             mode: "full".into(),
             mcp_config: Some(PathBuf::from("C:\\d\\mcp.json")),
             append_prompt_file: Some(PathBuf::from("C:\\d\\context.txt")),
@@ -1398,6 +1417,9 @@ mod tests {
         assert!(j.contains("--resume abc"));
         assert!(j.contains("--permission-mode default"));
         assert!(!j.contains("--model") && !j.contains("--effort"));
+        assert!(!j.contains("--fast-mode"), "fast mode only when the thread asks for it");
+        let f = LaunchOptions { fast: true, ..r };
+        assert!(launch_args(&f).join(" ").contains("--fast-mode on"));
         assert_eq!(permission_args("edits"), vec!["--permission-mode", "acceptEdits", "--allow-dangerously-skip-permissions"]);
         assert_eq!(permission_args("plan"), vec!["--permission-mode", "plan", "--allow-dangerously-skip-permissions"]);
     }

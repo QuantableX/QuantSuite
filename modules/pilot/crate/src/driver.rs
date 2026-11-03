@@ -99,6 +99,10 @@ pub struct ModelInfo {
     pub description: String,
     pub resolved_model: Option<String>,
     pub efforts: Vec<String>,
+    /// The CLI offers its fast mode for this model (Claude Code's
+    /// `supportsFastMode`; round 2, card 02).
+    #[serde(default)]
+    pub fast: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

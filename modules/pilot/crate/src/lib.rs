@@ -504,6 +504,7 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
         kind: "terminal".into(),
         effort: String::new(),
         title_source: "auto".into(),
+        fast: false,
         state: "idle".into(),
         context_tokens: None,
         context_window: None,

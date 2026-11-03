@@ -28,7 +28,8 @@ pub use storage::{log_run as log_storage_run, Category as StorageCategory, Clean
 /// 11: the last usage windows per provider (card 18).
 /// 12: revision-bound history chunks and indexed full-history pagination (parity 02).
 /// 13: versioned queue payloads and recoverable delivery state (parity 04).
-pub const SCHEMA_VERSION: i64 = 16;
+/// 17: threads remember fast mode (round 2, card 02).
+pub const SCHEMA_VERSION: i64 = 17;
 
 #[path = "queue.rs"]
 mod queue;
@@ -58,6 +59,9 @@ pub struct ThreadMeta {
     /// `chat` (V3, rendered natively) | `terminal` (a V2 session row)
     pub kind: String,
     pub effort: String,
+    /// Claude Code's fast mode for this thread (round 2, card 02).
+    #[serde(default)]
+    pub fast: bool,
     /// `auto` until the user renames the thread, then `user`.
     pub title_source: String,
     /// `idle` | `running` | `waiting` | `error` | `interrupted` | `limited` — last known.
@@ -114,7 +118,7 @@ pub struct Database {
 const THREAD_COLS: &str = "id, provider, provider_session_id, title, context_id, context_name, cwd, model, mode, \
     created_at, updated_at, cost_usd, input_tokens, output_tokens, last_error, kind, effort, title_source, state, \
     context_tokens, context_window, last_activity_at, pinned, sort_key, settled_at, snoozed_until, auto_settle, workspace_mode, base_branch, \
-    branch, worktree_path";
+    branch, worktree_path, fast";
 
 fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
     Ok(ThreadMeta {
@@ -149,6 +153,7 @@ fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
         base_branch: r.get(28)?,
         branch: r.get(29)?,
         worktree_path: r.get(30)?,
+        fast: r.get::<_, i64>(31)? != 0,
     })
 }
 
@@ -529,6 +534,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     tx.execute_batch(IMPORTS_TABLE)?;
     // Schema 16 (parity 11): draft review comments, per repository and PR.
     tx.execute_batch(REVIEW_DRAFTS_TABLE)?;
+    // Schema 17 (round 2, card 02): fast mode per thread.
+    if !column_exists(&tx, "threads", "fast")? {
+        tx.execute_batch("ALTER TABLE threads ADD COLUMN fast INTEGER NOT NULL DEFAULT 0;")?;
+    }
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;
@@ -600,7 +609,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO threads ({THREAD_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, \
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)"
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)"
             ),
             params![
                 m.id,
@@ -633,7 +642,8 @@ impl Database {
                 m.workspace_mode,
                 m.base_branch,
                 m.branch,
-                m.worktree_path
+                m.worktree_path,
+                m.fast as i64
             ],
         )?;
         Ok(())
@@ -831,6 +841,12 @@ impl Database {
     pub fn set_mode(&self, id: &str, mode: &str) -> rusqlite::Result<()> {
         let conn = self.lock();
         conn.execute("UPDATE threads SET mode = ?2 WHERE id = ?1", params![id, mode])?;
+        Ok(())
+    }
+
+    pub fn set_fast(&self, id: &str, fast: bool) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET fast = ?2 WHERE id = ?1", params![id, fast as i64])?;
         Ok(())
     }
 
@@ -1523,6 +1539,7 @@ mod tests {
             kind: "chat".into(),
             effort: String::new(),
             title_source: "auto".into(),
+            fast: false,
             state: "idle".into(),
             context_tokens: None,
             context_window: None,
@@ -1582,6 +1599,36 @@ mod tests {
         assert_eq!(db.items("src", None, 100).unwrap().len(), 6, "the source is untouched");
         assert!(db.copy_turns("src", "dst", "nope").unwrap().is_empty());
         assert_eq!(db.user_messages("src").unwrap(), 3);
+    }
+
+    /// Round 2, card 02: fast mode is kept per thread, and a schema-16 file
+    /// gains the column with every thread off.
+    #[test]
+    fn fast_mode_is_kept_and_old_files_gain_it_off() {
+        let dir = std::env::temp_dir().join(format!("qp-fast-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pilot.db");
+        {
+            let db = Database::open(&path).unwrap();
+            db.insert_session(&thread("a")).unwrap();
+            db.insert_session(&ThreadMeta { fast: true, ..thread("b") }).unwrap();
+            db.set_fast("a", true).unwrap();
+            db.set_fast("b", false).unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        assert!(db.get_session("a").unwrap().unwrap().fast);
+        assert!(!db.get_session("b").unwrap().unwrap().fast);
+        drop(db);
+        // Back to a schema-16 file without the column: opening adds it, off.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("ALTER TABLE threads DROP COLUMN fast; PRAGMA user_version = 16;").unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        assert!(!db.get_session("a").unwrap().unwrap().fast);
+        assert_eq!(db.lock().query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), SCHEMA_VERSION);
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

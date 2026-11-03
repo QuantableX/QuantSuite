@@ -11,7 +11,7 @@
  * tokens and endpoints from new Claude processes. Each agent shows its
  * logo; the user's own agents can take an image (round 2, card 01).
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { pilot } from '#pilot/utils/invoke'
@@ -55,7 +55,21 @@ onMounted(async () => {
   if (!store.settings) await store.loadSettings()
   pull()
   if (!store.status) void store.refreshStatus()
+  void showFocus()
 })
+
+/** From the agent menu (round 2, card 02): straight to that agent's card. */
+const focused = ref<string | null>(null)
+async function showFocus() {
+  const id = store.settingsFocus?.agent
+  if (!id || store.settingsFocus?.project) return
+  store.settingsFocus = null
+  focused.value = id
+  await nextTick()
+  document.querySelector<HTMLElement>(`[data-agent-card="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  setTimeout(() => (focused.value = null), 1600)
+}
+watch(() => store.settingsFocus, () => void showFocus())
 watch(() => store.settings, pull)
 // Agents whose status arrives later get their rows too (before the next render).
 watch(chatIds, (ids) => ids.forEach((id) => (draft.providers[id] ? undefined : (draft.providers[id] = blank()))), { immediate: true })
@@ -152,7 +166,7 @@ function addCustom() {
       <button class="qp-link" :disabled="store.statusBusy" @click="store.refreshStatus()"><RefreshCw :size="11" /> {{ store.statusBusy ? 'Checking…' : 'Check again' }}</button>
     </p>
 
-    <section v-for="a in adapters" :key="a.id" class="qp-prov" :class="{ off: draft.providers[a.id]?.disabled }">
+    <section v-for="a in adapters" :key="a.id" class="qp-prov" :class="{ off: draft.providers[a.id]?.disabled, focused: focused === a.id }" :data-agent-card="a.id">
       <header class="qp-prov-head">
         <span class="qp-dot" :class="{ ok: store.adapterReady(a.id), bad: !store.adapterReady(a.id) }" />
         <PilotAgentIcon :agent="a.id" :size="16" decorative />
@@ -240,7 +254,7 @@ function addCustom() {
       terminal session; placeholders in its arguments: <code>{cwd}</code> <code>{session}</code> <code>{title}</code> <code>{mode}</code>
       <code>{model}</code> <code>{vault}</code>.
     </p>
-    <div v-for="(c, i) in draft.custom" :key="i" class="qp-prov">
+    <div v-for="(c, i) in draft.custom" :key="i" class="qp-prov" :class="{ focused: focused === c.id }" :data-agent-card="c.id">
       <div class="qp-prov-icon">
         <PilotAgentIcon :agent="agentSlug(c.id) || null" :size="20" :label="c.label || c.id || 'New agent'" custom />
         <button class="qp-btn qp-btn-sm" :disabled="!agentSlug(c.id)" :title="agentSlug(c.id) ? 'PNG, JPEG or WebP, at most 256 KB' : 'Give the agent an id first'" @click="pickIcon(i, c)">
@@ -285,6 +299,7 @@ function addCustom() {
 .qp-link:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
 .qp-prov { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--qss-border-subtle, #35353d); border-radius: 8px; background: var(--qss-bg-raised, #1f1f25); align-items: stretch; }
 .qp-prov.off { opacity: 0.7; }
+.qp-prov.focused { border-color: color-mix(in srgb, var(--qss-accent, #7aa2f7) 70%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--qss-accent, #7aa2f7) 40%, transparent); }
 .qp-prov-head { display: flex; align-items: center; gap: 8px; }
 .qp-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--qss-border, #47474f); flex-shrink: 0; }
 .qp-dot.ok { background: var(--qss-success, #34d399); }

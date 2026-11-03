@@ -323,7 +323,7 @@ impl AcpDriver {
                             a.iter()
                                 .filter_map(|m| {
                                     let id = s(m, "modelId")?.to_string();
-                                    Some(ModelInfo { display_name: s(m, "name").unwrap_or(&id).to_string(), description: s(m, "description").unwrap_or_default().to_string(), id, ..Default::default() })
+                                    Some(ModelInfo { fast: false, display_name: s(m, "name").unwrap_or(&id).to_string(), description: s(m, "description").unwrap_or_default().to_string(), id, ..Default::default() })
                                 })
                                 .collect()
                         })

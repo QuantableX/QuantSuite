@@ -15,14 +15,6 @@ export interface MenuOption {
   reason?: string
 }
 
-/** An agent in the model picker's left column. */
-export interface ProviderOption {
-  id: string
-  label: string
-  available: boolean
-  reason?: string
-}
-
 /** A model row: the catalog's, or the custom id the user typed. */
 export interface ModelRow {
   /** What is stored on the thread and passed to the CLI ('' = the CLI's default). */

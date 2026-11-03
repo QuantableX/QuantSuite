@@ -26,6 +26,7 @@ import { Archive, ArchiveRestore, ChartColumn, ChevronDown, ChevronRight, Pin, P
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
+import type { AgentSetup } from '#pilot/utils/agentMenu'
 import {
   arrangementFor,
   canDrop,
@@ -83,6 +84,17 @@ const importing = ref(false)
 async function newThread(contextId?: string) {
   newMenu.value = false
   await sb.newThread(contextId ? { contextId } : {})
+}
+/** The ▾ beside New thread: the agent menu, with the project the thread starts in (round 2, card 02). */
+const newMoreBtn = ref<HTMLElement | null>(null)
+const newProject = ref('general')
+function toggleNewMenu() {
+  if (!newMenu.value) newProject.value = sb.projectFilter ?? store.active?.contextId ?? 'general'
+  newMenu.value = !newMenu.value
+}
+async function newThreadWith(setup: AgentSetup) {
+  newMenu.value = false
+  await sb.newThread({ contextId: newProject.value, setup })
 }
 
 // ── Menu ──
@@ -622,19 +634,25 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
         <button class="qp-new-btn" :title="`${keys.hint('chat.new', 'New thread')} — ${keys.hint('chat.newWithoutProject', 'without a project')}`" @click="newThread()">
           <Plus :size="14" />
         </button>
-        <button class="qp-new-more" title="New thread in…" aria-haspopup="menu" :aria-expanded="newMenu" @click="newMenu = !newMenu">
+        <button ref="newMoreBtn" class="qp-new-more" title="New thread with an agent, model or project…" aria-haspopup="menu" :aria-expanded="newMenu" @click="toggleNewMenu">
           <ChevronDown :size="12" />
         </button>
-        <div v-if="newMenu" class="qp-new-menu" role="menu" @keydown.esc.stop="newMenu = false">
-          <div class="qp-new-menu-title">New thread in</div>
-          <button v-for="o in filterOptions" :key="o.id" class="qp-new-menu-row" role="menuitem" @click="newThread(o.id)">{{ o.name }}</button>
-          <div class="qp-new-menu-sep" role="separator" />
-          <button class="qp-new-menu-row" role="menuitem" @click="(newMenu = false), (importing = true)">Import from Claude Code or Codex…</button>
-        </div>
+        <PilotAgentMenu v-if="newMenu" :anchor="newMoreBtn" title="New thread" :project="newProject" @pick="newThreadWith" @close="newMenu = false">
+          <template #header>
+            <label class="qp-new-in">
+              <span>New thread in</span>
+              <select v-model="newProject" class="qp-new-in-select" aria-label="Project of the new thread">
+                <option v-for="o in filterOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
+              </select>
+            </label>
+          </template>
+          <template #footer>
+            <button class="qp-new-import" role="menuitem" @click="(newMenu = false), (importing = true)">Import from Claude Code or Codex…</button>
+          </template>
+        </PilotAgentMenu>
         <PilotLayoutImportDialog v-if="importing" @close="importing = false" />
       </div>
     </div>
-    <div v-if="newMenu" class="qp-scrim" @pointerdown="newMenu = false" />
 
     <div ref="list" class="qp-side-list" role="listbox" aria-label="Threads" @keydown="onListKey">
       <!-- The Pinned / Active boundary: an overlay while dragging, so no row moves. -->
@@ -792,36 +810,33 @@ const empty = computed(() => !store.sessions.some((s) => !sb.hidden[s.id] && (!s
 .qp-new-more { width: 16px; border-left: none; border-radius: 0 6px 6px 0; color: var(--qss-text-muted, #6e6e7a); }
 .qp-new-btn:hover,
 .qp-new-more:hover { background: var(--qss-bg-hover, #313139); }
-.qp-new-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 20;
-  min-width: 180px;
-  padding: 4px;
-  background: var(--qss-bg-raised, #1f1f25);
-  border: 1px solid var(--qss-border, #47474f);
-  border-radius: 8px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-}
-.qp-new-menu-title { padding: 4px 8px 3px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
-.qp-new-menu-sep { height: 1px; margin: 4px 6px; background: var(--qss-border-subtle, #35353d); }
-.qp-new-menu-row {
-  display: block;
-  width: 100%;
-  padding: 5px 8px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
+.qp-new-in { display: flex; align-items: center; gap: 8px; padding: 8px 10px 4px; font-size: 11px; color: var(--qss-text-muted, #6e6e7a); }
+.qp-new-in-select {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--qss-border-subtle, #35353d);
+  border-radius: 6px;
+  background: var(--qss-bg-card, #292930);
   color: var(--qss-text, #d4d4d8);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
+}
+.qp-new-in-select option { background: var(--qss-bg-raised, #1f1f25); }
+.qp-new-import {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border: none;
+  border-top: 1px solid var(--qss-border-subtle, #35353d);
+  background: transparent;
+  color: var(--qss-text-secondary, #9a9aa5);
+  font: inherit;
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
-.qp-new-menu-row:hover,
-.qp-new-menu-row:focus-visible { background: var(--qss-bg-hover, #313139); outline: none; }
-.qp-scrim { position: absolute; inset: 0; z-index: 10; }
+.qp-new-import:hover { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
 .qp-side-list { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 6px 0 10px; outline: none; }
 .qp-side-list > * { transition: transform 140ms ease; }
 .qp-side-list.no-anim > *,
