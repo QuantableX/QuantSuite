@@ -2929,3 +2929,61 @@ Native QA (`artifacts/quantpilot-r2-05/`): the gallery in Night/Dots,
 Mint/Round/Cap and Violet/Sparkle/Headset; the panel, the empty thread with
 its line, the companion, the crew view's orchestrator node. The suite is
 dark only, so there is no second theme to check.
+
+## 48. QuantCanvas browser rework (2026-11-03)
+
+Card 3d0f2290. The user: the canvas browser "always had problems with
+visibility and layers, the window permanently in the foreground", rework it
+in general. A tab is a native webview, and a native webview is drawn above
+all HTML: only what the browser cut out by hand (higher windows, minimap,
+sidebars, its own panels) could lie above it, so menus, dialogs, drawers and
+the palette of the suite ended up under the page. A requestAnimationFrame loop
+measured the DOM every frame (~15 % of a core with one browser on screen), the
+URL was polled every second, scripts were injected with eval, history was an
+own URL list and the progress bar a timer.
+
+- **Engine in Rust** (`modules/canvas/crate/src/commands/browser.rs`, modeled
+  on QuantPilot's browser): the crate makes each tab with `on_navigation`,
+  `on_page_load`, `on_document_title_changed`, WebView2's history change
+  (`pushState` in single-page apps) and `on_new_window`; every change is one
+  `canvas-browser-state` event {label, url, title, loading, canGoBack,
+  canGoForward}. Commands `browser_tab_open/place/close/navigate/action/
+  capture` (+ `set_browser_clip_region`, `find_in_browser`) answer only the
+  suite's own pages; a tab never loads the suite's origin, files or app
+  schemes. Back/forward/reload/stop use the page's real history.
+- **Live page or its picture** (`BrowserWindow.vue`, `utils/browserSurface.ts`):
+  the live page shows only while nothing lies on top of it and the canvas is
+  at rest; otherwise a picture of it (WebView2 CapturePreview, JPEG) stands in
+  its place in the DOM, below every menu, dialog, drawer, popover and window.
+  Higher windows (also folded ones, and their resize handles), the minimap,
+  this window's own handles and what lies outside the visible canvas are cut
+  out of a live page exactly (window region); anything else on top is found by
+  hit-testing the page's area. Pan, zoom, drag and resize show the picture,
+  the live page returns ~160 ms after the motion. Pictures are taken after a
+  page loads, when the pointer comes back from the page and every 5 s while
+  live.
+- **Nothing per frame:** the page follows on events — canvas transform and
+  window geometry, DOM changes (a MutationObserver, probed at most 5×/s),
+  clicks and keys in the suite (menus open on those), visibility, KeepAlive.
+- **Zoom:** page zoom = canvas zoom × the window's own page zoom (Ctrl +/-/0,
+  a chip when not 100 %), so the live page and its picture look the same.
+- **Tabs:** opened when first shown (a restored window with ten tabs makes
+  one webview), real titles in tabs and window title, loading bar from the
+  load events, stop while loading. `target="_blank"` links and `window.open`
+  open a tab in the same window; a sized popup (a sign-in window) opens as the
+  page asked. The suite's shell plugin puts a link handler into every webview
+  that swallowed `_blank` links in web pages (they have no app access): the
+  tabs take such clicks first (`NEW_TAB_LINKS`). Closing the window closes
+  every tab's page, also those a reload of the suite page left running.
+- **Other platforms:** the picture needs WebView2; Linux/macOS show the tab's
+  title in its place. Simulated non-Windows clippy clean.
+
+**Measured** (QA app, CDP, renderer main thread): a live browser window idle
+0.15 % of a core (before ~15 %), minimized 0 %. **Checks:** check:ts, css,
+isolation, components, commands, modules; `npm run test:canvas` 17 passed (new
+`scripts/test-canvas-browser.mjs`); `cargo test -p tauri-plugin-canvas`.
+Native QA (`artifacts/canvas-browser-rework/`): Kanban drawer, palette,
+history panel and a card window over the live page; pan/zoom 75 %; module
+switch; back/forward; `_blank` link and `window.open` → tab; reload of the
+suite page reconnects the tabs without duplicates. Not tried: fullscreen
+video, a sign-in popup, downloads.
