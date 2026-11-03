@@ -71,7 +71,7 @@ function onUp(e: PointerEvent) {
   mascot.set({ companionAt: { x, y } })
 }
 /** Held, or swung fast: Bob reacts (Face.vue). */
-const carried = computed(() => (drag.value ? (Math.abs(drag.value.lean) > 9 ? 'fast' : 'held') : 'no'))
+const carried = computed(() => (drag.value ? (Math.abs(drag.value.lean) > 15 ? 'fast' : 'held') : 'no'))
 const style = computed(() => {
   const d = drag.value
   if (d) {

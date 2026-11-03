@@ -811,10 +811,10 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 .qp-m-spark { position: absolute; left: 50%; top: 48%; width: 0; height: 0; pointer-events: none; }
 .qp-m-spark i {
   position: absolute;
-  left: -2.5cqw;
-  top: -2.5cqw;
-  width: 5cqw;
-  height: 5cqw;
+  left: -4cqw;
+  top: -4cqw;
+  width: 8cqw;
+  height: 8cqw;
   background: var(--m-glow);
   clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
   opacity: 0;
@@ -896,7 +896,7 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 @keyframes qp-m-popin { from { transform: scale(0); } to { transform: scale(1); } }
 @keyframes qp-m-alert { 0%, 60%, 100% { transform: translateY(0) rotate(0); } 20% { transform: translateY(-14%) rotate(-8deg); } 40% { transform: translateY(0) rotate(6deg); } }
 @keyframes qp-m-think { 0%, 100% { opacity: 0.25; transform: scale(0.85); } 40% { opacity: 0.85; transform: scale(1); } }
-@keyframes qp-m-spark { 0% { opacity: 0; transform: rotate(var(--a)) translateY(0) scale(0.4); } 25% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateY(-26cqw) scale(1); } }
+@keyframes qp-m-spark { 0% { opacity: 0; transform: rotate(var(--a)) translateY(0) scale(0.4); } 25% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateY(-34cqw) scale(1); } }
 @keyframes qp-m-glowfly { from { opacity: 0.55; } to { opacity: 1; } }
 
 @keyframes qp-q-tilt { 0% { transform: rotate(0); } 25%, 75% { transform: rotate(calc(var(--q-dir, 1) * 13deg)) translateY(-2%); } 100% { transform: rotate(0); } }

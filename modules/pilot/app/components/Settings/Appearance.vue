@@ -69,7 +69,7 @@ const SIZES: { id: PilotSettings['textSize']; label: string }[] = [
       <div class="qp-row">
         <span class="qp-row-k">Skin</span>
         <span class="qp-swatches" role="radiogroup" aria-label="Skin">
-          <button v-for="k in SKINS" :key="k.id" role="radio" class="qp-swatch" :class="{ on: m.skin === k.id }" :aria-checked="m.skin === k.id" :title="k.label" :style="{ background: `radial-gradient(circle at 35% 30%, ${k.light}, ${k.base})` }" @click="mascot.set({ skin: k.id })" />
+          <button v-for="k in SKINS" :key="k.id" role="radio" class="qp-swatch" :class="{ on: m.skin === k.id }" :aria-checked="m.skin === k.id" :title="k.label" :style="{ background: k.base, boxShadow: `inset 0 0 0 2px ${k.light}66` }" @click="mascot.set({ skin: k.id })" />
         </span>
       </div>
       <div class="qp-row">
@@ -80,8 +80,8 @@ const SIZES: { id: PilotSettings['textSize']; label: string }[] = [
       </div>
       <div class="qp-row">
         <span class="qp-row-k">Accessory</span>
-        <span class="qp-seg" role="radiogroup" aria-label="Accessory">
-          <button v-for="a in ACCESSORIES" :key="a.id" role="radio" class="qp-seg-btn" :class="{ on: m.accessory === a.id }" :aria-checked="m.accessory === a.id" @click="mascot.set({ accessory: a.id })">{{ a.label }}</button>
+        <span class="qp-chips" role="radiogroup" aria-label="Accessory">
+          <button v-for="a in ACCESSORIES" :key="a.id" role="radio" class="qp-trick" :class="{ on: m.accessory === a.id }" :aria-checked="m.accessory === a.id" @click="mascot.set({ accessory: a.id })">{{ a.label }}</button>
         </span>
       </div>
       <div class="qp-row">
@@ -143,7 +143,11 @@ const SIZES: { id: PilotSettings['textSize']; label: string }[] = [
 .qp-tricks-face { flex: 0 0 auto; width: 96px; }
 .qp-tricks-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .qp-trick { padding: 3px 9px; border: 1px solid var(--qss-border, #47474f); border-radius: 999px; background: transparent; color: var(--qss-text-secondary, #9a9aa5); font: inherit; font-size: 11.5px; cursor: pointer; }
-.qp-trick:hover { color: var(--qss-text, #d4d4d8); background: var(--qss-bg-card, #292930); }
+.qp-trick:hover,
+.qp-trick.on { color: var(--qss-text, #d4d4d8); background: var(--qss-bg-card, #292930); }
+.qp-trick.on { border-color: var(--qss-text-secondary, #9a9aa5); }
+.qp-chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 440px; }
+.qp-trick { white-space: nowrap; }
 .qp-gallery { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 8px; margin-top: 4px; }
 .qp-gallery-item { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 0; }
 .qp-gallery-face { width: 72px; }

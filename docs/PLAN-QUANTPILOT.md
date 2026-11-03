@@ -3028,3 +3028,34 @@ nod-off closes in one slow move instead of holding half shut. A click is one
 boing (WAAPI, composite add, squash → stretch → settle, ends where it started)
 with ^^ eyes for 1.2 s and no hop; a cheer hops once, so it never stops mid-air
 (the old click snapped back after 0.26 s and cut its second hop).
+
+## 51. Bob The Blob — the all-out pass (2026-11-03)
+
+Card 7cdb47d9. The user: "all out … jegliche Aspekte", and the mascot is called
+**Bob The Blob**, Bob for short (the old default name Pip becomes Bob). Kept:
+flat glyph, eyes only, no half-shut holds, every animation ends where it started.
+
+- **Moods:** thinking shows a thought bubble; working reads along (eye
+  saccades left to right); needs-you gets a "!", a wave and attention hops;
+  error glances nervously; long run droops (eyes lower, slow blinks, sweat) —
+  no half lids any more; a cheer hops once with a sparkle burst; an approval
+  nods with ^^ eyes; sleeping sways. After three quiet minutes he naps and
+  wakes with an "oh, hi" when the pointer or the keyboard comes back.
+- **Quirks** (utils/mascot.ts, 17): new slow "love" blink, barrel roll, side
+  hop, shake-off, hiccup and a firefly he follows with his eyes (WAAPI flight,
+  gaze per waypoint). Movement Lively / Calm (rarer, no big quirks) / Still.
+- **Reactions:** he watches the field you type in; four quick clicks make him
+  dizzy (spinning eyes, woozy sway); stroking him back and forth is petting
+  (^^, contented sway); the companion is wide-eyed while held, > < when swung
+  fast, and lands with a squash (WAAPI, composite add).
+- **Look:** skins Ghost, Rose, Ocean; accessories Beanie, Crown, Party hat,
+  Sprout; flat swatches; accessories as wrapping chips.
+- **Settings:** the section is "Bob The Blob"; Tricks play every quirk on a
+  preview Bob (QUIRK_LABEL, tested to cover every quirk).
+- **Lines:** Bob's voice, three per mood; a calm Bob greets by the time of day.
+- Also: the Usage page reads "Reading the agents' logs…" (user request).
+
+Measured: empty thread with panel + hero Bob lively 1.4 % of a core. Checks:
+mascot tests 8, test:pilot, check:ts, css, isolation, components. QA frames in
+ (settings, gallery, tricks, dizzy/petting/sparkle,
+companion carried and landing, skins and accessories).
