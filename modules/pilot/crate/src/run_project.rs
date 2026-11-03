@@ -13,7 +13,9 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::process::{Command, Stdio};
+use std::process::Command;
+#[cfg(windows)]
+use std::process::Stdio;
 use std::time::Duration;
 
 /// Output lines an agent gets back.
@@ -26,13 +28,10 @@ pub struct Proc {
     pub name: String,
 }
 
+#[cfg(windows)]
 fn hidden(cmd: &mut Command) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
-    let _ = cmd;
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x0800_0000);
 }
 
 /// Every process with its parent.
@@ -63,6 +62,7 @@ pub fn processes() -> Vec<Proc> {
     }
 }
 
+#[cfg(any(windows, test))]
 pub fn parse_processes(out: &str) -> Vec<Proc> {
     out.lines()
         .filter_map(|l| {

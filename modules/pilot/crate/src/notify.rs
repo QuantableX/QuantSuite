@@ -143,6 +143,7 @@ pub fn set_badge(app: &AppHandle<Wry>, count: u32) -> Result<(), String> {
 }
 
 /// 3×5 digits and a plus, row by row (three bits each).
+#[cfg(any(windows, test))]
 const GLYPHS: [[u8; 5]; 11] = [
     [0b111, 0b101, 0b101, 0b101, 0b111],
     [0b010, 0b110, 0b010, 0b010, 0b111],
@@ -158,6 +159,8 @@ const GLYPHS: [[u8; 5]; 11] = [
 ];
 
 /// A 32×32 RGBA badge: an amber disc with the count in white ("9+" above nine).
+/// Windows only: elsewhere the system draws the badge count itself.
+#[cfg(any(windows, test))]
 pub fn badge(count: u32) -> (Vec<u8>, u32) {
     const S: u32 = 32;
     const SCALE: u32 = 4;
