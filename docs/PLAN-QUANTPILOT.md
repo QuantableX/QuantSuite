@@ -3059,3 +3059,30 @@ Measured: empty thread with panel + hero Bob lively 1.4 % of a core. Checks:
 mascot tests 8, test:pilot, check:ts, css, isolation, components. QA frames in
 `artifacts/bob-allout/` (settings, gallery, tricks, dizzy/petting/sparkle,
 companion carried and landing, skins and accessories).
+
+## 52. Round 3: the adopted roadmap areas (2026-11-03)
+
+The user on the roadmap (card 91212da8): "1.1.0 kommt ganz danach … implementiere
+sie so gut du kannst, bei denen wo du denkst wir können das implementieren und es
+lohnt sich … jedes einzelne dann wieder als karte". Adopted: 2, 7, 8, 9, 11, 12
+(cards "QuantPilot round 3 NN/07"); deferred 3, 5, 6; rejected 4, 10 — reasons on
+the roadmap card.
+
+### 01/07 — a General thread moves into a project (card 29d4a825)
+
+- Thread menu "Move to a project" (every workspace, or "Choose a folder…") and the
+  header's project chip on a General thread (a button there). A new folder is
+  registered without switching the suite's active workspace
+  (`registerWorkspacePath` in @quantsuite/core).
+- `pilot_thread_move_to_project`: refused for project threads, side chats (they
+  follow their main thread), worktree threads, running turns and an open terminal
+  UI. The thread's context and cwd change; transcript, title, tags stay; a warm
+  process is stopped (it still has the old folder); a notice says how it continues.
+- Continuity: Claude's session file is copied into
+  `<config>/projects/<folder with every non-alphanumeric as ->/` so `--resume`
+  continues there; Codex resumes by id; other agents start a new session and the
+  next message brings the conversation along (the existing handoff of an agent
+  switch). Side chats move with their main thread.
+- QA (Claude Haiku): a General thread learned a code word, moved into the QA
+  project, then named the word and the project folder as its working directory.
+  Not tried live: the handoff path (only Claude answers on this machine) and Codex.

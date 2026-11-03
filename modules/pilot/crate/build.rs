@@ -116,6 +116,7 @@ const COMMANDS: &[&str] = &[
     "pilot_agent_icon_clear",
     "pilot_new_thread_setup",
     "pilot_thread_apply_setup",
+    "pilot_thread_move_to_project",
     "pilot_restart_interrupted",
     "pilot_thread_set_parent",
     "pilot_agent_crew_dispatch",

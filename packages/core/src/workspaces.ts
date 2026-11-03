@@ -399,6 +399,28 @@ export async function openWorkspacePath(path: string, name?: string): Promise<Wo
 }
 
 /**
+ * Register a folder as a workspace without opening it — the active workspace
+ * stays what it is (QuantPilot moving a General thread into a new project,
+ * round 3 card 01). An already registered folder is returned as it is.
+ */
+export async function registerWorkspacePath(path: string, name?: string): Promise<Workspace> {
+  const known = (await listWorkspaces()).find((w) => samePath(w.path, path))
+  if (known) return known
+  const ws = workspaceFor(path, name)
+  if (!hasTauri()) {
+    const store = readDev()
+    store.list.push(ws)
+    writeDev(store)
+    notify()
+    return ws
+  }
+  await qs.core.upsertEntity(toEntity(ws))
+  // No bus topic for a plain registration: announce it here, like removals and pins.
+  notify()
+  return ws
+}
+
+/**
  * Folder dialog → open. Returns null when the user cancelled.
  *
  * The dialog plugin is imported lazily: in a plain browser it does not exist,
