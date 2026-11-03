@@ -33,6 +33,7 @@ mod events;
 mod files;
 mod git;
 mod github;
+mod guides;
 mod import;
 mod lifecycle;
 mod gitops;
@@ -1099,6 +1100,8 @@ pub fn init() -> TauriPlugin<Wry> {
             schedules::pilot_schedule_delete,
             schedules::pilot_schedule_run_now,
             schedules::pilot_schedule_runs,
+            guides::pilot_guide_get,
+            guides::pilot_guide_write,
             crew::pilot_crew_resume,
             pilot_provider_update,
             pilot_gh_status,

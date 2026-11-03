@@ -8,12 +8,15 @@
  * a draft follows its line when it is found once, otherwise it is marked
  * stale and never posted at a guessed line. Submit posts one review — Comment,
  * Approve or Request changes as GitHub allows you — exactly once; it never merges.
+ * The right column's Guide tab writes a review guide of the PR at its head;
+ * its entries open their file at their line (round 3, card 04).
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, Check, CircleDot, ExternalLink, MessageSquare, RefreshCw } from 'lucide-vue-next'
 import { pilot } from '#pilot/utils/invoke'
 import { openExternal } from '#pilot/utils/external'
 import { parsePatch, type PatchLine } from '#pilot/utils/diff'
+import type { GuideTarget } from '#pilot/types'
 
 interface Draft {
   id: string
@@ -115,6 +118,22 @@ onMounted(() => void load())
 
 const file = computed(() => pr.value?.files.find((f) => f.path === selected.value) ?? null)
 const lines = computed<PatchLine[]>(() => (file.value?.patch ? parsePatch(file.value.patch) : []))
+
+// ── The review guide (round 3, card 04) ──
+const sideTab = ref<'review' | 'guide'>('review')
+const guideTarget = computed<GuideTarget>(() => ({ kind: 'pr', contextId: props.contextId, number: props.number }))
+const guideLoads = ref(0)
+const diffEl = ref<HTMLElement | null>(null)
+async function openFromGuide(path: string, line: number | null) {
+  selected.value = path
+  await nextTick()
+  const row = line ? diffEl.value?.querySelector<HTMLElement>(`[data-new-line="${line}"]`) : null
+  if (row) {
+    row.scrollIntoView({ block: 'center' })
+    row.classList.add('flash')
+    setTimeout(() => row.classList.remove('flash'), 1200)
+  } else diffEl.value?.scrollTo({ top: 0 })
+}
 const drafts = computed(() => (pr.value?.drafts ?? []).filter((d) => d.path === selected.value))
 const stale = computed(() => (pr.value?.drafts ?? []).filter((d) => d.path && d.anchor === 'stale'))
 const inline = computed(() => (pr.value?.drafts ?? []).filter((d) => d.path))
@@ -227,13 +246,13 @@ const canSubmit = computed(() => !busy.value && pr.value && (event.value === 'ap
         <div class="qp-rv-sec">Commits</div>
         <div v-for="c in pr.commits" :key="c[0]" class="qp-rv-commit"><code>{{ c[0] }}</code> {{ c[1] }}</div>
       </aside>
-      <main class="qp-rv-diff">
+      <main ref="diffEl" class="qp-rv-diff">
         <div v-if="!file" class="qp-rv-dim qp-rv-pad">No files.</div>
         <template v-else>
           <div class="qp-rv-filehead">{{ file.previous ? `${file.previous} → ` : '' }}{{ file.path }}</div>
           <div v-if="!file.patch" class="qp-rv-dim qp-rv-pad">GitHub shows no diff for this file (binary, very large or only renamed).</div>
           <div v-for="(l, i) in lines" :key="i">
-            <div class="qp-rv-line" :data-kind="l.kind">
+            <div class="qp-rv-line" :data-kind="l.kind" :data-new-line="l.new ?? undefined">
               <button class="qp-rv-ln" :disabled="l.kind === 'hunk' || l.kind === 'meta'" title="Comment on this line (Shift: a range from the last one)" @click="startComment(l, $event)">{{ l.old ?? '' }}</button>
               <button class="qp-rv-ln" :disabled="l.kind === 'hunk' || l.kind === 'meta'" title="Comment on this line (Shift: a range from the last one)" @click="startComment(l, $event)">{{ l.new ?? '' }}</button>
               <pre class="qp-rv-code">{{ l.text }}</pre>
@@ -261,7 +280,13 @@ const canSubmit = computed(() => !busy.value && pr.value && (event.value === 'ap
           </div>
         </template>
       </main>
-      <aside class="qp-rv-side">
+      <aside class="qp-rv-side" :class="{ guide: sideTab === 'guide' }">
+        <div class="qp-rv-tabs" role="tablist" aria-label="Right column">
+          <button role="tab" :aria-selected="sideTab === 'review'" :class="{ on: sideTab === 'review' }" @click="sideTab = 'review'">Your review</button>
+          <button role="tab" :aria-selected="sideTab === 'guide'" :class="{ on: sideTab === 'guide' }" @click="sideTab = 'guide'">Guide</button>
+        </div>
+        <PilotGuidePanel v-if="sideTab === 'guide'" :target="guideTarget" :context-id="contextId" :refresh="guideLoads" @open="openFromGuide" />
+        <template v-else>
         <div class="qp-rv-sec">Description</div>
         <div class="qp-rv-desc">{{ pr.body || 'No description.' }}</div>
         <div class="qp-rv-sec">Your review</div>
@@ -281,6 +306,7 @@ const canSubmit = computed(() => !busy.value && pr.value && (event.value === 'ap
         </div>
         <div v-if="!pr.actions.includes('approve')" class="qp-rv-dim">GitHub allows only comments here (your own pull request, or not open).</div>
         <button class="qp-btn qp-btn-sm qp-btn-primary" :disabled="!canSubmit" @click="submit">{{ busy ? 'Submitting…' : 'Submit review' }}</button>
+        </template>
       </aside>
     </div>
   </section>
@@ -298,6 +324,13 @@ const canSubmit = computed(() => !busy.value && pr.value && (event.value === 'ap
 .qp-rv-err { color: var(--qss-error, #e06c75); font-size: 12px; padding: 4px 12px; }
 .qp-rv-ok { color: var(--qss-success, #34d399); font-size: 12px; padding: 4px 12px; }
 .qp-rv-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px 1fr 280px; }
+.qp-rv-body:has(.qp-rv-side.guide) { grid-template-columns: 240px 1fr 380px; }
+.qp-rv-side.guide { padding: 0; gap: 0; overflow: hidden; }
+.qp-rv-tabs { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--qss-border-subtle, #35353d); border-radius: 7px; flex-shrink: 0; }
+.qp-rv-side.guide .qp-rv-tabs { margin: 8px 8px 0; }
+.qp-rv-tabs button { flex: 1; padding: 3px 8px; border: none; border-radius: 5px; background: transparent; color: var(--qss-text-secondary, #9a9aa5); font: inherit; font-size: 12px; cursor: pointer; }
+.qp-rv-tabs button.on { background: var(--qss-bg-card, #292930); color: var(--qss-text, #d4d4d8); }
+.qp-rv-line.flash { background: color-mix(in srgb, var(--qss-accent, #7aa2f7) 22%, transparent); transition: background 0.3s; }
 .qp-rv-files, .qp-rv-side { min-height: 0; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--qss-border-subtle, #35353d); }
 .qp-rv-side { border-right: none; border-left: 1px solid var(--qss-border-subtle, #35353d); gap: 8px; }
 .qp-rv-sec { margin-top: 6px; font-size: 11.5px; font-weight: 600; color: var(--qss-text-secondary, #9a9aa5); }

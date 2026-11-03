@@ -145,6 +145,8 @@ Default permissions for the pilot module.
 - `allow-pilot-schedule-delete`
 - `allow-pilot-schedule-run-now`
 - `allow-pilot-schedule-runs`
+- `allow-pilot-guide-get`
+- `allow-pilot-guide-write`
 - `allow-pilot-provider-update`
 - `allow-pilot-gh-status`
 - `allow-pilot-diagnostics`
@@ -2452,6 +2454,58 @@ Enables the pilot_git_status command without any pre-configured scope.
 <td>
 
 Denies the pilot_git_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-guide-get`
+
+</td>
+<td>
+
+Enables the pilot_guide_get command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-guide-get`
+
+</td>
+<td>
+
+Denies the pilot_guide_get command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-guide-write`
+
+</td>
+<td>
+
+Enables the pilot_guide_write command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-guide-write`
+
+</td>
+<td>
+
+Denies the pilot_guide_write command without any pre-configured scope.
 
 </td>
 </tr>

@@ -7,13 +7,15 @@
  * the path, stage / unstage / discard (Uncommitted; discard asks first), and
  * a review comment on the selected lines that lands in the composer as a
  * chip — or every file in one scroll with find across all (card 24,
- * DiffAll.vue).
+ * DiffAll.vue). The guide button shows a review guide of the scope in place
+ * of the file list; its entries open their file and line (round 3, card 04).
  */
-import { computed, ref, watch } from 'vue'
-import { Columns2, Copy, File, Files, MessageSquarePlus, RefreshCw, Rows2, WrapText } from 'lucide-vue-next'
+import { computed, nextTick, ref, watch } from 'vue'
+import { BookOpen, Columns2, Copy, File, Files, MessageSquarePlus, RefreshCw, Rows2, WrapText } from 'lucide-vue-next'
+import { usePilotStore } from '#pilot/stores/pilot'
 import { pilot } from '#pilot/utils/invoke'
 import { useInspectorStore, type DiffScope } from '#pilot/stores/inspector'
-import type { DiffList, DiffSides, FileChange } from '#pilot/types'
+import type { DiffList, DiffSides, FileChange, GuideTarget } from '#pilot/types'
 import { languageOf } from '#pilot/utils/files'
 
 const props = defineProps<{ threadId: string }>()
@@ -30,7 +32,33 @@ const note = ref('')
 const confirmDiscard = ref(false)
 const commenting = ref<{ start: number; end: number; code: string } | null>(null)
 const commentText = ref('')
-const editor = ref<{ selection: () => { startLine: number; endLine: number; text: string } | null } | null>(null)
+const editor = ref<{ selection: () => { startLine: number; endLine: number; text: string } | null; reveal: (line: number) => void } | null>(null)
+
+// ── The review guide (round 3, card 04) ──
+const pilotStore = usePilotStore()
+const guideOpen = ref(false)
+/** Bumped by every load: the guide checks whether the diff moved on. */
+const loads = ref(0)
+const guideTarget = computed<GuideTarget>(() => ({ kind: 'thread', id: props.threadId, scope: scope.value, turn: scope.value === 'turn' ? turn.value : null }))
+const threadContext = computed(() => pilotStore.sessions.find((x) => x.id === props.threadId)?.contextId ?? null)
+let pendingLine: number | null = null
+function toggleGuide() {
+  guideOpen.value = !guideOpen.value
+  if (guideOpen.value && inspector.diffAll) inspector.setView({ all: false })
+}
+function openFromGuide(path: string, line: number | null) {
+  pendingLine = line
+  if (selected.value === path) void reveal()
+  else selected.value = path
+}
+async function reveal() {
+  const line = pendingLine
+  pendingLine = null
+  if (!line) return
+  await nextTick()
+  // Monaco lays the diff out a moment after new sides arrive.
+  setTimeout(() => editor.value?.reveal(line), 120)
+}
 
 const SCOPES: { id: DiffScope; label: string }[] = [
   { id: 'turn', label: 'This turn' },
@@ -46,6 +74,7 @@ async function load() {
     const files = list.value?.files ?? []
     if (!selected.value || !files.some((f) => f.path === selected.value)) selected.value = files[0]?.path ?? null
     if (scope.value === 'turn' && !turn.value && list.value?.turns.length) turn.value = list.value.turns[0][0]
+    loads.value++
   } catch (e) {
     list.value = null
     error.value = String(e)
@@ -63,6 +92,7 @@ async function loadSides() {
   }
   try {
     sides.value = await pilot<DiffSides>('plugin:pilot|pilot_diff_file', { id: props.threadId, from: l.from, to: l.to, path: selected.value })
+    if (pendingLine) void reveal()
   } catch (e) {
     sides.value = null
     error.value = String(e)
@@ -152,6 +182,7 @@ function addComment() {
         <option v-for="t in list.turns" :key="t[0]" :value="t[0]">{{ t[1] }}</option>
       </select>
       <span class="qp-diff-tools">
+        <button class="qp-diff-icon" :class="{ on: guideOpen }" :aria-pressed="guideOpen" title="Review guide — a walkthrough of these changes" @click="toggleGuide"><BookOpen :size="13" /></button>
         <button
           class="qp-diff-icon"
           :class="{ on: inspector.diffAll }"
@@ -175,7 +206,7 @@ function addComment() {
     </div>
 
     <PilotInspectorDiffAll
-      v-if="list?.files.length && inspector.diffAll"
+      v-if="list?.files.length && inspector.diffAll && !guideOpen"
       :thread-id="threadId"
       :from="list.from"
       :to="list.to"
@@ -184,7 +215,10 @@ function addComment() {
       @focus="(p: string) => { selected = p; inspector.setView({ all: false }) }"
     />
     <template v-else-if="list?.files.length">
-      <div class="qp-diff-files" role="listbox" aria-label="Changed files">
+      <div v-if="guideOpen" class="qp-diff-guide">
+        <PilotGuidePanel :target="guideTarget" :context-id="threadContext" :refresh="loads" @open="openFromGuide" />
+      </div>
+      <div v-else class="qp-diff-files" role="listbox" aria-label="Changed files">
         <div class="qp-diff-sum">{{ list.files.length }} file{{ list.files.length === 1 ? '' : 's' }} · <span class="add">+{{ totals.a }}</span> <span class="del">−{{ totals.r }}</span></div>
         <button
           v-for="f in list.files"
@@ -257,6 +291,7 @@ function addComment() {
 .qp-diff-icon.on { background: var(--qss-bg-hover, #313139); color: var(--qss-text, #d4d4d8); }
 .qp-diff-error { margin: 8px; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--qss-warning, #d29a3f) 14%, transparent); color: var(--qss-warning, #d29a3f); }
 .qp-diff-empty { padding: 16px; color: var(--qss-text-muted, #6e6e7a); text-align: center; }
+.qp-diff-guide { flex: 0 0 48%; min-height: 180px; display: flex; flex-direction: column; border-bottom: 1px solid var(--qss-border-subtle, #35353d); }
 .qp-diff-files { max-height: 32%; overflow-y: auto; padding: 4px; border-bottom: 1px solid var(--qss-border-subtle, #35353d); }
 .qp-diff-sum { padding: 2px 6px 4px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-diff-file {

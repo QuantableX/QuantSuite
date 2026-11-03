@@ -1471,12 +1471,12 @@ pub fn pilot_worktree_recreate(state: State<'_, PilotState>, id: String) -> Resu
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffList {
-    files: Vec<FileChange>,
+    pub(crate) files: Vec<FileChange>,
     /// Files staged in the user's index (Uncommitted).
     staged: Vec<String>,
     /// What the scope compares: commit ids or labels, for the header.
-    from: String,
-    to: String,
+    pub(crate) from: String,
+    pub(crate) to: String,
     /// The thread's turns that have changes, newest first: `(turn id, label)`.
     turns: Vec<(String, String)>,
 }
@@ -1502,6 +1502,12 @@ fn repo_of(meta: &ThreadMeta) -> Result<PathBuf, String> {
 /// against its merge base with the base branch).
 #[tauri::command(async)]
 pub fn pilot_diff_list(state: State<'_, PilotState>, id: String, scope: String, turn: Option<String>) -> Result<DiffList, String> {
+    diff_list(&state, &id, &scope, turn)
+}
+
+/// [`pilot_diff_list`] for the crate (review guides, round 3, card 04).
+pub(crate) fn diff_list(state: &PilotState, id: &str, scope: &str, turn: Option<String>) -> Result<DiffList, String> {
+    let id = id.to_string();
     let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
     let root = repo_of(&meta);
     let mut prompts: HashMap<String, String> = HashMap::new();
@@ -1523,7 +1529,7 @@ pub fn pilot_diff_list(state: State<'_, PilotState>, id: String, scope: String, 
         })
         .rev()
         .collect::<Vec<_>>();
-    match scope.as_str() {
+    match scope {
         // A turn's saved, frozen records — no repository needed (parity 01).
         "turn" => {
             let turn = turn.or_else(|| turns.first().map(|t| t.0.clone())).ok_or("no turn has changed files yet")?;
@@ -1556,8 +1562,8 @@ pub struct DiffSides {
 
 #[derive(Serialize)]
 pub struct FilePatch {
-    path: String,
-    patch: String,
+    pub(crate) path: String,
+    pub(crate) patch: String,
 }
 
 /// The Diff tab's all-files view (card 24): unified diffs of the files that
@@ -1567,6 +1573,11 @@ pub fn pilot_diff_patches(state: State<'_, PilotState>, id: String, from: String
     if paths.len() > 50 {
         return Err("at most 50 files at a time".into());
     }
+    diff_patches(&state, &id, &from, to, paths)
+}
+
+/// [`pilot_diff_patches`] without the page limit, for the crate.
+pub(crate) fn diff_patches(state: &PilotState, id: &str, from: &str, to: String, paths: Vec<String>) -> Result<Vec<FilePatch>, String> {
     // A turn's saved patches: what was frozen, never the files as they are now.
     if let Some(turn) = from.strip_prefix(SAVED) {
         return Ok(paths
@@ -1577,10 +1588,10 @@ pub fn pilot_diff_patches(state: State<'_, PilotState>, id: String, from: String
             })
             .collect());
     }
-    let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
+    let meta = state.db.get_session(id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
     let root = repo_of(&meta)?;
     let to = if to == "working tree" { checkpoints::snapshot(&root)? } else { to };
-    Ok(paths.into_iter().map(|path| FilePatch { patch: checkpoints::patch(&root, &from, &to, &path), path }).collect())
+    Ok(paths.into_iter().map(|path| FilePatch { patch: checkpoints::patch(&root, from, &to, &path), path }).collect())
 }
 
 /// Both sides of one file for the diff editor.

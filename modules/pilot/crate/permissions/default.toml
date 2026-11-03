@@ -144,6 +144,8 @@ permissions = [
   "allow-pilot-schedule-delete",
   "allow-pilot-schedule-run-now",
   "allow-pilot-schedule-runs",
+  "allow-pilot-guide-get",
+  "allow-pilot-guide-write",
   "allow-pilot-provider-update",
   "allow-pilot-gh-status",
   "allow-pilot-diagnostics",
