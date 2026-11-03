@@ -118,7 +118,8 @@ export interface MascotPrefs {
 }
 
 export const SKINS: { id: Skin; label: string; base: string; light: string; ink: string }[] = [
-  { id: 'night', label: 'Night', base: '#2a2a31', light: '#4a4a55', ink: '#e4e4e7' },
+  // Night is the old face: a dark glyph, darker than the panel, with a light outline.
+  { id: 'night', label: 'Night', base: '#141418', light: '#2c2c34', ink: '#e4e4e7' },
   { id: 'mint', label: 'Mint', base: '#3fbf95', light: '#9ff0cf', ink: '#13261f' },
   { id: 'sky', label: 'Sky', base: '#4c8fe6', light: '#a9cdfb', ink: '#0f1d33' },
   { id: 'violet', label: 'Violet', base: '#8b6ff0', light: '#cfc0ff', ink: '#1c1433' },

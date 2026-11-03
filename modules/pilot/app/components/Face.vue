@@ -242,19 +242,15 @@ const vars = computed(() => {
     '--m-gy': `${gaze.value.y * 100}%`,
   }
 })
-const MOUTH: Record<Mood, string> = {
-  calm: 'M8 5 Q12 8.2 16 5',
-  think: 'M10.4 6 Q12 4.6 13.6 6 Q12 7.4 10.4 6',
-  focus: 'M9 6 Q12 6.6 15 6',
-  juggle: 'M8 5 Q12 9 16 5',
-  tired: 'M8.5 7 Q12 5.6 15.5 6.4',
-  call: 'M10 5 Q12 3.2 14 5 Q12 8.8 10 5',
-  worried: 'M7.5 7 Q9.8 5 12 7 Q14.2 9 16.5 7',
-  cheer: 'M6.5 4 Q12 12 17.5 4 Q12 6.4 6.5 4',
-  nod: 'M8 5 Q12 8.6 16 5',
-  sleep: 'M10 6 Q12 7.2 14 6',
+// At rest the face is two eyes, like the old one; only the moods that speak
+// with their mouth show one.
+const MOUTH: Partial<Record<Mood, string>> = {
+  call: 'M10.2 5 Q12 3.4 13.8 5 Q12 8.4 10.2 5',
+  worried: 'M8 6.5 Q10 5 12 6.5 Q14 8 16 6.5',
+  cheer: 'M7.5 4 Q12 11 16.5 4 Q12 6 7.5 4',
 }
-const filled = computed(() => mood.value === 'cheer' || mood.value === 'call' || mood.value === 'think')
+const mouth = computed(() => MOUTH[mood.value] ?? '')
+const filled = computed(() => mood.value === 'cheer' || mood.value === 'call')
 const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.value))
 </script>
 
@@ -272,19 +268,17 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
     @pointerleave="hover = false"
     @click="poke"
   >
-    <div class="qp-m-shadow" />
     <div class="qp-m-bob">
       <div class="qp-m-halo" />
       <div class="qp-m-body">
-        <div class="qp-m-shine" />
         <div class="qp-m-cheek l" /><div class="qp-m-cheek r" />
         <div class="qp-m-brow l" /><div class="qp-m-brow r" />
         <div class="qp-m-eyes">
           <i class="qp-m-eye l"><b /><s /></i>
           <i class="qp-m-eye r"><b /><s /></i>
         </div>
-        <svg class="qp-m-mouth" viewBox="0 0 24 12" aria-hidden="true">
-          <path :d="MOUTH[mood]" :class="{ filled }" />
+        <svg v-if="mouth" class="qp-m-mouth" viewBox="0 0 24 12" aria-hidden="true">
+          <path :d="mouth" :class="{ filled }" />
         </svg>
         <!-- accessories ride on the body -->
         <svg v-if="prefs.accessory !== 'none'" class="qp-m-acc" viewBox="0 0 100 100" aria-hidden="true">
@@ -324,7 +318,7 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
   --m-base: #2a2a31;
   --m-light: #4a4a55;
   --m-ink: #e4e4e7;
-  --m-ring: color-mix(in srgb, var(--m-ink) 80%, transparent);
+  --m-ring: color-mix(in srgb, var(--m-ink) 62%, transparent);
   --m-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
   position: relative;
   width: 100%;
@@ -333,16 +327,7 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
   user-select: none;
   cursor: default;
 }
-/* ── Shadow, bob, body ── */
-.qp-m-shadow {
-  position: absolute;
-  left: 26%;
-  bottom: 9%;
-  width: 48%;
-  height: 7%;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.45), transparent 70%);
-}
+/* ── Bob, body: a flat glyph with a soft outline and a faint glow (the old face) ── */
 .qp-m-bob { position: absolute; inset: 0; animation: qp-m-breathe 4.2s ease-in-out infinite; transform-origin: 50% 80%; }
 .qp-m-body {
   position: absolute;
@@ -351,30 +336,16 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
   width: 60%;
   height: 60%;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 34% 28%, var(--m-light) 0%, var(--m-base) 52%, color-mix(in srgb, var(--m-base), #000 45%) 100%);
-  box-shadow:
-    inset 0 -2.2cqw 4.5cqw rgba(0, 0, 0, 0.35),
-    inset 0 1.2cqw 2.5cqw color-mix(in srgb, #fff 10%, transparent),
-    0 0 0 1.3cqw var(--m-ring);
+  background: radial-gradient(circle at 50% 22%, color-mix(in srgb, var(--m-light) 30%, var(--m-base)), var(--m-base) 70%);
+  box-shadow: 0 0 0 1.1cqw var(--m-ring);
   transition: transform 0.35s var(--m-spring), box-shadow 0.4s ease;
 }
-.skin-night .qp-m-body { --m-ring: color-mix(in srgb, var(--m-ink) 82%, transparent); }
+.skin-night .qp-m-body { --m-ring: color-mix(in srgb, var(--m-ink) 66%, transparent); }
 .skin-mint .qp-m-body,
 .skin-sky .qp-m-body,
 .skin-violet .qp-m-body,
 .skin-peach .qp-m-body,
 .skin-lemon .qp-m-body { --m-ring: color-mix(in srgb, var(--m-light) 55%, transparent); }
-.qp-m-shine {
-  position: absolute;
-  left: 18%;
-  top: 9%;
-  width: 36%;
-  height: 22%;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.42), transparent 70%);
-  transform: rotate(-18deg);
-}
 .qp-m-halo {
   position: absolute;
   left: 13%;
@@ -383,7 +354,7 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
   height: 74%;
   border-radius: 50%;
   background: radial-gradient(circle, color-mix(in srgb, var(--m-ink) 22%, transparent) 55%, transparent 72%);
-  opacity: 0;
+  opacity: 0.4;
   transition: opacity 0.5s ease;
 }
 /* ── Face parts (in the body's own percentages) ── */
@@ -424,10 +395,10 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 }
 .qp-m-brow.l { left: 24%; }
 .qp-m-brow.r { left: 58%; }
-.qp-m-mouth { position: absolute; left: 33%; top: 59%; width: 34%; height: 17%; overflow: visible; }
+.qp-m-mouth { position: absolute; left: 35%; top: 57%; width: 30%; height: 15%; overflow: visible; }
 .qp-m-mouth path { fill: none; stroke: var(--m-ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: d 0.3s var(--m-spring); }
 .qp-m-mouth path.filled { fill: color-mix(in srgb, var(--m-ink) 85%, transparent); }
-.qp-m-cheek { position: absolute; top: 55%; width: 15%; height: 9%; border-radius: 50%; background: radial-gradient(ellipse, rgba(255, 120, 140, 0.55), transparent 70%); opacity: 0.25; transition: opacity 0.3s ease; }
+.qp-m-cheek { position: absolute; top: 55%; width: 15%; height: 9%; border-radius: 50%; background: radial-gradient(ellipse, rgba(255, 120, 140, 0.55), transparent 70%); opacity: 0; transition: opacity 0.3s ease; }
 .qp-m-cheek.l { left: 12%; }
 .qp-m-cheek.r { right: 12%; }
 .qp-m-acc { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
@@ -442,7 +413,6 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 /* ── Moods ── */
 .m-sleep .qp-m-eye { transform: scaleY(0.12); opacity: 0.7; }
 .m-sleep .qp-m-body { transform: scaleY(0.95) translateY(2%); }
-.m-sleep .qp-m-cheek { opacity: 0; }
 .m-sleep .qp-m-bob { animation-duration: 6.5s; }
 .m-think .qp-m-brow { opacity: 0.8; }
 .m-think .qp-m-brow.l { transform: translateY(-20%) rotate(-8deg); }
@@ -453,9 +423,9 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 .m-focus .qp-m-eye,
 .m-juggle .qp-m-eye { transform: scaleY(0.72); }
 .m-focus .qp-m-brow,
-.m-juggle .qp-m-brow { opacity: 0.85; }
-.m-focus .qp-m-brow.l { transform: translateY(35%) rotate(10deg); }
-.m-focus .qp-m-brow.r { transform: translateY(35%) rotate(-10deg); }
+.m-juggle .qp-m-brow { opacity: 0.55; }
+.m-focus .qp-m-brow.l { transform: translateY(30%) rotate(4deg); }
+.m-focus .qp-m-brow.r { transform: translateY(30%) rotate(-4deg); }
 .m-focus .qp-m-bob,
 .m-juggle .qp-m-bob { animation-duration: 2.2s; }
 .m-tired .qp-m-eye { clip-path: inset(48% 0 0 0); }
@@ -467,18 +437,18 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 .m-call .qp-m-brow { opacity: 1; background: var(--qss-warning, #d29a3f); }
 .m-call .qp-m-brow.l,
 .m-call .qp-m-brow.r { transform: translateY(-35%); }
-.m-call .qp-m-body { box-shadow: inset 0 -2.2cqw 4.5cqw rgba(0, 0, 0, 0.35), inset 0 1.2cqw 2.5cqw color-mix(in srgb, #fff 10%, transparent), 0 0 0 1.3cqw var(--qss-warning, #d29a3f); }
+.m-call .qp-m-body { box-shadow: 0 0 0 1.1cqw var(--qss-warning, #d29a3f); }
 .m-call .qp-m-halo { opacity: 1; background: radial-gradient(circle, color-mix(in srgb, var(--qss-warning, #d29a3f) 35%, transparent) 55%, transparent 72%); animation: qp-m-pulse 1.6s ease-in-out infinite; }
 .m-worried .qp-m-eye { transform: scale(0.9); }
 .m-worried .qp-m-brow { opacity: 1; background: var(--qss-error, #f87171); }
-.m-worried .qp-m-brow.l { transform: translateY(-10%) rotate(18deg); }
-.m-worried .qp-m-brow.r { transform: translateY(-10%) rotate(-18deg); }
-.m-worried .qp-m-body { box-shadow: inset 0 -2.2cqw 4.5cqw rgba(0, 0, 0, 0.35), inset 0 1.2cqw 2.5cqw color-mix(in srgb, #fff 10%, transparent), 0 0 0 1.3cqw var(--qss-error, #f87171); animation: qp-m-shiver 0.5s ease-in-out 2; }
+.m-worried .qp-m-brow.l { transform: translateY(-20%) rotate(-16deg); }
+.m-worried .qp-m-brow.r { transform: translateY(-20%) rotate(16deg); }
+.m-worried .qp-m-body { box-shadow: 0 0 0 1.1cqw var(--qss-error, #f87171); animation: qp-m-shiver 0.5s ease-in-out 2; }
 .m-cheer .qp-m-eye { background: transparent; box-shadow: none; border-top: 1.7cqw solid var(--m-ink); border-radius: 50%; transform: translateY(14%) scaleX(1.15); }
 .m-cheer .qp-m-eye b,
 .m-cheer .qp-m-eye s { opacity: 0; }
 .m-cheer .qp-m-cheek,
-.m-nod .qp-m-cheek { opacity: 0.85; }
+.m-nod .qp-m-cheek { opacity: 0.7; }
 .m-cheer .qp-m-bob { animation: qp-m-jump 0.9s var(--m-spring) 2; }
 .m-nod .qp-m-bob { animation: qp-m-nod 0.5s ease-in-out 2; }
 .hover .qp-m-body { transform: scale(1.05); }
@@ -493,8 +463,8 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
   width: 14%;
   height: 14%;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, var(--m-light), var(--m-base));
-  box-shadow: 0 0 0 1cqw var(--m-ring);
+  background: var(--m-base);
+  box-shadow: 0 0 0 0.9cqw var(--m-ring);
   transform-origin: -60% 60%;
   animation: qp-m-wave 0.9s ease-in-out infinite;
 }
@@ -519,9 +489,13 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 
 /* A blink closes the eyes whatever the mood. */
 .qp-mascot.blink .qp-m-eye { transform: scaleY(0.1); }
+/* Closed round eyes are a line in the face's ink, not a white slit with a pupil. */
+.eyes-round.m-sleep .qp-m-eye,
+.eyes-round.blink .qp-m-eye { background: var(--m-ink); box-shadow: none; }
+.eyes-round.m-sleep .qp-m-eye b,
+.eyes-round.blink .qp-m-eye b { opacity: 0; }
 
 /* Reduced motion: every expression, no continuous motion. */
-.still .qp-m-shadow,
 .still .qp-m-bob,
 .still .qp-m-halo,
 .still .qp-m-hand,
