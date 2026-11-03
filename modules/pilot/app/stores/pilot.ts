@@ -23,6 +23,7 @@ import type {
   LaunchResult,
   LiveState,
   Mode,
+  NewSetup,
   PilotContext,
   PilotSettings,
   PilotSignal,
@@ -117,6 +118,10 @@ export const usePilotStore = defineStore('pilot/pilot', {
     agentImages: {} as Record<string, string>,
     /** Where Settings opens from the agent menu: the agent's card, a project's settings (round 2, card 02). */
     settingsFocus: null as { agent?: string; project?: string } | null,
+    /** What a new thread starts with, per project — from the one resolver (round 2, card 03). */
+    setups: {} as Record<string, NewSetup>,
+    /** A new thread's fallback notice ("Codex is not installed — …"), until its first message. */
+    setupNotices: {} as Record<string, string>,
   }),
 
   getters: {
@@ -135,20 +140,11 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
     /** The agent a new thread in `contextId` starts with: the project's pin, else the default; null until settings load. */
     newThreadAgent(state): (contextId: string | null | undefined) => string | null {
-      return (contextId) => {
-        const s = state.settings
-        if (!s) return null
-        return (contextId ? s.projects?.[contextId]?.provider : null) || s.defaultProvider || 'claude'
-      }
+      return (contextId) => state.setups[contextId || 'general']?.provider ?? null
     },
-    /** The model and effort a new thread with `agent` gets in `contextId`: the project's pin, else the remembered one. */
-    newThreadSetup(state): (contextId: string | null | undefined, agent: string) => { model: string; effort: string } {
-      return (contextId, agent) => {
-        const s = state.settings
-        const model = (contextId ? s?.projects?.[contextId]?.model?.[agent] : '') || s?.model?.[agent] || ''
-        // Only Claude Code and Codex take an effort; the others ignore it (round 2, card 02).
-        return { model, effort: agent === 'claude' || agent === 'codex' ? s?.effort ?? '' : '' }
-      }
+    /** The model and effort a new thread with `agent` gets in `contextId` (loadSetup first). */
+    newThreadSetup(state): (contextId: string | null | undefined, agent: string) => { model: string; effort: string; modelPinned: boolean } {
+      return (contextId, agent) => state.setups[contextId || 'general']?.agents[agent] ?? { model: '', effort: '', modelPinned: false }
     },
     adapterReady(): (id: string) => boolean {
       return (id) => {
@@ -244,6 +240,35 @@ export const usePilotStore = defineStore('pilot/pilot', {
       return saved
     },
 
+    /** Ask the one resolver what a new thread in `contextId` starts with (round 2, card 03). */
+    async loadSetup(contextId: string | null | undefined) {
+      const key = contextId || 'general'
+      try {
+        const s = await pilot<NewSetup>('plugin:pilot|pilot_new_thread_setup', { contextId: key })
+        if (s) this.setups = { ...this.setups, [key]: s }
+        return s
+      } catch {
+        return null
+      }
+    },
+
+    /** An untouched draft takes the current setup (and what `setup` names, remembered as the user's pick). */
+    async applySetup(id: string, setup?: { provider: string; model: string; effort: string; fast: boolean }) {
+      try {
+        const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_apply_setup', { id, req: setup ? { ...setup, remember: true } : {} })
+        if (meta) this.upsertSession(meta)
+        return meta
+      } catch (e) {
+        this.lastError = e instanceof Error ? e.message : String(e)
+        return null
+      }
+    },
+
+    dismissSetupNotice(id: string) {
+      const { [id]: _gone, ...rest } = this.setupNotices
+      this.setupNotices = rest
+    },
+
     /** Settings → Providers on `agent`, or a project's own settings ("Off in this project"). */
     openAgentSettings(agent?: string, project?: string | null) {
       this.settingsFocus = { agent, project: project ?? undefined }
@@ -296,6 +321,8 @@ export const usePilotStore = defineStore('pilot/pilot', {
         model?: string
         effort?: string
         fast?: boolean
+        /** Picked in a menu: new threads start with it from now on (round 2, card 03). */
+        remember?: boolean
         workspaceMode?: 'local' | 'worktree'
         baseBranch?: string
         worktreePath?: string
@@ -362,6 +389,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
 
     upsertSession(meta: SessionMeta) {
       this.noticeSettled(meta)
+      if (meta.notice) this.setupNotices = { ...this.setupNotices, [meta.id]: meta.notice }
       const i = this.sessions.findIndex((s) => s.id === meta.id)
       if (i >= 0) this.sessions[i] = meta
       else this.sessions.unshift(meta)

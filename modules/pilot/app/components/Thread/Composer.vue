@@ -352,6 +352,8 @@ async function runAppCommand(name: string, arg: string): Promise<boolean> {
   return false
 }
 const note = ref('')
+/** "Codex is not installed — this thread starts with Claude Code." until the first message (round 2, card 03). */
+const setupNotice = computed(() => (view.value?.items.some((i) => i.kind === 'user') ? '' : store.setupNotices[props.threadId] ?? ''))
 let noteTimer: ReturnType<typeof setTimeout> | null = null
 function showNote(text: string) {
   note.value = text
@@ -1169,6 +1171,10 @@ function focus() {
       @pick="pickMenu"
     />
     <div v-if="note" class="qp-c-note" role="status">{{ note }}</div>
+    <div v-if="setupNotice" class="qp-c-note is-setup" role="status">
+      <span>{{ setupNotice }}</span>
+      <button class="qp-link" @click="store.dismissSetupNotice(threadId)">Dismiss</button>
+    </div>
 
     <PilotThreadContextBar :thread-id="threadId" class="qp-c-context" />
     <div
@@ -1278,6 +1284,8 @@ function focus() {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--qss-accent, #7aa2f7) 45%, transparent);
   color: var(--qss-text, #d4d4d8);
 }
+.qp-c-note.is-setup { display: flex; align-items: center; gap: 10px; color: var(--qss-warning, #d29a3f); }
+.qp-c-note.is-setup .qp-link { margin-left: auto; }
 .qp-c-note { max-width: 780px; margin: 0 auto 6px; padding: 5px 10px; border-radius: 6px; background: var(--qss-bg-raised, #1f1f25); font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-c-shelf { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 0; }
 .qp-c-att {

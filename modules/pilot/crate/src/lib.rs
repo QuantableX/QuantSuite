@@ -233,7 +233,8 @@ fn pilot_settings_get(state: State<'_, PilotState>) -> Settings {
 
 #[tauri::command(async)]
 fn pilot_settings_set(state: State<'_, PilotState>, settings: Settings) -> Result<Settings, String> {
-    let settings = settings.normalized();
+    // The last choices stay the app's own record (round 2, card 03).
+    let settings = settings.normalized().merged_into(&lock(&state.settings));
     settings::write(&state.data_dir, &settings)?;
     agent_icons::prune(&state.data_dir, &custom_ids(&settings));
     github::set_enabled(settings.github);
@@ -505,6 +506,7 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
         effort: String::new(),
         title_source: "auto".into(),
         fast: false,
+        notice: None,
         state: "idle".into(),
         context_tokens: None,
         context_window: None,
@@ -1025,6 +1027,8 @@ pub fn init() -> TauriPlugin<Wry> {
             pilot_agent_icons,
             pilot_agent_icon_set,
             pilot_agent_icon_clear,
+            threads::pilot_new_thread_setup,
+            threads::pilot_thread_apply_setup,
             pilot_provider_update,
             pilot_gh_status,
             pilot_diagnostics,

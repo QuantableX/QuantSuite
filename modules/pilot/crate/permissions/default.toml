@@ -118,6 +118,8 @@ permissions = [
   "allow-pilot-agent-icons",
   "allow-pilot-agent-icon-set",
   "allow-pilot-agent-icon-clear",
+  "allow-pilot-new-thread-setup",
+  "allow-pilot-thread-apply-setup",
   "allow-pilot-provider-update",
   "allow-pilot-gh-status",
   "allow-pilot-diagnostics",

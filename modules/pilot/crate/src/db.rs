@@ -62,6 +62,10 @@ pub struct ThreadMeta {
     /// Claude Code's fast mode for this thread (round 2, card 02).
     #[serde(default)]
     pub fast: bool,
+    /// Only in the answer that created or set up a draft (round 2, card 03):
+    /// the agent wanted was not available. Not stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
     /// `auto` until the user renames the thread, then `user`.
     pub title_source: String,
     /// `idle` | `running` | `waiting` | `error` | `interrupted` | `limited` — last known.
@@ -154,6 +158,7 @@ fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
         branch: r.get(29)?,
         worktree_path: r.get(30)?,
         fast: r.get::<_, i64>(31)? != 0,
+        notice: None,
     })
 }
 
@@ -1540,6 +1545,7 @@ mod tests {
             effort: String::new(),
             title_source: "auto".into(),
             fast: false,
+            notice: None,
             state: "idle".into(),
             context_tokens: None,
             context_window: None,

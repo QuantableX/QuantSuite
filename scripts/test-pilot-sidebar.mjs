@@ -165,3 +165,19 @@ test('snooze times', () => {
   assert.equal(wakeLabel(tomorrowAt(NOW), NOW), 'Tomorrow 09:00')
   assert.match(wakeLabel(new Date(2026, 10, 2, 9, 0).getTime(), NOW), /^Mon, Nov 2 09:00$/)
 })
+
+// Round 2, card 03: which empty thread New thread may open again.
+test('New thread reopens only an untouched draft: not settled, snoozed, titled, started or written in', async () => {
+  const { isUntouchedDraft } = await import('../modules/pilot/app/utils/sidebar.ts')
+  const draft = { kind: 'chat', providerSessionId: null, title: '', settledAt: null, snoozedUntil: null }
+  const now = 1_000_000
+  assert.equal(isUntouchedDraft(draft, undefined, now), true, 'not loaded yet: nothing known against it')
+  assert.equal(isUntouchedDraft(draft, { loaded: true, items: [] }, now), true)
+  assert.equal(isUntouchedDraft(draft, { loaded: true, items: [{}] }, now), false, 'something in it')
+  assert.equal(isUntouchedDraft({ ...draft, settledAt: 5 }, undefined, now), false, 'a settled draft is never reopened')
+  assert.equal(isUntouchedDraft({ ...draft, snoozedUntil: now + 1 }, undefined, now), false, 'nor a snoozed one')
+  assert.equal(isUntouchedDraft({ ...draft, snoozedUntil: now - 1 }, undefined, now), true, 'a snooze that ran out does not count')
+  assert.equal(isUntouchedDraft({ ...draft, title: 'Fix it' }, undefined, now), false)
+  assert.equal(isUntouchedDraft({ ...draft, providerSessionId: 'abc' }, undefined, now), false)
+  assert.equal(isUntouchedDraft({ ...draft, kind: 'terminal' }, undefined, now), false)
+})

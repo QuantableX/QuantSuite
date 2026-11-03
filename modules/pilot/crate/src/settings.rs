@@ -47,6 +47,68 @@ pub struct Defaults {
     pub enabled: Vec<String>,
 }
 
+/// What the user chose last (round 2, card 03). New threads start with it
+/// unless the project pins a value; Settings → General gives the values
+/// before the first choice.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Sticky {
+    /// The agent picked last.
+    pub provider: String,
+    /// Per agent: the model picked last (`""` = the CLI's default, chosen).
+    pub model: BTreeMap<String, String>,
+    /// Per agent: the reasoning effort picked last.
+    pub effort: BTreeMap<String, String>,
+    /// The permission mode picked last.
+    pub mode: String,
+    /// `local` or `worktree`, picked last.
+    pub workspace: String,
+    /// Per project: the base branch of a worktree thread (`""` = the checkout's branch).
+    pub base_branch: BTreeMap<String, String>,
+}
+
+/// An agent's model and effort for a new thread in a project.
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSetup {
+    pub model: String,
+    pub effort: String,
+    /// The project pins this model.
+    pub model_pinned: bool,
+}
+
+/// ONE answer to "what does a new thread start with here" (round 2, card
+/// 03): the project's pin, else the user's last choice, else Settings.
+/// Every way to start a thread asks it; the menus show it.
+#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewSetup {
+    pub provider: String,
+    pub model: String,
+    pub effort: String,
+    pub mode: String,
+    pub workspace: String,
+    pub base_branch: String,
+    /// The values the project pins: `provider`, `model`, `mode`, `workspace`.
+    pub pinned: Vec<String>,
+    /// The agent wanted is not available here: what happens instead.
+    pub notice: Option<String>,
+    /// Every agent's model and effort here (the agent menu's rows).
+    pub agents: BTreeMap<String, AgentSetup>,
+}
+
+impl NewSetup {
+    /// The model and effort `provider` starts with (the resolved agent's, or another's).
+    pub fn agent(&self, provider: &str) -> AgentSetup {
+        self.agents.get(provider).cloned().unwrap_or_default()
+    }
+}
+
+/// The agents whose CLI takes a reasoning effort.
+fn takes_effort(provider: &str) -> bool {
+    matches!(provider, "claude" | "codex")
+}
+
 /// The built-in agents a chat thread can run (card 20); a user's own ACP agents join them.
 pub const CHAT_PROVIDERS: [&str; 7] = ["claude", "codex", "gemini", "opencode", "copilot", "pi", "omp"];
 
@@ -202,6 +264,8 @@ pub struct Settings {
     pub github: bool,
     /// Settings → Storage (parity 19): cleanup rules, all off by default.
     pub storage: crate::db::StoragePolicy,
+    /// What the user chose last; new threads start with it (round 2, card 03).
+    pub sticky: Sticky,
 }
 
 impl Default for Settings {
@@ -238,6 +302,7 @@ impl Default for Settings {
             storage: crate::db::StoragePolicy::default(),
             render_math: true,
             projects: BTreeMap::new(),
+            sticky: Sticky::default(),
         }
     }
 }
@@ -275,6 +340,16 @@ impl Settings {
             self.text_size = "default".into();
         }
         self.panel_motion_ms = self.panel_motion_ms.min(400);
+        if !valid_mode(&self.sticky.mode) {
+            self.sticky.mode.clear();
+        }
+        if !matches!(self.sticky.workspace.as_str(), "local" | "worktree") {
+            self.sticky.workspace.clear();
+        }
+        let trim_map = |m: BTreeMap<String, String>| m.into_iter().map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).filter(|(k, _)| !k.is_empty()).collect();
+        self.sticky.model = trim_map(std::mem::take(&mut self.sticky.model));
+        self.sticky.effort = trim_map(std::mem::take(&mut self.sticky.effort));
+        self.sticky.base_branch = trim_map(std::mem::take(&mut self.sticky.base_branch));
         self.env = clean_env(std::mem::take(&mut self.env));
         self.providers = std::mem::take(&mut self.providers)
             .into_iter()
@@ -409,6 +484,115 @@ impl Settings {
         all.into_iter().filter(|c| !self.providers.get(c).is_some_and(|p| p.disabled)).collect()
     }
 
+    /// An agent's model and effort for a new thread in `project`: the
+    /// project's model pin, else the last pick for that agent, else the
+    /// remembered model of earlier versions; the effort only where the
+    /// agent takes one.
+    pub fn agent_setup(&self, project: &str, provider: &str) -> AgentSetup {
+        let pin = self.projects.get(project).and_then(|p| p.model.get(provider)).filter(|m| !m.is_empty());
+        let model = match pin {
+            Some(m) => m.clone(),
+            None => self.sticky.model.get(provider).cloned().or_else(|| self.model_for(provider).map(str::to_string)).unwrap_or_default(),
+        };
+        let effort = if takes_effort(provider) {
+            self.sticky.effort.get(provider).cloned().unwrap_or_else(|| self.effort.trim().to_string())
+        } else {
+            String::new()
+        };
+        AgentSetup { model, effort, model_pinned: pin.is_some() }
+    }
+
+    /// What a new thread in `project` starts with (round 2, card 03). The
+    /// agent: the project's pin, else the last pick, else the default — and
+    /// when that one is not available here (`available` says whether its
+    /// CLI is installed) the default or the first offered one, with a notice.
+    pub fn new_thread_setup(&self, project: &str, available: &dyn Fn(&str) -> bool, label: &dyn Fn(&str) -> String) -> NewSetup {
+        let p = self.projects.get(project);
+        let offered = self.enabled_in(project);
+        let usable: Vec<String> = offered.iter().filter(|id| available(id)).cloned().collect();
+        let mut pinned = Vec::new();
+        let pin = p.and_then(|p| p.provider.clone()).filter(|id| self.is_chat_provider(id));
+        let last = Some(self.sticky.provider.clone()).filter(|id| !id.is_empty() && self.is_chat_provider(id));
+        let wanted = pin.clone().or(last).unwrap_or_else(|| self.default_provider.clone());
+        let provider = if usable.contains(&wanted) {
+            wanted.clone()
+        } else if usable.contains(&self.default_provider) {
+            self.default_provider.clone()
+        } else {
+            usable.first().or(offered.first()).cloned().unwrap_or_else(|| wanted.clone())
+        };
+        if pin.as_deref() == Some(provider.as_str()) {
+            pinned.push("provider".to_string());
+        }
+        let notice = (provider != wanted).then(|| {
+            let why = if !self.is_chat_provider(&wanted) {
+                "is gone"
+            } else if !offered.contains(&wanted) {
+                if p.and_then(|p| p.enabled.as_ref()).is_some() { "is off in this project" } else { "is turned off in Settings" }
+            } else {
+                "is not installed"
+            };
+            format!("{} {why} — this thread starts with {}.", label(&wanted), label(&provider))
+        });
+        let agents: BTreeMap<String, AgentSetup> = self.chat_providers().into_iter().map(|id| (id.clone(), self.agent_setup(project, &id))).collect();
+        let own = agents.get(&provider).cloned().unwrap_or_default();
+        if own.model_pinned {
+            pinned.push("model".to_string());
+        }
+        let mode = match p.and_then(|p| p.mode.clone()).filter(|m| valid_mode(m)) {
+            Some(m) => {
+                pinned.push("mode".to_string());
+                m
+            }
+            None => Some(self.sticky.mode.clone()).filter(|m| valid_mode(m)).unwrap_or_else(|| self.default_mode.clone()),
+        };
+        let workspace = match p.and_then(|p| p.workspace.clone()).filter(|w| matches!(w.as_str(), "local" | "worktree")) {
+            Some(w) => {
+                pinned.push("workspace".to_string());
+                w
+            }
+            None => Some(self.sticky.workspace.clone()).filter(|w| matches!(w.as_str(), "local" | "worktree")).unwrap_or_else(|| self.new_thread_workspace.clone()),
+        };
+        NewSetup {
+            model: own.model,
+            effort: own.effort,
+            provider,
+            mode,
+            workspace,
+            base_branch: self.sticky.base_branch.get(project).cloned().unwrap_or_default(),
+            pinned,
+            notice,
+            agents,
+        }
+    }
+
+    /// Settings saved from the app (round 2, card 03): the last choices are
+    /// the app's own record, never taken from the (possibly older) copy the
+    /// page sends; a default the user changes in Settings becomes the start
+    /// again, so the change shows on the next new thread.
+    pub fn merged_into(mut self, current: &Settings) -> Settings {
+        let mut sticky = current.sticky.clone();
+        if self.default_provider != current.default_provider {
+            sticky.provider.clear();
+        }
+        if self.default_mode != current.default_mode {
+            sticky.mode.clear();
+        }
+        if self.new_thread_workspace != current.new_thread_workspace {
+            sticky.workspace.clear();
+        }
+        for id in current.model.keys().chain(self.model.keys()) {
+            if self.model.get(id) != current.model.get(id) {
+                sticky.model.remove(id);
+            }
+        }
+        if self.effort != current.effort {
+            sticky.effort.remove("claude");
+        }
+        self.sticky = sticky;
+        self
+    }
+
     /// A new thread's defaults in a project: default → project.
     pub fn defaults_for(&self, project: &str) -> Defaults {
         let p = self.projects.get(project);
@@ -528,6 +712,120 @@ mod tests {
         assert!(!s.attach_quantmcp && !s.include_general_vault);
         assert_eq!((s.custom[0].id.as_str(), s.custom[0].protocol.as_str()), ("mine", "terminal"), "a V2 agent stays a terminal agent");
         assert_eq!((s.default_provider.as_str(), s.panel_motion_ms, s.render_math), ("claude", 160, true));
+    }
+
+    fn all_there(_: &str) -> bool {
+        true
+    }
+    fn name(id: &str) -> String {
+        match id {
+            "claude" => "Claude Code".into(),
+            "codex" => "Codex".into(),
+            other => other.into(),
+        }
+    }
+
+    /// Round 2, card 03: project pin → last choice → Settings, per value.
+    #[test]
+    fn a_new_thread_starts_with_the_last_choice_unless_the_project_pins_it() {
+        let mut s = Settings { default_provider: "claude".into(), default_mode: "full".into(), ..Default::default() };
+        s.model.insert("claude".into(), "opus".into());
+        // Before any choice: Settings, and the remembered model of earlier versions.
+        let d = s.new_thread_setup("ws", &all_there, &name);
+        assert_eq!((d.provider.as_str(), d.model.as_str(), d.mode.as_str(), d.workspace.as_str()), ("claude", "opus", "full", "local"));
+        assert!(d.pinned.is_empty() && d.notice.is_none());
+        // The user picks Codex, a model and effort per agent, Plan, a worktree off main.
+        s.sticky = Sticky {
+            provider: "codex".into(),
+            model: [("codex".to_string(), "gpt-a".to_string()), ("claude".to_string(), "haiku".to_string())].into(),
+            effort: [("codex".to_string(), "high".to_string()), ("pi".to_string(), "low".to_string())].into(),
+            mode: "plan".into(),
+            workspace: "worktree".into(),
+            base_branch: [("ws".to_string(), "main".to_string())].into(),
+        };
+        let s = s.normalized();
+        let d = s.new_thread_setup("ws", &all_there, &name);
+        assert_eq!((d.provider.as_str(), d.model.as_str(), d.effort.as_str()), ("codex", "gpt-a", "high"));
+        assert_eq!((d.mode.as_str(), d.workspace.as_str(), d.base_branch.as_str()), ("plan", "worktree", "main"));
+        assert_eq!(d.agent("claude").model, "haiku", "each agent keeps its own model");
+        assert_eq!(d.agent("pi").effort, "", "pi takes no effort");
+        assert_eq!(s.new_thread_setup("other", &all_there, &name).base_branch, "", "the base branch is per project");
+        // A project pin wins and is named.
+        let mut p = s.clone();
+        p.projects.insert(
+            "ws".into(),
+            ProjectPrefs { provider: Some("claude".into()), mode: Some("ask".into()), model: [("claude".to_string(), "sonnet".to_string())].into(), ..Default::default() },
+        );
+        let d = p.new_thread_setup("ws", &all_there, &name);
+        assert_eq!((d.provider.as_str(), d.model.as_str(), d.mode.as_str()), ("claude", "sonnet", "ask"));
+        assert_eq!(d.pinned, vec!["provider", "model", "mode"]);
+        assert!(d.agent("claude").model_pinned);
+        assert_eq!(p.new_thread_setup("other", &all_there, &name).provider, "codex", "elsewhere the last choice");
+    }
+
+    /// Round 2, card 03: saving Settings keeps the app's record of the last
+    /// choices, and a changed default starts over from it.
+    #[test]
+    fn saving_settings_keeps_the_last_choices_unless_a_default_changes() {
+        let mut current = Settings { sticky: Sticky { provider: "codex".into(), mode: "plan".into(), workspace: "worktree".into(), ..Default::default() }, ..Default::default() };
+        current.sticky.model.insert("claude".into(), "haiku".into());
+        current.sticky.model.insert("codex".into(), "gpt-a".into());
+        current.sticky.effort.insert("claude".into(), "low".into());
+        // The page's copy is older (no sticky) and only changes the toast setting.
+        let page = Settings { notify: "off".into(), ..Default::default() };
+        let saved = page.clone().merged_into(&current);
+        assert_eq!(saved.sticky, current.sticky);
+        assert_eq!(saved.notify, "off");
+        // A new default agent, mode and Claude model: those start over.
+        let mut changed = page;
+        changed.default_provider = "gemini".into();
+        changed.default_mode = "ask".into();
+        changed.model.insert("claude".into(), "opus".into());
+        changed.effort = "high".into();
+        let saved = changed.merged_into(&current);
+        assert_eq!((saved.sticky.provider.as_str(), saved.sticky.mode.as_str(), saved.sticky.workspace.as_str()), ("", "", "worktree"));
+        assert_eq!(saved.sticky.model.get("claude"), None);
+        assert_eq!(saved.sticky.model.get("codex").map(String::as_str), Some("gpt-a"));
+        assert_eq!(saved.sticky.effort.get("claude"), None);
+        let d = saved.new_thread_setup("ws", &all_there, &name);
+        assert_eq!((d.provider.as_str(), d.mode.as_str(), d.model.as_str(), d.effort.as_str()), ("gemini", "ask", "", ""));
+        assert_eq!(saved.agent_setup("ws", "claude").model, "opus");
+    }
+
+    /// Round 2, card 03: an agent that is not available falls back, and says so.
+    #[test]
+    fn an_unavailable_agent_falls_back_with_a_notice() {
+        let mut s = Settings { default_provider: "claude".into(), ..Default::default() };
+        s.sticky.provider = "codex".into();
+        let no_codex = |id: &str| id != "codex";
+        let d = s.new_thread_setup("ws", &no_codex, &name);
+        assert_eq!(d.provider, "claude");
+        assert_eq!(d.notice.as_deref(), Some("Codex is not installed — this thread starts with Claude Code."));
+        s.providers.insert("codex".into(), ProviderPrefs { disabled: true, ..Default::default() });
+        let d = s.new_thread_setup("ws", &all_there, &name);
+        assert_eq!(d.notice.as_deref(), Some("Codex is turned off in Settings — this thread starts with Claude Code."));
+        s.providers.clear();
+        s.projects.insert("ws".into(), ProjectPrefs { enabled: Some(vec!["claude".into()]), ..Default::default() });
+        let d = s.new_thread_setup("ws", &all_there, &name);
+        assert_eq!(d.notice.as_deref(), Some("Codex is off in this project — this thread starts with Claude Code."));
+        // The default itself unavailable: the first offered one.
+        let mut t = Settings { default_provider: "claude".into(), ..Default::default() };
+        t.providers.insert("claude".into(), ProviderPrefs { disabled: true, ..Default::default() });
+        let d = t.new_thread_setup("x", &all_there, &name);
+        assert_eq!(d.provider, "codex");
+        assert!(d.notice.is_some());
+        // A removed custom agent as the last choice.
+        let mut u = Settings::default();
+        u.sticky.provider = "gone-agent".into();
+        let d = u.normalized().new_thread_setup("x", &all_there, &name);
+        assert_eq!(d.provider, "claude");
+        assert!(d.notice.is_none(), "an id that is no agent any more is ignored, the default is no fallback");
+        // Invalid sticky values fall away on load.
+        let mut v = Settings::default();
+        v.sticky.mode = "yolo".into();
+        v.sticky.workspace = "cloud".into();
+        let v = v.normalized();
+        assert_eq!((v.sticky.mode.as_str(), v.sticky.workspace.as_str()), ("", ""));
     }
 
     /// Card 19: default → project, per row.

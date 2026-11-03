@@ -118,6 +118,10 @@ const status = computed(() => store.status)
 
     <template v-else>
       <h3 class="qp-settings-title">New threads</h3>
+      <p class="qp-settings-desc">
+        A new thread starts with what you picked last — agent, its model and effort, permissions, Local or Worktree. These are the values
+        before the first pick; changing one here makes it the start again. A project's own settings win.
+      </p>
       <div class="qp-settings-grid">
         <label class="qp-settings-field">
           <span>Agent</span>

@@ -10,7 +10,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ChevronDown } from 'lucide-vue-next'
 import { v4 as uuidv4 } from 'uuid'
-import { invoke } from '@tauri-apps/api/core'
 import type { CanvasWindow, FilePreviewKind } from '../../../shared/types'
 import { useCanvasStore } from '../../../stores/canvas'
 import { useWorkspacesStore } from '../../../stores/workspaces'
@@ -66,8 +65,9 @@ async function newThread(setup?: AgentSetup) {
   busy.value = true
   error.value = ''
   try {
-    const t = await invoke<{ id: string }>('plugin:pilot|pilot_thread_create', { req: { contextId: context.value, ...(setup ?? {}) } })
-    await pilot.refreshSessions()
+    // Through QuantPilot's store: the one resolver's setup and its notice (round 2, card 03).
+    const t = await pilot.createThread({ contextId: context.value, ...(setup ?? {}), remember: Boolean(setup) }, false)
+    if (!t) throw new Error(pilot.lastError || 'The thread could not be created.')
     attach(t.id)
   } catch (e) {
     error.value = String(e)

@@ -1418,6 +1418,7 @@ mod tests {
             effort: String::new(),
             title_source: "auto".into(),
             fast: false,
+            notice: None,
             state: "idle".into(),
             context_tokens: None,
             context_window: None,

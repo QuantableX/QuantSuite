@@ -149,20 +149,15 @@ async function pickSetup(s: AgentSetup) {
   if (s.effort !== (t.effort || '')) patch.effort = s.effort
   if (s.fast !== Boolean(t.fast)) patch.fast = s.fast
   if (!Object.keys(patch).length) return
-  if (await store.update(props.threadId, patch)) {
-    // A new model or effort is also remembered for new threads (not fast mode: it costs more).
-    const remembered = { ...(store.settings?.model ?? {}) }
-    if (s.model) remembered[s.provider] = s.model
-    else delete remembered[s.provider]
-    void store.saveSettings({ model: remembered, ...(patch.effort !== undefined ? { effort: s.effort } : {}) }, { quiet: true })
-    if (switching) await loadCatalog(s.provider)
-  }
+  // The pick is also what the next new thread starts with — recorded by the
+  // app itself for every way of changing a thread (round 2, card 03).
+  if ((await store.update(props.threadId, patch)) && switching) await loadCatalog(s.provider)
 }
 
 async function pickEffort(effort: string) {
   close()
   if (!thread.value || effort === thread.value.effort) return
-  if (await store.update(props.threadId, { effort })) void store.saveSettings({ effort }, { quiet: true })
+  await store.update(props.threadId, { effort })
 }
 
 async function pickMode(mode: string) {

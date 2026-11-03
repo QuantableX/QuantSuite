@@ -32,6 +32,8 @@ export interface SessionMeta {
   effort: string
   /** Claude Code's fast mode (round 2, card 02). */
   fast?: boolean
+  /** Only in the answer that created or set up a draft: the agent wanted was not available (round 2, card 03). */
+  notice?: string
   titleSource: 'auto' | 'user'
   /** The last known state, saved: `idle` | `running` | `waiting` | `error` | `interrupted` | `limited`. */
   state: string
@@ -106,6 +108,28 @@ export interface PilotStatus {
   generalPath: string
   dataDir: string
   relayPort: number
+}
+
+/** An agent's model and effort for a new thread (round 2, card 03). */
+export interface AgentNewSetup {
+  model: string
+  effort: string
+  /** The project pins this model. */
+  modelPinned: boolean
+}
+
+/** What a new thread in a project starts with — the one resolver's answer (round 2, card 03). */
+export interface NewSetup {
+  provider: string
+  model: string
+  effort: string
+  mode: Mode
+  workspace: 'local' | 'worktree'
+  baseBranch: string
+  /** `provider`, `model`, `mode`, `workspace`: the project's own values. */
+  pinned: string[]
+  notice: string | null
+  agents: Record<string, AgentNewSetup>
 }
 
 export interface CustomAdapter {
