@@ -1076,7 +1076,7 @@ impl Database {
         let mut stmt = conn.prepare("SELECT data FROM review_drafts WHERE repo = lower(?1) AND number = ?2")?;
         let rows = stmt.query_map(params![repo, number], |r| r.get::<_, String>(0))?;
         let mut out: Vec<crate::review::Draft> = rows.filter_map(|r| r.ok()).filter_map(|d| serde_json::from_str(&d).ok()).collect();
-        out.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        out.sort_by_key(|a| a.created_at);
         Ok(out)
     }
 
