@@ -141,7 +141,8 @@ async function runNow(id: string) {
             <div class="qp-sched-actions">
               <button class="qp-btn qp-btn-sm" :disabled="running" title="Run it now; the next scheduled run still happens" @click="runNow(current.id)"><Play :size="12" /> {{ running ? 'Starting…' : 'Run now' }}</button>
               <button class="qp-btn qp-btn-sm" @click="schedules.edit(current.id)">Edit</button>
-              <button class="qp-btn qp-btn-sm" @click="schedules.setEnabled(current.id, !current.enabled)">
+              <!-- A finished one-off has nothing to pause; Edit gives it a new time. -->
+              <button v-if="stateOf(current).tone !== 'done'" class="qp-btn qp-btn-sm" @click="schedules.setEnabled(current.id, !current.enabled)">
                 <template v-if="current.enabled"><Pause :size="12" /> Pause</template>
                 <template v-else><Play :size="12" /> Resume</template>
               </button>

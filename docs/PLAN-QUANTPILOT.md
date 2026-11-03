@@ -3133,3 +3133,32 @@ a search (arrows + Enter) and the threads grouped "This workspace" / "Elsewhere"
 with agent icon, project and age. Side chats are not offered. A short window
 drops Bob and the line (container query); a deleted thread is said above the
 button.
+
+### 03/07 — scheduled prompts (card 0d7e8a2e)
+
+- A schedule (pilot DB schema 22: `schedules`, `schedule_runs`) is a prompt
+  with a project, agent/model/effort/account, mode and a rule: once, every day,
+  weekdays, chosen days or every N hours — local wall-clock time. A time the
+  clocks skip at the spring change runs an hour later (02:30 → 03:30); a time
+  they pass twice in autumn runs once, at the first. "Every N hours" counts real
+  hours from its start. Webhooks stay deferred (they need an authenticated
+  listener).
+- Engine (`schedules.rs`): one task asleep until the next slot (at most a
+  minute, so a wall-clock jump after sleep is noticed; a change wakes it). A run
+  is recorded before it starts and (schedule, slot) is unique, so a slot runs at
+  most once. A slot found more than two minutes late — the suite was closed or
+  the machine asleep — follows the missed-run policy: skip (recorded as missed)
+  or run once after the start; only the latest missed slot counts. A run is
+  skipped while the previous run's thread still works. Each run starts a new
+  thread ("<name> · Nov 4 08:00") or continues the same one; a notice in the
+  thread names the schedule. New, changed and re-enabled schedules count from
+  now — nothing in the past runs.
+- UI: the Schedules view (header tab): the list with the next run and the last
+  result, the selected schedule with Run now / Edit / Pause / Delete and its
+  history (each run's thread one click away), and the form (prompt, project,
+  agent menu, mode, the rule, new or same thread, missed-run policy). "Schedule
+  this…" in a thread's menu prefills the form from the thread.
+- QA (QA app, Claude Haiku): a one-off due a minute later ran 0 s late in the QA
+  project and answered; Run now added a manual run; two one-offs whose slot
+  passed while the app was closed: "run once" ran once after the start, "skip"
+  was recorded as missed, and a second restart ran nothing more.

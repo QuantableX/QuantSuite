@@ -127,3 +127,25 @@ export function runLabel(status: string, manual: boolean): string {
   const word: Record<string, string> = { started: 'Ran', skipped: 'Skipped', missed: 'Missed', failed: 'Failed', starting: 'Starting' }
   return `${word[status] ?? status}${manual && status === 'started' ? ' (run now)' : ''}`
 }
+
+/** A typed time as 24-hour `HH:MM`: "8" → "08:00", "830" → "08:30", "8:5" → "08:05", "18.45" → "18:45"; null if it is none. */
+export function normalizeTime(raw: string): string | null {
+  const s = raw.trim().replace(/[.h]/gi, ':')
+  let h: number
+  let m: number
+  const colon = /^(\d{1,2}):(\d{1,2})$/.exec(s)
+  if (colon) {
+    h = Number(colon[1])
+    m = Number(colon[2])
+  } else if (/^\d{1,4}$/.test(s)) {
+    if (s.length <= 2) {
+      h = Number(s)
+      m = 0
+    } else {
+      h = Number(s.slice(0, s.length - 2))
+      m = Number(s.slice(-2))
+    }
+  } else return null
+  if (h > 23 || m > 59) return null
+  return `${pad(h)}:${pad(m)}`
+}

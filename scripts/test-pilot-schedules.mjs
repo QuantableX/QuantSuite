@@ -51,3 +51,15 @@ test('a new schedule starts on weekdays at nine, skipping missed runs, a new thr
   assert.equal(runLabel('started', true), 'Ran (run now)')
   assert.equal(runLabel('missed', false), 'Missed')
 })
+
+test('a typed time becomes 24-hour HH:MM', async () => {
+  const { normalizeTime } = await import('../modules/pilot/app/utils/schedules.ts')
+  assert.equal(normalizeTime('8'), '08:00')
+  assert.equal(normalizeTime('830'), '08:30')
+  assert.equal(normalizeTime('8:5'), '08:05')
+  assert.equal(normalizeTime('18.45'), '18:45')
+  assert.equal(normalizeTime(' 23:59 '), '23:59')
+  assert.equal(normalizeTime('24:00'), null)
+  assert.equal(normalizeTime('7:60'), null)
+  assert.equal(normalizeTime('soon'), null)
+})

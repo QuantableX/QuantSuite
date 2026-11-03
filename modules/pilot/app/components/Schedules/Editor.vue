@@ -67,6 +67,13 @@ function toggleDay(n: number) {
   r.days = r.days.includes(n) ? r.days.filter((d) => d !== n) : [...r.days, n].sort()
 }
 const summary = computed(() => describeRecurrence(s.value.recurrence))
+/** A one-off's or an every-N-hours start: date and 24-hour time apart. */
+function setStamp(key: 'at' | 'from', date: string | null, time: string | null) {
+  const r = s.value.recurrence as Record<string, unknown>
+  const cur = String(r[key] ?? '')
+  if (date === '') return
+  r[key] = `${date ?? cur.slice(0, 10)}T${time ?? cur.slice(11, 16)}`
+}
 const unattended = computed(() => s.value.mode === 'ask')
 
 const promptEl = ref<HTMLTextAreaElement | null>(null)
@@ -137,13 +144,17 @@ async function save() {
         </div>
         <div class="qp-sched-when">
           <template v-if="s.recurrence.kind === 'once'">
-            <input v-model="s.recurrence.at" type="datetime-local" class="qp-input" aria-label="Date and time" />
+            <input :value="s.recurrence.at.slice(0, 10)" type="date" class="qp-input" aria-label="Date" @change="setStamp('at', ($event.target as HTMLInputElement).value, null)" />
+            <span>at</span>
+            <PilotSchedulesTimeField :model-value="s.recurrence.at.slice(11, 16)" label="Time" @update:model-value="setStamp('at', null, $event)" />
           </template>
           <template v-else-if="s.recurrence.kind === 'hours'">
             <span>Every</span>
             <input v-model.number="s.recurrence.every" type="number" min="1" max="168" class="qp-input qp-sched-num" aria-label="Hours" />
             <span>hours, starting</span>
-            <input v-model="s.recurrence.from" type="datetime-local" class="qp-input" aria-label="Starting" />
+            <input :value="s.recurrence.from.slice(0, 10)" type="date" class="qp-input" aria-label="Starting on" @change="setStamp('from', ($event.target as HTMLInputElement).value, null)" />
+            <span>at</span>
+            <PilotSchedulesTimeField :model-value="s.recurrence.from.slice(11, 16)" label="Starting at" @update:model-value="setStamp('from', null, $event)" />
           </template>
           <template v-else>
             <div v-if="s.recurrence.kind === 'days'" class="qp-sched-days" role="group" aria-label="Days">
@@ -160,7 +171,7 @@ async function save() {
               </button>
             </div>
             <span>at</span>
-            <input v-model="s.recurrence.time" type="time" class="qp-input" aria-label="Time" />
+            <PilotSchedulesTimeField v-model="s.recurrence.time" label="Time" />
           </template>
         </div>
       </div>
@@ -217,8 +228,7 @@ async function save() {
 }
 .qp-input:focus { border-color: var(--qss-accent, #a0a0a8); }
 .qp-input::placeholder { color: var(--qss-text-muted, #6e6e7a); }
-.qp-input[type='datetime-local'],
-.qp-input[type='time'] { color-scheme: dark; }
+.qp-input[type='date'] { color-scheme: dark; }
 .qp-sched-agent { display: flex; align-items: center; gap: 7px; text-align: left; cursor: pointer; }
 .qp-sched-agent-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qp-seg { display: inline-flex; border: 1px solid var(--qss-border, #47474f); border-radius: 7px; overflow: hidden; }
