@@ -3059,6 +3059,7 @@ Measured: empty thread with panel + hero Bob lively 1.4 % of a core. Checks:
 mascot tests 8, test:pilot, check:ts, css, isolation, components. QA frames in
 `artifacts/bob-allout/` (settings, gallery, tricks, dizzy/petting/sparkle,
 companion carried and landing, skins and accessories).
+
 ## 52. Round 3: the adopted roadmap areas (2026-11-03)
 
 The user on the roadmap (card 91212da8): "1.1.0 kommt ganz danach … implementiere
