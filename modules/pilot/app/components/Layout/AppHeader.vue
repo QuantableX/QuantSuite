@@ -116,6 +116,7 @@ async function end() {
         >
           Crew
         </button>
+        <button :class="{ on: app.view === 'schedules' }" :aria-pressed="app.view === 'schedules'" title="Prompts that run on their own at the times you set" @click="app.setView('schedules')">Schedules</button>
       </div>
       <template v-if="app.view !== 'conversation'" />
       <template v-else-if="session">

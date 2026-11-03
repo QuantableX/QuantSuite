@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-schedule-delete"
+description = "Enables the pilot_schedule_delete command without any pre-configured scope."
+commands.allow = ["pilot_schedule_delete"]
+
+[[permission]]
+identifier = "deny-pilot-schedule-delete"
+description = "Denies the pilot_schedule_delete command without any pre-configured scope."
+commands.deny = ["pilot_schedule_delete"]

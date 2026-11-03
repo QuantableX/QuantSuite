@@ -32,7 +32,7 @@ pub use storage::{log_run as log_storage_run, Category as StorageCategory, Clean
 /// 18: thread tags (round 2, card 12).
 /// 19: side chats name their main thread (round 2, card 10).
 /// 20: crews — tasks, members and their message log (round 2, card 07).
-pub const SCHEMA_VERSION: i64 = 21;
+pub const SCHEMA_VERSION: i64 = 22;
 
 #[path = "queue.rs"]
 mod queue;
@@ -40,6 +40,8 @@ pub use queue::{QueueItem, QueuePayload};
 #[path = "crew_db.rs"]
 mod crew_db;
 pub use crew_db::{Crew, CrewMember, CrewMessage, CrewTask, TaskPatch};
+#[path = "schedules_db.rs"]
+mod schedules_db;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -592,6 +594,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !column_exists(&tx, "threads", "instance")? {
         tx.execute_batch("ALTER TABLE threads ADD COLUMN instance TEXT NOT NULL DEFAULT '';")?;
     }
+    // Schema 22 (round 3, card 03): scheduled prompts and their runs.
+    tx.execute_batch(schedules_db::SCHEDULE_TABLES)?;
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;

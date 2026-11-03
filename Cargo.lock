@@ -7029,6 +7029,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "chrono-tz",
  "dirs 5.0.1",
  "ignore",
  "image 0.25.10",

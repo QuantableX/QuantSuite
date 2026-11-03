@@ -9,6 +9,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, type Component } f
 import {
   AlarmClock,
   Archive,
+  CalendarClock,
   ArchiveRestore,
   Check,
   ChevronRight,
@@ -29,6 +30,8 @@ import {
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useThreadStore } from '#pilot/stores/thread'
+import { useSchedulesStore } from '#pilot/stores/schedules'
+import { useAppStore } from '#pilot/stores/app'
 import { inHours, parseDuration, parseTags, tomorrowAt, wakeLabel } from '#pilot/utils/sidebar'
 import { threadReference } from '#pilot/utils/format'
 import { pickFolder } from '#pilot/utils/pickFolder'
@@ -151,9 +154,18 @@ const items = computed<Item[]>(() => {
       ],
     })
   }
+  // Round 3, card 03: the thread's task as a schedule (its first message, project and agent).
+  if (t.kind === 'chat') list.push({ id: 'schedule', label: 'Schedule this…', icon: CalendarClock, run: () => scheduleThis(t) })
   list.push({ id: 'delete', label: 'Delete…', icon: Trash2, danger: true, run: () => void openPanel('delete') })
   return list
 })
+
+function scheduleThis(t: SessionMeta) {
+  const first = useThreadStore().views[t.id]?.items.find((i) => i.kind === 'user')
+  const text = typeof first?.data?.text === 'string' ? first.data.text : ''
+  useSchedulesStore().startNew({ name: t.title, prompt: text, contextId: t.contextId, provider: t.provider, model: t.model ?? '', effort: t.effort ?? '', mode: t.mode ?? '', instance: t.instance ?? '' })
+  useAppStore().setView('schedules')
+}
 
 function snoozeAt(at: number) {
   return sidebar.snooze(props.thread.id, at, wakeLabel(at, Date.now()))
