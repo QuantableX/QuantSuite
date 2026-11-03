@@ -366,7 +366,7 @@ function onFileDrop(e: DragEvent) {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  margin: 0 6px 6px;
+  margin: 6px;
   border: 1px solid var(--qp-panel-edge);
   border-radius: 12px;
   box-shadow: 0 1px 0 color-mix(in srgb, #fff 3%, transparent) inset, 0 8px 24px rgba(0, 0, 0, 0.18);

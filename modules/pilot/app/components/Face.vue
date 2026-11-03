@@ -6,24 +6,29 @@
  * Moods for what the agent does (utils/mascot.ts): sleeping, calm,
  * thinking, focused, juggling when several agents work, tired on a long
  * run, calling you (eyes on you, a wave), worried, cheering when a turn
- * finishes, nodding when an approval is granted. Depth: a shaded body with
- * a highlight, a rim, cheeks and a soft shadow that breathes with it.
+ * finishes, nodding when an approval is granted. It speaks with its eyes
+ * only — no mouth (the user found a smile on it uncanny) — on a flat dark
+ * glyph with a soft outline, like the first face.
  * Movement: the eyes follow the pointer, otherwise glance about (each
- * glance a fresh spot and pause — a loop would read as a GIF); hover perks
- * it up, a click squishes it and it says something. Springy transitions.
- * The user's look: skin, eye style, an accessory, a name, an agent tint.
+ * glance a fresh spot and pause — a loop would read as a GIF); while calm it
+ * does a quirk every few seconds (look around, roll its eyes, tilt, wink,
+ * hop, wiggle, giggle > <, stretch, nod off after a long quiet spell, and an
+ * "oh, hi" when the pointer comes back); hover perks it up, a click squishes
+ * it and it says something. The user's look: skin, eye style, an accessory,
+ * a name, an agent tint.
  *
  * Built from plain elements: every motion is `transform`/`opacity`, so the
  * compositor runs it. Timers and the pointer listener live only while the
- * face is on screen (an active page, a visible document). Reduced motion
- * keeps every expression but drops the continuous motion (breathing, bob,
- * orbit, wave, pulse) — Windows reports reduced motion whenever animation
- * effects are off, so expressions never depend on it.
+ * face is on screen (an active page, a visible document). Movement is the
+ * mascot's own setting (Lively / Still), not the system's: Windows reports
+ * reduced motion whenever animation effects are off, which silenced it on
+ * the user's machine. Still keeps every expression and drops the continuous
+ * motion and the quirks.
  */
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { inActiveKeepAliveTree } from '@quantsuite/core'
 import { useMascotStore } from '#pilot/stores/mascot'
-import { agentTint, gazeToward, lineFor, moodOf, MOOD_LABEL, SKINS, type Mood } from '#pilot/utils/mascot'
+import { agentTint, gazeToward, lineFor, moodOf, MOOD_LABEL, pickQuirk, QUIRKS, quirkPause, SKINS, type Mood, type Quirk } from '#pilot/utils/mascot'
 import type { LiveState } from '#pilot/types'
 
 const props = withDefaults(
@@ -56,7 +61,7 @@ const active = ref(false)
 const pageVisible = ref(typeof document === 'undefined' ? true : !document.hidden)
 const live = computed(() => active.value && pageVisible.value)
 const onVisibility = () => (pageVisible.value = !document.hidden)
-const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+const reduced = computed(() => prefs.value.motion === 'still')
 
 // ── Events: cheer, nod, click ──
 const cheering = ref(false)
@@ -131,6 +136,9 @@ let followUntil = 0
 let pendingPointer: { x: number; y: number } | null = null
 let frame = 0
 function onPointer(e: PointerEvent) {
+  const t = Date.now()
+  if (t - lastPointerAt > 15_000 && mood.value === 'calm' && !reduced.value) runQuirk('pop')
+  lastPointerAt = t
   pendingPointer = { x: e.clientX, y: e.clientY }
   if (frame) return
   frame = requestAnimationFrame(() => {
@@ -161,7 +169,7 @@ function scheduleGlance() {
 }
 function scheduleBlink() {
   later(() => {
-    if (!cheering.value && mood.value !== 'sleep') {
+    if (!cheering.value && !quirk.value && mood.value !== 'sleep') {
       blink.value = true
       later(() => {
         blink.value = false
@@ -174,11 +182,47 @@ function scheduleBlink() {
     scheduleBlink()
   }, mood.value === 'sleep' ? rand(12000, 20000) : rand(3500, 8500))
 }
-function scheduleIdleSmile() {
+// ── Idle quirks: while calm, a new one every few seconds (utils/mascot.ts) ──
+const quirk = ref<Quirk | null>(null)
+const side = ref<'l' | 'r'>('r')
+let lastQuirk: Quirk | null = null
+let lastPointerAt = Date.now()
+function runQuirk(q: Quirk) {
+  if (quirk.value || cheering.value) return
+  lastQuirk = q
+  const dir = Math.random() < 0.5 ? -1 : 1
+  side.value = dir < 0 ? 'l' : 'r'
+  // ^^ and a hop: the cheer face, without a word.
+  if (q === 'happy') return cheerFor(QUIRKS.happy.ms)
+  quirk.value = q
+  if (Date.now() >= followUntil) {
+    const look = (x: number, y: number, at: number) => later(() => (gaze.value = { x, y }), at)
+    if (q === 'look') {
+      look(dir * -0.055, 0.005, 0)
+      look(dir * 0.055, -0.01, 700)
+      look(0, 0, 1450)
+    } else if (q === 'roll') {
+      look(-0.045, -0.03, 0)
+      look(0, -0.055, 320)
+      look(0.045, -0.03, 640)
+      look(0, 0, 1050)
+    } else if (q === 'tilt') {
+      look(dir * 0.045, -0.03, 0)
+      look(0, 0, QUIRKS.tilt.ms - 350)
+    } else if (q === 'drowsy') {
+      look(0, 0.03, 0)
+      look(0, 0, QUIRKS.drowsy.ms - 500)
+    }
+  }
   later(() => {
-    if (props.state === 'idle' && !props.mood) cheerFor(rand(1400, 2200))
-    scheduleIdleSmile()
-  }, rand(20000, 45000))
+    if (quirk.value === q) quirk.value = null
+  }, QUIRKS[q].ms)
+}
+function scheduleQuirk() {
+  later(() => {
+    if (!reduced.value && mood.value === 'calm' && !squish.value) runQuirk(pickQuirk(lastQuirk, Date.now() - lastPointerAt))
+    scheduleQuirk()
+  }, quirkPause())
 }
 
 function start() {
@@ -186,12 +230,13 @@ function start() {
   clearTimers()
   scheduleGlance()
   scheduleBlink()
-  scheduleIdleSmile()
+  scheduleQuirk()
   if (props.interactive) window.addEventListener('pointermove', onPointer, { passive: true })
   syncLong()
 }
 function stop() {
   clearTimers()
+  quirk.value = null
   window.removeEventListener('pointermove', onPointer)
   if (frame) cancelAnimationFrame(frame)
   frame = 0
@@ -242,15 +287,6 @@ const vars = computed(() => {
     '--m-gy': `${gaze.value.y * 100}%`,
   }
 })
-// At rest the face is two eyes, like the old one; only the moods that speak
-// with their mouth show one.
-const MOUTH: Partial<Record<Mood, string>> = {
-  call: 'M10.2 5 Q12 3.4 13.8 5 Q12 8.4 10.2 5',
-  worried: 'M8 6.5 Q10 5 12 6.5 Q14 8 16 6.5',
-  cheer: 'M7.5 4 Q12 11 16.5 4 Q12 6 7.5 4',
-}
-const mouth = computed(() => MOUTH[mood.value] ?? '')
-const filled = computed(() => mood.value === 'cheer' || mood.value === 'call')
 const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.value))
 </script>
 
@@ -259,7 +295,8 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
     v-if="prefs.on || $props.mood !== null"
     ref="root"
     class="qp-mascot"
-    :class="[`m-${mood}`, `eyes-${prefs.eyes}`, `skin-${prefs.skin}`, { hover: hover && interactive, squish, blink, still: reduced }]"
+    :class="[`m-${mood}`, `eyes-${prefs.eyes}`, `skin-${prefs.skin}`, quirk ? `q-${quirk} side-${side}` : '', { hover: hover && interactive, squish, blink, still: reduced }]"
+    :data-own-motion="reduced ? undefined : ''"
     :style="vars"
     role="img"
     :aria-label="`${prefs.name || 'Mascot'} — ${MOOD_LABEL[mood]}`"
@@ -271,15 +308,11 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
     <div class="qp-m-bob">
       <div class="qp-m-halo" />
       <div class="qp-m-body">
-        <div class="qp-m-cheek l" /><div class="qp-m-cheek r" />
         <div class="qp-m-brow l" /><div class="qp-m-brow r" />
         <div class="qp-m-eyes">
           <i class="qp-m-eye l"><b /><s /></i>
           <i class="qp-m-eye r"><b /><s /></i>
         </div>
-        <svg v-if="mouth" class="qp-m-mouth" viewBox="0 0 24 12" aria-hidden="true">
-          <path :d="mouth" :class="{ filled }" />
-        </svg>
         <!-- accessories ride on the body -->
         <svg v-if="prefs.accessory !== 'none'" class="qp-m-acc" viewBox="0 0 100 100" aria-hidden="true">
           <g v-if="prefs.accessory === 'cap'">
@@ -395,12 +428,6 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 }
 .qp-m-brow.l { left: 24%; }
 .qp-m-brow.r { left: 58%; }
-.qp-m-mouth { position: absolute; left: 35%; top: 57%; width: 30%; height: 15%; overflow: visible; }
-.qp-m-mouth path { fill: none; stroke: var(--m-ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: d 0.3s var(--m-spring); }
-.qp-m-mouth path.filled { fill: color-mix(in srgb, var(--m-ink) 85%, transparent); }
-.qp-m-cheek { position: absolute; top: 55%; width: 15%; height: 9%; border-radius: 50%; background: radial-gradient(ellipse, rgba(255, 120, 140, 0.55), transparent 70%); opacity: 0; transition: opacity 0.3s ease; }
-.qp-m-cheek.l { left: 12%; }
-.qp-m-cheek.r { right: 12%; }
 .qp-m-acc { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .acc-fill { fill: #f87171; }
 .acc-band { fill: none; stroke: #b91c1c; stroke-width: 5; stroke-linecap: round; }
@@ -447,8 +474,6 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 .m-cheer .qp-m-eye { background: transparent; box-shadow: none; border-top: 1.7cqw solid var(--m-ink); border-radius: 50%; transform: translateY(14%) scaleX(1.15); }
 .m-cheer .qp-m-eye b,
 .m-cheer .qp-m-eye s { opacity: 0; }
-.m-cheer .qp-m-cheek,
-.m-nod .qp-m-cheek { opacity: 0.7; }
 .m-cheer .qp-m-bob { animation: qp-m-jump 0.9s var(--m-spring) 2; }
 .m-nod .qp-m-bob { animation: qp-m-nod 0.5s ease-in-out 2; }
 .hover .qp-m-body { transform: scale(1.05); }
@@ -487,6 +512,47 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 @keyframes qp-m-drip { 0%, 30% { transform: translateY(0); opacity: 0; } 40% { opacity: 0.9; } 100% { transform: translateY(160%); opacity: 0; } }
 @keyframes qp-m-float { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-14%); opacity: 1; } }
 
+/* ── Idle quirks ── */
+.side-l { --q-dir: -1; }
+.side-r { --q-dir: 1; }
+.q-tilt .qp-m-bob { animation: qp-q-tilt 1.9s var(--m-spring) both; }
+.q-tilt .qp-m-eye { animation: qp-q-wide 1.9s ease both; }
+.q-wink.side-l .qp-m-eye.l,
+.q-wink.side-r .qp-m-eye.r { animation: qp-q-wink 0.7s ease both; }
+.q-wink .qp-m-bob { animation: qp-q-lean 0.7s ease both; }
+.q-hop .qp-m-bob { animation: qp-m-jump 0.9s var(--m-spring) 1; }
+.q-wiggle .qp-m-bob { animation: qp-q-wiggle 1.1s ease-in-out both; }
+.q-pop .qp-m-eye { animation: qp-q-pop 0.8s var(--m-spring) both; }
+.q-pop .qp-m-bob { animation: qp-q-perk 0.8s var(--m-spring) both; }
+.q-look .qp-m-bob { animation: qp-q-sway 1.9s ease-in-out both; }
+.q-roll .qp-m-bob { animation: qp-q-roll 1.5s ease-in-out both; }
+.q-stretch .qp-m-bob { animation: qp-q-stretch 1.7s ease-in-out both; }
+.q-stretch .qp-m-eye { animation: qp-q-shut 1.7s ease both; }
+.q-drowsy .qp-m-eye { animation: qp-q-drowsy 3.2s ease both; }
+.q-drowsy .qp-m-bob { animation: qp-q-nodoff 3.2s ease both; }
+/* Giggle: > < eyes and a little shake. */
+.qp-mascot.q-giggle .qp-m-eye { background: transparent; box-shadow: none; border-radius: 0.5cqw; }
+.qp-mascot.q-giggle .qp-m-eye.l { border-top: 1.7cqw solid var(--m-ink); border-right: 1.7cqw solid var(--m-ink); transform: translateX(10%) rotate(45deg) scale(0.62); }
+.qp-mascot.q-giggle .qp-m-eye.r { border-bottom: 1.7cqw solid var(--m-ink); border-left: 1.7cqw solid var(--m-ink); transform: translateX(-10%) rotate(45deg) scale(0.62); }
+.qp-mascot.q-giggle .qp-m-eye b,
+.qp-mascot.q-giggle .qp-m-eye s { opacity: 0; }
+.q-giggle .qp-m-bob { animation: qp-q-giggle 1.3s ease-in-out both; }
+
+@keyframes qp-q-tilt { 0% { transform: rotate(0); } 25%, 75% { transform: rotate(calc(var(--q-dir, 1) * 13deg)) translateY(-2%); } 100% { transform: rotate(0); } }
+@keyframes qp-q-wide { 0%, 100% { transform: scale(1); } 25%, 75% { transform: scale(1.14); } }
+@keyframes qp-q-wink { 0%, 100% { transform: scaleY(1); } 25%, 70% { transform: scaleY(0.1); } }
+@keyframes qp-q-lean { 0%, 100% { transform: rotate(0); } 30%, 70% { transform: rotate(calc(var(--q-dir, 1) * 7deg)); } }
+@keyframes qp-q-wiggle { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(-9deg); } 35% { transform: rotate(9deg); } 55% { transform: rotate(-6deg); } 75% { transform: rotate(4deg); } }
+@keyframes qp-q-pop { 0%, 100% { transform: scale(1); } 30% { transform: scale(1.42); } 60% { transform: scale(1.22); } }
+@keyframes qp-q-perk { 0%, 100% { transform: translateY(0) scale(1, 1); } 30% { transform: translateY(-5%) scale(0.96, 1.05); } }
+@keyframes qp-q-sway { 0%, 100% { transform: rotate(0); } 20%, 35% { transform: rotate(calc(var(--q-dir, 1) * -5deg)); } 55%, 72% { transform: rotate(calc(var(--q-dir, 1) * 5deg)); } }
+@keyframes qp-q-roll { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 50% { transform: rotate(0) translateY(-3%); } 75% { transform: rotate(5deg); } }
+@keyframes qp-q-stretch { 0%, 100% { transform: scale(1, 1); } 35%, 55% { transform: translateY(-5%) scale(0.92, 1.12); } 75% { transform: scale(1.07, 0.93); } 88% { transform: scale(0.98, 1.02); } }
+@keyframes qp-q-shut { 0%, 100% { transform: scaleY(1); } 22%, 66% { transform: scaleY(0.1); } }
+@keyframes qp-q-drowsy { 0% { transform: scaleY(1); } 22% { transform: scaleY(0.5); } 40% { transform: scaleY(0.42); } 62% { transform: scaleY(0.1); } 70% { transform: scaleY(0.1); } 76% { transform: scale(1.3); } 88%, 100% { transform: scale(1); } }
+@keyframes qp-q-nodoff { 0%, 100% { transform: translateY(0) rotate(0); } 60%, 70% { transform: translateY(5%) rotate(-4deg); } 76% { transform: translateY(-4%) rotate(0); } 88% { transform: translateY(0); } }
+@keyframes qp-q-giggle { 0%, 100% { transform: rotate(0) translateY(0); } 15% { transform: rotate(-4deg) translateY(-2%); } 30% { transform: rotate(4deg); } 45% { transform: rotate(-4deg) translateY(-2%); } 60% { transform: rotate(4deg); } 75% { transform: rotate(-2deg); } }
+
 /* A blink closes the eyes whatever the mood. */
 .qp-mascot.blink .qp-m-eye { transform: scaleY(0.1); }
 /* Closed round eyes are a line in the face's ink, not a white slit with a pupil. */
@@ -497,6 +563,7 @@ const label = computed(() => lineFor(mood.value, prefs.value.name, lineSeed.valu
 
 /* Reduced motion: every expression, no continuous motion. */
 .still .qp-m-bob,
+.still .qp-m-eye,
 .still .qp-m-halo,
 .still .qp-m-hand,
 .still .qp-m-juggle,

@@ -346,9 +346,15 @@ body {
    transition/animation *end* events still fire and nothing that waits on one
    hangs. Modules' own per-component reduced-motion rules remain harmless on
    top of this.
+   One exception: an element marked [data-own-motion] follows a motion setting
+   of its own that the user chose in the suite (QuantPilot's mascot: Lively /
+   Still). Windows reports reduced motion whenever its animation effects are
+   off, which froze the mascot for a user who explicitly wants it lively.
    ───────────────────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  :not([data-own-motion]):not([data-own-motion] *),
+  :not([data-own-motion]):not([data-own-motion] *)::before,
+  :not([data-own-motion]):not([data-own-motion] *)::after {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;

@@ -8,7 +8,7 @@
 import { computed, onMounted } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useMascotStore } from '#pilot/stores/mascot'
-import { ACCESSORIES, EYES, MOOD_LABEL, MOODS, SIZES as MASCOT_SIZES, SKINS } from '#pilot/utils/mascot'
+import { ACCESSORIES, EYES, MOOD_LABEL, MOODS, MOTIONS, SIZES as MASCOT_SIZES, SKINS } from '#pilot/utils/mascot'
 import type { PilotSettings } from '#pilot/types'
 
 const store = usePilotStore()
@@ -85,6 +85,12 @@ const SIZES: { id: PilotSettings['textSize']; label: string }[] = [
         <span class="qp-row-k">Size in empty threads</span>
         <span class="qp-seg" role="radiogroup" aria-label="Size">
           <button v-for="z in MASCOT_SIZES" :key="z.id" role="radio" class="qp-seg-btn" :class="{ on: m.size === z.id }" :aria-checked="m.size === z.id" @click="mascot.set({ size: z.id })">{{ z.label }}</button>
+        </span>
+      </div>
+      <div class="qp-row">
+        <span class="qp-row-k">Movement</span>
+        <span class="qp-seg" role="radiogroup" aria-label="Movement">
+          <button v-for="mo in MOTIONS" :key="mo.id" role="radio" class="qp-seg-btn" :class="{ on: m.motion === mo.id }" :aria-checked="m.motion === mo.id" @click="mascot.set({ motion: mo.id })">{{ mo.label }}</button>
         </span>
       </div>
       <label class="qp-check">
