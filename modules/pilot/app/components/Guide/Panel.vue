@@ -143,7 +143,7 @@ const written = computed(() => {
       <template v-else>
         <p class="qp-guide-meta">{{ riskLine(guide) }} · {{ written }}</p>
         <p v-if="state?.stale" class="qp-guide-stale-note">The diff changed since this guide was written — write it again for the current one.</p>
-        <p class="qp-guide-summary">{{ guide.summary }}</p>
+        <p class="qp-guide-summary"><PilotGuideText :text="guide.summary" /></p>
         <ol class="qp-guide-groups">
           <li v-for="(g, gi) in guide.groups" :key="gi" class="qp-guide-group" :class="{ uncovered: g.title === 'Not covered by the guide' }">
             <div class="qp-guide-gtitle">{{ g.title }}</div>
@@ -154,9 +154,9 @@ const written = computed(() => {
                 <span v-if="f.line" class="qp-guide-line">:{{ f.line }}</span>
                 <span v-if="guide.cut.includes(f.path)" class="qp-guide-cut" title="Its diff was cut for the prompt">cut</span>
               </button>
-              <p v-if="f.what" class="qp-guide-what">{{ f.what }}</p>
+              <p v-if="f.what" class="qp-guide-what"><PilotGuideText :text="f.what" /></p>
               <ul v-if="f.check.length" class="qp-guide-check">
-                <li v-for="(c, ci) in f.check" :key="ci">{{ c }}</li>
+                <li v-for="(c, ci) in f.check" :key="ci"><PilotGuideText :text="c" /></li>
               </ul>
             </div>
           </li>
@@ -164,7 +164,7 @@ const written = computed(() => {
         <template v-if="guide.questions.length">
           <div class="qp-guide-gtitle">Questions for the author</div>
           <ul class="qp-guide-questions">
-            <li v-for="(q, qi) in guide.questions" :key="qi">{{ q }}</li>
+            <li v-for="(q, qi) in guide.questions" :key="qi"><PilotGuideText :text="q" /></li>
           </ul>
         </template>
         <p v-if="guide.cut.length" class="qp-guide-note">{{ guide.cut.length }} file{{ guide.cut.length === 1 ? '' : 's' }} had more diff than the prompt takes; the guide saw the start (marked "cut").</p>
