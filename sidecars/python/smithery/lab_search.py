@@ -22,7 +22,8 @@ class Search:
     def __init__(self, evaluate, keys, bases, *, seed, budget, progress=None):
         self.evaluate = evaluate          # list of trials -> list of (capital multiple, max drawdown %) or None
         self.keys = sorted(keys)
-        self.bases = {k: bases[k] for k in self.keys}
+        # Every base it is given: a control trial may hold members outside the searched keys.
+        self.bases = dict(bases)
         self.by_base = {}
         for key in self.keys:
             self.by_base.setdefault(self.bases[key], []).append(key)
@@ -30,6 +31,7 @@ class Search:
         self.seed, self.budget = seed, budget
         self.progress = progress or (lambda message, fraction=None: None)
         self.seen = {}
+        self.controls = set()             # scored for comparison only: never a result, leader or seed
         self.stages = []
         self.aggregates = 0
 
@@ -41,8 +43,11 @@ class Search:
     def remaining(self):
         return max(0, self.budget - self.aggregates)
 
-    def run(self, name, trials, cap=None, singles=False):
-        """Evaluate the stage's not yet seen, valid trials (at most ``cap`` and the budget)."""
+    def run(self, name, trials, cap=None, singles=False, control=False):
+        """Evaluate the stage's not yet seen, valid trials (at most ``cap`` and the budget).
+
+        ``control`` trials are scored for comparison only: they never appear in the results, so
+        growth, local search and the leaders never build on them."""
         fresh, proposed = [], 0
         for trial in trials:
             trial = tuple(sorted(trial))
@@ -55,6 +60,8 @@ class Search:
         for trial in fresh[limit:]:
             del self.seen[trial]
         fresh = fresh[:limit]
+        if control:
+            self.controls.update(fresh)
         self.progress(f"{name}: {len(fresh):,} candidates", None)
         for start in range(0, len(fresh), 4096):
             part = fresh[start:start + 4096]
@@ -69,7 +76,8 @@ class Search:
     # ------------------------------------------------------------- results
 
     def results(self, size=None, min_size=1):
-        return [(t, v) for t, v in self.seen.items() if v is not None and len(t) >= min_size and (size is None or len(t) == size)]
+        return [(t, v) for t, v in self.seen.items() if v is not None and t not in self.controls
+                and len(t) >= min_size and (size is None or len(t) == size)]
 
     def leaders(self, n, min_size=2, size=None):
         rows = self.results(size, min_size)
