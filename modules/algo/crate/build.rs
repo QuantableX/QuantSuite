@@ -21,6 +21,8 @@ const COMMANDS: &[&str] = &[
     "research_gauntlet_overview",
     "research_profit_overview",
     "research_aggregate_comparison",
+    // The System Gauntlet on a saved system (docs/ROBUSTNESS.md).
+    "research_robustness",
     "smithery_cancel",
     "smithery_jobs",
     // `{ limit }` → lines, for the suite's process page.

@@ -31,4 +31,5 @@ def run(path, doc):
     result["venues"] = list(doc.get("venues") or ())
     save(path / "results.json", result)
     v = result["verdict"]
+    save(path / "verdict.json", {k: v.get(k) for k in ("status", "grade", "score", "robust", "failures", "complete", "perm_p", "policy")})
     progress(f"Verdict: {v['status']} · grade {v['grade']}" + (f" · {len(v['failures'])} failed gates" if v["failures"] else ""))
