@@ -607,6 +607,102 @@
           "markdownDescription": "Denies the load_canvas_state command without any pre-configured scope."
         },
         {
+          "description": "Enables the moodboard_add command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-moodboard-add",
+          "markdownDescription": "Enables the moodboard_add command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the moodboard_add command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-moodboard-add",
+          "markdownDescription": "Denies the moodboard_add command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the moodboard_caption command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-moodboard-caption",
+          "markdownDescription": "Enables the moodboard_caption command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the moodboard_caption command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-moodboard-caption",
+          "markdownDescription": "Denies the moodboard_caption command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the moodboard_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-moodboard-create",
+          "markdownDescription": "Enables the moodboard_create command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the moodboard_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-moodboard-create",
+          "markdownDescription": "Denies the moodboard_create command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the moodboard_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-moodboard-image",
+          "markdownDescription": "Enables the moodboard_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the moodboard_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-moodboard-image",
+          "markdownDescription": "Denies the moodboard_image command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the moodboard_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-moodboard-list",
+          "markdownDescription": "Enables the moodboard_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the moodboard_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-moodboard-list",
+          "markdownDescription": "Denies the moodboard_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the moodboard_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-moodboard-read",
+          "markdownDescription": "Enables the moodboard_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the moodboard_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-moodboard-read",
+          "markdownDescription": "Denies the moodboard_read command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the moodboard_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-moodboard-remove",
+          "markdownDescription": "Enables the moodboard_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the moodboard_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-moodboard-remove",
+          "markdownDescription": "Denies the moodboard_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the moodboard_reorder command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-moodboard-reorder",
+          "markdownDescription": "Enables the moodboard_reorder command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the moodboard_reorder command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-moodboard-reorder",
+          "markdownDescription": "Denies the moodboard_reorder command without any pre-configured scope."
+        },
+        {
           "description": "Enables the read_dir_tree command without any pre-configured scope.",
           "type": "string",
           "const": "allow-read-dir-tree",
@@ -763,10 +859,10 @@
           "markdownDescription": "Denies the write_file command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`\n- `allow-design-list`\n- `allow-design-read`\n- `allow-design-write`\n- `allow-design-comments`\n- `allow-design-resolve`\n- `allow-design-comment-add`\n- `allow-design-comment-status`\n- `allow-design-comment-delete`\n- `allow-design-export`",
+          "description": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`\n- `allow-design-list`\n- `allow-design-read`\n- `allow-design-write`\n- `allow-design-comments`\n- `allow-design-resolve`\n- `allow-design-comment-add`\n- `allow-design-comment-status`\n- `allow-design-comment-delete`\n- `allow-design-export`\n- `allow-moodboard-list`\n- `allow-moodboard-read`\n- `allow-moodboard-create`\n- `allow-moodboard-add`\n- `allow-moodboard-caption`\n- `allow-moodboard-reorder`\n- `allow-moodboard-remove`\n- `allow-moodboard-image`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`\n- `allow-design-list`\n- `allow-design-read`\n- `allow-design-write`\n- `allow-design-comments`\n- `allow-design-resolve`\n- `allow-design-comment-add`\n- `allow-design-comment-status`\n- `allow-design-comment-delete`\n- `allow-design-export`"
+          "markdownDescription": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`\n- `allow-design-list`\n- `allow-design-read`\n- `allow-design-write`\n- `allow-design-comments`\n- `allow-design-resolve`\n- `allow-design-comment-add`\n- `allow-design-comment-status`\n- `allow-design-comment-delete`\n- `allow-design-export`\n- `allow-moodboard-list`\n- `allow-moodboard-read`\n- `allow-moodboard-create`\n- `allow-moodboard-add`\n- `allow-moodboard-caption`\n- `allow-moodboard-reorder`\n- `allow-moodboard-remove`\n- `allow-moodboard-image`"
         }
       ]
     }

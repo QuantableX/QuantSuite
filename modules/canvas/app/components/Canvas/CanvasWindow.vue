@@ -91,6 +91,7 @@ const typeIcon = computed(() => {
     chat: '\u275D',
     card: '\u25A4',
     artboard: '\u270E',
+    moodboard: '\u25A6',
   }
   return icons[props.window.type] ?? '\u25C7'
 })
@@ -566,6 +567,10 @@ provide('canvasWindowActions', { close: closeWindow, toggleZoom })
       />
       <CanvasWindowsArtboardWindow
         v-else-if="window.type === 'artboard'"
+        :window="window"
+      />
+      <CanvasWindowsMoodboardWindow
+        v-else-if="window.type === 'moodboard'"
         :window="window"
       />
     </div>

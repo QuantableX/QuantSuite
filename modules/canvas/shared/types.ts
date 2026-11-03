@@ -30,7 +30,7 @@ export interface WindowPosition {
   height: number
 }
 
-export type WindowType = 'terminal' | 'diff' | 'spec' | 'file' | 'browser' | 'chat' | 'card' | 'artboard'
+export type WindowType = 'terminal' | 'diff' | 'spec' | 'file' | 'browser' | 'chat' | 'card' | 'artboard' | 'moodboard'
 
 /** Shell flavour a terminal window runs. Re-exported from `stores/app`. */
 export type ShellType = 'powershell' | 'cmd' | 'bash' | 'wsl' | 'git-bash'
@@ -102,6 +102,8 @@ export interface CanvasWindow {
   diffConfig?: DiffConfig
   /** A design artboard: an HTML mockup with element comments (round 3, card 06). */
   artboardConfig?: ArtboardConfig
+  /** A moodboard: reference images agents can see (round 3, card 07). */
+  moodboardConfig?: MoodboardConfig
   /** A crew worker's chat: the orchestrator thread it belongs to (round 2, card 09). */
   crewOf?: string
   /** An orchestrator's chat: its workers fold into one node. */
@@ -114,6 +116,11 @@ export interface ArtboardConfig {
   /** The artboard id in the workspace's design folder; null until one is picked. */
   artboard: string | null
   device: ArtboardDevice
+}
+
+export interface MoodboardConfig {
+  /** The moodboard id in the workspace's moodboards folder; null until one is picked. */
+  board: string | null
 }
 
 export interface CardConfig {

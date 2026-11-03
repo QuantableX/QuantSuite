@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-moodboard-remove"
+description = "Enables the moodboard_remove command without any pre-configured scope."
+commands.allow = ["moodboard_remove"]
+
+[[permission]]
+identifier = "deny-moodboard-remove"
+description = "Denies the moodboard_remove command without any pre-configured scope."
+commands.deny = ["moodboard_remove"]

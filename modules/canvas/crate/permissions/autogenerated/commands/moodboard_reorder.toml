@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-moodboard-reorder"
+description = "Enables the moodboard_reorder command without any pre-configured scope."
+commands.allow = ["moodboard_reorder"]
+
+[[permission]]
+identifier = "deny-moodboard-reorder"
+description = "Denies the moodboard_reorder command without any pre-configured scope."
+commands.deny = ["moodboard_reorder"]

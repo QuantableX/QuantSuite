@@ -26,7 +26,7 @@
     "check:distribution": "node scripts/check-distribution.mjs",
     "test:distribution": "node --test scripts/test-distribution.mjs",
     "test:systems": "node --test scripts/test-systems-queue.mjs scripts/test-systems-groups.mjs",
-    "test:canvas": "node --test scripts/test-canvas-kanban.mjs scripts/test-canvas-edges.mjs scripts/test-canvas-browser.mjs scripts/test-canvas-artboard.mjs",
+    "test:canvas": "node --test scripts/test-canvas-kanban.mjs scripts/test-canvas-edges.mjs scripts/test-canvas-browser.mjs scripts/test-canvas-artboard.mjs scripts/test-canvas-moodboard.mjs",
     "check:release": "node scripts/check-release.mjs",
     "test:release": "node --test scripts/test-release.mjs",
     "test:pilot": "node --test scripts/test-pilot-timeline.mjs scripts/test-pilot-composer.mjs scripts/test-pilot-models.mjs scripts/test-pilot-sidebar.mjs scripts/test-pilot-mentions.mjs scripts/test-pilot-git.mjs scripts/test-pilot-files.mjs scripts/test-pilot-keys.mjs scripts/test-pilot-usage.mjs scripts/test-pilot-board.mjs scripts/test-pilot-github.mjs scripts/test-pilot-diff.mjs scripts/test-pilot-requests.mjs scripts/test-pilot-mermaid.mjs scripts/test-pilot-quote.mjs scripts/test-pilot-find.mjs scripts/test-pilot-stream.mjs scripts/test-pilot-agents.mjs scripts/test-pilot-agentmenu.mjs scripts/test-pilot-panel.mjs scripts/test-pilot-side.mjs scripts/test-pilot-crew.mjs scripts/test-pilot-crewgraph.mjs scripts/test-pilot-mascot.mjs scripts/test-pilot-schedules.mjs scripts/test-pilot-guide.mjs scripts/test-pilot-progress.mjs"

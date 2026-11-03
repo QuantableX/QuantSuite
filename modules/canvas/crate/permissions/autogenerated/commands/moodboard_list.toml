@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-moodboard-list"
+description = "Enables the moodboard_list command without any pre-configured scope."
+commands.allow = ["moodboard_list"]
+
+[[permission]]
+identifier = "deny-moodboard-list"
+description = "Denies the moodboard_list command without any pre-configured scope."
+commands.deny = ["moodboard_list"]

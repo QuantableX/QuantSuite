@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-moodboard-read"
+description = "Enables the moodboard_read command without any pre-configured scope."
+commands.allow = ["moodboard_read"]
+
+[[permission]]
+identifier = "deny-moodboard-read"
+description = "Denies the moodboard_read command without any pre-configured scope."
+commands.deny = ["moodboard_read"]

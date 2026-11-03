@@ -42,4 +42,12 @@ permissions = [
   "allow-design-comment-status",
   "allow-design-comment-delete",
   "allow-design-export",
+  "allow-moodboard-list",
+  "allow-moodboard-read",
+  "allow-moodboard-create",
+  "allow-moodboard-add",
+  "allow-moodboard-caption",
+  "allow-moodboard-reorder",
+  "allow-moodboard-remove",
+  "allow-moodboard-image",
 ]
