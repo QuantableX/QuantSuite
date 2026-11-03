@@ -197,11 +197,12 @@ def within_saved_data(config, engine, progress=None):
                      "Run the system in QuantSystems to update its prices, then start the comparison again.")
 
 
-def frozen_engine(config, candidates, data_dir):
+def frozen_engine(config, candidates, data_dir, prices=None):
     """A BacktestEngine on the saved price data whose answers are frozen on first use.
 
     Every OHLCV request starts at the earliest warm-up any candidate (or the
-    system itself, or its market filter) needs, so all runs share one copy."""
+    system itself, or its market filter) needs, so all runs share one copy.
+    ``prices`` is a smithery.prices variant (noise, venue) of the saved candles."""
     from rotation_lab.backtest.engine import BacktestEngine, _fetch_start
     from rotation_lab.config import IndicatorConfig
     from .lab_fast import indicator_for
@@ -212,7 +213,11 @@ def frozen_engine(config, candidates, data_dir):
         starts.append(_fetch_start(replace(timing, indicator=config.market_indicator)))
     offline()
     cache = saved_cache()
-    engine = BacktestEngine(registry=saved_rankings(cache), ohlcv=SavedPrices(cache))
+    ohlcv = SavedPrices(cache)
+    if prices:
+        from .prices import PricesVariant
+        ohlcv = PricesVariant(ohlcv, prices)
+    engine = BacktestEngine(registry=saved_rankings(cache), ohlcv=ohlcv)
     engine.registry = FrozenService(engine.registry, {"get_top_n"}, data_dir)
     engine.ohlcv = FrozenService(engine.ohlcv, {"get_series", "get_pair_series"}, data_dir, min(starts))
     return engine

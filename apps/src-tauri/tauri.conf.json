@@ -124,7 +124,9 @@
       "../../sidecars/python/smithery/prices.py": "sidecars/python/smithery/prices.py",
       "../../sidecars/python/smithery/robust_policy.py": "sidecars/python/smithery/robust_policy.py",
       "../../sidecars/python/smithery/system_gauntlet.py": "sidecars/python/smithery/system_gauntlet.py",
-      "../../sidecars/python/smithery/universal.py": "sidecars/python/smithery/universal.py"
+      "../../sidecars/python/smithery/universal.py": "sidecars/python/smithery/universal.py",
+      "../../sidecars/python/smithery/lab_gpu.py": "sidecars/python/smithery/lab_gpu.py",
+      "../../sidecars/python/smithery/robust_search.py": "sidecars/python/smithery/robust_search.py"
     },
     "icon": [
       "icons/32x32.png",

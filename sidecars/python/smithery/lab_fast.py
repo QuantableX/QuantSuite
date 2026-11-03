@@ -112,10 +112,8 @@ def _eval_init(folder):
     _EVALUATOR = FastSystem.load(folder)
 
 
-def _eval_task(trials):
-    curve, _ = _EVALUATOR.simulate(trials)
-    metrics = FastSystem.metrics(curve)
-    return [(float(m), float(d)) for m, d in zip(metrics["net_return_multiplier"], metrics["max_drawdown_pct"])]
+def _eval_task(trials, delay=0, end=None):
+    return _eval_local(_EVALUATOR, trials, delay, end)
 
 
 def default_workers():
@@ -373,21 +371,24 @@ class FastSystem:
         self.progress = lambda message, fraction=None: None
         return self
 
-    def evaluate(self, trials, chunk=96):
-        """Final capital and maximum drawdown per trial (None when a member is unusable), in parallel."""
+    def evaluate(self, trials, chunk=96, delay=0, end=None):
+        """Final capital and maximum drawdown per trial (None when a member is unusable), in parallel.
+
+        ``end`` measures on the bars before it only (a search window; the walk is causal,
+        so it equals a run ending there); ``delay`` as in ``simulate``."""
         trials = [tuple(t) for t in trials]
         out = [None] * len(trials)
         todo = [i for i, t in enumerate(trials) if not any(k in self.failed for k in t)]
         chunks = [todo[i:i + chunk] for i in range(0, len(todo), chunk)]
         if self.workers <= 1 or len(chunks) < 2:
             for part in chunks:
-                for i, value in zip(part, _eval_local(self, [trials[i] for i in part])):
+                for i, value in zip(part, _eval_local(self, [trials[i] for i in part], delay, end)):
                     out[i] = value
             return out
         if self._pool is None:
             self._pool = ProcessPoolExecutor(max_workers=self.workers, mp_context=mp.get_context("spawn"),
                                              initializer=_eval_init, initargs=(str(self.folder),))
-        futures = {self._pool.submit(_eval_task, [trials[i] for i in part]): part for part in chunks}
+        futures = {self._pool.submit(_eval_task, [trials[i] for i in part], delay, end): part for part in chunks}
         for future in as_completed(futures):
             for i, value in zip(futures[future], future.result()):
                 out[i] = value
@@ -584,7 +585,7 @@ class FastSystem:
             shutil.rmtree(self.folder, ignore_errors=True)
 
 
-def _eval_local(system, trials):
-    curve, _ = system.simulate(trials)
-    metrics = FastSystem.metrics(curve)
+def _eval_local(system, trials, delay=0, end=None):
+    curve, _ = system.simulate(trials, delay=delay)
+    metrics = FastSystem.metrics(curve if end is None else curve[:, :end])
     return [(float(m), float(d)) for m, d in zip(metrics["net_return_multiplier"], metrics["max_drawdown_pct"])]

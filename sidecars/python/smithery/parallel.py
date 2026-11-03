@@ -62,9 +62,13 @@ def pool(workers: int = WORKERS) -> ProcessPoolExecutor:
         # on every core; explicit user settings still take precedence.
         for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
             os.environ.setdefault(name, "1")
-        _POOL = ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("spawn"),
+        # Sized for the largest request at once: workers start only as tasks need
+        # them, and a pool that had to grow would respawn every worker, each loading
+        # the whole indicator library again (a minute per step on a 650-key library).
+        size = max(workers, WORKERS)
+        _POOL = ProcessPoolExecutor(max_workers=size, mp_context=mp.get_context("spawn"),
                                     initializer=_worker_init)
-        _POOL_WORKERS = workers
+        _POOL_WORKERS = size
     return _POOL
 
 

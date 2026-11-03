@@ -4,6 +4,12 @@ Any size from two distinct base indicators upward is allowed; size is part of
 the search, not a preference. The stages are fixed before results are seen,
 the top candidates and the best of the small sizes are re-run natively, and the
 leader and the current aggregate are compared from independent later starts.
+
+Robust by default (docs/ROBUSTNESS.md, 2026-11-03; smithery.robust_search): only
+indicators that pass the Indicator Gauntlet, each candidate scored by its worst
+price world on a search window, the leaders confirmed on the blind years after it
+against random aggregates, and the System Gauntlet on the finalists. Nothing found
+on the whole history seeds a validated search.
 """
 from __future__ import annotations
 
@@ -51,6 +57,22 @@ def run(path, doc):
     if unknown:
         raise ValueError(f"Unknown indicators: {unknown}")
     keys, duplicates = distinct_keys(keys, registry, config, keep=[*reference, *seed_keys])
+    robust = bool(doc.get("robust"))
+    gated, excluded = robust and doc.get("pool", "robust") == "robust", []
+    if gated:
+        from .lab_profit import TRACKS
+        from .robust_search import pool_gate
+        from .evidence import EVALUATION_VERSION
+        timeframe = config.single_asset.timeframe if config.mode == "single_asset" else config.cadence.value
+        track = TRACKS.get(timeframe, "1d")
+        searchable, excluded = pool_gate([k for k in keys if k not in reference], track)
+        progress(f"{len(searchable)} of {len(searchable) + len(excluded)} indicators pass the Indicator Gauntlet "
+                 f"on the {track} track ({EVALUATION_VERSION})")
+        if len(searchable) < 2:
+            raise ValueError(f"Only {len(searchable)} indicators pass the Indicator Gauntlet on the {track} track under "
+                             f"the current evaluation ({EVALUATION_VERSION}). Re-certify the library in QuantScript's "
+                             "forge first, or run with pool='all' for research (its results are marked not robust).")
+        keys = [k for k in keys if k in set(searchable) or k in reference]
     seeds = list({m: n for n, m in ((n, tuple(sorted({duplicates.get(k, k) for k in m}))) for n, m in seeds)}.items())
     saved_as = {m: n for m, n in seeds}
     earlier = list(dict.fromkeys(tuple(sorted({duplicates.get(k, k) for k in m})) for m in earlier))
@@ -63,10 +85,22 @@ def run(path, doc):
     config = within_saved_data(config, engine, progress)
     reason = unsupported_reason(config)
     progress(f"{len(keys)} candidates from {len(set(bases.values()))} base indicators; reference {' + '.join(reference)}")
+    if robust and reason:
+        raise ValueError(f"The robust search needs the bulk evaluator: {reason}")
     evaluator = NativeEvaluator(config, keys, engine, progress) if reason else \
         FastSystem(config, keys, path / "cube", engine, progress=progress).build()
     if reason:
         budget = min(budget, NATIVE_BUDGET)
+    worlds = cut = venue_path = None
+    if robust:
+        from .prices import venue_cache_path
+        from .robust_search import Worlds, default_cut
+        cut = default_cut(evaluator.dates, doc.get("blind_days"))
+        venue_path = venue_cache_path(tuple(doc.get("venues") or ()))
+        venue_path = venue_path if venue_path.is_file() else None
+        progress(f"Search window {evaluator.dates[0].date()} → {evaluator.dates[cut - 1].date()}; "
+                 f"blind window {evaluator.dates[cut].date()} → {evaluator.dates[-1].date()}")
+        worlds = Worlds(config, keys, path, evaluator, venue_path, progress)
     try:
         if any(k in evaluator.failed for k in reference):
             raise ValueError("The reference cannot be evaluated: " + "; ".join(evaluator.failed[k] for k in reference if k in evaluator.failed))
@@ -75,11 +109,14 @@ def run(path, doc):
             save(path / "verification.json", checks)
             raise ValueError("The bulk evaluator differs from the native engine; nothing was ranked")
         usable = [k for k in keys if k not in evaluator.failed]
+        if gated:
+            usable = [k for k in usable if k not in reference]
         sizes = sorted(set(doc.get("sizes") or [])) or None
         n_bases = len({bases[k] for k in usable})
         max_size = min(max(sizes) if sizes else n_bases, n_bases)
         allowed = (lambda s: s in sizes) if sizes else (lambda s: 2 <= s <= max_size)
-        plan = {"objective": "historical final capital, any aggregate size", "seed": seed, "budget": budget, "top": top,
+        plan = {"objective": ("worst price world's final capital on the search window, any aggregate size" if robust
+                              else "historical final capital, any aggregate size"), "seed": seed, "budget": budget, "top": top,
                 "reference": list(reference), "candidates": usable, "bases": n_bases, "sizes": sizes or [2, max_size],
                 "saved": [{"name": n, "members": list(m)} for m, n in seeds],
                 "stages": ["Control: the reference",
@@ -100,7 +137,8 @@ def run(path, doc):
                 "restarts": [d for d in (doc.get("restarts") or RESTARTS)],
                 "validation": "Retrospective search on examined history; no claim of out-of-sample performance or a global optimum."}
         save(path / "plan.json", plan)
-        search = Search(evaluator.evaluate, usable, {k: bases[k] for k in usable}, seed=seed, budget=budget, progress=progress)
+        evaluate = (lambda trials: worlds.evaluate(trials, cut)) if robust else evaluator.evaluate
+        search = Search(evaluate, usable, {k: bases[k] for k in [*usable, *reference]}, seed=seed, budget=budget, progress=progress)
         search.run("Control: the reference", [reference])
         if seeds:
             search.run("Your saved aggregates", [m for m, _ in seeds])
@@ -108,10 +146,11 @@ def run(path, doc):
                        [t for m, _ in seeds for t in search.neighbors(m) if allowed(len(t))])
         if earlier:
             search.run("Leaders of your earlier comparisons", [m for m in earlier if allowed(len(m))])
-        search.run("Reference neighbours", [t for t in search.neighbors(reference) if allowed(len(t))])
+        if not gated:  # a gated pool does not hold the reference's members: it is the control only
+            search.run("Reference neighbours", [t for t in search.neighbors(reference) if allowed(len(t))])
         ref_bases = {bases[k] for k in reference}
         additions = [k for k in usable if bases[k] not in ref_bases]
-        if allowed(len(reference) + 2):
+        if allowed(len(reference) + 2) and not gated:
             two = (tuple(sorted(reference + (a, b))) for i, a in enumerate(additions) for b in additions[i + 1:] if bases[a] != bases[b])
             cap = int(search.remaining() * 0.3)
             pool = list(islice(two, 2_000_000))
@@ -124,12 +163,32 @@ def run(path, doc):
             progress(f"Growth by size done up to {search.grown} members")
         search.stage_balanced("Balanced sizes", [s for s in range(3, max_size + 1) if allowed(s)], 0.1)
         search.stage_until_stable("Local search until stable, round", 25,
-                                  extra_seeds=[reference, *(m for m, _ in seeds), *earlier])
+                                  extra_seeds=[] if gated else [reference, *(m for m, _ in seeds), *earlier])
         progress("Local search " + ("stable: no single step improves the top 25" if search.stable
                                     else f"stopped at the budget after {search.rounds} rounds"))
         progress(f"Search done: {search.aggregates:,} aggregates in {time.monotonic() - started:,.0f} s")
         leaders = search.leaders(top)
         best = search.best_by_size()
+        robust_block = None
+        if robust:
+            from .robust_search import finalists as run_finalists, walk_forward
+            distinct, marks = [], set()
+            for trial, value in search.leaders(400):
+                mark = (round(value[0], 9), round(value[1], 9))
+                if mark not in marks:
+                    marks.add(mark)
+                    distinct.append((trial, value))
+                if len(distinct) == 50:
+                    break
+            wf = walk_forward(worlds, distinct, usable, bases, cut, seed, progress)
+            fin = run_finalists(config, wf["leaders"], int(doc.get("gauntlet_top") or 3), path / "finalists",
+                                venue_path, seed, progress)
+            robust_block = {"policy": "docs/ROBUSTNESS.md", "worlds": worlds.names, "venue_measured": worlds.complete,
+                            "pool_gated": gated, "pool_excluded": len(excluded), "pool": len(usable),
+                            "walk_forward": wf, "finalists": fin,
+                            "robust_finalists": [f["members"] for f in fin if f["verdict"]["robust"]]}
+            progress(f"Walk-forward: {wf['passed']} of {len(wf['leaders'])} leaders beat random aggregates on the blind "
+                     f"window; {len(robust_block['robust_finalists'])} of {len(fin)} finalists are robust")
         verify = [t for t, _ in leaders] + [best[s][0] for s in sorted(best) if s <= 5]
         subjects = Subjects(evaluator, registry, config)
         native = engine.run(evaluator.config_for(reference))
@@ -183,10 +242,13 @@ def run(path, doc):
         dates = [d.strftime("%Y-%m-%d") if (d.hour, d.minute) == (0, 0) else d.strftime("%Y-%m-%d %H:%M")
                  for d in native.equity_strategy.index]
         save(path / "results.json", {"kind": "aggregates", "format": 2, "system": describe(config, doc.get("system") or {}),
+                                     "robust": robust_block,
                                      "reference": list(reference), "dates": dates, "assets": subjects.assets,
                                      "subjects": subjects.items, "rows": rows_out, "restarts": restarts,
                                      "coverage": coverage, "plan": plan,
                                      "validation": "Retrospective variable-size search in the saved system; not Gauntlet certification."})
         progress("Report ready")
     finally:
+        if worlds is not None:
+            worlds.close()
         evaluator.close()

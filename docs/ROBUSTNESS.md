@@ -96,6 +96,24 @@ A system that makes no money on its own history has nothing to protect and is no
 | Research kind `robustness` | The System Gauntlet for any saved system (`quantsuite.algo.research_*`, QuantScript's research tab). |
 | Saving or importing a result as a system or strategy | Needs a robust verdict, or the user's explicit "not robust" mark in the app (card 4). |
 
+## Aggregate search (combinations)
+
+`smithery/lab_aggregates.py` with `smithery/robust_search.py` is robust by default. `pool: "all"` stays possible for research, but no result of an ungated pool counts as robust.
+
+1. **Pool gate:** only indicators that pass the Indicator Gauntlet on the system's track under the current evaluation (`registry.robust_on_track`). The system's current aggregate is evaluated as a control, but its members only join the pool when they pass.
+2. **Price worlds:** every candidate is scored in each world, and the search ranks it by its worst world's final capital on the search window. The worlds:
+   - the saved candles;
+   - ±0.03% noise, two seeds;
+   - another exchange's candles, when they were loaded;
+   - every trade one day later.
+
+   A fit to one exact history no longer wins.
+3. **Walk-forward:** the search sees only the bars before the cut, which by default is two years before the end (a third of a shorter history). The 50 best distinct leaders then run on the blind bars after it, against 300 random aggregates of the same size from the same pool. A leader passes when its worst-world CAGR in the blind window is positive and beats the random median.
+4. **System Gauntlet:** the best leaders that passed, three by default, go through the System Gauntlet in fast mode on the whole history. Only robust finalists are candidates for saved systems.
+5. **No seeding from the whole history:** a robust search never starts from the saved aggregates or earlier leaders, because they were found on the whole history.
+
+**Speed:** every world is an engine-identical bulk evaluator. When PyTorch with CUDA is importable (`smithery/lab_gpu.py`, checked bit-identical against the CPU evaluator), the GPU scores the worlds. `SMITHERY_GPU=0` turns it off.
+
 ## Running it
 
 - From the app or MCP: research kind `robustness` with a saved system's name. The run freezes the engine, the library and the saved prices like every research run. Before freezing it loads candles from the other venue chain into its own cache (`~/.quantsuite/modules/systems/cache/venues/`); the saved systems cache is never written.

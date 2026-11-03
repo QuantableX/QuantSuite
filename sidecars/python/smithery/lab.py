@@ -148,12 +148,23 @@ def create(request):
                 from .lab_profit import earlier_leaders, saved_aggregates
                 doc["seeds"] = saved_aggregates(doc["config"])
                 doc["earlier"] = earlier_leaders(doc["config"])
-            if kind == "robustness":
+            if kind == "aggregates":
+                # Robust by default (docs/ROBUSTNESS.md): gated pool, price worlds, walk-forward,
+                # System Gauntlet on the finalists. pool="all" is research only and flagged.
+                pool = request.get("pool", "robust")
+                if pool not in ("robust", "all"):
+                    raise ValueError("pool must be 'robust' or 'all'")
+                doc.update(pool=pool, robust=pool == "robust" or bool(request.get("robust", True)),
+                           blind_days=request.get("blind_days"), gauntlet_top=request.get("gauntlet_top", 3))
+            if kind in ("robustness", "aggregates"):
                 from .prices import DEFAULT_VENUES, NEVER_VENUES
                 venues = request.get("venues") or list(DEFAULT_VENUES)
                 if not isinstance(venues, list) or not all(isinstance(v, str) for v in venues) or NEVER_VENUES & set(venues):
                     raise ValueError("venues must list other exchanges than Binance, Gate.io and MEXC")
                 doc.update(fast=bool(request.get("fast")), venues=venues)
+                if kind == "aggregates" and doc.get("robust"):
+                    # A validated selection never starts from what was found on the whole history.
+                    doc["seeds"], doc["earlier"] = [], []
             validate_request(doc)
         save(path / "run.json", doc)
         return summary(path)
@@ -388,7 +399,7 @@ def freeze(path, kind="gauntlet"):
             src.backup(dst)
     # The robustness check's other-venue candles, next to the frozen cache like the saved ones.
     venues = cache.parent / "venues"
-    if kind == "robustness" and venues.is_dir():
+    if kind in ("robustness", "aggregates") and venues.is_dir():
         for source in venues.glob("*.sqlite"):
             (path / "venues").mkdir(exist_ok=True)
             with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src, \
@@ -438,7 +449,7 @@ def run(run_id):
         if frozen:
             if doc["kind"] in SYSTEM_KINDS:
                 update_saved_data(path, doc)
-            if doc["kind"] == "robustness":
+            if doc["kind"] == "robustness" or (doc["kind"] == "aggregates" and doc.get("robust")):
                 prepare_venues(path, doc)
             emit(path, "progress", message="Freezing engine, private library and market inputs")
             freeze(path, doc["kind"])
