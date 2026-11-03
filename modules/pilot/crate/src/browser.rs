@@ -20,6 +20,23 @@ pub const LABEL: &str = "pilot-browser";
 const STATE_EVENT: &str = "pilot-browser-state";
 pub const ELEMENT_EVENT: &str = "pilot-browser-element";
 
+/// Links that ask for a new window (`target="_blank"`) open in this view.
+/// The suite's shell plugin puts a link handler into every webview, this
+/// page included: it would take the click, ask the app to open the link —
+/// which a web page may not — and the link would do nothing. On `document`
+/// (capture), so the element picker, listening on `window`, still comes first.
+const SAME_VIEW_LINKS: &str = r#"(() => {
+  document.addEventListener('click', (e) => {
+    if (e.button !== 0 || e.defaultPrevented) return;
+    const t = e.composedPath ? e.composedPath()[0] : e.target;
+    const a = t instanceof Element ? t.closest('a[href]') : null;
+    if (!a || a.target !== '_blank' || !/^https?:/i.test(a.href)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    location.assign(a.href);
+  }, true);
+})();"#;
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct Bounds {
     pub x: f64,
@@ -238,7 +255,9 @@ pub fn open(app: &AppHandle, caller: &Webview, url: &str, bounds: Bounds, zoom: 
         let generation = state.view.fetch_add(1, Ordering::SeqCst) + 1;
         let nav = app.clone();
         let own_nav = own.clone();
-        let builder = tauri::webview::WebviewBuilder::new(LABEL, tauri::WebviewUrl::External(url));
+        let opener = app.clone();
+        let own_opener = own.clone();
+        let builder = tauri::webview::WebviewBuilder::new(LABEL, tauri::WebviewUrl::External(url)).initialization_script(SAME_VIEW_LINKS);
         let builder = match &profile {
             Some((_, dir)) => builder.data_directory(dir.clone()),
             None => builder.incognito(true),
@@ -257,7 +276,14 @@ pub fn open(app: &AppHandle, caller: &Webview, url: &str, bounds: Bounds, zoom: 
                 true
             })
             // Links that open a window open here instead: no second window, no popups.
-            .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+            .on_new_window(move |u, _| {
+                if current(&opener, generation) && allowed(&u, own_opener.as_ref()) {
+                    if let Some(view) = opener.get_webview(LABEL) {
+                        let _ = view.navigate(u);
+                    }
+                }
+                tauri::webview::NewWindowResponse::Deny
+            })
             .on_download(|_, _| false)
             .on_document_title_changed(move |view, title| {
                 if current(view.app_handle(), generation) {
