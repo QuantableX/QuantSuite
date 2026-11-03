@@ -176,6 +176,11 @@ def create(request):
                 if kind == "aggregates" and doc.get("robust"):
                     # A validated selection never starts from what was found on the whole history.
                     doc["seeds"], doc["earlier"] = [], []
+                    if doc.get("pool") == "robust":
+                        # The worker's frozen vault holds the price shelf only: the certified pool is
+                        # decided here, where the user's Gauntlet evidence is visible, and recorded.
+                        from .robust_search import certified_pool
+                        doc["pool_certified"] = certified_pool(doc["config"], doc.get("indicators") or None)
             validate_request(doc)
         save(path / "run.json", doc)
         return summary(path)

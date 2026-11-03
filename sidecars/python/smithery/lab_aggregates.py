@@ -65,7 +65,8 @@ def run(path, doc):
         from .evidence import EVALUATION_VERSION
         timeframe = config.single_asset.timeframe if config.mode == "single_asset" else config.cadence.value
         track = TRACKS.get(timeframe, "1d")
-        searchable, excluded = pool_gate([k for k in keys if k not in reference], track)
+        recorded = (doc.get("pool_certified") or {}).get("keys")
+        searchable, excluded = pool_gate([k for k in keys if k not in reference], track, recorded)
         progress(f"{len(searchable)} of {len(searchable) + len(excluded)} indicators pass the Indicator Gauntlet "
                  f"on the {track} track ({EVALUATION_VERSION})")
         if len(searchable) < 2:

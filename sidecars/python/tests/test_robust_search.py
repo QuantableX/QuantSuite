@@ -36,6 +36,13 @@ class PoolGate(unittest.TestCase):
         self.assertEqual(kept, ["a_opt", "c_opt_1d"])
         self.assertEqual(excluded, ["b_opt"])
 
+    def test_a_recorded_pool_is_used_as_is(self):
+        # A frozen run cannot see the user's evidence; the list recorded at creation decides.
+        with patch("smithery.registry.robust_on_track", side_effect=AssertionError("no lookup in a frozen run")):
+            kept, excluded = rs.pool_gate(["a_opt", "b_opt", "c_opt_1d"], "1d", certified=["b_opt", "z_opt"])
+        self.assertEqual(kept, ["b_opt"])
+        self.assertEqual(excluded, ["a_opt", "c_opt_1d"])
+
 
 class FakeSystem:
     def __init__(self, factor):

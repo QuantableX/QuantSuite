@@ -29,11 +29,34 @@ NOISE_SIGMA = 0.0003
 BASELINE_PER_SIZE = 300
 
 
-def pool_gate(keys, timeframe: str):
-    """(kept, excluded): keys that pass the Indicator Gauntlet on the track under the current evaluation."""
-    from .registry import robust_on_track
-    kept = [k for k in keys if robust_on_track(k, timeframe)]
+def pool_gate(keys, timeframe: str, certified=None):
+    """(kept, excluded): keys that pass the Indicator Gauntlet on the track under the current evaluation.
+
+    ``certified`` is the list recorded when the run was created (lab.create): a frozen research
+    run's vault holds the price shelf only, so its own lookup would find no verdict at all."""
+    if certified is not None:
+        allowed = set(certified)
+        kept = [k for k in keys if k in allowed]
+    else:
+        from .registry import robust_on_track
+        kept = [k for k in keys if robust_on_track(k, timeframe)]
     return kept, [k for k in keys if k not in set(kept)]
+
+
+def certified_pool(raw_config: dict, indicators=None) -> dict:
+    """The candidates a robust search may use, decided where the user's evidence is visible."""
+    from dataclasses import replace
+    from rotation_lab.rpc import _build_config
+    from .evidence import EVALUATION_VERSION
+    from .lab_profit import TRACKS, default_keys
+    from .registry import describe_all, robust_on_track
+    config = replace(_build_config(raw_config), compare_trends=())
+    rows = describe_all()["indicators"]
+    keys = list(indicators or default_keys(rows, config))
+    timeframe = config.single_asset.timeframe if config.mode == "single_asset" else config.cadence.value
+    track = TRACKS.get(timeframe, "1d")
+    return {"track": track, "evaluation": EVALUATION_VERSION, "candidates": len(keys),
+            "keys": [k for k in keys if robust_on_track(k, track)]}
 
 
 def default_cut(dates, blind_days: int | None = None) -> int:
