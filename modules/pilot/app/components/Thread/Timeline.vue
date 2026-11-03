@@ -400,6 +400,16 @@ function onFindKey(e: KeyboardEvent) {
   }
 }
 
+// The crew view's message bus jumps here (round 2, card 08): find these words in this thread.
+function onFindIn(e: Event) {
+  const d = (e as CustomEvent<{ threadId: string; query: string }>).detail
+  if (!d || d.threadId !== props.threadId || !d.query) return
+  query.value = d.query
+  void openFind()
+}
+onMounted(() => window.addEventListener('qp-find-in-thread', onFindIn))
+onBeforeUnmount(() => window.removeEventListener('qp-find-in-thread', onFindIn))
+
 // Find (card 17: a rebindable command); only the open thread's timeline answers.
 const pilotStore = usePilotStore()
 useCommands({
@@ -480,6 +490,8 @@ useCommands({
   position: absolute;
   top: 8px;
   right: 16px;
+  /* A narrow conversation column (inspector open) keeps the bar inside it. */
+  max-width: calc(100% - 32px);
   z-index: 5;
   display: flex;
   align-items: center;
@@ -491,6 +503,8 @@ useCommands({
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 .qp-find-input {
+  flex: 0 1 200px;
+  min-width: 48px;
   width: 200px;
   height: 24px;
   padding: 0 8px;

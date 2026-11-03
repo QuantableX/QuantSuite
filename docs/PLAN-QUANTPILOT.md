@@ -2687,3 +2687,76 @@ Claude could answer on this machine: Codex is not signed in, OpenCode fails
 on its own database, Gemini CLI is not installed, pi has no API key, omp
 cannot reach its model server — so the demo's second agent was a real
 failure, not a second success.
+
+## 44. Round 2 · 08/12: live orchestration graph and message bus
+
+Card 088278d3, on card 07's crews. The user's picture: the orchestrator in
+the middle, workers around it with progress, messages moving between them,
+a message bus underneath.
+
+- **Crew view** (`Crew/View.vue`): a fourth main view beside Conversation,
+  Board and GitHub (the thread list stays: the view follows the open
+  thread). It shows the open thread's crew (as orchestrator or worker),
+  else its native subagents, else the newest crew; a picker lists every
+  crew and the open thread's subagents.
+- **Graph** (`Crew/Graph.vue`, `utils/crewGraph.ts`): the orchestrator
+  node stands out (accent ring, "orchestrator · 6 workers · leading /
+  finished / stopped"); each worker shows its logo with the status ring,
+  name (task key), task line, progress % and bar, state in colour
+  (working, waiting, done, error, stopped, queued), elapsed time and the
+  attempt when retried; hover shows its latest step; a click opens the
+  worker thread. Dotted edges, one per worker. Every real crew message
+  sends a particle along its edge, sender → receiver (dispatch, steer and
+  reply out; progress, ask, done, failure and escalation in); the edge and
+  the receiving node light up; gates and decisions light the orchestrator.
+  Reduced motion: no particles, a short highlight only.
+- **Layout:** radial; each ring holds up to 12 and is sized so neighbours
+  never touch (√2 for the diagonals) and clears the center or the ring
+  inside, then spreads to fill the stage; more workers get further rings
+  and the graph scales down to fit. Wheel zooms around the pointer, drag
+  pans, double-click or Fit fits again; it follows the window size.
+- **Message bus** under the graph: the crew's messages live (time to the
+  millisecond, sender → receiver in their node colours, the text), a
+  filter per worker, newest at the bottom (kept scrolled unless the user
+  scrolls up); a click opens the thread the message shows in and finds it
+  there (the thread's find bar, parity 15). Footer: "7 agents on <objective>
+  · 42 messages on the bus". *Full log* opens card 07's log dialog.
+- **Native subagents** of a normal thread (Claude's Task, Codex's agents)
+  draw the same way: a particle out when one starts, back when it ends.
+- **Compact graph** in the panel's Crew section (icons, names, %), with a
+  *Crew view* button.
+- **Performance:** particles are small elements moved by the Web
+  Animations API with `transform` — the compositor runs them, no script per
+  frame; they exist only while the graph is on screen (not hidden, not a
+  deactivated KeepAlive page). Highlights switch without transitions;
+  progress bars scale. Driven by the `pilot-crew` event, no polling; a
+  one-second clock ticks elapsed times only while a worker works. Found
+  here and fixed for every view: the agent logo's *working* ring animated a
+  custom property inside a conic gradient, which restyled and repainted
+  every frame (~30 % of a core for nine working icons); it now turns an
+  inner gradient with `transform` under a static ring mask (same look).
+  Also fixed: the thread find bar overflowed a narrow conversation column.
+
+**CPU** (renderer main thread, CDP `TaskDuration` over 10 s, QA app, six
+working workers, `artifacts/quantpilot-r2-08/cpu3_*.json`): Crew view idle
+0.6 % of one core (31.7 % before the ring fix); Crew view with 2 messages a
+second 8.6 % (39.5 % with SVG-attribute particles); another QuantSuite
+module open while messages flow 2.0 %; conversation of a plain thread with
+the panel 3.1 %, without 0.4 %.
+
+**Checks.** `npm run check:ts`; `npm run test:pilot` 129 passed (new
+`scripts/test-pilot-crewgraph.mjs`: nodes and states, subagents, ring
+sizes, no overlap for 1–30 workers on three stage sizes, which edge a
+message travels, the bus time, jump targets, the footer); `check:isolation`,
+`check:commands`.
+
+**Native QA** (`artifacts/quantpilot-r2-08/`): a fixture crew like the
+picture (6 workers porting to rust, 42 messages, "need a lock on
+schema.rs") rendered as above; with 2 messages a second particles ran along
+the right edges. A real crew (Claude Haiku orchestrator, two workers, one
+asking "Which colour?") rendered live: 30 % → done, 7 particles for its 11
+messages; the bus line "Orchestrator → beta: teal" opened beta's thread
+with the find bar on "teal" (3 matches). A Haiku thread that started two
+Task subagents drew them live and done. 20 workers: two rings, no overlap,
+zoom and pan. Reduced motion (emulated): no particle, the edge lit for
+0.6 s. Switching crews in the picker animates nothing old.

@@ -78,16 +78,12 @@ const title = computed(() => (ring.value ? `${name.value} — ${STATUS[ring.valu
     <img v-else-if="src" class="qp-aicon-img" :src="src" alt="" draggable="false" />
     <SquareTerminal v-else-if="glyph.kind === 'terminal'" class="qp-aicon-term" :size="size" :stroke-width="1.75" />
     <span v-else class="qp-aicon-letter" :class="{ unknown: glyph.kind === 'unknown' }">{{ letter }}</span>
+    <!-- Working: a static ring-shaped mask over a rotating gradient — the turn runs on the compositor (round 2, card 08). -->
+    <span v-if="ring === 'working'" class="qp-aicon-spin" aria-hidden="true"><i /></span>
   </span>
 </template>
 
 <style scoped>
-@property --qp-aicon-turn {
-  syntax: '<angle>';
-  inherits: false;
-  initial-value: 0deg;
-}
-
 .qp-aicon {
   position: relative;
   display: inline-flex;
@@ -141,23 +137,38 @@ const title = computed(() => (ring.value ? `${name.value} — ${STATUS[ring.valu
 .qp-aicon-ring.is-limited { --qp-aicon-ring: var(--qss-warning, #d29a3f); }
 .qp-aicon-ring.is-limited::after { border-style: dashed; }
 .qp-aicon-ring.is-error { --qp-aicon-ring: var(--qss-error, #f87171); }
-.qp-aicon-ring.is-working::after {
-  border-color: transparent;
-  background: conic-gradient(
-      from var(--qp-aicon-turn),
-      var(--qss-success, #34d399) 0 34%,
-      color-mix(in srgb, var(--qss-success, #34d399) 26%, transparent) 34% 100%
-    )
-    border-box;
+.qp-aicon-ring.is-working::after { content: none; }
+/*
+ * The working ring: the same rounded ring, cut out by a static mask; inside
+ * it a conic gradient turns with `transform` — composited, so a crew of
+ * working agents does not repaint every frame (an animated custom property
+ * did: ~30 % of a core for nine icons).
+ */
+.qp-aicon-spin {
+  position: absolute;
+  inset: calc(var(--qp-aicon-gap, 3px) * -1);
+  border-radius: calc(var(--qp-aicon-gap, 3px) + 3px);
+  border: 1.5px solid transparent;
+  overflow: hidden;
+  pointer-events: none;
   mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
   -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
+}
+.qp-aicon-spin i {
+  position: absolute;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(var(--qss-success, #34d399) 0 34%, color-mix(in srgb, var(--qss-success, #34d399) 26%, transparent) 34% 100%);
   animation: qp-aicon-turn 1.1s linear infinite;
+  will-change: transform;
 }
 @keyframes qp-aicon-turn {
-  to { --qp-aicon-turn: 360deg; }
+  to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .qp-aicon-ring.is-working::after { animation: none; }
+  .qp-aicon-spin i { animation: none; }
 }
 </style>

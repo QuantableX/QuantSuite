@@ -29,8 +29,8 @@ export const useAppStore = defineStore('pilot/app', {
   state: () => ({
     sidebarLeftOpen: readBool('qp-sidebar-left', true),
     sidebarRightOpen: readBool('qp-sidebar-right', true),
-    /** The main area: the open thread's conversation, the kanban board (card 21), or GitHub (card 23). */
-    view: (['board', 'github'].includes(readText('qp-view')) ? readText('qp-view') : 'conversation') as 'conversation' | 'board' | 'github',
+    /** The main area: the open thread's conversation, the kanban board (card 21), GitHub (card 23) or the crew graph (round 2, card 08). */
+    view: (['board', 'github', 'crew'].includes(readText('qp-view')) ? readText('qp-view') : 'conversation') as 'conversation' | 'board' | 'github' | 'crew',
     /** The board shown: a workspace id or `general`; empty until one was picked. */
     boardId: readText('qp-board'),
     /** The thread open beside the board, and the card selected on it. */
@@ -38,7 +38,7 @@ export const useAppStore = defineStore('pilot/app', {
     boardCard: null as string | null,
   }),
   actions: {
-    setView(view: 'conversation' | 'board' | 'github') {
+    setView(view: 'conversation' | 'board' | 'github' | 'crew') {
       this.view = view
       writeText('qp-view', view)
     },

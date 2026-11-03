@@ -320,7 +320,8 @@ function onFileDrop(e: DragEvent) {
     <PilotLayoutAppHeader />
     <div class="qp-body">
       <!-- The board and GitHub fill the main area: no thread list, no thread panel (cards 21, 23). -->
-      <QSidebar :model-value="app.sidebarLeftOpen && app.view === 'conversation'" resizable storage-key="pilot.left">
+      <!-- The crew view follows the open thread, so the thread list stays (round 2, card 08). -->
+      <QSidebar :model-value="app.sidebarLeftOpen && (app.view === 'conversation' || app.view === 'crew')" resizable storage-key="pilot.left">
         <PilotLayoutLeftSidebar />
       </QSidebar>
       <main class="qp-main">

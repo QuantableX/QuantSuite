@@ -83,6 +83,14 @@ async function end() {
         >
           GitHub
         </button>
+        <button
+          :class="{ on: app.view === 'crew' }"
+          :aria-pressed="app.view === 'crew'"
+          title="The crew of this thread as a live graph, with its message bus"
+          @click="app.setView('crew')"
+        >
+          Crew
+        </button>
       </div>
       <template v-if="app.view !== 'conversation'" />
       <template v-else-if="session">
