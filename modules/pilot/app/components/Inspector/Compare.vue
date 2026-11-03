@@ -106,7 +106,7 @@ function onKey(e: KeyboardEvent) {
 </template>
 
 <style scoped>
-.qp-cmp { position: fixed; inset: 0; z-index: 1200; display: flex; flex-direction: column; background: rgba(8, 8, 10, 0.94); color: var(--qss-text, #d4d4d8); outline: none; font-size: 12.5px; }
+.qp-cmp { position: fixed; inset: 0; z-index: 1200; display: flex; flex-direction: column; background: #0b0b0d; color: var(--qss-text, #d4d4d8); outline: none; font-size: 12.5px; }
 .qp-cmp-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
 .qp-cmp-title { font-weight: 600; }
 .qp-cmp-dim { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--qss-text-muted, #8a8a95); }

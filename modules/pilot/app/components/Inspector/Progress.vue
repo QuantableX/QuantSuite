@@ -21,6 +21,9 @@ const progress = ref<Progress | null>(null)
 const thumbs = ref<Record<string, string | null>>({})
 const loading = ref(false)
 const error = ref('')
+/** Compare mode: the picks so far (declared before the watchers that reset them). */
+const picking = ref(false)
+const picked = ref<string[]>([])
 
 async function load() {
   loading.value = true
@@ -83,8 +86,6 @@ async function setPin(im: ProgressImage, on: boolean) {
 // ── Viewer and compare ──
 const viewing = ref<number | null>(null)
 const viewerImages = computed(() => images.value.map((im) => ({ key: im.key, path: im.path ?? undefined, name: im.name })))
-const picking = ref(false)
-const picked = ref<string[]>([])
 const pair = computed(() => beforeAfter(images.value, picked.value))
 const comparing = ref(false)
 function onTile(im: ProgressImage) {
@@ -132,7 +133,7 @@ function toggleCompare() {
         <div class="qp-prog-grid">
           <div v-for="im in layout.pinned" :key="`pin-${im.key}`" class="qp-prog-tile" :class="{ gone: im.gone, picked: picked.includes(im.key) }">
             <button class="qp-prog-img" :title="im.name" :disabled="im.gone && !picking" @click="onTile(im)">
-              <img v-if="thumbs[im.key]" :src="thumbs[im.key]!" alt="" />
+              <img v-if="!im.gone && thumbs[im.key]" :src="thumbs[im.key]!" alt="" />
               <span v-else-if="im.gone" class="qp-prog-gone">Gone</span>
               <span v-else class="qp-prog-wait" />
               <span v-if="pickRole(im)" class="qp-prog-badge">{{ pickRole(im) }}</span>
@@ -150,7 +151,7 @@ function toggleCompare() {
         <div class="qp-prog-grid">
           <div v-for="im in t.images" :key="im.key" class="qp-prog-tile" :class="{ gone: im.gone, picked: picked.includes(im.key) }" :data-progress="im.key">
             <button class="qp-prog-img" :title="im.name" :disabled="im.gone && !picking" @click="onTile(im)">
-              <img v-if="thumbs[im.key]" :src="thumbs[im.key]!" alt="" />
+              <img v-if="!im.gone && thumbs[im.key]" :src="thumbs[im.key]!" alt="" />
               <span v-else-if="im.gone" class="qp-prog-gone">Gone</span>
               <span v-else-if="im.key in thumbs" class="qp-prog-gone">Not shown</span>
               <span v-else class="qp-prog-wait" />
