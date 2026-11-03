@@ -3263,3 +3263,18 @@ button.
   "All to chat" put three image chips into the connected chat's composer; Haiku
   used moodboard_list, moodboard_read and Read and described the first image
   correctly.
+
+### Fix — agents always use the PC's own login (card 5232de41)
+
+The user saw a Codex chat fail with 401 at api.openai.com ("NO API … my login
+from my pc"). Cause: the dev app was started from an Orca terminal, which sets
+`CODEX_HOME` to an Orca account folder without a login; Codex inherited it and
+fell back to the API without a key. Now the default account gets
+`CODEX_HOME` / `CLAUDE_CONFIG_DIR` as Windows has them (user, then machine
+environment; `qs_core::system_path::system_var`): a differing inherited value
+is replaced or removed (`settings::home_fix`). A value in QuantPilot's settings
+or an account still wins. It applies to chat threads, the sign-in probe,
+review guides, helper runs (`providers::base_cmd`: commit messages, titles)
+and the agent's terminal UI, which now also gets the thread's account; PTYs
+honour `-NAME` (qs-pty). QA: the QA app started with Orca's empty
+`CODEX_HOME` showed Codex "Logged in using ChatGPT" and a Codex thread answered.
