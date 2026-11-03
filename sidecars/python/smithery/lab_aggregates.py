@@ -139,7 +139,8 @@ def run(path, doc):
         save(path / "plan.json", plan)
         evaluate = (lambda trials: worlds.evaluate(trials, cut)) if robust else evaluator.evaluate
         search = Search(evaluate, usable, {k: bases[k] for k in [*usable, *reference]}, seed=seed, budget=budget, progress=progress)
-        search.run("Control: the reference", [reference])
+        # A gated pool may not hold the reference's members: it is scored as a control only.
+        search.run("Control: the reference", [reference], control=gated)
         if seeds:
             search.run("Your saved aggregates", [m for m, _ in seeds])
             search.run("Neighbours of your saved aggregates",

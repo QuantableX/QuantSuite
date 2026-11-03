@@ -41,6 +41,16 @@ class SearchTests(unittest.TestCase):
             self.assertEqual(trial, tuple(sorted(trial)))
         self.assertEqual(sum(st["tested"] for st in s.stages if st["stage"] != "Single indicators"), s.aggregates)
 
+    def test_a_control_is_scored_but_never_built_on(self):
+        # A gated search's reference holds members outside the pool ('z' is not certified).
+        s = Search(fake_evaluate, self.keys, {**self.bases, "z_opt": "z"}, seed=1, budget=10_000)
+        s.run("Control: the reference", [("a_opt", "b_opt", "z_opt")], control=True)
+        self.assertIn(("a_opt", "b_opt", "z_opt"), s.seen)
+        s.stage_exhaustive_or_sample("Pairs", 2, 1.0)
+        s.stage_until_stable("Local search until stable, round", 5)
+        self.assertNotIn(("a_opt", "b_opt", "z_opt"), [t for t, _ in s.leaders(1000)])
+        self.assertFalse([t for t in s.seen if "z_opt" in t and t not in s.controls])
+
     def test_small_spaces_are_exhaustive_and_runs_reproduce(self):
         s = self.search(10_000)
         s.stage_exhaustive_or_sample("Pairs", 2, 0.35)
@@ -230,6 +240,24 @@ def aggregates():
             'restarts': results['restarts'], 'verified': results['coverage']['verified'], 'passed': results['coverage']['verified_passed'],
             'rows_have_singles': any(r['size'] == 1 for r in results['rows']), 'page': 'The ten most profitable aggregates' in page,
             'remote': bool(__import__('re').search(r"(?i)(?:src|href)\s*=\s*[\"']?(?:https?:)?//", page))}
+def robust():
+    from smithery.lab_aggregates import run as compare
+    # A gated robust search. k_slow, a member of the reference (k_mid + k_slow), is not certified:
+    # the reference is scored as a control only, and nothing found builds on k_slow.
+    doc = lab.create({'kind': 'aggregates', 'title': 'Robust', 'config': systems['rotation'], 'top': 3, 'budget': 40,
+                      'seed': 3, 'gauntlet_top': 1, 'system_name': 'Fixture rotation'})
+    path = lab.folder(doc['id'])
+    doc = {**lab.read(path / 'run.json'), 'pool_certified': {'track': '1d', 'evaluation': 'fixture', 'candidates': 4,
+                                                             'keys': ['k_fast', 'k_mid', 'k_mid2']}}
+    lab.save(path / 'run.json', doc)
+    compare(path, doc)
+    results = lab.read(path / 'results.json')
+    rob = results['robust']
+    return {'gated': rob['pool_gated'], 'pool': rob['pool'], 'worlds': rob['worlds'],
+            'leaders': [l['members'] for l in rob['walk_forward']['leaders']],
+            'finalists': [(f['members'], f['verdict']['status']) for f in rob['finalists']],
+            'rows': [r['members'] for r in results['rows']], 'reference': results['reference'],
+            'verdict': lab.read(path / 'verdict.json')['status']}
 def saved():
     # The requested end lies after the saved data: the comparison ends on the last saved day,
     # nothing is downloaded, and the saved candles are read, never rewritten.
@@ -253,6 +281,9 @@ if __name__ == '__main__':
     save_market()
     if sys.argv[1:] == ['aggregates']:
         print(json.dumps(aggregates(), default=str))
+        sys.exit(0)
+    if sys.argv[1:] == ['robust']:
+        print(json.dumps(robust(), default=str))
         sys.exit(0)
     if sys.argv[1:] == ['saved']:
         print(json.dumps(saved(), default=str))
@@ -314,6 +345,18 @@ class ProfitRunTests(unittest.TestCase):
                 self.assertEqual(r["end"], "2021-06-30")
         # Four fixtures, all usable: 4 singles and every one of the 11 aggregates within the budget.
         self.assertEqual(report["rotation"]["coverage"]["by_size"], {"1": 4, "2": 6, "3": 4, "4": 1})
+
+    def test_a_gated_robust_search_runs_end_to_end_without_building_on_uncertified_members(self):
+        r = self.run_script("robust")
+        self.assertTrue(r["gated"])
+        self.assertEqual(r["pool"], 3)
+        self.assertEqual(r["reference"], ["k_mid", "k_slow"])
+        self.assertIn("one day later", r["worlds"])
+        self.assertTrue(r["leaders"])
+        for members in [*r["leaders"], *(m for m, _ in r["finalists"])]:
+            self.assertNotIn("k_slow", members)
+        self.assertLessEqual(len(r["finalists"]), 1)  # only leaders that beat random on the blind window
+        self.assertIn(r["verdict"], ("robust", "not robust"))
 
     def test_runs_read_only_the_saved_price_data(self):
         r = self.run_script("saved")
