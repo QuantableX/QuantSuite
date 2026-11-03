@@ -24,13 +24,14 @@ Default permissions for the canvas module.
 - `allow-workspace-storage-dir`
 - `allow-load-canvas-state`
 - `allow-save-canvas-state`
-- `allow-navigate-browser`
-- `allow-eval-browser`
-- `allow-get-browser-url`
+- `allow-browser-tab-open`
+- `allow-browser-tab-place`
+- `allow-browser-tab-close`
+- `allow-browser-tab-navigate`
+- `allow-browser-tab-action`
+- `allow-browser-tab-capture`
 - `allow-set-browser-clip-region`
 - `allow-find-in-browser`
-- `allow-browser-request-new-tab`
-- `allow-browser-disable-fullscreen`
 - `allow-load-browser-data`
 - `allow-save-browser-data`
 
@@ -46,25 +47,12 @@ Default permissions for the canvas module.
 <tr>
 <td>
 
-`canvas:allow-browser-disable-fullscreen`
+`canvas:allow-browser-tab-action`
 
 </td>
 <td>
 
-Enables the browser_disable_fullscreen command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`canvas:deny-browser-disable-fullscreen`
-
-</td>
-<td>
-
-Denies the browser_disable_fullscreen command without any pre-configured scope.
+Enables the browser_tab_action command without any pre-configured scope.
 
 </td>
 </tr>
@@ -72,12 +60,12 @@ Denies the browser_disable_fullscreen command without any pre-configured scope.
 <tr>
 <td>
 
-`canvas:allow-browser-request-new-tab`
+`canvas:deny-browser-tab-action`
 
 </td>
 <td>
 
-Enables the browser_request_new_tab command without any pre-configured scope.
+Denies the browser_tab_action command without any pre-configured scope.
 
 </td>
 </tr>
@@ -85,12 +73,129 @@ Enables the browser_request_new_tab command without any pre-configured scope.
 <tr>
 <td>
 
-`canvas:deny-browser-request-new-tab`
+`canvas:allow-browser-tab-capture`
 
 </td>
 <td>
 
-Denies the browser_request_new_tab command without any pre-configured scope.
+Enables the browser_tab_capture command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-browser-tab-capture`
+
+</td>
+<td>
+
+Denies the browser_tab_capture command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-browser-tab-close`
+
+</td>
+<td>
+
+Enables the browser_tab_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-browser-tab-close`
+
+</td>
+<td>
+
+Denies the browser_tab_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-browser-tab-navigate`
+
+</td>
+<td>
+
+Enables the browser_tab_navigate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-browser-tab-navigate`
+
+</td>
+<td>
+
+Denies the browser_tab_navigate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-browser-tab-open`
+
+</td>
+<td>
+
+Enables the browser_tab_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-browser-tab-open`
+
+</td>
+<td>
+
+Denies the browser_tab_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:allow-browser-tab-place`
+
+</td>
+<td>
+
+Enables the browser_tab_place command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`canvas:deny-browser-tab-place`
+
+</td>
+<td>
+
+Denies the browser_tab_place command without any pre-configured scope.
 
 </td>
 </tr>
@@ -150,32 +255,6 @@ Denies the delete_file command without any pre-configured scope.
 <tr>
 <td>
 
-`canvas:allow-eval-browser`
-
-</td>
-<td>
-
-Enables the eval_browser command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`canvas:deny-eval-browser`
-
-</td>
-<td>
-
-Denies the eval_browser command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `canvas:allow-find-in-browser`
 
 </td>
@@ -195,32 +274,6 @@ Enables the find_in_browser command without any pre-configured scope.
 <td>
 
 Denies the find_in_browser command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`canvas:allow-get-browser-url`
-
-</td>
-<td>
-
-Enables the get_browser_url command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`canvas:deny-get-browser-url`
-
-</td>
-<td>
-
-Denies the get_browser_url command without any pre-configured scope.
 
 </td>
 </tr>
@@ -429,32 +482,6 @@ Enables the load_canvas_state command without any pre-configured scope.
 <td>
 
 Denies the load_canvas_state command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`canvas:allow-navigate-browser`
-
-</td>
-<td>
-
-Enables the navigate_browser command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`canvas:deny-navigate-browser`
-
-</td>
-<td>
-
-Denies the navigate_browser command without any pre-configured scope.
 
 </td>
 </tr>

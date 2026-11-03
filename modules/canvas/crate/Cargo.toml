@@ -35,6 +35,8 @@ qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
+# The browser's page pictures (CapturePreview into a memory stream).
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage"] }
 
 [lints.rust]
 warnings = "deny"

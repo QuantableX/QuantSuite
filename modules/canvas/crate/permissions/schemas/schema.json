@@ -295,28 +295,76 @@
       "type": "string",
       "oneOf": [
         {
-          "description": "Enables the browser_disable_fullscreen command without any pre-configured scope.",
+          "description": "Enables the browser_tab_action command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-browser-disable-fullscreen",
-          "markdownDescription": "Enables the browser_disable_fullscreen command without any pre-configured scope."
+          "const": "allow-browser-tab-action",
+          "markdownDescription": "Enables the browser_tab_action command without any pre-configured scope."
         },
         {
-          "description": "Denies the browser_disable_fullscreen command without any pre-configured scope.",
+          "description": "Denies the browser_tab_action command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-browser-disable-fullscreen",
-          "markdownDescription": "Denies the browser_disable_fullscreen command without any pre-configured scope."
+          "const": "deny-browser-tab-action",
+          "markdownDescription": "Denies the browser_tab_action command without any pre-configured scope."
         },
         {
-          "description": "Enables the browser_request_new_tab command without any pre-configured scope.",
+          "description": "Enables the browser_tab_capture command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-browser-request-new-tab",
-          "markdownDescription": "Enables the browser_request_new_tab command without any pre-configured scope."
+          "const": "allow-browser-tab-capture",
+          "markdownDescription": "Enables the browser_tab_capture command without any pre-configured scope."
         },
         {
-          "description": "Denies the browser_request_new_tab command without any pre-configured scope.",
+          "description": "Denies the browser_tab_capture command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-browser-request-new-tab",
-          "markdownDescription": "Denies the browser_request_new_tab command without any pre-configured scope."
+          "const": "deny-browser-tab-capture",
+          "markdownDescription": "Denies the browser_tab_capture command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the browser_tab_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-browser-tab-close",
+          "markdownDescription": "Enables the browser_tab_close command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the browser_tab_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-browser-tab-close",
+          "markdownDescription": "Denies the browser_tab_close command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the browser_tab_navigate command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-browser-tab-navigate",
+          "markdownDescription": "Enables the browser_tab_navigate command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the browser_tab_navigate command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-browser-tab-navigate",
+          "markdownDescription": "Denies the browser_tab_navigate command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the browser_tab_open command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-browser-tab-open",
+          "markdownDescription": "Enables the browser_tab_open command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the browser_tab_open command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-browser-tab-open",
+          "markdownDescription": "Denies the browser_tab_open command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the browser_tab_place command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-browser-tab-place",
+          "markdownDescription": "Enables the browser_tab_place command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the browser_tab_place command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-browser-tab-place",
+          "markdownDescription": "Denies the browser_tab_place command without any pre-configured scope."
         },
         {
           "description": "Enables the create_file command without any pre-configured scope.",
@@ -343,18 +391,6 @@
           "markdownDescription": "Denies the delete_file command without any pre-configured scope."
         },
         {
-          "description": "Enables the eval_browser command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-eval-browser",
-          "markdownDescription": "Enables the eval_browser command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the eval_browser command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-eval-browser",
-          "markdownDescription": "Denies the eval_browser command without any pre-configured scope."
-        },
-        {
           "description": "Enables the find_in_browser command without any pre-configured scope.",
           "type": "string",
           "const": "allow-find-in-browser",
@@ -365,18 +401,6 @@
           "type": "string",
           "const": "deny-find-in-browser",
           "markdownDescription": "Denies the find_in_browser command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the get_browser_url command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-get-browser-url",
-          "markdownDescription": "Enables the get_browser_url command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the get_browser_url command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-get-browser-url",
-          "markdownDescription": "Denies the get_browser_url command without any pre-configured scope."
         },
         {
           "description": "Enables the git_branch_list command without any pre-configured scope.",
@@ -473,18 +497,6 @@
           "type": "string",
           "const": "deny-load-canvas-state",
           "markdownDescription": "Denies the load_canvas_state command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the navigate_browser command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-navigate-browser",
-          "markdownDescription": "Enables the navigate_browser command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the navigate_browser command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-navigate-browser",
-          "markdownDescription": "Denies the navigate_browser command without any pre-configured scope."
         },
         {
           "description": "Enables the read_dir_tree command without any pre-configured scope.",
@@ -643,10 +655,10 @@
           "markdownDescription": "Denies the write_file command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-navigate-browser`\n- `allow-eval-browser`\n- `allow-get-browser-url`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-browser-request-new-tab`\n- `allow-browser-disable-fullscreen`\n- `allow-load-browser-data`\n- `allow-save-browser-data`",
+          "description": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-navigate-browser`\n- `allow-eval-browser`\n- `allow-get-browser-url`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-browser-request-new-tab`\n- `allow-browser-disable-fullscreen`\n- `allow-load-browser-data`\n- `allow-save-browser-data`"
+          "markdownDescription": "Default permissions for the canvas module.\n#### This default permission set includes:\n\n- `allow-read-dir-tree`\n- `allow-read-file`\n- `allow-write-file`\n- `allow-create-file`\n- `allow-delete-file`\n- `allow-rename-file`\n- `allow-search-files`\n- `allow-read-file-binary`\n- `allow-git-status`\n- `allow-git-diff`\n- `allow-git-stage`\n- `allow-git-branch-list`\n- `allow-git-log`\n- `allow-git-commit-files`\n- `allow-timeline-snapshot`\n- `allow-timeline-list`\n- `allow-timeline-read`\n- `allow-workspace-storage-dir`\n- `allow-load-canvas-state`\n- `allow-save-canvas-state`\n- `allow-browser-tab-open`\n- `allow-browser-tab-place`\n- `allow-browser-tab-close`\n- `allow-browser-tab-navigate`\n- `allow-browser-tab-action`\n- `allow-browser-tab-capture`\n- `allow-set-browser-clip-region`\n- `allow-find-in-browser`\n- `allow-load-browser-data`\n- `allow-save-browser-data`"
         }
       ]
     }
