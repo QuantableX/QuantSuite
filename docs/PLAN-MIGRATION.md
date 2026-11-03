@@ -6,7 +6,7 @@ Status: plan, 2026-11-03. Nothing here is built yet. Cards "QuantSuite Migration
 
 - **Export:** one button packs everything into one encrypted file (a `.qsbundle`). **Import:** on the new machine one button unpacks it and checks every piece.
 - **Included:** all databases and settings — bots, trades, strategies, systems and Ranks, scripts, notes, finance, plans, habits, kanban boards, memories, QuantPilot threads, each workspace's private data — and the API and wallet keys, locked with a passphrase you choose.
-- **Not included by default:** logs, the project folders themselves (they are git repositories), browser logins and the logins of the Claude/Codex command-line tools. The import report lists every one with what to do.
+- **Not included by default:** the agents' scratch files (`artifacts/`, over 250 GB on this PC), logs, the project folders themselves (they are git repositories), browser logins and the logins of the Claude/Codex command-line tools. The import report lists every one with what to do.
 - **No double trading:** everything arrives switched off on the new machine; you arm trading there yourself. The old PC stops trading after the move. Nothing is ever deleted on the old PC.
 - **Later, with the server:** "Move to server" sends the bundle straight over the paired connection, and this PC becomes a client.
 - **Two problems to fix first:** today's exchange keys can only be decrypted on this PC under this username and folder, and several files store absolute paths like `C:\Projects\…`. Card 1 makes both portable.
@@ -15,6 +15,8 @@ Status: plan, 2026-11-03. Nothing here is built yet. Cards "QuantSuite Migration
 
 Data root: `~/.quantsuite` (release) — `qs_core::paths` is the single source of its paths.
 
+Measured 2026-11-03: the data root holds over 200 GB, and almost all of it is `workspaces/*/artifacts/` (LCES tournament runs 97 GB, a Rust build cache 63 GB, game QA runs, venvs, release builds). Everything else is about 11 GB, of which 5.6 GB is per-machine (Python environments, Whisper and embedding models). A bundle with the defaults below is about 5.5 GB before compression; `modules/script/research/` (3.9 GB) is the largest part.
+
 | What | Where | Class |
 |---|---|---|
 | Suite database: entities, settings, workspace registry, event log | `core.db` (+ `-wal`, `-shm`) | Must |
@@ -22,14 +24,15 @@ Data root: `~/.quantsuite` (release) — `qs_core::paths` is the single source o
 | QuantSystems: systems, Ranks, research | `modules/systems/` (`config.json`, `research/`) | Must |
 | QuantSystems candle and ranking cache | `modules/systems/cache/` | Optional, on by default (rebuilding takes hours and hits rate limits) |
 | Shared candle archive | `market-data/candles.sqlite` (created on first use) | Optional, on by default |
-| QuantScript | `modules/script/` (`script.db`, `collection/`, `research/`) | Must |
+| QuantScript | `modules/script/` (`script.db`, `collection/`, `research/`, 3.9 GB) | Must |
 | Notes | `modules/notes/` (`notes.db`, `quantzen.db`, `assets/`, `config.json`, `workspaces.json`) | Must; `backups/`, `exports/` optional |
-| Finance, Plan, Habit, Terminal, HUD, console, control | `modules/<id>/` | Must |
+| Finance, Plan, Habit, Terminal, console, control | `modules/<id>/` | Must |
+| HUD and dictation settings | `modules/hud/` (`config.json`) | Must; `pyenv/` per machine (2.2 GB); `models/` off by default (Whisper models, 2.1 GB, downloaded again on first use) |
 | QuantPilot threads and settings | `modules/pilot/` (`pilot.db`, `sessions/`, `settings.json`) | Must |
 | QuantMCP: kanban boards, agent runs, server list | `modules/mcp/` (`kanban.db`, `agent-runs.db`, `mcps.json`) | Must; `indexes/` optional (rebuildable); `*.legacy*`, `*.bak` never |
-| Memory vaults | `modules/memory/` (`memory.db`, `vault/`, `workspaces/`) | Must; `engine/` per machine |
+| Memory vaults | `modules/memory/` (`memory.db`, `vault/`, `workspaces/`) | Must; `engine/` per machine (1.3 GB) |
 | QuantCanvas | `modules/canvas/` (`workspaces.json`, `browser-data.json`) | Must; `bin/` per machine |
-| Per-workspace private data | `workspaces/<id>/` | Must; `artifacts/` optional (can be large) |
+| Per-workspace private data | `workspaces/<id>/` | Must (small); `artifacts/` optional, off by default — over 250 GB here, nearly all re-creatable agent scratch; ticked per workspace or per subfolder. Worth ticking: the small folders that hold kept tools and revert points (`indicator-versions/`, `aggregate-playbook/`, `qa-native/`, `quantmcp-http-client/`, under 600 MB together) |
 | Logs | `logs/` | Optional, off by default |
 | Secrets | the vault ([PLAN-AUTO-EXECUTION.md](PLAN-AUTO-EXECUTION.md) §2.1) | Must, re-encrypted |
 | Release signing key | `signing/quantsuite.key` | Never by default; opt-in only if releases are built on the new machine |
@@ -62,7 +65,7 @@ Outside the data root:
 - One file, `<machine>-<date>.qsbundle`: tar + zstd, encrypted as a whole (AEAD in streaming chunks, key from the passphrase with Argon2id). It holds finances, notes and keys, so nothing in it is readable without the passphrase.
 - Inside: `manifest.json` (suite version, schema version per database, source machine and data root, creation time; per file: root, relative path, size, SHA-256, class), the data by root (`quantsuite/`, `quantmcp/`, `external/<name>/`), the secrets re-encrypted under the bundle key, and the list of what was left out and why.
 - Databases are copied with SQLite's backup API — a consistent snapshot while the app runs.
-- Before export: the size of each optional part, to tick or untick.
+- Before export: the size of each optional part, to tick or untick. The defaults follow the Class column, so `artifacts/`, logs and the Whisper models start unticked; the wizard shows the total before it starts.
 - The export refuses while live bots or live Manual execution are armed and offers to disarm them (disarming never sells).
 - **The passphrase cannot be recovered.** Lost passphrase = unreadable bundle. The wizard says so and asks for it twice.
 
@@ -116,6 +119,7 @@ Once pairing exists (Server 3/7) and client mode works (Server 5/7): Settings �
 |---|---|---|
 | Encryption | The whole bundle, passphrase + Argon2id | It holds money data and keys |
 | Market caches | Included, can be unticked | Rebuilding takes hours and hits rate limits |
+| Workspace `artifacts/` | Not included, can be ticked per workspace or subfolder | Over 250 GB here (2026-11-03), nearly all agent scratch that can be re-created |
 | Project folders | Not included, opt-in per workspace | They are git repositories |
 | Signing key | Not included unless ticked | Only needed where releases are built |
 | Older target version | Refused | Old code cannot read newer schemas |
