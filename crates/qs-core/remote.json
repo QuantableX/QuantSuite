@@ -1,0 +1,61 @@
+{
+  "$comment": "The remote manifest of the core plugin (qs), the app's own commands and the shared Tauri plugins (PLAN-SERVER-CLIENT \u00a76.2). Checked by scripts/remote-inventory.mjs and validate-modules.",
+  "remote": {
+    "commands": {
+      "get_settings": "client:read",
+      "get_setting": "client:read",
+      "set_setting": "client:write",
+      "emit_event": "client:write",
+      "recent_events": "client:read",
+      "upsert_entity": "client:write",
+      "delete_entity": "client:write",
+      "list_entities": "client:read",
+      "count_entities": "client:read",
+      "search_entities": "client:read",
+      "link_entities": "client:write",
+      "unlink_entities": "client:write",
+      "linked_entities": "client:read",
+      "process_list": "client:read",
+      "set_circular_window": "client:write",
+      "window_new": "client:write",
+      "window_show": "client:write",
+      "window_hide": "client:write",
+      "window_toggle": "client:write",
+      "quit": "client:write",
+      "autostart_enabled": "client:read",
+      "set_autostart": "client:write",
+      "app_version": "client:read",
+      "suite_paths": "client:read",
+      "agent_tools": "client:read",
+      "agent_tool_decision": "client:write",
+      "agent_pending_calls": "client:read",
+      "agent_call_claim": "client:write",
+      "agent_call_complete": "client:write",
+      "vault_status": "client:read",
+      "vault_unlock": "client:write",
+      "bundle_plan": "server:compute",
+      "bundle_export": "server:write",
+      "bundle_export_cancel": "server:write",
+      "import_propose": "client:compute",
+      "import_bundle": "client:write",
+      "import_status": "client:read"
+    }
+  },
+  "app": {
+    "suite_check_for_update": "client:read",
+    "suite_install_update": "client:external"
+  },
+  "plugins": {
+    "core:window": "client:write",
+    "core:webview": "client:write",
+    "core:event": "client:write",
+    "core:app": "client:read",
+    "dialog": "client:read",
+    "fs": "client:write",
+    "shell": "client:external",
+    "clipboard-manager": "client:write",
+    "global-shortcut": "client:write",
+    "autostart": "client:write",
+    "updater": "client:external"
+  }
+}

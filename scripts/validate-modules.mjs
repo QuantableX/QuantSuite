@@ -10,6 +10,7 @@
 import { readdirSync, readFileSync, writeFileSync, statSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { inventory as remoteInventory } from './remote-inventory.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const MODULES_DIR = join(ROOT, 'modules')
@@ -179,6 +180,23 @@ for (const m of modules) {
   const key = `${m.app}:${m.appOrder}`
   if (seenPerApp.has(key)) fail(m.id, `appOrder ${m.appOrder} in app "${m.app}" already used by "${seenPerApp.get(key)}"`)
   else seenPerApp.set(key, m.id)
+}
+
+// The remote manifest (PLAN-SERVER-CLIENT §6.2, card Server 1/7): every
+// command a plugin registers says where it runs when a client is connected
+// to a server — `server`, `client` or `deny` — and its side-effect class. A
+// command without an entry fails here, so a new one cannot slip through;
+// the gateway (card 4) denies whatever is not listed.
+{
+  const { problems } = remoteInventory()
+  for (const p of problems) errors.push(`remote: ${p}`)
+  const core = JSON.parse(readFileSync(join(ROOT, 'crates/qs-core/remote.json'), 'utf8'))
+  const lib = readFileSync(join(ROOT, 'apps/src-tauri/src/lib.rs'), 'utf8')
+  const handler = lib.match(/generate_handler!\[([\s\S]*?)\]/)
+  const appCommands = handler ? [...handler[1].matchAll(/([a-z0-9_]+)\s*,?\s*$/gm)].map((x) => x[1]) : []
+  for (const c of appCommands) {
+    if (!core.app?.[c]) errors.push(`remote: app command ${c} has no entry in crates/qs-core/remote.json → app`)
+  }
 }
 
 for (const w of warnings) console.warn(`  warn  ${w}`)

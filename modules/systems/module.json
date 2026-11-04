@@ -55,5 +55,28 @@
       "sideEffects": "compute"
     }
   ],
-  "migrateFrom": "~/.quantsystems"
+  "migrateFrom": "~/.quantsystems",
+  "remote": {
+    "events": ["engine:status","eval:progress","backtest:complete","cache:updated"],
+    "commands": {
+      "get_app_settings": "server:read",
+      "update_app_settings": "server:write",
+      "list_systems": "server:read",
+      "create_system": "server:write",
+      "delete_system": "server:write",
+      "get_system_config": "server:read",
+      "save_system_config": "server:write",
+      "start_engine": "server:write",
+      "stop_engine": "server:write",
+      "engine_status": "server:read",
+      "live_eval": "server:compute",
+      "pair_markets": "server:read",
+      "run_backtest": "server:compute",
+      "browse_universe": "server:read",
+      "cache_stats": "server:read",
+      "clear_cache": "server:write",
+      "ranking_archive": "server:write",
+      "screenshot_to_clipboard": "client:write"
+    }
+  }
 }

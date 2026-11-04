@@ -1,6 +1,6 @@
 # QuantSuite server and client — one QuantSuite, used from every PC
 
-Status: plan, 2026-11-03. Nothing here is built yet. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
+Status: plan, 2026-11-03; card 1 (spike) done 2026-11-04, see §6.3 and §6.3.1–6.3.4. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
 
 ## In short
 
@@ -118,6 +118,83 @@ Every `module.json` gets a `remote` section: per command `server`, `client` or `
 
 The spike measures latency and memory of A and B and records the decision here. Going in: B if it works without patching Tauri, otherwise A. C only if a Linux or Docker server becomes a goal.
 
+**Decision (card Server 1/7, 2026-11-04): B.** `crates/qs-core/tests/remote_dispatch_spike.rs` performs calls through `Webview::on_message` with the app's own invoke key (`AppHandle::invoke_key()`, public in Tauri 2.11.5) and a local origin URL, so the ACL resolves exactly as for the UI's own calls. No Tauri patch. Measured on Tauri's mock runtime (the IPC path itself, without WebView2), 2,000 calls each:
+
+| Call | Option B per call |
+|---|---|
+| read (a list from managed state) | 12 µs |
+| write (an insert into managed state) | 12 µs |
+| streaming (10 events to listeners, then the result) | 59 µs |
+
+- A wrong invoke key is dropped without an answer (the key never leaves the server). An unknown command answers with an error.
+- Plugin commands need the ACL to resolve. The server dispatches as its main window's webview, which carries the app's capabilities. A second, restricted capability for remote devices is a card 3 option, not a need.
+- Memory: B needs the server's main webview to exist (hidden in server mode). A needs the same webview plus a JS hop per call, so B costs no more.
+- A was not measured: it needs a live WebView2 window, and the app window is the user's. By design it adds two WebView2 IPC crossings and a JS event round trip on top of exactly the path measured above.
+- C, costed: a Tauri-free service layer for 652 commands means touching every command body and its state access (each plugin's `State<...>` and `AppHandle` use). Estimate: 4 to 6 weeks of refactoring across 15 crates. Only worth it for a Linux or Docker server.
+
+### 6.3.1 The remote manifest, built (card Server 1/7)
+
+Every `module.json` has a `remote` block, and the core plugin (`qs`), the app's own commands and the shared Tauri plugins have `crates/qs-core/remote.json`. Each command is `"name": "<server|client|deny>:<read|compute|write|external>"`. `scripts/validate-modules.mjs` (via `scripts/remote-inventory.mjs`) fails when a registered command (its plugin's `build.rs` list) has no entry, an entry is not of that form, or an entry names no command. `node scripts/remote-inventory.mjs --init` adds a first classification for new commands, which must be reviewed. `--table` prints:
+
+| Plugin | Commands | server | client | deny | read | compute | write | external |
+|---|---|---|---|---|---|---|---|---|
+| pilot | 186 | 0 | 186 | 0 | 73 | 6 | 55 | 52 |
+| algo | 81 | 80 | 0 | 1 | 43 | 10 | 21 | 7 |
+| mcp | 71 | 0 | 71 | 0 | 35 | 1 | 32 | 3 |
+| canvas | 47 | 0 | 47 | 0 | 23 | 1 | 15 | 8 |
+| hud | 47 | 0 | 47 | 0 | 23 | 1 | 18 | 5 |
+| memory | 38 | 0 | 38 | 0 | 22 | 1 | 15 | 0 |
+| core | 37 | 3 | 34 | 0 | 15 | 2 | 20 | 0 |
+| script | 29 | 28 | 0 | 1 | 12 | 3 | 10 | 4 |
+| notes | 26 | 26 | 0 | 0 | 8 | 0 | 18 | 0 |
+| finance | 20 | 20 | 0 | 0 | 7 | 0 | 13 | 0 |
+| plan | 20 | 20 | 0 | 0 | 8 | 0 | 12 | 0 |
+| systems | 18 | 17 | 1 | 0 | 7 | 2 | 9 | 0 |
+| console | 11 | 0 | 11 | 0 | 3 | 0 | 7 | 1 |
+| habit | 11 | 11 | 0 | 0 | 4 | 0 | 7 | 0 |
+| terminal | 10 | 10 | 0 | 0 | 10 | 0 | 0 | 0 |
+| **all** | **652** | 215 | 435 | 2 | 293 | 27 | 252 | 80 |
+
+- **server**: the trading and personal-data modules (§3), plus the bundle export (the data root is the server's).
+- **client**: QuantPilot, QuantCode/Canvas, console, QuantMCP, memory, HUD, the core's settings, entities, windows, autostart and agent broker, the app's update commands, and the shared Tauri plugins (dialog, fs, shell, clipboard, global shortcut, autostart, updater, window/webview/event/app). These act on the PC you sit at.
+- **deny**: `algo/wallet_export_key` (secrets never leave the server) and `script/open_scripts_folder` (the server's explorer). The remote file browser and downloads (card 4) replace dialogs and folders.
+- **external** on the server (server PIN, card 3): arming Manual execution, starting a live bot, closing positions, the kill switch, adding, changing or deleting an exchange key, the collection's GitHub token, and installing research or collection items.
+- The side-effect classes of client commands are informational: they run locally as today.
+
+### 6.3.2 Events a server-placed module emits (card Server 1/7)
+
+| Module | Tauri events (manifest `remote.events`) | Bus topics (`qs://event`) |
+|---|---|---|
+| QuantAlgo | `bot:log` (emitted to the window `main`), `bot:trade`, `bot:heartbeat`, `bot:paused`, `algo:kill-switch`, `algo:manual-run` | `algo.bot.started`, `algo.bot.stopped`, `algo.trade.executed`, `algo.backtest.completed` |
+| QuantSystems | `engine:status`, `eval:progress`, `backtest:complete`, `cache:updated` | `systems.engine.status`, `systems.backtest.completed`, `systems.signal.generated` |
+| QuantScript | none | `script.file.saved`, `script.file.created`, `script.file.deleted`, `script.collection.changed` |
+| QuantTerminal | none | `market.symbol.selected`, `market.data.refreshed` |
+| Finance, Notes, Plan, Habit | none | `finance.plan.changed`, `notes.note.created`, `notes.note.updated`, `plan.event.created`, `plan.event.updated`, `habit.habit.changed` |
+
+How they reach a client (card 4): the gateway listens with `listen_any` to every event in the manifests' `remote.events` and to the bus channel `qs://event`. An event emitted to a window label (`bot:log` to `main`) is still heard. Each event goes out as an `event` frame with a sequence number. The client re-emits it locally under the same name, so module code keeps its `listen` calls. Bus topics of client-placed modules stay local. A client module subscribing to a server topic (QuantPilot listening to `notes.note.updated`) gets it through the bridge.
+
+### 6.3.3 Data split (card Server 1/7)
+
+| `core.db` part | Server | Client | How the client sees both |
+|---|---|---|---|
+| `settings` | Keys of server modules and the shared data plane (`notes/sections`, `todos/sections`: the quick notes and to-dos of the drawer and the HUD are personal data) | Appearance, window layout, HUD placement, the open workspace, connection profiles | Routed by key prefix (card 5) |
+| `entities`, `links` | Entities of server modules (notes, events, finance items, habits, systems, bots) | Workspaces (`module: core, kind: workspace`) and the developer modules' entities | Entity commands route by their `module` argument. The command palette queries both and merges by score (card 5) |
+| `event_log` (bus history) | Its own | Its own | Server events forwarded by the gateway enter the client's log |
+| `secrets` / the vault | Exchange keys, wallets, API wallets (trading keys stay home) | The device key (card 3) | Never synced |
+| Workspace registry, kanban, code index, memory vaults | none | Per PC (phase 1) | Card 7 decides |
+
+### 6.3.4 Risks for cards 2 to 7 (card Server 1/7)
+
+1. **Hidden main webview.** B dispatches through the main window's webview. Server mode (card 2) must keep it alive while hidden, and a close request must hide it, not destroy it.
+2. **Commands that take a `Window` or `Webview` argument** act on the server's hidden window (e.g. positioning). They are placed client-side today; new ones must be too.
+3. **Paths in arguments and results.** Some server commands return or accept local paths (strategy files, backtest exports, the bundle). Card 4's files layer must translate them, or the client shows a server path it cannot open.
+4. **Streaming via `Channel`.** Commands that answer through a Tauri `Channel` (rather than events) need channel forwarding in the gateway. None of the server-placed commands uses one today; the validator could flag new ones.
+5. **Bus echo.** Frontends call `emit_event` themselves. With a bridge, a server topic re-emitted on the client must not be sent back (loop guard by origin id).
+6. **Mixed modules.** QuantAlgo has secrets (`wallet_export_key`, denied) next to ordinary commands. New commands default to the module's placement: a reviewer must check what `--init` guessed.
+7. **Settings by prefix** needs one table of prefixes kept in sync with the modules; a wrong prefix silently writes to the wrong machine.
+8. **One trader.** A client still has the trading plugins compiled. Card 2's guard must stop executors on a connected client, not only hide the UI.
+9. **Version skew.** The manifest is part of the protocol. A client and server with different manifests must refuse to connect (card 4's `hello` carries a manifest hash).
+
 ### 6.4 Gateway protocol
 
 WebSocket over TLS. Frames: `hello` (protocol version, device), `call` {id, cmd, args, idempotencyKey}, `result` {id, ok | error}, `event` {seq, topic, payload}, `resume` {lastSeq}, `cancel` {id}, binary chunks for files. Limits: frame size, timeouts per side-effect class, a rate limit per device.
@@ -159,6 +236,7 @@ Phase 1: Windows — the same build, WebView2 is there, the Python sidecars are 
 |---|---|---|
 | Internet path | Tailscale; Headscale as the self-hosted alternative | No open port, end-to-end encryption, free for personal use |
 | Server OS | Windows | Same build and sidecars; Linux needs the service-layer refactor |
+| Dispatch on the server | B: `Webview::on_message` with the app's invoke key (card 1, 12 µs per call on the mock runtime) | No Tauri patch, no JS hop; A needs the same hidden webview plus two WebView2 crossings |
 | Phase-1 modules on the server | Trading + personal data | The reason for a server is 24/7 trading and one truth for your data |
 | Developer modules | Local per PC in phase 1 | They work on the PC's own folders and agent CLIs |
 | Auth | Paired device keys + mutual TLS + server PIN for external actions | Passwords alone are guessable; a key on a revocable device is not |

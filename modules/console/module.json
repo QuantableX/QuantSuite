@@ -40,5 +40,20 @@
         }
       }
     }
-  ]
+  ],
+  "remote": {
+    "commands": {
+      "open_session": "client:write",
+      "write_session": "client:write",
+      "resize_session": "client:write",
+      "close_session": "client:write",
+      "detach_session": "client:write",
+      "attach_session": "client:write",
+      "session_alive": "client:read",
+      "list_sessions": "client:read",
+      "list_shells": "client:read",
+      "save_pasted_image": "client:write",
+      "run_command": "client:external"
+    }
+  }
 }

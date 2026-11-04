@@ -40,5 +40,29 @@
       "description": "Add a recurring line to the plan. Plans money; it never moves any.",
       "sideEffects": "write"
     }
-  ]
+  ],
+  "remote": {
+    "commands": {
+      "list_items": "server:read",
+      "get_item": "server:read",
+      "create_item": "server:write",
+      "update_item": "server:write",
+      "delete_item": "server:write",
+      "summary": "server:read",
+      "sankey": "server:read",
+      "goals": "server:read",
+      "create_target": "server:write",
+      "update_target": "server:write",
+      "delete_target": "server:write",
+      "get_app_settings": "server:read",
+      "update_app_settings": "server:write",
+      "backup_database": "server:write",
+      "funds_overview": "server:read",
+      "save_fund_account": "server:write",
+      "add_fund_entry": "server:write",
+      "delete_fund_record": "server:write",
+      "save_fund_plan": "server:write",
+      "book_fund_plan": "server:write"
+    }
+  }
 }
