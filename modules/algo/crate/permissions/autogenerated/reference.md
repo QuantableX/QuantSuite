@@ -76,6 +76,8 @@ Default permissions for the algo module.
 - `allow-venue-cost-preview`
 - `allow-venue-exposure`
 - `allow-venue-wallet-status`
+- `allow-wallet-export-key`
+- `allow-solana-wallet-status`
 - `allow-trading-kill-switch`
 - `allow-trading-kill-switch-status`
 - `allow-trading-confirm-move`
@@ -1551,6 +1553,32 @@ Denies the smithery_source command without any pre-configured scope.
 <tr>
 <td>
 
+`algo:allow-solana-wallet-status`
+
+</td>
+<td>
+
+Enables the solana_wallet_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-solana-wallet-status`
+
+</td>
+<td>
+
+Denies the solana_wallet_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `algo:allow-start-bot`
 
 </td>
@@ -2116,6 +2144,32 @@ Enables the venue_wallet_status command without any pre-configured scope.
 <td>
 
 Denies the venue_wallet_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-wallet-export-key`
+
+</td>
+<td>
+
+Enables the wallet_export_key command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-wallet-export-key`
+
+</td>
+<td>
+
+Denies the wallet_export_key command without any pre-configured scope.
 
 </td>
 </tr>

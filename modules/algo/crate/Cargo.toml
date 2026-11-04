@@ -38,6 +38,8 @@ zeroize = "1"
 # has had no release since May 2025 and builds on the deprecated ethers-rs.
 k256 = { version = "0.14", features = ["ecdsa"] }
 sha3 = "0.12"
+# Solana addresses and keys (Jupiter, Venues 3/5); ed25519 itself comes from ring.
+bs58 = "0.5"
 
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
 # Manual execution (PLAN-AUTO-EXECUTION §2.3) reads a saved system's config and

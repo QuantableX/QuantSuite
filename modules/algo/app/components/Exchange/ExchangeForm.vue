@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { invoke } from '@tauri-apps/api/core'
 import type { Exchange, ExchangeConfig, ExchangeType, ExchangeProvider, ConnectionResult } from '#algo/types'
 
 const props = withDefaults(
@@ -32,6 +33,7 @@ const walletAddress = ref('')
 const privateKey = ref('')
 const rpcEndpoint = ref('')
 const subAccount = ref('')
+const maxValue = ref<number | null>(null)
 const sandbox = ref(false)
 
 const showApiKey = ref(false)
@@ -48,6 +50,41 @@ const providerOptions = computed(() =>
 const needsPassphrase = computed(() => provider.value === 'okx' || provider.value === 'kucoin')
 /** Hyperliquid: an API wallet that trades for your main address but cannot withdraw (PLAN-EXECUTION-VENUES §8). */
 const isHyperliquid = computed(() => exchangeType.value === 'dex' && provider.value === 'hyperliquid')
+/** Jupiter: a Solana wallet QuantSuite generates; never an imported key (§8). */
+const isJupiter = computed(() => exchangeType.value === 'dex' && provider.value === 'jupiter')
+
+/** The generated wallet's key, shown once after a confirmed export. */
+const exportStep = ref<'idle' | 'confirm' | 'shown'>('idle')
+const exportConfirm = ref('')
+const exportedKey = ref('')
+const exportError = ref<string | null>(null)
+const solanaAddress = ref('')
+
+async function loadWallet() {
+  solanaAddress.value = ''
+  if (!props.exchange || props.exchange.provider !== 'jupiter') return
+  try {
+    const w = await invoke<{ address: string }>('plugin:algo|solana_wallet_status', { exchange_id: props.exchange.id })
+    solanaAddress.value = w.address
+  } catch {
+    // The address is optional here; the list shows the error.
+  }
+}
+
+async function exportKey() {
+  if (!props.exchange) return
+  exportError.value = null
+  try {
+    const r = await invoke<{ address: string; secret: string }>('plugin:algo|wallet_export_key', {
+      exchange_id: props.exchange.id,
+      confirm: exportConfirm.value.trim(),
+    })
+    exportedKey.value = r.secret
+    exportStep.value = 'shown'
+  } catch (e) {
+    exportError.value = String(e)
+  }
+}
 /** Binance has a spot testnet, Bybit a demo-trading environment, Hyperliquid a testnet; the other venues have none. */
 const supportsSandbox = computed(
   () => (exchangeType.value === 'cex' && (provider.value === 'binance' || provider.value === 'bybit')) || isHyperliquid.value,
@@ -62,7 +99,7 @@ function capitalize(s: string): string {
 
 function providerLabel(p: ExchangeProvider): string {
   const name = capitalize(p)
-  return exchangeType.value === 'dex' && p !== 'hyperliquid' ? `${name} (stored credentials only)` : name
+  return exchangeType.value === 'dex' && p !== 'hyperliquid' && p !== 'jupiter' ? `${name} (stored credentials only)` : name
 }
 
 function resetForm() {
@@ -76,6 +113,11 @@ function resetForm() {
   privateKey.value = ''
   rpcEndpoint.value = ''
   subAccount.value = ''
+  maxValue.value = null
+  exportStep.value = 'idle'
+  exportConfirm.value = ''
+  exportedKey.value = ''
+  exportError.value = null
   sandbox.value = false
   showApiKey.value = false
   showApiSecret.value = false
@@ -88,6 +130,11 @@ function prefillForm() {
     exchangeType.value = props.exchange.exchange_type
     provider.value = props.exchange.provider
     sandbox.value = props.exchange.sandbox
+    exportStep.value = 'idle'
+    exportConfirm.value = ''
+    exportedKey.value = ''
+    exportError.value = null
+    loadWallet()
   } else {
     resetForm()
   }
@@ -145,6 +192,13 @@ function buildConfig(): ExchangeConfig {
       config.sandbox = sandbox.value
     } else if (rpcEndpoint.value) {
       config.rpc_endpoint = rpcEndpoint.value
+    }
+    if (isJupiter.value) {
+      // The wallet is generated server-side; only settings travel.
+      delete config.wallet_address
+      delete config.private_key
+      if (apiKey.value) config.api_key = apiKey.value.trim()
+      if (maxValue.value != null && maxValue.value > 0) config.max_value = maxValue.value
     }
   }
 
@@ -232,6 +286,14 @@ function handleTest() {
                 that in Hyperliquid's app.
               </p>
             </div>
+            <div v-else-if="isJupiter" class="form-hint hl-guide">
+              <p>
+                QuantSuite <strong>generates a new Solana wallet</strong> when you save and shows its address. Fund it with
+                the trading capital only: its key can do everything, so it never holds more than the cap below. There is
+                no import — never enter a seed phrase anywhere.
+              </p>
+              <p>Swaps go through Jupiter with a slippage and price-impact cap; a small SOL balance pays the network fees.</p>
+            </div>
             <p v-else-if="exchangeType === 'dex'" class="form-note">
               DEX credentials can be stored here, but deploy and pair discovery are not supported yet.
             </p>
@@ -310,7 +372,55 @@ function handleTest() {
           </template>
 
           <!-- DEX fields -->
-          <template v-if="exchangeType === 'dex'">
+          <template v-if="isJupiter">
+            <div v-if="isEditing" class="form-group">
+              <label class="label">Wallet address</label>
+              <input class="input mono" type="text" :value="solanaAddress || '…'" readonly />
+            </div>
+            <div class="form-group">
+              <label class="label">Max value on this wallet (USD)</label>
+              <input
+                v-model.number="maxValue"
+                class="input"
+                type="number"
+                min="0"
+                step="any"
+                :placeholder="isEditing ? 'Leave blank to keep the stored cap' : 'e.g. 1000 — arming is refused above it'"
+              />
+            </div>
+            <div class="form-group">
+              <label class="label">RPC URL <span class="optional">(optional)</span></label>
+              <input
+                v-model="rpcEndpoint"
+                class="input"
+                type="text"
+                :placeholder="isEditing ? 'Leave blank to keep the stored RPC' : 'https://… — blank: the public Solana RPC (rate-limited)'"
+                autocomplete="off"
+              />
+            </div>
+            <div class="form-group">
+              <label class="label">Jupiter API key <span class="optional">(optional — keyless allows one request every 2 seconds)</span></label>
+              <input v-model="apiKey" class="input" type="password" :placeholder="isEditing ? 'Leave blank to keep the stored key' : 'From portal.jup.ag'" autocomplete="off" />
+            </div>
+            <div v-if="isEditing" class="form-group">
+              <label class="label">Wallet key</label>
+              <button v-if="exportStep === 'idle'" type="button" class="btn" @click="exportStep = 'confirm'">Export the key…</button>
+              <div v-else-if="exportStep === 'confirm'" class="export-box">
+                <p class="form-note">Anyone with this key can move everything on the wallet. Type the wallet address to show it.</p>
+                <input v-model="exportConfirm" class="input mono" type="text" placeholder="Wallet address" autocomplete="off" />
+                <div class="export-actions">
+                  <button type="button" class="btn" @click="exportStep = 'idle'">Cancel</button>
+                  <button type="button" class="btn btn-primary" :disabled="exportConfirm.trim() !== solanaAddress" @click="exportKey">Show the key</button>
+                </div>
+                <p v-if="exportError" class="form-note">{{ exportError }}</p>
+              </div>
+              <div v-else class="export-box">
+                <input class="input mono" type="text" :value="exportedKey" readonly />
+                <p class="form-hint">Phantom and the Solana CLI import this format. Close the form when you are done.</p>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="exchangeType === 'dex'">
             <div class="form-group">
               <label class="label">{{ isHyperliquid ? 'Main wallet address' : 'Wallet Address' }}</label>
               <input
@@ -399,7 +509,7 @@ function handleTest() {
             <button
               type="button"
               class="btn"
-              :disabled="(exchangeType === 'dex' && !isHyperliquid) || isTesting"
+              :disabled="(exchangeType === 'dex' && !isHyperliquid && !(isJupiter && isEditing)) || isTesting"
               @click="handleTest"
             >
               {{ isTesting ? 'Testing…' : 'Test Connection' }}
@@ -498,6 +608,18 @@ function handleTest() {
   font-size: 12px;
   line-height: 1.4;
   color: var(--qa-text-muted);
+}
+
+.export-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .hl-guide p {

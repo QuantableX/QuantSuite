@@ -194,6 +194,9 @@ pub struct ExchangeConfig {
     /// Hyperliquid: an optional sub-account address.
     #[serde(default)]
     pub sub_account: Option<String>,
+    /// Solana wallet: the most it may hold, in USD (arming is refused above).
+    #[serde(default)]
+    pub max_value: Option<f64>,
 }
 
 impl std::fmt::Debug for ExchangeConfig {
@@ -211,6 +214,7 @@ impl std::fmt::Debug for ExchangeConfig {
             .field("private_key", &given(&self.private_key))
             .field("rpc_endpoint", &given(&self.rpc_endpoint))
             .field("sub_account", &self.sub_account)
+            .field("max_value", &self.max_value)
             .finish()
     }
 }
@@ -598,6 +602,8 @@ pub fn init() -> TauriPlugin<Wry> {
             venues_cmd::venue_cost_preview,
             venues_cmd::venue_exposure,
             venues_cmd::venue_wallet_status,
+            venues_cmd::wallet_export_key,
+            venues_cmd::solana_wallet_status,
             unattended::trading_kill_switch,
             unattended::trading_kill_switch_status,
             unattended::trading_confirm_move,

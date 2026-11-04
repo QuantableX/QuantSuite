@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-solana-wallet-status"
+description = "Enables the solana_wallet_status command without any pre-configured scope."
+commands.allow = ["solana_wallet_status"]
+
+[[permission]]
+identifier = "deny-solana-wallet-status"
+description = "Denies the solana_wallet_status command without any pre-configured scope."
+commands.deny = ["solana_wallet_status"]

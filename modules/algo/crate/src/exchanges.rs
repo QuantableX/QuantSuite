@@ -1275,7 +1275,15 @@ pub(crate) async fn add_exchange(config: ExchangeConfig, state: State<'_, AppSta
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     let sandbox = sandbox_flag(&config)?;
-    let secret = ExchangeSecret::from_config(&config);
+    let mut secret = ExchangeSecret::from_config(&config);
+    if config.provider.eq_ignore_ascii_case("jupiter") {
+        if secret.private_key.is_some() {
+            return Err("QuantSuite generates the Solana wallet itself; importing a key or seed phrase is not offered.".into());
+        }
+        let (address, key) = crate::venues::jupiter::generate_wallet()?;
+        secret.wallet_address = Some(address);
+        secret.private_key = Some(key.to_string());
+    }
 
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
     db.execute(
@@ -1315,7 +1323,14 @@ pub(crate) async fn update_exchange(
 ) -> Result<Exchange, String> {
     let now = Utc::now().to_rfc3339();
     let sandbox = sandbox_flag(&config)?;
-    let update = ExchangeSecret::from_config(&config);
+    let mut update = ExchangeSecret::from_config(&config);
+    if config.provider.eq_ignore_ascii_case("jupiter") {
+        // The generated wallet stays the wallet: no key or address edits.
+        if update.private_key.is_some() {
+            return Err("A Solana wallet's key cannot be replaced; add a new account for a new wallet.".into());
+        }
+        update.wallet_address = None;
+    }
 
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
     let affected = db
@@ -1401,6 +1416,10 @@ pub(crate) struct StoredCredentials {
     pub wallet_address: String,
     pub private_key: String,
     pub sub_account: String,
+    /// Solana wallets: the RPC URL (blank: the public one) and the value cap.
+    pub rpc_endpoint: String,
+    pub max_value: Option<f64>,
+    /// Jupiter's optional API key travels in `api_key`.
     pub sandbox: bool,
 }
 
@@ -1431,6 +1450,8 @@ pub(crate) fn load_credentials(conn: &rusqlite::Connection, exchange_id: &str) -
         wallet_address: ExchangeSecret::text(&secret.wallet_address),
         private_key: ExchangeSecret::text(&secret.private_key),
         sub_account: ExchangeSecret::text(&secret.sub_account),
+        rpc_endpoint: ExchangeSecret::text(&secret.rpc_endpoint),
+        max_value: secret.max_value.as_deref().and_then(|v| v.parse().ok()),
         sandbox: sandbox != 0,
     })
 }
@@ -1479,6 +1500,9 @@ pub(crate) async fn test_exchange_connection(
         if creds.provider.eq_ignore_ascii_case("hyperliquid") {
             return crate::venues::test_hyperliquid(&creds.wallet_address, &creds.sub_account, &creds.private_key, creds.sandbox);
         }
+        if creds.provider.eq_ignore_ascii_case("jupiter") {
+            return crate::venues::test_jupiter(&creds);
+        }
         test_provider_credentials(&creds.provider, &creds.api_key, &creds.api_secret, &creds.passphrase, creds.sandbox)
     })
     .await
@@ -1494,6 +1518,13 @@ pub(crate) async fn test_exchange_credentials(
 ) -> Result<ConnectionResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let sandbox = sandbox_flag(&config)?;
+        if config.provider.eq_ignore_ascii_case("jupiter") {
+            return Ok(ConnectionResult {
+                success: false,
+                message: "QuantSuite generates this wallet when you save it; test it from the list afterwards.".into(),
+                latency_ms: None,
+            });
+        }
         if config.provider.eq_ignore_ascii_case("hyperliquid") {
             return crate::venues::test_hyperliquid(
                 config.wallet_address.as_deref().unwrap_or(""),
@@ -1853,6 +1884,9 @@ pub(crate) async fn get_balances(exchange_id: String, state: State<'_, AppState>
 fn fetch_balances(creds: &StoredCredentials) -> Result<Vec<Balance>, String> {
     if creds.provider.eq_ignore_ascii_case("hyperliquid") {
         return crate::venues::hyperliquid_balances(creds);
+    }
+    if creds.provider.eq_ignore_ascii_case("jupiter") {
+        return crate::venues::jupiter_balances(creds);
     }
     let provider = creds.provider.clone();
     let sandbox = creds.sandbox;
@@ -2411,6 +2445,7 @@ mod vault_tests {
             private_key: None,
             rpc_endpoint: None,
             sub_account: None,
+            max_value: None,
         }
     }
 
