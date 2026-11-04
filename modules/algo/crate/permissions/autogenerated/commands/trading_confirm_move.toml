@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-trading-confirm-move"
+description = "Enables the trading_confirm_move command without any pre-configured scope."
+commands.allow = ["trading_confirm_move"]
+
+[[permission]]
+identifier = "deny-trading-confirm-move"
+description = "Denies the trading_confirm_move command without any pre-configured scope."
+commands.deny = ["trading_confirm_move"]

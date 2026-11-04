@@ -413,6 +413,58 @@ pub(crate) async fn trading_kill_switch(on: bool, app: AppHandle) -> Result<Kill
     .map_err(|e| format!("Stop all trading failed: {e}"))?
 }
 
+/// The old machine after a move (PLAN-MIGRATION §2.2 step 8): the code the
+/// new machine's import shows, checked against the exports this machine
+/// wrote. A match stops all trading for good here — "Stop all trading" on,
+/// a "moved" notice — and deletes nothing. `external`.
+#[tauri::command(rename_all = "snake_case")]
+pub(crate) async fn trading_confirm_move(code: String, app: AppHandle) -> Result<KillReport, String> {
+    let wanted = qs_core::bundle::move_code_hash(&code);
+    let known = {
+        let core = app.state::<qs_core::Db>();
+        let conn = core.0.lock().map_err(|e| format!("Lock: {e}"))?;
+        qs_core::db::get_setting(&conn, "core", "migration.exports")
+            .map_err(|e| e.to_string())?
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .any(|e| e.get("code_sha256").and_then(|v| v.as_str()) == Some(wanted.as_str()))
+    };
+    if !known {
+        return Err("This code does not belong to a bundle exported on this machine.".into());
+    }
+    let report = trading_kill_switch(true, app.clone()).await?;
+    let state = app.state::<AppState>();
+    let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+    let notice = json!({ "at": Utc::now().to_rfc3339() }).to_string();
+    db.execute(
+        "INSERT INTO execution_flags (key, value) VALUES ('moved', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![notice],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(report)
+}
+
+/// The Trading overview's notices: an import arrived here, or this machine
+/// moved away.
+#[tauri::command(async)]
+pub(crate) fn trading_notices(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+    let read = |key: &str| -> Option<serde_json::Value> {
+        db.query_row("SELECT value FROM execution_flags WHERE key = ?1", params![key], |r| r.get::<_, String>(0))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+    };
+    Ok(json!({ "imported": read("imported"), "moved": read("moved") }))
+}
+
+/// Dismiss the "imported" notice (the "moved" one stays: trading here is off).
+#[tauri::command(async)]
+pub(crate) fn trading_notice_dismiss(state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+    db.execute("DELETE FROM execution_flags WHERE key = 'imported'", []).map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub(crate) fn trading_kill_switch_status(state: State<'_, AppState>) -> Result<bool, String> {
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;

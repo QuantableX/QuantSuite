@@ -17,6 +17,7 @@ pub mod bus;
 pub mod commands;
 pub mod diagnostics;
 pub mod embeddings;
+pub mod import;
 pub mod inventory;
 pub mod runtime;
 pub mod db;
@@ -81,8 +82,14 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::bundle_plan,
             commands::bundle_export,
             commands::bundle_export_cancel,
+            commands::import_propose,
+            commands::import_bundle,
+            commands::import_status,
         ]))
         .setup(|app, _api| {
+            // A staged import takes the data root's place before anything
+            // opens it (PLAN-MIGRATION §2.2 step 4).
+            import::apply_pending(&paths::root());
             paths::ensure()?;
 
             // First, so every line below actually lands somewhere, and so the

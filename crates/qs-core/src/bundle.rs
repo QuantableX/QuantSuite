@@ -190,6 +190,54 @@ pub struct FileEntry {
     /// SQLite `user_version` for a database copied with the backup API.
     #[serde(default)]
     pub schema_version: Option<i64>,
+    /// Rows per table of a database, for the import's check.
+    #[serde(default)]
+    pub tables: Option<BTreeMap<String, i64>>,
+}
+
+/// Rows per table of a SQLite database (full-text index internals left out:
+/// a path rewritten in an indexed row reshapes them).
+pub fn table_counts(conn: &rusqlite::Connection) -> BTreeMap<String, i64> {
+    let skip = crate::inventory::virtual_and_shadow_tables(conn);
+    let names: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect())
+        .unwrap_or_default();
+    names
+        .into_iter()
+        .filter(|t| !skip.contains(t))
+        .filter_map(|t| {
+            let n = conn
+                .query_row(&format!("SELECT COUNT(*) FROM \"{}\"", t.replace('"', "\"\"")), [], |r| r.get::<_, i64>(0))
+                .ok()?;
+            Some((t, n))
+        })
+        .collect()
+}
+
+/// The move code (PLAN-MIGRATION §2.2 step 8): eight characters both the
+/// exporting and the importing machine derive from the bundle key. Entered
+/// on the old machine, it confirms the move there.
+pub fn move_code(bundle_key: &[u8; 32]) -> String {
+    let mut h = Sha256::new();
+    h.update(b"quantsuite-bundle:move-code:");
+    h.update(bundle_key);
+    let digest = h.finalize();
+    const ALPHABET: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    let mut code = String::new();
+    for (i, b) in digest.iter().take(8).enumerate() {
+        if i == 4 {
+            code.push('-');
+        }
+        code.push(ALPHABET[(*b as usize) % 32] as char);
+    }
+    code
+}
+
+/// SHA-256 of a normalized move code, what the exporting machine keeps.
+pub fn move_code_hash(code: &str) -> String {
+    let norm: String = code.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_uppercase()).collect();
+    hex::encode(Sha256::digest(format!("quantsuite-move:{norm}").as_bytes()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -390,6 +438,15 @@ impl<R: Read> Read for HashRead<R> {
     }
 }
 
+/// A written bundle.
+pub struct Exported {
+    pub path: PathBuf,
+    pub manifest: Manifest,
+    /// Shown on the new machine after its import; entered here, it confirms
+    /// the move. Only its hash is kept on this machine.
+    pub move_code: String,
+}
+
 /// Export the data root `root` into `dest_dir`. `secrets` are the vault's
 /// (id, value) pairs, held in memory only. Returns the bundle's path and its
 /// manifest. A cancelled or failed export leaves no file behind.
@@ -403,7 +460,7 @@ pub fn export(
     params: KdfParams,
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(ExportProgress),
-) -> Result<(PathBuf, Manifest), String> {
+) -> Result<Exported, String> {
     if passphrase.chars().count() < 12 {
         return Err("The passphrase needs at least 12 characters.".into());
     }
@@ -438,7 +495,7 @@ pub fn export(
     let part = dest_dir.join(format!("{name}.part"));
     let temp_db = dest_dir.join(format!(".{name}.db-snapshot"));
 
-    let result = (|| -> Result<Manifest, String> {
+    let result = (|| -> Result<(Manifest, String), String> {
         let mut salt = [0u8; 16];
         OsRng.fill_bytes(&mut salt);
         let mut prefix = [0u8; 7];
@@ -488,10 +545,15 @@ pub fn export(
                     backup.run_to_completion(256, std::time::Duration::from_millis(5), None).map_err(|e| format!("{rel}: {e}"))?;
                 }
                 let version: i64 = dst.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap_or(0);
+                let counts = table_counts(&dst);
                 drop(dst);
-                (temp_db.clone(), Some(version))
+                (temp_db.clone(), Some((version, counts)))
             } else {
                 (path.clone(), None)
+            };
+            let (schema_version, tables) = match schema_version {
+                Some((v, counts)) => (Some(v), Some(counts)),
+                None => (None, None),
             };
             let size = std::fs::metadata(&source).map_err(|e| format!("{rel}: {e}"))?.len();
             let mut header = tar::Header::new_gnu();
@@ -511,6 +573,7 @@ pub fn export(
                 sha256: hex::encode(hashed.hash.finalize()),
                 class: format!("{:?}", rule.class),
                 schema_version,
+                tables,
             });
             done += size;
         }
@@ -557,13 +620,13 @@ pub fn export(
         let mut file = sealer.finish().map_err(|e| e.to_string())?;
         file.flush().map_err(|e| e.to_string())?;
         progress(ExportProgress { done_bytes: plan.total, total_bytes: plan.total, current: "done".into() });
-        Ok(manifest)
+        Ok((manifest, move_code(&key)))
     })();
 
     match result {
-        Ok(manifest) => {
+        Ok((manifest, move_code)) => {
             std::fs::rename(&part, &target).map_err(|e| format!("{}: {e}", target.display()))?;
-            Ok((target, manifest))
+            Ok(Exported { path: target, manifest, move_code })
         }
         Err(e) => {
             let _ = std::fs::remove_file(&part);
@@ -597,7 +660,7 @@ pub fn export_suite(
     })
     .map_err(|e| format!("The vault cannot be read, so its secrets cannot go into the bundle: {e}"))?;
     let opts = ExportOptions { include };
-    let (path, manifest) = export(
+    let Exported { path, manifest, move_code } = export(
         &crate::paths::root(),
         dest_dir,
         passphrase,
@@ -607,6 +670,20 @@ pub fn export_suite(
         &CANCEL,
         progress,
     )?;
+    // This machine keeps the move code's hash, to confirm a move later.
+    if let Ok(conn) = crate::db::open() {
+        let mut exports = crate::db::get_setting(&conn, "core", "migration.exports")
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default();
+        exports.push(serde_json::json!({
+            "file": path,
+            "created_at": manifest.created_at,
+            "code_sha256": move_code_hash(&move_code),
+        }));
+        let _ = crate::db::set_setting(&conn, "core", "migration.exports", &serde_json::Value::Array(exports));
+    }
     Ok(serde_json::json!({
         "path": path,
         "files": manifest.files.len(),
@@ -621,6 +698,8 @@ pub fn export_suite(
 /// What opening a bundle found.
 pub struct Opened {
     pub manifest: Manifest,
+    /// The bundle's move code (see [`move_code`]).
+    pub move_code: String,
     /// The secrets, decrypted, in memory.
     pub secrets: Vec<(String, Zeroizing<Vec<u8>>)>,
 }
@@ -728,7 +807,7 @@ pub fn open(bundle: &Path, passphrase: &str, unpack_to: Option<&Path>) -> Result
             .map_err(|_| format!("secret {} does not decrypt", s.id))?;
         secrets.push((s.id, Zeroizing::new(value)));
     }
-    Ok(Opened { manifest, secrets })
+    Ok(Opened { manifest, secrets, move_code: move_code(&key) })
 }
 
 #[cfg(test)]
@@ -768,7 +847,7 @@ mod tests {
     }
 
     fn run(root: &Path, dest: &Path, pass: &str, opts: &ExportOptions) -> Result<(PathBuf, Manifest), String> {
-        export(root, dest, pass, opts, &secrets(), FAST, &AtomicBool::new(false), &mut |_| {})
+        export(root, dest, pass, opts, &secrets(), FAST, &AtomicBool::new(false), &mut |_| {}).map(|e| (e.path, e.manifest))
     }
 
     #[test]
@@ -779,6 +858,7 @@ mod tests {
         let names: Vec<&str> = manifest.files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(names, vec!["core.db", "modules/algo/config.json", "modules/notes/notes.md", "workspaces/abc/canvas/canvas.json"]);
         assert_eq!(manifest.files[0].schema_version, Some(7));
+        assert_eq!(manifest.files[0].tables.as_ref().unwrap()["t"], 3);
         let left: Vec<&str> = manifest.left_out.iter().map(|l| l.pattern.as_str()).collect();
         assert!(left.contains(&"logs/") && left.contains(&"workspaces/*/artifacts/") && left.contains(&"modules/hud/pyenv/"), "{left:?}");
         assert_eq!(manifest.secrets, vec!["algo/exchange/e1"]);
@@ -790,6 +870,8 @@ mod tests {
         let stage = Tmp(r.0.with_extension("stage"));
         let opened = open(&path, "correct horse battery", Some(&stage.0)).unwrap();
         assert_eq!(opened.manifest.files, manifest.files);
+        assert_eq!(opened.move_code.len(), 9);
+        assert_eq!(move_code_hash(&opened.move_code.to_lowercase().replace('-', " ")), move_code_hash(&opened.move_code));
         assert_eq!(&opened.secrets[0].1[..], b"{\"api_secret\":\"SK-very-secret\"}");
         assert_eq!(std::fs::read(stage.0.join("quantsuite/modules/notes/notes.md")).unwrap(), b"my note");
         let db = rusqlite::Connection::open(stage.0.join("quantsuite/core.db")).unwrap();
@@ -883,7 +965,7 @@ mod profile_export {
         let out = PathBuf::from(std::env::var("QS_BUNDLE_OUT").expect("QS_BUNDLE_OUT"));
         let secrets = vec![("qa/secret".to_string(), Zeroizing::new(b"qa-value".to_vec()))];
         let t = std::time::Instant::now();
-        let (path, manifest) = export(&root, &out, "qa passphrase 2026", &ExportOptions::default(), &secrets, KdfParams::default(), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        let Exported { path, manifest, .. } = export(&root, &out, "qa passphrase 2026", &ExportOptions::default(), &secrets, KdfParams::default(), &AtomicBool::new(false), &mut |_| {}).unwrap();
         let size = std::fs::metadata(&path).unwrap().len();
         let bytes: u64 = manifest.files.iter().map(|f| f.size).sum();
         println!("exported {} files, {:.1} MB in, bundle {:.1} MB, {:.1}s", manifest.files.len(), bytes as f64 / 1e6, size as f64 / 1e6, t.elapsed().as_secs_f64());

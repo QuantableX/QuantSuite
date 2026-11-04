@@ -343,11 +343,32 @@ pub fn remap_json_file(path: &Path, map: &PathMap) -> Result<usize, String> {
     Ok(n)
 }
 
+/// Virtual tables (full-text indexes) and their shadow tables: their content
+/// follows the real tables through triggers, and writing them directly
+/// would break the index.
+pub fn virtual_and_shadow_tables(conn: &Connection) -> std::collections::BTreeSet<String> {
+    let virtuals: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND sql LIKE 'CREATE VIRTUAL TABLE%'")
+        .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect())
+        .unwrap_or_default();
+    let mut out: std::collections::BTreeSet<String> = virtuals.iter().cloned().collect();
+    for v in &virtuals {
+        for suffix in ["_data", "_idx", "_docsize", "_config", "_content", "_segments", "_segdir", "_stat"] {
+            out.insert(format!("{v}{suffix}"));
+        }
+    }
+    out
+}
+
 fn text_columns(conn: &Connection) -> Result<Vec<(String, String)>, String> {
+    let skip = virtual_and_shadow_tables(conn);
     let tables: Vec<String> = conn
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
-        .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect())
-        .map_err(|e| e.to_string())?;
+        .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect::<Result<Vec<String>, _>>())
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|t| !skip.contains(t))
+        .collect();
     let mut out = Vec::new();
     for table in tables {
         let cols: Vec<(String, String)> = conn

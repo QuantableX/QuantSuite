@@ -38,6 +38,9 @@ const COMMANDS: &[&str] = &[
     "bundle_plan",
     "bundle_export",
     "bundle_export_cancel",
+    "import_propose",
+    "import_bundle",
+    "import_status",
 ];
 
 fn main() {
