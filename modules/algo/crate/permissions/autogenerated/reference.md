@@ -76,6 +76,7 @@ Default permissions for the algo module.
 - `allow-venue-cost-preview`
 - `allow-venue-exposure`
 - `allow-venue-wallet-status`
+- `allow-server-trading-health`
 - `allow-venue-perp-positions`
 - `allow-wallet-export-key`
 - `allow-solana-wallet-status`
@@ -1365,6 +1366,32 @@ Enables the save_strategy command without any pre-configured scope.
 <td>
 
 Denies the save_strategy command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-server-trading-health`
+
+</td>
+<td>
+
+Enables the server_trading_health command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-server-trading-health`
+
+</td>
+<td>
+
+Denies the server_trading_health command without any pre-configured scope.
 
 </td>
 </tr>

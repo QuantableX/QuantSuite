@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-server-set-watchdog"
+description = "Enables the server_set_watchdog command without any pre-configured scope."
+commands.allow = ["server_set_watchdog"]
+
+[[permission]]
+identifier = "deny-server-set-watchdog"
+description = "Denies the server_set_watchdog command without any pre-configured scope."
+commands.deny = ["server_set_watchdog"]

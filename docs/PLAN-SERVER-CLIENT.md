@@ -1,6 +1,6 @@
 # QuantSuite server and client — one QuantSuite, used from every PC
 
-Status: plan, 2026-11-03; card 1 (spike) done 2026-11-04, see §6.3 and §6.3.1–6.3.4. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
+Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, see §6.3 and §6.3.1–6.3.5. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
 
 ## In short
 
@@ -120,11 +120,13 @@ The spike measures latency and memory of A and B and records the decision here. 
 
 **Decision (card Server 1/7, 2026-11-04): B.** `crates/qs-core/tests/remote_dispatch_spike.rs` performs calls through `Webview::on_message` with the app's own invoke key (`AppHandle::invoke_key()`, public in Tauri 2.11.5) and a local origin URL, so the ACL resolves exactly as for the UI's own calls. No Tauri patch. Measured on Tauri's mock runtime (the IPC path itself, without WebView2), 2,000 calls each:
 
-| Call | Option B per call |
+| Call (async commands, as every suite command must be) | Option B per call |
 |---|---|
-| read (a list from managed state) | 12 µs |
-| write (an insert into managed state) | 12 µs |
-| streaming (10 events to listeners, then the result) | 59 µs |
+| read (a list from managed state) | 0.22 ms |
+| write (an insert into managed state) | 0.18 ms |
+| streaming (10 events to listeners, then the result) | 0.24 ms |
+
+Most of that is the async hand-off to Tauri's runtime: the same calls as synchronous commands took 12 µs, 12 µs and 59 µs. Either way it is far below one network round trip.
 
 - A wrong invoke key is dropped without an answer (the key never leaves the server). An unknown command answers with an error.
 - Plugin commands need the ACL to resolve. The server dispatches as its main window's webview, which carries the app's capabilities. A second, restricted capability for remote devices is a card 3 option, not a need.
@@ -195,6 +197,16 @@ How they reach a client (card 4): the gateway listens with `listen_any` to every
 8. **One trader.** A client still has the trading plugins compiled. Card 2's guard must stop executors on a connected client, not only hide the UI.
 9. **Version skew.** The manifest is part of the protocol. A client and server with different manifests must refuse to connect (card 4's `hello` carries a manifest hash).
 
+### 6.3.5 Built: server mode (card Server 2/7, 2026-11-04)
+
+- **Role** (`qs_core::server`): `local` (default), `server` or `client`, stored as the core setting `server.role` and read at setup before any module's setup. `--server` makes a launch a server whatever the setting says. Settings → Server → "Run as server" switches between local and server (from the next start). A PC becomes a client only by connecting to a server (card 5).
+- **Tray only**: a server launch stays in the tray (`main` is created hidden and kept; closing it hides it, as before). The window opens from the tray icon.
+- **Start at boot**: the existing "Start QuantSuite with Windows" entry (HKCU Run) under a dedicated, automatically signed-in Windows user.
+- **Watchdog**: Settings → Server → "Restart QuantSuite when it exits" creates the Task Scheduler entry *QuantSuite Server Watchdog*. It runs `QuantSuite.exe --server --watchdog` every 5 minutes in the user's session (`/IT`). While the suite runs, the single-instance guard swallows that relaunch without showing the window. After a crash or a kill, it starts the suite again in the tray.
+- **One trader**: `qs_core::server::executors_allowed()` refuses on a client. QuantAlgo checks it when a bot starts, when a Manual system is armed, in every nightly attempt, and at startup: no scheduler, no funding reader, no bot resumes on a client. Tested in qs-core.
+- **Health** (Settings → Server): role, version, up since, free disk space for the data root, autostart, watchdog, gateway (none until card 4). From QuantAlgo: whether trading is allowed or the kill switch is on, every bot's status, and the newest nightly run of every Manual system (`server_trading_health`).
+- The Python engines and the Forge run from Rust and keep working without the window.
+
 ### 6.4 Gateway protocol
 
 WebSocket over TLS. Frames: `hello` (protocol version, device), `call` {id, cmd, args, idempotencyKey}, `result` {id, ok | error}, `event` {seq, topic, payload}, `resume` {lastSeq}, `cancel` {id}, binary chunks for files. Limits: frame size, timeouts per side-effect class, a rate limit per device.
@@ -236,7 +248,7 @@ Phase 1: Windows — the same build, WebView2 is there, the Python sidecars are 
 |---|---|---|
 | Internet path | Tailscale; Headscale as the self-hosted alternative | No open port, end-to-end encryption, free for personal use |
 | Server OS | Windows | Same build and sidecars; Linux needs the service-layer refactor |
-| Dispatch on the server | B: `Webview::on_message` with the app's invoke key (card 1, 12 µs per call on the mock runtime) | No Tauri patch, no JS hop; A needs the same hidden webview plus two WebView2 crossings |
+| Dispatch on the server | B: `Webview::on_message` with the app's invoke key (card 1, about 0.2 ms per async call on the mock runtime) | No Tauri patch, no JS hop; A needs the same hidden webview plus two WebView2 crossings |
 | Phase-1 modules on the server | Trading + personal data | The reason for a server is 24/7 trading and one truth for your data |
 | Developer modules | Local per PC in phase 1 | They work on the PC's own folders and agent CLIs |
 | Auth | Paired device keys + mutual TLS + server PIN for external actions | Passwords alone are guessable; a key on a revocable device is not |

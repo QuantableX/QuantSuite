@@ -394,6 +394,47 @@ pub async fn import_bundle(
     .map_err(|e| format!("Import failed: {e}"))?
 }
 
+// ── Server mode (PLAN-SERVER-CLIENT §5, card Server 2/7) ─────────────────
+
+#[derive(serde::Serialize)]
+pub struct ServerStatus {
+    #[serde(flatten)]
+    pub health: crate::server::Health,
+    /// The stored role; `role` above is this launch's (`--server` wins).
+    pub stored_role: Option<crate::server::Role>,
+}
+
+/// This installation's role and health: uptime, disk, version, watchdog.
+#[tauri::command(async)]
+pub fn server_status<R: Runtime>(app: AppHandle<R>, db_state: State<'_, Db>) -> Result<ServerStatus, String> {
+    let stored_role = {
+        let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+        crate::server::stored_role(&conn)
+    };
+    let autostart = crate::autostart::is_enabled(&app).ok();
+    let health = crate::server::health(&app.package_info().version.to_string(), &paths::root(), crate::server::watchdog_enabled(), autostart);
+    Ok(ServerStatus { health, stored_role })
+}
+
+/// Make this installation local or a server. `client` comes with a server
+/// connection (card 5), not from here.
+#[tauri::command(async)]
+pub fn server_set_role(role: String, db_state: State<'_, Db>) -> Result<(), String> {
+    let r = crate::server::Role::parse(&role).ok_or_else(|| format!("Unknown role {role:?}."))?;
+    if r == crate::server::Role::Client {
+        return Err("A PC becomes a client by connecting to a server (Settings → Connections).".into());
+    }
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    crate::server::set_role(&conn, r)
+}
+
+/// Create or remove the Task Scheduler watchdog that restarts the server.
+#[tauri::command(async)]
+pub fn server_set_watchdog(enabled: bool) -> Result<Option<bool>, String> {
+    crate::server::set_watchdog(enabled)?;
+    Ok(crate::server::watchdog_enabled())
+}
+
 /// Whether an import waits for the next start.
 #[tauri::command(async)]
 pub fn import_status() -> Option<String> {

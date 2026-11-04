@@ -40,4 +40,7 @@ permissions = [
   "allow-import-propose",
   "allow-import-bundle",
   "allow-import-status",
+  "allow-server-status",
+  "allow-server-set-role",
+  "allow-server-set-watchdog",
 ]

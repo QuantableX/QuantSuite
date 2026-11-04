@@ -16,7 +16,13 @@ pub fn run() {
         // `SendMessageW` with no timeout, so a relaunch against a hung first
         // instance blocks forever instead of exiting. `qs-single-instance` is
         // that code with the send bounded (see its module docs).
-        .plugin(qs_single_instance::init(|app, _args, _cwd| {
+        .plugin(qs_single_instance::init(|app, args, _cwd| {
+            // The server watchdog relaunches every few minutes; while the
+            // suite runs, that relaunch is just a check and must not pop the
+            // window (PLAN-SERVER-CLIENT §5).
+            if qs_core::server::is_watchdog_launch(&args) {
+                return;
+            }
             qs_core::window::show(app);
         }))
         // Core must come first among the suite's own plugins: bus, core.db,
