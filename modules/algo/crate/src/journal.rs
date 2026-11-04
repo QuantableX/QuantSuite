@@ -11,7 +11,7 @@ use crate::{AppState, BotTradeStats, DailyPnl, EquityPoint, Trade, TradeFacets, 
 /// Every journal read selects these columns: the trade with its bot's mode
 /// joined in (PLAN-QUANTALGO §3.4). The single-bot era's rows (NULL bot_id)
 /// count as paper; a backtest row has no mode.
-const TRADE_SELECT: &str = "SELECT t.id, t.strategy_id, t.exchange, t.pair, t.side, t.entry_price, t.exit_price, t.quantity, t.entry_time, t.exit_time, t.pnl, t.pnl_pct, t.fee, t.is_backtest, t.backtest_id, t.notes, t.created_at, t.bot_id, CASE WHEN t.is_backtest = 1 THEN NULL ELSE COALESCE(b.trading_mode, 'paper') END FROM trades t LEFT JOIN bots b ON b.id = t.bot_id";
+const TRADE_SELECT: &str = "SELECT t.id, t.strategy_id, t.exchange, t.pair, t.side, t.entry_price, t.exit_price, t.quantity, t.entry_time, t.exit_time, t.pnl, t.pnl_pct, t.fee, t.is_backtest, t.backtest_id, t.notes, t.created_at, t.bot_id, CASE WHEN t.is_backtest = 1 THEN NULL ELSE COALESCE(b.trading_mode, t.mode, 'paper') END, t.source, t.fees_json FROM trades t LEFT JOIN bots b ON b.id = t.bot_id";
 
 fn row_to_trade(row: &rusqlite::Row) -> rusqlite::Result<Trade> {
     Ok(Trade {
@@ -34,7 +34,18 @@ fn row_to_trade(row: &rusqlite::Row) -> rusqlite::Result<Trade> {
         created_at: row.get(16)?,
         bot_id: row.get(17)?,
         trading_mode: row.get(18)?,
+        source: row.get(19)?,
+        fees: fees_from_json(row.get::<_, Option<String>>(20)?),
     })
+}
+
+/// `trades.fees_json` → the fees; an absent or unreadable column is none.
+pub(crate) fn fees_from_json(json: Option<String>) -> Vec<crate::ChargedFee> {
+    json.and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default()
+}
+
+pub(crate) fn fees_to_json(fees: &[crate::ChargedFee]) -> Option<String> {
+    (!fees.is_empty()).then(|| serde_json::to_string(fees).unwrap_or_default())
 }
 
 /// The rows a filter selects, newest first.

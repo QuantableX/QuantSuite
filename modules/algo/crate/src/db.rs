@@ -193,11 +193,18 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         // Migration 6 (PLAN-QUANTALGO §4.2): private calls of a sandbox
         // exchange go to the venue's testnet / demo environment.
         ("exchanges", "sandbox", "INTEGER NOT NULL DEFAULT 0"),
+        // The execution core (PLAN-AUTO-EXECUTION §2.2): who made a trade
+        // (`bot:<id>` / `run:<id>`), its fees in the charged assets, and the
+        // mode of rows that have no bot.
+        ("trades", "source", "TEXT"),
+        ("trades", "fees_json", "TEXT"),
+        ("trades", "mode", "TEXT"),
     ] {
         if !column_exists(conn, table, column)? {
             conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"), [])?;
         }
     }
+    crate::execution::store::create_tables(conn)?;
     Ok(())
 }
 

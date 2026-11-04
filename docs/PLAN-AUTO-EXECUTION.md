@@ -1,6 +1,6 @@
 # QuantAlgo trading automation — Manual and Automated trade by themselves
 
-Status: plan, 2026-11-03. Built so far: card 1, the secret vault (2026-11-04). Cards "QuantAlgo Automation 1/5" to "5/5" on the QuantSuite board. Where orders go is [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md); running it 24/7 is [PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md).
+Status: plan, 2026-11-03. Built so far: card 1, the secret vault, and card 2, the execution core (2026-11-04). Cards "QuantAlgo Automation 1/5" to "5/5" on the QuantSuite board. Where orders go is [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md); running it 24/7 is [PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md).
 
 ## In short
 
@@ -88,6 +88,16 @@ Example, 10,000$ BTC → ETH on Binance spot: through USDT 0.10% × 2 = 20$; dir
 The backtest stays conservative: it charges two legs per switch (`rotation_lab` `_switch_legs`, `fee_rate` 0.1% per side). A cheaper live route can only make live better than the backtest, never worse.
 
 **Paper** uses the same core with a `PaperVenue`: fills at the real venue's current best bid/ask plus the configured fee and slippage, balances persisted per system. Paper and live share every step except the final API call.
+
+**Built (card 2, 2026-11-04).** `modules/algo/crate/src/execution/`:
+
+- `venue.rs`: the `ExecutionVenue` trait (capabilities, instruments, balances, positions, order book, fee tier, IOC place, cancel, lookup by client id, dry run) and the book walk.
+- `cex.rs`: Binance spot and Bybit spot. Orders are IOC limits with `newClientOrderId` / `orderLinkId`. A lookup by client id answers "never seen" on Binance -2013 or an empty Bybit list. Fee tiers come from `account/commission` and `v5/account/fee-rate`, with 0.1 % when the venue does not answer. All instruments are cached 15 minutes.
+- `route.rs`, `guards.rs`, `engine.rs`, `store.rs`, `paper.rs`: as specified above. Tables `execution_runs` (with a unique index on owner + close date for Manual's exactly-once), `execution_orders` (written before sending), `execution_holdings`, `execution_flags` (kill switch), `paper_balances` and `paper_orders`. `trades` gains `source` (`bot:<id>` / `run:<id>`), `fees_json` (fees in the charged assets) and `mode`.
+- Resuming is re-planning: holdings are rebuilt from the run's recorded fills. An order whose answer was lost is looked up by its client id, and an order the venue never saw is planned again under a new id.
+- A leg whose last order filled completely is done. What remains of it (lot rounding, the 0.1 % sizing room of a buy) stays as dust in the run record.
+- Bots: `LiveBroker` keeps the runtime's interface, but its orders now go through `CexVenue` the core's way (IOC at the 0.5 % cap, client id, lookup, three retries). Paper bots keep the runtime's simulation. The bots' run-level guards and the kill switch come with card 4.
+- Tests: 24 in `execution` (route cases incl. the 10 $ vs 20 $ example, every guard, crash between legs, an order that never arrived, partial-fill retries, paper fills and persistence) plus the bot tests unchanged. Live public checks (books, instruments of both venues) are `--ignored live_`.
 
 ### 2.3 Manual systems trade by themselves (card 3)
 

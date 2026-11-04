@@ -19,6 +19,11 @@ mod candle_archive;
 mod data;
 mod db;
 mod exchanges;
+// The execution core (PLAN-AUTO-EXECUTION §2.2). Bots use its venues today;
+// Manual runs (Automation 3/5) and the kill switch (4/5) call the engine —
+// remove this allow once they do.
+#[allow(dead_code)]
+mod execution;
 mod journal;
 mod logs;
 mod runtime;
@@ -69,6 +74,21 @@ pub struct Trade {
     pub backtest_id: Option<String>,
     pub notes: Option<String>,
     pub created_at: String,
+    /// Who made the trade: `bot:<id>` or `run:<system run id>`
+    /// (PLAN-AUTO-EXECUTION §2.2 step 7); `None` on older and backtest rows.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// The fees in the assets the venue charged them in (`fee` is their
+    /// value in the quote).
+    #[serde(default)]
+    pub fees: Vec<ChargedFee>,
+}
+
+/// One fee as the venue charged it.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct ChargedFee {
+    pub asset: String,
+    pub amount: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
