@@ -359,6 +359,8 @@ export interface ExchangeConfig {
   wallet_address?: string
   private_key?: string
   rpc_endpoint?: string
+  /** Hyperliquid: the sub-account the orders act on. */
+  sub_account?: string
 }
 
 export interface ConnectionResult {

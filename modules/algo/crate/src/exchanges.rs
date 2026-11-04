@@ -1380,9 +1380,9 @@ pub(crate) fn update_secret(
 /// demo environment may set it (PLAN-QUANTALGO §4.2).
 fn sandbox_flag(config: &ExchangeConfig) -> Result<bool, String> {
     let sandbox = config.sandbox.unwrap_or(false);
-    if sandbox && !crate::broker::Venue::supports_live(&config.provider) {
+    if sandbox && !crate::venues::has_testnet(&config.provider) {
         return Err(format!(
-            "Sandbox mode is available for Binance (spot testnet) and Bybit (demo trading), not {}.",
+            "Sandbox mode is available for Binance (spot testnet), Bybit (demo trading) and Hyperliquid (testnet), not {}.",
             config.provider
         ));
     }
@@ -1396,6 +1396,11 @@ pub(crate) struct StoredCredentials {
     pub api_key: String,
     pub api_secret: String,
     pub passphrase: String,
+    /// Wallet venues (Hyperliquid): the main address, the API wallet's key
+    /// and an optional sub-account.
+    pub wallet_address: String,
+    pub private_key: String,
+    pub sub_account: String,
     pub sandbox: bool,
 }
 
@@ -1405,6 +1410,7 @@ impl Drop for StoredCredentials {
         self.api_key.zeroize();
         self.api_secret.zeroize();
         self.passphrase.zeroize();
+        self.private_key.zeroize();
     }
 }
 
@@ -1422,6 +1428,9 @@ pub(crate) fn load_credentials(conn: &rusqlite::Connection, exchange_id: &str) -
         api_key: ExchangeSecret::text(&secret.api_key),
         api_secret: ExchangeSecret::text(&secret.api_secret),
         passphrase: ExchangeSecret::text(&secret.passphrase),
+        wallet_address: ExchangeSecret::text(&secret.wallet_address),
+        private_key: ExchangeSecret::text(&secret.private_key),
+        sub_account: ExchangeSecret::text(&secret.sub_account),
         sandbox: sandbox != 0,
     })
 }
@@ -1467,6 +1476,9 @@ pub(crate) async fn test_exchange_connection(
         load_credentials(&db, &id)?
     };
     tauri::async_runtime::spawn_blocking(move || {
+        if creds.provider.eq_ignore_ascii_case("hyperliquid") {
+            return crate::venues::test_hyperliquid(&creds.wallet_address, &creds.sub_account, &creds.private_key, creds.sandbox);
+        }
         test_provider_credentials(&creds.provider, &creds.api_key, &creds.api_secret, &creds.passphrase, creds.sandbox)
     })
     .await
@@ -1482,6 +1494,14 @@ pub(crate) async fn test_exchange_credentials(
 ) -> Result<ConnectionResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let sandbox = sandbox_flag(&config)?;
+        if config.provider.eq_ignore_ascii_case("hyperliquid") {
+            return crate::venues::test_hyperliquid(
+                config.wallet_address.as_deref().unwrap_or(""),
+                config.sub_account.as_deref().unwrap_or(""),
+                config.private_key.as_deref().unwrap_or(""),
+                sandbox,
+            );
+        }
         test_provider_credentials(
             &config.provider,
             config.api_key.as_deref().unwrap_or(""),
@@ -1831,6 +1851,9 @@ pub(crate) async fn get_balances(exchange_id: String, state: State<'_, AppState>
 /// The signed balance read of one provider — blocking HTTP, so it runs on
 /// the blocking pool (see `get_exchange_pairs`).
 fn fetch_balances(creds: &StoredCredentials) -> Result<Vec<Balance>, String> {
+    if creds.provider.eq_ignore_ascii_case("hyperliquid") {
+        return crate::venues::hyperliquid_balances(creds);
+    }
     let provider = creds.provider.clone();
     let sandbox = creds.sandbox;
     let api_key = creds.api_key.as_str();
@@ -2387,6 +2410,7 @@ mod vault_tests {
             wallet_address: None,
             private_key: None,
             rpc_endpoint: None,
+            sub_account: None,
         }
     }
 

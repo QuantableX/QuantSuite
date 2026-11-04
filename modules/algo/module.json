@@ -326,7 +326,8 @@
         "type": "object",
         "properties": {
           "exchange_id": { "type": "string", "description": "The account (list_venues)." },
-          "symbols": { "type": "array", "items": { "type": "string" }, "description": "Coin symbols, e.g. a system's universe." }
+          "symbols": { "type": "array", "items": { "type": "string" }, "description": "Coin symbols, e.g. a system's universe." },
+          "market": { "type": "string", "enum": ["spot", "perp"], "description": "spot (default) or perp (Hyperliquid accounts)." }
         },
         "required": ["exchange_id", "symbols"]
       }

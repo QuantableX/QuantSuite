@@ -7,11 +7,12 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 
-const props = defineProps<{ exchangeId: string | null; value: number }>()
+const props = withDefaults(defineProps<{ exchangeId: string | null; value: number; market?: 'spot' | 'perp' }>(), { market: 'spot' })
 
 interface Estimate { trades: number; fees: number; spread: number; total: number; complete: boolean }
 interface Preview {
   value: number; venue: string; taker_fee: number; fee_source: string; holding: number; days: number; total: number
+  funding_per_8h: number | null
   switch: { chosen: 'via_quote' | 'direct'; via_quote: Estimate; direct: Estimate | null; direct_pair: string | null; reason: string }
 }
 
@@ -35,7 +36,7 @@ async function run() {
       from: from.value.trim().toUpperCase(),
       to: to.value.trim().toUpperCase(),
       value_usd: props.value > 0 ? props.value : 1000,
-      market: 'spot',
+      market: props.market,
       days: 30,
     })
   } catch (e) {
@@ -67,7 +68,10 @@ async function run() {
         <li v-if="preview.switch.direct" :class="{ 'qs-cost__chosen': preview.switch.chosen === 'direct' }">
           Direct on {{ preview.switch.direct_pair }}, 1 trade: fees {{ usd(preview.switch.direct.fees) }} + spread {{ usd(preview.switch.direct.spread) }} = {{ usd(preview.switch.direct.total) }}
         </li>
-        <li>Holding {{ preview.days }} days on spot: {{ usd(preview.holding) }}</li>
+        <li v-if="preview.funding_per_8h != null">
+          Holding {{ preview.days }} days on perp: {{ usd(preview.holding) }} funding at {{ (preview.funding_per_8h * 100).toFixed(4) }} % per 8 hours
+        </li>
+        <li v-else>Holding {{ preview.days }} days on spot: {{ usd(preview.holding) }}</li>
       </ul>
       <p class="qs-cost__text">The engine would go {{ preview.switch.chosen === 'direct' ? 'direct' : 'through the quote' }} — {{ preview.switch.reason }}. Total {{ usd(preview.total) }}.</p>
     </template>

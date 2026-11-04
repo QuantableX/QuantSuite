@@ -9,9 +9,10 @@ use rusqlite::params;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
-use crate::execution::cex::{CexVenue, DEFAULT_TAKER_FEE};
-use crate::execution::mapping::{self, CostPreview, ExchangeCodes, MappingTable};
-use crate::execution::venue::{ExecutionVenue, Instrument, MarketType};
+use crate::execution::cex::DEFAULT_TAKER_FEE;
+use crate::execution::mapping::{self, CostPreview, MappingTable};
+use crate::execution::venue::{FeeSchedule, MarketType};
+use crate::venues::hyperliquid::{self, AgentStatus};
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
@@ -24,7 +25,7 @@ pub struct VenueAccount {
     pub executes: bool,
     pub markets: Vec<MarketType>,
     pub quote: String,
-    /// `cex` today; wallet kinds arrive with the DEX venues.
+    /// `cex` or `dex` (a wallet account: Hyperliquid's API wallet).
     pub kind: String,
 }
 
@@ -43,11 +44,11 @@ pub(crate) fn venue_list(state: State<'_, AppState>) -> Result<Vec<VenueAccount>
     let mut out = Vec::new();
     for row in rows.flatten() {
         let (id, name, provider, sandbox, kind) = row;
-        let executes = crate::broker::Venue::supports_live(&provider);
+        let executes = crate::venues::executes(&provider);
         out.push(VenueAccount {
             exchange_id: id,
             quote: mapping::quote_for(&provider).into(),
-            markets: if executes { vec![MarketType::Spot] } else { Vec::new() },
+            markets: crate::venues::markets(&provider),
             name,
             provider,
             sandbox,
@@ -58,20 +59,26 @@ pub(crate) fn venue_list(state: State<'_, AppState>) -> Result<Vec<VenueAccount>
     Ok(out)
 }
 
-fn provider_of(state: &AppState, exchange_id: &str) -> Result<String, String> {
+/// An account's provider and whether it points at the test network.
+fn provider_of(state: &AppState, exchange_id: &str) -> Result<(String, bool), String> {
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
-    db.query_row("SELECT provider FROM exchanges WHERE id = ?1", params![exchange_id], |r| r.get(0))
-        .map_err(|_| "That account is not connected.".to_string())
+    db.query_row("SELECT provider, sandbox FROM exchanges WHERE id = ?1", params![exchange_id], |r| {
+        Ok((r.get(0)?, r.get::<_, i64>(1)? != 0))
+    })
+    .map_err(|_| "That account is not connected.".to_string())
 }
 
 /// The venue's instruments for the data coins, verified by id. `read`.
 #[tauri::command(rename_all = "snake_case")]
-pub(crate) async fn venue_mapping(exchange_id: String, symbols: Vec<String>, app: AppHandle) -> Result<MappingTable, String> {
+pub(crate) async fn venue_mapping(
+    exchange_id: String,
+    symbols: Vec<String>,
+    market: Option<MarketType>,
+    app: AppHandle,
+) -> Result<MappingTable, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let provider = provider_of(&app.state::<AppState>(), &exchange_id)?;
-        let venue = CexVenue::new(&provider, "", "", false)?;
-        let instruments = venue.instruments()?;
-        Ok(mapping::map_coins(&venue.label(), &symbols, &instruments, &ExchangeCodes, &|i: &Instrument| i.base().to_string()))
+        let (provider, testnet) = provider_of(&app.state::<AppState>(), &exchange_id)?;
+        crate::venues::mapping_table(&provider, testnet, market.unwrap_or(MarketType::Spot), &symbols)
     })
     .await
     .map_err(|e| format!("Mapping failed: {e}"))?
@@ -101,13 +108,10 @@ pub(crate) async fn venue_cost_preview(
 ) -> Result<CostPreviewView, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let provider = provider_of(&state, &exchange_id)?;
+        let (provider, testnet) = provider_of(&state, &exchange_id)?;
         let market = market.unwrap_or(MarketType::Spot);
-        if market == MarketType::Perp {
-            return Err("This account has no perp market; perp venues come with Venues 2/4.".into());
-        }
         let quote = mapping::quote_for(&provider);
-        let public = CexVenue::new(&provider, "", "", false)?;
+        let public = crate::venues::public(&provider, testnet, market)?;
         let from_inst = public.instrument(&format!("{from}/{quote}"))?;
         let to_inst = public.instrument(&format!("{to}/{quote}"))?;
         let from_book = public.order_book(&from_inst)?;
@@ -117,13 +121,17 @@ pub(crate) async fn venue_cost_preview(
             let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
             crate::exchanges::load_credentials(&db, &exchange_id)
                 .ok()
-                .filter(|c| !c.api_key.is_empty())
-                .and_then(|c| CexVenue::new(&c.provider, &c.api_key, &c.api_secret, c.sandbox).ok())
+                .filter(|c| !c.api_key.is_empty() || !c.wallet_address.is_empty())
+                .and_then(|c| crate::venues::open(&c, market).ok())
         };
+        let standard = standard_taker(&provider, market);
         let (taker, fee_source) = match keyed.as_ref().map(|v| v.fee_schedule(&from_inst)) {
-            Some(Ok(f)) if f.taker > 0.0 => (f.taker, "the account's fee tier".to_string()),
-            _ => (DEFAULT_TAKER_FEE, "the venue's standard taker rate (no readable fee tier)".to_string()),
+            Some(Ok(f)) if f.taker > 0.0 && f.taker != standard => (f.taker, "the account's fee tier".to_string()),
+            _ => (standard, "the venue's standard taker rate (no readable fee tier)".to_string()),
         };
+        // Perp: the live funding of the coin held, per 8 hours.
+        let funding = (market == MarketType::Perp)
+            .then(|| crate::venues::funding_rate_hourly(&provider, testnet, &to).map(|h| h * 8.0).unwrap_or(BASE_FUNDING_PER_8H));
         let direct_inst = public.instruments().ok().and_then(|all| {
             all.into_iter().find(|i| {
                 (i.base().eq_ignore_ascii_case(&from) && i.quote().eq_ignore_ascii_case(&to))
@@ -145,13 +153,48 @@ pub(crate) async fn venue_cost_preview(
                 _ => None,
             },
             market,
-            None,
+            funding,
             days.unwrap_or(30),
         );
         Ok(CostPreviewView { preview, venue: public.label(), taker_fee: taker, fee_source })
     })
     .await
     .map_err(|e| format!("Cost preview failed: {e}"))?
+}
+
+/// Hyperliquid's base funding when the live rate is unreadable: the 0.01 %
+/// interest part per 8 hours (PLAN-EXECUTION-VENUES §5.1).
+const BASE_FUNDING_PER_8H: f64 = 0.0001;
+
+fn standard_taker(provider: &str, market: MarketType) -> f64 {
+    if provider.eq_ignore_ascii_case("hyperliquid") {
+        let FeeSchedule { taker, .. } = match market {
+            MarketType::Spot => FeeSchedule { maker: hyperliquid::SPOT_MAKER, taker: hyperliquid::SPOT_TAKER },
+            MarketType::Perp => FeeSchedule { maker: hyperliquid::PERP_MAKER, taker: hyperliquid::PERP_TAKER },
+        };
+        taker
+    } else {
+        DEFAULT_TAKER_FEE
+    }
+}
+
+/// A wallet account's API wallet: approved by the main address, and its
+/// expiry (Hyperliquid warns 7 days ahead). `read`.
+#[tauri::command(rename_all = "snake_case")]
+pub(crate) async fn venue_wallet_status(exchange_id: String, app: AppHandle) -> Result<AgentStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let creds = {
+            let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+            crate::exchanges::load_credentials(&db, &exchange_id)?
+        };
+        if !creds.provider.eq_ignore_ascii_case("hyperliquid") {
+            return Err("Only Hyperliquid accounts have an API wallet.".into());
+        }
+        crate::venues::hyperliquid_agent(&creds)
+    })
+    .await
+    .map_err(|e| format!("Wallet status failed: {e}"))?
 }
 
 #[derive(Debug, Serialize, Default)]

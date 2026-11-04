@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { invoke } from '@tauri-apps/api/core'
 import type { Exchange } from '#algo/types'
 import { formatDate, capitalize } from '#algo/utils/format'
 
@@ -11,6 +12,28 @@ const emit = defineEmits<{
   select: [id: string]
   delete: [id: string]
 }>()
+
+/** A Hyperliquid API wallet as the main account approved it (venue_wallet_status). */
+interface WalletStatus { address: string; approved: boolean; valid_until: number | null; days_left: number | null; expiring: boolean }
+
+const wallets = ref<Record<string, { text: string, tone: 'muted' | 'warn' }>>({})
+
+async function loadWallets() {
+  for (const ex of props.exchanges.filter(e => e.provider === 'hyperliquid' && e.key_storage === 'vault')) {
+    try {
+      const s = await invoke<WalletStatus>('plugin:algo|venue_wallet_status', { exchange_id: ex.id })
+      wallets.value[ex.id] = !s.approved
+        ? { text: 'API wallet not approved by the main address', tone: 'warn' }
+        : s.days_left == null
+          ? { text: 'API wallet approved, no expiry', tone: 'muted' }
+          : { text: `API wallet expires in ${s.days_left} day${s.days_left === 1 ? '' : 's'}${s.expiring ? ', approve a new one' : ''}`, tone: s.expiring ? 'warn' : 'muted' }
+    } catch (e) {
+      wallets.value[ex.id] = { text: `API wallet status unavailable: ${e}`, tone: 'warn' }
+    }
+  }
+}
+
+watch(() => props.exchanges.map(e => `${e.id}:${e.updated_at}`).join(','), loadWallets, { immediate: true })
 
 /** Where the keys are — never the keys (PLAN-AUTO-EXECUTION §2.1). */
 function keyLine(ex: Exchange): { text: string, tone: 'muted' | 'warn' } {
@@ -69,6 +92,14 @@ function keyLine(ex: Exchange): { text: string, tone: 'muted' | 'warn' } {
         title="API keys are kept in the suite's secret vault; QuantSuite never shows them again"
       >
         {{ keyLine(ex).text }}
+      </div>
+      <div
+        v-if="wallets[ex.id]"
+        class="card-keys"
+        :class="{ 'card-keys--warn': wallets[ex.id]!.tone === 'warn' }"
+        title="Hyperliquid API wallets can carry an expiry; QuantSuite warns 7 days ahead"
+      >
+        {{ wallets[ex.id]!.text }}
       </div>
     </div>
   </div>

@@ -29,6 +29,7 @@ mod settings;
 mod smithery;
 mod strategies;
 mod unattended;
+mod venues;
 mod venues_cmd;
 
 // ---------------------------------------------------------------------------
@@ -190,6 +191,9 @@ pub struct ExchangeConfig {
     pub wallet_address: Option<String>,
     pub private_key: Option<String>,
     pub rpc_endpoint: Option<String>,
+    /// Hyperliquid: an optional sub-account address.
+    #[serde(default)]
+    pub sub_account: Option<String>,
 }
 
 impl std::fmt::Debug for ExchangeConfig {
@@ -206,6 +210,7 @@ impl std::fmt::Debug for ExchangeConfig {
             .field("wallet_address", &self.wallet_address)
             .field("private_key", &given(&self.private_key))
             .field("rpc_endpoint", &given(&self.rpc_endpoint))
+            .field("sub_account", &self.sub_account)
             .finish()
     }
 }
@@ -592,6 +597,7 @@ pub fn init() -> TauriPlugin<Wry> {
             venues_cmd::venue_mapping,
             venues_cmd::venue_cost_preview,
             venues_cmd::venue_exposure,
+            venues_cmd::venue_wallet_status,
             unattended::trading_kill_switch,
             unattended::trading_kill_switch_status,
             unattended::trading_confirm_move,

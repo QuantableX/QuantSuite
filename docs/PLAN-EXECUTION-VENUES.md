@@ -142,6 +142,17 @@ The trading fee is the same as for any pair (14$ on 10,000$ in the table). The c
 - Live values (2026-11-04): a Top-10 universe is 10/10 tradable on Binance spot (17 direct pairs among them) and on Bybit spot (3). 10,000 $ BTC→ETH at the standard rate costs 20.01 $ through USDT or 11.67 $ direct on Binance, and 21.91 $ or 14.76 $ on Bybit; direct wins on both. Run with `--ignored live_venue_values`.
 - Not yet: wallet-kind accounts on the Exchange page and perp markets, which come with the DEX venue cards.
 
+### 10.2 Built (card Venues 2/5 Hyperliquid, 2026-11-04)
+
+- `modules/algo/crate/src/venues/hyperliquid.rs` (Tauri-free): `HyperliquidVenue` implements `ExecutionVenue` for spot and perp. Signing is own code with `k256` + `sha3` (msgpack of the action, nonce, vault flag → keccak → EIP-712 `Agent{source, connectionId}` in the `Exchange` domain, chain 1337). The official Rust SDK was not used: no release since May 2025, built on the deprecated ethers-rs. 16 signatures from hyperliquid-python-sdk 0.24.0 (order IOC spot with cloid, reduce-only perp order, cancel by cloid, 1x isolated leverage; mainnet/testnet; with and without a sub-account) plus the SDK's own test vectors are known-answer tests and match.
+- Nonces: milliseconds, strictly rising per API wallet in the process. Client order ids: `0x7173` ("qs") + 14 bytes of keccak of our id, so a resumed run finds its order by `orderStatus` and the kill switch only cancels ours.
+- Instruments speak the data source's terms: spot `BTC/USDC` is UBTC (pair `@142`, asset 10142) mapped by **token id** per network (mainnet: BTC, ETH, SOL, HYPE, DOGE, AVAX, ENA, PUMP, FARTCOIN, BONK, WLD, XPL, MON, ZEC, VIRTUAL; testnet: ETH, SOL, HYPE, FARTCOIN, PUMP, ENA); a token merely named like a coin is rejected. Perp contracts map by the protocol's own name. Prices are rounded to 5 significant figures inside the cap (integers always pass); IOC limit at the slippage cap; fills and fees come from `userFillsByTime` (a spot buy pays its fee in the bought token, netted from what arrives).
+- Perp in this card: 1x isolated (set by `updateLeverage` before the first opening order of a coin) and long-only — a sell on perp is always reduce-only. Leverage settings, shorts, the liquidation guard and funding rows are Venues 4/5.
+- Accounts: a DEX account "Hyperliquid" stores the API wallet's key, the main address and an optional sub-account (`vaultAddress`) in the vault; a Testnet switch points everything (prices, instruments, orders) at the testnet. The connection test checks that the main address approved the API wallet (`extraAgents`) and reads both USDC balances; the Exchange list shows the API wallet's expiry and warns 7 days ahead. Moving USDC between spot and perp stays in Hyperliquid's app (user-signed).
+- One factory (`venues::open` / `venues::public`) now serves Manual execution, the kill switch, coverage and the cost preview. Manual systems can pick a Hyperliquid account and Spot or Perp; the cost preview on perp adds funding at the live hourly rate × 8 per 8 hours. On any test network the price check compares with the venue's own mid (testnet prices are not market prices).
+- Bots still execute on Binance and Bybit only.
+- Live values (2026-11-04, `--ignored hyperliquid_live`): 14 verified spot pairs and 179 perps on mainnet, 6 and 159 on testnet; BTC funding −0.0021 %/h.
+
 ## 11. Cards
 
 | Card | What | Blocked by |
