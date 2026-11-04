@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-gateway-device-set-role"
+description = "Enables the gateway_device_set_role command without any pre-configured scope."
+commands.allow = ["gateway_device_set_role"]
+
+[[permission]]
+identifier = "deny-gateway-device-set-role"
+description = "Denies the gateway_device_set_role command without any pre-configured scope."
+commands.deny = ["gateway_device_set_role"]

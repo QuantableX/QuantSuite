@@ -44,6 +44,25 @@ Default permissions for the QuantSuite core plugin: settings, the event bus, the
 - `allow-server-status`
 - `allow-server-set-role`
 - `allow-server-set-watchdog`
+- `allow-gateway-status`
+- `allow-gateway-configure`
+- `allow-gateway-pairing-start`
+- `allow-gateway-pairing-status`
+- `allow-gateway-pairing-confirm`
+- `allow-gateway-pairing-cancel`
+- `allow-gateway-devices`
+- `allow-gateway-device-rename`
+- `allow-gateway-device-set-role`
+- `allow-gateway-device-revoke`
+- `allow-gateway-device-forget`
+- `allow-gateway-audit`
+- `allow-gateway-set-pin`
+- `allow-gateway-pair-begin`
+- `allow-gateway-pair-finish`
+- `allow-gateway-pair-current`
+- `allow-gateway-connections`
+- `allow-gateway-connection-test`
+- `allow-gateway-connection-forget`
 
 ## Permission Table
 
@@ -388,6 +407,500 @@ Enables the emit_event command without any pre-configured scope.
 <td>
 
 Denies the emit_event command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-audit`
+
+</td>
+<td>
+
+Enables the gateway_audit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-audit`
+
+</td>
+<td>
+
+Denies the gateway_audit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-configure`
+
+</td>
+<td>
+
+Enables the gateway_configure command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-configure`
+
+</td>
+<td>
+
+Denies the gateway_configure command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-connection-forget`
+
+</td>
+<td>
+
+Enables the gateway_connection_forget command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-connection-forget`
+
+</td>
+<td>
+
+Denies the gateway_connection_forget command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-connection-test`
+
+</td>
+<td>
+
+Enables the gateway_connection_test command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-connection-test`
+
+</td>
+<td>
+
+Denies the gateway_connection_test command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-connections`
+
+</td>
+<td>
+
+Enables the gateway_connections command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-connections`
+
+</td>
+<td>
+
+Denies the gateway_connections command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-device-forget`
+
+</td>
+<td>
+
+Enables the gateway_device_forget command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-device-forget`
+
+</td>
+<td>
+
+Denies the gateway_device_forget command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-device-rename`
+
+</td>
+<td>
+
+Enables the gateway_device_rename command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-device-rename`
+
+</td>
+<td>
+
+Denies the gateway_device_rename command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-device-revoke`
+
+</td>
+<td>
+
+Enables the gateway_device_revoke command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-device-revoke`
+
+</td>
+<td>
+
+Denies the gateway_device_revoke command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-device-set-role`
+
+</td>
+<td>
+
+Enables the gateway_device_set_role command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-device-set-role`
+
+</td>
+<td>
+
+Denies the gateway_device_set_role command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-devices`
+
+</td>
+<td>
+
+Enables the gateway_devices command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-devices`
+
+</td>
+<td>
+
+Denies the gateway_devices command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pair-begin`
+
+</td>
+<td>
+
+Enables the gateway_pair_begin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pair-begin`
+
+</td>
+<td>
+
+Denies the gateway_pair_begin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pair-current`
+
+</td>
+<td>
+
+Enables the gateway_pair_current command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pair-current`
+
+</td>
+<td>
+
+Denies the gateway_pair_current command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pair-finish`
+
+</td>
+<td>
+
+Enables the gateway_pair_finish command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pair-finish`
+
+</td>
+<td>
+
+Denies the gateway_pair_finish command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pairing-cancel`
+
+</td>
+<td>
+
+Enables the gateway_pairing_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pairing-cancel`
+
+</td>
+<td>
+
+Denies the gateway_pairing_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pairing-confirm`
+
+</td>
+<td>
+
+Enables the gateway_pairing_confirm command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pairing-confirm`
+
+</td>
+<td>
+
+Denies the gateway_pairing_confirm command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pairing-start`
+
+</td>
+<td>
+
+Enables the gateway_pairing_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pairing-start`
+
+</td>
+<td>
+
+Denies the gateway_pairing_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pairing-status`
+
+</td>
+<td>
+
+Enables the gateway_pairing_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pairing-status`
+
+</td>
+<td>
+
+Denies the gateway_pairing_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-set-pin`
+
+</td>
+<td>
+
+Enables the gateway_set_pin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-set-pin`
+
+</td>
+<td>
+
+Denies the gateway_set_pin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-status`
+
+</td>
+<td>
+
+Enables the gateway_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-status`
+
+</td>
+<td>
+
+Denies the gateway_status command without any pre-configured scope.
 
 </td>
 </tr>
