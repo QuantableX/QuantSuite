@@ -489,6 +489,9 @@ pub(crate) struct RunConfig {
     pub fee: f64,
     pub warmup_candles: usize,
     pub strategy_params: Option<Value>,
+    /// Where live orders go when it is not the data exchange
+    /// (PLAN-EXECUTION-VENUES §2: data source and execution venue apart).
+    pub execution_exchange_id: Option<String>,
 }
 
 impl RunConfig {
@@ -518,6 +521,11 @@ impl RunConfig {
                 .map(|n| (n as usize).clamp(2, MAX_WARMUP_CANDLES))
                 .unwrap_or(DEFAULT_WARMUP_CANDLES),
             strategy_params: overrides.get("strategy_params").cloned(),
+            execution_exchange_id: overrides
+                .get("execution_exchange_id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty() && *s != bot.exchange_id)
+                .map(String::from),
         })
     }
 
@@ -819,8 +827,9 @@ fn preflight_live(
     bot: &Bot,
     run: &RunConfig,
 ) {
+    let account = run.execution_exchange_id.as_deref().unwrap_or(&bot.exchange_id);
     let creds = match state.db.lock() {
-        Ok(db) => load_credentials(&db, &bot.exchange_id),
+        Ok(db) => load_credentials(&db, account),
         Err(e) => Err(format!("Lock: {e}")),
     };
     let creds = match creds {
@@ -938,9 +947,10 @@ fn connect_live(
     bot: &Bot,
     run: &RunConfig,
 ) -> Result<(Box<dyn Broker>, SymbolFilters), String> {
+    let account = run.execution_exchange_id.as_deref().unwrap_or(&bot.exchange_id);
     let creds = {
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
-        load_credentials(&db, &bot.exchange_id)?
+        load_credentials(&db, account)?
     };
     let venue = Venue::parse(&creds.provider).ok_or_else(|| {
         format!("Live order routing is implemented for Binance and Bybit spot; {} bots run in paper mode only.", creds.provider)

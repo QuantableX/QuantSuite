@@ -201,6 +201,10 @@ onMounted(async () => {
             @select="handleSelect"
             @delete="handleDelete"
           />
+          <div class="card exposure-card">
+            <h3 class="exposure-card__title">Exposure per venue</h3>
+            <AlgoExchangeExposurePanel />
+          </div>
         </div>
 
         <!-- Selected Exchange Detail -->
@@ -414,6 +418,18 @@ onMounted(async () => {
 .detail-panel__actions {
   display: flex;
   gap: 6px;
+}
+
+.exposure-card {
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.exposure-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--qa-text);
+  margin-bottom: 8px;
 }
 
 .detail-panel__balances {

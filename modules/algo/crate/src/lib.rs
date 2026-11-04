@@ -29,6 +29,7 @@ mod settings;
 mod smithery;
 mod strategies;
 mod unattended;
+mod venues_cmd;
 
 // ---------------------------------------------------------------------------
 // Data Structures
@@ -587,6 +588,10 @@ pub fn init() -> TauriPlugin<Wry> {
             manual::manual_execution_disarm,
             manual::manual_execution_runs,
             manual::manual_execution_coverage,
+            venues_cmd::venue_list,
+            venues_cmd::venue_mapping,
+            venues_cmd::venue_cost_preview,
+            venues_cmd::venue_exposure,
             unattended::trading_kill_switch,
             unattended::trading_kill_switch_status,
             unattended::trading_confirm_move,

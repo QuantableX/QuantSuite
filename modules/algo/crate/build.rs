@@ -7,6 +7,11 @@ const COMMANDS: &[&str] = &[
     "manual_execution_runs",
     "manual_execution_coverage",
     // Unattended bots (§2.6): "Stop all trading", its state, the heartbeats.
+    // Venues (PLAN-EXECUTION-VENUES): accounts, mapping, cost preview, exposure.
+    "venue_list",
+    "venue_mapping",
+    "venue_cost_preview",
+    "venue_exposure",
     "trading_kill_switch",
     "trading_kill_switch_status",
     // Migration (PLAN-MIGRATION §2.2): the move code, the notices.

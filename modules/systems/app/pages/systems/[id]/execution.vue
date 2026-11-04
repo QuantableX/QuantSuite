@@ -10,6 +10,7 @@ definePageMeta({ layout: 'systems', path: '/algo/manual/:id/execution' })
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSystemsStore } from '#systems/stores/systems'
+import SystemsSettingsCostPreview from '#systems/components/Settings/CostPreview.vue'
 
 type Mode = 'off' | 'paper' | 'live'
 interface Settings {
@@ -204,7 +205,7 @@ watch(systemId, () => { void load() })
             <option v-for="e in tradableVenues" :key="e.id" :value="e.id">{{ e.name }} ({{ e.provider }}{{ e.sandbox ? ', sandbox' : '' }})</option>
           </select>
         </label>
-        <label><span class="label">Market</span><select class="select" disabled><option>Spot</option></select></label>
+        <label><span class="label">Market</span><select class="select" disabled><option>Spot</option><option>Perp (with the perp venues, Venues 2/4)</option></select></label>
         <div class="qs-exec__pair">
           <label><span class="label">Capital</span>
             <select v-model="form.capital.kind" class="select">
@@ -263,6 +264,7 @@ watch(systemId, () => { void load() })
           <li v-for="c in checks" :key="c.name" :class="c.ok ? 'qs-exec__ok' : 'qs-exec__warn'">{{ c.ok ? '✓' : '✗' }} {{ c.detail }}</li>
         </ul>
         <p class="qs-exec__hint">Arming needs Live saved, a completed paper run, a working account and a robust verdict (or the tick). Stopping never sells.</p>
+        <SystemsSettingsCostPreview :exchange-id="form.exchange_id" :value="form.capital.kind === 'fixed' ? form.capital.value : 1000" />
       </section>
 
       <section class="card qs-exec__runs" aria-label="Runs">

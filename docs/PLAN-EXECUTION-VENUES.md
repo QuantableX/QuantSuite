@@ -133,6 +133,15 @@ The trading fee is the same as for any pair (14$ on 10,000$ in the table). The c
 - **Bot create modal:** "Data" (exchange + pair) and "Execution" (venue + account + market type) as two groups; for a CEX the default is "same as data".
 - **Exchange page (`/algo/exchange`):** add DEX accounts (wallet kinds), test (balance read), API-wallet expiry, sub-account, exposure per venue.
 
+### 10.1 Built (card Venues 1/5, 2026-11-04)
+
+- `modules/algo/crate/src/execution/mapping.rs`: `map_coins` maps data coins onto a venue's spot instruments against its quote (USDT on CEX, USDC on the DEX venues), by verified id. A CEX's asset code is the id (`ExchangeCodes`). An on-chain venue maps only through its `VerifiedList` (token index or mint, plus the custodian), and a look-alike named like the coin is rejected. Direct pairs are listed only between mapped coins. `preview` gives the §5.1 numbers: both switch routes from the live books and the fee tier, plus holding cost (0 on spot, funding on perp).
+- Commands, all read: `venue_list` (accounts and what they execute), `venue_mapping` (the table above), `venue_cost_preview` (live books, and the account's fee tier when its keys can read it, else the venue's standard rate, labelled as such), `venue_exposure` (what every bot and Manual system holds per account). MCP: `list_venues`, `venue_coverage`.
+- UI: the Manual Execution page gets a cost preview (both routes and the one the engine takes, plus 30 days of holding), and its market select shows Perp as "with the perp venues". The bot form has "Data" and "Execution" groups; a live bot can send its orders to another connected Binance or Bybit account (`execution_exchange_id` in the bot's config, used by the preflight and the live connection), and the default is "same as data". The Exchange page shows exposure per venue, the Trading overview a compact version.
+- The coverage check per system is Automation 3/5's "Check coverage". Its restrict policy is card 3b.
+- Live values (2026-11-04): a Top-10 universe is 10/10 tradable on Binance spot (17 direct pairs among them) and on Bybit spot (3). 10,000 $ BTC→ETH at the standard rate costs 20.01 $ through USDT or 11.67 $ direct on Binance, and 21.91 $ or 14.76 $ on Bybit; direct wins on both. Run with `--ignored live_venue_values`.
+- Not yet: wallet-kind accounts on the Exchange page and perp markets, which come with the DEX venue cards.
+
 ## 11. Cards
 
 | Card | What | Blocked by |

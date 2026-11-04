@@ -310,6 +310,26 @@
         "properties": { "on": { "type": "boolean", "description": "true = stop all trading, false = allow it again." } },
         "required": ["on"]
       }
+    },
+    {
+      "name": "list_venues",
+      "command": "plugin:algo|venue_list",
+      "description": "Every connected exchange account and what it can execute (PLAN-EXECUTION-VENUES): market types, quote asset, whether the execution core can trade on it.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "venue_coverage",
+      "command": "plugin:algo|venue_mapping",
+      "description": "Which of the given coins an account's venue can trade, mapped by verified id (never by name), with the direct pairs between them and the coins it does not list.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "exchange_id": { "type": "string", "description": "The account (list_venues)." },
+          "symbols": { "type": "array", "items": { "type": "string" }, "description": "Coin symbols, e.g. a system's universe." }
+        },
+        "required": ["exchange_id", "symbols"]
+      }
     }
   ],
   "migrateFrom": "<data_dir>/quantalgo"
