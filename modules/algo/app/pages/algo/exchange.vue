@@ -1,8 +1,9 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'algo' })
 
+import { invoke } from '@tauri-apps/api/core'
 import { useExchangeStore } from '#algo/stores/exchange'
-import type { Exchange, ExchangeConfig, ConnectionResult } from '#algo/types'
+import type { Exchange, ExchangeConfig, ConnectionResult, VaultStatus } from '#algo/types'
 
 const exchangeStore = useExchangeStore()
 
@@ -106,8 +107,44 @@ function closeForm() {
   testResult.value = null
 }
 
+// The secret vault (PLAN-AUTO-EXECUTION §2.1). Asked only when the list says
+// it is locked: on a machine with an OS keystore it never is.
+const vault = ref<VaultStatus | null>(null)
+const vaultPassphrase = ref('')
+const isUnlocking = ref(false)
+
+async function loadVaultStatus() {
+  if (!exchangeStore.exchanges.some((ex) => ex.key_storage === 'locked')) {
+    vault.value = null
+    return
+  }
+  try {
+    vault.value = await invoke<VaultStatus>('plugin:qs|vault_status')
+  } catch (err) {
+    vault.value = { state: 'error', source: null, secrets: 0, message: String(err) }
+  }
+}
+
+async function unlockVault() {
+  if (!vaultPassphrase.value) return
+  isUnlocking.value = true
+  try {
+    vault.value = await invoke<VaultStatus>('plugin:qs|vault_unlock', { passphrase: vaultPassphrase.value })
+    if (vault.value.state === 'ready') {
+      vaultPassphrase.value = ''
+      await exchangeStore.load()
+      await loadVaultStatus()
+    }
+  } catch (err) {
+    vault.value = { state: 'error', source: null, secrets: 0, message: String(err) }
+  } finally {
+    isUnlocking.value = false
+  }
+}
+
 onMounted(async () => {
   await exchangeStore.load()
+  await loadVaultStatus()
 })
 </script>
 
@@ -117,6 +154,27 @@ onMounted(async () => {
     <div class="exchange-page__header">
       <h2 class="exchange-page__title">Exchange Connections</h2>
       <button class="btn btn-primary" @click="openAddForm">Add Exchange</button>
+    </div>
+
+    <!-- Secret vault locked (only without an OS keystore, or when it failed) -->
+    <div v-if="vault && vault.state !== 'ready'" class="vault-notice card">
+      <p class="vault-notice__text">{{ vault.message ?? 'The secret vault is not open.' }}</p>
+      <form
+        v-if="vault.state === 'needs-passphrase'"
+        class="vault-notice__form"
+        @submit.prevent="unlockVault"
+      >
+        <input
+          v-model="vaultPassphrase"
+          type="password"
+          class="input"
+          placeholder="Vault passphrase"
+          autocomplete="off"
+        >
+        <button class="btn btn-sm btn-primary" type="submit" :disabled="isUnlocking || !vaultPassphrase">
+          {{ isUnlocking ? 'Opening...' : 'Open vault' }}
+        </button>
+      </form>
     </div>
 
     <!-- Loading State -->
@@ -234,6 +292,30 @@ onMounted(async () => {
   font-size: 16px;
   font-weight: 600;
   color: var(--qa-text);
+}
+
+.vault-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--qa-warning);
+  flex-shrink: 0;
+}
+
+.vault-notice__text {
+  font-size: 13px;
+  color: var(--qa-text);
+}
+
+.vault-notice__form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.vault-notice__form .input {
+  max-width: 280px;
 }
 
 .exchange-page__loading {

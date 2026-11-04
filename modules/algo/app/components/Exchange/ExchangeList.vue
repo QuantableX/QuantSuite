@@ -11,6 +11,20 @@ const emit = defineEmits<{
   select: [id: string]
   delete: [id: string]
 }>()
+
+/** Where the keys are — never the keys (PLAN-AUTO-EXECUTION §2.1). */
+function keyLine(ex: Exchange): { text: string, tone: 'muted' | 'warn' } {
+  switch (ex.key_storage) {
+    case 'vault':
+      return { text: `Keys in vault ${ex.key_fingerprint ?? ''}`.trim(), tone: 'muted' }
+    case 'unreadable':
+      return { text: 'Saved keys unreadable, enter them again', tone: 'warn' }
+    case 'locked':
+      return { text: 'Vault locked', tone: 'warn' }
+    default:
+      return { text: 'No API keys', tone: 'muted' }
+  }
+}
 </script>
 
 <template>
@@ -48,6 +62,13 @@ const emit = defineEmits<{
           <span class="status-text">{{ ex.is_active ? 'Connected' : 'Inactive' }}</span>
         </span>
         <span class="connected-date">{{ formatDate(ex.created_at) }}</span>
+      </div>
+      <div
+        class="card-keys"
+        :class="{ 'card-keys--warn': keyLine(ex).tone === 'warn' }"
+        title="API keys are kept in the suite's secret vault; QuantSuite never shows them again"
+      >
+        {{ keyLine(ex).text }}
       </div>
     </div>
   </div>
@@ -172,6 +193,16 @@ const emit = defineEmits<{
 .connected-date {
   font-size: 11px;
   color: var(--qa-text-muted);
+}
+
+.card-keys {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--qa-text-muted);
+}
+
+.card-keys--warn {
+  color: var(--qa-warning);
 }
 
 .empty-state {

@@ -24,6 +24,7 @@ pub mod processes;
 pub mod shutdown;
 pub mod system_path;
 pub mod tray;
+pub mod vault;
 pub mod window;
 pub mod workspaces;
 
@@ -73,6 +74,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::agent_pending_calls,
             commands::agent_call_claim,
             commands::agent_call_complete,
+            commands::vault_status,
+            commands::vault_unlock,
         ]))
         .setup(|app, _api| {
             paths::ensure()?;

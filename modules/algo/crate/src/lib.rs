@@ -22,6 +22,7 @@ mod exchanges;
 mod journal;
 mod logs;
 mod runtime;
+mod secrets;
 mod settings;
 mod smithery;
 mod strategies;
@@ -145,9 +146,19 @@ pub struct Exchange {
     pub sandbox: bool,
     pub created_at: String,
     pub updated_at: String,
+    /// Where the API keys are (PLAN-AUTO-EXECUTION §2.1): `vault`, `none`,
+    /// `unreadable` (an old row neither old key opens) or `locked` (the vault
+    /// could not be opened). Never a key.
+    #[serde(default)]
+    pub key_storage: String,
+    /// The vault's masked fingerprint (`…7f3a`) when the keys are there.
+    #[serde(default)]
+    pub key_fingerprint: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+/// The exchange form as it arrives over IPC — the only struct that carries
+/// typed-in keys, on their way into the vault. `Debug` prints no key.
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ExchangeConfig {
     pub name: String,
     pub exchange_type: String,
@@ -160,6 +171,24 @@ pub struct ExchangeConfig {
     pub wallet_address: Option<String>,
     pub private_key: Option<String>,
     pub rpc_endpoint: Option<String>,
+}
+
+impl std::fmt::Debug for ExchangeConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let given = |v: &Option<String>| if v.as_deref().is_some_and(|s| !s.is_empty()) { "<set>" } else { "<empty>" };
+        f.debug_struct("ExchangeConfig")
+            .field("name", &self.name)
+            .field("exchange_type", &self.exchange_type)
+            .field("provider", &self.provider)
+            .field("sandbox", &self.sandbox)
+            .field("api_key", &given(&self.api_key))
+            .field("api_secret", &given(&self.api_secret))
+            .field("passphrase", &given(&self.passphrase))
+            .field("wallet_address", &self.wallet_address)
+            .field("private_key", &given(&self.private_key))
+            .field("rpc_endpoint", &given(&self.rpc_endpoint))
+            .finish()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -371,6 +400,20 @@ pub fn init() -> TauriPlugin<Wry> {
             }
             if let Err(e) = run_migrations(&db, &strategy_dir) {
                 eprintln!("[quantalgo] run_migrations: {e}");
+            }
+            // API keys from quantalgo.db into the suite vault, once
+            // (PLAN-AUTO-EXECUTION §2.1). The vault is opened only when a row
+            // still holds old keys. Counts only — never a value — in the log.
+            if secrets::has_legacy_rows(&db) {
+                match qs_core::vault::with_vault(|vault| secrets::migrate_legacy_rows(&db, vault, None)) {
+                    Ok(report) => log::info!(
+                        target: "algo",
+                        "exchange keys moved into the vault: {} row(s); {} row(s) unreadable",
+                        report.migrated,
+                        report.unreadable.len()
+                    ),
+                    Err(e) => log::warn!(target: "algo", "exchange keys stay in quantalgo.db until the vault opens: {e}"),
+                }
             }
 
             let settings = load_settings_from_disk();

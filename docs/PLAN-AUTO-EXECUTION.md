@@ -1,6 +1,6 @@
 # QuantAlgo trading automation — Manual and Automated trade by themselves
 
-Status: plan, 2026-11-03. Nothing here is built yet. Cards "QuantAlgo Automation 1/5" to "5/5" on the QuantSuite board. Where orders go is [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md); running it 24/7 is [PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md).
+Status: plan, 2026-11-03. Built so far: card 1, the secret vault (2026-11-04). Cards "QuantAlgo Automation 1/5" to "5/5" on the QuantSuite board. Where orders go is [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md); running it 24/7 is [PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md).
 
 ## In short
 
@@ -33,6 +33,17 @@ One vault for every secret the suite keeps: exchange API keys, wallet keys (venu
 - Write-only: the frontend can set, test, replace and delete a secret, and sees a masked fingerprint (`…7f3a`). It never receives the value back.
 - One-time migration on first start: every `config_encrypted` row is decrypted with today's derivation (or the legacy key), re-encrypted into the vault and verified, then the old column is cleared. After that the legacy key is removed from the code.
 - Tests: round trip, wrong associated data fails, migration of rows written with both old keys, a missing keystore falls back to the passphrase file.
+
+**Built (card 1, 2026-11-04).** `crates/qs-core/src/vault.rs` + `modules/algo/crate/src/secrets.rs`:
+
+- Files: `~/.quantsuite/secrets/vault.db` (ciphertexts, fingerprints, a random vault id and a key check) and, only without a keystore, `secrets/vault.key` (the master key wrapped under Argon2id, 64 MiB / 3 passes). The keystore entry is service `QuantSuite Vault`, account `master-key:<vault id>`. A copy of `vault.db` alone decrypts nothing. An isolated profile (`QUANTSUITE_HOME`) gets its own vault.
+- No keystore: the vault is created only with a passphrase (at least 12 characters) from `QUANTSUITE_VAULT_PASSPHRASE` or the exchange page's "Open vault" field (`plugin:qs|vault_unlock`). It never falls back silently. A keystore vault whose key is missing refuses to open while it holds secrets. An empty one starts over.
+- Exchange keys: id `algo/exchange/<exchange id>`, the JSON of the form fields. `add_exchange` stores into the vault, or the exchange is not added. `update_exchange` keeps the stored value for every blank field (the old code wiped the keys on a rename). `delete_exchange` removes the entry. `list_exchanges` returns `key_storage` (`vault` / `none` / `unreadable` / `locked`) and the fingerprint, never a key. The page shows "Keys in vault …7f3a".
+- Migration: on start (only when a row still holds old keys), after an import and when a row is first read. It decrypts with today's derivation or the old constant, stores, reads back, compares, then sets `config_encrypted = NULL` with `secure_delete` on and checkpoints the WAL (TRUNCATE), so the old ciphertext is gone from the file. A row neither key opens stays and shows "Saved keys unreadable, enter them again". Saving new keys clears it.
+- The two old keys survive only in `secrets::legacy`, decrypt-only, to read rows written before the vault. Delete that module once every installation has started this version once.
+- Data export no longer carries keys; importing an old export moves its keys into the vault and prunes vault entries of exchanges the import dropped.
+- `ExchangeConfig` (the only IPC struct with typed-in keys) has a redacting `Debug`; `StoredCredentials` and `ExchangeSecret` wipe themselves on drop.
+- Real-data check (2026-11-04, a copy in `artifacts/vault-migration-20261104`): 1 of 1 row migrated, the column cleared, the old ciphertext no longer in the file. Bybit's read-only credential test reached the account but answered "Your api key has expired". The key itself has to be renewed at Bybit.
 
 ### 2.2 Execution core (card 2)
 

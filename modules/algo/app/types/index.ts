@@ -330,6 +330,22 @@ export interface Exchange {
   sandbox: boolean
   created_at: string
   updated_at: string
+  /**
+   * Where the API keys are (PLAN-AUTO-EXECUTION §2.1): in the suite vault,
+   * none stored, an old saved copy no key opens, or the vault is locked.
+   * The keys themselves never reach the frontend.
+   */
+  key_storage: 'vault' | 'none' | 'unreadable' | 'locked' | ''
+  /** Masked vault fingerprint, e.g. `…7f3a`; changes when the keys change. */
+  key_fingerprint?: string | null
+}
+
+/** `plugin:qs|vault_status` — never a secret value. */
+export interface VaultStatus {
+  state: 'ready' | 'needs-passphrase' | 'error'
+  source: 'keystore' | 'passphrase-file' | null
+  secrets: number
+  message: string | null
 }
 
 export interface ExchangeConfig {
