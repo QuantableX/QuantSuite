@@ -33,6 +33,8 @@ const COMMANDS: &[&str] = &[
     "agent_pending_calls",
     "agent_call_claim",
     "agent_call_complete",
+    "vault_status",
+    "vault_unlock",
 ];
 
 fn main() {

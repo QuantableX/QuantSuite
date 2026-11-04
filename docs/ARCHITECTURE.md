@@ -894,6 +894,12 @@ keychain via `keyring`, with an encrypted file fallback. QuantControl's existing
 `set_api_key` / `get_api_key_status` / `delete_api_key_cmd` becomes the core
 implementation for the whole suite.
 
+Built for QuantAlgo exchange keys on 2026-11-04 as the suite vault
+(`qs_core::vault`, PLAN-AUTO-EXECUTION §2.1): one random master key in the OS
+keystore (Argon2id passphrase file where none exists), each secret AES-256-GCM
+with its id as associated data in `~/.quantsuite/secrets/vault.db`. New secrets
+go there.
+
 ---
 
 ## 6. The Process Register

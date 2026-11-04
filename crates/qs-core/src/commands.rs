@@ -318,3 +318,19 @@ pub fn suite_paths() -> serde_json::Value {
         "secrets": paths::secrets_dir(),
     })
 }
+
+// ── Secret vault ────────────────────────────────────────────────────────
+
+/// The vault's state (PLAN-AUTO-EXECUTION §2.1). Never a secret value.
+#[tauri::command(async)]
+pub fn vault_status() -> crate::vault::VaultStatus {
+    crate::vault::status()
+}
+
+/// Open the vault with its passphrase — only for machines without an OS
+/// keystore, where the master key sits in a passphrase file.
+#[tauri::command(async)]
+pub fn vault_unlock(passphrase: String) -> crate::vault::VaultStatus {
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    crate::vault::unlock(&passphrase)
+}

@@ -32,6 +32,11 @@ struct BacktestExportRow {
 #[derive(Debug, Serialize, Deserialize)]
 struct ExchangeExportRow {
     exchange: Exchange,
+    /// Keys as exports before the vault carried them (encrypted with the old,
+    /// guessable key). New exports leave it empty: API keys stay in the vault
+    /// of this machine (PLAN-AUTO-EXECUTION §2.1); an import of an old export
+    /// moves them into the vault.
+    #[serde(default)]
     config_encrypted: Option<String>,
 }
 
@@ -130,7 +135,7 @@ pub(crate) async fn export_all_data(state: State<'_, AppState>) -> Result<String
         .collect::<Vec<_>>();
 
     let mut exchanges_stmt = db
-        .prepare("SELECT id, name, exchange_type, provider, is_active, created_at, updated_at, config_encrypted, sandbox FROM exchanges ORDER BY name")
+        .prepare("SELECT id, name, exchange_type, provider, is_active, created_at, updated_at, sandbox FROM exchanges ORDER BY name")
         .map_err(|e| format!("Prepare exchanges: {e}"))?;
     let exchanges = exchanges_stmt
         .query_map([], |row| {
@@ -141,11 +146,14 @@ pub(crate) async fn export_all_data(state: State<'_, AppState>) -> Result<String
                     exchange_type: row.get(2)?,
                     provider: row.get(3)?,
                     is_active: row.get::<_, i32>(4)? != 0,
-                    sandbox: row.get::<_, i32>(8)? != 0,
+                    sandbox: row.get::<_, i32>(7)? != 0,
                     created_at: row.get(5)?,
                     updated_at: row.get(6)?,
+                    key_storage: String::new(),
+                    key_fingerprint: None,
                 },
-                config_encrypted: row.get(7)?,
+                // Never exported: the keys stay in this machine's vault.
+                config_encrypted: None,
             })
         })
         .map_err(|e| format!("Query exchanges: {e}"))?
@@ -418,6 +426,25 @@ pub(crate) async fn import_data(state: State<'_, AppState>) -> Result<String, St
     .map_err(|e| format!("Restore bot state: {e}"))?;
 
     tx.commit().map_err(|e| format!("Commit import: {e}"))?;
+
+    // Keys of an old export move into the vault; vault entries of exchanges
+    // the import dropped go. A locked vault leaves both for later (the rows
+    // migrate when first read).
+    let keys = qs_core::vault::with_vault(|vault| {
+        let report = crate::secrets::migrate_legacy_rows(&db, vault, None)?;
+        crate::secrets::prune_orphans(&db, vault)?;
+        Ok(report)
+    });
+    match keys {
+        Ok(report) => log::info!(
+            target: "algo",
+            "import: {} exchange key row(s) moved into the vault, {} unreadable",
+            report.migrated,
+            report.unreadable.len()
+        ),
+        Err(e) => log::warn!(target: "algo", "import: exchange keys not moved into the vault yet: {e}"),
+    }
+    drop(db);
 
     for (target_path, code) in pending_files {
         std::fs::write(&target_path, code).map_err(|e| format!("Write strategy file: {e}"))?;

@@ -1,5 +1,3 @@
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
-use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine as _;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -13,7 +11,7 @@ use tauri::State;
 use uuid::Uuid;
 use crate::{AppState, BacktestConfig, Balance, ConnectionResult, Exchange, ExchangeConfig};
 use crate::candle_archive::{self, Bar, CandleArchive, Key as ArchiveKey, Window};
-use crate::settings::get_data_dir;
+use crate::secrets::{self, ExchangeSecret};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -29,56 +27,6 @@ static PAIR_CACHE: OnceLock<Mutex<HashMap<String, CachedPairs>>> = OnceLock::new
 
 fn pair_cache() -> &'static Mutex<HashMap<String, CachedPairs>> {
     PAIR_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-const LEGACY_APP_ENCRYPTION_KEY: &[u8; 32] = b"QuantAlgo_AES256_Key_2024!@#$%^&";
-
-fn derive_encryption_key() -> [u8; 32] {
-    let user = std::env::var("USERNAME")
-        .or_else(|_| std::env::var("USER"))
-        .unwrap_or_else(|_| "local-user".to_string());
-    let material = format!("quantalgo:v2:{}:{}", user, get_data_dir().to_string_lossy());
-    let digest = Sha256::digest(material.as_bytes());
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&digest);
-    key
-}
-
-pub fn encrypt_string(plaintext: &str) -> Result<String, String> {
-    let key = derive_encryption_key();
-    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| format!("Cipher init: {e}"))?;
-    let nonce_bytes: [u8; 12] = {
-        use aes_gcm::aead::rand_core::RngCore;
-        let mut buf = [0u8; 12];
-        OsRng.fill_bytes(&mut buf);
-        buf
-    };
-    let nonce = Nonce::from_slice(&nonce_bytes);
-    let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_bytes())
-        .map_err(|e| format!("Encrypt: {e}"))?;
-    let mut combined = nonce_bytes.to_vec();
-    combined.extend_from_slice(&ciphertext);
-    Ok(hex::encode(combined))
-}
-
-fn decrypt_with_key(data: &[u8], key: &[u8; 32]) -> Result<String, String> {
-    if data.len() < 13 {
-        return Err("Ciphertext too short".into());
-    }
-    let (nonce_bytes, ciphertext) = data.split_at(12);
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| format!("Cipher init: {e}"))?;
-    let nonce = Nonce::from_slice(nonce_bytes);
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|e| format!("Decrypt: {e}"))?;
-    String::from_utf8(plaintext).map_err(|e| format!("UTF-8: {e}"))
-}
-
-pub fn decrypt_string(hex_str: &str) -> Result<String, String> {
-    let data = hex::decode(hex_str).map_err(|e| format!("Hex decode: {e}"))?;
-    let key = derive_encryption_key();
-    decrypt_with_key(&data, &key).or_else(|_| decrypt_with_key(&data, LEGACY_APP_ENCRYPTION_KEY))
 }
 
 fn hmac_sha256_hex(key: &[u8], message: &[u8]) -> String {
@@ -1255,28 +1203,71 @@ fn fetch_from_exchange(
 #[tauri::command(async)]
 pub(crate) fn list_exchanges(state: State<'_, AppState>) -> Result<Vec<Exchange>, String> {
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
-    let mut stmt = db
-        .prepare("SELECT id, name, exchange_type, provider, is_active, created_at, updated_at, sandbox FROM exchanges ORDER BY name")
-        .map_err(|e| format!("Prepare: {e}"))?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(Exchange {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                exchange_type: row.get(2)?,
-                provider: row.get(3)?,
-                is_active: row.get::<_, i32>(4)? != 0,
-                sandbox: row.get::<_, i32>(7)? != 0,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+    exchange_rows(&db, |fill| qs_core::vault::with_vault(fill))
+}
+
+/// Every connected exchange with where its keys are (PLAN-AUTO-EXECUTION
+/// §2.1) — never a key. `open_vault` runs its closure on the suite vault
+/// (`qs_core::vault::with_vault` in the app); old rows move into the vault on
+/// the way.
+pub(crate) fn exchange_rows(
+    db: &rusqlite::Connection,
+    open_vault: impl FnOnce(&mut dyn FnMut(&qs_core::vault::Vault) -> Result<(), String>) -> Result<(), String>,
+) -> Result<Vec<Exchange>, String> {
+    let mut exchanges = {
+        let mut stmt = db
+            .prepare("SELECT id, name, exchange_type, provider, is_active, created_at, updated_at, sandbox, config_encrypted IS NOT NULL AND config_encrypted != '' FROM exchanges ORDER BY name")
+            .map_err(|e| format!("Prepare: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    Exchange {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        exchange_type: row.get(2)?,
+                        provider: row.get(3)?,
+                        is_active: row.get::<_, i32>(4)? != 0,
+                        sandbox: row.get::<_, i32>(7)? != 0,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
+                        key_storage: String::new(),
+                        key_fingerprint: None,
+                    },
+                    row.get::<_, bool>(8)?,
+                ))
             })
-        })
-        .map_err(|e| format!("Query: {e}"))?;
-    let mut result = Vec::new();
-    for row in rows {
-        result.push(row.map_err(|e| format!("Row: {e}"))?);
+            .map_err(|e| format!("Query: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Row: {e}"))?
+    };
+
+    let has_legacy = exchanges.iter().any(|(_, legacy)| *legacy);
+    let mut fill = |vault: &qs_core::vault::Vault| -> Result<(), String> {
+        let unreadable = if has_legacy {
+            secrets::migrate_legacy_rows(db, vault, None)?.unreadable
+        } else {
+            Vec::new()
+        };
+        for (exchange, _) in exchanges.iter_mut() {
+            if unreadable.contains(&exchange.id) {
+                exchange.key_storage = "unreadable".into();
+            } else if let Some(info) = vault.info(&secrets::secret_id(&exchange.id))? {
+                exchange.key_storage = "vault".into();
+                exchange.key_fingerprint = Some(info.fingerprint);
+            } else {
+                exchange.key_storage = "none".into();
+            }
+        }
+        Ok(())
+    };
+    let opened = open_vault(&mut fill);
+    if let Err(e) = opened {
+        log::warn!(target: "algo", "exchange list without key state: {e}");
+        for (exchange, _) in exchanges.iter_mut() {
+            exchange.key_storage = "locked".into();
+            exchange.key_fingerprint = None;
+        }
     }
-    Ok(result)
+    Ok(exchanges.into_iter().map(|(exchange, _)| exchange).collect())
 }
 
 #[tauri::command]
@@ -1284,23 +1275,23 @@ pub(crate) async fn add_exchange(config: ExchangeConfig, state: State<'_, AppSta
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     let sandbox = sandbox_flag(&config)?;
-
-    let sensitive = serde_json::json!({
-        "api_key": config.api_key,
-        "api_secret": config.api_secret,
-        "passphrase": config.passphrase,
-        "wallet_address": config.wallet_address,
-        "private_key": config.private_key,
-        "rpc_endpoint": config.rpc_endpoint,
-    });
-    let encrypted = encrypt_string(&sensitive.to_string())?;
+    let secret = ExchangeSecret::from_config(&config);
 
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
     db.execute(
-        "INSERT INTO exchanges (id, name, exchange_type, provider, config_encrypted, is_active, sandbox, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?8)",
-        params![id, config.name, config.exchange_type, config.provider, encrypted, sandbox as i32, now, now],
+        "INSERT INTO exchanges (id, name, exchange_type, provider, config_encrypted, is_active, sandbox, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 1, ?5, ?6, ?7)",
+        params![id, config.name, config.exchange_type, config.provider, sandbox as i32, now, now],
     )
     .map_err(|e| format!("Insert: {e}"))?;
+
+    // Keys go into the vault; without it the exchange is not added at all.
+    let info = match qs_core::vault::with_vault(|vault| secrets::store(vault, &id, &secret)) {
+        Ok(info) => info,
+        Err(e) => {
+            let _ = db.execute("DELETE FROM exchanges WHERE id = ?1", params![id]);
+            return Err(format!("The keys could not be stored: {e}"));
+        }
+    };
 
     Ok(Exchange {
         id,
@@ -1311,6 +1302,8 @@ pub(crate) async fn add_exchange(config: ExchangeConfig, state: State<'_, AppSta
         sandbox,
         created_at: now.clone(),
         updated_at: now,
+        key_storage: if info.is_some() { "vault" } else { "none" }.into(),
+        key_fingerprint: info.map(|i| i.fingerprint),
     })
 }
 
@@ -1322,28 +1315,24 @@ pub(crate) async fn update_exchange(
 ) -> Result<Exchange, String> {
     let now = Utc::now().to_rfc3339();
     let sandbox = sandbox_flag(&config)?;
-
-    let sensitive = serde_json::json!({
-        "api_key": config.api_key,
-        "api_secret": config.api_secret,
-        "passphrase": config.passphrase,
-        "wallet_address": config.wallet_address,
-        "private_key": config.private_key,
-        "rpc_endpoint": config.rpc_endpoint,
-    });
-    let encrypted = encrypt_string(&sensitive.to_string())?;
+    let update = ExchangeSecret::from_config(&config);
 
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
     let affected = db
         .execute(
-            "UPDATE exchanges SET name = ?1, exchange_type = ?2, provider = ?3, config_encrypted = ?4, updated_at = ?5, sandbox = ?7 WHERE id = ?6",
-            params![config.name, config.exchange_type, config.provider, encrypted, now, id, sandbox as i32],
+            "UPDATE exchanges SET name = ?1, exchange_type = ?2, provider = ?3, updated_at = ?4, sandbox = ?6 WHERE id = ?5",
+            params![config.name, config.exchange_type, config.provider, now, id, sandbox as i32],
         )
         .map_err(|e| format!("Update: {e}"))?;
 
     if affected == 0 {
         return Err("Exchange not found".into());
     }
+
+    // Blank key fields keep the stored keys ("Leave blank to keep the stored
+    // key"); an old row moves into the vault first, so it is merged, not lost.
+    let info = qs_core::vault::with_vault(|vault| update_secret(&db, vault, &id, &update))
+        .map_err(|e| format!("The keys could not be stored: {e}"))?;
 
     let created_at: String = db
         .query_row(
@@ -1362,7 +1351,29 @@ pub(crate) async fn update_exchange(
         sandbox,
         created_at,
         updated_at: now,
+        key_storage: if info.is_some() { "vault" } else { "none" }.into(),
+        key_fingerprint: info.map(|i| i.fingerprint),
     })
+}
+
+/// The vault side of an edit: fields the form carries replace the stored
+/// ones, blank fields keep them.
+pub(crate) fn update_secret(
+    db: &rusqlite::Connection,
+    vault: &qs_core::vault::Vault,
+    id: &str,
+    update: &ExchangeSecret,
+) -> Result<Option<qs_core::vault::SecretInfo>, String> {
+    secrets::migrate_legacy_rows(db, vault, Some(id))?;
+    if update.is_empty() {
+        return vault.info(&secrets::secret_id(id));
+    }
+    let merged = secrets::load(vault, id)?.merged(update);
+    let info = secrets::store(vault, id, &merged)?;
+    // New keys replace an old row the vault could not read.
+    db.execute("UPDATE exchanges SET config_encrypted = NULL WHERE id = ?1", params![id])
+        .map_err(|e| format!("Update: {e}"))?;
+    Ok(info)
 }
 
 /// The sandbox flag of an exchange config — only the venues with a testnet /
@@ -1378,8 +1389,8 @@ fn sandbox_flag(config: &ExchangeConfig) -> Result<bool, String> {
     Ok(sandbox)
 }
 
-/// An exchange row's decrypted credentials, for the live broker and the
-/// connection probes.
+/// An exchange row's credentials from the vault, for the live broker and the
+/// connection probes. Wiped from memory when dropped; no `Debug`.
 pub(crate) struct StoredCredentials {
     pub provider: String,
     pub api_key: String,
@@ -1388,26 +1399,48 @@ pub(crate) struct StoredCredentials {
     pub sandbox: bool,
 }
 
+impl Drop for StoredCredentials {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.api_key.zeroize();
+        self.api_secret.zeroize();
+        self.passphrase.zeroize();
+    }
+}
+
 pub(crate) fn load_credentials(conn: &rusqlite::Connection, exchange_id: &str) -> Result<StoredCredentials, String> {
-    let (provider, config_encrypted, sandbox): (String, Option<String>, i32) = conn
+    let (provider, legacy, sandbox): (String, bool, i32) = conn
         .query_row(
-            "SELECT provider, config_encrypted, sandbox FROM exchanges WHERE id = ?1",
+            "SELECT provider, config_encrypted IS NOT NULL AND config_encrypted != '', sandbox FROM exchanges WHERE id = ?1",
             params![exchange_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|e| format!("Exchange not found: {e}"))?;
-    let creds: Value = match config_encrypted {
-        Some(ref enc) => serde_json::from_str(&decrypt_string(enc)?).map_err(|e| format!("Parse credentials: {e}"))?,
-        None => Value::Null,
-    };
-    let field = |name: &str| -> String { creds.get(name).and_then(|v| v.as_str()).unwrap_or_default().to_string() };
+    let secret = qs_core::vault::with_vault(|vault| credentials_from_vault(conn, vault, exchange_id, legacy))?;
     Ok(StoredCredentials {
         provider,
-        api_key: field("api_key"),
-        api_secret: field("api_secret"),
-        passphrase: field("passphrase"),
+        api_key: ExchangeSecret::text(&secret.api_key),
+        api_secret: ExchangeSecret::text(&secret.api_secret),
+        passphrase: ExchangeSecret::text(&secret.passphrase),
         sandbox: sandbox != 0,
     })
+}
+
+fn credentials_from_vault(
+    conn: &rusqlite::Connection,
+    vault: &qs_core::vault::Vault,
+    exchange_id: &str,
+    legacy: bool,
+) -> Result<ExchangeSecret, String> {
+    if legacy {
+        let report = secrets::migrate_legacy_rows(conn, vault, Some(exchange_id))?;
+        if !report.unreadable.is_empty() {
+            return Err("The stored keys of this exchange cannot be read (they were saved on another machine or \
+                        user account). Enter them again on the Exchange page."
+                .to_string());
+        }
+    }
+    secrets::load(vault, exchange_id)
 }
 
 #[tauri::command(async)]
@@ -1416,6 +1449,11 @@ pub(crate) fn delete_exchange(id: String, state: State<'_, AppState>) -> Result<
     let affected = db
         .execute("DELETE FROM exchanges WHERE id = ?1", params![id])
         .map_err(|e| format!("Delete: {e}"))?;
+    // The keys go with the exchange. A locked vault keeps them until the next
+    // import prunes them; the row that pointed at them is gone either way.
+    if let Err(e) = qs_core::vault::with_vault(|vault| vault.delete(&secrets::secret_id(&id))) {
+        log::warn!(target: "algo", "keys of deleted exchange {id} stay in the vault for now: {e}");
+    }
     Ok(affected > 0)
 }
 
@@ -2319,5 +2357,111 @@ mod tests {
             );
             assert!(pairs.windows(2).all(|w| w[0] != w[1]), "{provider}: duplicate pairs");
         }
+    }
+}
+
+/// The vault side of the exchange commands (PLAN-AUTO-EXECUTION §2.1).
+#[cfg(test)]
+mod vault_tests {
+    use super::*;
+    use crate::secrets::tests::{test_db, test_vault};
+
+    fn insert(conn: &rusqlite::Connection, id: &str, name: &str, config_encrypted: Option<&str>) {
+        conn.execute(
+            "INSERT INTO exchanges (id, name, exchange_type, provider, config_encrypted, is_active, sandbox, created_at, updated_at)
+             VALUES (?1, ?2, 'cex', 'binance', ?3, 1, 0, 't', 't')",
+            params![id, name, config_encrypted],
+        )
+        .unwrap();
+    }
+
+    fn form(api_key: Option<&str>, api_secret: Option<&str>) -> ExchangeConfig {
+        ExchangeConfig {
+            name: "Binance".into(),
+            exchange_type: "cex".into(),
+            provider: "binance".into(),
+            sandbox: None,
+            api_key: api_key.map(String::from),
+            api_secret: api_secret.map(String::from),
+            passphrase: None,
+            wallet_address: None,
+            private_key: None,
+            rpc_endpoint: None,
+        }
+    }
+
+    #[test]
+    fn the_exchange_list_carries_where_the_keys_are_but_never_a_key() {
+        let db = test_db();
+        let vault = test_vault();
+        insert(&db, "with-keys", "A", None);
+        insert(&db, "paper-only", "B", None);
+        let old = crate::secrets::legacy::encrypt(
+            r#"{"api_key":"AK-old-5555","api_secret":"SK-old-6666"}"#,
+            &crate::secrets::legacy::constant(),
+        );
+        insert(&db, "old-row", "C", Some(&old));
+        update_secret(&db, &vault, "with-keys", &ExchangeSecret::from_config(&form(Some("AK-new-1111"), Some("SK-new-2222"))))
+            .unwrap();
+
+        let rows = exchange_rows(&db, |fill| fill(&vault)).unwrap();
+        let by_id = |id: &str| rows.iter().find(|e| e.id == id).unwrap();
+        assert_eq!(by_id("with-keys").key_storage, "vault");
+        assert!(by_id("with-keys").key_fingerprint.as_deref().unwrap().starts_with('…'));
+        assert_eq!(by_id("paper-only").key_storage, "none");
+        // The old row moved into the vault on the way.
+        assert_eq!(by_id("old-row").key_storage, "vault");
+
+        let json = serde_json::to_string(&rows).unwrap();
+        for secret in ["AK-new-1111", "SK-new-2222", "AK-old-5555", "SK-old-6666", &old[..24]] {
+            assert!(!json.contains(secret), "the list leaks {secret}");
+        }
+
+        let locked = exchange_rows(&db, |_| Err("locked".into())).unwrap();
+        assert!(locked.iter().all(|e| e.key_storage == "locked" && e.key_fingerprint.is_none()));
+    }
+
+    #[test]
+    fn an_edit_with_blank_key_fields_keeps_the_stored_keys() {
+        let db = test_db();
+        let vault = test_vault();
+        insert(&db, "e1", "A", None);
+        let first = update_secret(&db, &vault, "e1", &ExchangeSecret::from_config(&form(Some("AK1"), Some("SK1"))))
+            .unwrap()
+            .unwrap();
+        // Rename only: nothing typed into the key fields.
+        let same = update_secret(&db, &vault, "e1", &ExchangeSecret::from_config(&form(None, Some(""))))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.fingerprint, same.fingerprint);
+        let creds = credentials_from_vault(&db, &vault, "e1", false).unwrap();
+        assert_eq!(creds.api_key.as_deref(), Some("AK1"));
+        assert_eq!(creds.api_secret.as_deref(), Some("SK1"));
+
+        // A new secret only: the key stays.
+        update_secret(&db, &vault, "e1", &ExchangeSecret::from_config(&form(None, Some("SK2")))).unwrap();
+        let creds = credentials_from_vault(&db, &vault, "e1", false).unwrap();
+        assert_eq!(creds.api_key.as_deref(), Some("AK1"));
+        assert_eq!(creds.api_secret.as_deref(), Some("SK2"));
+    }
+
+    #[test]
+    fn an_unreadable_old_row_asks_for_the_keys_again_and_new_keys_replace_it() {
+        let db = test_db();
+        let vault = test_vault();
+        let foreign = crate::secrets::legacy::encrypt(
+            r#"{"api_key":"x","api_secret":"y"}"#,
+            &crate::secrets::legacy::derived("someone-else", "another/dir"),
+        );
+        insert(&db, "e1", "A", Some(&foreign));
+        let err = credentials_from_vault(&db, &vault, "e1", true).err().unwrap();
+        assert!(err.contains("Enter them again"), "{err}");
+
+        update_secret(&db, &vault, "e1", &ExchangeSecret::from_config(&form(Some("AK"), Some("SK")))).unwrap();
+        let column: Option<String> =
+            db.query_row("SELECT config_encrypted FROM exchanges WHERE id = 'e1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(column, None);
+        let creds = credentials_from_vault(&db, &vault, "e1", false).unwrap();
+        assert_eq!(creds.api_key.as_deref(), Some("AK"));
     }
 }

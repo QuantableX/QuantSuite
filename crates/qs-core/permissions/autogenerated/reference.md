@@ -1,6 +1,6 @@
 ## Default Permission
 
-Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle and the agent tool catalogue. process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.
+Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle, the agent tool catalogue and the secret vault's status (never a secret value). process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.
 
 #### This default permission set includes the following:
 
@@ -33,6 +33,8 @@ Default permissions for the QuantSuite core plugin: settings, the event bus, the
 - `allow-agent-pending-calls`
 - `allow-agent-call-claim`
 - `allow-agent-call-complete`
+- `allow-vault-status`
+- `allow-vault-unlock`
 
 ## Permission Table
 
@@ -715,6 +717,58 @@ Enables the upsert_entity command without any pre-configured scope.
 <td>
 
 Denies the upsert_entity command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-vault-status`
+
+</td>
+<td>
+
+Enables the vault_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-vault-status`
+
+</td>
+<td>
+
+Denies the vault_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-vault-unlock`
+
+</td>
+<td>
+
+Enables the vault_unlock command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-vault-unlock`
+
+</td>
+<td>
+
+Denies the vault_unlock command without any pre-configured scope.
 
 </td>
 </tr>
