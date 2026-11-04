@@ -75,6 +75,7 @@ Default permissions for the algo module.
 - `allow-venue-mapping`
 - `allow-venue-cost-preview`
 - `allow-venue-exposure`
+- `allow-venue-wallet-status`
 - `allow-trading-kill-switch`
 - `allow-trading-kill-switch-status`
 - `allow-trading-confirm-move`
@@ -2089,6 +2090,32 @@ Enables the venue_mapping command without any pre-configured scope.
 <td>
 
 Denies the venue_mapping command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-wallet-status`
+
+</td>
+<td>
+
+Enables the venue_wallet_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-wallet-status`
+
+</td>
+<td>
+
+Denies the venue_wallet_status command without any pre-configured scope.
 
 </td>
 </tr>

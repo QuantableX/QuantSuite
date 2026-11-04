@@ -31,6 +31,7 @@ const passphrase = ref('')
 const walletAddress = ref('')
 const privateKey = ref('')
 const rpcEndpoint = ref('')
+const subAccount = ref('')
 const sandbox = ref(false)
 
 const showApiKey = ref(false)
@@ -45,9 +46,15 @@ const providerOptions = computed(() =>
 )
 
 const needsPassphrase = computed(() => provider.value === 'okx' || provider.value === 'kucoin')
-/** Binance has a spot testnet, Bybit a demo-trading environment; the other venues have none. */
-const supportsSandbox = computed(() => exchangeType.value === 'cex' && (provider.value === 'binance' || provider.value === 'bybit'))
-const sandboxLabel = computed(() => (provider.value === 'binance' ? 'Binance spot testnet' : 'Bybit demo trading'))
+/** Hyperliquid: an API wallet that trades for your main address but cannot withdraw (PLAN-EXECUTION-VENUES §8). */
+const isHyperliquid = computed(() => exchangeType.value === 'dex' && provider.value === 'hyperliquid')
+/** Binance has a spot testnet, Bybit a demo-trading environment, Hyperliquid a testnet; the other venues have none. */
+const supportsSandbox = computed(
+  () => (exchangeType.value === 'cex' && (provider.value === 'binance' || provider.value === 'bybit')) || isHyperliquid.value,
+)
+const sandboxLabel = computed(() =>
+  provider.value === 'binance' ? 'Binance spot testnet' : provider.value === 'bybit' ? 'Bybit demo trading' : 'Hyperliquid testnet',
+)
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -55,7 +62,7 @@ function capitalize(s: string): string {
 
 function providerLabel(p: ExchangeProvider): string {
   const name = capitalize(p)
-  return exchangeType.value === 'dex' ? `${name} (stored credentials only)` : name
+  return exchangeType.value === 'dex' && p !== 'hyperliquid' ? `${name} (stored credentials only)` : name
 }
 
 function resetForm() {
@@ -68,6 +75,7 @@ function resetForm() {
   walletAddress.value = ''
   privateKey.value = ''
   rpcEndpoint.value = ''
+  subAccount.value = ''
   sandbox.value = false
   showApiKey.value = false
   showApiSecret.value = false
@@ -130,9 +138,14 @@ function buildConfig(): ExchangeConfig {
     if (passphrase.value) config.passphrase = passphrase.value
     config.sandbox = supportsSandbox.value && sandbox.value
   } else {
-    if (walletAddress.value) config.wallet_address = walletAddress.value
-    if (privateKey.value) config.private_key = privateKey.value
-    if (rpcEndpoint.value) config.rpc_endpoint = rpcEndpoint.value
+    if (walletAddress.value) config.wallet_address = walletAddress.value.trim()
+    if (privateKey.value) config.private_key = privateKey.value.trim()
+    if (isHyperliquid.value) {
+      if (subAccount.value) config.sub_account = subAccount.value.trim()
+      config.sandbox = sandbox.value
+    } else if (rpcEndpoint.value) {
+      config.rpc_endpoint = rpcEndpoint.value
+    }
   }
 
   return config
@@ -204,7 +217,22 @@ function handleTest() {
                 {{ providerLabel(p) }}
               </option>
             </select>
-            <p v-if="exchangeType === 'dex'" class="form-note">
+            <div v-if="isHyperliquid" class="form-hint hl-guide">
+              <p>
+                QuantSuite trades through an <strong>API wallet</strong>: it can place and cancel orders for your
+                account but cannot withdraw or transfer. Your main wallet's key or seed phrase is never needed.
+              </p>
+              <ol class="guide">
+                <li>In Hyperliquid's app open <em>More → API</em> and create an API wallet (one per sub-account; never reuse an old one).</li>
+                <li>Approve it with your main wallet. Copy its private key — Hyperliquid shows it once.</li>
+                <li>Paste the key and your main address here. A sub-account address is optional.</li>
+              </ol>
+              <p>
+                Spot and perp hold separate USDC. Moving USDC between them is signed by your main wallet, so you do
+                that in Hyperliquid's app.
+              </p>
+            </div>
+            <p v-else-if="exchangeType === 'dex'" class="form-note">
               DEX credentials can be stored here, but deploy and pair discovery are not supported yet.
             </p>
             <p v-else class="form-hint">
@@ -284,24 +312,24 @@ function handleTest() {
           <!-- DEX fields -->
           <template v-if="exchangeType === 'dex'">
             <div class="form-group">
-              <label class="label">Wallet Address</label>
+              <label class="label">{{ isHyperliquid ? 'Main wallet address' : 'Wallet Address' }}</label>
               <input
                 v-model="walletAddress"
                 class="input"
                 type="text"
-                placeholder="0x..."
+                :placeholder="isEditing ? 'Leave blank to keep the stored address' : '0x...'"
                 autocomplete="off"
               />
             </div>
 
             <div class="form-group">
-              <label class="label">Private Key</label>
+              <label class="label">{{ isHyperliquid ? 'API wallet private key' : 'Private Key' }}</label>
               <div class="input-reveal">
                 <input
                   v-model="privateKey"
                   class="input"
                   :type="showPrivateKey ? 'text' : 'password'"
-                  placeholder="Enter private key"
+                  :placeholder="isEditing ? 'Leave blank to keep the stored key' : 'Enter private key'"
                   autocomplete="off"
                 />
                 <button
@@ -314,7 +342,28 @@ function handleTest() {
               </div>
             </div>
 
-            <div class="form-group">
+            <div v-if="isHyperliquid" class="form-group">
+              <label class="label">Sub-account address <span class="optional">(optional)</span></label>
+              <input
+                v-model="subAccount"
+                class="input"
+                type="text"
+                :placeholder="isEditing ? 'Leave blank to keep the stored sub-account' : '0x... — orders act on this sub-account'"
+                autocomplete="off"
+              />
+            </div>
+
+            <div v-if="isHyperliquid" class="form-group">
+              <label class="checkbox-row">
+                <input v-model="sandbox" type="checkbox" />
+                <span>Testnet — {{ sandboxLabel }}</span>
+              </label>
+              <p class="form-hint">
+                An API wallet approved on the testnet. Balances, prices and orders all come from the testnet.
+              </p>
+            </div>
+
+            <div v-else class="form-group">
               <label class="label">RPC Endpoint <span class="optional">(optional)</span></label>
               <input
                 v-model="rpcEndpoint"
@@ -350,7 +399,7 @@ function handleTest() {
             <button
               type="button"
               class="btn"
-              :disabled="exchangeType === 'dex' || isTesting"
+              :disabled="(exchangeType === 'dex' && !isHyperliquid) || isTesting"
               @click="handleTest"
             >
               {{ isTesting ? 'Testing…' : 'Test Connection' }}
@@ -449,6 +498,19 @@ function handleTest() {
   font-size: 12px;
   line-height: 1.4;
   color: var(--qa-text-muted);
+}
+
+.hl-guide p {
+  margin: 0 0 6px;
+}
+
+.hl-guide .guide {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.hl-guide .guide li {
+  margin-bottom: 2px;
 }
 
 .checkbox-row {

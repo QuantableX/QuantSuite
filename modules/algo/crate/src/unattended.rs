@@ -368,23 +368,31 @@ pub(crate) async fn trading_kill_switch(on: bool, app: AppHandle) -> Result<Kill
         for (exchange_id, mut pairs) in by_account {
             pairs.sort();
             pairs.dedup();
-            let venue = {
+            let creds = {
                 let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
-                crate::exchanges::load_credentials(&db, &exchange_id).and_then(|c| {
-                    crate::execution::cex::CexVenue::new(&c.provider, &c.api_key, &c.api_secret, c.sandbox)
-                })
+                crate::exchanges::load_credentials(&db, &exchange_id)
             };
-            let venue = match venue {
-                Ok(v) => v,
+            let creds = match creds {
+                Ok(c) => c,
                 Err(e) => {
                     errors.push(format!("account {exchange_id}: {e}"));
                     continue;
                 }
             };
-            let instruments: Vec<Instrument> = pairs.iter().filter_map(|p| venue.instrument(p).ok()).collect();
-            let (c, e) = cancel_open_orders(&venue, &instruments);
-            cancelled.extend(c);
-            errors.extend(e);
+            // Every market of the account (Hyperliquid: spot and perp).
+            for market in crate::venues::markets(&creds.provider) {
+                let venue = match crate::venues::open(&creds, market) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        errors.push(format!("account {exchange_id}: {e}"));
+                        continue;
+                    }
+                };
+                let instruments: Vec<Instrument> = pairs.iter().filter_map(|p| venue.instrument(p).ok()).collect();
+                let (c, e) = cancel_open_orders(venue.as_ref(), &instruments);
+                cancelled.extend(c);
+                errors.extend(e);
+            }
         }
         let left_on_exchange = {
             let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;

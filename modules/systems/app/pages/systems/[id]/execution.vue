@@ -59,7 +59,15 @@ const ackNotRobust = ref(false)
 const coverage = ref<Coverage | null>(null)
 const coverageBusy = ref(false)
 
-const tradableVenues = computed(() => exchanges.value.filter(e => ['binance', 'bybit'].includes(e.provider.toLowerCase())))
+const tradableVenues = computed(() => exchanges.value.filter(e => ['binance', 'bybit', 'hyperliquid'].includes(e.provider.toLowerCase())))
+const account = computed(() => exchanges.value.find(e => e.id === form.value?.exchange_id) ?? null)
+/** Perp exists on Hyperliquid accounts (1x isolated, long-only until Venues 4/5). */
+const hasPerp = computed(() => account.value?.provider.toLowerCase() === 'hyperliquid')
+/** What "USD" is on the account: USDC on Hyperliquid, USDT on Binance and Bybit. */
+const quote = computed(() => (account.value?.provider.toLowerCase() === 'hyperliquid' ? 'USDC' : 'USDT'))
+watch(hasPerp, (perp) => {
+  if (!perp && form.value?.market === 'perp') form.value.market = 'spot'
+})
 const dirty = computed(() => JSON.stringify(form.value) !== JSON.stringify(view.value?.settings))
 const status = computed(() => {
   const v = view.value
@@ -205,12 +213,17 @@ watch(systemId, () => { void load() })
             <option v-for="e in tradableVenues" :key="e.id" :value="e.id">{{ e.name }} ({{ e.provider }}{{ e.sandbox ? ', sandbox' : '' }})</option>
           </select>
         </label>
-        <label><span class="label">Market</span><select class="select" disabled><option>Spot</option><option>Perp (with the perp venues, Venues 2/4)</option></select></label>
+        <label><span class="label">Market</span>
+          <select v-model="form.market" class="select">
+            <option value="spot">Spot</option>
+            <option value="perp" :disabled="!hasPerp">Perp — 1x isolated, long only{{ hasPerp ? '' : ' (Hyperliquid accounts)' }}</option>
+          </select>
+        </label>
         <div class="qs-exec__pair">
           <label><span class="label">Capital</span>
             <select v-model="form.capital.kind" class="select">
-              <option value="fixed">Fixed amount (USDT)</option>
-              <option value="percent">% of the USDT balance</option>
+              <option value="fixed">Fixed amount ({{ quote }})</option>
+              <option value="percent">% of the {{ quote }} balance</option>
               <option value="whole">The whole (sub-)account</option>
             </select>
           </label>
@@ -223,10 +236,10 @@ watch(systemId, () => { void load() })
           <label><span class="label">Retry window (hours after the close)</span><input v-model.number="form.retry_hours" class="input" type="number" min="1" max="23"></label>
         </div>
         <div class="qs-exec__pair">
-          <label><span class="label">Max order value (USDT, optional)</span>
+          <label><span class="label">Max order value ({{ quote }}, optional)</span>
             <input class="input" type="number" min="0" step="any" :value="form.max_order_value ?? ''" @input="form.max_order_value = numberOrNull(($event.target as HTMLInputElement).value)">
           </label>
-          <label><span class="label">Daily turnover cap (USDT, optional)</span>
+          <label><span class="label">Daily turnover cap ({{ quote }}, optional)</span>
             <input class="input" type="number" min="0" step="any" :value="form.daily_turnover_cap ?? ''" @input="form.daily_turnover_cap = numberOrNull(($event.target as HTMLInputElement).value)">
           </label>
         </div>
@@ -264,7 +277,7 @@ watch(systemId, () => { void load() })
           <li v-for="c in checks" :key="c.name" :class="c.ok ? 'qs-exec__ok' : 'qs-exec__warn'">{{ c.ok ? '✓' : '✗' }} {{ c.detail }}</li>
         </ul>
         <p class="qs-exec__hint">Arming needs Live saved, a completed paper run, a working account and a robust verdict (or the tick). Stopping never sells.</p>
-        <SystemsSettingsCostPreview :exchange-id="form.exchange_id" :value="form.capital.kind === 'fixed' ? form.capital.value : 1000" />
+        <SystemsSettingsCostPreview :exchange-id="form.exchange_id" :market="form.market === 'perp' ? 'perp' : 'spot'" :value="form.capital.kind === 'fixed' ? form.capital.value : 1000" />
       </section>
 
       <section class="card qs-exec__runs" aria-label="Runs">
@@ -287,7 +300,7 @@ watch(systemId, () => { void load() })
                 <tr v-if="openRun === r.run.id" class="qs-exec__detail">
                   <td colspan="7">
                     <p>{{ r.summary }}</p>
-                    <p v-if="r.run.route">Route: {{ r.run.route.chosen === 'direct' ? 'direct pair' : 'through USDT' }} — {{ r.run.route.reason }}</p>
+                    <p v-if="r.run.route">Route: {{ r.run.route.chosen === 'direct' ? 'direct pair' : 'through the quote' }} — {{ r.run.route.reason }}</p>
                     <ul>
                       <li v-for="o in r.orders" :key="o.client_order_id">
                         {{ o.leg }} · {{ o.side }} {{ o.qty }} {{ o.instrument.symbol }} ·

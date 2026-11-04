@@ -74,6 +74,7 @@ permissions = [
   "allow-venue-mapping",
   "allow-venue-cost-preview",
   "allow-venue-exposure",
+  "allow-venue-wallet-status",
   "allow-trading-kill-switch",
   "allow-trading-kill-switch-status",
   "allow-trading-confirm-move",
