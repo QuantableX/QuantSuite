@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-gateway-pair-current"
+description = "Enables the gateway_pair_current command without any pre-configured scope."
+commands.allow = ["gateway_pair_current"]
+
+[[permission]]
+identifier = "deny-gateway-pair-current"
+description = "Denies the gateway_pair_current command without any pre-configured scope."
+commands.deny = ["gateway_pair_current"]

@@ -57,6 +57,7 @@
       "gateway_set_pin": "client:write",
       "gateway_pair_begin": "client:write",
       "gateway_pair_finish": "client:write",
+      "gateway_pair_current": "client:read",
       "gateway_connections": "client:read",
       "gateway_connection_test": "client:read",
       "gateway_connection_forget": "client:write"

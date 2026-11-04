@@ -105,6 +105,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::gateway_set_pin,
             commands::gateway_pair_begin,
             commands::gateway_pair_finish,
+            commands::gateway_pair_current,
             commands::gateway_connections,
             commands::gateway_connection_test,
             commands::gateway_connection_forget,

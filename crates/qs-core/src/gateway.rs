@@ -46,8 +46,8 @@ pub struct GatewayState {
     hub: Mutex<Option<Arc<Hub>>>,
     listener: Mutex<Option<Listener>>,
     error: Mutex<Option<String>>,
-    /// This PC pairing with a server (client side).
-    attempt: tokio::sync::Mutex<Option<(String, PairingAttempt)>>,
+    /// This PC pairing with a server (client side), and what its screen shows.
+    attempt: tokio::sync::Mutex<Option<(PairBegun, PairingAttempt)>>,
 }
 
 /// The computer's name, as devices and servers see it.
@@ -167,7 +167,11 @@ fn parse_address(address: &str) -> Result<SocketAddr, String> {
 /// (Re)starts listening on the configured address; stops without one.
 pub async fn restart<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let state = app.state::<GatewayState>();
-    lock(&state.listener).take();
+    let old = lock(&state.listener).take();
+    if let Some(l) = old {
+        // The old socket must be closed before the same address is bound again.
+        l.close().await;
+    }
     let (address, every) = {
         let db = app.state::<Db>();
         let conn = db.0.lock().map_err(|e| e.to_string())?;
@@ -390,7 +394,7 @@ fn with_default_port(address: &str) -> String {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct PairBegun {
     pub server: String,
     pub address: String,
@@ -408,15 +412,21 @@ pub async fn pair_begin<R: Runtime>(app: &AppHandle<R>, address: &str, code: &st
         words: attempt.words.clone(),
         server_fingerprint: attempt.server_fingerprint(),
     };
-    *app.state::<GatewayState>().attempt.lock().await = Some((address, attempt));
+    *app.state::<GatewayState>().attempt.lock().await = Some((begun.clone(), attempt));
     Ok(begun)
+}
+
+/// The pairing in progress, if any: the settings page shows its words again
+/// after it was closed.
+pub async fn pair_current<R: Runtime>(app: &AppHandle<R>) -> Option<PairBegun> {
+    app.state::<GatewayState>().attempt.lock().await.as_ref().map(|(b, _)| b.clone())
 }
 
 /// This PC's user compared the words: `accept` waits for the server's user and
 /// saves the connection; otherwise the pairing ends.
 pub async fn pair_finish<R: Runtime>(app: &AppHandle<R>, accept: bool) -> Result<Option<Connection>, String> {
     let taken = app.state::<GatewayState>().attempt.lock().await.take();
-    let Some((address, attempt)) = taken else {
+    let Some((PairBegun { address, .. }, attempt)) = taken else {
         return Err("No pairing is in progress.".into());
     };
     if !accept {

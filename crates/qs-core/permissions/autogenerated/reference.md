@@ -59,6 +59,7 @@ Default permissions for the QuantSuite core plugin: settings, the event bus, the
 - `allow-gateway-set-pin`
 - `allow-gateway-pair-begin`
 - `allow-gateway-pair-finish`
+- `allow-gateway-pair-current`
 - `allow-gateway-connections`
 - `allow-gateway-connection-test`
 - `allow-gateway-connection-forget`
@@ -692,6 +693,32 @@ Enables the gateway_pair_begin command without any pre-configured scope.
 <td>
 
 Denies the gateway_pair_begin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pair-current`
+
+</td>
+<td>
+
+Enables the gateway_pair_current command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pair-current`
+
+</td>
+<td>
+
+Denies the gateway_pair_current command without any pre-configured scope.
 
 </td>
 </tr>

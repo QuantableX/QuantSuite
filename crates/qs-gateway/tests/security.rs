@@ -226,6 +226,15 @@ async fn the_server_user_can_turn_a_device_away() {
 }
 
 #[tokio::test]
+async fn the_same_address_can_be_listened_on_again_at_once() {
+    let s = server().await;
+    let addr = s.listener.local_addr();
+    s.listener.close().await;
+    let again = s.hub.listen(addr).await.expect("rebinding the address just closed");
+    assert_eq!(again.local_addr(), addr);
+}
+
+#[tokio::test]
 async fn versions_must_match() {
     let s = server().await;
     let device = Identity::generate().unwrap();

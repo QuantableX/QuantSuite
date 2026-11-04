@@ -241,7 +241,7 @@ Commands (core plugin `qs`) and their placement:
 | `gateway_devices`, `gateway_audit` | server:read | A paired PC sees the devices and the log |
 | `gateway_device_rename`, `gateway_device_forget` | server:write | |
 | `gateway_device_set_role`, `gateway_device_revoke` | server:external | From another PC with the server PIN ("laptop lost: revoke it from the desktop") |
-| `gateway_pair_begin`, `_finish`, `gateway_connections`, `gateway_connection_test`, `_forget` | client | This PC's connections to servers |
+| `gateway_pair_begin`, `_current`, `_finish`, `gateway_connections`, `gateway_connection_test`, `_forget` | client | This PC's connections to servers; `_current` brings back a pairing whose page was closed |
 
 `server_status` is now `server:read`, so every client can show the server's health.
 

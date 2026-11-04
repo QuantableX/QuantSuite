@@ -58,6 +58,7 @@ permissions = [
   "allow-gateway-set-pin",
   "allow-gateway-pair-begin",
   "allow-gateway-pair-finish",
+  "allow-gateway-pair-current",
   "allow-gateway-connections",
   "allow-gateway-connection-test",
   "allow-gateway-connection-forget",

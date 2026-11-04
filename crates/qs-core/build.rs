@@ -59,6 +59,7 @@ const COMMANDS: &[&str] = &[
     "gateway_set_pin",
     "gateway_pair_begin",
     "gateway_pair_finish",
+    "gateway_pair_current",
     "gateway_connections",
     "gateway_connection_test",
     "gateway_connection_forget",

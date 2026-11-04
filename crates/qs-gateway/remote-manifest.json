@@ -584,6 +584,7 @@
     "plugin:qs|gateway_device_set_role": "server:external",
     "plugin:qs|gateway_devices": "server:read",
     "plugin:qs|gateway_pair_begin": "client:write",
+    "plugin:qs|gateway_pair_current": "client:read",
     "plugin:qs|gateway_pair_finish": "client:write",
     "plugin:qs|gateway_pairing_cancel": "client:write",
     "plugin:qs|gateway_pairing_confirm": "client:write",

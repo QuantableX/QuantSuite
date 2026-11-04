@@ -552,6 +552,12 @@ pub async fn gateway_pair_begin<R: Runtime>(app: AppHandle<R>, address: String, 
     gateway::pair_begin(&app, &address, &code).await
 }
 
+/// The pairing in progress on this PC, if any.
+#[tauri::command]
+pub async fn gateway_pair_current<R: Runtime>(app: AppHandle<R>) -> Result<Option<gateway::PairBegun>, String> {
+    Ok(gateway::pair_current(&app).await)
+}
+
 /// This PC's user compared the words; `accept` saves the connection once the
 /// server's user has confirmed too.
 #[tauri::command]

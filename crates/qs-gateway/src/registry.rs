@@ -131,7 +131,9 @@ impl Registry {
                  outcome TEXT NOT NULL,
                  detail TEXT
              );
-             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             -- A pairing lives only as long as its connection: none survives a restart.
+             DELETE FROM devices WHERE state = 'pending';",
         )
         .map_err(|e| format!("gateway.db: {e}"))?;
         Ok(Self { conn })

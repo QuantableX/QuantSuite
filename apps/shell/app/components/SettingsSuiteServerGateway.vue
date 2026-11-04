@@ -120,12 +120,16 @@ async function loadStatus() {
 async function loadServerSide() {
   if (!isServer.value) return
   pairing.value = await invoke<Pairing>('plugin:qs|gateway_pairing_status').catch(() => null)
-  devices.value = await invoke<Device[]>('plugin:qs|gateway_devices').catch(() => [])
+  for (const p of pairing.value?.pending ?? []) grant.value[p.id] ??= 'full'
+  // A device waiting for the words is shown under "Pair a device" only.
+  devices.value = (await invoke<Device[]>('plugin:qs|gateway_devices').catch(() => [])).filter((d) => d.state !== 'pending')
   if (showAudit.value) audit.value = await invoke<AuditEntry[]>('plugin:qs|gateway_audit', { limit: 100 }).catch(() => [])
 }
 
 async function loadConnections() {
   connections.value = await invoke<Connection[]>('plugin:qs|gateway_connections').catch(() => [])
+  // A pairing still in progress (the page was closed while comparing).
+  begun.value = await invoke<PairBegun | null>('plugin:qs|gateway_pair_current').catch(() => null)
 }
 
 async function load() {
@@ -150,6 +154,8 @@ async function saveListen(off = false) {
       everyInterface: everyInterface.value,
     })
   })
+  // After an error too: show what the server really does now.
+  await loadStatus().catch(() => undefined)
 }
 
 async function savePin(remove = false) {
@@ -381,9 +387,10 @@ onUnmounted(() => {
               <p class="qsu-label">“{{ p.name }}” wants to connect</p>
               <p class="qsv-words">{{ p.words.join(' · ') }}</p>
               <p class="qsu-hint">Does the other PC show exactly these words? Key <span class="qsv-mono">{{ p.fingerprint.slice(0, 19) }}…</span></p>
+              <p class="qsu-hint">As {{ ROLES.find((r) => r.id === (grant[p.id] ?? 'full'))?.label }}: {{ ROLES.find((r) => r.id === (grant[p.id] ?? 'full'))?.hint }}.</p>
               <div class="qsv-line">
-                <select v-model="grant[p.id]" class="qsu-select">
-                  <option v-for="r in ROLES" :key="r.id" :value="r.id">{{ r.label }} — {{ r.hint }}</option>
+                <select v-model="grant[p.id]" class="qsu-select" :title="ROLES.find((r) => r.id === grant[p.id])?.hint">
+                  <option v-for="r in ROLES" :key="r.id" :value="r.id">{{ r.label }}</option>
                 </select>
                 <button class="qsu-btn qsu-btn--primary" :disabled="busy" @click="confirmDevice(p.id, true)">Same words — allow</button>
                 <button class="qsu-btn" :disabled="busy" @click="confirmDevice(p.id, false)">Different — turn away</button>

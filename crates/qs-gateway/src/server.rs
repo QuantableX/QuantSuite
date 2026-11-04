@@ -292,7 +292,7 @@ impl Hub {
         let (stop, mut stopped) = watch::channel(false);
         let hub = self.clone();
         let acceptor = TlsAcceptor::from(self.tls.clone());
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     _ = stopped.changed() => break,
@@ -310,7 +310,7 @@ impl Hub {
             }
         });
         log::info!("gateway: listening on {local}");
-        Ok(Listener { addr: local, stop })
+        Ok(Listener { addr: local, stop, task: Some(task) })
     }
 
     async fn session(self: Arc<Self>, acceptor: TlsAcceptor, sock: TcpStream, peer: SocketAddr, stop: watch::Receiver<bool>) {
@@ -571,11 +571,21 @@ impl Hub {
 pub struct Listener {
     addr: SocketAddr,
     stop: watch::Sender<bool>,
+    task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Listener {
     pub fn local_addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// Stops and waits until the socket is closed, so the same address can be
+    /// bound again at once.
+    pub async fn close(mut self) {
+        let _ = self.stop.send(true);
+        if let Some(t) = self.task.take() {
+            let _ = t.await;
+        }
     }
 }
 
