@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Collection
 
 from ...config import RankingResolution, RankingSource
 from ..cache import Cache, get_default_cache
@@ -64,10 +64,12 @@ class RankingRegistry:
         exclude_wrapped: bool = True,
         exclude_top_n: int = 0,
         resolution: RankingResolution = RankingResolution.WEEKLY,
+        exclude_symbols: Collection[str] = (),
     ) -> ResolvedRanking:
         order = self._provider_order(source)
         errors: list[str] = []
         skip = max(int(exclude_top_n), 0)
+        dropped = {s.upper() for s in exclude_symbols}
         for prov in order:
             if self.progress:
                 self.progress(f"{prov.name.upper()} coin list {on_date}")
@@ -88,7 +90,10 @@ class RankingRegistry:
                 # Drop the highest-ranked ``skip`` coins so the evaluated
                 # cohort is ranks ``skip + 1 .. n`` (the small-cap slice).
                 # ``n`` already counts the excluded coins.
-                return ResolvedRanking(provider=prov.name, coins=coins[skip:])
+                # Then drop the coins the caller cannot use (a venue that does
+                # not list them); the slice shrinks, it is not refilled.
+                kept = [c for c in coins[skip:] if c.symbol.upper() not in dropped]
+                return ResolvedRanking(provider=prov.name, coins=kept)
             log.info("Provider %s returned empty for %s; trying fallback", prov.name, on_date)
             errors.append(f"{prov.name}: no ranking data")
         if errors:

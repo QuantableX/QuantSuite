@@ -929,7 +929,7 @@ async fn live_eval(
     engine: State<'_, EngineManager>,
 ) -> Result<Value, String> {
     let mgr = engine.inner().clone();
-    let _ = system_id; // LCES today; SCES (planned) reuses the same engine path.
+    let config = with_restriction(&system_id, config);
     tauri::async_runtime::spawn_blocking(move || {
         mgr.request("live", json!({ "config": config }), LIVE_TIMEOUT)
     })
@@ -953,6 +953,7 @@ async fn run_backtest(
     app: AppHandle,
 ) -> Result<Value, String> {
     let mgr = engine.inner().clone();
+    let config = with_restriction(&system_id, config);
     let result = tauri::async_runtime::spawn_blocking(move || {
         mgr.request("backtest", json!({ "config": config }), BACKTEST_TIMEOUT)
     })
@@ -1402,6 +1403,35 @@ pub fn init() -> TauriPlugin<Wry> {
         .build()
 }
 
+/// `modules/systems/execution-restrictions.json`: per system, the coins its
+/// Manual execution cannot trade when its policy is "restrict the universe"
+/// (PLAN-AUTO-EXECUTION §2.3, card 3b). Written by QuantAlgo; merged here as
+/// `excludeSymbols` into every backtest and live evaluation of that system,
+/// so backtest = live. The saved system config is never changed.
+pub fn restrictions_path() -> PathBuf {
+    qs_core::paths::module_dir("systems").join("execution-restrictions.json")
+}
+
+/// The system's restriction, if any.
+pub fn restriction(system_id: &str) -> Vec<String> {
+    fs::read_to_string(restrictions_path())
+        .ok()
+        .and_then(|t| serde_json::from_str::<HashMap<String, Vec<String>>>(&t).ok())
+        .and_then(|mut m| m.remove(system_id))
+        .unwrap_or_default()
+}
+
+/// `config` with the system's restriction as `excludeSymbols`.
+pub fn with_restriction(system_id: &str, mut config: Value) -> Value {
+    let symbols = restriction(system_id);
+    if !symbols.is_empty() {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("excludeSymbols".into(), json!(symbols));
+        }
+    }
+    config
+}
+
 /// What QuantAlgo's Manual execution reads from a saved system
 /// (PLAN-AUTO-EXECUTION §2.3). Read-only: it never changes a saved system,
 /// and the engine calls are the same `live` / `universe` the pages make.
@@ -1417,16 +1447,18 @@ pub mod signals {
         data.systems.iter().map(|s| (s.id.clone(), s.name.clone())).collect()
     }
 
-    /// A saved system's run config (the default one when it has none).
+    /// A saved system's run config (the default one when it has none), with
+    /// its Manual execution restriction merged in.
     pub fn run_config(app: &AppHandle<Wry>, system_id: &str) -> Result<Value, String> {
         let store = app.try_state::<Store>().ok_or("QuantSystems is not loaded")?;
         let data = store.data.lock().map_err(|e| format!("Lock configs: {e}"))?;
         data.require_system(system_id)?;
-        Ok(data
+        let config = data
             .system_configs
             .get(system_id)
             .cloned()
-            .unwrap_or_else(|| super::default_run_config(system_id)))
+            .unwrap_or_else(|| super::default_run_config(system_id));
+        Ok(super::with_restriction(system_id, config))
     }
 
     /// Today's live evaluation of `config` (snapshot and tracking). Blocking:

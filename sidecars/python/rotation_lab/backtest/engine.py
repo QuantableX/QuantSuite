@@ -339,6 +339,7 @@ class BacktestEngine:
             exclude_top_n=config.exclude_top_n,
             resolution=config.ranking_resolution,
             progress=lambda i, n, d: _tick(f"Coin list {d}", 0.05 + 0.20 * i / max(n, 1)),
+            exclude_symbols=config.exclude_symbols,
         )
 
         coins = universe.unique_coins()
@@ -355,7 +356,7 @@ class BacktestEngine:
         # excluded head, so its market list is resolved separately and the
         # head's candles are fetched for the index alone (never traded).
         market_universe = universe
-        if config.market_filter and config.exclude_top_n > 0:
+        if config.market_filter and (config.exclude_top_n > 0 or config.exclude_symbols):
             _tick("Building the market list", 0.25)
             market_universe = build_universe_timeline(
                 self.registry,
