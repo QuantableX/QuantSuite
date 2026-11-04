@@ -75,6 +75,7 @@ permissions = [
   "allow-venue-cost-preview",
   "allow-venue-exposure",
   "allow-venue-wallet-status",
+  "allow-server-trading-health",
   "allow-venue-perp-positions",
   "allow-wallet-export-key",
   "allow-solana-wallet-status",

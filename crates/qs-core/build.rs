@@ -41,6 +41,9 @@ const COMMANDS: &[&str] = &[
     "import_propose",
     "import_bundle",
     "import_status",
+    "server_status",
+    "server_set_role",
+    "server_set_watchdog",
 ];
 
 fn main() {

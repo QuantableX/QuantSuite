@@ -20,6 +20,7 @@ pub mod embeddings;
 pub mod import;
 pub mod inventory;
 pub mod runtime;
+pub mod server;
 pub mod db;
 pub mod migrations;
 pub mod paths;
@@ -85,6 +86,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::import_propose,
             commands::import_bundle,
             commands::import_status,
+            commands::server_status,
+            commands::server_set_role,
+            commands::server_set_watchdog,
         ]))
         .setup(|app, _api| {
             // A staged import takes the data root's place before anything
@@ -102,6 +106,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             // plugin's setup reads its own scope or data directory.
             migrations::run(&conn)?;
             migrations::run_zen_to_notes(&conn)?;
+            // The role (local, server, client) before any module's setup asks
+            // for it: a client never starts executors (PLAN-SERVER-CLIENT §5).
+            server::init(&conn);
             app.manage(Db(std::sync::Mutex::new(conn)));
             app.manage(Bus::new());
             // A map of what the modules run, not an owner of it — module

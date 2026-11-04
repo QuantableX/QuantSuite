@@ -41,6 +41,9 @@ Default permissions for the QuantSuite core plugin: settings, the event bus, the
 - `allow-import-propose`
 - `allow-import-bundle`
 - `allow-import-status`
+- `allow-server-status`
+- `allow-server-set-role`
+- `allow-server-set-watchdog`
 
 ## Permission Table
 
@@ -723,6 +726,84 @@ Enables the search_entities command without any pre-configured scope.
 <td>
 
 Denies the search_entities command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-server-set-role`
+
+</td>
+<td>
+
+Enables the server_set_role command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-server-set-role`
+
+</td>
+<td>
+
+Denies the server_set_role command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-server-set-watchdog`
+
+</td>
+<td>
+
+Enables the server_set_watchdog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-server-set-watchdog`
+
+</td>
+<td>
+
+Denies the server_set_watchdog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-server-status`
+
+</td>
+<td>
+
+Enables the server_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-server-status`
+
+</td>
+<td>
+
+Denies the server_status command without any pre-configured scope.
 
 </td>
 </tr>

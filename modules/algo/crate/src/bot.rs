@@ -1144,6 +1144,8 @@ pub(crate) async fn start_bot(
     app_handle: AppHandle,
 ) -> Result<Bot, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // A client connected to a server never runs bots (one trader).
+        qs_core::server::executors_allowed()?;
         let state = app_handle.state::<AppState>();
         let bot = {
             let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;

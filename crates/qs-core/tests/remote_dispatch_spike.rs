@@ -23,12 +23,12 @@ use tauri::{Emitter, Listener, Manager, State, Webview, WebviewWindowBuilder};
 #[derive(Default)]
 struct Store(Mutex<Vec<String>>);
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_items(store: State<'_, Store>) -> Vec<String> {
     store.0.lock().unwrap().clone()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn add_item(store: State<'_, Store>, name: String) -> usize {
     let mut items = store.0.lock().unwrap();
     items.push(name);
@@ -36,7 +36,7 @@ fn add_item(store: State<'_, Store>, name: String) -> usize {
 }
 
 /// A command that streams: events while it runs, then its result.
-#[tauri::command]
+#[tauri::command(async)]
 fn stream(app: tauri::AppHandle<MockRuntime>, n: u32) -> u32 {
     for i in 0..n {
         app.emit("spike://tick", i).unwrap();
