@@ -53,7 +53,20 @@ const resumeAfterRestart = ref(false)
  * Data and execution are two choices; for a CEX the default is "same as data".
  */
 const executionExchangeId = ref('')
-const executionAccounts = computed(() => exchangeStore.exchanges.filter((e) => ['binance', 'bybit'].includes(e.provider) && e.id !== exchangeId.value))
+const executionAccounts = computed(() => exchangeStore.exchanges.filter((e) => ['binance', 'bybit', 'hyperliquid'].includes(e.provider) && e.id !== exchangeId.value))
+/** Hyperliquid can also take the bot's orders as perp: long and short, isolated (Venues 4/5). */
+const executionMarket = ref<'spot' | 'perp'>('spot')
+const leverage = ref(1)
+const executionIsHyperliquid = computed(() => {
+  const id = executionExchangeId.value || exchangeId.value
+  return exchangeStore.exchanges.find((e) => e.id === id)?.provider === 'hyperliquid'
+})
+watch(executionIsHyperliquid, (hl) => {
+  if (!hl) executionMarket.value = 'spot'
+})
+watch(executionMarket, (m) => {
+  if (m !== 'perp') leverage.value = 1
+})
 
 const preflightResult = ref<PreflightResult | null>(null)
 const isRunningPreflight = ref(false)
@@ -144,6 +157,8 @@ const draft = computed<BotDraft | null>(() => {
       warmup_candles: warmupCandles.value,
       resume_after_restart: resumeAfterRestart.value,
       execution_exchange_id: executionExchangeId.value || null,
+      execution_market: executionMarket.value,
+      leverage: executionMarket.value === 'perp' ? leverage.value : 1,
     },
   }
 })
@@ -353,8 +368,15 @@ onMounted(() => {
               <div class="section-label">Execution <span class="optional">(where live orders go)</span></div>
               <select v-model="executionExchangeId" class="create-input">
                 <option value="">Same as data</option>
-                <option v-for="e in executionAccounts" :key="e.id" :value="e.id">{{ e.name }} ({{ e.provider }}{{ e.sandbox ? ', sandbox' : '' }}) · spot</option>
+                <option v-for="e in executionAccounts" :key="e.id" :value="e.id">{{ e.name }} ({{ e.provider }}{{ e.sandbox ? ', sandbox' : '' }})</option>
               </select>
+              <div v-if="executionIsHyperliquid" class="section-row">
+                <select v-model="executionMarket" class="create-input">
+                  <option value="spot">Spot — long-only</option>
+                  <option value="perp">Perp — long and short, isolated</option>
+                </select>
+                <input v-if="executionMarket === 'perp'" v-model.number="leverage" class="create-input mono" type="number" min="1" step="1" title="Leverage (x), capped in Settings" />
+              </div>
             </div>
 
             <div class="section">
@@ -576,6 +598,12 @@ onMounted(() => {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+
+.create-overlay .section-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .create-overlay .section-label {

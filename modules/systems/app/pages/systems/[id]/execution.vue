@@ -17,6 +17,8 @@ interface Settings {
   mode: Mode
   exchange_id: string | null
   market: string
+  /** Perp: isolated leverage, 1x default, capped in QuantAlgo Settings (Venues 4/5). */
+  leverage: number
   capital: { kind: 'fixed' | 'percent' | 'whole'; value: number }
   run_time: string
   retry_hours: number
@@ -68,6 +70,29 @@ const quote = computed(() => (['hyperliquid', 'jupiter'].includes(account.value?
 watch(hasPerp, (perp) => {
   if (!perp && form.value?.market === 'perp') form.value.market = 'spot'
 })
+watch(() => form.value?.market, (market) => {
+  if (form.value && market !== 'perp') form.value.leverage = 1
+})
+
+/** The account's perp positions with their liquidation distance (Venues 4/5). */
+interface PerpPosition {
+  coin: string; side: string; size: number; entry_price: number; mark_price: number | null
+  liquidation_price: number | null; liquidation_distance: number | null; leverage: number | null; warn: boolean
+}
+const positions = ref<PerpPosition[]>([])
+async function loadPositions() {
+  positions.value = []
+  if (!view.value || view.value.settings.market !== 'perp' || !view.value.settings.exchange_id) return
+  try {
+    positions.value = await invoke<PerpPosition[]>('plugin:algo|venue_perp_positions', { exchange_id: view.value.settings.exchange_id })
+  } catch {
+    // Shown as no positions; the account's own page names the error.
+  }
+}
+watch(() => view.value?.settings.exchange_id + ':' + view.value?.settings.market, loadPositions)
+function price(n: number | null) {
+  return n == null ? '—' : n.toLocaleString('en-US', { maximumFractionDigits: n < 10 ? 4 : 1 })
+}
 const dirty = computed(() => JSON.stringify(form.value) !== JSON.stringify(view.value?.settings))
 const status = computed(() => {
   const v = view.value
@@ -216,8 +241,11 @@ watch(systemId, () => { void load() })
         <label><span class="label">Market</span>
           <select v-model="form.market" class="select">
             <option value="spot">Spot</option>
-            <option value="perp" :disabled="!hasPerp">Perp — 1x isolated, long only{{ hasPerp ? '' : ' (Hyperliquid accounts)' }}</option>
+            <option value="perp" :disabled="!hasPerp">Perp — isolated, long and short{{ hasPerp ? '' : ' (Hyperliquid accounts)' }}</option>
           </select>
+        </label>
+        <label v-if="form.market === 'perp'"><span class="label">Leverage (x, isolated — capped in QuantAlgo Settings)</span>
+          <input v-model.number="form.leverage" class="input" type="number" min="1" step="1">
         </label>
         <div class="qs-exec__pair">
           <label><span class="label">Capital</span>
@@ -278,6 +306,17 @@ watch(systemId, () => { void load() })
         </ul>
         <p class="qs-exec__hint">Arming needs Live saved, a completed paper run, a working account and a robust verdict (or the tick). Stopping never sells.</p>
         <SystemsSettingsCostPreview :exchange-id="form.exchange_id" :market="form.market === 'perp' ? 'perp' : 'spot'" :value="form.capital.kind === 'fixed' ? form.capital.value : 1000" />
+        <div v-if="view?.settings.market === 'perp'" class="qs-exec__positions">
+          <h2 class="qs-exec__h2">Perp positions on the account</h2>
+          <p v-if="!positions.length" class="qs-exec__hint">None open.</p>
+          <ul v-else class="qs-exec__checks">
+            <li v-for="p in positions" :key="p.coin + p.side" :class="p.warn ? 'qs-exec__warn' : ''">
+              {{ p.coin }} {{ p.side }} {{ p.size }} at {{ price(p.entry_price) }}{{ p.leverage ? `, ${p.leverage}x` : '' }} —
+              liquidation {{ price(p.liquidation_price) }}<template v-if="p.liquidation_distance != null"> ({{ (p.liquidation_distance * 100).toFixed(1) }} % from the mark)</template>
+            </li>
+          </ul>
+          <p class="qs-exec__hint">Funding is booked every hour into the journal and the system's cash.</p>
+        </div>
       </section>
 
       <section class="card qs-exec__runs" aria-label="Runs">

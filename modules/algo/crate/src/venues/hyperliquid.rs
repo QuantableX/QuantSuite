@@ -773,8 +773,41 @@ pub struct HyperliquidVenue {
     key: Option<SigningKey>,
     agent: String,
     client: reqwest::blocking::Client,
-    /// Assets whose leverage this venue already set to 1x isolated.
+    /// Assets whose leverage this venue already set (isolated).
     leverage_set: Mutex<HashSet<u32>>,
+    /// The leverage an opening perp order sets first (1x default; the cap
+    /// is checked by the caller, Venues 4/5).
+    leverage: u32,
+}
+
+/// One funding payment of the account (`userFunding`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FundingPayment {
+    pub time: i64,
+    pub coin: String,
+    /// What the account received (negative: paid).
+    pub usdc: f64,
+    /// The signed position size it was paid on.
+    pub szi: f64,
+    /// The hourly rate.
+    pub rate: f64,
+    pub hash: String,
+}
+
+pub fn parse_funding(rows: &Value) -> Vec<FundingPayment> {
+    rows.as_array()
+        .into_iter()
+        .flatten()
+        .filter(|r| r.pointer("/delta/type").and_then(|t| t.as_str()) == Some("funding"))
+        .map(|r| FundingPayment {
+            time: r["time"].as_i64().unwrap_or(0),
+            coin: r.pointer("/delta/coin").and_then(|c| c.as_str()).unwrap_or("").to_string(),
+            usdc: num(&r.pointer("/delta/usdc").cloned().unwrap_or_default()),
+            szi: num(&r.pointer("/delta/szi").cloned().unwrap_or_default()),
+            rate: num(&r.pointer("/delta/fundingRate").cloned().unwrap_or_default()),
+            hash: r["hash"].as_str().unwrap_or("").to_string(),
+        })
+        .collect()
 }
 
 impl std::fmt::Debug for HyperliquidVenue {
@@ -809,6 +842,7 @@ impl HyperliquidVenue {
             agent: String::new(),
             client: http()?,
             leverage_set: Mutex::new(HashSet::new()),
+            leverage: 1,
         })
     }
 
@@ -829,6 +863,17 @@ impl HyperliquidVenue {
             v.key = Some(key);
         }
         Ok(v)
+    }
+
+    /// The leverage opening perp orders set (isolated).
+    pub fn with_leverage(mut self, leverage: u32) -> Self {
+        self.leverage = leverage.max(1);
+        self
+    }
+
+    /// The account's funding payments since `start_ms`.
+    pub fn funding_since(&self, start_ms: i64) -> Result<Vec<FundingPayment>, String> {
+        Ok(parse_funding(&self.info(&json!({"type": "userFunding", "user": self.user()?, "startTime": start_ms}))?))
     }
 
     fn base(&self) -> &'static str {
@@ -942,15 +987,15 @@ impl HyperliquidVenue {
         }
     }
 
-    /// 1x isolated before the first opening order on a perp asset (Venues
-    /// 4/5 makes the leverage a setting, capped).
-    fn ensure_one_x_isolated(&self, asset: u32) -> Result<(), String> {
+    /// Isolated margin at the venue's leverage before the first opening
+    /// order on a perp asset (1x by default).
+    fn ensure_isolated(&self, asset: u32) -> Result<(), String> {
         if self.leverage_set.lock().map(|s| s.contains(&asset)).unwrap_or(false) {
             return Ok(());
         }
-        let resp = self.exchange(&update_leverage_action(asset, false, 1))?;
+        let resp = self.exchange(&update_leverage_action(asset, false, self.leverage))?;
         if resp["status"].as_str() != Some("ok") {
-            return Err(format!("setting 1x isolated failed: {}", resp["response"]));
+            return Err(format!("setting {}x isolated failed: {}", self.leverage, resp["response"]));
         }
         if let Ok(mut s) = self.leverage_set.lock() {
             s.insert(asset);
@@ -1117,14 +1162,28 @@ impl ExecutionVenue for HyperliquidVenue {
             .filter_map(|p| {
                 let pos = &p["position"];
                 let szi = num(&pos["szi"]);
+                let value = num(&pos["positionValue"]);
                 (szi != 0.0).then(|| VenuePosition {
                     symbol: pos["coin"].as_str().unwrap_or("").to_string(),
                     side: if szi > 0.0 { "long" } else { "short" }.into(),
                     size: szi.abs(),
                     entry_price: num(&pos["entryPx"]),
+                    liquidation_price: Some(num(&pos["liquidationPx"])).filter(|p| *p > 0.0),
+                    mark_price: (value > 0.0).then(|| value / szi.abs()),
+                    leverage: pos.pointer("/leverage/value").map(num).filter(|l| *l > 0.0),
+                    margin: Some(num(&pos["marginUsed"])),
                 })
             })
             .collect())
+    }
+
+    fn maintenance_margin(&self, instrument: &Instrument) -> Option<f64> {
+        if instrument.market != MarketType::Perp {
+            return None;
+        }
+        let meta = self.meta().ok()?;
+        let a = meta.perps.iter().find(|a| a.name == instrument.filters.symbol)?;
+        Some(1.0 / (2.0 * a.max_leverage.max(1) as f64))
     }
 
     fn order_book(&self, instrument: &Instrument) -> Result<OrderBook, String> {
@@ -1163,10 +1222,11 @@ impl ExecutionVenue for HyperliquidVenue {
         self.ready()?;
         let meta = self.meta()?;
         let (asset, sz_decimals) = meta.asset_of(inst)?;
-        // Long-only until Venues 4/5: on perp a sell only ever closes.
-        let reduce_only = order.reduce_only || (self.market == MarketType::Perp && order.side == Side::Sell);
+        // Closes are reduce-only (the engine says so); an opening order sets
+        // isolated margin at the venue's leverage first.
+        let reduce_only = order.reduce_only;
         if self.market == MarketType::Perp && !reduce_only {
-            if let Err(e) = self.ensure_one_x_isolated(asset) {
+            if let Err(e) = self.ensure_isolated(asset) {
                 return Ok(OrderReport::empty(&order.client_order_id, OrderStatus::Rejected, e));
             }
         }

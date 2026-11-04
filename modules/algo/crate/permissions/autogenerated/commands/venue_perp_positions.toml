@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-venue-perp-positions"
+description = "Enables the venue_perp_positions command without any pre-configured scope."
+commands.allow = ["venue_perp_positions"]
+
+[[permission]]
+identifier = "deny-venue-perp-positions"
+description = "Denies the venue_perp_positions command without any pre-configured scope."
+commands.deny = ["venue_perp_positions"]

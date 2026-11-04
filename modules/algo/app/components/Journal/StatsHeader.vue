@@ -9,12 +9,17 @@ const props = defineProps<{
 const statCards = computed(() => {
   if (!props.stats) return []
   const s = props.stats
+  const funding = s.funding ?? 0
   return [
     {
       label: 'PnL',
       value: formatCurrency(s.total_pnl),
       colorClass: s.total_pnl > 0 ? 'value-positive' : s.total_pnl < 0 ? 'value-negative' : '',
     },
+    // Perp funding is in the PnL above; shown apart when there is any.
+    ...(funding !== 0
+      ? [{ label: 'Funding', value: formatCurrency(funding), colorClass: funding > 0 ? 'value-positive' : 'value-negative' }]
+      : []),
     {
       label: 'Total Trades',
       value: String(s.total_trades),

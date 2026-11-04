@@ -19,11 +19,50 @@ pub struct GuardConfig {
     /// Max traded value per UTC day on the account.
     #[serde(default)]
     pub daily_turnover_cap: Option<f64>,
+    /// A perp position must open at least this far from its liquidation
+    /// price, as a share of the entry (default 20 %, Venues 4/5).
+    #[serde(default = "default_min_liquidation_distance")]
+    pub min_liquidation_distance: f64,
+}
+
+fn default_min_liquidation_distance() -> f64 {
+    0.2
+}
+
+/// How far an isolated position at `leverage` opens from its liquidation
+/// price, as a share of the entry: the margin (1 / leverage) less the
+/// maintenance margin. The same both ways, fees and funding aside.
+pub fn liquidation_distance(leverage: f64, maintenance_margin: f64) -> f64 {
+    (1.0 / leverage.max(1.0) - maintenance_margin).max(0.0)
+}
+
+/// The liquidation price of an isolated position opened at `entry`.
+pub fn liquidation_price(entry: f64, leverage: f64, maintenance_margin: f64, short: bool) -> f64 {
+    let d = liquidation_distance(leverage, maintenance_margin);
+    if short {
+        entry * (1.0 + d)
+    } else {
+        entry * (1.0 - d)
+    }
+}
+
+pub fn liquidation_guard(pair: &str, distance: f64, min: f64) -> GuardResult {
+    GuardResult::new(
+        "liquidation_distance",
+        distance + 1e-12 >= min,
+        format!("{pair}: liquidation {:.1} % from the entry (limit {:.1} %)", distance * 100.0, min * 100.0),
+    )
 }
 
 impl Default for GuardConfig {
     fn default() -> Self {
-        Self { max_slippage: 0.005, price_tolerance: 0.02, max_order_value: None, daily_turnover_cap: None }
+        Self {
+            max_slippage: 0.005,
+            price_tolerance: 0.02,
+            max_order_value: None,
+            daily_turnover_cap: None,
+            min_liquidation_distance: default_min_liquidation_distance(),
+        }
     }
 }
 

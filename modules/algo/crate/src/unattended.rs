@@ -63,6 +63,22 @@ impl Books {
     pub fn long_qty(&self) -> f64 {
         self.positions.iter().filter(|p| p.side == "long").map(|p| p.quantity).sum()
     }
+
+    /// Base quantity of open shorts (perp bots, Venues 4/5).
+    pub fn short_qty(&self) -> f64 {
+        self.positions.iter().filter(|p| p.side == "short").map(|p| p.quantity).sum()
+    }
+}
+
+/// A perp bot's shorts against the venue's short position of the coin.
+pub fn reconcile_shorts(books: &Books, base: &str, venue_short: f64) -> Result<(), String> {
+    let want = books.short_qty();
+    if venue_short + 1e-9 < want * 0.999 {
+        return Err(format!(
+            "the books say {want} {base} is short, the venue is short {venue_short} {base}; check the account, then start the bot by hand"
+        ));
+    }
+    Ok(())
 }
 
 /// Rebuild the books of the session that began at `started_at`: the budget,
@@ -235,12 +251,18 @@ pub fn resume_bots(app: AppHandle, bots: Vec<(Bot, String)>) {
                 restore_books(&db, &bot, &started_at)?
             };
             if bot.trading_mode == "live" {
-                let venue = {
+                // The account the orders go to, with the bot's market and leverage.
+                let run = crate::bot::RunConfig::resolve(&bot, &state)?;
+                let account = run.execution_exchange_id.clone().unwrap_or_else(|| bot.exchange_id.clone());
+                let (venue, quote) = {
                     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
-                    let creds = crate::exchanges::load_credentials(&db, &bot.exchange_id)?;
-                    crate::execution::cex::CexVenue::new(&creds.provider, &creds.api_key, &creds.api_secret, creds.sandbox)?
+                    let creds = crate::exchanges::load_credentials(&db, &account)?;
+                    let quote = crate::execution::mapping::quote_for(&creds.provider);
+                    (crate::venues::open_leveraged(&creds, run.execution_market, run.leverage as u32)?, quote)
                 };
-                let inst = venue.instrument(&bot.pair)?;
+                let base = bot.pair.split('/').next().unwrap_or(&bot.pair).to_string();
+                let pair = if venue.label().to_lowercase().contains("hyperliquid") { format!("{base}/{quote}") } else { bot.pair.clone() };
+                let inst = venue.instrument(&pair)?;
                 let total: f64 = venue
                     .balances()?
                     .iter()
@@ -249,6 +271,15 @@ pub fn resume_bots(app: AppHandle, bots: Vec<(Bot, String)>) {
                     .sum();
                 let open: Vec<String> = venue.open_orders(&inst)?.into_iter().filter(|id| ours(id)).collect();
                 reconcile(&books, inst.base(), total, &open)?;
+                if venue.capabilities().perp {
+                    let short: f64 = venue
+                        .positions()?
+                        .iter()
+                        .filter(|p| p.side == "short" && p.symbol.eq_ignore_ascii_case(inst.base()))
+                        .map(|p| p.size)
+                        .sum();
+                    reconcile_shorts(&books, inst.base(), short)?;
+                }
             }
             crate::bot::resume_bot(&app, &state, bot.clone(), books, &started_at)
         })();
@@ -560,6 +591,29 @@ mod tests {
         assert!(err.contains("the venue holds 0.001 BTC"), "{err}");
         let err = reconcile(&books, "BTC", 0.002, &["qsb1234-0007".into()]).unwrap_err();
         assert!(err.contains("still open"), "{err}");
+    }
+
+    #[test]
+    fn a_perp_bot_resumes_only_when_its_short_is_on_the_venue() {
+        let books = Books {
+            balance: 0.0,
+            positions: vec![Position {
+                id: "p".into(),
+                pair: "BTC/USDT".into(),
+                side: "short".into(),
+                entry_price: 60_000.0,
+                quantity: 0.01,
+                entry_fee: 0.0,
+                reserved_margin: 600.0,
+                entry_time: "t".into(),
+                entry_order_id: None,
+                entry_fees: Vec::new(),
+            }],
+        };
+        assert_eq!(books.long_qty(), 0.0);
+        assert!(reconcile(&books, "BTC", 0.0, &[]).is_ok(), "no long expected");
+        assert!(reconcile_shorts(&books, "BTC", 0.01).is_ok());
+        assert!(reconcile_shorts(&books, "BTC", 0.0).unwrap_err().contains("short"));
     }
 
     #[test]

@@ -76,6 +76,7 @@ Default permissions for the algo module.
 - `allow-venue-cost-preview`
 - `allow-venue-exposure`
 - `allow-venue-wallet-status`
+- `allow-venue-perp-positions`
 - `allow-wallet-export-key`
 - `allow-solana-wallet-status`
 - `allow-trading-kill-switch`
@@ -2118,6 +2119,32 @@ Enables the venue_mapping command without any pre-configured scope.
 <td>
 
 Denies the venue_mapping command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-perp-positions`
+
+</td>
+<td>
+
+Enables the venue_perp_positions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-perp-positions`
+
+</td>
+<td>
+
+Denies the venue_perp_positions command without any pre-configured scope.
 
 </td>
 </tr>

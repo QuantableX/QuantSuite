@@ -109,6 +109,25 @@ pub struct VenuePosition {
     pub side: String,
     pub size: f64,
     pub entry_price: f64,
+    /// Perp: where the venue liquidates it, the mark price, the leverage and
+    /// the margin it holds (Venues 4/5).
+    #[serde(default)]
+    pub liquidation_price: Option<f64>,
+    #[serde(default)]
+    pub mark_price: Option<f64>,
+    #[serde(default)]
+    pub leverage: Option<f64>,
+    #[serde(default)]
+    pub margin: Option<f64>,
+}
+
+impl VenuePosition {
+    /// The distance from the mark to the liquidation price, as a share of
+    /// the mark.
+    pub fn liquidation_distance(&self) -> Option<f64> {
+        let (liq, mark) = (self.liquidation_price?, self.mark_price.or(Some(self.entry_price))?);
+        (mark > 0.0).then(|| (mark - liq).abs() / mark)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -341,6 +360,12 @@ pub trait ExecutionVenue: Send + Sync {
     fn cancel(&self, instrument: &Instrument, client_order_id: &str) -> Result<(), String>;
     /// Client ids of the orders still open on the instrument (IOC orders
     /// never rest, so normally none). Venues without resting orders: none.
+    /// The maintenance margin of a perp instrument, as a share of the
+    /// notional (Hyperliquid: half the initial margin at max leverage).
+    fn maintenance_margin(&self, _instrument: &Instrument) -> Option<f64> {
+        None
+    }
+
     fn open_orders(&self, _instrument: &Instrument) -> Result<Vec<String>, String> {
         Ok(Vec::new())
     }

@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "venue_cost_preview",
     "venue_exposure",
     "venue_wallet_status",
+    "venue_perp_positions",
     "wallet_export_key",
     "solana_wallet_status",
     "trading_kill_switch",

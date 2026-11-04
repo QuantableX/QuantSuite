@@ -213,6 +213,8 @@ function onCreated(_bot: unknown, started: boolean) {
           </tr>
         </tbody>
       </table>
+      <!-- Perp positions with their liquidation distance (Venues 4/5). -->
+      <AlgoExchangePerpPositions class="perp-positions" />
     </div>
 
     <AlgoBotCreateModal :visible="showCreate" @close="showCreate = false" @created="onCreated" />
@@ -366,5 +368,8 @@ function onCreated(_bot: unknown, started: boolean) {
 
 .cell-actions .btn {
   margin-left: 4px;
+}
+.perp-positions {
+  margin-top: 12px;
 }
 </style>

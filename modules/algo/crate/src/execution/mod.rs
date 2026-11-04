@@ -22,6 +22,9 @@ pub mod store;
 pub mod venue;
 
 #[cfg(test)]
+mod perp_tests;
+
+#[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, HashMap};
     use std::sync::Mutex;
@@ -214,6 +217,7 @@ mod tests {
             signal: json!({"best": "ETH"}),
             initial_capital: None,
             initial_holdings: None,
+            leverage: 1.0,
         }
     }
 
@@ -504,6 +508,7 @@ mod live_paper {
             signal: serde_json::json!({}),
             initial_capital: Some(1_000.0),
             initial_holdings: None,
+            leverage: 1.0,
         };
         let store = SqliteStore { conn: &conn };
         let rec = Engine::default().run(&store, &paper, &req).unwrap();

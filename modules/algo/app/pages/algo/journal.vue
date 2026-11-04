@@ -186,7 +186,7 @@ onUnmounted(stopListening)
               <span class="detail__label">Side</span>
               <span
                 class="detail__value"
-                :class="selectedTrade.side === 'long' ? 'text-accent' : 'text-error'"
+                :class="selectedTrade.side === 'long' ? 'text-accent' : selectedTrade.side === 'funding' ? 'text-muted' : 'text-error'"
               >
                 {{ selectedTrade.side.toUpperCase() }}
               </span>

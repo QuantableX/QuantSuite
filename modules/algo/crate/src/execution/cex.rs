@@ -216,10 +216,6 @@ impl CexVenue {
         self.venue
     }
 
-    pub fn sandbox(&self) -> bool {
-        self.sandbox
-    }
-
     fn has_keys(&self) -> Result<(), String> {
         if self.api_key.is_empty() || self.api_secret.is_empty() {
             return Err("The exchange has no API key and secret stored; live trading needs both.".into());
