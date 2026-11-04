@@ -212,6 +212,7 @@ mod tests {
             close_date: None,
             signal: json!({"best": "ETH"}),
             initial_capital: None,
+            initial_holdings: None,
         }
     }
 
@@ -457,5 +458,69 @@ mod tests {
         assert!(AccountLock::acquire("acct-lock-test").is_err());
         drop(lock);
         assert!(AccountLock::acquire("acct-lock-test").is_ok());
+    }
+}
+
+/// Paper on real data: the engine, the route choice and the guards against
+/// Binance's live public book — nothing is sent anywhere.
+/// `cargo test -p tauri-plugin-algo --lib -- --ignored live_paper --nocapture`
+#[cfg(test)]
+mod live_paper {
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+
+    use super::cex::CexVenue;
+    use super::engine::{Engine, RunRequest};
+    use super::paper::PaperVenue;
+    use super::store::{RunStatus, RunStore, SqliteStore, Target};
+    use super::venue::ExecutionVenue;
+    use crate::runtime::Mode;
+
+    #[test]
+    #[ignore = "reads Binance's public order books"]
+    fn live_paper_rotation_on_the_real_binance_book() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::init_db(&conn).unwrap();
+        let conn = Mutex::new(conn);
+        let market = CexVenue::new("binance", "", "", false).unwrap();
+        let mid = |pair: &str| market.order_book(&market.instrument(pair).unwrap()).unwrap().mid().unwrap();
+        let refs: BTreeMap<String, f64> =
+            [("BTC", mid("BTC/USDT")), ("ETH", mid("ETH/USDT")), ("USDT", 1.0)].into_iter().map(|(a, p)| (a.to_string(), p)).collect();
+        let paper = PaperVenue::new(&market, &conn, "system:qa", "binance-qa", 0.001, 0.0005);
+        paper.fund_if_empty("USDT", 1_000.0).unwrap();
+        let mut req = RunRequest {
+            run_id: "qa-1".into(),
+            owner: "system:qa".into(),
+            exchange_id: "binance-qa".into(),
+            mode: Mode::Paper,
+            quote: "USDT".into(),
+            target: Target::Hold("BTC".into()),
+            reference_prices: refs,
+            data_fresh: true,
+            armed: false,
+            account_belongs: true,
+            close_date: None,
+            signal: serde_json::json!({}),
+            initial_capital: Some(1_000.0),
+            initial_holdings: None,
+        };
+        let store = SqliteStore { conn: &conn };
+        let rec = Engine::default().run(&store, &paper, &req).unwrap();
+        println!("buy BTC: {:?} fees {:.4} cost {:.4} after {:?}", rec.status, rec.fees, rec.cost, rec.holdings_after);
+        assert_eq!(rec.status, RunStatus::Done, "{:?}", rec.errors);
+        // The switch BTC → ETH: Binance lists ETH/BTC, so the route choice runs on real books.
+        req.run_id = "qa-2".into();
+        req.target = Target::Hold("ETH".into());
+        let rec = Engine::default().run(&store, &paper, &req).unwrap();
+        let route = rec.route.as_ref().unwrap();
+        println!("switch BTC → ETH: {:?} — {}", route.chosen, route.reason);
+        println!("  via USDT {:.4}$ vs direct {:?}", route.via_quote.total, route.direct.as_ref().map(|d| d.total));
+        for o in store.orders("qa-2").unwrap() {
+            let r = o.report.unwrap();
+            println!("  {} {:?} {} {} at {} fee {} {}", o.leg, o.side, r.filled_qty, o.instrument.filters.symbol, r.avg_price, r.fee_amount, r.fee_asset);
+        }
+        println!("  after {:?}, fees {:.4}$", rec.holdings_after, rec.fees);
+        assert_eq!(rec.status, RunStatus::Done, "{:?}", rec.errors);
+        assert!(rec.holdings_after.unwrap().get("ETH").copied().unwrap_or(0.0) > 0.0);
     }
 }

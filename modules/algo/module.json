@@ -260,6 +260,45 @@
         },
         "required": ["indicator"]
       }
+    },
+    {
+      "name": "manual_runs",
+      "command": "plugin:algo|manual_execution_runs",
+      "description": "The Manual execution runs of a saved QuantSystems system, newest first (PLAN-AUTO-EXECUTION §2.3): close date, decision, route, guard results, orders with fills, cost, status and a one-line summary.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "system_id": { "type": "string", "description": "The system's id (QuantSystems)." },
+          "limit": { "type": "integer", "description": "How many runs (default 60)." }
+        },
+        "required": ["system_id"]
+      }
+    },
+    {
+      "name": "manual_arm",
+      "command": "plugin:algo|manual_execution_arm",
+      "description": "Arm Live Manual execution of a system: from its next run it TRADES REAL MONEY on its account. Refused without a completed paper run, a working account and a robust verdict (or ack_not_robust).",
+      "sideEffects": "external",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "system_id": { "type": "string" },
+          "ack_not_robust": { "type": "boolean", "description": "The user's own \"I know this system is not robust\"." }
+        },
+        "required": ["system_id"]
+      }
+    },
+    {
+      "name": "manual_disarm",
+      "command": "plugin:algo|manual_execution_disarm",
+      "description": "Disarm Live Manual execution of a system. Nothing is sold.",
+      "sideEffects": "external",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "system_id": { "type": "string" } },
+        "required": ["system_id"]
+      }
     }
   ],
   "migrateFrom": "<data_dir>/quantalgo"

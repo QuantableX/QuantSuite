@@ -205,6 +205,7 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         }
     }
     crate::execution::store::create_tables(conn)?;
+    crate::manual::create_table(conn)?;
     Ok(())
 }
 

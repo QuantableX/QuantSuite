@@ -34,6 +34,14 @@ base64 = "0.22"
 zeroize = "1"
 
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+# Manual execution (PLAN-AUTO-EXECUTION §2.3) reads a saved system's config and
+# its live signal through QuantSystems' read-only `signals` API.
+tauri-plugin-systems = { path = "../../systems/crate" }
+
+# Run notifications: the WinRT wrapper tauri-plugin-notification uses on
+# Windows, without its JS package — the same as QuantPilot's toasts.
+[target.'cfg(windows)'.dependencies]
+tauri-winrt-notification = "0.8"
 
 [lints.rust]
 warnings = "deny"

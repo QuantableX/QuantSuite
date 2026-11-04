@@ -64,4 +64,10 @@ permissions = [
   "allow-get-settings",
   "allow-update-settings",
   "allow-detect-python",
+  "allow-manual-execution-get",
+  "allow-manual-execution-save",
+  "allow-manual-execution-arm",
+  "allow-manual-execution-disarm",
+  "allow-manual-execution-runs",
+  "allow-manual-execution-coverage",
 ]

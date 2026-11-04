@@ -6818,6 +6818,8 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "tauri-plugin-qs",
+ "tauri-plugin-systems",
+ "tauri-winrt-notification",
  "tokio",
  "uuid",
  "zeroize",

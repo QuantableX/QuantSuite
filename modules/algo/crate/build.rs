@@ -1,4 +1,11 @@
 const COMMANDS: &[&str] = &[
+    // Manual execution (PLAN-AUTO-EXECUTION §2.3): settings, arming, runs, coverage.
+    "manual_execution_get",
+    "manual_execution_save",
+    "manual_execution_arm",
+    "manual_execution_disarm",
+    "manual_execution_runs",
+    "manual_execution_coverage",
     "list_strategies",
     "get_strategy",
     "create_strategy",

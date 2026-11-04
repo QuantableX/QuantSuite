@@ -65,6 +65,12 @@ Default permissions for the algo module.
 - `allow-get-settings`
 - `allow-update-settings`
 - `allow-detect-python`
+- `allow-manual-execution-get`
+- `allow-manual-execution-save`
+- `allow-manual-execution-arm`
+- `allow-manual-execution-disarm`
+- `allow-manual-execution-runs`
+- `allow-manual-execution-coverage`
 
 ## Permission Table
 
@@ -903,6 +909,162 @@ Enables the list_trades command without any pre-configured scope.
 <td>
 
 Denies the list_trades command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-manual-execution-arm`
+
+</td>
+<td>
+
+Enables the manual_execution_arm command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-manual-execution-arm`
+
+</td>
+<td>
+
+Denies the manual_execution_arm command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-manual-execution-coverage`
+
+</td>
+<td>
+
+Enables the manual_execution_coverage command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-manual-execution-coverage`
+
+</td>
+<td>
+
+Denies the manual_execution_coverage command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-manual-execution-disarm`
+
+</td>
+<td>
+
+Enables the manual_execution_disarm command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-manual-execution-disarm`
+
+</td>
+<td>
+
+Denies the manual_execution_disarm command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-manual-execution-get`
+
+</td>
+<td>
+
+Enables the manual_execution_get command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-manual-execution-get`
+
+</td>
+<td>
+
+Denies the manual_execution_get command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-manual-execution-runs`
+
+</td>
+<td>
+
+Enables the manual_execution_runs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-manual-execution-runs`
+
+</td>
+<td>
+
+Denies the manual_execution_runs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-manual-execution-save`
+
+</td>
+<td>
+
+Enables the manual_execution_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-manual-execution-save`
+
+</td>
+<td>
+
+Denies the manual_execution_save command without any pre-configured scope.
 
 </td>
 </tr>

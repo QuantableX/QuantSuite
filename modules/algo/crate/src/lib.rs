@@ -19,13 +19,10 @@ mod candle_archive;
 mod data;
 mod db;
 mod exchanges;
-// The execution core (PLAN-AUTO-EXECUTION §2.2). Bots use its venues today;
-// Manual runs (Automation 3/5) and the kill switch (4/5) call the engine —
-// remove this allow once they do.
-#[allow(dead_code)]
 mod execution;
 mod journal;
 mod logs;
+mod manual;
 mod runtime;
 mod secrets;
 mod settings;
@@ -449,6 +446,10 @@ pub fn init() -> TauriPlugin<Wry> {
 
             app.manage(state);
 
+            // Manual systems trade by themselves after the daily close
+            // (PLAN-AUTO-EXECUTION §2.3): the scheduler sleeps until a run is due.
+            manual::start(app.clone());
+
             // Reconcile: a bot left "running" by a previous session has no
             // process in this one. Bots are never auto-restarted
             // (PLAN-QUANTALGO §3.1).
@@ -570,6 +571,12 @@ pub fn init() -> TauriPlugin<Wry> {
             bots::get_bot,
             bots::get_bot_positions,
             exchanges::list_exchanges,
+            manual::manual_execution_get,
+            manual::manual_execution_save,
+            manual::manual_execution_arm,
+            manual::manual_execution_disarm,
+            manual::manual_execution_runs,
+            manual::manual_execution_coverage,
             exchanges::add_exchange,
             exchanges::update_exchange,
             exchanges::delete_exchange,

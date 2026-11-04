@@ -1,6 +1,6 @@
 import type { EngineView } from '#systems/types'
 
-const VIEWS: EngineView[] = ['settings', 'live', 'backtest']
+const VIEWS: EngineView[] = ['settings', 'live', 'backtest', 'execution']
 
 /** Derive the active system id + view from the current route. */
 export function useActiveView() {
