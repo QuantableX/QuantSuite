@@ -71,14 +71,19 @@ async function handleTestConnection(config: ExchangeConfig) {
   isTesting.value = true
   testResult.value = null
   try {
-    if (config.api_key || config.api_secret) {
+    // A Solana wallet is generated on save: only the stored one can be tested.
+    const typed = config.provider !== 'jupiter'
+      && !!(config.api_key || config.api_secret || config.private_key || config.wallet_address)
+    if (typed) {
       testResult.value = await exchangeStore.testCredentials(config)
     } else if (editingExchange.value) {
       testResult.value = await exchangeStore.testConnection(editingExchange.value.id)
     } else {
       testResult.value = {
         success: false,
-        message: 'Enter an API key and secret to test them — both are optional for paper trading and backtests.',
+        message: config.provider === 'jupiter'
+          ? 'QuantSuite generates the wallet when you save; test it afterwards.'
+          : 'Enter an API key and secret to test them — both are optional for paper trading and backtests.',
       }
     }
   } catch (err) {

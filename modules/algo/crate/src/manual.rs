@@ -411,10 +411,12 @@ struct VenueMarket<'a> {
 fn reference_closes(venue: &VenueMarket, coins: &[String], day: NaiveDate, listed: &dyn Fn(&str) -> bool) -> HashMap<String, f64> {
     let mut out = HashMap::new();
     for coin in coins {
+        let binance = || crate::venues::daily_close("binance", false, MarketType::Spot, coin, "USDT", day);
+        // A venue without candles (Jupiter) falls back to Binance too.
         let close = if listed(coin) {
-            crate::venues::daily_close(venue.provider, venue.testnet, venue.market, coin, venue.quote, day)
+            crate::venues::daily_close(venue.provider, venue.testnet, venue.market, coin, venue.quote, day).or_else(binance)
         } else {
-            crate::venues::daily_close("binance", false, MarketType::Spot, coin, "USDT", day)
+            binance()
         };
         if let Some(c) = close {
             out.insert(coin.clone(), c);
@@ -941,7 +943,13 @@ pub(crate) async fn manual_execution_arm(
             venue.ready()?;
             let balances = venue.balances()?;
             let quote = quote_for(&venue.label());
-            Ok(format!("{}: {:.2} {quote} free", venue.label(), free_balance(&balances, quote)))
+            // A Solana wallet must hold no more than its cap (PLAN-EXECUTION-VENUES §8).
+            let creds = {
+                let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+                crate::exchanges::load_credentials(&db, &exchange_id)?
+            };
+            let cap = crate::venues::wallet_cap_check(&creds)?.map(|c| format!(", {c}")).unwrap_or_default();
+            Ok(format!("{}: {:.2} {quote} free{cap}", venue.label(), free_balance(&balances, quote)))
         });
         let verdict = robustness_verdict(&research_dir(), &system_id);
         let checks = arming_checks(&row.settings, paper_runs, account, verdict.as_ref(), ack);

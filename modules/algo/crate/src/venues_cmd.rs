@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::execution::cex::DEFAULT_TAKER_FEE;
 use crate::execution::mapping::{self, CostPreview, MappingTable};
-use crate::execution::venue::{FeeSchedule, MarketType};
+use crate::execution::venue::{ExecutionVenue, FeeSchedule, MarketType};
 use crate::venues::hyperliquid::{self, AgentStatus};
 use crate::AppState;
 
@@ -195,6 +195,74 @@ pub(crate) async fn venue_wallet_status(exchange_id: String, app: AppHandle) -> 
     })
     .await
     .map_err(|e| format!("Wallet status failed: {e}"))?
+}
+
+#[derive(Debug, Serialize)]
+pub struct SolanaWallet {
+    pub address: String,
+    pub sol: f64,
+    pub usdc: f64,
+    pub value_usd: Option<f64>,
+    pub cap: Option<f64>,
+    pub rpc_public: bool,
+}
+
+/// A generated Solana wallet: its address, what it holds and its cap. `read`.
+#[tauri::command(rename_all = "snake_case")]
+pub(crate) async fn solana_wallet_status(exchange_id: String, app: AppHandle) -> Result<SolanaWallet, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let creds = {
+            let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+            crate::exchanges::load_credentials(&db, &exchange_id)?
+        };
+        if !creds.provider.eq_ignore_ascii_case("jupiter") {
+            return Err("Only Jupiter accounts have a Solana wallet.".into());
+        }
+        let venue = crate::venues::jupiter::JupiterVenue::new("", &creds.wallet_address, &creds.rpc_endpoint, &creds.api_key, None)?;
+        let balances = venue.balances()?;
+        let held = |a: &str| balances.iter().filter(|b| b.asset == a).map(|b| b.free + b.locked).sum::<f64>();
+        Ok(SolanaWallet {
+            address: creds.wallet_address.clone(),
+            sol: held("SOL"),
+            usdc: held("USDC"),
+            value_usd: venue.wallet_value_usd().ok(),
+            cap: creds.max_value,
+            rpc_public: venue.rpc_is_public(),
+        })
+    })
+    .await
+    .map_err(|e| format!("Wallet status failed: {e}"))?
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExportedKey {
+    pub address: String,
+    /// base58 of seed ‖ public key — Phantom and the Solana CLI read it.
+    pub secret: String,
+}
+
+/// Export a generated Solana wallet's key (§8). The UI asks first; `confirm`
+/// must be the wallet's address, so no stray call reveals it.
+#[tauri::command(rename_all = "snake_case")]
+pub(crate) async fn wallet_export_key(exchange_id: String, confirm: String, app: AppHandle) -> Result<ExportedKey, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let creds = {
+            let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+            crate::exchanges::load_credentials(&db, &exchange_id)?
+        };
+        if !creds.provider.eq_ignore_ascii_case("jupiter") {
+            return Err("Only a generated Solana wallet can be exported.".into());
+        }
+        if confirm.trim() != creds.wallet_address {
+            return Err("Confirm with the wallet's address.".into());
+        }
+        log::warn!(target: "algo", "the key of Solana wallet {} was exported", creds.wallet_address);
+        Ok(ExportedKey { address: creds.wallet_address.clone(), secret: creds.private_key.clone() })
+    })
+    .await
+    .map_err(|e| format!("Export failed: {e}"))?
 }
 
 #[derive(Debug, Serialize, Default)]

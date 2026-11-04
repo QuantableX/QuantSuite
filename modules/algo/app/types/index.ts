@@ -361,6 +361,8 @@ export interface ExchangeConfig {
   rpc_endpoint?: string
   /** Hyperliquid: the sub-account the orders act on. */
   sub_account?: string
+  /** Solana wallet: the most it may hold, in USD (arming is refused above). */
+  max_value?: number
 }
 
 export interface ConnectionResult {

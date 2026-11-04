@@ -59,12 +59,12 @@ const ackNotRobust = ref(false)
 const coverage = ref<Coverage | null>(null)
 const coverageBusy = ref(false)
 
-const tradableVenues = computed(() => exchanges.value.filter(e => ['binance', 'bybit', 'hyperliquid'].includes(e.provider.toLowerCase())))
+const tradableVenues = computed(() => exchanges.value.filter(e => ['binance', 'bybit', 'hyperliquid', 'jupiter'].includes(e.provider.toLowerCase())))
 const account = computed(() => exchanges.value.find(e => e.id === form.value?.exchange_id) ?? null)
 /** Perp exists on Hyperliquid accounts (1x isolated, long-only until Venues 4/5). */
 const hasPerp = computed(() => account.value?.provider.toLowerCase() === 'hyperliquid')
-/** What "USD" is on the account: USDC on Hyperliquid, USDT on Binance and Bybit. */
-const quote = computed(() => (account.value?.provider.toLowerCase() === 'hyperliquid' ? 'USDC' : 'USDT'))
+/** What "USD" is on the account: USDC on Hyperliquid and Jupiter, USDT on Binance and Bybit. */
+const quote = computed(() => (['hyperliquid', 'jupiter'].includes(account.value?.provider.toLowerCase() ?? '') ? 'USDC' : 'USDT'))
 watch(hasPerp, (perp) => {
   if (!perp && form.value?.market === 'perp') form.value.market = 'spot'
 })

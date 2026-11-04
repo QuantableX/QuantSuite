@@ -1600,6 +1600,14 @@
               "type": "string"
             },
             "description": "Coin symbols, e.g. a system's universe."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "spot",
+              "perp"
+            ],
+            "description": "spot (default) or perp (Hyperliquid accounts)."
           }
         },
         "required": [

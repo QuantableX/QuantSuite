@@ -13,6 +13,8 @@ const COMMANDS: &[&str] = &[
     "venue_cost_preview",
     "venue_exposure",
     "venue_wallet_status",
+    "wallet_export_key",
+    "solana_wallet_status",
     "trading_kill_switch",
     "trading_kill_switch_status",
     // Migration (PLAN-MIGRATION §2.2): the move code, the notices.

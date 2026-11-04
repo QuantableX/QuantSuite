@@ -153,6 +153,16 @@ The trading fee is the same as for any pair (14$ on 10,000$ in the table). The c
 - Bots still execute on Binance and Bybit only.
 - Live values (2026-11-04, `--ignored hyperliquid_live`): 14 verified spot pairs and 179 perps on mainnet, 6 and 159 on testnet; BTC funding −0.0021 %/h.
 
+### 10.3 Built (card Venues 3/5 Jupiter, 2026-11-04)
+
+- **Jupiter vs CoW, re-checked first.** Over two years the Top-5/Top-10 universes held 11 coins. A 10,000 USDC buy with under 0.5 % price impact: Jupiter 7 (BTC, ETH, SOL, TRX, HYPE, ZEC, DOGE; XRP 0.59 %), CoW Protocol on Base 5 (BTC, ETH, SOL, XRP, LINK; DOGE 1.2 %, ADA 2.2 %). CoW does not cover materially more → **Jupiter**. Today's Top 5 (BTC, ETH, BNB, XRP, SOL): Jupiter 3 with depth plus XRP borderline, BNB thin (1.1 %).
+- `modules/algo/crate/src/venues/jupiter.rs` (Tauri-free), Swap API V2 (`api.jup.ag/swap/v2`, keyless at 0.5 requests/s, an optional free API key raises it): `/order` with the wallet as taker → the engine's limit becomes the minimum output (`slippageBps` ≤ 50) and the price impact is capped at 0.5 % → the signature goes into the fee payer's slot (legacy and v0; a transaction whose fee payer is not the wallet is refused) → the signature, which is the transaction id, is journaled (`algo/execution/jupiter-swaps.jsonl`) → `simulateTransaction` (sigVerify) on the RPC → `/execute`, which lands it with Jupiter's priority-fee strategy and confirms it. An order older than 10 s is fetched again. RFQ routes (`jupiterz`) are excluded: there the market maker is the fee payer and the transaction id would not be ours. A lost answer is looked up by the journaled signature (`getSignatureStatuses`, `getTransaction` deltas, expiry by `lastValidBlockHeight`), never sent again.
+- Verified mints (one per coin, with the custodian): SOL (native), BTC = cbBTC (Coinbase), ETH and BNB (Wormhole Portal), XRP = wXRP (Hex Trust), TRX (TRON DAO); USDC (Circle) is the quote. Not mapped although Jupiter lists them: HYPE, ZEC, DOGE (issuer not confirmed), ADA, LINK (no depth). A token merely named like a coin is rejected.
+- Fills from `/execute`'s wallet amounts: Jupiter's fee in its mint (10 bps on 2026-11-04 with RFQ excluded), the network fee (signature + priority + rent) valued in USDC on top. 0.02 SOL always stays on the wallet for fees. Jupiter has no candles: freshness and reference prices come from Binance.
+- Accounts: DEX → Jupiter. QuantSuite generates the ed25519 keypair (ring) into the vault and shows the address; there is no import. Settings: max value on this wallet (arming is refused without it or above it, valued with Jupiter's price API), RPC URL (blank: the public RPC, rate-limited), Jupiter API key. The key can be exported after typing the wallet address. The Exchange list shows the wallet, its value against the cap and a SOL-for-fees warning.
+- Known answers: transaction signing (v0 and legacy) against solders 0.29 (`venues/jupiter_kat.json`). Live, public: quotes and prices (`--ignored jupiter_live`).
+- The canary (one switch there and back with a small amount, fills and fees against the explorer) is the user's (Automation 5 step 3).
+
 ## 11. Cards
 
 | Card | What | Blocked by |

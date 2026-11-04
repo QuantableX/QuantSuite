@@ -7039,6 +7039,7 @@ version = "1.0.45"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
+ "bs58",
  "chrono",
  "dirs 5.0.1",
  "hex",
