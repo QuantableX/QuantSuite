@@ -607,6 +607,42 @@
           "markdownDescription": "Denies the search_entities command without any pre-configured scope."
         },
         {
+          "description": "Enables the server_set_role command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-server-set-role",
+          "markdownDescription": "Enables the server_set_role command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the server_set_role command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-server-set-role",
+          "markdownDescription": "Denies the server_set_role command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the server_set_watchdog command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-server-set-watchdog",
+          "markdownDescription": "Enables the server_set_watchdog command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the server_set_watchdog command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-server-set-watchdog",
+          "markdownDescription": "Denies the server_set_watchdog command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the server_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-server-status",
+          "markdownDescription": "Enables the server_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the server_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-server-status",
+          "markdownDescription": "Denies the server_status command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_autostart command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-autostart",
@@ -751,10 +787,10 @@
           "markdownDescription": "Denies the window_toggle command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle, the agent tool catalogue and the secret vault's status (never a secret value). process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`\n- `allow-vault-status`\n- `allow-vault-unlock`\n- `allow-bundle-plan`\n- `allow-bundle-export`\n- `allow-bundle-export-cancel`\n- `allow-import-propose`\n- `allow-import-bundle`\n- `allow-import-status`",
+          "description": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle, the agent tool catalogue and the secret vault's status (never a secret value). process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`\n- `allow-vault-status`\n- `allow-vault-unlock`\n- `allow-bundle-plan`\n- `allow-bundle-export`\n- `allow-bundle-export-cancel`\n- `allow-import-propose`\n- `allow-import-bundle`\n- `allow-import-status`\n- `allow-server-status`\n- `allow-server-set-role`\n- `allow-server-set-watchdog`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle, the agent tool catalogue and the secret vault's status (never a secret value). process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`\n- `allow-vault-status`\n- `allow-vault-unlock`\n- `allow-bundle-plan`\n- `allow-bundle-export`\n- `allow-bundle-export-cancel`\n- `allow-import-propose`\n- `allow-import-bundle`\n- `allow-import-status`"
+          "markdownDescription": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle, the agent tool catalogue and the secret vault's status (never a secret value). process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`\n- `allow-vault-status`\n- `allow-vault-unlock`\n- `allow-bundle-plan`\n- `allow-bundle-export`\n- `allow-bundle-export-cancel`\n- `allow-import-propose`\n- `allow-import-bundle`\n- `allow-import-status`\n- `allow-server-status`\n- `allow-server-set-role`\n- `allow-server-set-watchdog`"
         }
       ]
     }

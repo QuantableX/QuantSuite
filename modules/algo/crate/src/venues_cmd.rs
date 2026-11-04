@@ -227,6 +227,76 @@ pub(crate) async fn venue_perp_positions(exchange_id: Option<String>, app: AppHa
     .map_err(|e| format!("Positions failed: {e}"))?
 }
 
+#[derive(Debug, Serialize)]
+pub struct BotLine {
+    pub id: String,
+    pub name: String,
+    pub mode: String,
+    pub status: String,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NightlyLine {
+    pub system_id: String,
+    pub close_date: Option<String>,
+    pub status: String,
+    pub finished_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TradingHealth {
+    pub executors_allowed: bool,
+    pub kill_switch: bool,
+    pub bots_running: usize,
+    pub bots: Vec<BotLine>,
+    /// The newest run of every Manual system.
+    pub nightly: Vec<NightlyLine>,
+}
+
+/// What the trading side is doing, for the server's health page
+/// (PLAN-SERVER-CLIENT §5, card Server 2/7). `read`.
+#[tauri::command(async)]
+pub(crate) fn server_trading_health(state: State<'_, AppState>) -> Result<TradingHealth, String> {
+    let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+    let bots: Vec<BotLine> = db
+        .prepare("SELECT id, name, trading_mode, status, last_error FROM bots ORDER BY name")
+        .and_then(|mut s| {
+            s.query_map([], |r| {
+                Ok(BotLine { id: r.get(0)?, name: r.get(1)?, mode: r.get(2)?, status: r.get(3)?, last_error: r.get(4)? })
+            })?
+            .collect()
+        })
+        .map_err(|e| e.to_string())?;
+    let nightly: Vec<NightlyLine> = db
+        .prepare(
+            "SELECT owner, close_date, status, finished_at FROM execution_runs r
+             WHERE owner LIKE 'system:%' AND started_at = (SELECT MAX(started_at) FROM execution_runs WHERE owner = r.owner)
+             ORDER BY owner",
+        )
+        .and_then(|mut s| {
+            s.query_map([], |r| {
+                let owner: String = r.get(0)?;
+                Ok(NightlyLine {
+                    system_id: owner.trim_start_matches("system:").to_string(),
+                    close_date: r.get(1)?,
+                    status: r.get(2)?,
+                    finished_at: r.get(3)?,
+                })
+            })?
+            .collect()
+        })
+        .map_err(|e| e.to_string())?;
+    let kill_switch = crate::execution::store::kill_switch_on(&db).unwrap_or(false);
+    Ok(TradingHealth {
+        executors_allowed: qs_core::server::executors_allowed().is_ok(),
+        kill_switch,
+        bots_running: bots.iter().filter(|b| b.status == "running").count(),
+        bots,
+        nightly,
+    })
+}
+
 /// Hyperliquid's base funding when the live rate is unreadable: the 0.01 %
 /// interest part per 8 hours (PLAN-EXECUTION-VENUES §5.1).
 const BASE_FUNDING_PER_8H: f64 = 0.0001;

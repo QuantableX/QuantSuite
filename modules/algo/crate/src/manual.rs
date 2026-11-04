@@ -562,6 +562,10 @@ fn starting_capital(
 /// One attempt at the run of `system` for the close at `close`.
 /// `Ok(None)`: the data is not there yet and the window is still open.
 pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Result<Option<RunRecord>, String> {
+    // One trader: a PC that became a client leaves the run to the server.
+    if qs_core::server::executors_allowed().is_err() {
+        return Ok(None);
+    }
     let state = app.state::<AppState>();
     let row = {
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
@@ -974,6 +978,8 @@ pub(crate) async fn manual_execution_arm(
     app: AppHandle<Wry>,
 ) -> Result<ArmResult, String> {
     let ack = ack_not_robust.unwrap_or(false);
+    // Armed systems run where the data lives: never on a connected client.
+    qs_core::server::executors_allowed()?;
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let (row, paper_runs) = {

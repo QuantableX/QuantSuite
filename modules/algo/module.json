@@ -348,6 +348,7 @@
       "venue_cost_preview": "server:compute",
       "venue_exposure": "server:read",
       "venue_wallet_status": "server:read",
+      "server_trading_health": "server:read",
       "venue_perp_positions": "server:read",
       "wallet_export_key": "deny:read",
       "solana_wallet_status": "server:read",

@@ -205,6 +205,11 @@ pub fn start(app: AppHandle<Wry>) {
     std::thread::Builder::new()
         .name("algo-funding".into())
         .spawn(move || loop {
+            // A PC that became a client stops reading (one trader).
+            if qs_core::server::executors_allowed().is_err() {
+                std::thread::sleep(EVERY);
+                continue;
+            }
             for id in accounts_to_read(&app) {
                 match sync_account(&app, &id) {
                     Ok(0) => {}

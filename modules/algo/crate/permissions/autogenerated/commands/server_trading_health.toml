@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-server-trading-health"
+description = "Enables the server_trading_health command without any pre-configured scope."
+commands.allow = ["server_trading_health"]
+
+[[permission]]
+identifier = "deny-server-trading-health"
+description = "Denies the server_trading_health command without any pre-configured scope."
+commands.deny = ["server_trading_health"]

@@ -470,8 +470,15 @@ pub fn init() -> TauriPlugin<Wry> {
 
             // Manual systems trade by themselves after the daily close
             // (PLAN-AUTO-EXECUTION §2.3): the scheduler sleeps until a run is due.
-            manual::start(app.clone());
-            funding::start(app.clone());
+            // One trader (PLAN-SERVER-CLIENT §5): a client connected to a
+            // server runs none of the executors; the server does.
+            let executors = qs_core::server::executors_allowed();
+            if executors.is_ok() {
+                manual::start(app.clone());
+                funding::start(app.clone());
+            } else {
+                log::info!(target: "algo", "client mode: no nightly runs, funding or bot resumes here");
+            }
 
             // Reconcile: a bot left "running" by a previous session has no
             // process in this one. It stays stopped unless it asked to resume
@@ -481,7 +488,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 let state = app.state::<AppState>();
                 let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
                 let resumable = unattended::resumable(&db);
-                if !resumable.is_empty() {
+                if !resumable.is_empty() && executors.is_ok() {
                     let handle = app.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_secs(5));
@@ -614,6 +621,7 @@ pub fn init() -> TauriPlugin<Wry> {
             venues_cmd::venue_cost_preview,
             venues_cmd::venue_exposure,
             venues_cmd::venue_wallet_status,
+            venues_cmd::server_trading_health,
             venues_cmd::venue_perp_positions,
             venues_cmd::wallet_export_key,
             venues_cmd::solana_wallet_status,
