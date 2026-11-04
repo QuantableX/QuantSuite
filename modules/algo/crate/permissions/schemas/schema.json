@@ -1027,6 +1027,18 @@
           "markdownDescription": "Denies the test_exchange_credentials command without any pre-configured scope."
         },
         {
+          "description": "Enables the trading_confirm_move command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-trading-confirm-move",
+          "markdownDescription": "Enables the trading_confirm_move command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the trading_confirm_move command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-trading-confirm-move",
+          "markdownDescription": "Denies the trading_confirm_move command without any pre-configured scope."
+        },
+        {
           "description": "Enables the trading_kill_switch command without any pre-configured scope.",
           "type": "string",
           "const": "allow-trading-kill-switch",
@@ -1049,6 +1061,30 @@
           "type": "string",
           "const": "deny-trading-kill-switch-status",
           "markdownDescription": "Denies the trading_kill_switch_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the trading_notice_dismiss command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-trading-notice-dismiss",
+          "markdownDescription": "Enables the trading_notice_dismiss command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the trading_notice_dismiss command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-trading-notice-dismiss",
+          "markdownDescription": "Denies the trading_notice_dismiss command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the trading_notices command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-trading-notices",
+          "markdownDescription": "Enables the trading_notices command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the trading_notices command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-trading-notices",
+          "markdownDescription": "Denies the trading_notices command without any pre-configured scope."
         },
         {
           "description": "Enables the update_bot command without any pre-configured scope.",
@@ -1135,10 +1171,10 @@
           "markdownDescription": "Denies the validate_strategy command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the algo module.\n#### This default permission set includes:\n\n- `allow-list-strategies`\n- `allow-get-strategy`\n- `allow-create-strategy`\n- `allow-save-strategy`\n- `allow-update-strategy-meta`\n- `allow-delete-strategy`\n- `allow-read-strategy-file`\n- `allow-list-indicators`\n- `allow-create-strategy-from-indicator`\n- `allow-smithery-info`\n- `allow-smithery-report`\n- `allow-smithery-source`\n- `allow-smithery-run`\n- `allow-research-run`\n- `allow-research-gauntlet-overview`\n- `allow-research-robustness`\n- `allow-research-profit-overview`\n- `allow-research-aggregate-comparison`\n- `allow-smithery-cancel`\n- `allow-smithery-jobs`\n- `allow-smithery-process-logs`\n- `allow-run-backtest`\n- `allow-list-backtests`\n- `allow-get-backtest`\n- `allow-save-backtest`\n- `allow-delete-backtest`\n- `allow-validate-strategy`\n- `allow-validate-bot-deploy`\n- `allow-start-bot`\n- `allow-stop-bot`\n- `allow-stop-all-bots`\n- `allow-close-bot-positions`\n- `allow-get-bot-status`\n- `allow-get-bot-logs`\n- `allow-process-bot-logs`\n- `allow-create-bot`\n- `allow-update-bot`\n- `allow-delete-bot`\n- `allow-list-bots`\n- `allow-get-bot`\n- `allow-get-bot-positions`\n- `allow-list-exchanges`\n- `allow-add-exchange`\n- `allow-update-exchange`\n- `allow-delete-exchange`\n- `allow-test-exchange-connection`\n- `allow-test-exchange-credentials`\n- `allow-get-balances`\n- `allow-get-exchange-pairs`\n- `allow-list-trades`\n- `allow-list-trade-facets`\n- `allow-get-trade-stats`\n- `allow-get-trade-stats-breakdown`\n- `allow-get-daily-pnl`\n- `allow-update-trade-notes`\n- `allow-get-equity-curve`\n- `allow-export-all-data`\n- `allow-import-data`\n- `allow-get-settings`\n- `allow-update-settings`\n- `allow-detect-python`\n- `allow-manual-execution-get`\n- `allow-manual-execution-save`\n- `allow-manual-execution-arm`\n- `allow-manual-execution-disarm`\n- `allow-manual-execution-runs`\n- `allow-manual-execution-coverage`\n- `allow-trading-kill-switch`\n- `allow-trading-kill-switch-status`\n- `allow-bot-heartbeats`",
+          "description": "Default permissions for the algo module.\n#### This default permission set includes:\n\n- `allow-list-strategies`\n- `allow-get-strategy`\n- `allow-create-strategy`\n- `allow-save-strategy`\n- `allow-update-strategy-meta`\n- `allow-delete-strategy`\n- `allow-read-strategy-file`\n- `allow-list-indicators`\n- `allow-create-strategy-from-indicator`\n- `allow-smithery-info`\n- `allow-smithery-report`\n- `allow-smithery-source`\n- `allow-smithery-run`\n- `allow-research-run`\n- `allow-research-gauntlet-overview`\n- `allow-research-robustness`\n- `allow-research-profit-overview`\n- `allow-research-aggregate-comparison`\n- `allow-smithery-cancel`\n- `allow-smithery-jobs`\n- `allow-smithery-process-logs`\n- `allow-run-backtest`\n- `allow-list-backtests`\n- `allow-get-backtest`\n- `allow-save-backtest`\n- `allow-delete-backtest`\n- `allow-validate-strategy`\n- `allow-validate-bot-deploy`\n- `allow-start-bot`\n- `allow-stop-bot`\n- `allow-stop-all-bots`\n- `allow-close-bot-positions`\n- `allow-get-bot-status`\n- `allow-get-bot-logs`\n- `allow-process-bot-logs`\n- `allow-create-bot`\n- `allow-update-bot`\n- `allow-delete-bot`\n- `allow-list-bots`\n- `allow-get-bot`\n- `allow-get-bot-positions`\n- `allow-list-exchanges`\n- `allow-add-exchange`\n- `allow-update-exchange`\n- `allow-delete-exchange`\n- `allow-test-exchange-connection`\n- `allow-test-exchange-credentials`\n- `allow-get-balances`\n- `allow-get-exchange-pairs`\n- `allow-list-trades`\n- `allow-list-trade-facets`\n- `allow-get-trade-stats`\n- `allow-get-trade-stats-breakdown`\n- `allow-get-daily-pnl`\n- `allow-update-trade-notes`\n- `allow-get-equity-curve`\n- `allow-export-all-data`\n- `allow-import-data`\n- `allow-get-settings`\n- `allow-update-settings`\n- `allow-detect-python`\n- `allow-manual-execution-get`\n- `allow-manual-execution-save`\n- `allow-manual-execution-arm`\n- `allow-manual-execution-disarm`\n- `allow-manual-execution-runs`\n- `allow-manual-execution-coverage`\n- `allow-trading-kill-switch`\n- `allow-trading-kill-switch-status`\n- `allow-trading-confirm-move`\n- `allow-trading-notices`\n- `allow-trading-notice-dismiss`\n- `allow-bot-heartbeats`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the algo module.\n#### This default permission set includes:\n\n- `allow-list-strategies`\n- `allow-get-strategy`\n- `allow-create-strategy`\n- `allow-save-strategy`\n- `allow-update-strategy-meta`\n- `allow-delete-strategy`\n- `allow-read-strategy-file`\n- `allow-list-indicators`\n- `allow-create-strategy-from-indicator`\n- `allow-smithery-info`\n- `allow-smithery-report`\n- `allow-smithery-source`\n- `allow-smithery-run`\n- `allow-research-run`\n- `allow-research-gauntlet-overview`\n- `allow-research-robustness`\n- `allow-research-profit-overview`\n- `allow-research-aggregate-comparison`\n- `allow-smithery-cancel`\n- `allow-smithery-jobs`\n- `allow-smithery-process-logs`\n- `allow-run-backtest`\n- `allow-list-backtests`\n- `allow-get-backtest`\n- `allow-save-backtest`\n- `allow-delete-backtest`\n- `allow-validate-strategy`\n- `allow-validate-bot-deploy`\n- `allow-start-bot`\n- `allow-stop-bot`\n- `allow-stop-all-bots`\n- `allow-close-bot-positions`\n- `allow-get-bot-status`\n- `allow-get-bot-logs`\n- `allow-process-bot-logs`\n- `allow-create-bot`\n- `allow-update-bot`\n- `allow-delete-bot`\n- `allow-list-bots`\n- `allow-get-bot`\n- `allow-get-bot-positions`\n- `allow-list-exchanges`\n- `allow-add-exchange`\n- `allow-update-exchange`\n- `allow-delete-exchange`\n- `allow-test-exchange-connection`\n- `allow-test-exchange-credentials`\n- `allow-get-balances`\n- `allow-get-exchange-pairs`\n- `allow-list-trades`\n- `allow-list-trade-facets`\n- `allow-get-trade-stats`\n- `allow-get-trade-stats-breakdown`\n- `allow-get-daily-pnl`\n- `allow-update-trade-notes`\n- `allow-get-equity-curve`\n- `allow-export-all-data`\n- `allow-import-data`\n- `allow-get-settings`\n- `allow-update-settings`\n- `allow-detect-python`\n- `allow-manual-execution-get`\n- `allow-manual-execution-save`\n- `allow-manual-execution-arm`\n- `allow-manual-execution-disarm`\n- `allow-manual-execution-runs`\n- `allow-manual-execution-coverage`\n- `allow-trading-kill-switch`\n- `allow-trading-kill-switch-status`\n- `allow-bot-heartbeats`"
+          "markdownDescription": "Default permissions for the algo module.\n#### This default permission set includes:\n\n- `allow-list-strategies`\n- `allow-get-strategy`\n- `allow-create-strategy`\n- `allow-save-strategy`\n- `allow-update-strategy-meta`\n- `allow-delete-strategy`\n- `allow-read-strategy-file`\n- `allow-list-indicators`\n- `allow-create-strategy-from-indicator`\n- `allow-smithery-info`\n- `allow-smithery-report`\n- `allow-smithery-source`\n- `allow-smithery-run`\n- `allow-research-run`\n- `allow-research-gauntlet-overview`\n- `allow-research-robustness`\n- `allow-research-profit-overview`\n- `allow-research-aggregate-comparison`\n- `allow-smithery-cancel`\n- `allow-smithery-jobs`\n- `allow-smithery-process-logs`\n- `allow-run-backtest`\n- `allow-list-backtests`\n- `allow-get-backtest`\n- `allow-save-backtest`\n- `allow-delete-backtest`\n- `allow-validate-strategy`\n- `allow-validate-bot-deploy`\n- `allow-start-bot`\n- `allow-stop-bot`\n- `allow-stop-all-bots`\n- `allow-close-bot-positions`\n- `allow-get-bot-status`\n- `allow-get-bot-logs`\n- `allow-process-bot-logs`\n- `allow-create-bot`\n- `allow-update-bot`\n- `allow-delete-bot`\n- `allow-list-bots`\n- `allow-get-bot`\n- `allow-get-bot-positions`\n- `allow-list-exchanges`\n- `allow-add-exchange`\n- `allow-update-exchange`\n- `allow-delete-exchange`\n- `allow-test-exchange-connection`\n- `allow-test-exchange-credentials`\n- `allow-get-balances`\n- `allow-get-exchange-pairs`\n- `allow-list-trades`\n- `allow-list-trade-facets`\n- `allow-get-trade-stats`\n- `allow-get-trade-stats-breakdown`\n- `allow-get-daily-pnl`\n- `allow-update-trade-notes`\n- `allow-get-equity-curve`\n- `allow-export-all-data`\n- `allow-import-data`\n- `allow-get-settings`\n- `allow-update-settings`\n- `allow-detect-python`\n- `allow-manual-execution-get`\n- `allow-manual-execution-save`\n- `allow-manual-execution-arm`\n- `allow-manual-execution-disarm`\n- `allow-manual-execution-runs`\n- `allow-manual-execution-coverage`\n- `allow-trading-kill-switch`\n- `allow-trading-kill-switch-status`\n- `allow-trading-confirm-move`\n- `allow-trading-notices`\n- `allow-trading-notice-dismiss`\n- `allow-bot-heartbeats`"
         }
       ]
     }

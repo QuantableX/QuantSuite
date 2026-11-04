@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-import-bundle"
+description = "Enables the import_bundle command without any pre-configured scope."
+commands.allow = ["import_bundle"]
+
+[[permission]]
+identifier = "deny-import-bundle"
+description = "Denies the import_bundle command without any pre-configured scope."
+commands.deny = ["import_bundle"]

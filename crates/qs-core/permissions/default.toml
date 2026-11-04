@@ -37,4 +37,7 @@ permissions = [
   "allow-bundle-plan",
   "allow-bundle-export",
   "allow-bundle-export-cancel",
+  "allow-import-propose",
+  "allow-import-bundle",
+  "allow-import-status",
 ]

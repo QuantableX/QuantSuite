@@ -73,6 +73,9 @@ Default permissions for the algo module.
 - `allow-manual-execution-coverage`
 - `allow-trading-kill-switch`
 - `allow-trading-kill-switch-status`
+- `allow-trading-confirm-move`
+- `allow-trading-notices`
+- `allow-trading-notice-dismiss`
 - `allow-bot-heartbeats`
 
 ## Permission Table
@@ -1673,6 +1676,32 @@ Denies the test_exchange_credentials command without any pre-configured scope.
 <tr>
 <td>
 
+`algo:allow-trading-confirm-move`
+
+</td>
+<td>
+
+Enables the trading_confirm_move command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-trading-confirm-move`
+
+</td>
+<td>
+
+Denies the trading_confirm_move command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `algo:allow-trading-kill-switch`
 
 </td>
@@ -1718,6 +1747,58 @@ Enables the trading_kill_switch_status command without any pre-configured scope.
 <td>
 
 Denies the trading_kill_switch_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-trading-notice-dismiss`
+
+</td>
+<td>
+
+Enables the trading_notice_dismiss command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-trading-notice-dismiss`
+
+</td>
+<td>
+
+Denies the trading_notice_dismiss command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-trading-notices`
+
+</td>
+<td>
+
+Enables the trading_notices command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-trading-notices`
+
+</td>
+<td>
+
+Denies the trading_notices command without any pre-configured scope.
 
 </td>
 </tr>

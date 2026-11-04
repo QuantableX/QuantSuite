@@ -38,6 +38,9 @@ Default permissions for the QuantSuite core plugin: settings, the event bus, the
 - `allow-bundle-plan`
 - `allow-bundle-export`
 - `allow-bundle-export-cancel`
+- `allow-import-propose`
+- `allow-import-bundle`
+- `allow-import-status`
 
 ## Permission Table
 
@@ -434,6 +437,84 @@ Enables the get_settings command without any pre-configured scope.
 <td>
 
 Denies the get_settings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-import-bundle`
+
+</td>
+<td>
+
+Enables the import_bundle command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-import-bundle`
+
+</td>
+<td>
+
+Denies the import_bundle command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-import-propose`
+
+</td>
+<td>
+
+Enables the import_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-import-propose`
+
+</td>
+<td>
+
+Denies the import_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-import-status`
+
+</td>
+<td>
+
+Enables the import_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-import-status`
+
+</td>
+<td>
+
+Denies the import_status command without any pre-configured scope.
 
 </td>
 </tr>

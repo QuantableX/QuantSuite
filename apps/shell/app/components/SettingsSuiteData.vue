@@ -83,9 +83,71 @@ async function cancel() {
   await invoke('plugin:qs|bundle_export_cancel')
 }
 
+// ── Import (PLAN-MIGRATION §2.2) ──
+interface PathRow { kind: string; name: string; old: string; new: string | null }
+interface Proposal { machine: string; created_at: string; suite_version: string; files: number; bytes: number; secrets: number; rows: PathRow[] }
+interface Check { name: string; ok: boolean; detail: string }
+interface ImportReport { ok: boolean; from_machine: string; checks: Check[]; manual_steps: string[]; move_code: string; report_file: string }
+
+const bundlePath = ref('')
+const importPass = ref('')
+const proposal = ref<Proposal | null>(null)
+const importBusy = ref(false)
+const importReport = ref<ImportReport | null>(null)
+const importError = ref<string | null>(null)
+const pendingImport = ref<string | null>(null)
+const moveCode = ref('')
+const moveResult = ref<string | null>(null)
+
+async function chooseBundle() {
+  const { open } = await import('@tauri-apps/plugin-dialog')
+  const picked = await open({ title: 'A QuantSuite bundle', filters: [{ name: 'QuantSuite bundle', extensions: ['qsbundle'] }] })
+  if (typeof picked === 'string') bundlePath.value = picked
+}
+
+async function checkBundle() {
+  importBusy.value = true
+  importError.value = null
+  importReport.value = null
+  try {
+    proposal.value = await invoke<Proposal>('plugin:qs|import_propose', { bundle_path: bundlePath.value, passphrase: importPass.value })
+  } catch (e) {
+    importError.value = String(e)
+  } finally {
+    importBusy.value = false
+  }
+}
+
+async function runImport() {
+  if (!proposal.value) return
+  importBusy.value = true
+  importError.value = null
+  try {
+    importReport.value = await invoke<ImportReport>('plugin:qs|import_bundle', { bundle_path: bundlePath.value, passphrase: importPass.value, rows: proposal.value.rows })
+    pendingImport.value = await invoke<string | null>('plugin:qs|import_status')
+    importPass.value = ''
+  } catch (e) {
+    importError.value = String(e)
+  } finally {
+    importBusy.value = false
+  }
+}
+
+async function confirmMove() {
+  moveResult.value = null
+  try {
+    const r = await invoke<{ bots_stopped: number; systems_disarmed: number }>('plugin:algo|trading_confirm_move', { code: moveCode.value })
+    moveResult.value = `Moved: ${r.bots_stopped} bot(s) stopped, ${r.systems_disarmed} system(s) disarmed. Trading stays off on this machine; nothing was deleted or sold.`
+    moveCode.value = ''
+  } catch (e) {
+    moveResult.value = String(e)
+  }
+}
+
 onMounted(async () => {
   if (!inTauri()) return
   unlisten = await listen<Progress>('qs:bundle-progress', (e) => { progress.value = e.payload })
+  pendingImport.value = await invoke<string | null>('plugin:qs|import_status').catch(() => null)
   await loadPlan()
 })
 onUnmounted(() => { unlisten?.() })
@@ -134,6 +196,70 @@ onUnmounted(() => { unlisten?.() })
       <p v-if="result" class="qsu-hint qsd-ok">Written: {{ result.path }} — {{ result.files }} files, {{ gb(result.bytes) }}, {{ result.secrets }} secret(s).</p>
       <p v-if="error" class="qsu-hint qsd-error">{{ error }}</p>
     </div>
+
+    <div class="qsu-row qsd-section">
+      <div class="qsu-row-text">
+        <p class="qsu-label">Import from a QuantSuite bundle</p>
+        <p class="qsu-hint">
+          Checks the passphrase, every checksum and the version, rewrites the folders below, puts the keys into this machine's vault and verifies everything.
+          The switch happens at the next start; today's data is kept beside it, nothing is deleted. Trading arrives switched off.
+        </p>
+      </div>
+    </div>
+    <p v-if="pendingImport" class="qsu-hint qsd-warn">An import waits for the next start ({{ pendingImport }}). Restart QuantSuite to switch.</p>
+    <div class="qsd-form">
+      <div class="qsd-line">
+        <input v-model="bundlePath" class="qsd-input" placeholder="The .qsbundle file" :disabled="importBusy">
+        <button class="qsd-btn" :disabled="importBusy" @click="chooseBundle">Choose…</button>
+      </div>
+      <input v-model="importPass" class="qsd-input" type="password" autocomplete="off" placeholder="The bundle's passphrase" :disabled="importBusy">
+      <div class="qsd-line">
+        <button class="qsd-btn" :disabled="importBusy || !bundlePath || !importPass" @click="checkBundle">{{ importBusy && !proposal ? 'Checking…' : 'Check the bundle' }}</button>
+      </div>
+      <template v-if="proposal">
+        <p class="qsu-hint">From {{ proposal.machine }}, {{ proposal.created_at.slice(0, 10) }}, QuantSuite {{ proposal.suite_version }}: {{ proposal.files }} files, {{ gb(proposal.bytes) }}, {{ proposal.secrets }} secret(s).</p>
+        <table class="qsd-paths">
+          <thead><tr><th>Folder</th><th>On the old machine</th><th>Here</th></tr></thead>
+          <tbody>
+            <tr v-for="row in proposal.rows" :key="row.old">
+              <td>{{ row.name }}</td>
+              <td class="qsd-mono">{{ row.old }}</td>
+              <td><input v-model="row.new" class="qsd-input" :placeholder="row.kind === 'workspace' ? 'Leave empty to link later' : ''" :disabled="row.kind === 'data-root' || importBusy"></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="qsd-line">
+          <button class="qsd-btn qsd-btn--primary" :disabled="importBusy || !importPass" @click="runImport">{{ importBusy ? 'Importing…' : 'Import' }}</button>
+        </div>
+      </template>
+      <template v-if="importReport">
+        <p class="qsu-hint" :class="importReport.ok ? 'qsd-ok' : 'qsd-error'">
+          {{ importReport.ok ? 'Everything checked out. Restart QuantSuite to switch.' : 'Something did not check out; nothing will switch.' }} Report: {{ importReport.report_file }}
+        </p>
+        <ul class="qsd-optional">
+          <li v-for="(c, i) in importReport.checks" :key="i" :class="c.ok ? '' : 'qsd-error'">{{ c.ok ? '✓' : '✗' }} {{ c.detail }}</li>
+        </ul>
+        <p class="qsu-hint">Move code for the old machine: <strong class="qsd-mono">{{ importReport.move_code }}</strong></p>
+        <ul class="qsd-optional">
+          <li v-for="(step, i) in importReport.manual_steps" :key="`s${i}`">• {{ step }}</li>
+        </ul>
+      </template>
+      <p v-if="importError" class="qsu-hint qsd-error">{{ importError }}</p>
+    </div>
+
+    <div class="qsu-row qsd-section">
+      <div class="qsu-row-text">
+        <p class="qsu-label">This installation moved to another machine</p>
+        <p class="qsu-hint">Enter the move code the new machine's import showed. Trading stops here for good (Stop all trading); nothing is deleted or sold.</p>
+      </div>
+    </div>
+    <div class="qsd-form">
+      <div class="qsd-line">
+        <input v-model="moveCode" class="qsd-input qsd-mono" placeholder="e.g. K7Q2-M9XD">
+        <button class="qsd-btn" :disabled="moveCode.replace(/[^a-z0-9]/gi, '').length !== 8" @click="confirmMove">Confirm the move</button>
+      </div>
+      <p v-if="moveResult" class="qsu-hint">{{ moveResult }}</p>
+    </div>
   </div>
 </template>
 
@@ -150,4 +276,9 @@ onUnmounted(() => { unlisten?.() })
 .qsd-warn { color: var(--qss-warning, #d9a441); }
 .qsd-error { color: var(--qss-error, #e5534b); }
 .qsd-ok { color: var(--qss-success, #3fb950); }
+.qsd-section { margin-top: 18px; }
+.qsd-mono { font-family: var(--qss-font-mono, monospace); font-size: 12px; }
+.qsd-paths { width: 100%; border-collapse: collapse; font-size: 12px; }
+.qsd-paths th { text-align: left; color: var(--qss-text-muted, inherit); font-weight: 500; padding: 4px; }
+.qsd-paths td { padding: 4px; vertical-align: middle; }
 </style>

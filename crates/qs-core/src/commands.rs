@@ -357,6 +357,49 @@ pub async fn bundle_export<R: Runtime>(
     .map_err(|e| format!("Export failed: {e}"))?
 }
 
+/// Import (PLAN-MIGRATION §2.2): check a bundle and propose the path table.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn import_propose(bundle_path: String, passphrase: String) -> Result<serde_json::Value, String> {
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = paths::root();
+        let probe = root.with_file_name(".quantsuite-import-probe");
+        let (manifest, rows) = crate::import::propose(std::path::Path::new(&bundle_path), &passphrase, &probe, &root)?;
+        Ok(serde_json::json!({
+            "machine": manifest.machine,
+            "created_at": manifest.created_at,
+            "suite_version": manifest.suite_version,
+            "files": manifest.files.len(),
+            "bytes": manifest.files.iter().map(|f| f.size).sum::<u64>(),
+            "secrets": manifest.secrets.len(),
+            "rows": rows,
+        }))
+    })
+    .await
+    .map_err(|e| format!("Import failed: {e}"))?
+}
+
+/// Import into a staging folder; the switch happens at the next start.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn import_bundle(
+    bundle_path: String,
+    passphrase: String,
+    rows: Vec<crate::import::PathRow>,
+) -> Result<crate::import::Report, String> {
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::import::import(std::path::Path::new(&bundle_path), &passphrase, &paths::root(), &rows, &crate::vault::OsKeyStore)
+    })
+    .await
+    .map_err(|e| format!("Import failed: {e}"))?
+}
+
+/// Whether an import waits for the next start.
+#[tauri::command(async)]
+pub fn import_status() -> Option<String> {
+    crate::import::pending(&paths::root())
+}
+
 #[tauri::command(async)]
 pub fn bundle_export_cancel() {
     crate::bundle::CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);

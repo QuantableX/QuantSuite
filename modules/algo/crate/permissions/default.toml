@@ -72,5 +72,8 @@ permissions = [
   "allow-manual-execution-coverage",
   "allow-trading-kill-switch",
   "allow-trading-kill-switch-status",
+  "allow-trading-confirm-move",
+  "allow-trading-notices",
+  "allow-trading-notice-dismiss",
   "allow-bot-heartbeats",
 ]
