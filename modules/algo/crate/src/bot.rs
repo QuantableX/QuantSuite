@@ -301,6 +301,11 @@ fn apply_effects(
                 notify_strategy_trade(stdin, runtime, &trade_id, &pair, &side, price, quantity, pnl, action);
             }
             Effect::Equity => emit_equity(app_handle, runtime, true),
+            Effect::Pause { reason } => {
+                // The stop path takes this runtime's lock: pause from outside it.
+                let (app, bot_id) = (app_handle.clone(), runtime.bot_id.clone());
+                std::thread::spawn(move || crate::unattended::pause_bot(&app, &bot_id, &reason));
+            }
         }
     }
 }
@@ -1124,7 +1129,34 @@ mod smithery_warmup_tests {
 }
 
 fn start_bot_inner(app_handle: &AppHandle, state: &AppState, bot: Bot) -> Result<Bot, String> {
+    start_bot_with(app_handle, state, bot, None)
+}
+
+/// Start a bot that was running when the suite exited, with its books as the
+/// journal has them (PLAN-AUTO-EXECUTION §2.6); the session keeps its start.
+pub(crate) fn resume_bot(
+    app_handle: &AppHandle,
+    state: &AppState,
+    bot: Bot,
+    books: crate::unattended::Books,
+    started_at: &str,
+) -> Result<(), String> {
+    start_bot_with(app_handle, state, bot, Some((books, started_at.to_string()))).map(|_| ())
+}
+
+fn start_bot_with(
+    app_handle: &AppHandle,
+    state: &AppState,
+    bot: Bot,
+    restored: Option<(crate::unattended::Books, String)>,
+) -> Result<Bot, String> {
     let mode = validate_mode(&bot.trading_mode)?;
+    if mode == Mode::Live {
+        let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+        if crate::execution::store::kill_switch_on(&db)? {
+            return Err("\"Stop all trading\" is on: turn it off on the Trading overview before starting a live bot.".into());
+        }
+    }
     validate_timeframe(&bot.timeframe)?;
     if bot.pair.trim().is_empty() {
         return Err("Trading pair is required.".into());
@@ -1233,15 +1265,16 @@ fn start_bot_inner(app_handle: &AppHandle, state: &AppState, bot: Bot) -> Result
         exchange_id: bot.exchange_id.clone(),
         pair: bot.pair.clone(),
         mode,
-        balance: bot.budget,
+        balance: restored.as_ref().map(|(b, _)| b.balance).unwrap_or(bot.budget),
         last_price: initial_candle.close,
-        open_positions: Vec::new(),
+        open_positions: restored.as_ref().map(|(b, _)| b.positions.clone()).unwrap_or_default(),
         fee_rate: run.fee / 100.0,
         slippage_pct: run.slippage,
         risk_per_trade: run.risk_per_trade,
         max_positions: run.max_positions as usize,
         broker: live_broker,
         filters: live_filters,
+        order_errors: 0,
     }));
 
     // stdout: the strategy's RPC, with the startup acknowledgement first
@@ -1355,6 +1388,11 @@ fn start_bot_inner(app_handle: &AppHandle, state: &AppState, bot: Bot) -> Result
     {
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
         set_bot_status(&db, &bot.id, "running", None)?;
+        if let Some((_, started_at)) = &restored {
+            // A resumed session keeps its start: its books are counted from it.
+            db.execute("UPDATE bots SET started_at = ?2 WHERE id = ?1", params![bot.id, started_at])
+                .map_err(|e| format!("Resume: {e}"))?;
+        }
     }
     {
         let mut bots = state.bots.lock().map_err(|e| format!("Lock: {e}"))?;
@@ -1396,6 +1434,9 @@ fn start_bot_inner(app_handle: &AppHandle, state: &AppState, bot: Bot) -> Result
         let mut last_candle_time = Some(initial_candle.time.clone());
         std::thread::spawn(move || {
             let mut idx = 0_usize;
+            // Health (PLAN-AUTO-EXECUTION §2.6): no new candle for two bar
+            // lengths pauses the bot.
+            let mut last_new_candle = Instant::now();
             let mut consecutive_errors = 0_usize;
             // A snapshot per candle, and at least one a minute: an hourly
             // bot's equity curve follows the mark price, not just its candles.
@@ -1407,7 +1448,16 @@ fn start_bot_inner(app_handle: &AppHandle, state: &AppState, bot: Bot) -> Result
                 match fetch_latest_market_candle(&provider, &pair, &timeframe) {
                     Ok(candle) => {
                         consecutive_errors = 0;
+                        crate::unattended::heartbeat(&app, &bot_id);
                         let is_new = last_candle_time.as_deref() != Some(candle.time.as_str());
+                        if is_new {
+                            last_new_candle = Instant::now();
+                        } else if crate::unattended::feed_stale(last_new_candle.elapsed().as_secs(), &timeframe) {
+                            let reason = format!("no new {timeframe} candle from {provider} for two bar lengths");
+                            let (app2, id2) = (app.clone(), bot_id.clone());
+                            std::thread::spawn(move || crate::unattended::pause_bot(&app2, &id2, &reason));
+                            break;
+                        }
                         let snapshot = is_new || last_snapshot.elapsed() >= std::time::Duration::from_secs(60);
                         if snapshot {
                             last_snapshot = Instant::now();
@@ -1614,6 +1664,19 @@ pub(crate) fn stop_every_bot(app_handle: &AppHandle, state: &AppState) -> Result
 }
 
 /// The register's stop button and the shutdown hook.
+/// The last feed tick of every running bot: bot id → RFC 3339 (§2.6).
+#[tauri::command(async)]
+pub(crate) fn bot_heartbeats(state: tauri::State<'_, AppState>) -> Result<std::collections::HashMap<String, String>, String> {
+    let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+    let mut stmt = db
+        .prepare("SELECT id, heartbeat_at FROM bots WHERE status = 'running' AND heartbeat_at IS NOT NULL")
+        .map_err(|e| format!("Heartbeats: {e}"))?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| format!("Heartbeats: {e}"))?;
+    rows.collect::<Result<_, _>>().map_err(|e| format!("Heartbeats: {e}"))
+}
+
 #[tauri::command]
 pub(crate) async fn stop_all_bots(app_handle: AppHandle) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {

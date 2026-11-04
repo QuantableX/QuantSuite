@@ -118,7 +118,13 @@ pub enum Effect {
     },
     /// The equity changed — snapshot it and announce (`bot:equity`).
     Equity,
+    /// Three order errors in a row (PLAN-AUTO-EXECUTION §2.6): stop the bot
+    /// with this reason and tell the user.
+    Pause { reason: String },
 }
+
+/// Order errors in a row that pause a live bot.
+pub const ORDER_ERROR_STREAK: usize = 3;
 
 pub struct BotRuntime {
     pub bot_id: String,
@@ -139,6 +145,8 @@ pub struct BotRuntime {
     pub broker: Option<Box<dyn Broker>>,
     /// The pair's lot and notional limits, fetched once at start (live).
     pub filters: Option<SymbolFilters>,
+    /// Live orders the venue refused in a row; a fill resets it.
+    pub order_errors: usize,
 }
 
 impl std::fmt::Debug for BotRuntime {
@@ -600,11 +608,17 @@ impl BotRuntime {
                     .map(|b| b.market_buy(&filters, quote_amount))
                     .unwrap_or_else(|| Err("no broker".into()));
                 match result {
-                    Ok(fill) => self.book_live_entry(fill, now, &mut effects),
-                    Err(e) => effects.push(Effect::Log {
-                        level: "error",
-                        message: format!("Live buy of {quote_amount:.2} {quote} on {} rejected: {e}", req.pair),
-                    }),
+                    Ok(fill) => {
+                        self.order_errors = 0;
+                        self.book_live_entry(fill, now, &mut effects);
+                    }
+                    Err(e) => {
+                        effects.push(Effect::Log {
+                            level: "error",
+                            message: format!("Live buy of {quote_amount:.2} {quote} on {} rejected: {e}", req.pair),
+                        });
+                        self.order_error(&e, &mut effects);
+                    }
                 }
                 effects.push(Effect::Equity);
                 effects
@@ -632,14 +646,30 @@ impl BotRuntime {
             return;
         }
         match broker.market_sell(&filters, position.quantity) {
-            Ok(fill) => self.book_live_exit(idx, fill, now, effects),
-            Err(e) => effects.push(Effect::Log {
-                level: "error",
-                message: format!(
-                    "Live sell of {} {} rejected: {e}; the position stays open.",
-                    filters.qty_string(position.quantity), self.base_asset()
-                ),
-            }),
+            Ok(fill) => {
+                self.order_errors = 0;
+                self.book_live_exit(idx, fill, now, effects);
+            }
+            Err(e) => {
+                effects.push(Effect::Log {
+                    level: "error",
+                    message: format!(
+                        "Live sell of {} {} rejected: {e}; the position stays open.",
+                        filters.qty_string(position.quantity), self.base_asset()
+                    ),
+                });
+                self.order_error(&e, effects);
+            }
+        }
+    }
+
+    /// Count a refused order; the third in a row pauses the bot.
+    fn order_error(&mut self, error: &str, effects: &mut Vec<Effect>) {
+        self.order_errors += 1;
+        if self.order_errors >= ORDER_ERROR_STREAK {
+            effects.push(Effect::Pause {
+                reason: format!("{} order errors in a row, the last: {error}", self.order_errors),
+            });
         }
     }
 
@@ -767,6 +797,7 @@ mod tests {
             max_positions: 2,
             broker: None,
             filters: None,
+            order_errors: 0,
         }
     }
 
@@ -992,6 +1023,26 @@ mod tests {
             fee_amount: 0.0000015625,
             fee_estimated: false,
         }
+    }
+
+    #[test]
+    fn three_refused_orders_in_a_row_pause_the_bot_and_a_fill_resets_the_count() {
+        let refused = || Err::<Fill, String>("Insufficient balance".into());
+        let mut rt = live_runtime(vec![refused(), refused(), Ok(buy_fill_fee_in_base()), refused(), refused(), refused()]);
+        let pauses = |e: &[Effect]| e.iter().filter(|e| matches!(e, Effect::Pause { .. })).count();
+        assert_eq!(pauses(&rt.place(buy(0.0), "t0")), 0);
+        assert_eq!(pauses(&rt.place(buy(0.0), "t1")), 0);
+        assert_eq!(rt.order_errors, 2);
+        rt.place(buy(0.0), "t2");
+        assert_eq!(rt.order_errors, 0, "the fill reset the streak");
+        // The open long blocks further buys; sells are refused three times.
+        let sell = || OrderRequest { side: OrderSide::Sell, pair: "BTC/USDT".into(), quantity: 0.0, position_size: None, reverse: false };
+        assert_eq!(pauses(&rt.place(sell(), "t3")), 0);
+        assert_eq!(pauses(&rt.place(sell(), "t4")), 0);
+        let effects = rt.place(sell(), "t5");
+        assert_eq!(pauses(&effects), 1);
+        assert!(matches!(effects.iter().find(|e| matches!(e, Effect::Pause { .. })), Some(Effect::Pause { reason }) if reason.contains("3 order errors")));
+        assert_eq!(rt.open_positions.len(), 1, "a pause never sells");
     }
 
     #[test]

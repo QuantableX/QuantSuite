@@ -589,6 +589,34 @@ impl ExecutionVenue for CexVenue {
         }
     }
 
+    fn open_orders(&self, instrument: &Instrument) -> Result<Vec<String>, String> {
+        let symbol = instrument.filters.symbol.clone();
+        match self.venue {
+            Venue::Binance => {
+                let body = self.binance_signed(reqwest::Method::GET, "/api/v3/openOrders", &[("symbol", symbol)])?;
+                Ok(body
+                    .as_array()
+                    .map(|a| a.iter().map(|o| s(&o["clientOrderId"])).filter(|id| !id.is_empty()).collect())
+                    .unwrap_or_default())
+            }
+            Venue::Bybit => {
+                let query = format!("category=spot&symbol={symbol}&openOnly=0");
+                let body = self.bybit_signed(reqwest::Method::GET, "/v5/order/realtime", Some(&query), None)?;
+                Ok(body
+                    .pointer("/result/list")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter(|o| matches!(o.get("orderStatus").and_then(|v| v.as_str()), Some("New" | "PartiallyFilled" | "Untriggered")))
+                            .map(|o| s(&o["orderLinkId"]))
+                            .filter(|id| !id.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default())
+            }
+        }
+    }
+
     fn query_by_client_id(&self, instrument: &Instrument, client_order_id: &str) -> Result<Option<OrderReport>, String> {
         let filters = &instrument.filters;
         match self.venue {

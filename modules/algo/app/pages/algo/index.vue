@@ -1,6 +1,8 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'algo' })
 
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useBotsStore } from '#algo/stores/bots'
 import { useStrategiesStore } from '#algo/stores/strategies'
 import { useExchangeStore } from '#algo/stores/exchange'
@@ -50,14 +52,95 @@ function navigateTo(path: string) {
   router.push(path)
 }
 
-onActivated(() => {
+// "Stop all trading" (PLAN-AUTO-EXECUTION §2.6): stops every bot, disarms
+// Manual execution, cancels QuantSuite's open orders — never sells.
+interface KillReport { on: boolean; bots_stopped: number; systems_disarmed: number; orders_cancelled: string[]; errors: string[]; left_on_exchange: string[] }
+const killOn = ref(false)
+const killConfirm = ref(false)
+const killBusy = ref(false)
+const killReport = ref<KillReport | null>(null)
+const killError = ref<string | null>(null)
+
+async function loadKillSwitch() {
+  try {
+    killOn.value = await invoke<boolean>('plugin:algo|trading_kill_switch_status')
+  } catch (e) {
+    killError.value = String(e)
+  }
+}
+
+async function setKillSwitch(on: boolean) {
+  killBusy.value = true
+  killError.value = null
+  try {
+    const report = await invoke<KillReport>('plugin:algo|trading_kill_switch', { on })
+    killOn.value = report.on
+    killReport.value = on ? report : null
+    killConfirm.value = false
+    await botsStore.load()
+  } catch (e) {
+    killError.value = String(e)
+  } finally {
+    killBusy.value = false
+  }
+}
+
+// Heartbeats: the feed's last tick per running bot; the age ticks while
+// the page is shown and stops with it (warm cache).
+const heartbeats = ref<Record<string, string>>({})
+const now = ref(Date.now())
+let clock: ReturnType<typeof setInterval> | null = null
+let unlistenBeat: UnlistenFn | null = null
+
+function beatAge(id: string): string {
+  const at = heartbeats.value[id]
+  if (!at) return ''
+  const s = Math.max(0, Math.round((now.value - Date.parse(at)) / 1000))
+  return s < 120 ? `${s}s` : `${Math.round(s / 60)}m`
+}
+
+onActivated(async () => {
   void botsStore.load()
+  void loadKillSwitch()
+  try {
+    heartbeats.value = await invoke<Record<string, string>>('plugin:algo|bot_heartbeats')
+  } catch { /* the column fills with the next tick */ }
+  unlistenBeat = await listen<{ bot_id: string; at: string }>('bot:heartbeat', (e) => {
+    heartbeats.value = { ...heartbeats.value, [e.payload.bot_id]: e.payload.at }
+  })
+  clock = setInterval(() => { now.value = Date.now() }, 5000)
+})
+
+onDeactivated(() => {
+  if (clock) clearInterval(clock)
+  clock = null
+  unlistenBeat?.()
+  unlistenBeat = null
 })
 </script>
 
 <template>
   <div class="dashboard">
-    <QPageHeading class="dashboard__heading" title="Trading overview" />
+    <QPageHeading class="dashboard__heading" title="Trading overview">
+      <div class="kill">
+        <template v-if="killOn">
+          <span class="kill__on">Stop all trading is on</span>
+          <button class="btn btn-sm" :disabled="killBusy" @click="setKillSwitch(false)">Allow trading again</button>
+        </template>
+        <template v-else-if="killConfirm">
+          <span class="kill__ask">Stop every bot, disarm Manual execution and cancel open orders? Nothing is sold.</span>
+          <button class="btn btn-sm" :disabled="killBusy" @click="killConfirm = false">Cancel</button>
+          <button class="btn btn-sm kill__btn" :disabled="killBusy" @click="setKillSwitch(true)">{{ killBusy ? 'Stopping…' : 'Stop all trading' }}</button>
+        </template>
+        <button v-else class="btn btn-sm kill__btn" @click="killConfirm = true">Stop all trading</button>
+      </div>
+    </QPageHeading>
+    <div v-if="killError" class="kill__report text-error">{{ killError }}</div>
+    <div v-if="killReport" class="kill__report">
+      {{ killReport.bots_stopped }} bot(s) stopped, {{ killReport.systems_disarmed }} system(s) disarmed, {{ killReport.orders_cancelled.length }} order(s) cancelled.
+      Nothing was sold{{ killReport.left_on_exchange.length ? `; still held: ${killReport.left_on_exchange.join(', ')}` : '' }}.
+      <span v-if="killReport.errors.length" class="text-warning"> {{ killReport.errors.join('; ') }}</span>
+    </div>
     <div class="dashboard__top">
       <!-- Bots at a glance -->
       <div class="card card--bots">
@@ -171,6 +254,7 @@ onActivated(() => {
               <td>
                 <span class="dot" :class="`dot--${bot.status}`" />
                 {{ bot.status }}
+                <span v-if="bot.status === 'running' && beatAge(bot.id)" class="beat" :title="`Last feed tick ${heartbeats[bot.id]}`">· {{ beatAge(bot.id) }}</span>
               </td>
               <td class="num mono">{{ bot.status === 'running' ? formatCurrency(bot.equity) : '--' }}</td>
               <td class="num mono">{{ bot.status === 'running' ? bot.open_positions : '--' }}</td>
@@ -212,6 +296,39 @@ onActivated(() => {
 </template>
 
 <style scoped>
+.kill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kill__btn {
+  color: var(--qa-error);
+  border-color: color-mix(in srgb, var(--qa-error) 45%, var(--qa-border));
+}
+
+.kill__on {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--qa-error);
+}
+
+.kill__ask {
+  font-size: 12px;
+  color: var(--qa-text-secondary);
+}
+
+.kill__report {
+  font-size: 12px;
+  color: var(--qa-text-secondary);
+  flex-shrink: 0;
+}
+
+.beat {
+  color: var(--qa-text-muted);
+  font-size: 11px;
+}
+
 /* Each content row gets the same share of the available height; lists scroll
    inside their cards instead of changing the dashboard's proportions. */
 .dashboard {

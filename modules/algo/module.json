@@ -299,6 +299,17 @@
         "properties": { "system_id": { "type": "string" } },
         "required": ["system_id"]
       }
+    },
+    {
+      "name": "stop_all_trading",
+      "command": "plugin:algo|trading_kill_switch",
+      "description": "\"Stop all trading\" (PLAN-AUTO-EXECUTION §2.6): on=true stops every bot, disarms every Manual system and cancels QuantSuite's open orders — it never sells, and reports what stays on the exchanges. on=false allows trading again without re-arming or restarting anything.",
+      "sideEffects": "external",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "on": { "type": "boolean", "description": "true = stop all trading, false = allow it again." } },
+        "required": ["on"]
+      }
     }
   ],
   "migrateFrom": "<data_dir>/quantalgo"

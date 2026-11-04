@@ -199,6 +199,8 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         ("trades", "source", "TEXT"),
         ("trades", "fees_json", "TEXT"),
         ("trades", "mode", "TEXT"),
+        // Unattended bots (PLAN-AUTO-EXECUTION §2.6): the feed's last tick.
+        ("bots", "heartbeat_at", "TEXT"),
     ] {
         if !column_exists(conn, table, column)? {
             conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"), [])?;

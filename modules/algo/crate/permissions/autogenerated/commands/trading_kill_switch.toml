@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-trading-kill-switch"
+description = "Enables the trading_kill_switch command without any pre-configured scope."
+commands.allow = ["trading_kill_switch"]
+
+[[permission]]
+identifier = "deny-trading-kill-switch"
+description = "Denies the trading_kill_switch command without any pre-configured scope."
+commands.deny = ["trading_kill_switch"]

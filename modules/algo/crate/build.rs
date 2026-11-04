@@ -6,6 +6,10 @@ const COMMANDS: &[&str] = &[
     "manual_execution_disarm",
     "manual_execution_runs",
     "manual_execution_coverage",
+    // Unattended bots (§2.6): "Stop all trading", its state, the heartbeats.
+    "trading_kill_switch",
+    "trading_kill_switch_status",
+    "bot_heartbeats",
     "list_strategies",
     "get_strategy",
     "create_strategy",

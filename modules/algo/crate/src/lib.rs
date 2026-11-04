@@ -28,6 +28,7 @@ mod secrets;
 mod settings;
 mod smithery;
 mod strategies;
+mod unattended;
 
 // ---------------------------------------------------------------------------
 // Data Structures
@@ -451,11 +452,20 @@ pub fn init() -> TauriPlugin<Wry> {
             manual::start(app.clone());
 
             // Reconcile: a bot left "running" by a previous session has no
-            // process in this one. Bots are never auto-restarted
-            // (PLAN-QUANTALGO §3.1).
+            // process in this one. It stays stopped unless it asked to resume
+            // (PLAN-AUTO-EXECUTION §2.6); those are reconciled with the venue
+            // and restarted below, once the app is up.
             {
                 let state = app.state::<AppState>();
                 let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+                let resumable = unattended::resumable(&db);
+                if !resumable.is_empty() {
+                    let handle = app.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(5));
+                        unattended::resume_bots(handle, resumable);
+                    });
+                }
                 let now = chrono::Utc::now().to_rfc3339();
                 let reconciled = db
                     .execute(
@@ -577,6 +587,9 @@ pub fn init() -> TauriPlugin<Wry> {
             manual::manual_execution_disarm,
             manual::manual_execution_runs,
             manual::manual_execution_coverage,
+            unattended::trading_kill_switch,
+            unattended::trading_kill_switch_status,
+            bot::bot_heartbeats,
             exchanges::add_exchange,
             exchanges::update_exchange,
             exchanges::delete_exchange,

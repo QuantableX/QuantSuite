@@ -1,6 +1,6 @@
 # QuantAlgo trading automation — Manual and Automated trade by themselves
 
-Status: plan, 2026-11-03. Built so far: card 1, the secret vault; card 2, the execution core; card 3, Manual systems trading by themselves (2026-11-04). Cards "QuantAlgo Automation 1/5" to "5/5" on the QuantSuite board. Where orders go is [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md); running it 24/7 is [PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md).
+Status: plan, 2026-11-03. Built so far: card 1, the secret vault; card 2, the execution core; card 3, Manual systems trading by themselves; card 4, unattended bots (2026-11-04). Cards "QuantAlgo Automation 1/5" to "5/5" on the QuantSuite board. Where orders go is [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md); running it 24/7 is [PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md).
 
 ## In short
 
@@ -159,6 +159,15 @@ In-app (Trading overview, the system's Runs tab) and Windows notifications (`tau
 - **Health:** no new candle for two bar lengths → pause and notify; three order errors in a row → pause and notify; a heartbeat per bot on the Trading overview.
 - **Kill switch** "Stop all trading" for bots and Manual execution: cancels open orders and disarms. It never sells (today's rule). "Close positions" stays a separate confirmed action.
 - Bots route their live orders through the execution core, so they get every new venue and guard.
+
+**Built (card 4, 2026-11-04).** `modules/algo/crate/src/unattended.rs`:
+
+- "Resume after a restart" is a checkbox in the bot form (`resume_after_restart` in the bot's config, off by default). At start every running bot is marked stopped as before. Five seconds later the bots that asked to resume get their books rebuilt from the journal: the budget, plus what closed since the session began, minus what open positions tie up, with the positions themselves. A live bot is then reconciled with the venue. The venue must hold at least the open base (0.1 % tolerance for lot rounding and base fees), and no QuantSuite order (`qs…` client id) may still rest on it. A mismatch leaves the bot stopped with "not resumed: …" and a toast. A resumed bot keeps its session start.
+- Health: every feed tick is a heartbeat (`bots.heartbeat_at`, event `bot:heartbeat`, "· 12s" next to a running bot on the Trading overview). No new candle for two bar lengths pauses the bot, and so do three refused orders in a row (`Effect::Pause`). A pause stops the bot, keeps "paused: …" on its row and sends a toast. It never sells.
+- Kill switch: "Stop all trading" on the Trading overview (inline confirm) and the MCP tool `stop_all_trading` (external). It sets the flag every engine run checks, stops every bot, disarms every Manual system and cancels QuantSuite's open orders on the live bots' pairs and the last two days' live Manual pairs. The user's own orders are never touched, nothing is sold, and the report lists what is still held. While it is on, live bots refuse to start. "Allow trading again" clears the flag and re-arms nothing.
+- Bots' live orders already went through the execution core's venue since card 2.
+- Tests: books rebuilt from the journal, reconcile match and mismatch, the stale-feed rule, the error streak (a fill resets it, a pause never sells), the kill switch cancelling only `qs…` orders and never placing one, and that only bots that asked resume.
+- Not run by the agent: the QA in paper with the app (resume across a restart, the kill switch in the UI). That belongs to the user's step 1 of card 5.
 
 ### 2.7 Verification ladder (card 5)
 

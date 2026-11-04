@@ -70,4 +70,7 @@ permissions = [
   "allow-manual-execution-disarm",
   "allow-manual-execution-runs",
   "allow-manual-execution-coverage",
+  "allow-trading-kill-switch",
+  "allow-trading-kill-switch-status",
+  "allow-bot-heartbeats",
 ]

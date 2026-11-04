@@ -239,7 +239,6 @@ pub fn set_armed(conn: &Connection, system_id: &str, armed: bool, ack_not_robust
 }
 
 /// Disarm every Manual system (the kill switch, card 4).
-#[allow(dead_code)]
 pub fn disarm_all(conn: &Connection) -> Result<usize, String> {
     conn.execute("UPDATE manual_execution SET armed = 0, armed_at = NULL WHERE armed = 1", [])
         .map_err(|e| format!("manual_execution: {e}"))
@@ -649,22 +648,23 @@ fn notify(app: &AppHandle<Wry>, system_id: &str, record: &RunRecord, line: &str)
         json!({ "systemId": system_id, "runId": record.id, "status": record.status, "summary": line }),
     );
     crate::logs::push_bot_log(app, if record.status == RunStatus::Done { "info" } else { "warn" }, format!("Manual · {line}"));
-    toast(app, line);
+    toast_line(app, "QuantAlgo · Manual execution", line);
 }
 
+/// A Windows toast (§2.5): the WinRT wrapper tauri-plugin-notification uses.
 #[cfg(windows)]
-fn toast(app: &AppHandle<Wry>, line: &str) {
+pub fn toast_line(app: &AppHandle<Wry>, title: &str, line: &str) {
     use tauri_winrt_notification::Toast;
     // A dev build has no registered AppUserModelID; it borrows PowerShell's
     // (the rule tauri-plugin-notification uses).
     let app_id = if cfg!(debug_assertions) { Toast::POWERSHELL_APP_ID.to_string() } else { app.config().identifier.clone() };
-    if let Err(e) = Toast::new(&app_id).title("QuantAlgo · Manual execution").text1(line).show() {
+    if let Err(e) = Toast::new(&app_id).title(title).text1(line).show() {
         log::warn!(target: "algo", "the toast could not be shown: {e}");
     }
 }
 
 #[cfg(not(windows))]
-fn toast(_app: &AppHandle<Wry>, _line: &str) {}
+pub fn toast_line(_app: &AppHandle<Wry>, _title: &str, _line: &str) {}
 
 // ── the scheduler ───────────────────────────────────────────────────────────
 

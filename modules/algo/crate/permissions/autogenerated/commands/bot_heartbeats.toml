@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-bot-heartbeats"
+description = "Enables the bot_heartbeats command without any pre-configured scope."
+commands.allow = ["bot_heartbeats"]
+
+[[permission]]
+identifier = "deny-bot-heartbeats"
+description = "Denies the bot_heartbeats command without any pre-configured scope."
+commands.deny = ["bot_heartbeats"]
