@@ -26,6 +26,22 @@
     "tool"
   ],
   "sidecars": [],
-  "capabilities": [],
+  "capabilities": [
+    {
+      "name": "export_everything",
+      "command": "plugin:mcp|export_everything",
+      "description": "Export the whole suite into one encrypted .qsbundle (PLAN-MIGRATION §2.1): every module's data and settings, the vault's secrets re-encrypted under the passphrase. Refuses while live trading is armed. The file holds every key, so this is external: only on the user's explicit request.",
+      "sideEffects": "external",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dest_dir": { "type": "string", "description": "Folder to write <machine>-<date>.qsbundle into." },
+          "passphrase": { "type": "string", "description": "At least 12 characters; it cannot be recovered." },
+          "include": { "type": "object", "description": "Optional parts by inventory pattern to true/false (default: the inventory's defaults)." }
+        },
+        "required": ["dest_dir", "passphrase"]
+      }
+    }
+  ],
   "migrateFrom": "~/.config"
 }

@@ -73,4 +73,5 @@ permissions = [
   "allow-write-agent-md",
   "allow-init-agent-md",
   "allow-reset-agent-md",
+  "allow-export-everything",
 ]

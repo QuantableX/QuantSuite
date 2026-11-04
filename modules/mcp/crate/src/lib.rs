@@ -1,6 +1,7 @@
 mod clients;
 mod commands;
 mod config_gen;
+mod export;
 pub mod git_helpers;
 mod indexing;
 pub mod kanban_db;
@@ -205,6 +206,8 @@ pub fn init() -> TauriPlugin<Wry> {
             Ok(())
         })
         .invoke_handler(qs_core::diagnostics::traced(tauri::generate_handler![
+            // The suite export as an agent tool (PLAN-MIGRATION §2.1)
+            export::export_everything,
             // MCP CRUD
             commands::registry::list_mcps,
             commands::registry::toggle_mcp,

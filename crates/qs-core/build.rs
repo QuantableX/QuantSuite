@@ -35,6 +35,9 @@ const COMMANDS: &[&str] = &[
     "agent_call_complete",
     "vault_status",
     "vault_unlock",
+    "bundle_plan",
+    "bundle_export",
+    "bundle_export_cancel",
 ];
 
 fn main() {

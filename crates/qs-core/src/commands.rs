@@ -327,6 +327,41 @@ pub fn vault_status() -> crate::vault::VaultStatus {
     crate::vault::status()
 }
 
+/// Export everything (PLAN-MIGRATION §2.1): what would go in, before it starts.
+#[tauri::command(async)]
+pub fn bundle_plan(include: Option<std::collections::BTreeMap<String, bool>>) -> crate::bundle::PlanSummary {
+    crate::bundle::plan_summary(&paths::root(), &crate::bundle::ExportOptions { include: include.unwrap_or_default() })
+}
+
+/// Write `<machine>-<date>.qsbundle` into `dest_dir`; progress arrives as
+/// `qs:bundle-progress` events. `external` for agents: the file holds every
+/// secret, encrypted under the passphrase.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn bundle_export<R: Runtime>(
+    app: AppHandle<R>,
+    dest_dir: String,
+    passphrase: String,
+    include: Option<std::collections::BTreeMap<String, bool>>,
+) -> Result<serde_json::Value, String> {
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        crate::bundle::export_suite(std::path::Path::new(&dest_dir), &passphrase, include.unwrap_or_default(), &mut |p| {
+            if last.elapsed() >= std::time::Duration::from_millis(250) || p.current == "done" {
+                last = std::time::Instant::now();
+                let _ = tauri::Emitter::emit(&app, "qs:bundle-progress", &p);
+            }
+        })
+    })
+    .await
+    .map_err(|e| format!("Export failed: {e}"))?
+}
+
+#[tauri::command(async)]
+pub fn bundle_export_cancel() {
+    crate::bundle::CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Open the vault with its passphrase — only for machines without an OS
 /// keystore, where the master key sits in a passphrase file.
 #[tauri::command(async)]

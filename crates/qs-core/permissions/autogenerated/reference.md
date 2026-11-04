@@ -35,6 +35,9 @@ Default permissions for the QuantSuite core plugin: settings, the event bus, the
 - `allow-agent-call-complete`
 - `allow-vault-status`
 - `allow-vault-unlock`
+- `allow-bundle-plan`
+- `allow-bundle-export`
+- `allow-bundle-export-cancel`
 
 ## Permission Table
 
@@ -223,6 +226,84 @@ Enables the autostart_enabled command without any pre-configured scope.
 <td>
 
 Denies the autostart_enabled command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-bundle-export`
+
+</td>
+<td>
+
+Enables the bundle_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-bundle-export`
+
+</td>
+<td>
+
+Denies the bundle_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-bundle-export-cancel`
+
+</td>
+<td>
+
+Enables the bundle_export_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-bundle-export-cancel`
+
+</td>
+<td>
+
+Denies the bundle_export_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-bundle-plan`
+
+</td>
+<td>
+
+Enables the bundle_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-bundle-plan`
+
+</td>
+<td>
+
+Denies the bundle_plan command without any pre-configured scope.
 
 </td>
 </tr>
