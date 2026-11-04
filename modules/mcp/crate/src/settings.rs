@@ -112,7 +112,10 @@ pub fn ensure_registered_workspace(
     if !std::path::Path::new(&canonical).is_dir() {
         return Err(format!("Not a directory: {canonical}"));
     }
-    let id = qs_core::workspaces::workspace_id_for(&canonical);
+    // By path first: a folder that moved (PLAN-MIGRATION §1.1) keeps the id
+    // it was registered with, which a hash of its new path would not be.
+    let id = with_core_db(app, |conn| Ok(qs_core::workspaces::storage_id(Some(conn), &canonical)))
+        .unwrap_or_else(|_| qs_core::workspaces::workspace_id_for(&canonical));
     if let Ok(existing) = with_core_db(app, |conn| {
         qs_core::workspaces::by_id(conn, &id).ok_or_else(|| "not registered".into())
     }) {

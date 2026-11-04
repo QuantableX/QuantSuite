@@ -43,6 +43,7 @@ import {
   onKanbanBoardSelected,
   onWorkspacesChanged,
   qs,
+  samePath,
   selectKanbanBoard,
   setKanbanApprovalMode,
   sortWorkspaces,
@@ -497,7 +498,10 @@ onMounted(async () => {
     // A selection made during the lookup wins over the default.
     if (disposed) return
     if (!props.boardId && !getSelectedKanbanBoard()) {
-      boardId.value = active?.path ? workspaceIdFor(active.path) : GENERAL_BOARD_ID
+      // The registry's id: a moved folder keeps its board (PLAN-MIGRATION §1.1).
+      const registered = active?.path ? (await listWorkspaces().catch(() => [])).find(w => samePath(w.path, active.path)) : undefined
+      if (disposed) return
+      boardId.value = registered?.id ?? (active?.path ? workspaceIdFor(active.path) : GENERAL_BOARD_ID)
       selectKanbanBoard(boardId.value)
     }
   }

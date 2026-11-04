@@ -54,7 +54,7 @@ pub fn open() -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
-fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
