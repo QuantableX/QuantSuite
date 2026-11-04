@@ -58,6 +58,17 @@ Outside the data root:
 3. **Workspace ids:** boards, vaults and `workspaces/<id>/` key off the registry id. Remapping a folder must keep its id; card 1 proves it with a test.
 4. **Live databases:** they run in WAL mode, so copying files while the app runs can produce a torn copy. The export uses SQLite's online backup API.
 
+### 1.2 Built (card 1, 2026-11-04)
+
+`crates/qs-core/src/inventory.rs`:
+
+- `RULES` turn the first table above into code: one rule per pattern under the data root, the most specific wins. A test fails when a module of `modules/*/module.json` or a top-level root has no rule. `EXTERNAL` lists the roots outside the data root.
+- `dry_run(root)` walks a data root read-only, with names and sizes only, and totals it per rule. Files no rule covers are listed; the export (card 2) refuses them until they are classified.
+- `PathMap` is the one remapping function: old prefix → new prefix, with the longest prefix first. It accepts any separator (`/`, `\`, or the JSON-escaped `\`) and any case, and matches only on whole path segments, so `C:/Projects/Quant` never matches `C:/Projects/QuantSuite`. The rest of a path takes the new prefix's separator. `remap_json` / `remap_json_file` rewrite every string of a JSON store. `remap_sqlite` rewrites every TEXT cell of every table, so a store nobody listed is covered too. `find_paths` lists every absolute path with its store, location and remap result.
+- Workspace ids: the registry keeps its ids, and a remap changes only the path inside the entity. `workspaces::storage_id` returns the registered id for a folder before it hashes a path. `paths::workspace_dir`, QuantMCP's `ensure_registered_workspace` and the kanban drawer use it, so a moved folder keeps its board, memory vault and `workspaces/<id>/` folder.
+- Secrets: QuantScript's Collection tokens sat in the OS credential store, bound to the machine. They now live in the vault (`script/collection/<source>`); a token still in the credential store moves into the vault the first time it is read. No secret is left outside the vault.
+- Dry run on the user's data (2026-11-04, `artifacts/migration-dryrun-20261104/`): the live root walked read-only with 0 unclassified files. Must-move is 17.1 GB (QuantScript's research runs and the systems research are "must"), optional-on 0.2 GB. In a copy of the 30 JSON and SQLite stores there are 2,523 absolute paths in 13 stores. The largest are console history (1,505), memory notes (588) and kanban cards and worktrees (352); the rest is core.db 35, canvas 21 + 1, hud 7, algo 2 + 1, notes 2 + 1, pilot 1, plus legacy MCP projects. The sample map covers all of them except 645 hits inside memory note prose (other drives, `~/` notation), which are text, not stored paths.
+
 ## 2. The design
 
 ### 2.1 The bundle

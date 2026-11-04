@@ -16,6 +16,7 @@ pub mod bus;
 pub mod commands;
 pub mod diagnostics;
 pub mod embeddings;
+pub mod inventory;
 pub mod runtime;
 pub mod db;
 pub mod migrations;

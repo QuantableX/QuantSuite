@@ -45,7 +45,9 @@ pub fn candle_archive() -> PathBuf {
 
 /// Private workspace data, keyed by the registry's normalized path identity.
 pub fn workspace_dir(folder: &str) -> PathBuf {
-    let id = crate::workspaces::workspace_id_for(folder);
+    // The registry's id, so a moved workspace keeps its folder (PLAN-MIGRATION §1.1).
+    let conn = rusqlite::Connection::open_with_flags(core_db(), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok();
+    let id = crate::workspaces::storage_id(conn.as_ref(), folder);
     root().join("workspaces").join(id.rsplit(':').next().unwrap())
 }
 

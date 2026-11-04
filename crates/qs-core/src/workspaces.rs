@@ -68,6 +68,17 @@ fn to_base36(mut n: u32) -> String {
     String::from_utf8_lossy(&out[i..]).into_owned()
 }
 
+/// The id that names a folder's private data (`workspaces/<b36>/`, memory
+/// vaults, index databases): the registry's id when the folder is registered
+/// — a folder moved to another path keeps its id (PLAN-MIGRATION §1.1) —
+/// else the id hashed from its path, the one a new registration gets.
+pub fn storage_id(conn: Option<&Connection>, folder: &str) -> String {
+    let norm = normalize_path(folder);
+    conn.and_then(|c| list(c).into_iter().find(|w| normalize_path(&w.path) == norm))
+        .map(|w| w.id)
+        .unwrap_or_else(|| workspace_id_for(folder))
+}
+
 /// Every workspace in the registry. Empty on any failure — a broken registry
 /// read must degrade to "none registered", never to an error.
 pub fn list(conn: &Connection) -> Vec<WorkspaceEntry> {
