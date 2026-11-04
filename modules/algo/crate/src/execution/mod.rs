@@ -15,6 +15,7 @@
 pub mod cex;
 pub mod engine;
 pub mod guards;
+pub mod mapping;
 pub mod paper;
 pub mod route;
 pub mod store;

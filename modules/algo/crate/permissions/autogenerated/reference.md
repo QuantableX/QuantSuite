@@ -71,6 +71,10 @@ Default permissions for the algo module.
 - `allow-manual-execution-disarm`
 - `allow-manual-execution-runs`
 - `allow-manual-execution-coverage`
+- `allow-venue-list`
+- `allow-venue-mapping`
+- `allow-venue-cost-preview`
+- `allow-venue-exposure`
 - `allow-trading-kill-switch`
 - `allow-trading-kill-switch-status`
 - `allow-trading-confirm-move`
@@ -1981,6 +1985,110 @@ Enables the validate_strategy command without any pre-configured scope.
 <td>
 
 Denies the validate_strategy command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-cost-preview`
+
+</td>
+<td>
+
+Enables the venue_cost_preview command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-cost-preview`
+
+</td>
+<td>
+
+Denies the venue_cost_preview command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-exposure`
+
+</td>
+<td>
+
+Enables the venue_exposure command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-exposure`
+
+</td>
+<td>
+
+Denies the venue_exposure command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-list`
+
+</td>
+<td>
+
+Enables the venue_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-list`
+
+</td>
+<td>
+
+Denies the venue_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-mapping`
+
+</td>
+<td>
+
+Enables the venue_mapping command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-mapping`
+
+</td>
+<td>
+
+Denies the venue_mapping command without any pre-configured scope.
 
 </td>
 </tr>

@@ -48,6 +48,12 @@ const fee = ref(0.1)
 const warmupCandles = ref(200)
 /** Restart with the suite, after its books match the venue (PLAN-AUTO-EXECUTION §2.6). */
 const resumeAfterRestart = ref(false)
+/**
+ * Where live orders go (PLAN-EXECUTION-VENUES §2): '' = the data exchange.
+ * Data and execution are two choices; for a CEX the default is "same as data".
+ */
+const executionExchangeId = ref('')
+const executionAccounts = computed(() => exchangeStore.exchanges.filter((e) => ['binance', 'bybit'].includes(e.provider) && e.id !== exchangeId.value))
 
 const preflightResult = ref<PreflightResult | null>(null)
 const isRunningPreflight = ref(false)
@@ -137,6 +143,7 @@ const draft = computed<BotDraft | null>(() => {
       fee: fee.value,
       warmup_candles: warmupCandles.value,
       resume_after_restart: resumeAfterRestart.value,
+      execution_exchange_id: executionExchangeId.value || null,
     },
   }
 })
@@ -316,7 +323,7 @@ onMounted(() => {
             </div>
 
             <div class="section">
-              <div class="section-label">Exchange</div>
+              <div class="section-label">Data <span class="optional">(the candles the strategy reads)</span></div>
               <AlgoExchangeSelect v-model="exchangeId" />
             </div>
 
@@ -340,6 +347,14 @@ onMounted(() => {
                 <div class="section-label">Budget <span v-if="quoteAsset" class="optional">({{ quoteAsset }})</span></div>
                 <input v-model.number="budget" class="create-input mono" type="number" min="100" step="100" />
               </div>
+            </div>
+
+            <div v-if="tradingMode === 'live'" class="section">
+              <div class="section-label">Execution <span class="optional">(where live orders go)</span></div>
+              <select v-model="executionExchangeId" class="create-input">
+                <option value="">Same as data</option>
+                <option v-for="e in executionAccounts" :key="e.id" :value="e.id">{{ e.name }} ({{ e.provider }}{{ e.sandbox ? ', sandbox' : '' }}) · spot</option>
+              </select>
             </div>
 
             <div class="section">

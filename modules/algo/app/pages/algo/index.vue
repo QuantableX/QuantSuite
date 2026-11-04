@@ -207,6 +207,10 @@ onDeactivated(() => {
             <span class="kv__value mono">{{ strategiesStore.strategies.length }}</span>
           </div>
         </div>
+        <div class="exposure-mini">
+          <span class="kv__label">Exposure per venue</span>
+          <AlgoExchangeExposurePanel compact />
+        </div>
       </div>
 
       <!-- Realised PnL, paper and live apart -->
@@ -312,6 +316,13 @@ onDeactivated(() => {
 </template>
 
 <style scoped>
+.exposure-mini {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .kill {
   display: flex;
   align-items: center;

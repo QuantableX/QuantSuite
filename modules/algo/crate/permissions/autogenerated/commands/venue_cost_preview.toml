@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-venue-cost-preview"
+description = "Enables the venue_cost_preview command without any pre-configured scope."
+commands.allow = ["venue_cost_preview"]
+
+[[permission]]
+identifier = "deny-venue-cost-preview"
+description = "Denies the venue_cost_preview command without any pre-configured scope."
+commands.deny = ["venue_cost_preview"]
