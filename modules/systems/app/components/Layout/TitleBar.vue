@@ -26,6 +26,7 @@ const views: { id: EngineView; label: string }[] = [
   { id: 'settings', label: 'Settings' },
   { id: 'live', label: 'Live' },
   { id: 'backtest', label: 'Backtest' },
+  { id: 'execution', label: 'Execution' },
 ]
 const activeViewLabel = computed(() => views.find(v => v.id === view.value)?.label ?? 'View')
 

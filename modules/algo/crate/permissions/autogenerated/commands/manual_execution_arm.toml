@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-manual-execution-arm"
+description = "Enables the manual_execution_arm command without any pre-configured scope."
+commands.allow = ["manual_execution_arm"]
+
+[[permission]]
+identifier = "deny-manual-execution-arm"
+description = "Denies the manual_execution_arm command without any pre-configured scope."
+commands.deny = ["manual_execution_arm"]

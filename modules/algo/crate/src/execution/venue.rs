@@ -100,7 +100,9 @@ pub struct VenueBalance {
     pub locked: f64,
 }
 
-/// An open perp position (spot venues report none).
+/// An open perp position (spot venues report none). Read by the perp venues
+/// (PLAN-EXECUTION-VENUES) and the bots' reconcile (Automation 4/5).
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VenuePosition {
     pub symbol: String,
@@ -327,6 +329,7 @@ pub trait ExecutionVenue: Send + Sync {
     /// One instrument by `BASE/QUOTE`.
     fn instrument(&self, pair: &str) -> Result<Instrument, String>;
     fn balances(&self) -> Result<Vec<VenueBalance>, String>;
+    #[allow(dead_code)]
     fn positions(&self) -> Result<Vec<VenuePosition>, String>;
     fn order_book(&self, instrument: &Instrument) -> Result<OrderBook, String>;
     /// The account's fee tier for the instrument.
@@ -334,6 +337,8 @@ pub trait ExecutionVenue: Send + Sync {
     /// Send an IOC limit order. `Err` means the outcome is unknown or the
     /// venue refused it — the engine looks the order up by its client id.
     fn place(&self, order: &OrderRequest) -> Result<OrderReport, String>;
+    /// The kill switch cancels open orders with it (Automation 4/5).
+    #[allow(dead_code)]
     fn cancel(&self, instrument: &Instrument, client_order_id: &str) -> Result<(), String>;
     /// `Ok(None)` when the venue never saw an order with this id.
     fn query_by_client_id(&self, instrument: &Instrument, client_order_id: &str) -> Result<Option<OrderReport>, String>;

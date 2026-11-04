@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-manual-execution-runs"
+description = "Enables the manual_execution_runs command without any pre-configured scope."
+commands.allow = ["manual_execution_runs"]
+
+[[permission]]
+identifier = "deny-manual-execution-runs"
+description = "Denies the manual_execution_runs command without any pre-configured scope."
+commands.deny = ["manual_execution_runs"]

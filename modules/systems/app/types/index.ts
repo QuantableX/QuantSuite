@@ -288,4 +288,4 @@ export interface RankingArchiveStatus {
   }
 }
 
-export type EngineView = 'settings' | 'live' | 'backtest'
+export type EngineView = 'settings' | 'live' | 'backtest' | 'execution'

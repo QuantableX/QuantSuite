@@ -59,6 +59,8 @@ pub struct RunRequest {
     pub signal: Value,
     /// The quote capital an owner starts with when it holds nothing yet.
     pub initial_capital: Option<f64>,
+    /// Or everything it starts with (a whole sub-account); wins over the capital.
+    pub initial_holdings: Option<Holdings>,
 }
 
 /// One run per account at a time, across every caller in the process.
@@ -217,6 +219,14 @@ impl Engine {
         if let Err(e) = venue.ready() {
             return Self::finish(store, rec, RunStatus::Failed, Some(e), t0);
         }
+        let caps = venue.capabilities();
+        if !caps.spot || !caps.ioc_limit {
+            let why = format!("{} cannot take spot IOC limit orders, which this engine sends", venue.label());
+            return Self::finish(store, rec, RunStatus::Failed, Some(why), t0);
+        }
+        if !caps.client_order_ids {
+            rec.notes.push(format!("{} has no client order ids: a lost answer cannot be looked up", venue.label()));
+        }
 
         let orders = store.orders(&req.run_id)?;
         let mut x = Exec {
@@ -358,7 +368,9 @@ impl Exec<'_> {
                     .holdings(&self.req.owner, &self.req.exchange_id)
                     .map_err(|e| Stop(RunStatus::Failed, e))?;
                 if h.is_empty() {
-                    if let Some(capital) = self.req.initial_capital.filter(|c| *c > 0.0) {
+                    if let Some(start) = self.req.initial_holdings.clone() {
+                        h = start;
+                    } else if let Some(capital) = self.req.initial_capital.filter(|c| *c > 0.0) {
                         h.insert(self.req.quote.clone(), capital);
                     }
                 }

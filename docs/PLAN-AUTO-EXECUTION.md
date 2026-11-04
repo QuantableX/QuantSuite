@@ -1,6 +1,6 @@
 # QuantAlgo trading automation — Manual and Automated trade by themselves
 
-Status: plan, 2026-11-03. Built so far: card 1, the secret vault, and card 2, the execution core (2026-11-04). Cards "QuantAlgo Automation 1/5" to "5/5" on the QuantSuite board. Where orders go is [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md); running it 24/7 is [PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md).
+Status: plan, 2026-11-03. Built so far: card 1, the secret vault; card 2, the execution core; card 3, Manual systems trading by themselves (2026-11-04). Cards "QuantAlgo Automation 1/5" to "5/5" on the QuantSuite board. Where orders go is [PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md); running it 24/7 is [PLAN-SERVER-CLIENT.md](PLAN-SERVER-CLIENT.md).
 
 ## In short
 
@@ -132,6 +132,18 @@ A new **Execution** section in every Manual system's settings:
 3. the system's robustness verdict ([ROBUSTNESS.md](ROBUSTNESS.md), card "Robustness 4/5"). A missing or failing verdict is shown, and Live then needs the user's own tick "I know this system is not robust" — the same rule as the save gate there.
 
 **Runs tab** per system: date, decision, orders, fills, cost, status, and achieved vs Live Eval's expected result.
+
+**Built (card 3, 2026-11-04).** `modules/algo/crate/src/manual.rs` and the page `/algo/manual/:id/execution` (view "Execution" next to Settings, Live and Backtest):
+
+- Settings live in `quantalgo.db` (`manual_execution`), never in the system's `config.json`. They hold the mode Off / Paper / Live, the account (Binance or Bybit), Spot, the capital (fixed / % of the USDT balance / the whole account), the run time (UTC), the retry window, the optional max order value and daily turnover cap, and the paper fee and slippage. Changing mode, account, market or capital disarms Live.
+- Scheduler: one thread that sleeps until the next due time or a settings change. A day's run is due from the run time until the window ends. A late start runs once inside the window, and after it the day is skipped. The run id is `manual-<system>-<close date>`, and the unique index on (owner, close date) makes a second run impossible.
+- Freshness without touching `rotation_lab`: the engine's `live` result gives the pick and the scored coins. The run then reads the closed daily candle of the day before from the account's venue (Binance when the venue does not list the coin). Every scored coin must have that candle, or the run waits and retries every 5 minutes until the window ends, then records a skip. The same closes are the reference prices of the price-sanity guard.
+- Coverage: "Check coverage" lists today's universe against the venue's USDT pairs. A pick the venue cannot trade is held as USD and flagged "backtest ≠ live". Option (a), restricting the universe so the backtest honours it, needs a `rotation_lab` change and is card 3b (not merged while the Gauntlet run uses `sidecars/python`).
+- Arming checks: Live is saved, a completed paper run exists, the account reads its balance, and the newest System Gauntlet verdict is robust or the user ticked "I know this system is not robust".
+- After each run: an `algo:manual-run` event, a line in the bot log and a Windows toast through `tauri-winrt-notification` (the same wrapper QuantPilot uses), e.g. "LCES: BTC → ETH, 2 orders, fees 13.98$".
+- MCP: `manual_runs` (read), `manual_arm` and `manual_disarm` (external).
+- Checks: unit tests for the due times and window, exactly-once, freshness and skip, the target and coverage policy, the arming rule and the verdict file reading. A paper run against Binance's live book: 1,000 $ bought BTC, and the switch to ETH took ETH/BTC directly (1.17 $ against 2.00 $). Run it with `--ignored live_paper`.
+- Not run by the agent: the scheduler firing inside the app, the toast, and a restart between snapshot and orders in the app. These belong to the user's paper nights, step 1 of card 5.
 
 ### 2.4 Budget: what a system may touch
 

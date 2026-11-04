@@ -1402,6 +1402,50 @@ pub fn init() -> TauriPlugin<Wry> {
         .build()
 }
 
+/// What QuantAlgo's Manual execution reads from a saved system
+/// (PLAN-AUTO-EXECUTION §2.3). Read-only: it never changes a saved system,
+/// and the engine calls are the same `live` / `universe` the pages make.
+pub mod signals {
+    use super::{json, EngineManager, Store, LIVE_TIMEOUT};
+    use serde_json::Value;
+    use tauri::{AppHandle, Manager, Wry};
+
+    /// `(id, name)` of every saved system.
+    pub fn systems(app: &AppHandle<Wry>) -> Vec<(String, String)> {
+        let Some(store) = app.try_state::<Store>() else { return Vec::new() };
+        let Ok(data) = store.data.lock() else { return Vec::new() };
+        data.systems.iter().map(|s| (s.id.clone(), s.name.clone())).collect()
+    }
+
+    /// A saved system's run config (the default one when it has none).
+    pub fn run_config(app: &AppHandle<Wry>, system_id: &str) -> Result<Value, String> {
+        let store = app.try_state::<Store>().ok_or("QuantSystems is not loaded")?;
+        let data = store.data.lock().map_err(|e| format!("Lock configs: {e}"))?;
+        data.require_system(system_id)?;
+        Ok(data
+            .system_configs
+            .get(system_id)
+            .cloned()
+            .unwrap_or_else(|| super::default_run_config(system_id)))
+    }
+
+    /// Today's live evaluation of `config` (snapshot and tracking). Blocking:
+    /// it waits for the engine, which starts when it is not running.
+    pub fn live(app: &AppHandle<Wry>, config: Value) -> Result<Value, String> {
+        let engine = app.try_state::<EngineManager>().ok_or("QuantSystems is not loaded")?;
+        engine.inner().clone().request("live", json!({ "config": config }), LIVE_TIMEOUT)
+    }
+
+    /// The ranked universe of `config` on a day (`YYYY-MM-DD`). Blocking.
+    pub fn universe(app: &AppHandle<Wry>, on_date: &str, config: Value) -> Result<Value, String> {
+        let engine = app.try_state::<EngineManager>().ok_or("QuantSystems is not loaded")?;
+        engine
+            .inner()
+            .clone()
+            .request("universe", json!({ "onDate": on_date, "config": config }), LIVE_TIMEOUT)
+    }
+}
+
 /// One-time import of the standalone app's `~/.quantsystems` directory.
 ///
 /// Copies, never moves: the standalone QuantSystems stays installable and

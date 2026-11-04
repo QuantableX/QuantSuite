@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-manual-execution-save"
+description = "Enables the manual_execution_save command without any pre-configured scope."
+commands.allow = ["manual_execution_save"]
+
+[[permission]]
+identifier = "deny-manual-execution-save"
+description = "Denies the manual_execution_save command without any pre-configured scope."
+commands.deny = ["manual_execution_save"]
