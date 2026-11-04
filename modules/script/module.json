@@ -245,5 +245,38 @@
         "required": ["run_id", "indicator", "timeframe"]
       }
     }
-  ]
+  ],
+  "remote": {
+    "commands": {
+      "research_context": "server:read",
+      "research_list": "server:read",
+      "research_create": "server:write",
+      "research_candidate": "server:read",
+      "research_import": "server:write",
+      "research_read": "server:read",
+      "research_install": "server:external",
+      "list_scripts": "server:read",
+      "open_scripts_folder": "deny:write",
+      "read_script": "server:read",
+      "check_script": "server:compute",
+      "save_script": "server:write",
+      "list_versions": "server:read",
+      "read_version": "server:read",
+      "restore_version": "server:write",
+      "create_script": "server:write",
+      "delete_script": "server:write",
+      "lint_script": "server:compute",
+      "script_python": "server:read",
+      "collection_sources": "server:read",
+      "collection_source_save": "server:write",
+      "collection_source_delete": "server:write",
+      "collection_token_set": "server:external",
+      "collection_token_clear": "server:external",
+      "collection_catalog": "server:read",
+      "collection_item": "server:read",
+      "collection_plan": "server:compute",
+      "collection_install": "server:external",
+      "collection_remove": "server:write"
+    }
+  }
 }

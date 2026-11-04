@@ -88,5 +88,29 @@
         "required": ["event"]
       }
     }
-  ]
+  ],
+  "remote": {
+    "commands": {
+      "list_calendars": "server:read",
+      "create_calendar": "server:write",
+      "update_calendar": "server:write",
+      "delete_calendar": "server:write",
+      "get_event": "server:read",
+      "create_event": "server:write",
+      "update_event": "server:write",
+      "delete_event": "server:write",
+      "list_occurrences": "server:read",
+      "override_occurrence": "server:write",
+      "truncate_series": "server:write",
+      "find_free_slots": "server:read",
+      "list_reminders": "server:read",
+      "set_reminders": "server:write",
+      "search": "server:read",
+      "get_setting": "server:read",
+      "set_setting": "server:write",
+      "get_app_settings": "server:read",
+      "update_app_settings": "server:write",
+      "backup_database": "server:write"
+    }
+  }
 }

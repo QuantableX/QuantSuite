@@ -1,0 +1,214 @@
+#!/usr/bin/env node
+/**
+ * The remote manifest's inventory (PLAN-SERVER-CLIENT §6.2, card Server 1/7).
+ *
+ * Every Tauri command a plugin registers (its `build.rs` COMMANDS list) must
+ * have an entry in its module's `remote` manifest — `module.json → remote →
+ * commands` for the modules, `crates/qs-core/remote.json` for the core plugin
+ * (`qs`), the app's own commands and the shared Tauri plugins:
+ *
+ *   "list_habits": "server:read"
+ *
+ * `run` is where the command executes when a client is connected to a server:
+ *   server — the gateway forwards it to the server (the data lives there)
+ *   client — it runs on the PC you sit at (screen, files, agent CLIs)
+ *   deny   — not offered remotely (it acts on a disk or OS the caller cannot see)
+ * `effect` is the side-effect class as for MCP capabilities: read, compute,
+ * write, external (orders, processes, the network — step-up PIN, card 3).
+ *
+ *   node scripts/remote-inventory.mjs           report (exit 1 when an entry is missing or stale)
+ *   node scripts/remote-inventory.mjs --init    add a first classification for missing entries
+ *   node scripts/remote-inventory.mjs --table   print the per-module totals as a Markdown table
+ *
+ * `--init` never changes an existing entry: review what it adds.
+ */
+
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+export const RUNS = ['server', 'client', 'deny']
+export const EFFECTS = ['read', 'compute', 'write', 'external']
+
+/** Phase-1 placement of each plugin's module (PLAN-SERVER-CLIENT §3). */
+const MODULE_RUN = {
+  algo: 'server',
+  systems: 'server',
+  terminal: 'server',
+  script: 'server',
+  finance: 'server',
+  notes: 'server',
+  plan: 'server',
+  habit: 'server',
+  pilot: 'client',
+  canvas: 'client',
+  console: 'client',
+  mcp: 'client',
+  memory: 'client',
+  hud: 'client',
+}
+
+/** The commands of a plugin, from its build.rs `COMMANDS` list. */
+export function buildCommands(buildRs) {
+  const src = readFileSync(buildRs, 'utf8')
+  const m = src.match(/const COMMANDS:\s*&\[&str\]\s*=\s*&\[([\s\S]*?)\];/)
+  if (!m) return []
+  return [...m[1].matchAll(/"([a-z0-9_]+)"/g)].map((x) => x[1])
+}
+
+/** Every plugin with its commands and the manifest file that covers it. */
+export function plugins() {
+  const out = [
+    { id: 'core', plugin: 'qs', manifest: join(ROOT, 'crates/qs-core/remote.json'), commands: buildCommands(join(ROOT, 'crates/qs-core/build.rs')) },
+  ]
+  for (const id of readdirSync(join(ROOT, 'modules')).sort()) {
+    const buildRs = join(ROOT, 'modules', id, 'crate', 'build.rs')
+    if (!existsSync(buildRs)) continue
+    out.push({ id, plugin: id, manifest: join(ROOT, 'modules', id, 'module.json'), commands: buildCommands(buildRs) })
+  }
+  return out
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, 'utf8'))
+}
+
+/** The `remote.commands` map of a manifest file. */
+export function remoteOf(path) {
+  if (!existsSync(path)) return {}
+  return readJson(path).remote?.commands ?? {}
+}
+
+// ── the first classification (--init) ──────────────────────────────────────
+
+/** Verbs by side-effect class; a command's tokens decide (read verbs first). */
+const READ_FIRST = new Set(['get', 'list', 'read', 'load', 'fetch', 'search', 'find', 'query', 'view', 'describe', 'stats', 'status', 'count', 'tail', 'peek', 'is', 'has', 'can', 'lookup', 'resolve', 'info', 'show', 'history', 'logs', 'snapshot', 'export'])
+const EXTERNAL_TOKENS = new Set(['place', 'execute', 'spawn', 'launch', 'exec', 'deploy', 'publish', 'push', 'pull', 'install', 'arm', 'kill', 'switch', 'send', 'pty', 'agent', 'agents', 'crew', 'shell', 'command', 'commands', 'run', 'forge', 'gauntlet', 'bot', 'bots', 'positions', 'export_key', 'github', 'pr', 'login', 'browser', 'navigate', 'record', 'dictation', 'speak', 'screenshot', 'capture'])
+const WRITE_TOKENS = new Set(['create', 'add', 'update', 'save', 'set', 'delete', 'remove', 'rename', 'move', 'import', 'reorder', 'toggle', 'archive', 'unarchive', 'restore', 'mark', 'apply', 'write', 'upsert', 'insert', 'clear', 'reset', 'dismiss', 'cancel', 'confirm', 'unlock', 'approve', 'reject', 'claim', 'complete', 'merge', 'edit', 'patch', 'attach', 'detach', 'pin', 'unpin', 'append', 'commit', 'stash', 'checkout', 'init', 'register', 'unregister', 'enable', 'disable', 'disarm', 'duplicate', 'copy', 'paste', 'drop', 'upload', 'store', 'put', 'link', 'unlink', 'tag', 'untag', 'assign', 'accept', 'decline', 'snooze', 'retire', 'promote', 'stop', 'start', 'close', 'open', 'resume', 'pause', 'refresh', 'sync', 'rebuild', 'reindex', 'index', 'generate', 'backup', 'prune', 'purge', 'trash', 'cleanup', 'migrate', 'focus', 'hide', 'resize', 'position', 'dock', 'undock', 'notify', 'dispatch', 'emit', 'ack', 'answer', 'reply', 'stage', 'unstage', 'discard', 'revert', 'fork', 'branch', 'swap', 'bind', 'unbind', 'mute', 'unmute', 'grant', 'revoke', 'touch', 'feed', 'consume', 'write_text', 'type'])
+const COMPUTE_TOKENS = new Set(['backtest', 'preview', 'compute', 'evaluate', 'eval', 'simulate', 'render', 'test', 'check', 'validate', 'lint', 'parse', 'analyze', 'analyse', 'sweep', 'score', 'estimate', 'diff', 'format', 'tokenize', 'transcribe', 'summarize', 'explain', 'suggest', 'convert', 'measure', 'probe', 'plan', 'mapping', 'coverage', 'compare'])
+
+export function classify(id, cmd) {
+  const tokens = cmd.split('_')
+  // Strip a leading module word (pilot_, hud_, canvas_ …) before the verb.
+  while (tokens.length > 1 && (tokens[0] === id || tokens[0] === 'qs' || tokens[0] === 'suite')) tokens.shift()
+  let effect
+  if (tokens.some((t) => EXTERNAL_TOKENS.has(t)) && !READ_FIRST.has(tokens[0])) effect = 'external'
+  else if (READ_FIRST.has(tokens[0])) effect = 'read'
+  else if (tokens.some((t) => WRITE_TOKENS.has(t))) effect = 'write'
+  else if (tokens.some((t) => COMPUTE_TOKENS.has(t))) effect = 'compute'
+  else effect = 'read'
+  return [effect, tokens]
+}
+
+export function placement(id, cmd) {
+  const [effect] = classify(id, cmd)
+  let run = MODULE_RUN[id] ?? 'client'
+  // A server module's command that acts on the caller's own disk, windows or
+  // editor cannot run for a remote caller: the remote file browser and
+  // downloads replace it (card 4).
+  if (run === 'server' && /(^|_)(reveal|open_in|open_folder|open_file|show_in|explorer|pick_|dialog|clipboard|open_editor|open_path|open_dir|open_data_dir|open_log)/.test(cmd)) run = 'deny'
+  return `${run}:${effect}`
+}
+
+// ── report ─────────────────────────────────────────────────────────────────
+
+export function inventory() {
+  const rows = []
+  const problems = []
+  for (const p of plugins()) {
+    const remote = remoteOf(p.manifest)
+    for (const c of p.commands) {
+      const v = remote[c]
+      if (!v) {
+        problems.push(`${p.id}: ${c} has no remote entry`)
+        continue
+      }
+      const [run, effect] = String(v).split(':')
+      if (!RUNS.includes(run) || !EFFECTS.includes(effect)) problems.push(`${p.id}: ${c} = "${v}" is not <server|client|deny>:<read|compute|write|external>`)
+      rows.push({ id: p.id, cmd: c, run, effect })
+    }
+    for (const c of Object.keys(remote)) {
+      if (!p.commands.includes(c)) problems.push(`${p.id}: remote entry ${c} is not a registered command`)
+    }
+  }
+  return { rows, problems }
+}
+
+/** The `remote` block as text, so the rest of module.json keeps its layout. */
+function remoteBlock(commands, eol, indent, extra = {}) {
+  const pad = ' '.repeat(indent)
+  const lines = Object.entries(commands).map(([c, v]) => `${pad}    ${JSON.stringify(c)}: ${JSON.stringify(v)}`)
+  // Other keys of the block (the events a server-placed module emits) stay, first.
+  const others = Object.entries(extra).map(([k, v]) => `${pad}  ${JSON.stringify(k)}: ${JSON.stringify(v)},${eol}`).join('')
+  return `${pad}"remote": {${eol}${others}${pad}  "commands": {${eol}${lines.join(',' + eol)}${eol}${pad}  }${eol}${pad}}`
+}
+
+function init() {
+  let added = 0
+  for (const p of plugins()) {
+    const exists = existsSync(p.manifest)
+    const raw = exists ? readFileSync(p.manifest, 'utf8') : '{\n}\n'
+    const eol = raw.includes('\r\n') ? '\r\n' : '\n'
+    const json = JSON.parse(raw)
+    const commands = json.remote?.commands ?? {}
+    const next = {}
+    for (const c of p.commands) {
+      next[c] = commands[c] ?? placement(p.id, c)
+      if (!commands[c]) added++
+    }
+    if (json.remote) {
+      // Replace the existing block (generated by this script, same layout).
+      const start = raw.indexOf('"remote": {')
+      let depth = 0
+      let end = start
+      for (let i = raw.indexOf('{', start); i < raw.length; i++) {
+        if (raw[i] === '{') depth++
+        if (raw[i] === '}' && --depth === 0) { end = i + 1; break }
+      }
+      const indent = start - raw.lastIndexOf('\n', start) - 1
+      const { commands: _c, ...extra } = json.remote
+      writeFileSync(p.manifest, raw.slice(0, start) + remoteBlock(next, eol, indent, extra).trimStart() + raw.slice(end))
+    } else {
+      // Append as the last member of the top-level object.
+      const close = raw.lastIndexOf('}')
+      const before = raw.slice(0, close).replace(/\s+$/, '')
+      const sep = before.endsWith('{') ? '' : ','
+      writeFileSync(p.manifest, `${before}${sep}${eol}${remoteBlock(next, eol, 2)}${eol}}${eol}`)
+    }
+  }
+  console.log(`added ${added} entries — review them`)
+}
+
+function table(rows) {
+  const by = new Map()
+  for (const r of rows) {
+    const k = r.id
+    const t = by.get(k) ?? { server: 0, client: 0, deny: 0, read: 0, compute: 0, write: 0, external: 0, total: 0 }
+    t[r.run]++
+    t[r.effect]++
+    t.total++
+    by.set(k, t)
+  }
+  console.log('| Plugin | Commands | server | client | deny | read | compute | write | external |')
+  console.log('|---|---|---|---|---|---|---|---|---|')
+  const sum = { total: 0, server: 0, client: 0, deny: 0, read: 0, compute: 0, write: 0, external: 0 }
+  for (const [k, t] of [...by].sort((a, b) => b[1].total - a[1].total)) {
+    console.log(`| ${k} | ${t.total} | ${t.server} | ${t.client} | ${t.deny} | ${t.read} | ${t.compute} | ${t.write} | ${t.external} |`)
+    for (const f of Object.keys(sum)) sum[f] += t[f]
+  }
+  console.log(`| **all** | **${sum.total}** | ${sum.server} | ${sum.client} | ${sum.deny} | ${sum.read} | ${sum.compute} | ${sum.write} | ${sum.external} |`)
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  if (process.argv.includes('--init')) init()
+  const { rows, problems } = inventory()
+  if (process.argv.includes('--table')) table(rows)
+  for (const p of problems) console.error(`  ✗ ${p}`)
+  if (problems.length) {
+    console.error(`remote manifest: ${problems.length} problem(s)`)
+    process.exit(1)
+  }
+  console.log(`  ok    ${rows.length} command(s) placed in the remote manifest`)
+}

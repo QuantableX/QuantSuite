@@ -58,3 +58,8 @@ windows-registry = "0.6"
 # New code: held to the full lint gate (see workspace root).
 [lints]
 workspace = true
+
+[dev-dependencies]
+# The remote-dispatch spike (card Server 1/7) drives commands through
+# Tauri's IPC on the mock runtime.
+tauri = { workspace = true, features = ["test"] }

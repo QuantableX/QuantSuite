@@ -82,5 +82,35 @@
       }
     }
   ],
-  "migrateFrom": "~/.quantzen"
+  "migrateFrom": "~/.quantzen",
+  "remote": {
+    "commands": {
+      "list_notes": "server:read",
+      "get_note": "server:read",
+      "create_note": "server:write",
+      "update_note_meta": "server:write",
+      "set_note_property": "server:write",
+      "save_note_content": "server:write",
+      "move_note": "server:write",
+      "archive_note": "server:write",
+      "restore_note": "server:write",
+      "delete_note": "server:write",
+      "empty_trash": "server:write",
+      "list_backlinks": "server:read",
+      "list_properties": "server:read",
+      "create_property": "server:write",
+      "update_property": "server:write",
+      "delete_property": "server:write",
+      "list_views": "server:read",
+      "create_view": "server:write",
+      "update_view": "server:write",
+      "delete_view": "server:write",
+      "search": "server:read",
+      "get_setting": "server:read",
+      "set_setting": "server:write",
+      "get_app_settings": "server:read",
+      "update_app_settings": "server:write",
+      "backup_database": "server:write"
+    }
+  }
 }

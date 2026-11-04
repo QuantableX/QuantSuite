@@ -28,5 +28,19 @@
   ],
   "sidecars": [],
   "capabilities": [],
-  "migrateFrom": "C:/Projects/QuantView/quantview.db"
+  "migrateFrom": "C:/Projects/QuantView/quantview.db",
+  "remote": {
+    "commands": {
+      "get_ohlcv": "server:read",
+      "get_tickers": "server:read",
+      "get_order_book": "server:read",
+      "get_symbols": "server:read",
+      "get_screener": "server:read",
+      "get_correlation": "server:read",
+      "get_marketcap": "server:read",
+      "get_daily_change": "server:read",
+      "get_sentiment": "server:read",
+      "get_metric_history": "server:read"
+    }
+  }
 }

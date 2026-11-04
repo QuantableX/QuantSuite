@@ -45,4 +45,12 @@ const COMMANDS: &[&str] = &[
 
 fn main() {
     tauri_plugin::Builder::new(COMMANDS).build();
+    // tests/remote_dispatch_spike.rs builds a Wry app on the mock runtime,
+    // which links TaskDialogIndirect from Common Controls v6. The suite binary
+    // gets that manifest from tauri-build; test binaries do not (the crash
+    // would be STATUS_ENTRYPOINT_NOT_FOUND). Test targets only.
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg-tests=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'");
+    }
 }
