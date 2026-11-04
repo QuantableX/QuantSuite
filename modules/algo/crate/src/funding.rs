@@ -16,8 +16,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use tauri::{AppHandle, Manager, Wry};
 
 use crate::execution::store::book_funding;
-use crate::execution::venue::MarketType;
-use crate::venues::hyperliquid::{FundingPayment, HyperliquidVenue};
+use crate::venues::hyperliquid::FundingPayment;
 use crate::AppState;
 
 /// How often the accounts are read.
@@ -112,7 +111,7 @@ fn flag_key(exchange_id: &str) -> String {
     format!("funding_since:{exchange_id}")
 }
 
-/// Read and book one Hyperliquid account's new payments.
+/// Read and book one perp account's new payments (Hyperliquid, Lighter).
 pub fn sync_account(app: &AppHandle<Wry>, exchange_id: &str) -> Result<usize, String> {
     let state = app.state::<AppState>();
     let (creds, since) = {
@@ -124,12 +123,11 @@ pub fn sync_account(app: &AppHandle<Wry>, exchange_id: &str) -> Result<usize, St
             .and_then(|v| v.parse().ok());
         (crate::exchanges::load_credentials(&db, exchange_id)?, since)
     };
-    if !creds.provider.eq_ignore_ascii_case("hyperliquid") {
+    if !crate::venues::is_perp_dex(&creds.provider) {
         return Ok(0);
     }
     let start = since.unwrap_or_else(|| chrono::Utc::now().timestamp_millis() - FIRST_LOOKBACK_MS) - 3_600_000;
-    let venue = HyperliquidVenue::new(MarketType::Perp, creds.sandbox, &creds.wallet_address, &creds.sub_account, "")?;
-    let payments = venue.funding_since(start)?;
+    let payments = crate::venues::funding_since(&creds, start)?;
     if payments.is_empty() {
         return Ok(0);
     }
@@ -172,7 +170,7 @@ pub fn sync_account(app: &AppHandle<Wry>, exchange_id: &str) -> Result<usize, St
     Ok(booked)
 }
 
-/// The Hyperliquid accounts something of QuantSuite holds a perp on.
+/// The perp accounts something of QuantSuite holds a position on.
 fn accounts_to_read(app: &AppHandle<Wry>) -> Vec<String> {
     let state = app.state::<AppState>();
     let mut ids: Vec<String> = state
@@ -182,7 +180,7 @@ fn accounts_to_read(app: &AppHandle<Wry>) -> Vec<String> {
         .and_then(|db| {
             db.prepare(
                 "SELECT DISTINCT e.id FROM exchanges e JOIN execution_holdings h ON h.exchange_id = e.id
-                 WHERE lower(e.provider) = 'hyperliquid' AND h.asset != 'USDC'",
+                 WHERE lower(e.provider) IN ('hyperliquid', 'lighter') AND h.asset != 'USDC'",
             )
             .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect())
             .ok()

@@ -173,6 +173,14 @@ The trading fee is the same as for any pair (14$ on 10,000$ in the table). The c
 - Tests: short open → cover → long → flat through the core with reduce-only checks on a mock perp venue, leverage sizing, the liquidation guard, spot refusing a short, paper shorts, funding split and booking (idempotent, journal + books, bots), stats, a live perp bot shorting and reversing.
 - The user's testnet check (ladder step 2b): a 1x short and a 1x long for a single-asset system, funding rows after an hour.
 
+### 10.5 Built (card Venues 5/5 Lighter, 2026-11-04)
+
+- **Lighter vs dYdX v4, re-checked first.** Both list every coin of the systems' universes as perp. Liquidity is not close: BTC open interest 353 M$ on Lighter vs 16 M$ on dYdX, 24 h volume 1.4 B$ vs 8 M$, and ETH, SOL, HYPE and ZEC similar. Lighter standard accounts pay no trading fee, and Lighter also has a few spot pairs (ETH, LINK, AAVE, UNI, LDO …). Key permissions: a Lighter API key signs orders, cancels, leverage, and withdrawals **only to the account's own L1 address**; transfers to anyone else need the L1 wallet's key. dYdX's permissioned keys would be stricter, but its books are too thin for the systems → **Lighter**.
+- `modules/algo/crate/src/venues/lighter.rs` (Tauri-free): transactions are Goldilocks field elements hashed with Poseidon2 and signed with Schnorr over ECgFp5 (`goldilocks-crypto` + `poseidon-hash`, MIT/Apache; Lighter's own signer is a Go DLL). Known answers from the official signer (lighter-sdk 1.1.8): the public key of a generated key, the hashes of two IOC orders (one reduce-only), a cancel and a 1x isolated leverage update, and the official signatures, all of which our verifier accepts; the auth token too. Schnorr is randomized, so our signatures are checked by verification. Every signature is verified before it is sent.
+- IOC limit at the slippage cap (prices and sizes in the market's integer units, a sell limit rounded up), 48-bit client order indexes `0x71…` derived from our id (so a resumed run finds its order in `accountActiveOrders` / `accountInactiveOrders`, and the kill switch only cancels ours), nonces from `nextNonce` then increasing per API key, an auth token for private reads (1 h). Perp and spot are separate market types. Positions carry the venue's liquidation price. The maintenance margin comes from each market's details (BTC 1.2 %). Funding (`positionFunding`) is booked like Hyperliquid's. Daily candles come from the venue.
+- Accounts: DEX → Lighter with the account index, the API key index (2–254) and the key's private key, plus a Testnet switch. The connection test reads the balance and makes a private read with the key's token. Manual systems and bots pick it like a Hyperliquid account. A system moves between the two by changing only its Execution account. Venues 4/5's perp rules apply unchanged.
+- Live (2026-11-04, `--ignored lighter_live`): 214 perps and 11 spot pairs on mainnet; 3 perps and 2 spot on testnet.
+
 ## 11. Cards
 
 | Card | What | Blocked by |
@@ -189,7 +197,7 @@ The trading fee is the same as for any pair (14$ on 10,000$ in the table). The c
 |---|---|---|
 | First DEX | Hyperliquid | Spot + perp in one adapter, deepest books, API wallets cannot withdraw |
 | Spot DEX for wider coverage | Jupiter; CoW Protocol if coverage is better | Widest single-chain token set, cheap transactions |
-| Redundancy perp DEX | Lighter; dYdX if Lighter's API or permissions disappoint | Ethereum-settled order book |
+| Redundancy perp DEX | Lighter (re-checked 2026-11-04: 10–100× dYdX's liquidity, keys withdraw only to the own L1 address) | Ethereum-settled order book |
 | Manual market type | Spot | Funding over multi-day holds (§5.1) |
 | Leverage | 1x isolated, cap 3x | A rotation system has no reason for leverage |
 

@@ -6,6 +6,7 @@
 
 pub mod hyperliquid;
 pub mod jupiter;
+pub mod lighter;
 
 use chrono::NaiveDate;
 
@@ -17,6 +18,7 @@ use crate::{Balance, ConnectionResult};
 
 use hyperliquid::HyperliquidVenue;
 use jupiter::JupiterVenue;
+use lighter::LighterVenue;
 
 fn is_hyperliquid(provider: &str) -> bool {
     provider.eq_ignore_ascii_case("hyperliquid")
@@ -26,9 +28,25 @@ fn is_jupiter(provider: &str) -> bool {
     provider.eq_ignore_ascii_case("jupiter")
 }
 
+fn is_lighter(provider: &str) -> bool {
+    provider.eq_ignore_ascii_case("lighter")
+}
+
 /// The execution core can trade on this provider's accounts.
 pub fn executes(provider: &str) -> bool {
-    crate::broker::Venue::supports_live(provider) || is_hyperliquid(provider) || is_jupiter(provider)
+    crate::broker::Venue::supports_live(provider) || is_hyperliquid(provider) || is_jupiter(provider) || is_lighter(provider)
+}
+
+/// A perp order-book DEX (Hyperliquid, Lighter): perp and spot markets,
+/// USDC quote, a testnet, funding.
+pub fn is_perp_dex(provider: &str) -> bool {
+    is_hyperliquid(provider) || is_lighter(provider)
+}
+
+/// A Lighter account: the account index travels in `sub_account`, the API
+/// key's index in `api_key`, its private key in `private_key`.
+fn lighter_account(creds: &StoredCredentials, market: MarketType) -> Result<LighterVenue, String> {
+    LighterVenue::new(market, creds.sandbox, &creds.sub_account, &creds.api_key, &creds.private_key)
 }
 
 /// Where Jupiter swaps are journaled before they are sent.
@@ -48,7 +66,7 @@ fn jupiter_account(creds: &StoredCredentials, journal: bool) -> Result<JupiterVe
 
 /// The market types an account of this provider trades.
 pub fn markets(provider: &str) -> Vec<MarketType> {
-    if is_hyperliquid(provider) {
+    if is_perp_dex(provider) {
         vec![MarketType::Spot, MarketType::Perp]
     } else if executes(provider) {
         vec![MarketType::Spot]
@@ -59,16 +77,16 @@ pub fn markets(provider: &str) -> Vec<MarketType> {
 
 /// The provider has a test network the account can point at.
 pub fn has_testnet(provider: &str) -> bool {
-    crate::broker::Venue::supports_live(provider) || is_hyperliquid(provider)
+    crate::broker::Venue::supports_live(provider) || is_perp_dex(provider)
 }
 
 fn check_market(provider: &str, market: MarketType) -> Result<(), String> {
     if markets(provider).contains(&market) {
         Ok(())
     } else if executes(provider) {
-        Err(format!("{provider} accounts trade spot only; perp is on Hyperliquid."))
+        Err(format!("{provider} accounts trade spot only; perp is on Hyperliquid and Lighter."))
     } else {
-        Err(format!("Live order routing is implemented for Binance, Bybit and Hyperliquid, not {provider}."))
+        Err(format!("Live order routing is implemented for Binance, Bybit, Hyperliquid, Jupiter and Lighter, not {provider}."))
     }
 }
 
@@ -82,6 +100,9 @@ pub fn open_leveraged(creds: &StoredCredentials, market: MarketType, leverage: u
     check_market(&creds.provider, market)?;
     if is_jupiter(&creds.provider) {
         return Ok(Box::new(jupiter_account(creds, true)?));
+    }
+    if is_lighter(&creds.provider) {
+        return Ok(Box::new(lighter_account(creds, market)?.with_leverage(leverage)));
     }
     if is_hyperliquid(&creds.provider) {
         return Ok(Box::new(
@@ -101,6 +122,9 @@ pub fn public(provider: &str, testnet: bool, market: MarketType) -> Result<Box<d
     if is_jupiter(provider) {
         return Ok(Box::new(JupiterVenue::public("", "")?));
     }
+    if is_lighter(provider) {
+        return Ok(Box::new(LighterVenue::public(market, testnet)?));
+    }
     if is_hyperliquid(provider) {
         return Ok(Box::new(HyperliquidVenue::public(market, testnet)?));
     }
@@ -112,6 +136,9 @@ pub fn mapping_table(provider: &str, testnet: bool, market: MarketType, symbols:
     check_market(provider, market)?;
     if is_jupiter(provider) {
         return Ok(jupiter::mapping_with("Jupiter (Solana)", symbols, &[]));
+    }
+    if is_lighter(provider) {
+        return LighterVenue::public(market, testnet)?.mapping(symbols);
     }
     if is_hyperliquid(provider) {
         return HyperliquidVenue::public(market, testnet)?.mapping(symbols);
@@ -127,6 +154,11 @@ pub fn daily_close(provider: &str, testnet: bool, market: MarketType, coin: &str
     if is_jupiter(provider) {
         return None;
     }
+    if is_lighter(provider) {
+        let venue = LighterVenue::public(market, testnet).ok()?;
+        let inst = venue.instrument(&format!("{coin}/{quote}")).ok()?;
+        return venue.daily_close_of(&inst, day);
+    }
     if is_hyperliquid(provider) {
         let venue = HyperliquidVenue::public(market, testnet).ok()?;
         let inst = venue.instrument(&format!("{coin}/{quote}")).ok()?;
@@ -135,6 +167,63 @@ pub fn daily_close(provider: &str, testnet: bool, market: MarketType, coin: &str
     let prefix = day.to_string();
     let candles = crate::exchanges::fetch_recent_market_candles(provider, &format!("{coin}/{quote}"), "1d", 3).ok()?;
     candles.iter().find(|c| c.time.starts_with(&prefix)).map(|c| c.close).filter(|c| *c > 0.0)
+}
+
+/// An account's funding payments since `start_ms` (Hyperliquid, Lighter).
+pub fn funding_since(creds: &StoredCredentials, start_ms: i64) -> Result<Vec<hyperliquid::FundingPayment>, String> {
+    if is_lighter(&creds.provider) {
+        return lighter_account(creds, MarketType::Perp)?.funding_since(start_ms);
+    }
+    if is_hyperliquid(&creds.provider) {
+        return HyperliquidVenue::new(MarketType::Perp, creds.sandbox, &creds.wallet_address, &creds.sub_account, "")?.funding_since(start_ms);
+    }
+    Ok(Vec::new())
+}
+
+/// The Exchange page's test of a Lighter account: the API key signs a token
+/// the venue accepts, and both balances read.
+pub fn test_lighter(account: &str, api_key_index: &str, key: &str, testnet: bool) -> Result<ConnectionResult, String> {
+    let fail = |message: String| Ok(ConnectionResult { success: false, message, latency_ms: None });
+    if account.trim().is_empty() || api_key_index.trim().is_empty() || key.trim().is_empty() {
+        return fail("Enter the account index, the API key index and the API key's private key.".into());
+    }
+    let start = std::time::Instant::now();
+    let perp = match LighterVenue::new(MarketType::Perp, testnet, account, api_key_index, key) {
+        Ok(v) => v,
+        Err(e) => return fail(e),
+    };
+    let usdc = match perp.balances() {
+        Ok(b) => crate::execution::venue::free_balance(&b, "USDC"),
+        Err(e) => return fail(e),
+    };
+    // A private read proves the API key is the account's.
+    if let Err(e) = perp.instrument("BTC/USDC").and_then(|i| perp.open_orders(&i)) {
+        return fail(format!("The account reads, but the API key is not accepted: {e}"));
+    }
+    let latency = start.elapsed().as_millis() as u64;
+    Ok(ConnectionResult {
+        success: true,
+        message: format!("API key accepted by Lighter{}: {usdc:.2} USDC available for perp ({latency}ms)", if testnet { " testnet" } else { "" }),
+        latency_ms: Some(latency),
+    })
+}
+
+/// A Lighter account's spot assets and perp positions for the Exchange page.
+pub fn lighter_balances(creds: &StoredCredentials) -> Result<Vec<Balance>, String> {
+    let mut out = Vec::new();
+    for b in lighter_account(creds, MarketType::Spot)?.balances()? {
+        if b.free + b.locked > 0.0 {
+            out.push(Balance { asset: b.asset, total: b.free + b.locked, available: b.free, in_positions: b.locked });
+        }
+    }
+    let perp = lighter_account(creds, MarketType::Perp)?;
+    for b in perp.balances()?.into_iter().filter(|b| b.asset == "USDC") {
+        out.push(Balance { asset: "USDC (perp, available)".into(), total: b.free, available: b.free, in_positions: 0.0 });
+    }
+    for p in perp.positions()? {
+        out.push(Balance { asset: format!("{} perp {}", p.symbol, p.side), total: p.size, available: 0.0, in_positions: p.size });
+    }
+    Ok(out)
 }
 
 /// The hourly funding rate of a perp, when the venue has one.
@@ -288,6 +377,8 @@ mod tests {
         assert!(markets("uniswap").is_empty());
         assert!(executes("hyperliquid") && executes("bybit") && executes("jupiter") && !executes("uniswap"));
         assert_eq!(markets("jupiter"), vec![MarketType::Spot]);
+        assert_eq!(markets("lighter"), vec![MarketType::Spot, MarketType::Perp]);
+        assert!(executes("lighter") && has_testnet("lighter") && is_perp_dex("lighter"));
         assert!(public("jupiter", false, MarketType::Perp).is_err());
         assert!(has_testnet("hyperliquid"));
         assert!(public("binance", false, MarketType::Perp).is_err(), "no CEX perps");

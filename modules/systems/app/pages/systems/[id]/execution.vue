@@ -61,12 +61,12 @@ const ackNotRobust = ref(false)
 const coverage = ref<Coverage | null>(null)
 const coverageBusy = ref(false)
 
-const tradableVenues = computed(() => exchanges.value.filter(e => ['binance', 'bybit', 'hyperliquid', 'jupiter'].includes(e.provider.toLowerCase())))
+const tradableVenues = computed(() => exchanges.value.filter(e => ['binance', 'bybit', 'hyperliquid', 'jupiter', 'lighter'].includes(e.provider.toLowerCase())))
 const account = computed(() => exchanges.value.find(e => e.id === form.value?.exchange_id) ?? null)
-/** Perp exists on Hyperliquid accounts (1x isolated, long-only until Venues 4/5). */
-const hasPerp = computed(() => account.value?.provider.toLowerCase() === 'hyperliquid')
+/** Perp exists on Hyperliquid and Lighter accounts. */
+const hasPerp = computed(() => ['hyperliquid', 'lighter'].includes(account.value?.provider.toLowerCase() ?? ''))
 /** What "USD" is on the account: USDC on Hyperliquid and Jupiter, USDT on Binance and Bybit. */
-const quote = computed(() => (['hyperliquid', 'jupiter'].includes(account.value?.provider.toLowerCase() ?? '') ? 'USDC' : 'USDT'))
+const quote = computed(() => (['hyperliquid', 'jupiter', 'lighter'].includes(account.value?.provider.toLowerCase() ?? '') ? 'USDC' : 'USDT'))
 watch(hasPerp, (perp) => {
   if (!perp && form.value?.market === 'perp') form.value.market = 'spot'
 })
@@ -241,7 +241,7 @@ watch(systemId, () => { void load() })
         <label><span class="label">Market</span>
           <select v-model="form.market" class="select">
             <option value="spot">Spot</option>
-            <option value="perp" :disabled="!hasPerp">Perp — isolated, long and short{{ hasPerp ? '' : ' (Hyperliquid accounts)' }}</option>
+            <option value="perp" :disabled="!hasPerp">Perp — isolated, long and short{{ hasPerp ? '' : ' (Hyperliquid and Lighter accounts)' }}</option>
           </select>
         </label>
         <label v-if="form.market === 'perp'"><span class="label">Leverage (x, isolated — capped in QuantAlgo Settings)</span>

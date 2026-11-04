@@ -574,7 +574,7 @@ impl RunConfig {
 /// liquidation price than the user's limit is refused.
 fn live_broker_for(creds: &crate::exchanges::StoredCredentials, run: &RunConfig, pair: &str) -> Result<LiveBroker, String> {
     let provider = creds.provider.as_str();
-    if provider.eq_ignore_ascii_case("hyperliquid") {
+    if crate::venues::is_perp_dex(provider) {
         let venue = crate::venues::open_leveraged(creds, run.execution_market, run.leverage as u32)?;
         venue.ready()?;
         if run.execution_market == MarketType::Perp {
@@ -590,10 +590,10 @@ fn live_broker_for(creds: &crate::exchanges::StoredCredentials, run: &RunConfig,
         return Ok(LiveBroker::on_venue(venue, creds.sandbox, "USDC"));
     }
     if run.execution_market == MarketType::Perp {
-        return Err(format!("{provider} accounts trade spot only; perp is on Hyperliquid accounts."));
+        return Err(format!("{provider} accounts trade spot only; perp is on Hyperliquid and Lighter accounts."));
     }
     if Venue::parse(provider).is_none() {
-        return Err(format!("Live order routing is implemented for Binance, Bybit and Hyperliquid; {provider} bots run in paper mode only."));
+        return Err(format!("Live order routing is implemented for Binance, Bybit, Hyperliquid and Lighter; {provider} bots run in paper mode only."));
     }
     if creds.api_key.is_empty() || creds.api_secret.is_empty() {
         return Err("The exchange has no API key and secret stored; add them on the Exchange page.".into());

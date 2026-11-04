@@ -40,6 +40,10 @@ k256 = { version = "0.14", features = ["ecdsa"] }
 sha3 = "0.12"
 # Solana addresses and keys (Jupiter, Venues 3/5); ed25519 itself comes from ring.
 bs58 = "0.5"
+# Lighter (Venues 5/5): Poseidon2 over Goldilocks and Schnorr over ECgFp5,
+# the curve its API keys sign with (MIT/Apache; the official signer is Go).
+goldilocks-crypto = "0.1.2"
+poseidon-hash = "0.1.4"
 
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
 # Manual execution (PLAN-AUTO-EXECUTION §2.3) reads a saved system's config and
