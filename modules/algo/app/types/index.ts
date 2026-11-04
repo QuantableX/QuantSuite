@@ -321,7 +321,7 @@ export type ExchangeType = 'cex' | 'dex'
 
 export type ExchangeProvider =
   | 'binance' | 'bybit' | 'okx' | 'coinbase' | 'kraken' | 'kucoin'
-  | 'uniswap' | 'jupiter' | 'hyperliquid'
+  | 'uniswap' | 'jupiter' | 'hyperliquid' | 'lighter'
 
 export interface Exchange {
   id: string

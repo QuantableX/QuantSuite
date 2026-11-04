@@ -53,13 +53,13 @@ const resumeAfterRestart = ref(false)
  * Data and execution are two choices; for a CEX the default is "same as data".
  */
 const executionExchangeId = ref('')
-const executionAccounts = computed(() => exchangeStore.exchanges.filter((e) => ['binance', 'bybit', 'hyperliquid'].includes(e.provider) && e.id !== exchangeId.value))
-/** Hyperliquid can also take the bot's orders as perp: long and short, isolated (Venues 4/5). */
+const executionAccounts = computed(() => exchangeStore.exchanges.filter((e) => ['binance', 'bybit', 'hyperliquid', 'lighter'].includes(e.provider) && e.id !== exchangeId.value))
+/** Hyperliquid and Lighter can also take the bot's orders as perp: long and short, isolated (Venues 4/5, 5/5). */
 const executionMarket = ref<'spot' | 'perp'>('spot')
 const leverage = ref(1)
 const executionIsHyperliquid = computed(() => {
   const id = executionExchangeId.value || exchangeId.value
-  return exchangeStore.exchanges.find((e) => e.id === id)?.provider === 'hyperliquid'
+  return ['hyperliquid', 'lighter'].includes(exchangeStore.exchanges.find((e) => e.id === id)?.provider ?? '')
 })
 watch(executionIsHyperliquid, (hl) => {
   if (!hl) executionMarket.value = 'spot'

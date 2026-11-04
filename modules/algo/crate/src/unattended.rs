@@ -261,7 +261,8 @@ pub fn resume_bots(app: AppHandle, bots: Vec<(Bot, String)>) {
                     (crate::venues::open_leveraged(&creds, run.execution_market, run.leverage as u32)?, quote)
                 };
                 let base = bot.pair.split('/').next().unwrap_or(&bot.pair).to_string();
-                let pair = if venue.label().to_lowercase().contains("hyperliquid") { format!("{base}/{quote}") } else { bot.pair.clone() };
+                let label = venue.label().to_lowercase();
+                let pair = if label.contains("hyperliquid") || label.contains("lighter") { format!("{base}/{quote}") } else { bot.pair.clone() };
                 let inst = venue.instrument(&pair)?;
                 let total: f64 = venue
                     .balances()?

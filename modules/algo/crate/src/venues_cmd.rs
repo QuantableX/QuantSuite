@@ -191,7 +191,7 @@ pub(crate) async fn venue_perp_positions(exchange_id: Option<String>, app: AppHa
         let accounts: Vec<(String, String)> = {
             let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
             let mut stmt = db
-                .prepare("SELECT id, name FROM exchanges WHERE lower(provider) = 'hyperliquid' ORDER BY name")
+                .prepare("SELECT id, name, provider FROM exchanges WHERE lower(provider) IN ('hyperliquid', 'lighter') ORDER BY name")
                 .map_err(|e| e.to_string())?;
             let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|e| e.to_string())?;
             rows.flatten().filter(|(id, _): &(String, String)| exchange_id.as_deref().map_or(true, |x| x == id)).collect()
@@ -202,7 +202,7 @@ pub(crate) async fn venue_perp_positions(exchange_id: Option<String>, app: AppHa
                 let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
                 crate::exchanges::load_credentials(&db, &id)?
             };
-            let venue = crate::venues::hyperliquid::HyperliquidVenue::new(MarketType::Perp, creds.sandbox, &creds.wallet_address, &creds.sub_account, "")?;
+            let venue = crate::venues::open(&creds, MarketType::Perp)?;
             for p in venue.positions()? {
                 let distance = p.liquidation_distance();
                 out.push(PerpPosition {
@@ -232,6 +232,10 @@ pub(crate) async fn venue_perp_positions(exchange_id: Option<String>, app: AppHa
 const BASE_FUNDING_PER_8H: f64 = 0.0001;
 
 fn standard_taker(provider: &str, market: MarketType) -> f64 {
+    if provider.eq_ignore_ascii_case("lighter") {
+        // Standard accounts trade without fees (2026-11-04).
+        return 0.0;
+    }
     if provider.eq_ignore_ascii_case("hyperliquid") {
         let FeeSchedule { taker, .. } = match market {
             MarketType::Spot => FeeSchedule { maker: hyperliquid::SPOT_MAKER, taker: hyperliquid::SPOT_TAKER },

@@ -1503,6 +1503,9 @@ pub(crate) async fn test_exchange_connection(
         if creds.provider.eq_ignore_ascii_case("jupiter") {
             return crate::venues::test_jupiter(&creds);
         }
+        if creds.provider.eq_ignore_ascii_case("lighter") {
+            return crate::venues::test_lighter(&creds.sub_account, &creds.api_key, &creds.private_key, creds.sandbox);
+        }
         test_provider_credentials(&creds.provider, &creds.api_key, &creds.api_secret, &creds.passphrase, creds.sandbox)
     })
     .await
@@ -1524,6 +1527,14 @@ pub(crate) async fn test_exchange_credentials(
                 message: "QuantSuite generates this wallet when you save it; test it from the list afterwards.".into(),
                 latency_ms: None,
             });
+        }
+        if config.provider.eq_ignore_ascii_case("lighter") {
+            return crate::venues::test_lighter(
+                config.sub_account.as_deref().unwrap_or(""),
+                config.api_key.as_deref().unwrap_or(""),
+                config.private_key.as_deref().unwrap_or(""),
+                sandbox,
+            );
         }
         if config.provider.eq_ignore_ascii_case("hyperliquid") {
             return crate::venues::test_hyperliquid(
@@ -1887,6 +1898,9 @@ fn fetch_balances(creds: &StoredCredentials) -> Result<Vec<Balance>, String> {
     }
     if creds.provider.eq_ignore_ascii_case("jupiter") {
         return crate::venues::jupiter_balances(creds);
+    }
+    if creds.provider.eq_ignore_ascii_case("lighter") {
+        return crate::venues::lighter_balances(creds);
     }
     let provider = creds.provider.clone();
     let sandbox = creds.sandbox;
