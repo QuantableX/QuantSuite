@@ -211,6 +211,9 @@ onDeactivated(() => {
           <span class="kv__label">Exposure per venue</span>
           <AlgoExchangeExposurePanel compact />
         </div>
+        <div class="exposure-mini">
+          <AlgoExchangePerpPositions />
+        </div>
       </div>
 
       <!-- Realised PnL, paper and live apart -->

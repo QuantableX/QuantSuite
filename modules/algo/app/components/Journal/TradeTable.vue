@@ -167,7 +167,7 @@ function saveNotes(tradeId: string) {
             <td>{{ formatDateTime(trade.entry_time) }}</td>
             <td class="mono">{{ trade.pair }}</td>
             <td>
-              <span :class="trade.side === 'long' ? 'text-accent' : 'text-error'">
+              <span :class="trade.side === 'long' ? 'text-accent' : trade.side === 'funding' ? 'text-muted' : 'text-error'">
                 {{ capitalize(trade.side) }}
               </span>
             </td>

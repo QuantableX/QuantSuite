@@ -25,8 +25,11 @@ pub type Holdings = BTreeMap<String, f64>;
 pub enum Target {
     /// Everything in the account's quote (USD).
     Flat,
-    /// All of the owner's capital in this asset (spot, long-only).
+    /// All of the owner's capital in this asset: bought on spot, a long on
+    /// perp (at the run's leverage).
     Hold(String),
+    /// A short of this asset at the run's leverage — perp only (Venues 4/5).
+    Short(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -408,22 +411,77 @@ pub fn book_fill(conn: &Connection, b: &FillBooking) -> Result<(), String> {
     let fees_json = serde_json::to_string(&serde_json::json!([{ "asset": r.fee_asset, "amount": r.fee_amount }]))
         .unwrap_or_default();
     let note = format!("{} · order {} ({})", b.mode, r.venue_order_id, r.client_order_id);
+    let perp = b.instrument.market == super::venue::MarketType::Perp;
     match b.side {
         Side::Buy => {
-            open_row(conn, b, base, r.base_received, base_usd, fee_usd, &fees_json, &note)?;
+            // On perp a buy first covers the owner's shorts; the rest is long.
+            let left = if perp { close_rows(conn, b, base, "short", r.filled_qty, base_usd, fee_usd, &fees_json, &note)? } else { r.filled_qty };
+            if left > 1e-12 {
+                let share = if r.filled_qty > 0.0 { left / r.filled_qty } else { 1.0 };
+                open_row(conn, b, base, "long", r.base_received * share, base_usd, fee_usd * share, &fees_json, &note)?;
+            }
             if !quote.eq_ignore_ascii_case(b.account_quote) {
-                close_rows(conn, b, quote, r.quote_amount, b.quote_usd, 0.0, &fees_json, &note)?;
+                close_rows(conn, b, quote, "long", r.quote_amount, b.quote_usd, 0.0, &fees_json, &note)?;
             }
         }
         Side::Sell => {
-            close_rows(conn, b, base, r.filled_qty, base_usd, fee_usd, &fees_json, &note)?;
+            let left = close_rows(conn, b, base, "long", r.filled_qty, base_usd, fee_usd, &fees_json, &note)?;
+            // On perp what a sell does beyond the longs opens a short; on
+            // spot it is lot rounding.
+            if perp && left > 1e-12 {
+                let share = left / r.filled_qty.max(1e-18);
+                open_row(conn, b, base, "short", left, base_usd, fee_usd * share, &fees_json, &note)?;
+            }
             if !quote.eq_ignore_ascii_case(b.account_quote) {
                 let received = r.quote_amount - r.fee_in(quote);
-                open_row(conn, b, quote, received, b.quote_usd, 0.0, &fees_json, &note)?;
+                open_row(conn, b, quote, "long", received, b.quote_usd, 0.0, &fees_json, &note)?;
             }
         }
     }
     Ok(())
+}
+
+/// A funding payment as its own journal row (side `funding`, Venues 4/5):
+/// `usd` is what the owner received (negative: paid). Idempotent by `key`.
+#[allow(clippy::too_many_arguments)]
+pub fn book_funding(
+    conn: &Connection,
+    owner: &str,
+    bot_id: Option<&str>,
+    exchange_id: &str,
+    pair: &str,
+    size: f64,
+    usd: f64,
+    rate: f64,
+    at: &str,
+    key: &str,
+) -> Result<bool, String> {
+    let source = format!("funding:{key}");
+    let exists: bool = conn
+        .query_row("SELECT EXISTS(SELECT 1 FROM trades WHERE source = ?1)", params![source], |r| r.get(0))
+        .map_err(db_err)?;
+    if exists {
+        return Ok(false);
+    }
+    conn.execute(
+        "INSERT INTO trades (id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, notes, created_at, source, mode, bot_id)
+         VALUES (?1, ?2, ?3, ?4, 'funding', 0, 0, ?5, ?6, ?6, ?7, ?8, 0, 0, ?9, ?6, ?10, 'live', ?11)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            owner,
+            exchange_id,
+            pair,
+            size,
+            at,
+            usd,
+            rate * 100.0,
+            format!("funding {:+.4} % per hour on {size}", rate * 100.0),
+            source,
+            bot_id,
+        ],
+    )
+    .map_err(db_err)?;
+    Ok(true)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -431,6 +489,7 @@ fn open_row(
     conn: &Connection,
     b: &FillBooking,
     asset: &str,
+    side: &str,
     qty: f64,
     price_usd: f64,
     fee_usd: f64,
@@ -439,7 +498,7 @@ fn open_row(
 ) -> Result<(), String> {
     conn.execute(
         "INSERT INTO trades (id, strategy_id, exchange, pair, side, entry_price, quantity, entry_time, fee, is_backtest, notes, created_at, source, fees_json, mode)
-         VALUES (?1, ?2, ?3, ?4, 'long', ?5, ?6, ?7, ?8, 0, ?9, ?7, ?10, ?11, ?12)",
+         VALUES (?1, ?2, ?3, ?4, ?13, ?5, ?6, ?7, ?8, 0, ?9, ?7, ?10, ?11, ?12)",
         params![
             uuid::Uuid::new_v4().to_string(),
             b.owner,
@@ -453,34 +512,38 @@ fn open_row(
             format!("run:{}", b.run_id),
             fees_json,
             b.mode,
+            side,
         ],
     )
     .map(|_| ())
     .map_err(db_err)
 }
 
+/// Close the owner's open `side` rows of `asset` with `qty`; returns what
+/// was left over (no open row to close).
 #[allow(clippy::too_many_arguments)]
 fn close_rows(
     conn: &Connection,
     b: &FillBooking,
     asset: &str,
+    side: &str,
     mut qty: f64,
     price_usd: f64,
     fee_usd: f64,
     fees_json: &str,
     note: &str,
-) -> Result<(), String> {
+) -> Result<f64, String> {
     let pair = format!("{asset}/{}", b.account_quote);
     let open: Vec<(String, f64, f64, f64)> = {
         let mut stmt = conn
             .prepare(
                 "SELECT id, entry_price, quantity, fee FROM trades
-                 WHERE strategy_id = ?1 AND exchange = ?2 AND pair = ?3 AND exit_time IS NULL AND is_backtest = 0
+                 WHERE strategy_id = ?1 AND exchange = ?2 AND pair = ?3 AND side = ?4 AND exit_time IS NULL AND is_backtest = 0
                  ORDER BY entry_time",
             )
             .map_err(db_err)?;
         let rows = stmt
-            .query_map(params![b.owner, b.exchange_id, pair], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .query_map(params![b.owner, b.exchange_id, pair, side], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .map_err(db_err)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)?
     };
@@ -491,7 +554,8 @@ fn close_rows(
         }
         let take = qty.min(row_qty);
         let share_fee = if total > 0.0 { fee_usd * take / total } else { 0.0 };
-        let pnl = (price_usd - entry) * take - share_fee - entry_fee * (take / row_qty.max(1e-18));
+        let gross = if side == "short" { (entry - price_usd) * take } else { (price_usd - entry) * take };
+        let pnl = gross - share_fee - entry_fee * (take / row_qty.max(1e-18));
         let pnl_pct = pnl / (entry * take).max(1e-9) * 100.0;
         conn.execute(
             "UPDATE trades SET exit_price = ?1, exit_time = ?2, quantity = ?3, pnl = ?4, pnl_pct = ?5,
@@ -512,5 +576,5 @@ fn close_rows(
         }
         qty -= take;
     }
-    Ok(())
+    Ok(qty.max(0.0))
 }

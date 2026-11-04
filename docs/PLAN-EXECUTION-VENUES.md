@@ -163,6 +163,16 @@ The trading fee is the same as for any pair (14$ on 10,000$ in the table). The c
 - Known answers: transaction signing (v0 and legacy) against solders 0.29 (`venues/jupiter_kat.json`). Live, public: quotes and prices (`--ignored jupiter_live`).
 - The canary (one switch there and back with a small amount, fills and fees against the explorer) is the user's (Automation 5 step 3).
 
+### 10.4 Built (card Venues 4/5 perp safety, 2026-11-04)
+
+- **Execution core on perp**: a run's target can be `short` besides `hold` and `flat`. On a perp venue the engine closes every position that is not the target with **reduce-only** orders, then opens the target long or short on the owner's equity × leverage. The books carry a short as a negative quantity, and its proceeds as cash: PnL = entry − exit. Journal rows are `long`, `short` (closed with entry − exit) and `funding`. Paper mode shorts on perp books too. A short on a spot venue fails the run. Spot stays long-only. (Card 2's perp venue was refused by the engine's spot-only check; fixed here.)
+- **Leverage**: isolated margin, 1x default. Manual systems (Execution → Market Perp → Leverage) and bots (Execution → Hyperliquid → Perp → leverage) are capped by QuantAlgo Settings → Perp → Leverage cap (default 3x, at most 20x). Spot is always 1x. Hyperliquid's `updateLeverage` sets the leverage before the first opening order of a coin.
+- **Liquidation guard**: before a position opens, its distance to liquidation (1 / leverage − maintenance margin; Hyperliquid's maintenance margin is half the initial margin at max leverage) must be at least Settings → Min. liquidation distance (default 20 %). Below it, the run stops with `liquidation_distance` and sends nothing, and a bot does not start. The run notes give the estimated liquidation price. Open positions show the venue's own liquidation price and distance from the mark on the Trading overview, the Bots page and the system's Execution view; below the limit they are marked.
+- **Funding in the journal**: every 30 minutes `userFunding` of each Hyperliquid account with perp holdings is read. Each payment is split over the owners holding the coin on its side (Manual books, running live perp bots) and booked once per (account, hour, coin, owner) as a journal row with side `funding`. It also goes into the owner's cash (the system's books, the bot's balance), so equity and the next run's sizing include it. Stats count funding in the PnL and show it apart, never as a trade.
+- **Bots that reverse**: a live bot can send its orders to a Hyperliquid account as perp. The live broker runs over any execution venue: `BTC/USDT` signals trade `BTC/USDC`, a sell opens a short, a buy covers it reduce-only, `reverse` does both. A partly covered short keeps its open rest. Margin is booked like paper (the notional set aside). Spot bots stay long-only.
+- Tests: short open → cover → long → flat through the core with reduce-only checks on a mock perp venue, leverage sizing, the liquidation guard, spot refusing a short, paper shorts, funding split and booking (idempotent, journal + books, bots), stats, a live perp bot shorting and reversing.
+- The user's testnet check (ladder step 2b): a 1x short and a 1x long for a single-asset system, funding rows after an hour.
+
 ## 11. Cards
 
 | Card | What | Blocked by |

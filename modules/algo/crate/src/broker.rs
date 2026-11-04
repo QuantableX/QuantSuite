@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::execution::cex::CexVenue;
-use crate::execution::venue::{free_balance, ExecutionVenue, Instrument, OrderReport, OrderRequest, OrderStatus, Side};
+use crate::execution::venue::{free_balance, ExecutionVenue, Instrument, MarketType, OrderReport, OrderRequest, OrderStatus, Side};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -187,8 +187,22 @@ impl Fill {
 /// The venue behind a live bot. `Send` so the runtime can hold it behind a
 /// mutex; a mock implements it in the runtime's tests.
 pub trait Broker: Send {
-    fn venue(&self) -> Venue;
+    /// "Binance spot", "Hyperliquid perp (testnet)".
+    fn label(&self) -> String;
     fn sandbox(&self) -> bool;
+    /// The broker trades perp: a sell may open a short and a buy cover it
+    /// (Venues 4/5). Spot brokers are long-only.
+    fn perp(&self) -> bool {
+        false
+    }
+    /// Open a short of `base_qty` (perp only).
+    fn open_short(&self, _filters: &SymbolFilters, _base_qty: f64) -> Result<Fill, String> {
+        Err("spot trading is long-only".into())
+    }
+    /// Buy back `base_qty` of a short, reduce-only (perp only).
+    fn close_short(&self, _filters: &SymbolFilters, _base_qty: f64) -> Result<Fill, String> {
+        Err("spot trading is long-only".into())
+    }
     fn symbol_filters(&self, pair: &str) -> Result<SymbolFilters, String>;
     fn available_balance(&self, asset: &str) -> Result<f64, String>;
     fn market_buy(&self, filters: &SymbolFilters, quote_amount: f64) -> Result<Fill, String>;
@@ -332,23 +346,70 @@ pub fn normalize_bybit_order(row: &Value, filters: &SymbolFilters) -> Result<Fil
 // The live broker
 // ---------------------------------------------------------------------------
 
-/// A live bot's [`Broker`] over a [`CexVenue`].
+/// A live bot's [`Broker`] over any execution venue: Binance or Bybit spot
+/// ([`CexVenue`]), Hyperliquid spot or perp (Venues 4/5).
 pub struct LiveBroker {
-    venue: CexVenue,
+    venue: Box<dyn ExecutionVenue>,
+    label: String,
+    sandbox: bool,
+    market: MarketType,
+    /// The venue's quote when it is not the bot pair's (a BTC/USDT signal
+    /// trades BTC/USDC on Hyperliquid).
+    venue_quote: Option<String>,
     /// The IOC cap against the best price (the core's default 0.5 %).
     pub max_slippage: f64,
     tag: String,
     sent: AtomicU64,
 }
 
+/// How much an order is for: quote to spend, or base to trade.
+#[derive(Debug, Clone, Copy)]
+enum Amount {
+    Quote(f64),
+    Base(f64),
+}
+
 impl LiveBroker {
     pub fn new(provider: &str, api_key: &str, api_secret: &str, sandbox: bool) -> Result<Self, String> {
-        Ok(Self {
-            venue: CexVenue::new(provider, api_key, api_secret, sandbox)?,
+        let venue = CexVenue::new(provider, api_key, api_secret, sandbox)?;
+        let label = venue.venue().label().to_string();
+        Ok(Self::on(Box::new(venue), label, sandbox, None))
+    }
+
+    /// A broker over an account's venue (`venues::open_leveraged`).
+    pub fn on_venue(venue: Box<dyn ExecutionVenue>, sandbox: bool, venue_quote: &str) -> Self {
+        let label = venue.label();
+        Self::on(venue, label, sandbox, Some(venue_quote.to_string()))
+    }
+
+    fn on(venue: Box<dyn ExecutionVenue>, label: String, sandbox: bool, venue_quote: Option<String>) -> Self {
+        let caps = venue.capabilities();
+        Self {
+            market: if caps.perp && !caps.spot { MarketType::Perp } else { MarketType::Spot },
+            venue,
+            label,
+            sandbox,
+            venue_quote,
             max_slippage: crate::execution::guards::GuardConfig::default().max_slippage,
             tag: uuid::Uuid::new_v4().simple().to_string()[..10].to_string(),
             sent: AtomicU64::new(0),
-        })
+        }
+    }
+
+    /// The bot's pair on the venue: BTC/USDT → BTC/USDC where USDC is the quote.
+    fn venue_pair(&self, pair: &str) -> String {
+        match (&self.venue_quote, pair.split_once('/')) {
+            (Some(q), Some((base, _))) => format!("{base}/{q}"),
+            _ => pair.to_string(),
+        }
+    }
+
+    /// A stablecoin asked for is the venue's quote (budgets are in USD).
+    fn venue_asset(&self, asset: &str) -> String {
+        match &self.venue_quote {
+            Some(q) if matches!(asset.to_uppercase().as_str(), "USDT" | "USDC" | "USD") => q.clone(),
+            _ => asset.to_string(),
+        }
     }
 
     /// Unique per order: `qsb` + this broker's tag + a counter.
@@ -386,18 +447,21 @@ impl LiveBroker {
         Ok((book, best, inst.round_price(cap, side)))
     }
 
-    /// Fill `amount` — quote to spend on a buy, base to sell — in up to four
-    /// IOC attempts at the cap; one [`Fill`] for all of them.
-    fn fill(&self, filters: &SymbolFilters, side: Side, amount: f64) -> Result<Fill, String> {
-        let inst = Instrument::spot(filters.clone());
+    /// Fill `amount` — quote to spend on a buy, or base — in up to four IOC
+    /// attempts at the cap; one [`Fill`] for all of them. `reduce_only` on
+    /// perp closes.
+    fn fill(&self, filters: &SymbolFilters, side: Side, amount: Amount, reduce_only: bool) -> Result<Fill, String> {
+        let inst = Instrument { market: self.market, filters: filters.clone() };
         let mut reports: Vec<OrderReport> = Vec::new();
-        let mut left = amount;
+        let mut left = match amount {
+            Amount::Quote(q) | Amount::Base(q) => q,
+        };
         for _ in 0..=crate::execution::engine::MAX_RETRIES {
             let (book, best, limit) = self.priced(&inst, side)?;
-            let qty = match side {
+            let qty = match amount {
                 // 0.1 % room for a move between reading the book and the order.
-                Side::Buy => filters.round_qty_down(book.walk_buy_quote(left / 1.001, Some(limit)).base),
-                Side::Sell => filters.round_qty_down(left),
+                Amount::Quote(_) => filters.round_qty_down(book.walk_buy_quote(left / 1.001, Some(limit)).base),
+                Amount::Base(_) => filters.round_qty_down(left),
             };
             if !inst.tradable(qty, best) {
                 break;
@@ -408,7 +472,7 @@ impl LiveBroker {
                 side,
                 qty,
                 limit_price: limit,
-                reduce_only: false,
+                reduce_only,
             };
             let report = match self.send(&order) {
                 Ok(report) => report,
@@ -421,9 +485,9 @@ impl LiveBroker {
                 }
                 break;
             }
-            left -= match side {
-                Side::Buy => report.quote_amount + report.fee_in(&filters.quote),
-                Side::Sell => report.filled_qty,
+            left -= match amount {
+                Amount::Quote(_) => report.quote_amount + report.fee_in(&filters.quote),
+                Amount::Base(_) => report.filled_qty,
             };
             let done = report.status == OrderStatus::Filled;
             if report.filled_qty > 0.0 {
@@ -461,21 +525,45 @@ pub fn merge_reports(reports: &[OrderReport]) -> Option<Fill> {
 }
 
 impl Broker for LiveBroker {
-    fn venue(&self) -> Venue {
-        self.venue.venue()
+    fn label(&self) -> String {
+        self.label.clone()
     }
 
     fn sandbox(&self) -> bool {
-        self.venue.sandbox()
+        self.sandbox
+    }
+
+    fn perp(&self) -> bool {
+        self.market == MarketType::Perp
     }
 
     fn symbol_filters(&self, pair: &str) -> Result<SymbolFilters, String> {
-        self.venue.instrument(pair).map(|i| i.filters)
+        self.venue.instrument(&self.venue_pair(pair)).map(|i| i.filters)
     }
 
     fn available_balance(&self, asset: &str) -> Result<f64, String> {
         self.venue.ready()?;
-        Ok(free_balance(&self.venue.balances()?, asset))
+        Ok(free_balance(&self.venue.balances()?, &self.venue_asset(asset)))
+    }
+
+    fn open_short(&self, filters: &SymbolFilters, base_qty: f64) -> Result<Fill, String> {
+        if !self.perp() {
+            return Err(format!("{} is spot: long-only", self.label));
+        }
+        let qty = filters.round_qty_down(base_qty);
+        if qty < filters.min_qty || qty <= 0.0 {
+            return Err(format!("{} {} is below the minimum quantity of {}", filters.qty_string(qty), filters.base, filters.qty_string(filters.min_qty)));
+        }
+        self.venue.ready()?;
+        self.fill(filters, Side::Sell, Amount::Base(qty), false)
+    }
+
+    fn close_short(&self, filters: &SymbolFilters, base_qty: f64) -> Result<Fill, String> {
+        if !self.perp() {
+            return Err(format!("{} is spot: there is no short to close", self.label));
+        }
+        self.venue.ready()?;
+        self.fill(filters, Side::Buy, Amount::Base(filters.round_qty_down(base_qty)), true)
     }
 
     fn market_buy(&self, filters: &SymbolFilters, quote_amount: f64) -> Result<Fill, String> {
@@ -486,7 +574,7 @@ impl Broker for LiveBroker {
             ));
         }
         self.venue.ready()?;
-        self.fill(filters, Side::Buy, quote_amount)
+        self.fill(filters, Side::Buy, Amount::Quote(quote_amount), false)
     }
 
     fn market_sell(&self, filters: &SymbolFilters, base_qty: f64) -> Result<Fill, String> {
@@ -498,12 +586,19 @@ impl Broker for LiveBroker {
             ));
         }
         self.venue.ready()?;
-        self.fill(filters, Side::Sell, qty)
+        // On perp a sell of a long only ever closes it.
+        self.fill(filters, Side::Sell, Amount::Base(qty), self.perp())
     }
 
     fn test_market_buy(&self, filters: &SymbolFilters, quote_amount: f64) -> Result<String, String> {
         self.venue.ready()?;
-        let inst = Instrument::spot(filters.clone());
+        if !self.venue.capabilities().test_orders {
+            return Ok(format!(
+                "{} has no test-order endpoint; lot size, minimum and the slippage cap were checked here, the venue checks the rest when the order goes out",
+                self.label
+            ));
+        }
+        let inst = Instrument { market: self.market, filters: filters.clone() };
         let (book, _, limit) = self.priced(&inst, Side::Buy)?;
         let qty = filters.round_qty_down(book.walk_buy_quote(quote_amount, Some(limit)).base);
         let order = OrderRequest { client_order_id: self.next_id(), instrument: inst, side: Side::Buy, qty, limit_price: limit, reduce_only: false };
@@ -513,7 +608,7 @@ impl Broker for LiveBroker {
 
 impl std::fmt::Debug for LiveBroker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LiveBroker").field("venue", &self.venue).field("max_slippage", &self.max_slippage).finish()
+        f.debug_struct("LiveBroker").field("venue", &self.label).field("max_slippage", &self.max_slippage).finish()
     }
 }
 

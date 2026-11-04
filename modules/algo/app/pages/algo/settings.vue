@@ -180,6 +180,26 @@ onUnmounted(() => {
           </div>
         </section>
 
+        <!-- Perp (Venues 4/5) -->
+        <section class="card settings__section">
+          <h3 class="settings__section-title">Perp</h3>
+          <p class="settings__note text-muted">
+            Perp positions use isolated margin, 1x by default. A rotation system has no reason for leverage; the cap
+            keeps systems and bots below it. A position that would open closer to its liquidation price than the
+            minimum distance is refused.
+          </p>
+          <div class="field-grid field-grid--3">
+            <div class="settings__field">
+              <label class="label" for="perp-cap">Leverage cap (x)</label>
+              <input id="perp-cap" v-model.number="localSettings.perp_max_leverage" type="number" class="input mono" min="1" max="20" step="1" />
+            </div>
+            <div class="settings__field">
+              <label class="label" for="perp-liq">Min. liquidation distance (%)</label>
+              <input id="perp-liq" v-model.number="localSettings.perp_min_liquidation_distance_pct" type="number" class="input mono" min="0" max="95" step="1" />
+            </div>
+          </div>
+        </section>
+
         <!-- General -->
         <section class="card settings__section">
           <h3 class="settings__section-title">General</h3>

@@ -72,20 +72,22 @@ fn check_market(provider: &str, market: MarketType) -> Result<(), String> {
     }
 }
 
-/// An account's venue for `market`, with its keys.
+/// An account's venue for `market`, with its keys (1x on perp).
 pub fn open(creds: &StoredCredentials, market: MarketType) -> Result<Box<dyn ExecutionVenue>, String> {
+    open_leveraged(creds, market, 1)
+}
+
+/// The same with the leverage an opening perp order sets (isolated).
+pub fn open_leveraged(creds: &StoredCredentials, market: MarketType, leverage: u32) -> Result<Box<dyn ExecutionVenue>, String> {
     check_market(&creds.provider, market)?;
     if is_jupiter(&creds.provider) {
         return Ok(Box::new(jupiter_account(creds, true)?));
     }
     if is_hyperliquid(&creds.provider) {
-        return Ok(Box::new(HyperliquidVenue::new(
-            market,
-            creds.sandbox,
-            &creds.wallet_address,
-            &creds.sub_account,
-            &creds.private_key,
-        )?));
+        return Ok(Box::new(
+            HyperliquidVenue::new(market, creds.sandbox, &creds.wallet_address, &creds.sub_account, &creds.private_key)?
+                .with_leverage(leverage),
+        ));
     }
     Ok(Box::new(CexVenue::new(&creds.provider, &creds.api_key, &creds.api_secret, creds.sandbox)?))
 }

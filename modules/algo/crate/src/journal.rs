@@ -281,7 +281,10 @@ pub(crate) fn daily_pnl(trades: &[Trade], tz_offset_minutes: i32) -> Vec<DailyPn
         let date = closed.with_timezone(&zone).format("%Y-%m-%d").to_string();
         let day = days.entry(date.clone()).or_insert(DailyPnl { date, pnl: 0.0, trades: 0 });
         day.pnl += pnl;
-        day.trades += 1;
+        // Funding counts in the day's PnL but is not a trade.
+        if trade.side != "funding" {
+            day.trades += 1;
+        }
     }
     days.into_values().collect()
 }
@@ -301,10 +304,17 @@ pub(crate) fn compute_stats<'a>(trades: impl IntoIterator<Item = &'a Trade>) -> 
     let mut total_pnl_pct = 0.0_f64;
     let mut total_duration = 0.0_f64;
     let mut duration_count = 0_u64;
+    let mut funding = 0.0_f64;
 
     for trade in trades {
-        total += 1.0;
         let pnl = trade.pnl.unwrap_or(0.0);
+        if trade.side == "funding" {
+            // In the PnL, not in the trade statistics.
+            funding += pnl;
+            total_pnl += pnl;
+            continue;
+        }
+        total += 1.0;
         total_pnl += pnl;
         total_pnl_pct += trade.pnl_pct.unwrap_or(0.0);
 
@@ -346,9 +356,10 @@ pub(crate) fn compute_stats<'a>(trades: impl IntoIterator<Item = &'a Trade>) -> 
             expectancy: 0.0,
             best_trade: 0.0,
             worst_trade: 0.0,
-            total_pnl: 0.0,
+            total_pnl,
             total_pnl_pct: 0.0,
             avg_duration_secs: 0.0,
+            funding,
         };
     }
 
@@ -362,7 +373,7 @@ pub(crate) fn compute_stats<'a>(trades: impl IntoIterator<Item = &'a Trade>) -> 
     } else {
         0.0
     };
-    let expectancy = total_pnl / total;
+    let expectancy = (total_pnl - funding) / total;
     let avg_duration = if duration_count > 0 { total_duration / duration_count as f64 } else { 0.0 };
 
     if best == f64::MIN {
@@ -384,6 +395,7 @@ pub(crate) fn compute_stats<'a>(trades: impl IntoIterator<Item = &'a Trade>) -> 
         total_pnl,
         total_pnl_pct,
         avg_duration_secs: avg_duration,
+        funding,
     }
 }
 

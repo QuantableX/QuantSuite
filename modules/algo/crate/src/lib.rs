@@ -20,6 +20,7 @@ mod data;
 mod db;
 mod exchanges;
 mod execution;
+mod funding;
 mod journal;
 mod logs;
 mod manual;
@@ -280,6 +281,12 @@ pub struct AppSettings {
     pub default_budget: f64,
     #[serde(default = "settings::default_warmup_candles")]
     pub default_warmup_candles: u32,
+    /// Perp (Venues 4/5): the leverage cap (default 3x) and the closest a
+    /// position may open to its liquidation price (default 20 %).
+    #[serde(default = "settings::default_perp_max_leverage")]
+    pub perp_max_leverage: f64,
+    #[serde(default = "settings::default_perp_min_liquidation_distance_pct")]
+    pub perp_min_liquidation_distance_pct: f64,
     /// Which set of bot defaults this config has received (`settings::apply_bot_defaults`).
     #[serde(default)]
     pub defaults_version: u32,
@@ -288,7 +295,7 @@ pub struct AppSettings {
     pub notify_on_daily_summary: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct TradeFilters {
     #[serde(default)]
     pub bot_id: Option<String>,
@@ -337,6 +344,10 @@ pub struct TradeStats {
     pub total_pnl: f64,
     pub total_pnl_pct: f64,
     pub avg_duration_secs: f64,
+    /// Perp funding received (negative: paid), inside `total_pnl` but not a
+    /// trade (journal rows with side `funding`, Venues 4/5).
+    #[serde(default)]
+    pub funding: f64,
 }
 
 /// One bot's share of `get_trade_stats_breakdown`. `bot_id` is `None` for
@@ -460,6 +471,7 @@ pub fn init() -> TauriPlugin<Wry> {
             // Manual systems trade by themselves after the daily close
             // (PLAN-AUTO-EXECUTION §2.3): the scheduler sleeps until a run is due.
             manual::start(app.clone());
+            funding::start(app.clone());
 
             // Reconcile: a bot left "running" by a previous session has no
             // process in this one. It stays stopped unless it asked to resume
@@ -602,6 +614,7 @@ pub fn init() -> TauriPlugin<Wry> {
             venues_cmd::venue_cost_preview,
             venues_cmd::venue_exposure,
             venues_cmd::venue_wallet_status,
+            venues_cmd::venue_perp_positions,
             venues_cmd::wallet_export_key,
             venues_cmd::solana_wallet_status,
             unattended::trading_kill_switch,

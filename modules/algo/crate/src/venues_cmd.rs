@@ -162,6 +162,71 @@ pub(crate) async fn venue_cost_preview(
     .map_err(|e| format!("Cost preview failed: {e}"))?
 }
 
+#[derive(Debug, Serialize)]
+pub struct PerpPosition {
+    pub exchange_id: String,
+    pub account: String,
+    pub coin: String,
+    pub side: String,
+    pub size: f64,
+    pub entry_price: f64,
+    pub mark_price: Option<f64>,
+    pub liquidation_price: Option<f64>,
+    /// From the mark to the liquidation price, as a share of the mark.
+    pub liquidation_distance: Option<f64>,
+    pub leverage: Option<f64>,
+    pub margin: Option<f64>,
+    /// Below the user's minimum distance (Settings).
+    pub warn: bool,
+}
+
+/// Every perp position on the connected Hyperliquid accounts, with its
+/// liquidation price and distance (Trading overview, bot page, system
+/// Execution, Venues 4/5). `read`.
+#[tauri::command(rename_all = "snake_case")]
+pub(crate) async fn venue_perp_positions(exchange_id: Option<String>, app: AppHandle) -> Result<Vec<PerpPosition>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let min = state.settings.lock().map(|s| s.perp_min_liquidation_distance_pct / 100.0).unwrap_or(0.2);
+        let accounts: Vec<(String, String)> = {
+            let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+            let mut stmt = db
+                .prepare("SELECT id, name FROM exchanges WHERE lower(provider) = 'hyperliquid' ORDER BY name")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|e| e.to_string())?;
+            rows.flatten().filter(|(id, _): &(String, String)| exchange_id.as_deref().map_or(true, |x| x == id)).collect()
+        };
+        let mut out = Vec::new();
+        for (id, name) in accounts {
+            let creds = {
+                let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+                crate::exchanges::load_credentials(&db, &id)?
+            };
+            let venue = crate::venues::hyperliquid::HyperliquidVenue::new(MarketType::Perp, creds.sandbox, &creds.wallet_address, &creds.sub_account, "")?;
+            for p in venue.positions()? {
+                let distance = p.liquidation_distance();
+                out.push(PerpPosition {
+                    exchange_id: id.clone(),
+                    account: name.clone(),
+                    warn: distance.is_some_and(|d| d < min),
+                    coin: p.symbol,
+                    side: p.side,
+                    size: p.size,
+                    entry_price: p.entry_price,
+                    mark_price: p.mark_price,
+                    liquidation_price: p.liquidation_price,
+                    liquidation_distance: distance,
+                    leverage: p.leverage,
+                    margin: p.margin,
+                });
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("Positions failed: {e}"))?
+}
+
 /// Hyperliquid's base funding when the live rate is unreadable: the 0.01 %
 /// interest part per 8 hours (PLAN-EXECUTION-VENUES §5.1).
 const BASE_FUNDING_PER_8H: f64 = 0.0001;

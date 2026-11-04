@@ -25,6 +25,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::bots::{insert_bot, load_bot, set_bot_status, validate_mode, validate_timeframe, Bot, BotDraft};
 use crate::broker::{Broker, LiveBroker, SymbolFilters, Venue};
+use crate::execution::venue::MarketType;
 use crate::exchanges::{
     fetch_exchange_pairs_for_provider,
     load_credentials,
@@ -492,6 +493,13 @@ pub(crate) struct RunConfig {
     /// Where live orders go when it is not the data exchange
     /// (PLAN-EXECUTION-VENUES §2: data source and execution venue apart).
     pub execution_exchange_id: Option<String>,
+    /// Spot, or perp on a Hyperliquid account (Venues 4/5): shorts, funding.
+    pub execution_market: MarketType,
+    /// Perp: isolated leverage (1x default), at most `leverage_cap`.
+    pub leverage: f64,
+    pub leverage_cap: f64,
+    /// A perp position must open at least this far from liquidation (share).
+    pub min_liquidation_distance: f64,
 }
 
 impl RunConfig {
@@ -526,6 +534,14 @@ impl RunConfig {
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty() && *s != bot.exchange_id)
                 .map(String::from),
+            execution_market: if overrides.get("execution_market").and_then(|v| v.as_str()) == Some("perp") {
+                MarketType::Perp
+            } else {
+                MarketType::Spot
+            },
+            leverage: num("leverage", 1.0),
+            leverage_cap: settings.perp_max_leverage,
+            min_liquidation_distance: settings.perp_min_liquidation_distance_pct / 100.0,
         })
     }
 
@@ -542,8 +558,47 @@ impl RunConfig {
         if !(0.0..=MAX_PAPER_FEE_PCT).contains(&self.fee) {
             return Err(format!("Paper fee must be between 0 and {MAX_PAPER_FEE_PCT:.0} percent."));
         }
-        Ok(())
+        if self.execution_market == MarketType::Spot && self.leverage != 1.0 {
+            return Err("Leverage is a perp setting; spot is always 1x.".into());
+        }
+        if self.leverage < 1.0 {
+            return Err("Leverage is 1x or more.".into());
+        }
+        crate::manual::check_leverage(self.leverage, self.leverage_cap)
     }
+}
+
+/// The live broker of a bot's execution account: Binance or Bybit spot, or
+/// Hyperliquid spot or perp at the bot's leverage (Venues 4/5). On perp the
+/// liquidation guard runs first: a position that would open closer to its
+/// liquidation price than the user's limit is refused.
+fn live_broker_for(creds: &crate::exchanges::StoredCredentials, run: &RunConfig, pair: &str) -> Result<LiveBroker, String> {
+    let provider = creds.provider.as_str();
+    if provider.eq_ignore_ascii_case("hyperliquid") {
+        let venue = crate::venues::open_leveraged(creds, run.execution_market, run.leverage as u32)?;
+        venue.ready()?;
+        if run.execution_market == MarketType::Perp {
+            let base = pair.split('/').next().unwrap_or(pair);
+            let inst = venue.instrument(&format!("{base}/USDC"))?;
+            let mmr = venue.maintenance_margin(&inst).unwrap_or(crate::execution::engine::DEFAULT_MAINTENANCE_MARGIN);
+            let distance = crate::execution::guards::liquidation_distance(run.leverage, mmr);
+            let check = crate::execution::guards::liquidation_guard(&inst.pair(), distance, run.min_liquidation_distance);
+            if !check.ok {
+                return Err(format!("liquidation guard: {}", check.detail));
+            }
+        }
+        return Ok(LiveBroker::on_venue(venue, creds.sandbox, "USDC"));
+    }
+    if run.execution_market == MarketType::Perp {
+        return Err(format!("{provider} accounts trade spot only; perp is on Hyperliquid accounts."));
+    }
+    if Venue::parse(provider).is_none() {
+        return Err(format!("Live order routing is implemented for Binance, Bybit and Hyperliquid; {provider} bots run in paper mode only."));
+    }
+    if creds.api_key.is_empty() || creds.api_secret.is_empty() {
+        return Err("The exchange has no API key and secret stored; add them on the Exchange page.".into());
+    }
+    LiveBroker::new(provider, &creds.api_key, &creds.api_secret, creds.sandbox)
 }
 
 fn check_run_config(
@@ -839,48 +894,36 @@ fn preflight_live(
             return;
         }
     };
-    let Some(venue) = Venue::parse(&creds.provider) else {
-        add_preflight_check(
-            checks, has_fatal, app_handle, bot_id, "live_venue", "Live venue", "error",
-            format!("Live order routing is implemented for Binance and Bybit spot; {} bots run in paper mode only.", creds.provider),
-        );
-        return;
-    };
-    add_preflight_check(
-        checks, has_fatal, app_handle, bot_id, "live_venue", "Live venue", if creds.sandbox { "ok" } else { "warn" },
-        if creds.sandbox {
-            format!("{} — sandbox environment (testnet / demo), no real funds", venue.label())
-        } else {
-            format!("{} — PRODUCTION account, real funds", venue.label())
-        },
-    );
-    if creds.api_key.is_empty() || creds.api_secret.is_empty() {
-        add_preflight_check(
-            checks, has_fatal, app_handle, bot_id, "live_credentials", "Exchange credentials", "error",
-            "The exchange has no API key and secret stored; add them on the Exchange page.",
-        );
-        return;
-    }
-    let broker = match LiveBroker::new(&creds.provider, &creds.api_key, &creds.api_secret, creds.sandbox) {
+    let broker = match live_broker_for(&creds, run, &bot.pair) {
         Ok(broker) => broker,
         Err(err) => {
-            add_preflight_check(checks, has_fatal, app_handle, bot_id, "live_credentials", "Exchange credentials", "error", err);
+            add_preflight_check(checks, has_fatal, app_handle, bot_id, "live_venue", "Live venue", "error", err);
             return;
         }
     };
+    let venue = broker.label();
+    let sides = if broker.perp() { format!(", long and short at {}x isolated", run.leverage) } else { ", long-only".into() };
+    add_preflight_check(
+        checks, has_fatal, app_handle, bot_id, "live_venue", "Live venue", if creds.sandbox { "ok" } else { "warn" },
+        if creds.sandbox {
+            format!("{venue}{sides} — sandbox environment (testnet / demo), no real funds")
+        } else {
+            format!("{venue}{sides} — PRODUCTION account, real funds")
+        },
+    );
     let quote = bot.pair.split('/').nth(1).unwrap_or("USDT").to_string();
     let available = match broker.available_balance(&quote) {
         Ok(available) => {
             add_preflight_check(
                 checks, has_fatal, app_handle, bot_id, "live_credentials", "Exchange credentials", "ok",
-                format!("Authenticated with {}; {available:.2} {quote} available", venue.label()),
+                format!("Authenticated with {venue}; {available:.2} {quote} available"),
             );
             available
         }
         Err(err) => {
             add_preflight_check(
                 checks, has_fatal, app_handle, bot_id, "live_credentials", "Exchange credentials", "error",
-                format!("Authentication with {} failed: {err}", venue.label()),
+                format!("Authentication with {venue} failed: {err}"),
             );
             return;
         }
@@ -952,17 +995,12 @@ fn connect_live(
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
         load_credentials(&db, account)?
     };
-    let venue = Venue::parse(&creds.provider).ok_or_else(|| {
-        format!("Live order routing is implemented for Binance and Bybit spot; {} bots run in paper mode only.", creds.provider)
-    })?;
-    if creds.api_key.is_empty() || creds.api_secret.is_empty() {
-        return Err("The exchange has no API key and secret stored; add them on the Exchange page.".into());
-    }
-    let broker = LiveBroker::new(&creds.provider, &creds.api_key, &creds.api_secret, creds.sandbox)?;
+    let broker = live_broker_for(&creds, run, &bot.pair)?;
+    let venue = broker.label();
     let quote = bot.pair.split('/').nth(1).unwrap_or("USDT").to_string();
     let available = broker
         .available_balance(&quote)
-        .map_err(|e| format!("Authentication with {} failed: {e}", venue.label()))?;
+        .map_err(|e| format!("Authentication with {venue} failed: {e}"))?;
     if bot.budget > available + 1e-9 {
         return Err(format!(
             "Budget {:.2} {quote} exceeds the {available:.2} {quote} available on the exchange.",
@@ -984,14 +1022,15 @@ fn connect_live(
         Some(&bot.id),
         "warn",
         format!(
-            "LIVE bot on {}{}: budget {:.2} {quote} of {available:.2} available; {} lot step {} {}, minimum order {} {quote}; long-only.",
-            venue.label(),
+            "LIVE bot on {}{}: budget {:.2} {quote} of {available:.2} available; {} lot step {} {}, minimum order {} {quote}; {}.",
+            venue,
             if creds.sandbox { " (sandbox)" } else { " (PRODUCTION)" },
             bot.budget,
             filters.symbol,
             filters.qty_string(filters.qty_step),
             filters.base,
             filters.quote_string(filters.min_notional),
+            if broker.perp() { format!("long and short at {}x isolated", run.leverage) } else { "long-only".into() },
         ),
     );
     Ok((Box::new(broker), filters))
@@ -1285,6 +1324,7 @@ fn start_bot_with(
         broker: live_broker,
         filters: live_filters,
         order_errors: 0,
+        execution_account: (mode == Mode::Live).then(|| run.execution_exchange_id.clone().unwrap_or_else(|| bot.exchange_id.clone())),
     }));
 
     // stdout: the strategy's RPC, with the startup acknowledgement first

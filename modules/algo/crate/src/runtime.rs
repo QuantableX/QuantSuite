@@ -17,7 +17,7 @@
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::broker::{Broker, Fill, SymbolFilters, Venue};
+use crate::broker::{Broker, Fill, SymbolFilters};
 use crate::{ChargedFee, Trade};
 
 /// Trading mode of a runtime.
@@ -147,6 +147,8 @@ pub struct BotRuntime {
     pub filters: Option<SymbolFilters>,
     /// Live orders the venue refused in a row; a fill resets it.
     pub order_errors: usize,
+    /// The account a live bot's orders go to (its funding is booked there).
+    pub execution_account: Option<String>,
 }
 
 impl std::fmt::Debug for BotRuntime {
@@ -164,7 +166,7 @@ impl std::fmt::Debug for BotRuntime {
             .field("slippage_pct", &self.slippage_pct)
             .field("risk_per_trade", &self.risk_per_trade)
             .field("max_positions", &self.max_positions)
-            .field("broker", &self.broker.as_ref().map(|b| b.venue()))
+            .field("broker", &self.broker.as_ref().map(|b| b.label()))
             .field("filters", &self.filters)
             .finish()
     }
@@ -223,8 +225,19 @@ impl BotRuntime {
         self.pair.split('/').next().unwrap_or("").to_string()
     }
 
-    pub fn venue(&self) -> Option<Venue> {
-        self.broker.as_ref().map(|b| b.venue())
+    pub fn venue(&self) -> Option<String> {
+        self.broker.as_ref().map(|b| b.label())
+    }
+
+    /// The bot trades perp live (shorts allowed, funding booked).
+    pub fn live_perp(&self) -> bool {
+        self.mode == Mode::Live && self.broker.as_ref().is_some_and(|b| b.perp())
+    }
+
+    /// A funding payment on the bot's position: into its cash, so equity
+    /// and stats show the real cost (Venues 4/5).
+    pub fn book_funding(&mut self, usd: f64) {
+        self.balance += usd;
     }
 
     pub fn balance_json(&self) -> Value {
@@ -454,7 +467,11 @@ impl BotRuntime {
             .collect();
         for idx in indices.into_iter().rev() {
             if self.mode == Mode::Live {
-                self.sell_live(idx, now, &mut effects);
+                if self.open_positions[idx].side == "short" {
+                    self.cover_live(idx, now, &mut effects);
+                } else {
+                    self.sell_live(idx, now, &mut effects);
+                }
                 continue;
             }
             let side_long = self.open_positions[idx].side == "long";
@@ -537,6 +554,9 @@ impl BotRuntime {
                 message: "Live order routing is not connected for this bot; the order was not sent.".into(),
             });
             return effects;
+        }
+        if self.live_perp() {
+            return self.place_live_perp(req, now, filters);
         }
         let long_idx = self
             .open_positions
@@ -624,6 +644,210 @@ impl BotRuntime {
                 effects
             }
         }
+    }
+
+    /// Perp (Venues 4/5): the paper rules live — a sell closes a long or
+    /// opens a short, a buy covers a short or opens a long, `reverse` does
+    /// both. A close that does not go through leaves the other side unopened.
+    fn place_live_perp(&mut self, req: OrderRequest, now: &str, filters: SymbolFilters) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        let opening = req.side.opens();
+        let opposing = req.side.closes();
+        let same = |p: &Position, side: &str| p.pair == req.pair && p.side == side;
+        let opposing_idx = self.open_positions.iter().position(|p| same(p, opposing));
+        if opposing_idx.is_none() && self.open_positions.iter().any(|p| same(p, opening)) {
+            effects.push(Effect::Log {
+                level: "warn",
+                message: format!("One open {opening} position per pair is supported; skipping duplicate {} signal.", req.pair),
+            });
+            return effects;
+        }
+        if let Some(idx) = opposing_idx {
+            if opposing == "long" {
+                self.sell_live(idx, now, &mut effects);
+            } else {
+                self.cover_live(idx, now, &mut effects);
+            }
+            let still_open = self.open_positions.iter().any(|p| same(p, opposing));
+            if still_open || !req.reverse {
+                effects.push(Effect::Equity);
+                return effects;
+            }
+        }
+        if self.open_positions.len() >= self.max_positions {
+            effects.push(Effect::Log {
+                level: "warn",
+                message: format!("Max positions ({}) reached, skipping {opening} entry.", self.max_positions),
+            });
+            effects.push(Effect::Equity);
+            return effects;
+        }
+        let price = self.last_price.max(0.0001);
+        let wanted = if req.quantity > 0.0 {
+            req.quantity * price
+        } else if let Some(fraction) = req.position_size {
+            self.balance * fraction
+        } else {
+            self.balance * self.risk_per_trade / 100.0
+        };
+        let quote_amount = wanted.min(self.balance);
+        let quote = self.quote_asset();
+        if quote_amount < filters.min_notional || quote_amount <= 0.0 {
+            effects.push(Effect::Log {
+                level: "warn",
+                message: format!(
+                    "Budget left for this order ({quote_amount:.2} {quote}) is below the venue minimum of {:.2} {quote}; {opening} skipped.",
+                    filters.min_notional
+                ),
+            });
+            effects.push(Effect::Equity);
+            return effects;
+        }
+        let result = self
+            .broker
+            .as_ref()
+            .map(|b| if opening == "long" { b.market_buy(&filters, quote_amount) } else { b.open_short(&filters, quote_amount / price) })
+            .unwrap_or_else(|| Err("no broker".into()));
+        match result {
+            Ok(fill) => {
+                self.order_errors = 0;
+                if opening == "long" {
+                    self.book_live_entry(fill, now, &mut effects);
+                } else {
+                    self.book_live_short(fill, now, &mut effects);
+                }
+            }
+            Err(e) => {
+                effects.push(Effect::Log {
+                    level: "error",
+                    message: format!("Live {opening} of {quote_amount:.2} {quote} on {} rejected: {e}", req.pair),
+                });
+                self.order_error(&e, &mut effects);
+            }
+        }
+        effects.push(Effect::Equity);
+        effects
+    }
+
+    /// Book a live short: its notional is set aside as margin (1x, like
+    /// paper), the fee leaves the cash.
+    fn book_live_short(&mut self, fill: Fill, now: &str, effects: &mut Vec<Effect>) {
+        let quote = self.quote_asset();
+        self.balance -= fill.quote_amount + fill.fee_from_cash(&quote);
+        let position = Position {
+            id: Uuid::new_v4().to_string(),
+            pair: self.pair.clone(),
+            side: "short".into(),
+            entry_price: fill.avg_price,
+            quantity: fill.base_qty,
+            entry_fee: fill.fee_quote,
+            reserved_margin: fill.quote_amount,
+            entry_time: now.to_string(),
+            entry_order_id: Some(fill.order_id.clone()),
+            entry_fees: vec![ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }],
+        };
+        let row = self.trade_row(&position, None, None, None, fill.fee_quote, None, None);
+        effects.push(Effect::Trade(Box::new(row)));
+        effects.push(Effect::Notify {
+            trade_id: position.id.clone(),
+            pair: position.pair.clone(),
+            side: "short".into(),
+            price: fill.avg_price,
+            quantity: fill.base_qty,
+            pnl: 0.0,
+            action: "open",
+        });
+        effects.push(Effect::Log {
+            level: "trade",
+            message: format!(
+                "LIVE shorted {} {} at {:.4} ({:.2} {quote}, fee {:.6} {}) — order {}",
+                self.filters.as_ref().map(|f| f.qty_string(fill.base_qty)).unwrap_or_else(|| format!("{:.6}", fill.base_qty)),
+                self.base_asset(),
+                fill.avg_price,
+                fill.quote_amount,
+                fill.fee_amount,
+                fill.fee_asset,
+                fill.order_id
+            ),
+        });
+        self.open_positions.push(position);
+    }
+
+    /// Buy back a live short, reduce-only. A partial cover keeps the rest of
+    /// the short open with its share of the margin.
+    fn cover_live(&mut self, idx: usize, now: &str, effects: &mut Vec<Effect>) {
+        let (Some(filters), Some(broker)) = (self.filters.clone(), self.broker.as_ref()) else {
+            effects.push(Effect::Log {
+                level: "error",
+                message: "Live order routing is not connected for this bot; the short stays open.".into(),
+            });
+            return;
+        };
+        let position = self.open_positions[idx].clone();
+        let fill = match broker.close_short(&filters, position.quantity) {
+            Ok(fill) => fill,
+            Err(e) => {
+                effects.push(Effect::Log {
+                    level: "error",
+                    message: format!("Live cover of {} {} rejected: {e}; the short stays open.", filters.qty_string(position.quantity), self.base_asset()),
+                });
+                self.order_error(&e, effects);
+                return;
+            }
+        };
+        self.order_errors = 0;
+        let quote = self.quote_asset();
+        let qty = fill.base_qty.min(position.quantity);
+        let share = if position.quantity > 0.0 { qty / position.quantity } else { 1.0 };
+        let margin = position.reserved_margin * share;
+        let entry_fee = position.entry_fee * share;
+        let total_fee = entry_fee + fill.fee_quote;
+        let pnl = (position.entry_price - fill.avg_price) * qty - total_fee;
+        self.balance += margin + (position.entry_price - fill.avg_price) * qty - fill.fee_from_cash(&quote);
+        let left = position.quantity - qty;
+        let mut closed = position.clone();
+        closed.quantity = qty;
+        closed.entry_fee = entry_fee;
+        if left > filters.qty_step.max(1e-12) {
+            // The rest is still short on the venue: it stays a position.
+            let rest = &mut self.open_positions[idx];
+            rest.quantity = left;
+            rest.reserved_margin -= margin;
+            rest.entry_fee -= entry_fee;
+            rest.id = Uuid::new_v4().to_string();
+        } else {
+            self.open_positions.remove(idx);
+        }
+        let row = self.trade_row(
+            &closed,
+            Some(fill.avg_price),
+            Some(now.to_string()),
+            Some(pnl),
+            total_fee,
+            Some(&fill.order_id),
+            Some(ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }),
+        );
+        effects.push(Effect::Trade(Box::new(row)));
+        effects.push(Effect::Notify {
+            trade_id: closed.id.clone(),
+            pair: closed.pair.clone(),
+            side: "short".into(),
+            price: fill.avg_price,
+            quantity: qty,
+            pnl,
+            action: "close",
+        });
+        effects.push(Effect::Log {
+            level: "trade",
+            message: format!(
+                "LIVE covered {} {} at {:.4} — PnL {pnl:+.2}{} — order {}",
+                filters.qty_string(qty),
+                self.base_asset(),
+                fill.avg_price,
+                if left > filters.qty_step.max(1e-12) { format!("; {} still short", filters.qty_string(left)) } else { String::new() },
+                fill.order_id
+            ),
+        });
     }
 
     /// Market-sell `open_positions[idx]` through the broker and book the fill.
@@ -798,6 +1022,7 @@ mod tests {
             broker: None,
             filters: None,
             order_errors: 0,
+            execution_account: None,
         }
     }
 
@@ -950,17 +1175,27 @@ mod tests {
     struct MockBroker {
         fills: RefCell<VecDeque<Result<Fill, String>>>,
         calls: RefCell<Vec<String>>,
+        perp: bool,
     }
 
     impl MockBroker {
         fn new(fills: Vec<Result<Fill, String>>) -> Self {
-            Self { fills: RefCell::new(fills.into()), calls: RefCell::new(Vec::new()) }
+            Self { fills: RefCell::new(fills.into()), calls: RefCell::new(Vec::new()), perp: false }
         }
     }
 
     impl Broker for MockBroker {
-        fn venue(&self) -> Venue { Venue::Binance }
+        fn label(&self) -> String { "Binance spot (mock)".into() }
         fn sandbox(&self) -> bool { true }
+        fn perp(&self) -> bool { self.perp }
+        fn open_short(&self, f: &SymbolFilters, base_qty: f64) -> Result<Fill, String> {
+            self.calls.borrow_mut().push(format!("short {}", f.qty_string(f.round_qty_down(base_qty))));
+            self.fills.borrow_mut().pop_front().unwrap_or_else(|| Err("no scripted fill".into()))
+        }
+        fn close_short(&self, f: &SymbolFilters, base_qty: f64) -> Result<Fill, String> {
+            self.calls.borrow_mut().push(format!("cover {}", f.qty_string(f.round_qty_down(base_qty))));
+            self.fills.borrow_mut().pop_front().unwrap_or_else(|| Err("no scripted fill".into()))
+        }
         fn symbol_filters(&self, _pair: &str) -> Result<SymbolFilters, String> { Ok(filters()) }
         fn available_balance(&self, _asset: &str) -> Result<f64, String> { Ok(1_000.0) }
         fn market_buy(&self, f: &SymbolFilters, quote_amount: f64) -> Result<Fill, String> {
@@ -1130,6 +1365,49 @@ mod tests {
         assert!(rt.open_positions.is_empty(), "the long was closed");
         assert!(logs(&effects).iter().any(|l| l.contains("no short was opened")));
         assert_eq!(calls(&rt).len(), 2, "one buy, one sell, never a short");
+    }
+
+    fn perp_fill(id: &str, price: f64, qty: f64) -> Fill {
+        Fill {
+            order_id: id.into(),
+            avg_price: price,
+            base_qty: qty,
+            base_received: qty,
+            quote_amount: price * qty,
+            fee_quote: price * qty * 0.00045,
+            fee_asset: "USDT".into(),
+            fee_amount: price * qty * 0.00045,
+            fee_estimated: false,
+        }
+    }
+
+    #[test]
+    fn a_live_perp_bot_shorts_covers_and_reverses() {
+        // Scripted fills: the short, its cover at a lower price, the long.
+        let mut rt = live_runtime(Vec::new());
+        rt.broker = Some(Box::new(MockBroker {
+            fills: RefCell::new(
+                vec![Ok(perp_fill("s1", 64_000.0, 0.0015)), Ok(perp_fill("c1", 60_000.0, 0.0015)), Ok(perp_fill("l1", 60_000.0, 0.0016))].into(),
+            ),
+            calls: RefCell::new(Vec::new()),
+            perp: true,
+        }));
+        rt.place(sell(0.0), "t0");
+        assert_eq!(rt.open_positions.len(), 1);
+        assert_eq!(rt.open_positions[0].side, "short");
+        let margin = rt.open_positions[0].reserved_margin;
+        assert!((margin - 96.0).abs() < 1e-9, "1x: the notional is set aside");
+        let cash_after_open = rt.balance;
+        // A buy with reverse covers the short (reduce-only) and opens a long.
+        rt.place(OrderRequest { side: OrderSide::Buy, pair: "BTC/USDT".into(), quantity: 0.0, position_size: None, reverse: true }, "t1");
+        let calls = calls(&rt);
+        assert!(calls[0].starts_with("short ") && calls[1].starts_with("cover ") && calls[2].starts_with("buy "), "{calls:?}");
+        assert_eq!(rt.open_positions.len(), 1);
+        assert_eq!(rt.open_positions[0].side, "long");
+        // Short PnL: (64,000 − 60,000) × 0.0015 = 6 less the two fees.
+        let back = margin + 6.0 - 60_000.0 * 0.0015 * 0.00045;
+        assert!((rt.balance - (cash_after_open + back - 96.0 - 96.0 * 0.00045)).abs() < 1e-6, "{}", rt.balance);
+        assert!(rt.live_perp());
     }
 
     #[test]
