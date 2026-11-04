@@ -438,6 +438,8 @@ fn parse_backtest_output(
                             backtest_id: Some(backtest_id.to_string()),
                             notes: None,
                             created_at: created_at.to_string(),
+                            source: None,
+                            fees: Vec::new(),
                         }
                     })
                     .collect::<Vec<_>>();

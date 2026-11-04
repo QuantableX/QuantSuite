@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::broker::{Broker, Fill, SymbolFilters, Venue};
-use crate::Trade;
+use crate::{ChargedFee, Trade};
 
 /// Trading mode of a runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +59,8 @@ pub struct Position {
     pub entry_time: String,
     /// The venue's order id of the entry (live bots).
     pub entry_order_id: Option<String>,
+    /// The entry fee in the asset it was charged in.
+    pub entry_fees: Vec<ChargedFee>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -251,10 +253,11 @@ impl BotRuntime {
     pub fn open_trades(&self) -> Vec<Trade> {
         self.open_positions
             .iter()
-            .map(|p| self.trade_row(p, None, None, None, p.entry_fee, None))
+            .map(|p| self.trade_row(p, None, None, None, p.entry_fee, None, None))
             .collect()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn trade_row(
         &self,
         position: &Position,
@@ -263,7 +266,10 @@ impl BotRuntime {
         pnl: Option<f64>,
         fee: f64,
         exit_order_id: Option<&str>,
+        exit_fee: Option<ChargedFee>,
     ) -> Trade {
+        let mut fees = position.entry_fees.clone();
+        fees.extend(exit_fee.filter(|f| f.amount > 0.0));
         let notes = match (&position.entry_order_id, exit_order_id) {
             (Some(entry), Some(exit)) => Some(format!("live · entry order {entry} · exit order {exit}")),
             (Some(entry), None) => Some(format!("live · entry order {entry}")),
@@ -289,6 +295,8 @@ impl BotRuntime {
             backtest_id: None,
             notes,
             created_at: position.entry_time.clone(),
+            source: Some(format!("bot:{}", self.bot_id)),
+            fees,
         }
     }
 
@@ -403,8 +411,9 @@ impl BotRuntime {
             reserved_margin: if opening == "short" { notional } else { 0.0 },
             entry_time: now.to_string(),
             entry_order_id: None,
+            entry_fees: vec![ChargedFee { asset: self.quote_asset(), amount: entry_fee }],
         };
-        let row = self.trade_row(&position, None, None, None, entry_fee, None);
+        let row = self.trade_row(&position, None, None, None, entry_fee, None, None);
         effects.push(Effect::Trade(Box::new(row)));
         effects.push(Effect::Notify {
             trade_id: position.id.clone(),
@@ -470,7 +479,8 @@ impl BotRuntime {
                 + (position.entry_price - price) * position.quantity
                 - exit_fee;
         }
-        let row = self.trade_row(&position, Some(price), Some(now.to_string()), Some(pnl), total_fee, None);
+        let exit_charge = ChargedFee { asset: self.quote_asset(), amount: exit_fee };
+        let row = self.trade_row(&position, Some(price), Some(now.to_string()), Some(pnl), total_fee, None, Some(exit_charge));
         effects.push(Effect::Trade(Box::new(row)));
         effects.push(Effect::Notify {
             trade_id: position.id.clone(),
@@ -648,8 +658,9 @@ impl BotRuntime {
             reserved_margin: 0.0,
             entry_time: now.to_string(),
             entry_order_id: Some(fill.order_id.clone()),
+            entry_fees: vec![ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }],
         };
-        let row = self.trade_row(&position, None, None, None, fill.fee_quote, None);
+        let row = self.trade_row(&position, None, None, None, fill.fee_quote, None, None);
         effects.push(Effect::Trade(Box::new(row)));
         effects.push(Effect::Notify {
             trade_id: position.id.clone(),
@@ -696,6 +707,7 @@ impl BotRuntime {
             Some(pnl),
             total_fee,
             Some(&fill.order_id),
+            Some(ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }),
         );
         effects.push(Effect::Trade(Box::new(row)));
         effects.push(Effect::Notify {

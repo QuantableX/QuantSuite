@@ -1,11 +1,17 @@
-//! Live order routing (PLAN-QUANTALGO §4) — Tauri-free.
+//! Live order routing for bots (PLAN-QUANTALGO §4) — Tauri-free.
 //!
 //! One [`Broker`] per live bot, built from the exchange's stored credentials:
 //! symbol filters (lot step, minimum quantity and notional), the available
-//! quote balance, and market buys/sells whose fills come back normalised to
-//! one [`Fill`] shape whatever the venue's fee convention. Binance spot and
+//! quote balance, and buys/sells whose fills come back normalised to one
+//! [`Fill`] shape whatever the venue's fee convention. Binance spot and
 //! Bybit spot (v5, unified account) are the venues with routing; the other
 //! providers stay paper-only and the preflight says so.
+//!
+//! Since the execution core (PLAN-AUTO-EXECUTION §2.2) the venues are
+//! [`crate::execution::cex::CexVenue`]s and a bot's "market" order goes out
+//! the core's way: an IOC limit at the slippage cap with our client order id,
+//! looked up by that id when the answer is lost, a partial fill retried up to
+//! three times. The bot runtime keeps this narrow interface.
 //!
 //! Private calls go to the venue's sandbox when the exchange row says so
 //! (Binance spot testnet, Bybit demo trading); public market data always
@@ -15,11 +21,15 @@
 use hmac::{Hmac, Mac};
 use serde_json::Value;
 use sha2::Sha256;
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(test)]
 use std::time::Duration;
+
+use crate::execution::cex::CexVenue;
+use crate::execution::venue::{free_balance, ExecutionVenue, Instrument, OrderReport, OrderRequest, OrderStatus, Side};
 
 type HmacSha256 = Hmac<Sha256>;
 
-const RECV_WINDOW_MS: &str = "10000";
 /// A fee charged in an asset that is neither base nor quote (Binance's BNB
 /// discount) cannot be read off the fill; it is valued at Binance's standard
 /// BNB-discounted taker rate and flagged as an estimate.
@@ -75,7 +85,7 @@ impl Venue {
 
 /// What the venue allows for a symbol — every order is rounded and checked
 /// against this before it is sent.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SymbolFilters {
     pub symbol: String,
     pub base: String,
@@ -322,290 +332,150 @@ pub fn normalize_bybit_order(row: &Value, filters: &SymbolFilters) -> Result<Fil
 // The live broker
 // ---------------------------------------------------------------------------
 
+/// A live bot's [`Broker`] over a [`CexVenue`].
 pub struct LiveBroker {
-    venue: Venue,
-    api_key: String,
-    api_secret: String,
-    sandbox: bool,
-    client: reqwest::blocking::Client,
+    venue: CexVenue,
+    /// The IOC cap against the best price (the core's default 0.5 %).
+    pub max_slippage: f64,
+    tag: String,
+    sent: AtomicU64,
 }
 
 impl LiveBroker {
     pub fn new(provider: &str, api_key: &str, api_secret: &str, sandbox: bool) -> Result<Self, String> {
-        let venue = Venue::parse(provider)
-            .ok_or_else(|| format!("Live order routing is implemented for Binance and Bybit spot, not {provider}."))?;
-        let client = reqwest::blocking::Client::builder()
-            .user_agent(concat!("QuantSuite/", env!("CARGO_PKG_VERSION"), " (QuantAlgo)"))
-            .timeout(Duration::from_secs(20))
-            .build()
-            .map_err(|e| format!("HTTP client: {e}"))?;
         Ok(Self {
-            venue,
-            api_key: api_key.to_string(),
-            api_secret: api_secret.to_string(),
-            sandbox,
-            client,
+            venue: CexVenue::new(provider, api_key, api_secret, sandbox)?,
+            max_slippage: crate::execution::guards::GuardConfig::default().max_slippage,
+            tag: uuid::Uuid::new_v4().simple().to_string()[..10].to_string(),
+            sent: AtomicU64::new(0),
         })
     }
 
-    fn has_keys(&self) -> Result<(), String> {
-        if self.api_key.is_empty() || self.api_secret.is_empty() {
-            return Err("The exchange has no API key and secret stored; live trading needs both.".into());
-        }
-        Ok(())
+    /// Unique per order: `qsb` + this broker's tag + a counter.
+    fn next_id(&self) -> String {
+        format!("qsb{}-{:04}", self.tag, self.sent.fetch_add(1, Ordering::Relaxed) + 1)
     }
 
-    fn server_time_ms(&self) -> i64 {
-        let fallback = chrono::Utc::now().timestamp_millis();
-        let url = match self.venue {
-            Venue::Binance => format!("{}/api/v3/time", self.venue.public_base()),
-            Venue::Bybit => format!("{}/v5/market/time", self.venue.public_base()),
+    /// One IOC order. An error from the venue is looked up by client id
+    /// before it counts — the order may have gone through.
+    fn send(&self, order: &OrderRequest) -> Result<OrderReport, String> {
+        match self.venue.place(order) {
+            Ok(report) => Ok(report),
+            Err(e) => match self.venue.query_by_client_id(&order.instrument, &order.client_order_id) {
+                Ok(Some(report)) => Ok(report),
+                Ok(None) => Err(e),
+                Err(e2) => Err(format!(
+                    "{e}; the outcome of order {} is unknown (the lookup failed: {e2}) — check the exchange",
+                    order.client_order_id
+                )),
+            },
+        }
+    }
+
+    fn priced(&self, inst: &Instrument, side: Side) -> Result<(crate::execution::venue::OrderBook, f64, f64), String> {
+        let book = self.venue.order_book(inst)?;
+        let best = match side {
+            Side::Buy => book.best_ask(),
+            Side::Sell => book.best_bid(),
+        }
+        .ok_or_else(|| format!("{}: the order book is empty", inst.pair()))?;
+        let cap = match side {
+            Side::Buy => best * (1.0 + self.max_slippage),
+            Side::Sell => best * (1.0 - self.max_slippage),
         };
-        let body: Option<Value> = self.client.get(&url).send().ok().and_then(|r| r.json().ok());
-        match (self.venue, body) {
-            (Venue::Binance, Some(j)) => j.get("serverTime").and_then(|v| v.as_i64()).unwrap_or(fallback),
-            (Venue::Bybit, Some(j)) => j
-                .pointer("/result/timeSecond")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<f64>().ok())
-                .map(|s| (s * 1000.0) as i64)
-                .or_else(|| j.get("time").and_then(|v| v.as_i64()))
-                .unwrap_or(fallback),
-            _ => fallback,
-        }
+        Ok((book, best, inst.round_price(cap, side)))
     }
 
-    // ── Binance ──
-
-    fn binance_signed(&self, method: reqwest::Method, path: &str, params: &[(&str, String)]) -> Result<Value, String> {
-        self.has_keys()?;
-        let ts = self.server_time_ms().to_string();
-        let mut query: Vec<String> = params.iter().map(|(k, v)| format!("{k}={v}")).collect();
-        query.push(format!("recvWindow={RECV_WINDOW_MS}"));
-        query.push(format!("timestamp={ts}"));
-        let query = query.join("&");
-        let signature = binance_signature(&self.api_secret, &query);
-        let url = format!("{}{path}?{query}&signature={signature}", self.venue.private_base(self.sandbox));
-        let resp = self
-            .client
-            .request(method, &url)
-            .header("X-MBX-APIKEY", &self.api_key)
-            .send()
-            .map_err(|e| format!("Binance request failed: {e}"))?;
-        let status = resp.status();
-        let body: Value = resp.json().unwrap_or(Value::Null);
-        if !status.is_success() {
-            let msg = body.get("msg").and_then(|v| v.as_str()).unwrap_or("request rejected");
-            let code = body.get("code").and_then(|v| v.as_i64()).unwrap_or(0);
-            return Err(format!("Binance {status} ({code}): {msg}"));
-        }
-        Ok(body)
-    }
-
-    fn binance_filters(&self, pair: &str) -> Result<SymbolFilters, String> {
-        let symbol = self.venue.symbol(pair);
-        let url = format!("{}/api/v3/exchangeInfo", self.venue.public_base());
-        let body: Value = self
-            .client
-            .get(&url)
-            .query(&[("symbol", symbol.as_str())])
-            .send()
-            .map_err(|e| format!("Binance exchangeInfo: {e}"))?
-            .json()
-            .map_err(|e| format!("Binance exchangeInfo parse: {e}"))?;
-        let sym = body
-            .get("symbols")
-            .and_then(|v| v.as_array())
-            .and_then(|a| a.first())
-            .ok_or_else(|| format!("Binance does not list {pair} ({symbol})"))?;
-        let mut filters = SymbolFilters {
-            symbol: symbol.clone(),
-            base: sym.get("baseAsset").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            quote: sym.get("quoteAsset").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            qty_step: 0.0,
-            min_qty: 0.0,
-            min_notional: 0.0,
-            price_tick: 0.0,
-        };
-        for filter in sym.get("filters").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
-            match filter.get("filterType").and_then(|v| v.as_str()).unwrap_or("") {
-                "LOT_SIZE" => {
-                    filters.qty_step = f(&filter["stepSize"]);
-                    filters.min_qty = f(&filter["minQty"]);
+    /// Fill `amount` — quote to spend on a buy, base to sell — in up to four
+    /// IOC attempts at the cap; one [`Fill`] for all of them.
+    fn fill(&self, filters: &SymbolFilters, side: Side, amount: f64) -> Result<Fill, String> {
+        let inst = Instrument::spot(filters.clone());
+        let mut reports: Vec<OrderReport> = Vec::new();
+        let mut left = amount;
+        for _ in 0..=crate::execution::engine::MAX_RETRIES {
+            let (book, best, limit) = self.priced(&inst, side)?;
+            let qty = match side {
+                // 0.1 % room for a move between reading the book and the order.
+                Side::Buy => filters.round_qty_down(book.walk_buy_quote(left / 1.001, Some(limit)).base),
+                Side::Sell => filters.round_qty_down(left),
+            };
+            if !inst.tradable(qty, best) {
+                break;
+            }
+            let order = OrderRequest {
+                client_order_id: self.next_id(),
+                instrument: inst.clone(),
+                side,
+                qty,
+                limit_price: limit,
+                reduce_only: false,
+            };
+            let report = match self.send(&order) {
+                Ok(report) => report,
+                Err(e) if reports.is_empty() => return Err(e),
+                Err(_) => break,
+            };
+            if report.status == OrderStatus::Rejected {
+                if reports.is_empty() {
+                    return Err(report.message.unwrap_or_else(|| "rejected".into()));
                 }
-                "NOTIONAL" | "MIN_NOTIONAL" => {
-                    filters.min_notional = filters.min_notional.max(f(&filter["minNotional"]));
-                }
-                "PRICE_FILTER" => filters.price_tick = f(&filter["tickSize"]),
-                _ => {}
+                break;
+            }
+            left -= match side {
+                Side::Buy => report.quote_amount + report.fee_in(&filters.quote),
+                Side::Sell => report.filled_qty,
+            };
+            let done = report.status == OrderStatus::Filled;
+            if report.filled_qty > 0.0 {
+                reports.push(report);
+            }
+            if done {
+                break;
             }
         }
-        if filters.qty_step <= 0.0 {
-            return Err(format!("Binance returned no LOT_SIZE filter for {symbol}"));
-        }
-        Ok(filters)
+        merge_reports(&reports).ok_or_else(|| {
+            format!("nothing filled within the {:.2} % slippage cap", self.max_slippage * 100.0)
+        })
     }
+}
 
-    fn binance_balance(&self, asset: &str) -> Result<f64, String> {
-        let body = self.binance_signed(reqwest::Method::GET, "/api/v3/account", &[])?;
-        Ok(body
-            .get("balances")
-            .and_then(|v| v.as_array())
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|b| b.get("asset").and_then(|v| v.as_str()).map(|a| a.eq_ignore_ascii_case(asset)).unwrap_or(false))
-            })
-            .map(|b| f(&b["free"]))
-            .unwrap_or(0.0))
+/// Several IOC fills of one bot order as one [`Fill`].
+pub fn merge_reports(reports: &[OrderReport]) -> Option<Fill> {
+    let first = reports.first()?;
+    let base_qty: f64 = reports.iter().map(|r| r.filled_qty).sum();
+    let quote_amount: f64 = reports.iter().map(|r| r.quote_amount).sum();
+    if base_qty <= 0.0 {
+        return None;
     }
-
-    fn binance_order(&self, filters: &SymbolFilters, side: &str, params: Vec<(&str, String)>, test: bool) -> Result<Value, String> {
-        let mut all: Vec<(&str, String)> = vec![
-            ("symbol", filters.symbol.clone()),
-            ("side", side.to_string()),
-            ("type", "MARKET".to_string()),
-        ];
-        all.extend(params);
-        all.push(("newOrderRespType", "FULL".to_string()));
-        let path = if test { "/api/v3/order/test" } else { "/api/v3/order" };
-        self.binance_signed(reqwest::Method::POST, path, &all)
-    }
-
-    // ── Bybit ──
-
-    fn bybit_signed(&self, method: reqwest::Method, path: &str, query: Option<&str>, body: Option<&Value>) -> Result<Value, String> {
-        self.has_keys()?;
-        let ts = self.server_time_ms().to_string();
-        let payload = match (query, body) {
-            (Some(q), _) => q.to_string(),
-            (None, Some(b)) => b.to_string(),
-            (None, None) => String::new(),
-        };
-        let signature = bybit_signature(&self.api_secret, &ts, &self.api_key, RECV_WINDOW_MS, &payload);
-        let url = match query {
-            Some(q) => format!("{}{path}?{q}", self.venue.private_base(self.sandbox)),
-            None => format!("{}{path}", self.venue.private_base(self.sandbox)),
-        };
-        let mut req = self
-            .client
-            .request(method, &url)
-            .header("X-BAPI-API-KEY", &self.api_key)
-            .header("X-BAPI-TIMESTAMP", &ts)
-            .header("X-BAPI-SIGN", &signature)
-            .header("X-BAPI-RECV-WINDOW", RECV_WINDOW_MS)
-            .header("X-BAPI-SIGN-TYPE", "2");
-        if let Some(b) = body {
-            req = req.header("Content-Type", "application/json").body(b.to_string());
-        }
-        let resp = req.send().map_err(|e| format!("Bybit request failed: {e}"))?;
-        let status = resp.status();
-        let json: Value = resp.json().unwrap_or(Value::Null);
-        let ret_code = json.get("retCode").and_then(|v| v.as_i64()).unwrap_or(-1);
-        if !status.is_success() || ret_code != 0 {
-            let msg = json.get("retMsg").and_then(|v| v.as_str()).unwrap_or("request rejected");
-            return Err(format!("Bybit {status} ({ret_code}): {msg}"));
-        }
-        Ok(json)
-    }
-
-    fn bybit_filters(&self, pair: &str) -> Result<SymbolFilters, String> {
-        let symbol = self.venue.symbol(pair);
-        let url = format!("{}/v5/market/instruments-info", self.venue.public_base());
-        let body: Value = self
-            .client
-            .get(&url)
-            .query(&[("category", "spot"), ("symbol", symbol.as_str())])
-            .send()
-            .map_err(|e| format!("Bybit instruments-info: {e}"))?
-            .json()
-            .map_err(|e| format!("Bybit instruments-info parse: {e}"))?;
-        let row = body
-            .pointer("/result/list")
-            .and_then(|v| v.as_array())
-            .and_then(|a| a.first())
-            .ok_or_else(|| format!("Bybit does not list {pair} ({symbol})"))?;
-        let lot = row.get("lotSizeFilter").cloned().unwrap_or(Value::Null);
-        let filters = SymbolFilters {
-            symbol: symbol.clone(),
-            base: row.get("baseCoin").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            quote: row.get("quoteCoin").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            qty_step: f(&lot["basePrecision"]),
-            min_qty: f(&lot["minOrderQty"]),
-            min_notional: f(&lot["minOrderAmt"]),
-            price_tick: f(&row["priceFilter"]["tickSize"]),
-        };
-        if filters.qty_step <= 0.0 {
-            return Err(format!("Bybit returned no lot size for {symbol}"));
-        }
-        Ok(filters)
-    }
-
-    fn bybit_balance(&self, asset: &str) -> Result<f64, String> {
-        let query = format!("accountType=UNIFIED&coin={}", asset.to_uppercase());
-        let body = self.bybit_signed(reqwest::Method::GET, "/v5/account/wallet-balance", Some(&query), None)?;
-        let mut available = 0.0;
-        for account in body.pointer("/result/list").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
-            for coin in account.get("coin").and_then(|v| v.as_array()).cloned().unwrap_or_default() {
-                if coin.get("coin").and_then(|v| v.as_str()).map(|c| c.eq_ignore_ascii_case(asset)).unwrap_or(false) {
-                    // `availableToWithdraw` is empty on some accounts; the wallet
-                    // balance minus locked is the spendable amount.
-                    let avail = f(&coin["availableToWithdraw"]);
-                    available = if avail > 0.0 {
-                        avail
-                    } else {
-                        (f(&coin["walletBalance"]) - f(&coin["locked"])).max(0.0)
-                    };
-                }
-            }
-        }
-        Ok(available)
-    }
-
-    fn bybit_order_row(&self, symbol: &str, order_id: &str) -> Result<Value, String> {
-        // A market order fills at once; the realtime endpoint may still lag a
-        // moment behind the create call.
-        let query = format!("category=spot&symbol={symbol}&orderId={order_id}");
-        let mut last = Value::Null;
-        for _ in 0..8 {
-            let body = self.bybit_signed(reqwest::Method::GET, "/v5/order/realtime", Some(&query), None)
-                .or_else(|_| self.bybit_signed(reqwest::Method::GET, "/v5/order/history", Some(&query), None))?;
-            if let Some(row) = body.pointer("/result/list").and_then(|v| v.as_array()).and_then(|a| a.first()) {
-                last = row.clone();
-                let status = row.get("orderStatus").and_then(|v| v.as_str()).unwrap_or("");
-                if matches!(status, "Filled" | "PartiallyFilledCanceled" | "Cancelled" | "Rejected") {
-                    return Ok(last);
-                }
-            }
-            std::thread::sleep(Duration::from_millis(250));
-        }
-        if last.is_null() {
-            return Err(format!("Bybit order {order_id} not found after placing it"));
-        }
-        Ok(last)
-    }
+    Some(Fill {
+        order_id: reports.iter().map(|r| r.venue_order_id.as_str()).collect::<Vec<_>>().join(","),
+        avg_price: quote_amount / base_qty,
+        base_qty,
+        base_received: reports.iter().map(|r| r.base_received).sum(),
+        quote_amount,
+        fee_quote: reports.iter().map(|r| r.fee_quote).sum(),
+        fee_asset: first.fee_asset.clone(),
+        fee_amount: reports.iter().filter(|r| r.fee_asset.eq_ignore_ascii_case(&first.fee_asset)).map(|r| r.fee_amount).sum(),
+        fee_estimated: reports.iter().any(|r| r.fee_estimated),
+    })
 }
 
 impl Broker for LiveBroker {
     fn venue(&self) -> Venue {
-        self.venue
+        self.venue.venue()
     }
 
     fn sandbox(&self) -> bool {
-        self.sandbox
+        self.venue.sandbox()
     }
 
     fn symbol_filters(&self, pair: &str) -> Result<SymbolFilters, String> {
-        match self.venue {
-            Venue::Binance => self.binance_filters(pair),
-            Venue::Bybit => self.bybit_filters(pair),
-        }
+        self.venue.instrument(pair).map(|i| i.filters)
     }
 
     fn available_balance(&self, asset: &str) -> Result<f64, String> {
-        match self.venue {
-            Venue::Binance => self.binance_balance(asset),
-            Venue::Bybit => self.bybit_balance(asset),
-        }
+        self.venue.ready()?;
+        Ok(free_balance(&self.venue.balances()?, asset))
     }
 
     fn market_buy(&self, filters: &SymbolFilters, quote_amount: f64) -> Result<Fill, String> {
@@ -615,26 +485,8 @@ impl Broker for LiveBroker {
                 filters.quote_string(quote_amount), filters.quote_string(filters.min_notional), filters.quote
             ));
         }
-        match self.venue {
-            Venue::Binance => {
-                let resp = self.binance_order(filters, "BUY", vec![("quoteOrderQty", filters.quote_string(quote_amount))], false)?;
-                normalize_binance_fill(&resp, filters)
-            }
-            Venue::Bybit => {
-                let body = serde_json::json!({
-                    "category": "spot",
-                    "symbol": filters.symbol,
-                    "side": "Buy",
-                    "orderType": "Market",
-                    "qty": filters.quote_string(quote_amount),
-                    "marketUnit": "quoteCoin",
-                });
-                let created = self.bybit_signed(reqwest::Method::POST, "/v5/order/create", None, Some(&body))?;
-                let order_id = s(&created["result"]["orderId"]);
-                let row = self.bybit_order_row(&filters.symbol, &order_id)?;
-                normalize_bybit_order(&row, filters)
-            }
-        }
+        self.venue.ready()?;
+        self.fill(filters, Side::Buy, quote_amount)
     }
 
     fn market_sell(&self, filters: &SymbolFilters, base_qty: f64) -> Result<Fill, String> {
@@ -645,49 +497,23 @@ impl Broker for LiveBroker {
                 filters.qty_string(qty), filters.base, filters.qty_string(filters.min_qty)
             ));
         }
-        match self.venue {
-            Venue::Binance => {
-                let resp = self.binance_order(filters, "SELL", vec![("quantity", filters.qty_string(qty))], false)?;
-                normalize_binance_fill(&resp, filters)
-            }
-            Venue::Bybit => {
-                let body = serde_json::json!({
-                    "category": "spot",
-                    "symbol": filters.symbol,
-                    "side": "Sell",
-                    "orderType": "Market",
-                    "qty": filters.qty_string(qty),
-                    "marketUnit": "baseCoin",
-                });
-                let created = self.bybit_signed(reqwest::Method::POST, "/v5/order/create", None, Some(&body))?;
-                let order_id = s(&created["result"]["orderId"]);
-                let row = self.bybit_order_row(&filters.symbol, &order_id)?;
-                normalize_bybit_order(&row, filters)
-            }
-        }
+        self.venue.ready()?;
+        self.fill(filters, Side::Sell, qty)
     }
 
     fn test_market_buy(&self, filters: &SymbolFilters, quote_amount: f64) -> Result<String, String> {
-        match self.venue {
-            Venue::Binance => {
-                self.binance_order(filters, "BUY", vec![("quoteOrderQty", filters.quote_string(quote_amount))], true)?;
-                Ok(format!(
-                    "Binance accepted a test market buy of {} {} on {} (nothing executed)",
-                    filters.quote_string(quote_amount), filters.quote, filters.symbol
-                ))
-            }
-            Venue::Bybit => Ok("Bybit offers no order dry run; filters and balance were checked instead".into()),
-        }
+        self.venue.ready()?;
+        let inst = Instrument::spot(filters.clone());
+        let (book, _, limit) = self.priced(&inst, Side::Buy)?;
+        let qty = filters.round_qty_down(book.walk_buy_quote(quote_amount, Some(limit)).base);
+        let order = OrderRequest { client_order_id: self.next_id(), instrument: inst, side: Side::Buy, qty, limit_price: limit, reduce_only: false };
+        self.venue.test_order(&order)
     }
 }
 
 impl std::fmt::Debug for LiveBroker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LiveBroker")
-            .field("venue", &self.venue)
-            .field("sandbox", &self.sandbox)
-            .field("api_key", &format!("{}…", &self.api_key[..self.api_key.len().min(4)]))
-            .finish()
+        f.debug_struct("LiveBroker").field("venue", &self.venue).field("max_slippage", &self.max_slippage).finish()
     }
 }
 

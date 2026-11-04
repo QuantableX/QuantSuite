@@ -161,7 +161,7 @@ pub(crate) async fn export_all_data(state: State<'_, AppState>) -> Result<String
         .collect::<Vec<_>>();
 
     let mut trades_stmt = db
-        .prepare("SELECT id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at, bot_id FROM trades ORDER BY entry_time DESC")
+        .prepare("SELECT id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at, bot_id, mode, source, fees_json FROM trades ORDER BY entry_time DESC")
         .map_err(|e| format!("Prepare trades: {e}"))?;
     let trades = trades_stmt
         .query_map([], |row| {
@@ -184,7 +184,9 @@ pub(crate) async fn export_all_data(state: State<'_, AppState>) -> Result<String
                 notes: row.get(15)?,
                 created_at: row.get(16)?,
                 bot_id: row.get(17)?,
-                trading_mode: None,
+                trading_mode: row.get(18)?,
+                source: row.get(19)?,
+                fees: crate::journal::fees_from_json(row.get(20)?),
             })
         })
         .map_err(|e| format!("Query trades: {e}"))?
@@ -356,7 +358,7 @@ pub(crate) async fn import_data(state: State<'_, AppState>) -> Result<String, St
 
     for trade in export.trades {
         tx.execute(
-            "INSERT INTO trades (id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at, bot_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+            "INSERT INTO trades (id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at, bot_id, mode, source, fees_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
             params![
                 trade.id,
                 trade.strategy_id,
@@ -376,6 +378,11 @@ pub(crate) async fn import_data(state: State<'_, AppState>) -> Result<String, St
                 trade.notes,
                 trade.created_at,
                 trade.bot_id,
+                // Bot rows take their mode from the bot; the column keeps it
+                // for rows that have none (system runs).
+                if trade.bot_id.is_none() { trade.trading_mode.clone() } else { None },
+                trade.source,
+                crate::journal::fees_to_json(&trade.fees),
             ],
         )
         .map_err(|e| format!("Insert trade: {e}"))?;

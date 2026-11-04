@@ -132,7 +132,7 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
 
     if trade.exit_price.is_none() {
         db.execute(
-            "INSERT OR REPLACE INTO trades (id, bot_id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,0,NULL,?15,?16)",
+            "INSERT OR REPLACE INTO trades (id, bot_id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at, source, fees_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,0,NULL,?15,?16,?17,?18)",
             params![
                 trade.id,
                 trade.bot_id,
@@ -150,13 +150,15 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
                 trade.fee,
                 trade.notes,
                 trade.created_at,
+                trade.source,
+                crate::journal::fees_to_json(&trade.fees),
             ],
         )
         .map_err(|e| format!("Insert trade: {e}"))?;
     } else {
         let updated = db
             .execute(
-                "UPDATE trades SET exit_price = ?1, exit_time = ?2, pnl = ?3, pnl_pct = ?4, fee = ?5, notes = ?6 WHERE id = ?7",
+                "UPDATE trades SET exit_price = ?1, exit_time = ?2, pnl = ?3, pnl_pct = ?4, fee = ?5, notes = ?6, fees_json = ?8 WHERE id = ?7",
                 params![
                     trade.exit_price,
                     trade.exit_time,
@@ -165,12 +167,13 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
                     trade.fee,
                     trade.notes,
                     trade.id,
+                    crate::journal::fees_to_json(&trade.fees),
                 ],
             )
             .map_err(|e| format!("Update trade: {e}"))?;
         if updated == 0 {
             db.execute(
-                "INSERT INTO trades (id, bot_id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,0,NULL,?15,?16)",
+                "INSERT INTO trades (id, bot_id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at, source, fees_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,0,NULL,?15,?16,?17,?18)",
                 params![
                     trade.id,
                     trade.bot_id,
@@ -188,6 +191,8 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
                     trade.fee,
                     trade.notes,
                     trade.created_at,
+                    trade.source,
+                    crate::journal::fees_to_json(&trade.fees),
                 ],
             )
             .map_err(|e| format!("Insert closed trade: {e}"))?;
