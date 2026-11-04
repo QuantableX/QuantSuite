@@ -337,9 +337,13 @@ pub trait ExecutionVenue: Send + Sync {
     /// Send an IOC limit order. `Err` means the outcome is unknown or the
     /// venue refused it — the engine looks the order up by its client id.
     fn place(&self, order: &OrderRequest) -> Result<OrderReport, String>;
-    /// The kill switch cancels open orders with it (Automation 4/5).
-    #[allow(dead_code)]
+    /// The kill switch cancels QuantSuite's open orders with it (§2.6).
     fn cancel(&self, instrument: &Instrument, client_order_id: &str) -> Result<(), String>;
+    /// Client ids of the orders still open on the instrument (IOC orders
+    /// never rest, so normally none). Venues without resting orders: none.
+    fn open_orders(&self, _instrument: &Instrument) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
     /// `Ok(None)` when the venue never saw an order with this id.
     fn query_by_client_id(&self, instrument: &Instrument, client_order_id: &str) -> Result<Option<OrderReport>, String>;
     /// A dry run that is validated but never executed.

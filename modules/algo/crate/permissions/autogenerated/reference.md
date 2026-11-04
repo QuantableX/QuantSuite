@@ -71,6 +71,9 @@ Default permissions for the algo module.
 - `allow-manual-execution-disarm`
 - `allow-manual-execution-runs`
 - `allow-manual-execution-coverage`
+- `allow-trading-kill-switch`
+- `allow-trading-kill-switch-status`
+- `allow-bot-heartbeats`
 
 ## Permission Table
 
@@ -103,6 +106,32 @@ Enables the add_exchange command without any pre-configured scope.
 <td>
 
 Denies the add_exchange command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-bot-heartbeats`
+
+</td>
+<td>
+
+Enables the bot_heartbeats command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-bot-heartbeats`
+
+</td>
+<td>
+
+Denies the bot_heartbeats command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1637,6 +1666,58 @@ Enables the test_exchange_credentials command without any pre-configured scope.
 <td>
 
 Denies the test_exchange_credentials command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-trading-kill-switch`
+
+</td>
+<td>
+
+Enables the trading_kill_switch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-trading-kill-switch`
+
+</td>
+<td>
+
+Denies the trading_kill_switch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-trading-kill-switch-status`
+
+</td>
+<td>
+
+Enables the trading_kill_switch_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-trading-kill-switch-status`
+
+</td>
+<td>
+
+Denies the trading_kill_switch_status command without any pre-configured scope.
 
 </td>
 </tr>

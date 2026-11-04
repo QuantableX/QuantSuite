@@ -46,6 +46,8 @@ const maxPositions = ref(3)
 const slippage = ref(0.1)
 const fee = ref(0.1)
 const warmupCandles = ref(200)
+/** Restart with the suite, after its books match the venue (PLAN-AUTO-EXECUTION §2.6). */
+const resumeAfterRestart = ref(false)
 
 const preflightResult = ref<PreflightResult | null>(null)
 const isRunningPreflight = ref(false)
@@ -134,6 +136,7 @@ const draft = computed<BotDraft | null>(() => {
       slippage: slippage.value,
       fee: fee.value,
       warmup_candles: warmupCandles.value,
+      resume_after_restart: resumeAfterRestart.value,
     },
   }
 })
@@ -401,6 +404,10 @@ onMounted(() => {
                 <label class="adv-field">
                   <span>Warm-up candles</span>
                   <input v-model.number="warmupCandles" class="create-input mono" type="number" min="2" max="3000" step="50" />
+                </label>
+                <label class="adv-field adv-field--check" :title="tradingMode === 'live' ? 'A live bot resumes only when the venue still holds what its books say and none of its orders rests on the venue.' : 'The bot continues with its open positions after the suite restarts.'">
+                  <input v-model="resumeAfterRestart" type="checkbox" />
+                  <span>Resume after a restart{{ tradingMode === 'live' ? ' (checked against the venue first)' : '' }}</span>
                 </label>
               </div>
             </div>
@@ -713,6 +720,12 @@ onMounted(() => {
   gap: 4px;
   font-size: 11px;
   color: var(--qa-text-secondary);
+}
+
+.create-overlay .adv-field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
 }
 
 .create-overlay .checklist {

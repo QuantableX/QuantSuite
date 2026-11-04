@@ -259,8 +259,7 @@ pub fn create_tables(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-/// "Stop all trading" (Automation 4/5 calls it).
-#[allow(dead_code)]
+/// "Stop all trading" (Automation 4/5).
 pub fn set_kill_switch(conn: &Connection, on: bool) -> Result<(), String> {
     conn.execute(
         "INSERT INTO execution_flags (key, value) VALUES ('kill_switch', ?1)
