@@ -1,4 +1,5 @@
 const COMMANDS: &[&str] = &[
+    "export_everything",
     "list_mcps",
     "toggle_mcp",
     "get_mcp_config",

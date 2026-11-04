@@ -80,6 +80,16 @@ Outside the data root:
 - The export refuses while live bots or live Manual execution are armed and offers to disarm them (disarming never sells).
 - **The passphrase cannot be recovered.** Lost passphrase = unreadable bundle. The wizard says so and asks for it twice.
 
+**Built (card 2, 2026-11-04).** `crates/qs-core/src/bundle.rs`, Settings → Data, and the agent tool `export_everything` (`plugin:mcp|export_everything`, external):
+
+- File format: `QSBUNDLE1
+`, then a JSON header (Argon2id parameters and salt, nonce prefix, chunk size), then 1 MiB chunks of AES-256-GCM. Each chunk is authenticated with the STREAM nonce (prefix, counter, last-chunk flag) and the header as associated data. A changed, reordered, dropped or cut chunk fails, and so does a wrong passphrase. Inside: tar + zstd (level 3).
+- Content: every file the inventory moves (`quantsuite/<path>`, defaults per rule; Settings → Data ticks optional parts). Databases are copied via SQLite's online backup, and `user_version` is recorded as the schema version. `secrets.json` holds the vault's secrets re-encrypted under a key derived from the bundle key, with the secret id as associated data; they exist in plaintext only in memory. `manifest.json` comes last: suite version, machine, source root, per file size, SHA-256, class and schema version, the left-out patterns with reasons, and the secret ids.
+- Folders that are left out are not walked (artifacts can be hundreds of GB). WAL/SHM files and `secrets/` are never copied as they are.
+- Refusals: an unclassified file (named), live trading armed (live bots running or Manual systems armed; "Stop all trading" first, which never sells), not enough free space (the total plus 10 %), and a passphrase under 12 characters. A cancelled or failed export leaves no file: it writes `.part`, then renames.
+- `open(bundle, passphrase, unpack_to)` verifies the passphrase, every chunk and every checksum, and optionally unpacks into a staging folder. Import (card 3) builds on it.
+- Checks: 4 unit tests (round trip with the manifest following the inventory; wrong passphrase, tampered and cut bundles; refusals; a database written to during the export comes out as a consistent snapshot). Profile export of the copy of the user's stores: 29 files, 32.6 MB, of which 14 databases came in through the backup API; the bundle is 13.5 MB and was written in 7.8 s, then opened and verified in 7.0 s.
+
 ### 2.2 Import
 
 1. **Check:** passphrase, manifest, every checksum, version (same or newer QuantSuite; an older one refuses), free disk space.

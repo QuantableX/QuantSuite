@@ -34,4 +34,7 @@ permissions = [
   "allow-agent-call-complete",
   "allow-vault-status",
   "allow-vault-unlock",
+  "allow-bundle-plan",
+  "allow-bundle-export",
+  "allow-bundle-export-cancel",
 ]

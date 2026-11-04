@@ -25,7 +25,7 @@ tauri-plugin = { workspace = true }
 tauri = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rusqlite = { workspace = true }
+rusqlite = { workspace = true, features = ["backup"] }
 uuid = { workspace = true }
 dirs = { workspace = true }
 chrono = { workspace = true }
@@ -45,6 +45,11 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 zeroize = "1"
+# The .qsbundle export (bundle.rs): tar + zstd inside the encrypted stream,
+# and the free space at the destination.
+tar = "0.4"
+zstd = "0.13"
+fs4 = { version = "0.13", features = ["sync"] }
 
 # `system_path` reads the current PATH from the registry.
 [target.'cfg(windows)'.dependencies]

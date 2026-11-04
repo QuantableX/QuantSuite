@@ -12,6 +12,7 @@
 pub mod agent;
 pub mod apps;
 pub mod autostart;
+pub mod bundle;
 pub mod bus;
 pub mod commands;
 pub mod diagnostics;
@@ -77,6 +78,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::agent_call_complete,
             commands::vault_status,
             commands::vault_unlock,
+            commands::bundle_plan,
+            commands::bundle_export,
+            commands::bundle_export_cancel,
         ]))
         .setup(|app, _api| {
             paths::ensure()?;
