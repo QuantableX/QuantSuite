@@ -39,7 +39,7 @@
       "import_propose": "client:compute",
       "import_bundle": "client:write",
       "import_status": "client:read",
-      "server_status": "client:read",
+      "server_status": "server:read",
       "server_set_role": "client:write",
       "server_set_watchdog": "client:write"
     }
