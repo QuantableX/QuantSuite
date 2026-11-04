@@ -137,6 +137,12 @@ impl Pairing {
     }
 }
 
+/// A QR code of `text` as SVG (for a phone app; the desktop types the code).
+pub fn qr_svg(text: &str) -> Option<String> {
+    let code = qrcode::QrCode::new(text.as_bytes()).ok()?;
+    Some(code.render::<qrcode::render::svg::Color<'_>>().min_dimensions(160, 160).quiet_zone(true).build())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,5 +187,11 @@ mod tests {
         p.start_with("87654321".into(), later).unwrap();
         assert_eq!(p.check("87654321", later), Ok(()));
         assert!(CodeError::Locked { secs: 840 }.to_string().contains("14 min"));
+    }
+
+    #[test]
+    fn a_qr_code_renders() {
+        let svg = qr_svg("quantsuite://pair?addr=100.101.102.103:47100&code=48219937").unwrap();
+        assert!(svg.starts_with("<?xml") && svg.contains("<svg"));
     }
 }

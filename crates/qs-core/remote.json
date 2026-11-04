@@ -41,7 +41,25 @@
       "import_status": "client:read",
       "server_status": "server:read",
       "server_set_role": "client:write",
-      "server_set_watchdog": "client:write"
+      "server_set_watchdog": "client:write",
+      "gateway_status": "client:read",
+      "gateway_configure": "client:write",
+      "gateway_pairing_start": "client:write",
+      "gateway_pairing_status": "client:read",
+      "gateway_pairing_confirm": "client:write",
+      "gateway_pairing_cancel": "client:write",
+      "gateway_devices": "server:read",
+      "gateway_device_rename": "server:write",
+      "gateway_device_set_role": "server:external",
+      "gateway_device_revoke": "server:external",
+      "gateway_device_forget": "server:write",
+      "gateway_audit": "server:read",
+      "gateway_set_pin": "client:write",
+      "gateway_pair_begin": "client:write",
+      "gateway_pair_finish": "client:write",
+      "gateway_connections": "client:read",
+      "gateway_connection_test": "client:read",
+      "gateway_connection_forget": "client:write"
     }
   },
   "app": {

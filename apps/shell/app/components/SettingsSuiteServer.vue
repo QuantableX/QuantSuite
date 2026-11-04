@@ -2,9 +2,12 @@
 /**
  * Suite → Server (PLAN-SERVER-CLIENT §5, card Server 2/7): run this
  * installation as the server at home — tray only, started at boot, restarted
- * by a watchdog, and the one machine that trades — plus its health.
+ * by a watchdog, and the one machine that trades — plus its health. The
+ * gateway, devices and connections (card Server 3/7) are in
+ * SettingsSuiteServerGateway.
  */
 import { invoke } from '@tauri-apps/api/core'
+import SettingsSuiteServerGateway from './SettingsSuiteServerGateway.vue'
 
 type Role = 'local' | 'server' | 'client'
 interface Status {
@@ -145,6 +148,8 @@ onUnmounted(() => {
       />
     </div>
 
+    <SettingsSuiteServerGateway />
+
     <div class="qsu-row qsv-section">
       <div class="qsu-row-text">
         <p class="qsu-label">Setting up the server machine</p>
@@ -170,7 +175,7 @@ onUnmounted(() => {
             <tr><th>Disk</th><td :class="{ 'qsv-warn': diskLow }">{{ gb(status.disk_free_bytes) }} free of {{ gb(status.disk_total_bytes) }} · <span class="qsv-mono">{{ status.data_root }}</span></td></tr>
             <tr><th>Started at boot</th><td>{{ status.autostart === null ? '—' : status.autostart ? 'yes' : 'no' }}</td></tr>
             <tr><th>Watchdog</th><td>{{ status.watchdog === null ? 'not on this OS' : status.watchdog ? 'on' : 'off' }}</td></tr>
-            <tr><th>Gateway</th><td>{{ status.gateway ?? 'not serving clients yet' }}</td></tr>
+            <tr><th>Gateway</th><td>{{ status.gateway ? `listening on ${status.gateway}` : 'not listening' }}</td></tr>
             <template v-if="trading">
               <tr><th>Trading</th><td :class="{ 'qsv-warn': trading.kill_switch || !trading.executors_allowed }">
                 {{ !trading.executors_allowed ? 'off here — this PC is a client' : trading.kill_switch ? 'stopped by the kill switch' : 'allowed' }}

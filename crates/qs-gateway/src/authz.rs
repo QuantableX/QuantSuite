@@ -86,6 +86,7 @@ struct Raw {
     events: Vec<String>,
 }
 
+#[derive(Clone)]
 pub struct Manifest {
     commands: HashMap<String, (Placement, Effect)>,
     plugins: HashMap<String, (Placement, Effect)>,

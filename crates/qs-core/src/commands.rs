@@ -412,7 +412,8 @@ pub fn server_status<R: Runtime>(app: AppHandle<R>, db_state: State<'_, Db>) -> 
         crate::server::stored_role(&conn)
     };
     let autostart = crate::autostart::is_enabled(&app).ok();
-    let health = crate::server::health(&app.package_info().version.to_string(), &paths::root(), crate::server::watchdog_enabled(), autostart);
+    let mut health = crate::server::health(&app.package_info().version.to_string(), &paths::root(), crate::server::watchdog_enabled(), autostart);
+    health.gateway = crate::gateway::listening(&app);
     Ok(ServerStatus { health, stored_role })
 }
 
@@ -452,4 +453,132 @@ pub fn bundle_export_cancel() {
 pub fn vault_unlock(passphrase: String) -> crate::vault::VaultStatus {
     let passphrase = zeroize::Zeroizing::new(passphrase);
     crate::vault::unlock(&passphrase)
+}
+
+// ── The gateway (PLAN-SERVER-CLIENT §4, card Server 3/7) ─────────────────
+//
+// On the server: where it listens, pairing, devices, the audit log and the
+// PIN. On any PC: pairing with a server and the saved connections. Devices and
+// the audit are `server` in the remote manifest (a paired PC can revoke a lost
+// laptop); pairing, the PIN and the address only on the server's own screen.
+
+use crate::gateway;
+use tauri::Manager;
+
+#[tauri::command(async)]
+pub fn gateway_status<R: Runtime>(app: AppHandle<R>, db_state: State<'_, Db>) -> Result<gateway::GatewayStatus, String> {
+    let conn = db_state.0.lock().map_err(map_err)?;
+    Ok(gateway::status(&app, &conn))
+}
+
+/// Saves where the server listens (`None`: nowhere) and restarts the listener.
+#[tauri::command]
+pub async fn gateway_configure<R: Runtime>(app: AppHandle<R>, address: Option<String>, every_interface: bool) -> Result<gateway::GatewayStatus, String> {
+    {
+        let db = app.state::<Db>();
+        let conn = db.0.lock().map_err(map_err)?;
+        gateway::configure(&conn, address.as_deref(), every_interface)?;
+    }
+    let restarted = gateway::restart(&app).await;
+    let db = app.state::<Db>();
+    let conn = db.0.lock().map_err(map_err)?;
+    let status = gateway::status(&app, &conn);
+    restarted.map(|_| status)
+}
+
+#[tauri::command(async)]
+pub fn gateway_pairing_start<R: Runtime>(app: AppHandle<R>) -> Result<gateway::PairingView, String> {
+    gateway::pairing_start(&app)
+}
+
+#[tauri::command(async)]
+pub fn gateway_pairing_status<R: Runtime>(app: AppHandle<R>) -> Result<gateway::PairingView, String> {
+    gateway::pairing_status(&app)
+}
+
+/// The server's user compared the four words: a role lets the device in,
+/// none turns it away.
+#[tauri::command(async)]
+pub fn gateway_pairing_confirm<R: Runtime>(app: AppHandle<R>, device_id: String, role: Option<String>) -> Result<(), String> {
+    gateway::pairing_confirm(&app, &device_id, role.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn gateway_pairing_cancel<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    gateway::pairing_cancel(&app)
+}
+
+#[tauri::command(async)]
+pub fn gateway_devices<R: Runtime>(app: AppHandle<R>) -> Result<Vec<gateway::DeviceLine>, String> {
+    gateway::devices(&app)
+}
+
+#[tauri::command(async)]
+pub fn gateway_device_rename<R: Runtime>(app: AppHandle<R>, id: String, name: String) -> Result<qs_gateway::registry::Device, String> {
+    gateway::device_rename(&app, &id, &name)
+}
+
+#[tauri::command(async)]
+pub fn gateway_device_set_role<R: Runtime>(app: AppHandle<R>, id: String, role: String) -> Result<qs_gateway::registry::Device, String> {
+    gateway::device_set_role(&app, &id, &role)
+}
+
+/// Removes a device's access; its connections drop at once.
+#[tauri::command(async)]
+pub fn gateway_device_revoke<R: Runtime>(app: AppHandle<R>, id: String) -> Result<qs_gateway::registry::Device, String> {
+    gateway::device_revoke(&app, &id)
+}
+
+#[tauri::command(async)]
+pub fn gateway_device_forget<R: Runtime>(app: AppHandle<R>, id: String) -> Result<(), String> {
+    gateway::device_forget(&app, &id)
+}
+
+#[tauri::command(async)]
+pub fn gateway_audit<R: Runtime>(app: AppHandle<R>, limit: Option<usize>) -> Result<Vec<qs_gateway::registry::AuditEntry>, String> {
+    gateway::audit(&app, limit.unwrap_or(200))
+}
+
+/// Sets the server PIN (6–12 digits) or, with `None`, removes it. Only an
+/// Argon2id hash is kept.
+#[tauri::command(async)]
+pub fn gateway_set_pin<R: Runtime>(app: AppHandle<R>, pin: Option<String>) -> Result<(), String> {
+    gateway::set_pin(&app, pin.as_deref())
+}
+
+/// This PC pairs with a server: returns the four words to compare.
+#[tauri::command]
+pub async fn gateway_pair_begin<R: Runtime>(app: AppHandle<R>, address: String, code: String) -> Result<gateway::PairBegun, String> {
+    gateway::pair_begin(&app, &address, &code).await
+}
+
+/// This PC's user compared the words; `accept` saves the connection once the
+/// server's user has confirmed too.
+#[tauri::command]
+pub async fn gateway_pair_finish<R: Runtime>(app: AppHandle<R>, accept: bool) -> Result<Option<gateway::Connection>, String> {
+    gateway::pair_finish(&app, accept).await
+}
+
+#[tauri::command(async)]
+pub fn gateway_connections(db_state: State<'_, Db>) -> Result<Vec<gateway::Connection>, String> {
+    let conn = db_state.0.lock().map_err(map_err)?;
+    Ok(gateway::connections(&conn))
+}
+
+/// Connects to a saved server and reads its health through the connection.
+#[tauri::command]
+pub async fn gateway_connection_test<R: Runtime>(app: AppHandle<R>, id: String) -> Result<gateway::ConnectionTest, String> {
+    let found = {
+        let db = app.state::<Db>();
+        let conn = db.0.lock().map_err(map_err)?;
+        gateway::connections(&conn).into_iter().find(|c| c.id == id)
+    };
+    let c = found.ok_or("No such connection.")?;
+    gateway::test_connection(&app, &c).await
+}
+
+#[tauri::command(async)]
+pub fn gateway_connection_forget(id: String, db_state: State<'_, Db>) -> Result<(), String> {
+    let conn = db_state.0.lock().map_err(map_err)?;
+    gateway::forget_connection(&conn, &id)
 }

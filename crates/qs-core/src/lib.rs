@@ -29,6 +29,7 @@ pub mod shutdown;
 pub mod system_path;
 pub mod tray;
 pub mod vault;
+pub mod gateway;
 pub mod window;
 pub mod workspaces;
 
@@ -89,6 +90,24 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::server_status,
             commands::server_set_role,
             commands::server_set_watchdog,
+            commands::gateway_status,
+            commands::gateway_configure,
+            commands::gateway_pairing_start,
+            commands::gateway_pairing_status,
+            commands::gateway_pairing_confirm,
+            commands::gateway_pairing_cancel,
+            commands::gateway_devices,
+            commands::gateway_device_rename,
+            commands::gateway_device_set_role,
+            commands::gateway_device_revoke,
+            commands::gateway_device_forget,
+            commands::gateway_audit,
+            commands::gateway_set_pin,
+            commands::gateway_pair_begin,
+            commands::gateway_pair_finish,
+            commands::gateway_connections,
+            commands::gateway_connection_test,
+            commands::gateway_connection_forget,
         ]))
         .setup(|app, _api| {
             // A staged import takes the data root's place before anything
@@ -118,6 +137,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             app.manage(tray::TrayRegistry::default());
             app.manage(shutdown::Teardown::new());
             app.manage(agent::AgentBroker::default());
+            // The server's gateway (devices, pairing, audit) and this PC's
+            // connections to servers (PLAN-SERVER-CLIENT §4, card Server 3/7).
+            app.manage(gateway::GatewayState::default());
             // The broker's entry point for QuantMCP's MCP server (E4). Must
             // come after the states above — a call reads settings and state.
             agent::install(app.clone());
@@ -125,6 +147,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             runtime::install(app.clone());
 
             tray::init(app)?;
+            // A server listens on its chosen address (LAN or tailnet).
+            gateway::start(app);
             // No geometry to restore: the suite window is always maximised
             // (launcher and app differ only by the circular region), and
             // QuantHUD's overlays place themselves in `tauri-plugin-hud`. The

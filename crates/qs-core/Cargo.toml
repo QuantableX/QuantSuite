@@ -36,6 +36,8 @@ log = { workspace = true }
 # read and write the OS autostart entry from its settings commands.
 tauri-plugin-autostart = { workspace = true }
 qs-mcp-bridge = { path = "../qs-mcp-bridge" }
+# The server gateway: pairing, mutual TLS, roles, audit (card Server 3/7).
+qs-gateway = { path = "../qs-gateway" }
 # The secret vault (vault.rs): master key in the OS keystore, AES-256-GCM per
 # secret, Argon2id for the passphrase file where no keystore exists.
 keyring = { workspace = true }
