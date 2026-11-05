@@ -32,7 +32,7 @@ pub use storage::{log_run as log_storage_run, Category as StorageCategory, Clean
 /// 18: thread tags (round 2, card 12).
 /// 19: side chats name their main thread (round 2, card 10).
 /// 20: crews — tasks, members and their message log (round 2, card 07).
-pub const SCHEMA_VERSION: i64 = 25;
+pub const SCHEMA_VERSION: i64 = 26;
 
 #[path = "queue.rs"]
 mod queue;
@@ -45,6 +45,8 @@ mod schedules_db;
 #[path = "phone_db.rs"]
 mod phone_db;
 pub use phone_db::{PhoneAudit, PhoneDevice};
+#[path = "telegram_db.rs"]
+mod telegram_db;
 #[path = "guides_db.rs"]
 mod guides_db;
 #[path = "progress_db.rs"]
@@ -609,6 +611,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     tx.execute_batch(progress_db::PIN_TABLES)?;
     // Schema 25 (round 4, card 1): paired phones and what they did.
     tx.execute_batch(phone_db::PHONE_TABLES)?;
+    // Schema 26 (round 4, card 2): the Telegram bot's linked chat and offset.
+    tx.execute_batch(telegram_db::TELEGRAM_TABLES)?;
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;

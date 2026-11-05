@@ -151,6 +151,13 @@ Default permissions for the pilot module.
 - `allow-pilot-phone-pair`
 - `allow-pilot-phone-pair-cancel`
 - `allow-pilot-phone-revoke`
+- `allow-pilot-telegram-status`
+- `allow-pilot-telegram-set-token`
+- `allow-pilot-telegram-set`
+- `allow-pilot-telegram-pair`
+- `allow-pilot-telegram-pair-cancel`
+- `allow-pilot-telegram-unlink`
+- `allow-pilot-telegram-forget-token`
 - `allow-pilot-guide-get`
 - `allow-pilot-guide-write`
 - `allow-pilot-progress`
@@ -4336,6 +4343,188 @@ Enables the pilot_storage_plan command without any pre-configured scope.
 <td>
 
 Denies the pilot_storage_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-telegram-forget-token`
+
+</td>
+<td>
+
+Enables the pilot_telegram_forget_token command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-telegram-forget-token`
+
+</td>
+<td>
+
+Denies the pilot_telegram_forget_token command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-telegram-pair`
+
+</td>
+<td>
+
+Enables the pilot_telegram_pair command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-telegram-pair`
+
+</td>
+<td>
+
+Denies the pilot_telegram_pair command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-telegram-pair-cancel`
+
+</td>
+<td>
+
+Enables the pilot_telegram_pair_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-telegram-pair-cancel`
+
+</td>
+<td>
+
+Denies the pilot_telegram_pair_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-telegram-set`
+
+</td>
+<td>
+
+Enables the pilot_telegram_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-telegram-set`
+
+</td>
+<td>
+
+Denies the pilot_telegram_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-telegram-set-token`
+
+</td>
+<td>
+
+Enables the pilot_telegram_set_token command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-telegram-set-token`
+
+</td>
+<td>
+
+Denies the pilot_telegram_set_token command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-telegram-status`
+
+</td>
+<td>
+
+Enables the pilot_telegram_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-telegram-status`
+
+</td>
+<td>
+
+Denies the pilot_telegram_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-telegram-unlink`
+
+</td>
+<td>
+
+Enables the pilot_telegram_unlink command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-telegram-unlink`
+
+</td>
+<td>
+
+Denies the pilot_telegram_unlink command without any pre-configured scope.
 
 </td>
 </tr>

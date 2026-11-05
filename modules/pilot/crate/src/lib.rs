@@ -54,6 +54,7 @@ mod skills;
 mod signals;
 mod terminals;
 mod threads;
+mod telegram;
 mod tracking;
 mod usage;
 mod watch;
@@ -884,6 +885,10 @@ pub fn init() -> TauriPlugin<Wry> {
                             phone.ping(thread_id);
                         }
                     }
+                    // The Telegram bot hears of waits and turn ends (round 4, card 2).
+                    if let Some(bot) = app.try_state::<telegram::TelegramAppState>() {
+                        bot.on_thread_event(thread_id, event);
+                    }
                     if let events::ThreadEvent::State { state, .. } = event {
                         if state == "waiting" {
                             if let Some(pilot) = app.try_state::<PilotState>() {
@@ -948,6 +953,8 @@ pub fn init() -> TauriPlugin<Wry> {
             });
             app.manage(phone::PhoneState::default());
             phone::start_saved(app);
+            app.manage(telegram::TelegramAppState::default());
+            telegram::start_saved(app);
             tauri::async_runtime::spawn(threads::resume_scheduler(app.clone()));
             // Crews (round 2, card 07): workers the close interrupted are stalled; timeouts.
             if let Some(state) = app.try_state::<PilotState>() {
@@ -1116,6 +1123,13 @@ pub fn init() -> TauriPlugin<Wry> {
             phone::pilot_phone_pair,
             phone::pilot_phone_pair_cancel,
             phone::pilot_phone_revoke,
+            telegram::pilot_telegram_status,
+            telegram::pilot_telegram_set_token,
+            telegram::pilot_telegram_set,
+            telegram::pilot_telegram_pair,
+            telegram::pilot_telegram_pair_cancel,
+            telegram::pilot_telegram_unlink,
+            telegram::pilot_telegram_forget_token,
             guides::pilot_guide_get,
             guides::pilot_guide_write,
             progress::pilot_progress,

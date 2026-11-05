@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-telegram-set-token"
+description = "Enables the pilot_telegram_set_token command without any pre-configured scope."
+commands.allow = ["pilot_telegram_set_token"]
+
+[[permission]]
+identifier = "deny-pilot-telegram-set-token"
+description = "Denies the pilot_telegram_set_token command without any pre-configured scope."
+commands.deny = ["pilot_telegram_set_token"]

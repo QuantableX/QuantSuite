@@ -3292,3 +3292,17 @@ The user on the roadmap (card 91212da8): "plan each idea as a card and implement
 - **The browser's attacks.** Every request's Host must be this address (DNS rebinding); a write needs the `X-QS-Phone` header and a matching Origin (cross-site requests); `default-src 'none'` with the script and style as files; the DOM is built from text only, so agent output cannot become markup. Revoking or turning it off also ends open connections and event streams.
 - **What the page does.** Threads that need you, then working, then recent (side chats and settled threads stay on the PC unless they wait for you). A thread's messages, the newest 6 tool calls, approval, plan and question cards, a composer (a message during a turn is queued, as on the PC), Stop, and New thread. Reasoning, diffs, files and attachments stay on the PC; a form from an MCP server says to answer it on the PC. Events only say "this thread changed"; the page then asks, so no content travels unasked.
 - **Limit.** A closed page cannot alert you: web push needs HTTPS and an outside push service. With the page open it vibrates and shows the count in the tab.
+
+
+### 2/6 — the Telegram bot (card 666c5d56)
+
+`telegram.rs` (Telegram's API with a replaceable base address, the bot behind the same `Backend` as the phone page), `telegram_db.rs` (schema 26), Settings → QuantPilot → Telegram bot (`Telegram.vue`). Off by default.
+
+- **Outbound only.** `getUpdates` long polling: no port, no webhook. The token is in the vault (`pilot.telegram-token`), and because it is in every URL, no error may carry the URL (`without_url`, tested).
+- **One chat.** Linked with a one-time code (`/start <code>`, or a QR that opens the bot with it). Every other chat and every group is ignored without an answer, and nobody learns there is a bot here unless a code is open.
+- **The PIN.** The same one as phone access. `/unlock <pin>`, 10 minutes, 5 tries, and the bot deletes that message first, right or wrong. A message sent while locked waits for the PIN. A locked button press answers nothing, and the button still works afterwards.
+- **Threads are ordinary threads.** Plain text goes to the current thread, or starts one in General; `/new [@project] task`, `/threads`, `/use <n>`, `/projects`, `/stop`. A text while a question waits answers that question.
+- **Alerts.** This is the alert a closed phone page cannot give: when any thread starts waiting, its request comes with buttons (Allow, For this session, Deny; Go ahead, Keep planning; a question's options), once per request. A question asking for a secret and an MCP form are left for the PC. A turn's end reaches the chat only for threads it follows (started or used from Telegram), split at 4,096 characters at line ends.
+- **Restarts.** The read position is saved before an update is acted on, so nothing runs twice; updates from before the bot was on are skipped. A wrong token stops polling and says so; everything else backs off and retries.
+
+Tests run against a local stand-in for Telegram's API. A debug build reads `QS_TELEGRAM_API` for that; a release always talks to Telegram. The first real message is the user's.

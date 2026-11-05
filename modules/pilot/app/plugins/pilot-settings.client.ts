@@ -13,6 +13,7 @@ import Appearance from '../components/Settings/Appearance.vue'
 import Advanced from '../components/Settings/Advanced.vue'
 import Storage from '../components/Settings/Storage.vue'
 import Phone from '../components/Settings/Phone.vue'
+import Telegram from '../components/Settings/Telegram.vue'
 
 export default defineNuxtPlugin(() => {
   registerSettingsSections('pilot', [
@@ -23,6 +24,7 @@ export default defineNuxtPlugin(() => {
     { id: 'skills', label: 'Skills', component: markRaw(Skills), order: 3.5 },
     { id: 'source-control', label: 'Source control', component: markRaw(SourceControl), order: 4 },
     { id: 'phone', label: 'Phone access', component: markRaw(Phone), order: 4.5 },
+    { id: 'telegram', label: 'Telegram bot', component: markRaw(Telegram), order: 4.6 },
     { id: 'appearance', label: 'Appearance', component: markRaw(Appearance), order: 5 },
     { id: 'storage', label: 'Storage', component: markRaw(Storage), order: 5.5 },
     { id: 'advanced', label: 'Advanced', component: markRaw(Advanced), order: 6 },
