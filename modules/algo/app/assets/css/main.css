@@ -111,6 +111,10 @@
   background: var(--qa-scrollbar-thumb-hover);
 }
 
+[data-module="algo"] ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 
 
 /* ── Utility classes ── */

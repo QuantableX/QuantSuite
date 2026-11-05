@@ -608,9 +608,7 @@ onMounted(() => {
 }
 
 .create-overlay .section-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: var(--qss-text-label);
   font-weight: 500;
   color: var(--qa-text-muted);
   margin-bottom: 2px;
