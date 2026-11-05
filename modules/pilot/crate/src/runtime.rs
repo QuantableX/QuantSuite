@@ -887,6 +887,16 @@ impl Runtime {
         cats.get(provider).filter(|(at, _)| at.elapsed() < CATALOG_TTL).map(|(_, c)| c.clone())
     }
 
+    /// The agent's list as last seen, however old (round 4, card 5).
+    pub fn last_catalog(&self, provider: &str) -> Option<Catalog> {
+        lock(&self.catalogs).get(provider).map(|(_, c)| c.clone())
+    }
+
+    /// What the thread's live process was started with, if one runs.
+    pub fn warm_key(&self, thread_id: &str) -> Option<String> {
+        self.run(thread_id).map(|r| lock(&r.key).clone())
+    }
+
     pub fn store_catalog(&self, catalog: Catalog) {
         lock(&self.catalogs).insert(catalog.provider.clone(), (Instant::now(), catalog));
     }
@@ -1423,6 +1433,7 @@ mod tests {
             effort: String::new(),
             title_source: "auto".into(),
             fast: false,
+            auto_model: false,
             notice: None,
             tags: Vec::new(),
             instance: String::new(), parent_id: None,

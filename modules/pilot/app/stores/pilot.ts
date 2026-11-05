@@ -530,7 +530,7 @@ export const usePilotStore = defineStore('pilot/pilot', {
     },
 
     /** Title, model, effort or mode; model, effort and mode apply from the next turn. */
-    async update(id: string, patch: { title?: string; provider?: string; model?: string; effort?: string; mode?: Mode; fast?: boolean; tags?: string[]; instance?: string }) {
+    async update(id: string, patch: { title?: string; provider?: string; model?: string; effort?: string; mode?: Mode; fast?: boolean; tags?: string[]; instance?: string; auto?: boolean }) {
       try {
         const meta = await pilot<SessionMeta>('plugin:pilot|pilot_thread_update', { id, ...patch })
         if (meta) this.upsertSession(meta)

@@ -208,6 +208,8 @@ pub struct TurnInput {
     pub skills: Vec<SkillRef>,
     /// Stable queue row associated before provider delivery (never sent as text).
     pub queue_id: Option<String>,
+    /// Continues what the last turn was doing: Auto stays on its model (round 4, card 5).
+    pub keep_model: bool,
 }
 
 /// How a tool call is shown: a category for grouping ("Ran 3 commands") and

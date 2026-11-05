@@ -145,6 +145,8 @@ pub enum ThreadEvent {
     },
     RateLimit { windows: Vec<RateWindow> },
     Title { title: String },
+    /// Auto chose another model for the thread (round 4, card 5).
+    Model { model: String },
     /// The thread's goal, or none (card 16).
     Goal { goal: Option<Value> },
     /// The follow-ups waiting for the running turn, in order; `held` after

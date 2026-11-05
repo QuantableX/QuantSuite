@@ -22,6 +22,8 @@ pub struct ProviderPrefs {
     pub env: BTreeMap<String, String>,
     pub models: Vec<String>,
     pub disabled: bool,
+    /// Which model each Auto tier means for this agent (round 4, card 5).
+    pub auto_tiers: crate::auto_model::AutoTiers,
 }
 
 /// What a project changes for its new threads (card 19); `None` inherits.
@@ -442,6 +444,7 @@ impl Settings {
                 p.env = clean_env(p.env);
                 let mut seen = std::collections::BTreeSet::new();
                 p.models = p.models.into_iter().map(|m| m.trim().to_string()).filter(|m| !m.is_empty() && seen.insert(m.clone())).collect();
+                p.auto_tiers = p.auto_tiers.trimmed();
                 (id.trim().to_string(), p)
             })
             .filter(|(id, p)| !id.is_empty() && *p != ProviderPrefs::default())

@@ -27,8 +27,13 @@ const chatIds = computed(() => store.adapters.filter((a) => a.chat ?? (a.id === 
 const CHAT = { includes: (id: string) => chatIds.value.includes(id) }
 
 type Owned = Pick<PilotSettings, 'exe' | 'model' | 'effort' | 'providers' | 'env' | 'preferSavedClaudeLogin' | 'custom'> & { instances: Instance[] }
-const blank = (): ProviderPrefs => ({ args: '', env: {}, models: [], disabled: false })
+const blank = (): ProviderPrefs => ({ args: '', env: {}, models: [], disabled: false, autoTiers: { light: '', standard: '', deep: '' } })
 const draft = reactive<Owned>({ exe: {}, model: {}, effort: '', providers: { claude: blank(), codex: blank() }, env: {}, preferSavedClaudeLogin: false, custom: [], instances: [] })
+const AUTO_TIERS = [
+  { id: 'light', label: 'Light', hint: '(small edits)' },
+  { id: 'standard', label: 'Standard', hint: '(most work)' },
+  { id: 'deep', label: 'Deep', hint: '(big or risky)' },
+] as const
 /** Own model ids as typed, one per line. */
 const modelText = reactive<Record<string, string>>({})
 /** Bumped on pull so the env editors start from the saved rows. */
@@ -47,7 +52,10 @@ function pull() {
   draft.effort = s.effort
   draft.providers = JSON.parse(JSON.stringify(s.providers ?? {}))
   // The chat agents' rows edit these directly.
-  for (const id of chatIds.value) draft.providers[id] ??= blank()
+  for (const id of chatIds.value) {
+    draft.providers[id] ??= blank()
+    draft.providers[id]!.autoTiers ??= { light: '', standard: '', deep: '' }
+  }
   draft.env = { ...(s.env ?? {}) }
   draft.preferSavedClaudeLogin = s.preferSavedClaudeLogin ?? false
   draft.custom = (s.custom ?? []).map((c) => ({ ...c }))
@@ -278,6 +286,15 @@ function addCustom() {
           </label>
         </template>
       </div>
+      <div v-if="CHAT.includes(a.id)" class="qp-settings-field" :data-auto-tiers="a.id">
+        <span>Auto model <em>(a model id, or a word from one: the newest with it is used. {{ a.autoDefaults ? 'Empty = the suggestion shown' : 'Auto is offered once one is set' }})</em></span>
+        <div class="qp-settings-grid qp-auto-tiers">
+          <label v-for="t in AUTO_TIERS" :key="t.id" class="qp-settings-field">
+            <span>{{ t.label }} <em>{{ t.hint }}</em></span>
+            <input v-model="draft.providers[a.id]!.autoTiers![t.id]" class="qp-input" spellcheck="false" :placeholder="a.autoDefaults?.[t.id] ?? ''" />
+          </label>
+        </div>
+      </div>
       <template v-if="CHAT.includes(a.id)">
         <div class="qp-settings-field">
           <span>Environment variables</span>
@@ -400,6 +417,7 @@ function addCustom() {
 .qp-settings-inline { display: flex; gap: 6px; }
 .qp-settings-inline .qp-input { flex: 1; min-width: 0; }
 .qp-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.qp-auto-tiers { grid-template-columns: repeat(3, 1fr); }
 .qp-input {
   background: var(--qss-bg, #18181e);
   border: 1px solid var(--qss-border, #47474f);

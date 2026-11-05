@@ -19,6 +19,7 @@ import { usePilotStore } from '#pilot/stores/pilot'
 import { useKeysStore } from '#pilot/stores/keys'
 import { useCommands } from '#pilot/utils/commands'
 import { compactTokens, effortsFor, MODES, modesFor, type MenuOption } from '#pilot/utils/models'
+import { autoLabel } from '#pilot/utils/agentMenu'
 import type { AgentSetup } from '#pilot/utils/agentMenu'
 import { formatDuration } from '#pilot/utils/timeline'
 import type { Mode, ProviderCatalog } from '#pilot/types'
@@ -78,6 +79,7 @@ const modelLabel = computed(() => {
   const fan = threads.fanout[props.threadId]
   if (fan && fan.length > 1) return `${fan.length} models`
   const m = thread.value?.model ?? ''
+  if (thread.value?.autoModel) return autoLabel(m, Object.fromEntries((catalog.value?.models ?? []).map((x) => [x.id, x.displayName || x.id])))
   if (!m) return view.value?.model ? `Default · ${view.value.model.replace(/^claude-/, '')}` : 'Default'
   const known = catalog.value?.models.find((x) => x.id === m)
   return known?.displayName ?? m
@@ -143,13 +145,21 @@ async function pickSetup(s: AgentSetup) {
   const t = thread.value
   if (!t) return
   const switching = s.provider !== provider.value
-  const patch: { provider?: string; model?: string; effort?: string; fast?: boolean; instance?: string } = {}
+  const patch: { provider?: string; model?: string; effort?: string; fast?: boolean; instance?: string; auto?: boolean } = {}
   if (switching) patch.provider = s.provider
   // Another account of the agent (round 3, card 02).
   if ((s.instance ?? '') !== (t.instance ?? '')) patch.instance = s.instance ?? ''
-  if (switching || s.model !== t.model) patch.model = s.model
-  if (s.effort !== (t.effort || '')) patch.effort = s.effort
-  if (s.fast !== Boolean(t.fast)) patch.fast = s.fast
+  if (s.auto) {
+    // Auto chooses from here on (round 4, card 5); the app clears what belonged to the old model.
+    if (!t.autoModel || switching) patch.auto = true
+    if (switching) patch.model = ''
+    if (patch.auto) setFanout([])
+  } else {
+    // A model chosen by hand turns Auto off, even the one Auto is on right now.
+    if (switching || s.model !== t.model || t.autoModel) patch.model = s.model
+    if (s.effort !== (t.effort || '')) patch.effort = s.effort
+    if (s.fast !== Boolean(t.fast)) patch.fast = s.fast
+  }
   if (!Object.keys(patch).length) return
   // The pick is also what the next new thread starts with — recorded by the
   // app itself for every way of changing a thread (round 2, card 03).
@@ -229,6 +239,8 @@ useCommands({
         :effort="thread?.effort ?? ''"
         :fast="Boolean(thread?.fast)"
         :project="thread?.contextId ?? null"
+        allow-auto
+        :auto="Boolean(thread?.autoModel)"
         :locked="locked"
         :allow-multi="!started"
         :multi="threads.fanout[threadId] ?? []"
@@ -238,7 +250,7 @@ useCommands({
       />
     </span>
 
-    <span v-if="efforts === null || efforts.length" class="qp-ctl-anchor">
+    <span v-if="!thread?.autoModel && (efforts === null || efforts.length)" class="qp-ctl-anchor">
       <button class="qp-ctl-btn" :class="{ on: open === 'effort' }" :title="keys.hint('composer.effort', 'Effort')" @click.stop="toggle('effort')">
         <Gauge :size="12" />
         <span class="qp-ctl-text">{{ effortLabel }}</span>

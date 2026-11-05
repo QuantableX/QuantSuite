@@ -44,6 +44,8 @@ pub struct AdapterStatus {
     pub update: Option<String>,
     /// It can run a chat thread (card 20).
     pub chat: bool,
+    /// The Auto tiers it has without settings (round 4, card 5).
+    pub auto_defaults: Option<crate::auto_model::AutoTiers>,
 }
 
 /// How an installed CLI updates (card 19): through the installer that put it
@@ -463,6 +465,7 @@ fn status_one(adapter: &Adapter, settings: &Settings) -> AdapterStatus {
         custom: adapter.kind == Kind::Custom,
         signals: Some(adapter.signals()),
         chat: adapter.protocol().is_some(),
+        auto_defaults: crate::auto_model::built_in(&adapter.id),
         ..Default::default()
     };
     let Some(exe) = resolve(adapter, settings) else {

@@ -3329,3 +3329,14 @@ Tests run against a local stand-in for Telegram's API. A debug build reads `QS_T
 - **History per project:** when, which commit, preview or production, address, result and log (its last 64 KiB).
 
 Tests run real processes against a stand-in CLI. The first real deploy is the user's.
+
+### 5/6 — Auto in the model menu (card 47781259)
+
+`auto_model.rs` (schema 29, `threads.auto_model`), the Auto row in the agent menu's model list, tiers under Settings → Providers. No learned router: the rules are word lists and a few numbers at the top of the file, meant to be read and changed.
+
+- **At each message the first rule that fits decides:** a `/command` is left alone; Plan mode → Deep; a bare follow-up ("yes", "go ahead") keeps the last model, as do answers to the agent's questions and a resume; big-work words → Deep; a long brief or four attachments → Deep; a short small edit → Light; sensitive topics → Deep; a short quick question → Light; else Standard. A big thread (100k tokens or 40 messages) or any attachment never goes to Light.
+- **Tiers per agent.** Claude Code: haiku, sonnet, opus. Codex: luna, sol, astra, by its own descriptions of them. A tier is a model id or a word from one; the first (newest) id in the agent's list containing the word is used, so a new model needs no change here. Any other chat agent is offered Auto once a tier is filled in; the backend refuses otherwise.
+- **The thread says what it chose:** "Auto: Sonnet 5.5 — a medium change", in the timeline's setup-marker style, and the composer reads "Auto · Sonnet 5.5". A tier whose model is not in the agent's list goes to the agent's default and says so. It never tries another tier or account, and nothing here reads limits.
+- **Per thread.** Auto picks are not remembered as the next new thread's model. Choosing a model by hand turns Auto off, even the model Auto is on right now. Turning Auto on clears the thread's effort and fast mode, and the effort control hides, because they belong to a model.
+- **Switching.** Goes into the live process like a hand pick, unless the process differs in more than the model (effort cannot switch live); then the send starts a fresh one, resuming the conversation.
+- **Verified with real turns** (2026-11-05, the CLIs' own session logs): Claude Code haiku → sonnet → default (the fallback) → sonnet → opus (Plan); Codex gpt-6-luna → gpt-6.1-sol.

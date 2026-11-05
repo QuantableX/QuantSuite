@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const { agentRowState, canChat, filterAgents, pushRecent, orderModels, setupLabel, placeMenu, placeSubmenu, RECENT_MAX, accountKey, splitAccountKey, accountKeyLabel } = await import('../modules/pilot/app/utils/agentMenu.ts')
+const { autoLabel, autoOffered, autoRow, AUTO_ROW, agentRowState, canChat, filterAgents, pushRecent, orderModels, setupLabel, placeMenu, placeSubmenu, RECENT_MAX, accountKey, splitAccountKey, accountKeyLabel } = await import('../modules/pilot/app/utils/agentMenu.ts')
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 const ok = { id: 'claude', label: 'Claude Code', found: true, loggedIn: true, chat: true }
@@ -66,6 +66,10 @@ test('a setup reads as model · effort', () => {
   assert.equal(setupLabel('', ''), 'Default')
   assert.equal(setupLabel('opus', 'high', { opus: 'Opus 5.5' }), 'Opus 5.5 · high')
   assert.equal(setupLabel('x-1', ''), 'x-1')
+  // Round 4, card 5: what the composer says on Auto.
+  assert.equal(autoLabel(''), 'Auto')
+  assert.equal(autoLabel('haiku', { haiku: 'Haiku 5.5' }), 'Auto · Haiku 5.5')
+  assert.equal(autoLabel('own-id'), 'Auto · own-id')
 })
 
 test('the menu opens below its anchor, above when there is more room, never off screen', () => {
@@ -137,4 +141,17 @@ test('an account is agent@id, labelled with its name, and a removed one keeps it
   assert.equal(accountKeyLabel('claude@work', label, accounts), 'Claude Code · Work')
   assert.equal(accountKeyLabel('codex@work', label, accounts), 'Codex · work', 'an account belongs to one agent')
   assert.equal(accountKeyLabel('claude@gone', label, accounts), 'Claude Code · gone', 'past usage never reads as the default account')
+})
+
+test('Auto is offered only where a tier has a model, and is findable', () => {
+  const none = { light: '', standard: '', deep: '' }
+  assert.equal(autoOffered({ light: 'haiku', standard: 'sonnet', deep: 'opus' }, none), true, 'built in')
+  assert.equal(autoOffered(null, none), false, 'nothing known')
+  assert.equal(autoOffered(undefined, undefined), false)
+  assert.equal(autoOffered(null, { ...none, standard: ' pro ' }), true, 'set by the user')
+  assert.equal(autoOffered(null, { ...none, standard: '   ' }), false, 'spaces are not a model')
+  assert.deepEqual(autoRow(false, '').length, 0)
+  assert.equal(autoRow(true, '')[0].id, AUTO_ROW)
+  assert.equal(autoRow(true, 'au').length, 1)
+  assert.equal(autoRow(true, 'sonnet').length, 0, 'a search for a model hides it')
 })

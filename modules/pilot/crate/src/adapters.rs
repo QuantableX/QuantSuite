@@ -528,6 +528,7 @@ mod tests {
             effort: String::new(),
             title_source: "auto".into(),
             fast: false,
+            auto_model: false,
             notice: None,
             tags: Vec::new(),
             instance: String::new(), parent_id: None,
