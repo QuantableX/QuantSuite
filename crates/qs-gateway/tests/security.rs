@@ -180,6 +180,11 @@ async fn a_revoked_device_is_dropped_at_once_and_refused() {
         other => panic!("expected revoked, got {:?}", other.map(|c| c.welcome.clone())),
     }
     assert_eq!(s.hub.devices().unwrap()[0].state, DeviceState::Revoked);
+
+    // With a new code from the server's screen, the same PC pairs again.
+    let key = pair(&s, &device, DeviceRole::ReadOnly).await;
+    let c = client::connect(&s.addr(), &device, key, &me("Laptop")).await.unwrap();
+    assert_eq!(c.welcome.role, DeviceRole::ReadOnly);
 }
 
 #[tokio::test]

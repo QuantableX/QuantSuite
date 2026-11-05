@@ -60,6 +60,11 @@ Default permissions for the QuantSuite core plugin: settings, the event bus, the
 - `allow-gateway-pair-begin`
 - `allow-gateway-pair-finish`
 - `allow-gateway-pair-current`
+- `allow-gateway-remote-call`
+- `allow-gateway-step-up`
+- `allow-gateway-link-status`
+- `allow-gateway-link-retry`
+- `allow-gateway-use-connection`
 - `allow-gateway-connections`
 - `allow-gateway-connection-test`
 - `allow-gateway-connection-forget`
@@ -674,6 +679,58 @@ Denies the gateway_devices command without any pre-configured scope.
 <tr>
 <td>
 
+`qs:allow-gateway-link-retry`
+
+</td>
+<td>
+
+Enables the gateway_link_retry command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-link-retry`
+
+</td>
+<td>
+
+Denies the gateway_link_retry command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-link-status`
+
+</td>
+<td>
+
+Enables the gateway_link_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-link-status`
+
+</td>
+<td>
+
+Denies the gateway_link_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `qs:allow-gateway-pair-begin`
 
 </td>
@@ -856,6 +913,32 @@ Denies the gateway_pairing_status command without any pre-configured scope.
 <tr>
 <td>
 
+`qs:allow-gateway-remote-call`
+
+</td>
+<td>
+
+Enables the gateway_remote_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-remote-call`
+
+</td>
+<td>
+
+Denies the gateway_remote_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `qs:allow-gateway-set-pin`
 
 </td>
@@ -901,6 +984,58 @@ Enables the gateway_status command without any pre-configured scope.
 <td>
 
 Denies the gateway_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-step-up`
+
+</td>
+<td>
+
+Enables the gateway_step_up command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-step-up`
+
+</td>
+<td>
+
+Denies the gateway_step_up command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-use-connection`
+
+</td>
+<td>
+
+Enables the gateway_use_connection command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-use-connection`
+
+</td>
+<td>
+
+Denies the gateway_use_connection command without any pre-configured scope.
 
 </td>
 </tr>

@@ -48,6 +48,8 @@ const MODULE_RUN = {
   notes: 'server',
   plan: 'server',
   habit: 'server',
+  // No plugin of its own; its settings and entities live with the server's data.
+  flow: 'server',
   pilot: 'client',
   canvas: 'client',
   console: 'client',
@@ -145,6 +147,14 @@ export function combinedManifest() {
     plugins: core.plugins ?? {},
     events: [...events].sort(),
     topics: [...topics].filter(Boolean).sort(),
+    // Core settings and entities of the server-placed modules live on the
+    // server (§6.3.3): the client routes `get_setting`/`set_setting` by scope
+    // and the entity commands by module; the server refuses any other scope
+    // or module (card Server 5/7). `todos` is the shared to-do document.
+    data: {
+      modules: Object.keys(MODULE_RUN).filter((m) => MODULE_RUN[m] === 'server').sort(),
+      scopes: [...Object.keys(MODULE_RUN).filter((m) => MODULE_RUN[m] === 'server'), 'todos'].sort(),
+    },
   }
 }
 

@@ -105,6 +105,10 @@ pub enum Frame {
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resume: Option<ResumePoint>,
+        /// This connection is to pair: a revoked key may pair again (with a
+        /// new code from the server's screen), but not connect.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pair: bool,
     },
     Welcome {
         protocol: u32,

@@ -552,6 +552,44 @@ pub async fn gateway_pair_begin<R: Runtime>(app: AppHandle<R>, address: String, 
     gateway::pair_begin(&app, &address, &code).await
 }
 
+// ── Client mode (card Server 5/7) ──────────────────────────────────────────
+
+/// A call the frontend seam routed to the server this PC uses. Errors are
+/// `{ code, message }` (the seam asks for the PIN on `step_up_required`).
+#[tauri::command]
+pub async fn gateway_remote_call<R: Runtime>(app: AppHandle<R>, cmd: String, args: serde_json::Value) -> Result<serde_json::Value, serde_json::Value> {
+    gateway::remote_call(&app, cmd, args).await
+}
+
+/// Enters the server PIN for `external` actions (valid 10 minutes).
+#[tauri::command]
+pub async fn gateway_step_up<R: Runtime>(app: AppHandle<R>, pin: String) -> Result<u64, String> {
+    gateway::step_up(&app, &pin).await
+}
+
+/// Local, or the server this PC uses and the connection's state.
+#[tauri::command(async)]
+pub fn gateway_link_status<R: Runtime>(app: AppHandle<R>) -> gateway::LinkStatus {
+    gateway::link_status(&app)
+}
+
+#[tauri::command(async)]
+pub fn gateway_link_retry<R: Runtime>(app: AppHandle<R>) {
+    gateway::retry(&app)
+}
+
+/// Switches this PC to a saved server connection (`id`) or back to its own
+/// data (`null`), then restarts QuantSuite: the role decides at start whether
+/// this PC may trade.
+#[tauri::command(async)]
+pub fn gateway_use_connection<R: Runtime>(app: AppHandle<R>, id: Option<String>, db_state: State<'_, Db>) -> Result<(), String> {
+    {
+        let conn = db_state.0.lock().map_err(map_err)?;
+        gateway::use_connection(&conn, id.as_deref().filter(|s| !s.is_empty()))?;
+    }
+    app.restart()
+}
+
 /// The pairing in progress on this PC, if any.
 #[tauri::command]
 pub async fn gateway_pair_current<R: Runtime>(app: AppHandle<R>) -> Result<Option<gateway::PairBegun>, String> {

@@ -35,6 +35,8 @@ function openFor(id: string | null, section: string | null = null) {
   // section when it has any; suite otherwise.
   if (id && section && settingsSectionsFor(id).some((s) => s.id === section)) {
     selected.value = { group: 'module', id: section }
+  } else if (!id && section && suiteSections.value.some((s) => s.id === section)) {
+    selected.value = { group: 'suite', id: section }
   } else if (id && settingsSectionsFor(id).length > 0) {
     selected.value = { group: 'module', id: settingsSectionsFor(id)[0]!.id }
   } else if (suiteSections.value.length > 0) {
