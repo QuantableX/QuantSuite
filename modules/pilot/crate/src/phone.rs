@@ -480,6 +480,7 @@ fn router(shared: Arc<Shared>) -> Router {
         .route("/", get(page))
         .route("/app.js", get(script))
         .route("/app.css", get(style))
+        .route("/favicon.ico", get(|| async { StatusCode::NO_CONTENT }))
         .route("/api/pair", post(pair))
         .route("/api/me", get(me))
         .route("/api/pin", post(pin))

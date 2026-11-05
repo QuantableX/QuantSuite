@@ -13,7 +13,7 @@ function h(tag, props, ...kids) {
     else if (k === 'value') el.value = v
     else el.setAttribute(k, v === true ? '' : v)
   }
-  for (const kid of kids.flat()) {
+  for (const kid of kids.flat(Infinity)) {
     if (kid === undefined || kid === null || kid === false) continue
     el.append(kid.nodeType ? kid : document.createTextNode(String(kid)))
   }
@@ -157,7 +157,7 @@ function waitingNow(rows) {
 
 function rowOf(r) {
   const detail = r.needs
-    ? h('small', { class: 'ask' }, r.needs)
+    ? h('small', { class: 'wait' }, r.needs)
     : r.running
       ? h('small', { class: 'busy' }, `Working · ${r.project}`)
       : h('small', {}, `${r.project} · ${age(r.updatedAt)}`)
@@ -265,11 +265,26 @@ async function answer(threadId, requestId, body) {
   }
 }
 
+/** A tool's input for reading: a command as itself, its description in words. */
+function inputOf(item) {
+  let input = null
+  try {
+    input = JSON.parse(item.text)
+  } catch {
+    return { detail: item.text !== item.title ? item.text : '', note: '' }
+  }
+  const command = input && typeof input.command === 'string' ? input.command : ''
+  if (!command) return { detail: item.text, note: '' }
+  return { detail: command !== item.title ? command : '', note: typeof input.description === 'string' ? input.description : '' }
+}
+
 function approvalCard(threadId, item) {
+  const { detail, note } = inputOf(item)
   return h('section', { class: 'ask' },
     h('h2', {}, 'The agent asks'),
     h('div', { class: 'what' }, item.title),
-    item.text && item.text !== item.title && h('pre', {}, item.text),
+    note && h('div', { class: 'desc' }, note),
+    detail && h('pre', {}, detail),
     h('div', { class: 'buttons' },
       h('button', { class: 'danger', onclick: () => answer(threadId, item.requestId, { decision: 'deny' }) }, 'Deny'),
       item.allowSession && h('button', { onclick: () => answer(threadId, item.requestId, { decision: 'allowSession' }) }, 'Allow for this session'),

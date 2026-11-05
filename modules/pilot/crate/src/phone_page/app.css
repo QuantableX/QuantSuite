@@ -40,7 +40,7 @@ label { display: block; }
 .row.needs { border-color: var(--warn); }
 .row b { display: block; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row small { display: block; color: var(--muted); font-size: 12.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.row small.ask { color: var(--warn); }
+.row small.wait { color: var(--warn); }
 .row small.busy { color: var(--ok); }
 .empty { padding: 40px 20px; color: var(--muted); text-align: center; }
 

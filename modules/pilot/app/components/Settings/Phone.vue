@@ -36,11 +36,15 @@ const lanOk = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 
 const kindOf = computed(() => status.value?.addresses.find((a) => a.address === address.value)?.kind ?? '')
-const kindLabel: Record<string, string> = { tailnet: 'Tailscale', lan: 'Local network', other: 'Public' }
+const kindLabel: Record<string, string> = { tailnet: 'Tailscale', lan: 'Local network', other: 'Public', saved: 'Saved' }
 const choices = computed(() => {
   const all = status.value?.addresses ?? []
   const rank: Record<string, number> = { tailnet: 0, lan: 1, other: 2 }
-  return [...all].sort((a, b) => (rank[a.kind] ?? 3) - (rank[b.kind] ?? 3))
+  const sorted = [...all].sort((a, b) => (rank[a.kind] ?? 3) - (rank[b.kind] ?? 3))
+  // The saved address stays in the list, even when it is not a network's right now.
+  const saved = status.value?.settings.address
+  if (saved && !all.some((a) => a.address === saved)) sorted.unshift({ name: 'saved', address: saved, kind: 'saved' })
+  return sorted
 })
 const pairingCode = computed(() => {
   const c = status.value?.pairing?.code ?? ''
