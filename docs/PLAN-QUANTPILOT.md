@@ -3278,3 +3278,17 @@ review guides, helper runs (`providers::base_cmd`: commit messages, titles)
 and the agent's terminal UI, which now also gets the thread's account; PTYs
 honour `-NAME` (qs-pty). QA: the QA app started with Orca's empty
 `CODEX_HOME` showed Codex "Logged in using ChatGPT" and a Codex thread answered.
+
+## 53. Round 4: the postponed roadmap areas (2026-11-05)
+
+The user on the roadmap (card 91212da8): "plan each idea as a card and implement". The six ideas postponed in round 3, cards "QuantPilot round 4 N/6". Areas 4 and 10 and a second quick overlay stay rejected.
+
+### 1/6 — phone access: approvals and messages (card 425a2e4c)
+
+`phone.rs` (web layer behind a `Backend` trait, so its tests run over real HTTP against a fake), `phone_db.rs` (schema 25), `phone_page/` (one plain page, built into the binary), Settings → QuantPilot → Phone access (`Phone.vue`).
+
+- **Where it listens.** On this PC, off by default, on one address the user chooses. Tailscale's address is recommended; a LAN address is plain HTTP on the Wi-Fi and needs a tick that says so; a public address or every interface is refused (`check_address`). No relay and no account. This is the coding PC: the decision that the trading server runs no agents (PLAN-SERVER-CLIENT §6.3.10) stands.
+- **Three locks.** The network; the pairing (`qs_gateway::pairing`: 8 digits, 5 minutes, 5 tries, then locked; a QR holds the code in the URL fragment, which never reaches a server log), after which the phone holds a long random token in an HttpOnly, SameSite=Strict cookie and the PC keeps only its hash; and the PIN (`qs_gateway::stepup`: Argon2id hash in the vault as `pilot.phone-pin`, 10 minutes, 5 tries, then locked). Reading needs the pairing, anything that makes an agent act needs the PIN too, because a message to a thread in Full mode can do what the agent can. The audit list in Settings shows every act; it never holds a PIN or a token.
+- **The browser's attacks.** Every request's Host must be this address (DNS rebinding); a write needs the `X-QS-Phone` header and a matching Origin (cross-site requests); `default-src 'none'` with the script and style as files; the DOM is built from text only, so agent output cannot become markup. Revoking or turning it off also ends open connections and event streams.
+- **What the page does.** Threads that need you, then working, then recent (side chats and settled threads stay on the PC unless they wait for you). A thread's messages, the newest 6 tool calls, approval, plan and question cards, a composer (a message during a turn is queued, as on the PC), Stop, and New thread. Reasoning, diffs, files and attachments stay on the PC; a form from an MCP server says to answer it on the PC. Events only say "this thread changed"; the page then asks, so no content travels unasked.
+- **Limit.** A closed page cannot alert you: web push needs HTTPS and an outside push service. With the page open it vibrates and shows the count in the tab.
