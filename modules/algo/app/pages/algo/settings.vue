@@ -114,15 +114,8 @@ onUnmounted(() => {
 
 <template>
   <div class="settings">
-    <!-- Save indicator -->
-    <Transition name="fade">
-      <div v-if="saveMessage" class="settings__toast" :class="{ 'settings__toast--error': saveMessage === 'Failed to save' }">
-        {{ saveMessage }}
-      </div>
-    </Transition>
-
     <div class="settings__columns">
-      <div class="settings__col">
+      <div class="settings__col settings__col--bots">
         <!-- Bot defaults: what a new bot and a backtest start from -->
         <section class="card settings__section">
           <h3 class="settings__section-title">Bot defaults</h3>
@@ -136,6 +129,12 @@ onUnmounted(() => {
               <AlgoExchangeSelect id="default-exchange" v-model="defaultExchangeId" />
             </div>
             <div class="settings__field">
+              <label class="label" for="default-timeframe">Timeframe</label>
+              <select id="default-timeframe" v-model="localSettings.default_timeframe" class="input">
+                <option v-for="tf in timeframeOptions" :key="tf" :value="tf">{{ tf }}</option>
+              </select>
+            </div>
+            <div class="settings__field settings__field--full">
               <label class="label" for="default-pair">Trading pair</label>
               <AlgoExchangePairSelect
                 id="default-pair"
@@ -143,12 +142,6 @@ onUnmounted(() => {
                 :exchange-id="effectiveExchangeId"
                 :preferred="localSettings.default_pair || appStore.botDefaults.pair"
               />
-            </div>
-            <div class="settings__field">
-              <label class="label" for="default-timeframe">Timeframe</label>
-              <select id="default-timeframe" v-model="localSettings.default_timeframe" class="input">
-                <option v-for="tf in timeframeOptions" :key="tf" :value="tf">{{ tf }}</option>
-              </select>
             </div>
           </div>
 
@@ -188,7 +181,7 @@ onUnmounted(() => {
             keeps systems and bots below it. A position that would open closer to its liquidation price than the
             minimum distance is refused.
           </p>
-          <div class="field-grid field-grid--3">
+          <div class="field-grid field-grid--2">
             <div class="settings__field">
               <label class="label" for="perp-cap">Leverage cap (x)</label>
               <input id="perp-cap" v-model.number="localSettings.perp_max_leverage" type="number" class="input mono" min="1" max="20" step="1" />
@@ -199,11 +192,13 @@ onUnmounted(() => {
             </div>
           </div>
         </section>
+      </div>
 
+      <div class="settings__col settings__col--app">
         <!-- General -->
         <section class="card settings__section">
           <h3 class="settings__section-title">General</h3>
-          <div class="field-grid">
+          <div class="field-grid field-grid--2">
             <div class="settings__field">
               <label class="label">Theme</label>
               <div class="settings__theme-row">
@@ -236,9 +231,7 @@ onUnmounted(() => {
             <button class="btn btn-sm" @click="handleImportData">Import data</button>
           </div>
         </section>
-      </div>
 
-      <div class="settings__col">
         <!-- Python -->
         <section class="card settings__section">
           <h3 class="settings__section-title">Python</h3>
@@ -262,7 +255,9 @@ onUnmounted(() => {
             </p>
           </div>
         </section>
+      </div>
 
+      <div class="settings__col settings__col--about">
         <!-- Notifications -->
         <section class="card settings__section">
           <h3 class="settings__section-title">Notifications</h3>
@@ -298,86 +293,102 @@ onUnmounted(() => {
             <p class="settings__about-version text-muted">Version {{ config.public.appVersion }}</p>
           </div>
         </section>
-
-        <div class="settings__footer">
-          <button class="btn btn-primary" :disabled="isSaving" @click="saveAllSettings">
-            {{ isSaving ? 'Saving...' : 'Save settings' }}
-          </button>
-        </div>
       </div>
+    </div>
+
+    <!-- Right under the columns -->
+    <div class="settings__footer">
+      <Transition name="fade">
+        <span v-if="saveMessage" class="settings__toast" :class="{ 'settings__toast--error': saveMessage === 'Failed to save' }" role="status">
+          {{ saveMessage }}
+        </span>
+      </Transition>
+      <button class="btn btn-primary" :disabled="isSaving" @click="saveAllSettings">
+        {{ isSaving ? 'Saving...' : 'Save settings' }}
+      </button>
     </div>
   </div>
 </template>
 
 <style scoped>
 .settings {
+  container-type: inline-size;
   height: 100%;
   overflow-y: auto;
-  padding: 20px;
-  position: relative;
+  padding: var(--qss-page-edge);
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
 }
 
+/* Three columns of panels, each as tall as its content. */
 .settings__columns {
+  flex: none;
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--qss-gap);
   align-items: start;
+  align-content: start;
 }
 
 .settings__col {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--qss-gap);
   min-width: 0;
 }
 
-@media (max-width: 1100px) {
+/* Two columns, the last panels side by side underneath: it all still fits one screen. */
+@container (max-width: 1160px) {
   .settings__columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings__col--about {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-/* Toast */
+@container (max-width: 640px) {
+  .settings__columns,
+  .settings__col--about {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Save result, next to the button */
 .settings__toast {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  padding: 8px 16px;
-  background: var(--qa-accent);
-  color: var(--qa-bg);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
   font-weight: 500;
-  border-radius: var(--qa-radius);
-  z-index: 100;
+  color: var(--qa-text-secondary);
 }
 
 .settings__toast--error {
-  background: var(--qa-error);
-  color: #fff;
+  color: var(--qa-error);
 }
 
 /* Section */
 .settings__section-title {
-  font-size: 12px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--qa-text-secondary);
-  margin: 0 0 12px;
+  color: var(--qa-text);
+  margin: 0 0 var(--qss-gap-tight);
 }
 
 .settings__note {
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   line-height: 1.45;
-  margin: -6px 0 12px;
+  margin: -4px 0 var(--qss-gap-tight);
 }
 
 /* Fields */
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px 16px;
-  margin-bottom: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  margin-bottom: var(--qss-gap-tight);
 }
 
 .field-grid:last-child {
@@ -388,12 +399,20 @@ onUnmounted(() => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.field-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .settings__field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 12px;
+  gap: 0;
+  margin-bottom: var(--qss-gap-tight);
   min-width: 0;
+}
+
+.settings__field--full {
+  grid-column: 1 / -1;
 }
 
 .field-grid .settings__field,
@@ -409,32 +428,32 @@ onUnmounted(() => {
 .settings__theme-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 34px;
+  gap: var(--qss-gap-tight);
+  min-height: var(--qss-ctl-h);
 }
 
 .settings__theme-value {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 500;
   color: var(--qa-text);
-  min-width: 40px;
 }
 
 /* Path row */
 .settings__path-row {
   display: flex;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
   align-items: center;
 }
 
 .settings__path-row .input {
   flex: 1;
+  min-width: 0;
 }
 
 /* Detect result */
 .settings__detect-result {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -453,7 +472,7 @@ onUnmounted(() => {
 }
 
 .settings__field .settings__note {
-  margin: 8px 0 0;
+  margin: var(--qss-gap-tight) 0 0;
 }
 
 /* Toggle fields */
@@ -461,17 +480,16 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 0;
+  min-height: var(--qss-row-h);
   border-bottom: 1px solid var(--qa-border-subtle);
 }
 
 .settings__toggle-field:last-child {
   border-bottom: none;
-  padding-bottom: 0;
 }
 
 .settings__toggle-label {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   color: var(--qa-text);
   cursor: pointer;
 }
@@ -480,8 +498,8 @@ onUnmounted(() => {
 .toggle {
   position: relative;
   display: inline-block;
-  width: 40px;
-  height: 22px;
+  width: 34px;
+  height: 20px;
   flex-shrink: 0;
 }
 
@@ -497,15 +515,15 @@ onUnmounted(() => {
   inset: 0;
   background: var(--qa-bg-hover);
   border: 1px solid var(--qa-border);
-  border-radius: 11px;
+  border-radius: 10px;
   transition: all var(--qa-transition);
 }
 
 .toggle__slider::before {
   content: '';
   position: absolute;
-  height: 16px;
-  width: 16px;
+  height: 14px;
+  width: 14px;
   left: 2px;
   bottom: 2px;
   background: var(--qa-text-muted);
@@ -519,44 +537,46 @@ onUnmounted(() => {
 }
 
 .toggle__input:checked + .toggle__slider::before {
-  transform: translateX(18px);
+  transform: translateX(14px);
   background: var(--qa-bg);
 }
 
 /* Data actions */
 .settings__data-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--qss-gap-tight);
+  margin-top: var(--qss-gap-tight);
 }
 
 /* About */
 .settings__about {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .settings__about-name {
-  font-size: 15px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
-  font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 .settings__about-desc {
-  font-size: 13px;
+  font-size: var(--qss-text-label);
 }
 
 .settings__about-version {
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 /* Footer */
 .settings__footer {
+  flex-shrink: 0;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--qss-gap);
 }
 
 /* Fade transition */

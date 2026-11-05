@@ -35,6 +35,19 @@ let aggregateTimer: ReturnType<typeof setTimeout> | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 const POLL_MS = 30_000
 
+// The charts take a height in pixels: hand them what their panels have free. A
+// detached page (warm cache) measures 0 and keeps the last real size.
+const equityBox = ref<HTMLElement | null>(null)
+const drawdownBox = ref<HTMLElement | null>(null)
+const equityHeight = ref(400)
+const drawdownHeight = ref(200)
+useResizeObserver(equityBox, ([entry]) => {
+  if (entry && entry.contentRect.height > 0) equityHeight.value = Math.floor(entry.contentRect.height)
+})
+useResizeObserver(drawdownBox, ([entry]) => {
+  if (entry && entry.contentRect.height > 0) drawdownHeight.value = Math.floor(entry.contentRect.height)
+})
+
 const selectedBot = computed(() => botsStore.byId(selectedScope.value))
 const scopeMode = computed<TradingMode | null>(() =>
   selectedScope.value === 'paper' || selectedScope.value === 'live' ? selectedScope.value : null,
@@ -209,23 +222,26 @@ onUnmounted(stopListening)
       </p>
     </div>
 
-    <template v-else>
-      <div class="charts__main card">
-        <div class="chart-header">
-          <h3 class="chart-header__title">Equity Curve <span class="chart-header__bot">{{ scopeLabel }}</span></h3>
-          <span v-if="isLoading" class="text-muted chart-header__status">Updating...</span>
+    <!-- The two charts stacked on one time axis, the trades in a list beside them. -->
+    <div v-else class="charts__body" :class="{ 'charts__body--trades': trades.length }">
+      <div class="charts__plots">
+        <div class="charts__main card">
+          <div class="chart-header">
+            <h3 class="chart-header__title">Equity Curve <span class="chart-header__bot">{{ scopeLabel }}</span></h3>
+            <span v-if="isLoading" class="text-muted chart-header__status">Updating...</span>
+          </div>
+          <div ref="equityBox" class="chart-container">
+            <AlgoChartsEquityCurve :data="equityData" :height="equityHeight" />
+          </div>
         </div>
-        <div class="chart-container">
-          <AlgoChartsEquityCurve :data="equityData" />
-        </div>
-      </div>
 
-      <div class="charts__secondary card">
-        <div class="chart-header">
-          <h3 class="chart-header__title">Drawdown</h3>
-        </div>
-        <div class="chart-container chart-container--small">
-          <AlgoChartsDrawdownChart :data="equityData" />
+        <div class="charts__secondary card">
+          <div class="chart-header">
+            <h3 class="chart-header__title">Drawdown</h3>
+          </div>
+          <div ref="drawdownBox" class="chart-container">
+            <AlgoChartsDrawdownChart :data="equityData" :height="drawdownHeight" />
+          </div>
         </div>
       </div>
 
@@ -251,38 +267,41 @@ onUnmounted(stopListening)
           </div>
         </div>
       </div>
-    </template>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .charts {
+  container-type: inline-size;
   height: 100%;
   overflow-y: auto;
-  padding: 20px;
+  padding: var(--qss-page-edge);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--qss-gap);
 }
 
 .charts__toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
   flex-shrink: 0;
 }
 
 .charts__left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--qss-gap);
   min-width: 0;
 }
 
 .charts__title {
-  font-size: 16px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--qa-text);
   white-space: nowrap;
 }
@@ -290,8 +309,6 @@ onUnmounted(stopListening)
 .charts__select {
   width: auto;
   min-width: 200px;
-  padding: 5px 28px 5px 10px;
-  font-size: 12px;
 }
 
 .timeframe-bar {
@@ -301,91 +318,117 @@ onUnmounted(stopListening)
 
 .charts__loading,
 .charts__empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 300px;
-  font-size: 14px;
+  font-size: var(--qss-text-section);
 }
 
 .charts__error {
+  flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 40px;
-  text-align: center;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  font-size: var(--qss-text-section);
 }
 
 .empty-state {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
 }
 
-.charts__main {
-  flex: 1;
-  min-height: 300px;
+.charts__body {
+  flex: 1 1 0;
+  min-height: 460px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--qss-gap);
+}
+
+.charts__body--trades {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+.charts__plots {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
+}
+
+.charts__main,
+.charts__secondary {
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.charts__secondary,
+.charts__main {
+  flex: 3 1 0;
+}
+
+.charts__secondary {
+  flex: 1 1 0;
+}
+
 .charts__trades {
-  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .chart-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--qss-gap-tight);
 }
 
 .chart-header__title {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--qa-text-secondary);
+  color: var(--qa-text);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
 }
 
 .chart-header__bot {
-  text-transform: none;
-  letter-spacing: 0;
   font-weight: 500;
-  color: var(--qa-text);
+  color: var(--qa-text-secondary);
 }
 
 .chart-header__status {
-  font-size: 12px;
+  font-size: var(--qss-text-label);
 }
 
+/* The chart takes a height in pixels: it gets what this box has free. */
 .chart-container {
-  flex: 1;
-  min-height: 250px;
+  flex: 1 1 0;
+  min-height: 0;
   position: relative;
+  overflow: hidden;
 }
 
-.chart-container--small {
-  min-height: 150px;
-  height: 150px;
+.trades-summary {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .trades-summary__grid {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .trade-marker-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 0;
+  gap: var(--qss-gap-tight);
+  min-height: var(--qss-row-h);
   border-bottom: 1px solid var(--qa-border-subtle);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
 }
 
 .trade-marker-item:last-child {
@@ -393,23 +436,40 @@ onUnmounted(stopListening)
 }
 
 .trade-marker-item__side {
-  width: 20px;
+  width: 16px;
   font-weight: 700;
-  font-size: 12px;
   text-align: center;
 }
 
 .trade-marker-item__pair {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--qa-text);
 }
 
 .trade-marker-item__bot {
   font-size: 11px;
+  white-space: nowrap;
 }
 
 .trade-marker-item__pnl {
   font-weight: 600;
-  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Too narrow for the list beside the charts: it goes underneath, the page scrolls. */
+@container (max-width: 820px) {
+  .charts__body--trades {
+    flex: none;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 460px auto;
+  }
+
+  .charts__trades {
+    max-height: 240px;
+  }
 }
 </style>

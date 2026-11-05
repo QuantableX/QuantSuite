@@ -314,6 +314,7 @@ onMounted(() => {
       <div
         v-if="visible"
         class="create-overlay"
+        data-module="algo"
         @click="onOverlayClick"
         @contextmenu.prevent
       >

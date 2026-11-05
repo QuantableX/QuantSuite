@@ -167,44 +167,46 @@ onDeactivated(() => {
             <button class="btn btn-sm" @click="navigateTo('/algo/bots')">All bots</button>
           </div>
         </div>
-        <div class="stat-strip">
-          <div class="stat">
-            <span class="stat__value mono">{{ botsStore.runningCount }}</span>
-            <span class="stat__label">running</span>
+        <div class="bots-glance">
+          <div class="stat-strip">
+            <div class="stat">
+              <span class="stat__value">{{ botsStore.runningCount }}</span>
+              <span class="stat__label">running</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">{{ botsStore.liveRunningCount }}</span>
+              <span class="stat__label">live</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">{{ botsStore.list.length }}</span>
+              <span class="stat__label">total</span>
+            </div>
           </div>
-          <div class="stat">
-            <span class="stat__value mono">{{ botsStore.liveRunningCount }}</span>
-            <span class="stat__label">live</span>
-          </div>
-          <div class="stat">
-            <span class="stat__value mono">{{ botsStore.list.length }}</span>
-            <span class="stat__label">total</span>
-          </div>
-        </div>
-        <div class="kv-grid">
-          <div class="kv">
-            <span class="kv__label">Equity · paper</span>
-            <span class="kv__value mono">{{ formatCurrency(botsStore.equityByMode.paper) }}</span>
-          </div>
-          <div class="kv">
-            <span class="kv__label">Equity · live</span>
-            <span class="kv__value mono">{{ formatCurrency(botsStore.equityByMode.live) }}</span>
-          </div>
-          <div class="kv">
-            <span class="kv__label">Open · paper</span>
-            <span class="kv__value mono">{{ botsStore.openByMode.paper }}</span>
-          </div>
-          <div class="kv">
-            <span class="kv__label">Open · live</span>
-            <span class="kv__value mono">{{ botsStore.openByMode.live }}</span>
-          </div>
-          <div class="kv">
-            <span class="kv__label">Exchanges</span>
-            <span class="kv__value mono">{{ exchangeStore.exchanges.length }}</span>
-          </div>
-          <div class="kv">
-            <span class="kv__label">Strategies</span>
-            <span class="kv__value mono">{{ strategiesStore.strategies.length }}</span>
+          <div class="kv-grid">
+            <div class="kv">
+              <span class="kv__label">Equity · paper</span>
+              <span class="kv__value mono">{{ formatCurrency(botsStore.equityByMode.paper) }}</span>
+            </div>
+            <div class="kv">
+              <span class="kv__label">Equity · live</span>
+              <span class="kv__value mono">{{ formatCurrency(botsStore.equityByMode.live) }}</span>
+            </div>
+            <div class="kv">
+              <span class="kv__label">Open · paper</span>
+              <span class="kv__value mono">{{ botsStore.openByMode.paper }}</span>
+            </div>
+            <div class="kv">
+              <span class="kv__label">Open · live</span>
+              <span class="kv__value mono">{{ botsStore.openByMode.live }}</span>
+            </div>
+            <div class="kv">
+              <span class="kv__label">Exchanges</span>
+              <span class="kv__value mono">{{ exchangeStore.exchanges.length }}</span>
+            </div>
+            <div class="kv">
+              <span class="kv__label">Strategies</span>
+              <span class="kv__value mono">{{ strategiesStore.strategies.length }}</span>
+            </div>
           </div>
         </div>
         <div class="exposure-mini">
@@ -242,7 +244,7 @@ onDeactivated(() => {
     </div>
 
     <!-- Every bot, with its own numbers -->
-    <div class="card card--table">
+    <div class="card card--list">
       <div class="card__head">
         <h3 class="card__title">
           Every bot
@@ -296,7 +298,7 @@ onDeactivated(() => {
     </div>
 
     <!-- What just happened -->
-    <div class="card card--activity">
+    <div class="card card--list">
       <div class="card__head">
         <h3 class="card__title">Recent activity</h3>
         <div class="card__buttons">
@@ -319,17 +321,46 @@ onDeactivated(() => {
 </template>
 
 <style scoped>
+/* The glance row takes what it needs, the two lists share the rest and scroll
+   inside their panels. The page only scrolls once a short window hits the floors. */
+.dashboard {
+  container: algo-overview / inline-size;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--qss-page-edge);
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
+}
+
+.dashboard .dashboard__heading {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.dashboard .dashboard__empty {
+  flex: 1;
+  min-height: 0;
+  padding: var(--qss-gap-tight);
+}
+
 .exposure-mini {
-  margin-top: 10px;
+  margin-top: var(--qss-gap-tight);
+  padding-top: var(--qss-gap-tight);
+  border-top: 1px solid var(--qa-border-subtle);
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
+.exposure-mini:empty {
+  display: none;
+}
+
 .kill {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
 }
 
 .kill__btn {
@@ -338,18 +369,18 @@ onDeactivated(() => {
 }
 
 .kill__on {
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   font-weight: 600;
   color: var(--qa-error);
 }
 
 .kill__ask {
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   color: var(--qa-text-secondary);
 }
 
 .kill__report {
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   color: var(--qa-text-secondary);
   flex-shrink: 0;
 }
@@ -359,30 +390,17 @@ onDeactivated(() => {
   font-size: 11px;
 }
 
-/* Each content row gets the same share of the available height; lists scroll
-   inside their cards instead of changing the dashboard's proportions. */
-.dashboard {
-  height: 100%;
-  overflow: hidden;
-  padding: 14px 16px;
-  display: grid;
-  grid-template-rows: auto repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.dashboard .dashboard__heading { margin-bottom: 0; }
-.dashboard .dashboard__empty { flex: 1; min-height: 0; }
-
 .dashboard__top {
+  flex: 0 1 auto;
   min-height: 0;
+  max-height: 42%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  overflow: auto;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-auto-rows: minmax(0, 1fr);
+  gap: var(--qss-gap);
 }
 
 .dashboard .card {
-  padding: 12px 16px 14px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -390,29 +408,35 @@ onDeactivated(() => {
   overflow: auto;
 }
 
+.dashboard .card--list {
+  flex: 1 1 0;
+  min-height: 176px;
+  overflow: hidden;
+}
+
 .card__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: var(--qss-gap-tight);
+  min-height: var(--qss-ctl-h);
+  margin-bottom: var(--qss-gap-tight);
   flex-shrink: 0;
 }
 
 .card__title {
-  font-size: 12px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--qa-text-secondary);
+  color: var(--qa-text);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
   margin: 0;
 }
 
 .card__hint {
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   color: var(--qa-text-muted);
 }
 
@@ -421,55 +445,61 @@ onDeactivated(() => {
   gap: 6px;
 }
 
-/* Bots card */
-.stat-strip {
+/* Bots card: the counts beside their details */
+.bots-glance {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--qss-gap) 28px;
+}
+
+.stat-strip {
+  display: flex;
+  gap: 24px;
 }
 
 .stat {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--qa-bg-hover);
-  border: 1px solid var(--qa-border-subtle);
-  border-radius: var(--qa-radius);
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
 .stat__value {
-  font-size: 20px;
-  line-height: 1;
+  font-size: var(--qss-text-metric);
+  line-height: 1.1;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
   color: var(--qa-text);
 }
 
 .stat__label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: var(--qss-text-meta);
   color: var(--qa-text-muted);
+}
+
+.stat__label::first-letter {
+  text-transform: uppercase;
 }
 
 .kv-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px 28px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 24px;
 }
 
 .kv {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 8px;
-  font-size: 12px;
+  gap: var(--qss-gap-tight);
+  font-size: var(--qss-text-label);
 }
 
 .kv__label {
   color: var(--qa-text-muted);
+  font-size: var(--qss-text-label);
 }
 
 .kv__value {
@@ -481,15 +511,14 @@ onDeactivated(() => {
 .pnl-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
 }
 
 .pnl-table th {
-  padding: 0 0 6px;
-  font-size: 10px;
+  padding: 0 0 4px;
+  font-size: var(--qss-text-meta);
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--qa-text-muted);
   text-align: left;
 }
@@ -500,7 +529,8 @@ onDeactivated(() => {
 }
 
 .pnl-table td {
-  padding: 5px 0;
+  height: 26px;
+  padding: 0;
   border-top: 1px solid var(--qa-border-subtle);
 }
 
@@ -515,7 +545,14 @@ onDeactivated(() => {
   overflow: auto;
 }
 
-.table th {
+.bots-table-wrap .table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--qss-bg-raised);
+}
+
+.bots-table-wrap .table td {
   white-space: nowrap;
 }
 
@@ -539,10 +576,9 @@ onDeactivated(() => {
   display: inline-block;
   padding: 0 6px;
   border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
   color: var(--qa-text-secondary);
   border: 1px solid var(--qa-border-subtle);
 }
@@ -571,7 +607,7 @@ onDeactivated(() => {
 
 /* Activity */
 .activity-list {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
   display: flex;
@@ -584,7 +620,7 @@ onDeactivated(() => {
   gap: 10px;
   padding: 4px 0;
   border-bottom: 1px solid var(--qa-border-subtle);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
 }
 
 .activity-entry:last-child {
@@ -611,8 +647,24 @@ onDeactivated(() => {
 }
 
 .empty-state {
-  font-size: 13px;
-  padding: 8px 0;
+  font-size: var(--qss-text-label);
+  padding: var(--qss-gap-tight) 0;
 }
 
+/* The counts go above their details before the details get cramped. */
+@container algo-overview (max-width: 800px) {
+  .bots-glance {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--qss-gap-tight);
+  }
+}
+
+@container algo-overview (max-width: 680px) {
+  .dashboard__top {
+    flex: none;
+    max-height: none;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: auto;
+  }
+}
 </style>

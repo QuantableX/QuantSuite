@@ -79,37 +79,41 @@ const statCards = computed(() => {
 </template>
 
 <style scoped>
+/* One strip of figures, no tiles: the PnL carries the weight. */
 .stats-header {
   display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--qss-gap-tight) 20px;
 }
 
 .stat-card {
-  background: var(--qa-bg-card);
-  border: 1px solid var(--qa-border);
-  border-radius: var(--qa-radius);
-  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  flex: 1 1 0;
-  min-width: 96px;
+  gap: 2px;
+  flex: 1 1 84px;
+  min-width: 0;
 }
 
 .stat-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
   color: var(--qa-text-muted);
+  white-space: nowrap;
 }
 
 .stat-value {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--qa-text);
+  white-space: nowrap;
+}
+
+.stat-card:first-child .stat-value {
+  font-size: var(--qss-text-metric);
+  line-height: 1.1;
+  letter-spacing: -.02em;
 }
 
 .value-positive {
@@ -122,9 +126,7 @@ const statCards = computed(() => {
 
 .empty-state {
   width: 100%;
-  padding: 24px;
-  text-align: center;
   color: var(--qa-text-muted);
-  font-size: 13px;
+  font-size: var(--qss-text-section);
 }
 </style>

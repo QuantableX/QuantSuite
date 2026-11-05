@@ -234,53 +234,49 @@ onBeforeUnmount(unbindSaveShortcut)
       @rename="handleRename"
     />
 
-    <div v-if="showNewForm" class="new-form-wrap">
-      <div class="new-form card">
-        <h3 class="new-form__title">Create New Strategy</h3>
-        <div class="new-form__fields">
-          <div class="new-form__field">
-            <label class="label" for="strategy-name">Name</label>
-            <input
-              id="strategy-name"
-              v-model="newName"
-              class="input"
-              type="text"
-              placeholder="My Strategy"
-              @keydown.enter="handleCreate"
-            />
-          </div>
-          <div class="new-form__field">
-            <label class="label" for="strategy-desc">Description</label>
-            <input
-              id="strategy-desc"
-              v-model="newDesc"
-              class="input"
-              type="text"
-              placeholder="Brief description..."
-              @keydown.enter="handleCreate"
-            />
-          </div>
-        </div>
-        <div class="new-form__actions">
-          <button class="btn" @click="cancelCreate">Cancel</button>
-          <button
-            class="btn btn-primary"
-            :disabled="!newName.trim() || isCreating"
-            @click="handleCreate"
-          >
-            {{ isCreating ? 'Creating...' : 'Create' }}
-          </button>
-        </div>
+    <div v-if="showNewForm" class="new-form card">
+      <h3 class="new-form__title">Create New Strategy</h3>
+      <div class="new-form__field">
+        <label class="label" for="strategy-name">Name</label>
+        <input
+          id="strategy-name"
+          v-model="newName"
+          class="input"
+          type="text"
+          placeholder="My Strategy"
+          @keydown.enter="handleCreate"
+        />
+      </div>
+      <div class="new-form__field new-form__field--wide">
+        <label class="label" for="strategy-desc">Description</label>
+        <input
+          id="strategy-desc"
+          v-model="newDesc"
+          class="input"
+          type="text"
+          placeholder="Brief description..."
+          @keydown.enter="handleCreate"
+        />
+      </div>
+      <div class="new-form__actions">
+        <button class="btn" @click="cancelCreate">Cancel</button>
+        <button
+          class="btn btn-primary"
+          :disabled="!newName.trim() || isCreating"
+          @click="handleCreate"
+        >
+          {{ isCreating ? 'Creating...' : 'Create' }}
+        </button>
       </div>
     </div>
 
-    <!-- Editor area -->
+    <!-- Editor area: the code takes the room, its parameters and checks sit beside it -->
     <div v-if="hasActiveStrategy" class="editor-area">
       <AlgoStrategyEditor
         v-model:content="strategiesStore.editorContent"
         :strategy-id="strategiesStore.activeStrategyId!"
       />
-      <div class="params-panel">
+      <div class="params-panel card">
         <div class="params-panel__header">
           <div>
             <h3 class="params-panel__title">Strategy Params</h3>
@@ -315,24 +311,11 @@ onBeforeUnmount(unbindSaveShortcut)
     </div>
 
     <!-- Empty state -->
-    <div v-else class="empty-state">
-      <div class="empty-state__content">
-        <div class="empty-state__icon">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="12" y1="18" x2="12" y2="12" />
-            <line x1="9" y1="15" x2="15" y2="15" />
-          </svg>
-        </div>
-        <p class="empty-state__text">
-          Select a strategy from the sidebar or create a new one
-        </p>
-        <button class="btn btn-primary" @click="showNewForm = true">
-          New Strategy
-        </button>
-      </div>
-    </div>
+    <QEmptyState v-else class="empty-state" compact title="Select a strategy from the sidebar or create a new one">
+      <button class="btn btn-primary" @click="showNewForm = true">
+        New Strategy
+      </button>
+    </QEmptyState>
 
     <!-- Create-bot modal (outside v-if/v-else chain, uses Teleport) -->
     <AlgoBotCreateModal
@@ -346,43 +329,54 @@ onBeforeUnmount(unbindSaveShortcut)
 
 <style scoped>
 .strategies-page {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
+  gap: var(--qss-gap);
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  padding: var(--qss-page-edge);
 }
 
 .editor-area {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 0;
+  min-height: 420px;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--qss-gap);
+}
+
+/* The editor fills its panel, so its own 400px minimum would only push the page. */
+.editor-area :deep(.strategy-editor) {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--qa-border);
+  border-radius: var(--qss-panel-radius);
   overflow: hidden;
 }
 
 .params-panel {
-  flex-shrink: 0;
-  border-top: 1px solid var(--qa-border);
-  background: var(--qa-bg-card);
-  padding: 10px 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .params-panel__header {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--qss-gap);
+  margin-bottom: var(--qss-gap-tight);
 }
 
 .params-panel__title {
-  font-size: 12px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
   margin: 0;
 }
 
 .params-panel__hint {
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   color: var(--qa-text-muted);
   margin: 2px 0 0;
 }
@@ -390,21 +384,23 @@ onBeforeUnmount(unbindSaveShortcut)
 .params-panel__dirty {
   align-self: flex-start;
   color: var(--qa-warning);
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   font-weight: 600;
 }
 
 .params-panel__textarea {
+  display: block;
   width: 100%;
+  height: 220px;
   min-height: 92px;
   resize: vertical;
   box-sizing: border-box;
   border: 1px solid var(--qa-border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--qa-bg-input);
   color: var(--qa-text);
-  padding: 8px 10px;
-  font-size: 12px;
+  padding: var(--qss-gap-tight);
+  font-size: var(--qss-text-label);
   line-height: 1.45;
   font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
 }
@@ -417,7 +413,7 @@ onBeforeUnmount(unbindSaveShortcut)
 .params-panel__error,
 .params-panel__status {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--qss-text-label);
 }
 
 .params-panel__error {
@@ -428,106 +424,85 @@ onBeforeUnmount(unbindSaveShortcut)
   color: var(--qa-text-muted);
 }
 
+/* Validation results: a list on the panel's ground, the status in the label's colour. */
 .params-panel__checks {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 6px;
-  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--qss-gap-tight);
 }
 
 .params-panel__check {
-  border: 1px solid var(--qa-border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  background: var(--qa-bg-hover);
+  padding: 6px 0;
+  border-top: 1px solid var(--qa-border-subtle);
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.params-panel__check--ok {
-  border-color: color-mix(in srgb, var(--qa-success) 35%, var(--qa-border));
+.params-panel__check--ok .params-panel__check-label {
+  color: var(--qa-success);
 }
 
-.params-panel__check--warn {
-  border-color: color-mix(in srgb, var(--qa-warning) 35%, var(--qa-border));
+.params-panel__check--warn .params-panel__check-label {
+  color: var(--qa-warning);
 }
 
-.params-panel__check--error {
-  border-color: color-mix(in srgb, var(--qa-error) 35%, var(--qa-border));
+.params-panel__check--error .params-panel__check-label {
+  color: var(--qa-error);
 }
 
 .params-panel__check-label {
-  font-size: 11px;
+  font-size: var(--qss-text-label);
   color: var(--qa-text);
   font-weight: 600;
 }
 
 .params-panel__check-message {
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   color: var(--qa-text-muted);
 }
 
-.new-form-wrap {
-  padding: 16px;
-}
-
-/* Empty state */
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-}
-
-.empty-state__content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.empty-state__icon {
-  color: var(--qa-text-muted);
-}
-
-.empty-state__text {
-  font-size: 14px;
-  color: var(--qa-text-muted);
-  text-align: center;
-  max-width: 320px;
-}
-
-/* New strategy form */
+/* New strategy form: one row between the toolbar and the editor */
 .new-form {
-  width: 100%;
-  max-width: 520px;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .new-form__title {
-  font-size: 14px;
+  flex: 1 1 100%;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
-  margin-bottom: 16px;
-}
-
-.new-form__fields {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 16px;
 }
 
 .new-form__field {
+  flex: 1 1 200px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.new-form__field--wide {
+  flex-grow: 2;
 }
 
 .new-form__actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
+}
+
+@container (max-width: 860px) {
+  .editor-area {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(240px, 1fr) auto;
+  }
+
+  .params-panel__textarea {
+    height: 92px;
+  }
 }
 </style>

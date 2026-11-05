@@ -310,14 +310,26 @@ useEventListener<KeyboardEvent>(activeWindow, 'keydown', (e) => {
   min-height: 0;
 }
 
+/* Every page brings its own page edge and fills this box. */
 .main-content {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 24px 32px;
+  padding: 0;
   background: var(--qa-bg);
 }
 .strategy-chip--live {
   color: var(--qa-error);
+}
+
+@media (max-width: 1100px) {
+  .titlebar-center {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-inline: 10px;
+  }
+
+  .status-right {
+    display: none;
+  }
 }
 </style>

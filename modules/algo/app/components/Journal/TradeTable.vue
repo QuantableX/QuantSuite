@@ -264,7 +264,7 @@ function saveNotes(tradeId: string) {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--qa-bg-card);
+  background: var(--qss-bg-raised);
 }
 
 .sortable-header {
@@ -282,22 +282,27 @@ function saveNotes(tradeId: string) {
   cursor: pointer;
 }
 
+/* One line per trade; a narrow window scrolls the panel sideways. */
+.trade-row td {
+  white-space: nowrap;
+}
+
 .expanded-row td {
   padding: 0 !important;
   border-bottom: 1px solid var(--qa-border);
 }
 
 .expanded-panel {
-  padding: 16px;
-  background: var(--qa-bg-sidebar);
+  padding: var(--qss-panel-pad);
+  background: var(--qa-bg);
   border-top: 1px solid var(--qa-border-subtle);
 }
 
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  margin-bottom: var(--qss-gap);
 }
 
 .detail-item {
@@ -307,15 +312,13 @@ function saveNotes(tradeId: string) {
 }
 
 .detail-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
   color: var(--qa-text-muted);
 }
 
 .detail-value {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   color: var(--qa-text);
 }
 
@@ -343,10 +346,10 @@ function saveNotes(tradeId: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
+  padding: var(--qss-gap);
   text-align: center;
   color: var(--qa-text-muted);
-  font-size: 13px;
+  font-size: var(--qss-text-section);
 }
 .cell-bot {
   white-space: nowrap;
@@ -357,10 +360,9 @@ function saveNotes(tradeId: string) {
   margin-left: 6px;
   padding: 0 5px;
   border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
   color: var(--qa-text-muted);
   border: 1px solid var(--qa-border-subtle);
   vertical-align: middle;

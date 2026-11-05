@@ -188,13 +188,14 @@ onMounted(async () => {
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="!exchangeStore.exchanges.length" class="exchange-page__empty card">
-      <p class="empty-state__title">No exchanges connected</p>
-      <p class="empty-state__desc text-muted">
-        Connect a centralized or decentralized exchange to start trading.
-      </p>
+    <QEmptyState
+      v-else-if="!exchangeStore.exchanges.length"
+      compact
+      title="No exchanges connected"
+      description="Connect a centralized or decentralized exchange to start trading."
+    >
       <button class="btn btn-primary" @click="openAddForm">Connect Exchange</button>
-    </div>
+    </QEmptyState>
 
     <!-- Exchange Content -->
     <template v-else>
@@ -253,16 +254,14 @@ onMounted(async () => {
             <!-- Balance Display -->
             <div class="detail-panel__balances">
               <p v-if="balanceError" class="text-error">{{ balanceError }}</p>
-              <AlgoExchangeBalanceDisplay :balances="exchangeStore.balances" />
+              <AlgoExchangeBalanceDisplay class="detail-panel__display" :balances="exchangeStore.balances" />
             </div>
           </div>
         </div>
 
         <!-- No Selection State -->
         <div v-else class="exchange-page__detail">
-          <div class="no-selection card">
-            <p class="text-muted">Select an exchange to view balances and details.</p>
-          </div>
+          <p class="no-selection text-muted">Select an exchange to view balances and details.</p>
         </div>
       </div>
     </template>
@@ -282,44 +281,46 @@ onMounted(async () => {
 
 <style scoped>
 .exchange-page {
+  container-type: inline-size;
   height: 100%;
   overflow-y: auto;
-  padding: 20px;
+  padding: var(--qss-page-edge);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--qss-gap);
 }
 
 .exchange-page__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--qss-gap);
   flex-shrink: 0;
 }
 
 .exchange-page__title {
-  font-size: 16px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--qa-text);
 }
 
 .vault-notice {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: var(--qss-gap-tight);
   border-left: 3px solid var(--qa-warning);
   flex-shrink: 0;
 }
 
 .vault-notice__text {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   color: var(--qa-text);
 }
 
 .vault-notice__form {
   display: flex;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
   align-items: center;
 }
 
@@ -328,75 +329,60 @@ onMounted(async () => {
 }
 
 .exchange-page__loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  font-size: 14px;
+  font-size: var(--qss-text-section);
 }
 
-/* Empty State */
-.exchange-page__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 48px 24px;
-  text-align: center;
-}
-
-.empty-state__title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--qa-text);
-}
-
-.empty-state__desc {
-  font-size: 13px;
-  max-width: 360px;
-}
-
-/* Content Layout */
+/* The list beside its detail; each scrolls on its own. */
 .exchange-page__content {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  flex: 1;
-  min-height: 0;
-}
-
-@media (max-width: 900px) {
-  .exchange-page__content {
-    grid-template-columns: 1fr;
-  }
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: var(--qss-gap);
+  flex: 1 1 0;
+  min-height: 420px;
 }
 
 .exchange-page__list {
   min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
 }
 
 .exchange-page__detail {
+  min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Detail Panel */
-.detail-panel__header {
+.detail-panel {
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--qss-gap-tight);
+}
+
+.detail-panel__header {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .detail-panel__info {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .detail-panel__name {
-  font-size: 16px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
 }
@@ -404,8 +390,8 @@ onMounted(async () => {
 .detail-panel__meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 13px;
+  gap: var(--qss-gap-tight);
+  font-size: var(--qss-text-label);
 }
 
 .detail-panel__provider {
@@ -416,7 +402,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   color: var(--qa-text-secondary);
 }
 
@@ -426,20 +412,29 @@ onMounted(async () => {
 }
 
 .exposure-card {
-  margin-top: 12px;
-  padding: 12px;
+  flex-shrink: 0;
 }
 
 .exposure-card__title {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
-  margin-bottom: 8px;
+  margin-bottom: var(--qss-gap-tight);
 }
 
 .detail-panel__balances {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap-tight);
   border-top: 1px solid var(--qa-border-subtle);
-  padding-top: 16px;
+  padding-top: var(--qss-gap);
+}
+
+.detail-panel__display {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 /* Pill variants */
@@ -469,12 +464,25 @@ onMounted(async () => {
   background: var(--qa-text-muted);
 }
 
-/* No selection */
+/* No selection: a hint level with the list, no frame */
 .no-selection {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-  font-size: 13px;
+  padding: var(--qss-panel-pad) 0;
+  font-size: var(--qss-text-section);
+}
+
+@container (max-width: 700px) {
+  .exchange-page__content {
+    flex: none;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+
+  .exchange-page__list {
+    overflow-y: visible;
+  }
+
+  .detail-panel {
+    min-height: 320px;
+  }
 }
 </style>

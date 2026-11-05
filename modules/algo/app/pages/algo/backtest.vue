@@ -119,21 +119,25 @@ onMounted(async () => {
       <div v-if="backtestStore.isRunning" class="progress-section">
         <div class="progress-card card">
           <h3 class="progress-title">Running Backtest</h3>
+          <div class="progress-info">
+            <span class="progress-pct">{{ Math.round(backtestStore.progress.pct) }}%</span>
+            <span class="progress-message text-muted">{{ backtestStore.progress.message }}</span>
+          </div>
           <div class="progress-bar-track">
             <div
               class="progress-bar-fill"
               :style="{ width: `${backtestStore.progress.pct}%` }"
             />
           </div>
-          <div class="progress-info">
-            <span class="progress-pct">{{ Math.round(backtestStore.progress.pct) }}%</span>
-            <span class="progress-message text-muted">{{ backtestStore.progress.message }}</span>
-          </div>
         </div>
       </div>
 
       <!-- Results Section -->
-      <div v-if="!showConfig && !backtestStore.isRunning && backtestStore.currentResult" class="results-section">
+      <div
+        v-if="!showConfig && !backtestStore.isRunning && backtestStore.currentResult"
+        class="results-section"
+        :class="{ 'results-section--comparing': isComparing }"
+      >
         <div class="results-toolbar">
           <button class="btn btn-sm" @click="handleReconfigure">
             New Backtest
@@ -143,7 +147,7 @@ onMounted(async () => {
           </button>
         </div>
 
-        <!-- Save prompt overlay -->
+        <!-- Save prompt, one row above the results -->
         <div v-if="showSavePrompt" class="save-prompt card">
           <h4 class="save-prompt__title">Save Backtest Result</h4>
           <div class="save-prompt__field">
@@ -169,7 +173,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <AlgoBacktestResults :result="backtestStore.currentResult" />
+        <AlgoBacktestResults class="results-body" :result="backtestStore.currentResult" />
 
         <!-- Comparison view -->
         <div v-if="isComparing" class="comparison-section">
@@ -178,17 +182,17 @@ onMounted(async () => {
       </div>
 
       <!-- Empty state when no config and no result -->
-      <div
+      <QEmptyState
         v-if="!showConfig && !backtestStore.isRunning && !backtestStore.currentResult"
-        class="empty-state"
+        compact
+        title="No backtest result loaded."
       >
-        <p class="text-muted">No backtest result loaded.</p>
         <button class="btn" @click="showConfig = true">Configure Backtest</button>
-      </div>
+      </QEmptyState>
     </div>
 
     <!-- Saved backtests sidebar -->
-    <aside v-if="backtestStore.backtests.length" class="backtest-sidebar">
+    <aside v-if="backtestStore.backtests.length" class="backtest-sidebar card">
       <h3 class="sidebar-title">Saved Backtests</h3>
       <div class="saved-list">
         <div
@@ -215,58 +219,66 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* The saved list sits next to the page and wraps under it when it would squeeze the form. */
 .backtest-page {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--qss-gap);
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  padding: var(--qss-page-edge);
 }
 
 .backtest-main {
-  flex: 1;
+  flex: 999 1 540px;
   min-width: 0;
-  overflow-y: auto;
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
 }
 
 /* Config section: the form spans the page */
 .config-section {
-  max-width: none;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
 }
 
 .run-error {
-  margin-bottom: 12px;
-  padding: 10px 14px;
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
   border: 1px solid color-mix(in srgb, var(--qa-error) 50%, var(--qa-border));
   border-radius: var(--qa-radius);
   background: color-mix(in srgb, var(--qa-error) 12%, transparent);
   color: var(--qa-error);
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
-/* Progress */
+/* Progress: a slim track at the top of the page, where the form was */
 .progress-section {
-  max-width: 600px;
-  margin: 80px auto 0;
+  flex-shrink: 0;
 }
 
 .progress-card {
-  text-align: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .progress-title {
-  font-size: 14px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
-  margin-bottom: 20px;
 }
 
 .progress-bar-track {
+  grid-column: 1 / -1;
   width: 100%;
   height: 4px;
-  background: var(--qa-bg-card);
-  border: 1px solid var(--qa-border-subtle);
+  background: var(--qa-bg-hover);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -279,105 +291,118 @@ onMounted(async () => {
 }
 
 .progress-info {
+  min-width: 0;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 12px;
+  align-items: baseline;
+  gap: var(--qss-gap-tight);
 }
 
 .progress-pct {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
   font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 .progress-message {
-  font-size: 13px;
+  min-width: 0;
+  font-size: var(--qss-text-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Results */
+/* Results take the page's height; the chart and the trades split it. */
 .results-section {
+  flex: 1 1 0;
+  min-height: 560px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--qss-gap);
+}
+
+.results-body {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* A comparison adds a whole chart and table: this one state may scroll the page. */
+.results-section--comparing {
+  flex: none;
+}
+
+.results-section--comparing .results-body {
+  flex: none;
+  height: 720px;
 }
 
 .results-toolbar {
+  flex-shrink: 0;
   display: flex;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
 }
 
 /* Save prompt */
 .save-prompt {
-  max-width: 480px;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .save-prompt__title {
-  font-size: 14px;
+  align-self: center;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
-  margin-bottom: 12px;
 }
 
 .save-prompt__field {
-  margin-bottom: 12px;
+  flex: 1 1 280px;
+  min-width: 0;
 }
 
 .save-prompt__actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
 }
 
 /* Comparison */
 .comparison-section {
-  margin-top: 24px;
-  padding-top: 24px;
+  padding-top: var(--qss-gap);
   border-top: 1px solid var(--qa-border);
 }
 
-/* Empty state */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 80px 0;
-}
-
-/* Sidebar */
+/* Saved results, a list next to the page */
 .backtest-sidebar {
-  width: 260px;
-  flex-shrink: 0;
-  background: var(--qa-bg-sidebar);
-  border-left: 1px solid var(--qa-border);
+  flex: 1 0 260px;
+  min-height: 0;
   overflow-y: auto;
-  padding: 16px;
 }
 
 .sidebar-title {
-  font-size: 11px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--qa-text-muted);
-  margin-bottom: 12px;
+  color: var(--qa-text);
+  margin-bottom: var(--qss-gap-tight);
 }
 
 .saved-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .saved-item {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 2px 6px;
+  padding: 6px var(--qss-gap-tight);
+  border: 1px solid transparent;
   border-radius: var(--qa-radius);
   cursor: pointer;
   transition: background var(--qa-transition);
@@ -389,12 +414,12 @@ onMounted(async () => {
 
 .saved-item--active {
   background: var(--qa-bg-hover);
-  border: 1px solid var(--qa-border);
+  border-color: var(--qa-border);
 }
 
 .saved-item__name {
-  flex: 1;
-  font-size: 13px;
+  flex: 1 1 100%;
+  font-size: var(--qss-text-section);
   font-weight: 500;
   color: var(--qa-text);
   min-width: 0;
@@ -404,14 +429,12 @@ onMounted(async () => {
 }
 
 .saved-item__meta {
-  font-size: 11px;
-  width: 100%;
+  font-size: var(--qss-text-meta);
+  flex: 1 1 auto;
 }
 
 .saved-item__delete {
   margin-left: auto;
-  font-size: 11px;
-  padding: 2px 8px;
   opacity: 0;
   transition: opacity var(--qa-transition);
 }

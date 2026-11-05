@@ -148,8 +148,8 @@ function handleSubmit() {
 <template>
   <form class="card config-form" @submit.prevent="handleSubmit">
     <div class="form-grid">
-      <!-- Row 1 -->
-      <div class="field">
+      <!-- What runs -->
+      <div class="field field--wide">
         <label class="label" for="bt-strategy">Strategy</label>
         <select
           id="bt-strategy"
@@ -166,13 +166,11 @@ function handleSubmit() {
           </option>
         </select>
       </div>
-      <div class="field">
+      <div class="field field--wide">
         <label class="label" for="bt-exchange">Exchange</label>
         <AlgoExchangeSelect id="bt-exchange" v-model="form.exchange_id" />
       </div>
-
-      <!-- Row 2 -->
-      <div class="field">
+      <div class="field field--wide">
         <label class="label" for="bt-pair">Trading Pair</label>
         <AlgoExchangePairSelect
           id="bt-pair"
@@ -181,6 +179,8 @@ function handleSubmit() {
           :preferred="appStore.botDefaults.pair"
         />
       </div>
+
+      <!-- How it runs -->
       <div class="field">
         <label class="label" for="bt-timeframe">Timeframe</label>
         <select
@@ -198,8 +198,6 @@ function handleSubmit() {
           </option>
         </select>
       </div>
-
-      <!-- Row 3 -->
       <div class="field">
         <label class="label" for="bt-start">Start Date</label>
         <input
@@ -218,8 +216,6 @@ function handleSubmit() {
           type="date"
         />
       </div>
-
-      <!-- Row 4 -->
       <div class="field">
         <label class="label" for="bt-capital">Initial Capital ($)</label>
         <input
@@ -245,8 +241,6 @@ function handleSubmit() {
           @input="markTouched"
         />
       </div>
-
-      <!-- Row 5 -->
       <div class="field">
         <label class="label" for="bt-direction">Direction</label>
         <select
@@ -283,43 +277,69 @@ function handleSubmit() {
 
 <style scoped>
 .config-form {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--qss-gap);
 }
 
+/* Six columns: what runs takes two each, how it runs one each. */
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px 20px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--qss-gap);
 }
 
-@media (max-width: 900px) {
-  .form-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+.field--wide {
+  grid-column: span 2;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .form-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding-top: 4px;
+  gap: var(--qss-gap);
+  padding-top: var(--qss-gap-tight);
   border-top: 1px solid var(--qa-border-subtle);
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-}
-
 .data-note {
-  font-size: 12px;
+  min-width: 0;
+  font-size: var(--qss-text-label);
 }
 
 .run-btn {
-  min-width: 200px;
+  min-width: 128px;
   flex-shrink: 0;
+}
+
+@container (max-width: 820px) {
+  .form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .field--wide {
+    grid-column: auto;
+  }
+
+  .field--wide:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (max-width: 480px) {
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-footer {
+    flex-wrap: wrap;
+  }
 }
 </style>

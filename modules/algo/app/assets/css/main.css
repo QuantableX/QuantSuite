@@ -157,10 +157,11 @@
 /* ── Card ── */
 
 [data-module="algo"] .card {
-  background: var(--qa-bg-card);
+  background: var(--qss-bg-raised);
   border: 1px solid var(--qa-border);
-  border-radius: var(--qa-radius-lg);
-  padding: 16px;
+  border-radius: var(--qss-panel-radius);
+  padding: var(--qss-panel-pad);
+  box-shadow: none;
 }
 
 
@@ -173,9 +174,7 @@
   gap: 6px;
   padding: 3px 10px;
   font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: 500;
   border: 1px solid var(--qa-border);
   border-radius: 9999px;
   color: var(--qa-text-secondary);
@@ -228,7 +227,7 @@
 
 [data-module="algo"] .btn-primary {
   background: var(--qa-accent);
-  color: var(--qa-bg);
+  color: var(--qss-accent-ink);
   border-color: var(--qa-accent);
 }
 
@@ -263,6 +262,19 @@
 }
 
 
+
+/* The middle runs at the shared density. The right panel and the dialogs keep their own control sizes. */
+[data-module="algo"] .main-content .btn {
+  height: var(--qss-ctl-h);
+  padding: 0 var(--qss-panel-pad);
+  font-size: var(--qss-ctl-font);
+}
+
+[data-module="algo"] .main-content :is(input.input, select.input) {
+  height: var(--qss-ctl-h);
+  padding-block: 0;
+  font-size: var(--qss-ctl-font);
+}
 
 /* ── Form Inputs ── */
 
@@ -312,12 +324,10 @@
 
 [data-module="algo"] .label {
   display: block;
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   font-weight: 500;
   color: var(--qa-text-secondary);
   margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 
@@ -327,26 +337,27 @@
 [data-module="algo"] .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
 }
 
 
 
 [data-module="algo"] .table th {
   text-align: left;
-  padding: 8px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--qa-text-muted);
+  padding: 6px var(--qss-panel-pad);
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--qa-text-secondary);
   border-bottom: 1px solid var(--qa-border);
 }
 
 
 
 [data-module="algo"] .table td {
-  padding: 10px 12px;
+  height: var(--qss-row-h);
+  padding: 4px var(--qss-panel-pad);
   border-bottom: 1px solid var(--qa-border-subtle);
   color: var(--qa-text);
 }

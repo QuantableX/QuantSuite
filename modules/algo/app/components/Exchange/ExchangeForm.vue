@@ -229,7 +229,7 @@ function handleTest() {
 
 <template>
   <Teleport to="body">
-    <div v-if="visible !== false" class="modal-backdrop" @click="onBackdropClick">
+    <div v-if="visible !== false" class="modal-backdrop" data-module="algo" @click="onBackdropClick">
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title">{{ modalTitle }}</h3>
