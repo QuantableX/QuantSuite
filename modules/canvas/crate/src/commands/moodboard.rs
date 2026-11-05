@@ -123,7 +123,7 @@ pub fn list_in(root: &Path) -> Vec<BoardSummary> {
             Some(BoardSummary { id, name: if b.name.is_empty() { e.file_name().to_string_lossy().into_owned() } else { b.name }, images: b.items.len() })
         })
         .collect();
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|a| a.name.to_lowercase());
     out
 }
 
