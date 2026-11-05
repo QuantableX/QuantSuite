@@ -35,7 +35,7 @@ async function run(command: string, args: Record<string, unknown> = {}) {
   busy.value = true
   notice.value = ''
   try {
-    const next = await pilot<Status>(`plugin:pilot|${command}`, args)
+    const next = await pilot<Status>(command, args)
     if (next) status.value = next
   } catch (e) {
     notice.value = String(e)
@@ -44,9 +44,9 @@ async function run(command: string, args: Record<string, unknown> = {}) {
   }
 }
 
-const load = () => run('pilot_telegram_status')
+const load = () => run('plugin:pilot|pilot_telegram_status')
 async function saveToken() {
-  await run('pilot_telegram_set_token', { token: token.value })
+  await run('plugin:pilot|pilot_telegram_set_token', { token: token.value })
   if (!notice.value) token.value = ''
 }
 async function setPin() {
@@ -62,11 +62,11 @@ async function setPin() {
   }
   await load()
 }
-const turn = (enabled: boolean) => run('pilot_telegram_set', { enabled })
-const pair = () => run('pilot_telegram_pair')
-const cancelPair = () => run('pilot_telegram_pair_cancel')
-const unlink = () => run('pilot_telegram_unlink')
-const forget = () => run('pilot_telegram_forget_token')
+const turn = (enabled: boolean) => run('plugin:pilot|pilot_telegram_set', { enabled })
+const pair = () => run('plugin:pilot|pilot_telegram_pair')
+const cancelPair = () => run('plugin:pilot|pilot_telegram_pair_cancel')
+const unlink = () => run('plugin:pilot|pilot_telegram_unlink')
+const forget = () => run('plugin:pilot|pilot_telegram_forget_token')
 
 /** The code's countdown and the chat showing up, while the page is open. */
 watch(

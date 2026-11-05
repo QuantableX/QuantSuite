@@ -65,7 +65,7 @@ async function run(command: string, args: Record<string, unknown> = {}) {
   busy.value = true
   notice.value = ''
   try {
-    const next = await pilot<Status>(`plugin:pilot|${command}`, args)
+    const next = await pilot<Status>(command, args)
     if (next) adopt(next)
   } catch (e) {
     notice.value = String(e)
@@ -74,16 +74,16 @@ async function run(command: string, args: Record<string, unknown> = {}) {
   }
 }
 
-const load = () => run('pilot_phone_status')
-const turnOn = () => run('pilot_phone_set', { settings: { enabled: true, address: address.value, port: Number(port.value), lanOk: lanOk.value } })
-const turnOff = () => run('pilot_phone_set', { settings: { enabled: false, address: address.value, port: Number(port.value), lanOk: lanOk.value } })
+const load = () => run('plugin:pilot|pilot_phone_status')
+const turnOn = () => run('plugin:pilot|pilot_phone_set', { settings: { enabled: true, address: address.value, port: Number(port.value), lanOk: lanOk.value } })
+const turnOff = () => run('plugin:pilot|pilot_phone_set', { settings: { enabled: false, address: address.value, port: Number(port.value), lanOk: lanOk.value } })
 async function setPin() {
-  await run('pilot_phone_set_pin', { pin: pin.value })
+  await run('plugin:pilot|pilot_phone_set_pin', { pin: pin.value })
   if (!notice.value) pin.value = ''
 }
-const pair = () => run('pilot_phone_pair')
-const cancelPair = () => run('pilot_phone_pair_cancel')
-const revoke = (id: string) => run('pilot_phone_revoke', { id })
+const pair = () => run('plugin:pilot|pilot_phone_pair')
+const cancelPair = () => run('plugin:pilot|pilot_phone_pair_cancel')
+const revoke = (id: string) => run('plugin:pilot|pilot_phone_revoke', { id })
 
 /** The code's countdown and a new device showing up, while the page is open. */
 watch(
