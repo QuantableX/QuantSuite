@@ -63,6 +63,40 @@ pub struct Position {
     pub entry_fees: Vec<ChargedFee>,
 }
 
+impl Position {
+    /// Split at `qty` when an order closed only part of the position. The
+    /// closed part keeps the id (its journal row); the rest gets a new id and
+    /// a row of its own. Entry fee and margin go by share.
+    fn split(&self, qty: f64) -> (Position, Position) {
+        let share = if self.quantity > 0.0 { (qty / self.quantity).min(1.0) } else { 1.0 };
+        let fees = |factor: f64| -> Vec<ChargedFee> {
+            self.entry_fees
+                .iter()
+                .map(|f| ChargedFee { asset: f.asset.clone(), amount: f.amount * factor })
+                .collect()
+        };
+        let mut closed = self.clone();
+        closed.quantity = qty;
+        closed.entry_fee = self.entry_fee * share;
+        closed.reserved_margin = self.reserved_margin * share;
+        closed.entry_fees = fees(share);
+        let mut rest = self.clone();
+        rest.id = Uuid::new_v4().to_string();
+        rest.quantity = self.quantity - qty;
+        rest.entry_fee = self.entry_fee - closed.entry_fee;
+        rest.reserved_margin = self.reserved_margin - closed.reserved_margin;
+        rest.entry_fees = fees(1.0 - share);
+        (closed, rest)
+    }
+}
+
+/// Whether the venue would take an order for `qty` at `price`. A rest it would
+/// not take can never be closed by an order, so it is dust, not a position.
+fn orderable(filters: &SymbolFilters, qty: f64, price: f64) -> bool {
+    let qty = filters.round_qty_down(qty);
+    qty > 0.0 && qty + 1e-12 >= filters.min_qty && qty * price + 1e-9 >= filters.min_notional
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrderSide {
     Buy,
@@ -569,9 +603,14 @@ impl BotRuntime {
                     Some(idx) => {
                         self.sell_live(idx, now, &mut effects);
                         if req.reverse {
+                            let still_long = self.open_positions.iter().any(|p| p.pair == req.pair && p.side == "long");
                             effects.push(Effect::Log {
                                 level: "warn",
-                                message: "Spot live trading is long-only: the long was closed, no short was opened.".into(),
+                                message: if still_long {
+                                    "Spot live trading is long-only: no short was opened, and the long is not fully closed.".into()
+                                } else {
+                                    "Spot live trading is long-only: the long was closed, no short was opened.".into()
+                                },
                             });
                         }
                     }
@@ -773,6 +812,27 @@ impl BotRuntime {
         self.open_positions.push(position);
     }
 
+    /// Log what an order left behind: a rest that stays open, or dust.
+    fn note_rest(&self, stays_open: bool, left: f64, effects: &mut Vec<Effect>) {
+        if left <= 1e-12 {
+            return;
+        }
+        let base = self.base_asset();
+        effects.push(if stays_open {
+            Effect::Log {
+                level: "warn",
+                message: format!(
+                    "Only part of the order filled within the slippage cap: {left:.8} {base} is still open. The next close signal, or Close positions, closes it."
+                ),
+            }
+        } else {
+            Effect::Log {
+                level: "info",
+                message: format!("{left:.8} {base} is too small for the venue to take an order and stays on the exchange as dust."),
+            }
+        });
+    }
+
     /// Buy back a live short, reduce-only. A partial cover keeps the rest of
     /// the short open with its share of the margin.
     fn cover_live(&mut self, idx: usize, now: &str, effects: &mut Vec<Effect>) {
@@ -798,26 +858,16 @@ impl BotRuntime {
         self.order_errors = 0;
         let quote = self.quote_asset();
         let qty = fill.base_qty.min(position.quantity);
-        let share = if position.quantity > 0.0 { qty / position.quantity } else { 1.0 };
-        let margin = position.reserved_margin * share;
-        let entry_fee = position.entry_fee * share;
-        let total_fee = entry_fee + fill.fee_quote;
-        let pnl = (position.entry_price - fill.avg_price) * qty - total_fee;
-        self.balance += margin + (position.entry_price - fill.avg_price) * qty - fill.fee_from_cash(&quote);
         let left = position.quantity - qty;
-        let mut closed = position.clone();
-        closed.quantity = qty;
-        closed.entry_fee = entry_fee;
-        if left > filters.qty_step.max(1e-12) {
-            // The rest is still short on the venue: it stays a position.
-            let rest = &mut self.open_positions[idx];
-            rest.quantity = left;
-            rest.reserved_margin -= margin;
-            rest.entry_fee -= entry_fee;
-            rest.id = Uuid::new_v4().to_string();
+        let (closed, rest) = if orderable(&filters, left, fill.avg_price) {
+            let (closed, rest) = position.split(qty);
+            (closed, Some(rest))
         } else {
-            self.open_positions.remove(idx);
-        }
+            (position.clone(), None)
+        };
+        let total_fee = closed.entry_fee + fill.fee_quote;
+        let pnl = (position.entry_price - fill.avg_price) * qty - total_fee;
+        self.balance += closed.reserved_margin + (position.entry_price - fill.avg_price) * qty - fill.fee_from_cash(&quote);
         let row = self.trade_row(
             &closed,
             Some(fill.avg_price),
@@ -828,6 +878,16 @@ impl BotRuntime {
             Some(ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }),
         );
         effects.push(Effect::Trade(Box::new(row)));
+        let stays_open = rest.is_some();
+        if let Some(rest) = rest {
+            // Still short on the venue: it stays a position, with its own row
+            // so a restart finds it in the journal.
+            let row = self.trade_row(&rest, None, None, None, rest.entry_fee, None, None);
+            effects.push(Effect::Trade(Box::new(row)));
+            self.open_positions[idx] = rest;
+        } else {
+            self.open_positions.remove(idx);
+        }
         effects.push(Effect::Notify {
             trade_id: closed.id.clone(),
             pair: closed.pair.clone(),
@@ -840,14 +900,14 @@ impl BotRuntime {
         effects.push(Effect::Log {
             level: "trade",
             message: format!(
-                "LIVE covered {} {} at {:.4} — PnL {pnl:+.2}{} — order {}",
+                "LIVE covered {} {} at {:.4} — PnL {pnl:+.2} — order {}",
                 filters.qty_string(qty),
                 self.base_asset(),
                 fill.avg_price,
-                if left > filters.qty_step.max(1e-12) { format!("; {} still short", filters.qty_string(left)) } else { String::new() },
                 fill.order_id
             ),
         });
+        self.note_rest(stays_open, left, effects);
     }
 
     /// Market-sell `open_positions[idx]` through the broker and book the fill.
@@ -944,18 +1004,26 @@ impl BotRuntime {
 
     /// Book a live sell of `open_positions[idx]`. The proceeds net of a fee
     /// charged in quote come back to the cash; the fees of both legs, valued
-    /// in quote, are in the pnl. Base the venue could not sell (below the lot
-    /// step) stays on the exchange as dust and is logged.
+    /// in quote, are in the pnl. The slippage cap can leave a sell part filled:
+    /// only what sold is closed and the rest stays a position, unless the
+    /// venue would not take an order for it (dust, stays on the exchange).
     fn book_live_exit(&mut self, idx: usize, fill: Fill, now: &str, effects: &mut Vec<Effect>) {
-        let position = self.open_positions.remove(idx);
+        let position = self.open_positions[idx].clone();
+        let sold = fill.base_qty.min(position.quantity);
+        let left = position.quantity - sold;
+        let (closed, rest) = if self.filters.as_ref().is_some_and(|f| orderable(f, left, fill.avg_price)) {
+            let (closed, rest) = position.split(sold);
+            (closed, Some(rest))
+        } else {
+            (position.clone(), None)
+        };
         let quote = self.quote_asset();
         let proceeds = fill.quote_amount - fill.fee_from_cash(&quote);
         self.balance += proceeds;
-        let total_fee = position.entry_fee + fill.fee_quote;
-        let pnl = (fill.avg_price - position.entry_price) * fill.base_qty - total_fee;
-        let dust = position.quantity - fill.base_qty;
+        let total_fee = closed.entry_fee + fill.fee_quote;
+        let pnl = (fill.avg_price - position.entry_price) * sold - total_fee;
         let row = self.trade_row(
-            &position,
+            &closed,
             Some(fill.avg_price),
             Some(now.to_string()),
             Some(pnl),
@@ -964,6 +1032,16 @@ impl BotRuntime {
             Some(ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }),
         );
         effects.push(Effect::Trade(Box::new(row)));
+        let stays_open = rest.is_some();
+        if let Some(rest) = rest {
+            // Still on the venue: it stays a position, with its own row so a
+            // restart finds it in the journal.
+            let row = self.trade_row(&rest, None, None, None, rest.entry_fee, None, None);
+            effects.push(Effect::Trade(Box::new(row)));
+            self.open_positions[idx] = rest;
+        } else {
+            self.open_positions.remove(idx);
+        }
         effects.push(Effect::Notify {
             trade_id: position.id.clone(),
             pair: position.pair.clone(),
@@ -987,15 +1065,7 @@ impl BotRuntime {
                 fill.order_id
             ),
         });
-        if dust > 1e-12 {
-            effects.push(Effect::Log {
-                level: "info",
-                message: format!(
-                    "{dust:.8} {} below the lot step stays on the exchange as dust.",
-                    self.base_asset()
-                ),
-            });
-        }
+        self.note_rest(stays_open, left, effects);
     }
 }
 
@@ -1338,6 +1408,179 @@ mod tests {
         assert_eq!(row.notes.as_deref(), Some("live · entry order buy-2 · exit order sell-2"));
         assert!((rt.balance - (899.9 + 101.4 - 0.1014)).abs() < 1e-9);
         assert!(logs(&effects).iter().any(|l| l.contains("stays on the exchange as dust")));
+    }
+
+    fn fill_of(id: &str, price: f64, qty: f64) -> Fill {
+        Fill {
+            order_id: id.into(),
+            avg_price: price,
+            base_qty: qty,
+            base_received: qty,
+            quote_amount: price * qty,
+            fee_quote: price * qty * 0.001,
+            fee_asset: "USDT".into(),
+            fee_amount: price * qty * 0.001,
+            fee_estimated: false,
+        }
+    }
+
+    /// The slippage cap can leave a sell part filled: only what sold is closed,
+    /// the rest stays a position and the next close sells it.
+    #[test]
+    fn a_partly_filled_sell_closes_what_sold_and_keeps_the_rest_open() {
+        let mut rt = live_runtime(vec![
+            Ok(fill_of("buy-1", 64_000.0, 0.01)),
+            Ok(fill_of("sell-1", 65_000.0, 0.006)),
+            Ok(fill_of("sell-2", 66_000.0, 0.004)),
+        ]);
+        rt.place(buy(0.0), "t0");
+        let opened = rt.open_positions[0].id.clone();
+
+        rt.last_price = 65_000.0;
+        let effects = rt.place(sell(0.0), "t1");
+        assert_eq!(rt.open_positions.len(), 1, "the rest is still on the exchange, so it stays on the books");
+        let rest = rt.open_positions[0].clone();
+        assert!((rest.quantity - 0.004).abs() < 1e-12);
+        assert_eq!(rest.entry_price, 64_000.0);
+        assert!((rest.entry_fee - 0.256).abs() < 1e-9, "the rest keeps its share of the entry fee");
+        assert_ne!(rest.id, opened);
+
+        let rows = trades(&effects);
+        assert_eq!(rows.len(), 2, "the closed part and the rest's own open row");
+        assert_eq!(rows[0].id, opened);
+        assert!((rows[0].quantity - 0.006).abs() < 1e-12);
+        assert_eq!(rows[0].exit_price, Some(65_000.0));
+        // 1,000 × 0.006 less the entry fee's 60 % share (0.384) and the exit fee (0.39).
+        assert!((rows[0].pnl.unwrap() - 5.226).abs() < 1e-9, "{:?}", rows[0].pnl);
+        assert!((rows[0].fee - 0.774).abs() < 1e-9);
+        assert_eq!(rows[1].id, rest.id);
+        assert_eq!(rows[1].exit_price, None);
+        assert!((rows[1].quantity - 0.004).abs() < 1e-12);
+        let lines = logs(&effects);
+        assert!(lines.iter().any(|l| l.contains("still open")), "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("dust")), "{lines:?}");
+
+        // 1000 − 640 − 0.64 + 390 − 0.39
+        assert!((rt.balance - 748.97).abs() < 1e-9, "{}", rt.balance);
+        assert!((rt.equity() - (748.97 + 0.004 * 65_000.0)).abs() < 1e-9, "the rest still counts in the equity");
+
+        // The next close sells the rest, and the two closes add up.
+        rt.last_price = 66_000.0;
+        let effects = rt.place(sell(0.0), "t2");
+        assert_eq!(calls(&rt)[2], "sell 0.004");
+        assert!(rt.open_positions.is_empty());
+        let last = trades(&effects)[0];
+        assert_eq!(last.id, rest.id);
+        assert!((last.pnl.unwrap() - 7.48).abs() < 1e-9, "{:?}", last.pnl);
+        assert!((rt.balance - 1_012.706).abs() < 1e-9, "{}", rt.balance);
+    }
+
+    /// The rows of a partial close, written to a journal, give back the same
+    /// books after a restart: the rest and the cash, on either side.
+    #[test]
+    fn the_books_after_a_partial_close_come_back_from_the_journal() {
+        let journal = || {
+            let conn = rusqlite::Connection::open_in_memory().unwrap();
+            crate::db::init_db(&conn).unwrap();
+            conn
+        };
+        let write = |conn: &rusqlite::Connection, effects: &[Effect]| {
+            for row in trades(effects) {
+                crate::bot::write_trade(conn, row).unwrap();
+            }
+        };
+        let bot = crate::bots::Bot {
+            id: "bot-1".into(),
+            name: "Bot".into(),
+            strategy_id: "strat".into(),
+            exchange_id: "x".into(),
+            pair: "BTC/USDT".into(),
+            timeframe: "1h".into(),
+            trading_mode: "live".into(),
+            budget: 1_000.0,
+            status: "running".into(),
+            started_at: Some("t".into()),
+            stopped_at: None,
+            last_error: None,
+            config_json: None,
+            created_at: "t".into(),
+            updated_at: "t".into(),
+        };
+
+        // A long.
+        let conn = journal();
+        let mut rt = live_runtime(vec![Ok(fill_of("buy-1", 64_000.0, 0.01)), Ok(fill_of("sell-1", 65_000.0, 0.006))]);
+        write(&conn, &rt.place(buy(0.0), "t0"));
+        let opened = rt.open_positions[0].id.clone();
+        write(&conn, &rt.place(sell(0.0), "t1"));
+        let books = crate::unattended::restore_books(&conn, &bot, "t").unwrap();
+        assert_eq!(books.positions.len(), 1);
+        assert_eq!(books.positions[0].id, rt.open_positions[0].id);
+        assert!((books.positions[0].quantity - 0.004).abs() < 1e-12);
+        assert!((books.positions[0].entry_fee - 0.256).abs() < 1e-9);
+        assert_eq!(books.positions[0].entry_order_id.as_deref(), Some("buy-1"));
+        assert!((books.balance - rt.balance).abs() < 1e-9, "{} vs {}", books.balance, rt.balance);
+        let closed_qty: f64 = conn.query_row("SELECT quantity FROM trades WHERE id = ?1", [&opened], |r| r.get(0)).unwrap();
+        assert!((closed_qty - 0.006).abs() < 1e-12, "the closed row covers what closed");
+        // The entry fee in its asset is split too, not counted twice.
+        let fees: f64 = rt.open_positions[0].entry_fees.iter().map(|f| f.amount).sum();
+        assert!((fees - 0.256).abs() < 1e-9, "{fees}");
+
+        // A short on perp.
+        let conn = journal();
+        let mut rt = live_runtime(Vec::new());
+        rt.broker = Some(Box::new(MockBroker {
+            fills: RefCell::new(VecDeque::from(vec![Ok(fill_of("short-1", 64_000.0, 0.01)), Ok(fill_of("cover-1", 60_000.0, 0.006))])),
+            calls: RefCell::new(Vec::new()),
+            perp: true,
+        }));
+        write(&conn, &rt.place(sell(0.0), "t0"));
+        write(&conn, &rt.place(buy(0.0), "t1"));
+        assert_eq!(rt.open_positions.len(), 1);
+        assert_eq!(rt.open_positions[0].side, "short");
+        assert!((rt.open_positions[0].reserved_margin - 256.0).abs() < 1e-9, "the rest's share of the margin");
+        let books = crate::unattended::restore_books(&conn, &bot, "t").unwrap();
+        assert_eq!(books.positions.len(), 1, "the rest has its own row");
+        assert_eq!(books.positions[0].id, rt.open_positions[0].id);
+        assert!((books.positions[0].quantity - 0.004).abs() < 1e-12);
+        assert!((books.positions[0].reserved_margin - 256.0).abs() < 1e-9);
+        assert!((books.balance - rt.balance).abs() < 1e-9, "{} vs {}", books.balance, rt.balance);
+    }
+
+    /// A rest no order could close is dust: otherwise the position could never
+    /// close, and its open row would block every later buy.
+    #[test]
+    fn a_rest_the_venue_would_not_take_is_dust_not_a_position() {
+        // 0.0001 BTC at 45,000 is 4.50 USDT, under the 5 USDT minimum.
+        let mut rt = live_runtime(vec![Ok(fill_of("buy-1", 45_000.0, 0.01)), Ok(fill_of("sell-1", 45_000.0, 0.0099))]);
+        rt.last_price = 45_000.0;
+        rt.place(buy(0.0), "t0");
+        let effects = rt.place(sell(0.0), "t1");
+        assert!(rt.open_positions.is_empty());
+        assert_eq!(trades(&effects).len(), 1);
+        assert!(logs(&effects).iter().any(|l| l.contains("stays on the exchange as dust")));
+    }
+
+    /// A reverse never opens the other side while part of the long is open.
+    #[test]
+    fn a_partly_closed_long_opens_no_short() {
+        let mut rt = live_runtime(Vec::new());
+        rt.broker = Some(Box::new(MockBroker {
+            fills: RefCell::new(VecDeque::from(vec![Ok(fill_of("buy-1", 64_000.0, 0.01)), Ok(fill_of("sell-1", 65_000.0, 0.006))])),
+            calls: RefCell::new(Vec::new()),
+            perp: true,
+        }));
+        rt.place(buy(0.0), "t0");
+        rt.place(OrderRequest { side: OrderSide::Sell, pair: "BTC/USDT".into(), quantity: 0.0, position_size: None, reverse: true }, "t1");
+        assert_eq!(rt.open_positions.len(), 1);
+        assert_eq!(rt.open_positions[0].side, "long");
+        assert_eq!(calls(&rt).len(), 2, "no order for a short went out");
+
+        // Spot says so too, instead of claiming the long was closed.
+        let mut rt = live_runtime(vec![Ok(fill_of("buy-1", 64_000.0, 0.01)), Ok(fill_of("sell-1", 65_000.0, 0.006))]);
+        rt.place(buy(0.0), "t0");
+        let effects = rt.place(OrderRequest { side: OrderSide::Sell, pair: "BTC/USDT".into(), quantity: 0.0, position_size: None, reverse: true }, "t1");
+        assert!(logs(&effects).iter().any(|l| l.contains("not fully closed")));
     }
 
     #[test]

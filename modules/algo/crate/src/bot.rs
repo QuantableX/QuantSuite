@@ -130,7 +130,12 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
         .try_state::<AppState>()
         .ok_or_else(|| "App state unavailable".to_string())?;
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+    write_trade(&db, trade)
+}
 
+/// A trade's journal row. A close sets the quantity too: after a partial fill
+/// the row covers only what closed, and the rest has a row of its own.
+pub(crate) fn write_trade(db: &rusqlite::Connection, trade: &Trade) -> Result<(), String> {
     if trade.exit_price.is_none() {
         db.execute(
             "INSERT OR REPLACE INTO trades (id, bot_id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at, source, fees_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,0,NULL,?15,?16,?17,?18)",
@@ -159,7 +164,7 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
     } else {
         let updated = db
             .execute(
-                "UPDATE trades SET exit_price = ?1, exit_time = ?2, pnl = ?3, pnl_pct = ?4, fee = ?5, notes = ?6, fees_json = ?8 WHERE id = ?7",
+                "UPDATE trades SET exit_price = ?1, exit_time = ?2, pnl = ?3, pnl_pct = ?4, fee = ?5, notes = ?6, fees_json = ?8, quantity = ?9 WHERE id = ?7",
                 params![
                     trade.exit_price,
                     trade.exit_time,
@@ -169,6 +174,7 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
                     trade.notes,
                     trade.id,
                     crate::journal::fees_to_json(&trade.fees),
+                    trade.quantity,
                 ],
             )
             .map_err(|e| format!("Update trade: {e}"))?;
