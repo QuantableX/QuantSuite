@@ -164,12 +164,24 @@ export function manifestText() {
 
 // ── report ─────────────────────────────────────────────────────────────────
 
+/**
+ * The developer modules work on the folders and agent CLIs of the PC you sit
+ * at (PLAN-SERVER-CLIENT §6.3.10, card Server 7/7): none of their commands
+ * runs on the server for another device — QuantPilot, QuantCode/Canvas, the
+ * console (no remote shell on the trading machine), QuantMCP with its boards
+ * and index, memory, the HUD.
+ */
+export const LOCAL_ONLY = ['pilot', 'canvas', 'console', 'mcp', 'memory', 'hud']
+
 export function inventory() {
   const rows = []
   const problems = []
   for (const p of plugins()) {
     const remote = remoteOf(p.manifest)
     for (const c of p.commands) {
+      if (LOCAL_ONLY.includes(p.id) && String(remote[c] ?? '').startsWith('server:')) {
+        problems.push(`${p.id}: ${c} is placed on the server, but ${p.id} stays on each PC (PLAN-SERVER-CLIENT §6.3.10)`)
+      }
       const v = remote[c]
       if (!v) {
         problems.push(`${p.id}: ${c} has no remote entry`)

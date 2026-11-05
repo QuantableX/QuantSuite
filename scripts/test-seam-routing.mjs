@@ -35,6 +35,15 @@ test('the phase-1 placement of §3', () => {
   assert.equal(route(manifest, 'plugin:qs|server_status', {}), 'server', 'the health page shows the server')
 })
 
+test('the developer modules never leave the PC you sit at (§6.3.10)', () => {
+  for (const [cmd, entry] of Object.entries(manifest.commands)) {
+    if (/^plugin:(pilot|canvas|console|mcp|memory|hud)\|/.test(cmd)) {
+      assert.notEqual(entry.split(':')[0], 'server', cmd)
+      assert.notEqual(route(manifest, cmd, {}), 'server', cmd)
+    }
+  }
+})
+
 test('Tauri’s own plugins and unlisted commands stay on this PC', () => {
   for (const cmd of ['plugin:event|listen', 'plugin:window|set_title', 'plugin:path|resolve_directory', 'plugin:dialog|open', 'plugin:fs|read_file', 'plugin:shell|open', 'suite_check_for_update', 'plugin:resources|close'])
     assert.equal(route(manifest, cmd, {}), 'local', cmd)
