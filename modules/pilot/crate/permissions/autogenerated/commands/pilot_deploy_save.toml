@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-deploy-save"
+description = "Enables the pilot_deploy_save command without any pre-configured scope."
+commands.allow = ["pilot_deploy_save"]
+
+[[permission]]
+identifier = "deny-pilot-deploy-save"
+description = "Denies the pilot_deploy_save command without any pre-configured scope."
+commands.deny = ["pilot_deploy_save"]

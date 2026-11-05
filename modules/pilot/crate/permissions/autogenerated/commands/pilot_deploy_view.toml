@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-deploy-view"
+description = "Enables the pilot_deploy_view command without any pre-configured scope."
+commands.allow = ["pilot_deploy_view"]
+
+[[permission]]
+identifier = "deny-pilot-deploy-view"
+description = "Denies the pilot_deploy_view command without any pre-configured scope."
+commands.deny = ["pilot_deploy_view"]
