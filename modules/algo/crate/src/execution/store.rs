@@ -61,7 +61,9 @@ impl RunStatus {
 
     /// Final states are never run again; `Running` and `Interrupted` resume.
     pub fn is_final(self) -> bool {
-        !matches!(self, RunStatus::Running | RunStatus::Interrupted)
+        // A partial or failed run has not done what the signal said: it goes on
+        // while its window is open.
+        !matches!(self, RunStatus::Running | RunStatus::Interrupted | RunStatus::Partial | RunStatus::Failed)
     }
 }
 

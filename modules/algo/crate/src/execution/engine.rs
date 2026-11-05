@@ -8,10 +8,12 @@
 //! 5. Holdings: what the owner held when the run started plus every fill
 //!    of this run, capped at what the venue really holds.
 //! 6. Step until the target holds: the route for a switch (direct pair or
-//!    through the quote asset), sells first, then the buy. Every order is an
-//!    IOC limit at the slippage cap, passes the order guards, is written
-//!    before it is sent, and is booked after. A partial fill is retried up to
-//!    three times, then the run stops and reports. A direct order gets one
+//!    through the quote asset), sells first, then the buy. Every order follows
+//!    the signal whatever the price does: a market order, or on a venue without
+//!    them an IOC order with a far worst price. It passes the order guards, is
+//!    written before it is sent, and is booked after. A partial fill is retried
+//!    up to three times, then the run stops and reports, and the scheduler
+//!    tries the run again while its window is open. A direct order gets one
 //!    attempt; what it leaves goes through the quote asset.
 //! 7. Save holdings and the run record.
 //!
@@ -29,7 +31,7 @@ use serde_json::Value;
 use super::guards::{self, GuardConfig, OrderCheck, RunContext};
 use super::route::{self, DirectMarket, RouteKind, SwitchInputs};
 use super::store::{FillBooking, Holdings, OrderRecord, OrderState, RunRecord, RunStatus, RunStore, Target};
-use super::venue::{free_balance, ExecutionVenue, Instrument, OrderReport, OrderRequest, OrderStatus, Side};
+use super::venue::{MARKET_DEPTHS, free_balance, ExecutionVenue, Instrument, OrderReport, OrderRequest, OrderStatus, Side};
 use crate::runtime::Mode;
 
 /// Partial fills: retries after the first attempt.
@@ -168,6 +170,11 @@ struct Exec<'a> {
     direct_skipped: bool,
     /// The venue trades perp: positions instead of balances, shorts allowed.
     perp: bool,
+    /// Which `MARKET_DEPTHS` the venue accepts, on a venue without market orders.
+    depth: usize,
+    /// Orders from before this attempt at the run: only this attempt's count
+    /// towards its retries.
+    resumed_from: usize,
 }
 
 impl Engine {
@@ -243,6 +250,7 @@ impl Engine {
         }
 
         let orders = store.orders(&req.run_id)?;
+        let resumed_from = orders.len();
         let mut x = Exec {
             engine: self,
             store,
@@ -255,6 +263,8 @@ impl Engine {
             dusted: HashSet::new(),
             direct_skipped: false,
             perp,
+            depth: 0,
+            resumed_from,
         };
         let outcome = x.settle_open_orders().and_then(|()| x.init_holdings()).and_then(|()| x.drive());
         let Exec { mut rec, holdings, .. } = x;
@@ -450,7 +460,7 @@ impl Exec<'_> {
     }
 
     fn attempts(&self, leg: &str) -> usize {
-        self.orders.iter().filter(|o| o.leg == leg && o.state != OrderState::NotSent).count()
+        self.orders[self.resumed_from..].iter().filter(|o| o.leg == leg && o.state != OrderState::NotSent).count()
     }
 
     /// A leg whose last order filled completely is done: what is left of it
@@ -774,8 +784,8 @@ impl Exec<'_> {
         Ok(())
     }
 
-    /// One IOC limit order at the slippage cap: guards, write-ahead, send,
-    /// settle, book. `spend` sizes a buy in the instrument's quote.
+    /// One order from the signal, with no price limit: guards, write-ahead,
+    /// send, settle, book. `spend` sizes a buy in the instrument's quote.
     #[allow(clippy::too_many_arguments)]
     fn execute(
         &mut self,
@@ -792,36 +802,22 @@ impl Exec<'_> {
             .venue
             .order_book(inst)
             .map_err(|e| Stop(RunStatus::Failed, format!("{}: order book: {e}", inst.pair())))?;
-        let slip = self.engine.guards.max_slippage;
-        let (best, limit) = match side {
-            Side::Buy => {
-                let best = book.best_ask().ok_or_else(|| Stop(RunStatus::Failed, format!("{}: no asks", inst.pair())))?;
-                (best, inst.round_price(best * (1.0 + slip), Side::Buy))
-            }
-            Side::Sell => {
-                let best = book.best_bid().ok_or_else(|| Stop(RunStatus::Failed, format!("{}: no bids", inst.pair())))?;
-                (best, inst.round_price(best * (1.0 - slip), Side::Sell))
-            }
+        let best = match side {
+            Side::Buy => book.best_ask().ok_or_else(|| Stop(RunStatus::Failed, format!("{}: no asks", inst.pair())))?,
+            Side::Sell => book.best_bid().ok_or_else(|| Stop(RunStatus::Failed, format!("{}: no bids", inst.pair())))?,
         };
+        let market_orders = self.venue.capabilities().market_orders;
+        let limit = if market_orders { 0.0 } else { inst.market_worst_price(side, best, self.depth) };
         let fee = self.taker_fee(inst);
         // A buy is sized from the book, with 0.1 % room for a price move
         // between reading the book and the order arriving.
         let qty = match spend {
-            Some(cash) => inst.filters.round_qty_down(book.walk_buy_quote(cash * (1.0 - fee) / 1.001, Some(limit)).base),
+            Some(cash) => inst.filters.round_qty_down(book.walk_buy_quote(cash * (1.0 - fee) / 1.001, None).base),
             None => inst.filters.round_qty_down(qty),
         };
         if !inst.tradable(qty, best) {
             return Ok(OrderOutcome::TooSmall);
         }
-        let walk = match side {
-            Side::Buy => book.walk_buy_base(qty, None),
-            Side::Sell => book.walk_sell_base(qty, None),
-        };
-        let expected_slippage = if walk.complete && walk.base > 0.0 {
-            (walk.avg_price() / best - 1.0).abs()
-        } else {
-            f64::INFINITY
-        };
         let quote_usd = self.quote_usd(inst)?;
         let mid = book.mid().unwrap_or(best);
         let value = qty * mid * quote_usd;
@@ -836,7 +832,7 @@ impl Exec<'_> {
                 value,
                 venue_price: mid,
                 reference_price: reference,
-                expected_slippage,
+                buying: side == Side::Buy,
                 turnover_today: turnover,
             },
         );
@@ -852,6 +848,7 @@ impl Exec<'_> {
         let seq = self.orders.len() as u32 + 1;
         let client_order_id = format!("qs{}-{:02}", compact(&self.req.run_id), seq);
         let request = OrderRequest {
+            market: true,
             client_order_id: client_order_id.clone(),
             instrument: inst.clone(),
             side,
@@ -879,11 +876,13 @@ impl Exec<'_> {
         let i = self.orders.len() - 1;
         self.store.save_order(&self.orders[i], &self.req.exchange_id).map_err(|e| Stop(RunStatus::Failed, e))?;
 
+        let mut venue_said_no = false;
         let outcome = match self.venue.place(&request) {
             Ok(report) => {
                 self.orders[i].state = OrderState::Done;
                 self.orders[i].report = Some(report.clone());
                 if report.status == OrderStatus::Rejected {
+                    venue_said_no = true;
                     OrderOutcome::Refused(report.message.clone().unwrap_or_else(|| "rejected".into()))
                 } else {
                     OrderOutcome::Report(report)
@@ -916,6 +915,14 @@ impl Exec<'_> {
         };
         self.orders[i].updated_at = now_rfc3339();
         self.store.save_order(&self.orders[i], &self.req.exchange_id).map_err(|e| Stop(RunStatus::Failed, e))?;
+        if let (true, false, OrderOutcome::Refused(why)) = (venue_said_no, market_orders, &outcome) {
+            if self.depth + 1 < MARKET_DEPTHS.len() {
+                self.rec.notes.push(format!("{client_order_id}: refused at a worst price {:.0} % from the best ({why}); closer", MARKET_DEPTHS[self.depth] * 100.0));
+                self.depth += 1;
+                self.save()?;
+                return self.execute(leg, inst, side, qty, spend, reference, reduce_only);
+            }
+        }
         if let OrderOutcome::Report(_) = outcome {
             self.book(i);
         }

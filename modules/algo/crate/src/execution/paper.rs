@@ -93,9 +93,10 @@ impl<'a> PaperVenue<'a> {
 
     /// The fill a book gives an IOC order, with the paper slippage on top.
     pub fn simulate(&self, order: &OrderRequest, book: &OrderBook) -> OrderReport {
+        let limit = (!order.market).then_some(order.limit_price);
         let walk = match order.side {
-            Side::Buy => book.walk_buy_base(order.qty, Some(order.limit_price)),
-            Side::Sell => book.walk_sell_base(order.qty, Some(order.limit_price)),
+            Side::Buy => book.walk_buy_base(order.qty, limit),
+            Side::Sell => book.walk_sell_base(order.qty, limit),
         };
         let qty = order.instrument.filters.round_qty_down(walk.base);
         if qty <= 0.0 {

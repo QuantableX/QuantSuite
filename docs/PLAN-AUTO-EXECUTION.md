@@ -54,14 +54,13 @@ One engine for Manual and Automated. Input: a **target** ("hold 100% ETH", "flat
 3. **Plan:** the difference between now and the target, inside the system's own budget (2.4). A switch takes the cheaper route: a direct pair, or sell to the account's quote asset and buy (USDT on Binance/Bybit, USDC on DEXs) — see "Route choice" below. Through the quote asset it sells first, then buys. Round to the lot step; a leg below the venue's minimum stays as dust and is logged.
 4. **Guards** — every one must pass, or the run stops with the reason:
    - data freshness (the signal is from the candle that just closed);
-   - price sanity: the venue's price is within 2% of the signal's reference price (catches a wrong instrument mapping or a broken book);
-   - max slippage per order (default 0.5%);
+   - wrong coin, buys only: the venue's price is within 3 times of the signal's reference price (a wrong instrument mapping or a broken book; no market moves that far);
    - max order value and daily turnover cap (set by the user);
    - the global kill switch is off;
    - the account belongs to this system;
    - live is armed (2.3).
-5. **Execute:** each order carries a client order id made from the run id and the leg. After a crash or restart the engine looks the id up on the venue before it sends anything again, so an order is never sent twice. "Market" orders go out as immediate-or-cancel limit orders at the slippage cap where the venue supports it, so a thin book cannot fill at an absurd price.
-6. **Confirm:** fills are read back from the venue. A partial fill retries the rest up to three times, then stops and reports.
+5. **Execute:** each order carries a client order id made from the run id and the leg. After a crash or restart the engine looks the id up on the venue before it sends anything again, so an order is never sent twice. Orders have no price limit (2.6): a market order where the venue has one, otherwise an immediate-or-cancel order with a far worst price.
+6. **Confirm:** fills are read back from the venue. A partial fill retries the rest up to three times, then stops and reports; the scheduler tries a partial or failed run again every 5 minutes while its window is open.
 7. **Book:** journal rows (`trades` gains a source: bot id or system run id), fees in the asset the venue charged, equity.
 8. **Report:** a run record with the signal snapshot, plan, guard results, orders, fills, errors and timings, plus a notification (2.5).
 
@@ -96,7 +95,7 @@ The backtest stays conservative: it charges two legs per switch (`rotation_lab` 
 - `route.rs`, `guards.rs`, `engine.rs`, `store.rs`, `paper.rs`: as specified above. Tables `execution_runs` (with a unique index on owner + close date for Manual's exactly-once), `execution_orders` (written before sending), `execution_holdings`, `execution_flags` (kill switch), `paper_balances` and `paper_orders`. `trades` gains `source` (`bot:<id>` / `run:<id>`), `fees_json` (fees in the charged assets) and `mode`.
 - Resuming is re-planning: holdings are rebuilt from the run's recorded fills. An order whose answer was lost is looked up by its client id, and an order the venue never saw is planned again under a new id.
 - A leg whose last order filled completely is done. What remains of it (lot rounding, the 0.1 % sizing room of a buy) stays as dust in the run record.
-- Bots: `LiveBroker` keeps the runtime's interface, but its orders now go through `CexVenue` the core's way (IOC at the 0.5 % cap, client id, lookup, three retries). Paper bots keep the runtime's simulation. The bots' run-level guards and the kill switch come with card 4. A sell or cover that fills only partly closes what filled: the rest stays a position with its share of the entry fee and margin and its own journal row, a warning is logged, and the next close signal or Close positions closes it (there is no automatic retry on later candles). Only a rest the venue would not take an order for (lot step, minimum quantity, minimum order value) is dust and stays on the exchange.
+- Bots: `LiveBroker` keeps the runtime's interface, but its orders now go through `CexVenue` the core's way (client id, lookup, three retries; no price limit, see 2.6). Paper bots keep the runtime's simulation. The bots' run-level guards and the kill switch come with card 4. A sell or cover that fills only partly closes what filled: the rest stays a position with its share of the entry fee and margin and its own journal row. Only a rest the venue would not take an order for (lot step, minimum quantity, minimum order value) is dust and stays on the exchange. Exits have no price limit, see "A bot acts on candle close" in 2.6.
 - Tests: 24 in `execution` (route cases incl. the 10 $ vs 20 $ example, every guard, crash between legs, an order that never arrived, partial-fill retries, paper fills and persistence) plus the bot tests unchanged. Live public checks (books, instruments of both venues) are `--ignored live_`.
 
 ### 2.3 Manual systems trade by themselves (card 3)
@@ -156,7 +155,10 @@ In-app (Trading overview, the system's Runs tab) and Windows notifications (`tau
 ### 2.6 Automated bots run unattended (card 4)
 
 - **Resume after restart**, opt-in per bot (off by default for live). On start the bot reconciles with the venue: positions and open orders must match its books. A mismatch keeps it stopped with a clear message; it never trades to "fix" it.
-- **Health:** no new candle for two bar lengths → pause and notify; three order errors in a row → pause and notify; a heartbeat per bot on the Trading overview.
+- **Health:** no new candle for two bar lengths → pause and notify; three refused entries in a row → pause and notify; a heartbeat per bot on the Trading overview. A refused exit never pauses (below).
+- **A bot acts on candle close (user rule, 2026-11-05).** Like Manual and the backtest, the strategy sees finished candles only: within a poll (30 s) of the close it gets the bar that just ended, and its order goes out at the current price, which is about this bar's open. The forming candle is never a signal, at the start neither: a new bot acts from the next close, a resumed bot also on what closed while it was down, and it knows what it holds.
+- **Orders follow the signal, for bots and Manual (user rule, 2026-11-05).** "If it drops by a lot, it happens, manual and automated, just follow the system's signal of the close/open, not the current % points." No order has a price limit, and neither the move since the close nor the book's depth stops one: a market order on Binance and Bybit; Hyperliquid and Lighter have none, so an IOC order with its worst price 50 % from the best (20 %, 5 %, then 1 % if the venue refuses that), which fills against the book like one; on Jupiter the swap takes the slippage Jupiter sets. Still in force: the wrong-coin check on buys (2.2), the system being armed, the kill switch, the budget, the venue's minimums, the leverage and liquidation limits on perp, and the order value and turnover limits if the user set them.
+- **A bot's exit goes on until the position is closed.** What a thin book leaves over and what the venue refuses is retried on every poll. The third refusal in a row tells the user but does not pause the bot, and neither a stale nor a failed feed stops it while an exit is open. A position marked as closing says so in its journal row, so a resumed bot goes on selling. "Stop all trading" and the stop button still stop the bot, and then the selling, and a position under the venue's minimum order is reported once and left on the exchange. Refused entries still pause after three in a row.
 - **Kill switch** "Stop all trading" for bots and Manual execution: cancels open orders and disarms. It never sells (today's rule). "Close positions" stays a separate confirmed action.
 - Bots route their live orders through the execution core, so they get every new venue and guard.
 
@@ -223,7 +225,7 @@ The same night with missing data:
 | Decision | Default | Why |
 |---|---|---|
 | Run time | 00:15 UTC, retry until 06:00 UTC | Candles are final at 00:00; the delay covers late data; six hours later the signal is stale. |
-| Order type | IOC limit at the slippage cap | A plain market order in a thin book can fill far from the price. |
+| Order type | A market order: "just follow the system's signal of the close/open, not the current % points" (user rule, 2026-11-05) | A system's result depends on following its signal. In a thin book or a fast move it fills far from the price: that happens. |
 | Switch route | The cheaper of direct pair and through USD, from fees + the live book for the size; through USD unless direct saves ≥ 0.02% | One trade instead of two saves up to 0.1% per switch on a CEX; a thin cross pair's spread can cost more than that (user decision 2026-11-03). |
 | Live arming | Paper run + account test + robustness verdict or explicit acknowledgement | Matches the robustness rule without blocking a system the user already trades by hand. |
 | Restart of live bots | Opt-in per bot, reconcile first | A silent restart after a crash must not trade on a wrong state. |

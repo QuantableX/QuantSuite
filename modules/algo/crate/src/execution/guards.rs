@@ -7,12 +7,6 @@ use serde::{Deserialize, Serialize};
 /// User limits. `None` = not set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GuardConfig {
-    /// Max slippage per order against the best price (default 0.5 %); the
-    /// IOC limit sits at this cap.
-    pub max_slippage: f64,
-    /// The venue's price must be within this share of the signal's
-    /// reference price (default 2 %).
-    pub price_tolerance: f64,
     /// Max value of one order, in the account's quote.
     #[serde(default)]
     pub max_order_value: Option<f64>,
@@ -57,8 +51,6 @@ pub fn liquidation_guard(pair: &str, distance: f64, min: f64) -> GuardResult {
 impl Default for GuardConfig {
     fn default() -> Self {
         Self {
-            max_slippage: 0.005,
-            price_tolerance: 0.02,
             max_order_value: None,
             daily_turnover_cap: None,
             min_liquidation_distance: default_min_liquidation_distance(),
@@ -131,42 +123,35 @@ pub struct OrderCheck<'a> {
     /// The signal's reference for the same instrument (a cross price for a
     /// direct pair: X in USD ÷ Y in USD); `None` = no reference given.
     pub reference_price: Option<f64>,
-    /// Average fill of the walk for the full size against the best price.
-    pub expected_slippage: f64,
+    /// A buy: the one order where a far-off price can mean the wrong coin.
+    pub buying: bool,
     /// Value already traded on the account today (UTC), this run included.
     pub turnover_today: f64,
 }
 
+/// A buy stops when the venue's price is this many times away from the signal's:
+/// no market moves that far between the close and the order, so it is another
+/// coin under the same symbol or a broken book.
+pub const WRONG_COIN_FACTOR: f64 = 3.0;
+
+/// Orders follow the system's signal. How far the price moved since the close and
+/// how deep the book is stop nothing (user rule, 2026-11-05): if it drops a lot,
+/// that happens. What is left is the wrong-coin check and the user's own limits.
 pub fn order_guards(cfg: &GuardConfig, o: &OrderCheck) -> Vec<GuardResult> {
     let mut out = Vec::new();
-    match o.reference_price {
-        Some(reference) if reference > 0.0 && o.venue_price > 0.0 => {
-            let gap = (o.venue_price / reference - 1.0).abs();
-            out.push(GuardResult::new(
-                "price_sanity",
-                gap <= cfg.price_tolerance + 1e-12,
-                format!(
-                    "{}: venue {} vs signal {} ({:.2} %, limit {:.2} %)",
-                    o.pair,
-                    fmt_price(o.venue_price),
-                    fmt_price(reference),
-                    gap * 100.0,
-                    cfg.price_tolerance * 100.0
-                ),
-            ));
-        }
-        _ => out.push(GuardResult::new("price_sanity", false, format!("{}: no reference price to check against", o.pair))),
+    if let (true, Some(reference)) = (o.buying && o.venue_price > 0.0, o.reference_price.filter(|r| *r > 0.0)) {
+        let apart = (o.venue_price / reference).max(reference / o.venue_price);
+        out.push(GuardResult::new(
+            "wrong_coin",
+            apart <= WRONG_COIN_FACTOR,
+            format!(
+                "{}: venue {} vs signal {} is {apart:.1} times apart, so this is not the same coin (limit {WRONG_COIN_FACTOR} times)",
+                o.pair,
+                fmt_price(o.venue_price),
+                fmt_price(reference),
+            ),
+        ));
     }
-    out.push(GuardResult::new(
-        "max_slippage",
-        o.expected_slippage <= cfg.max_slippage + 1e-12,
-        format!(
-            "{}: the book fills this size {:.3} % from the best price (cap {:.2} %)",
-            o.pair,
-            o.expected_slippage * 100.0,
-            cfg.max_slippage * 100.0
-        ),
-    ));
     if let Some(max) = cfg.max_order_value {
         out.push(GuardResult::new(
             "max_order_value",
@@ -233,7 +218,7 @@ mod tests {
             value: 1_000.0,
             venue_price: 100_000.0,
             reference_price: Some(100_500.0),
-            expected_slippage: 0.001,
+            buying: true,
             turnover_today: 0.0,
         }
     }
@@ -243,9 +228,8 @@ mod tests {
         let cfg = GuardConfig { max_order_value: Some(5_000.0), daily_turnover_cap: Some(20_000.0), ..GuardConfig::default() };
         assert!(all_pass(&order_guards(&cfg, &check())));
         for (o, name) in [
-            (OrderCheck { venue_price: 103_000.0, ..check() }, "price_sanity"),
-            (OrderCheck { reference_price: None, ..check() }, "price_sanity"),
-            (OrderCheck { expected_slippage: 0.006, ..check() }, "max_slippage"),
+            (OrderCheck { venue_price: 400_000.0, ..check() }, "wrong_coin"),
+            (OrderCheck { venue_price: 30_000.0, ..check() }, "wrong_coin"),
             (OrderCheck { value: 6_000.0, ..check() }, "max_order_value"),
             (OrderCheck { turnover_today: 19_500.0, ..check() }, "daily_turnover"),
         ] {
@@ -256,5 +240,21 @@ mod tests {
         let results = order_guards(&GuardConfig::default(), &OrderCheck { value: 1e9, ..check() });
         assert!(all_pass(&results));
         assert!(!results.iter().any(|g| g.name == "max_order_value"));
+    }
+
+    /// If it drops a lot, that happens: no market move stops an order.
+    #[test]
+    fn a_price_move_stops_no_order() {
+        let cfg = GuardConfig::default();
+        for venue_price in [50_000.0, 90_000.0, 110_000.0, 200_000.0] {
+            assert!(all_pass(&order_guards(&cfg, &OrderCheck { venue_price, ..check() })), "a buy at {venue_price}");
+        }
+        // A sell is never stopped by the price at all: it sells what the account holds.
+        for venue_price in [1.0, 1_000_000.0] {
+            let o = OrderCheck { buying: false, venue_price, ..check() };
+            assert!(all_pass(&order_guards(&cfg, &o)), "a sell at {venue_price}");
+        }
+        // No reference is no reason to stop either.
+        assert!(all_pass(&order_guards(&cfg, &OrderCheck { reference_price: None, ..check() })));
     }
 }

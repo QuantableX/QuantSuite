@@ -8,10 +8,13 @@
 //! providers stay paper-only and the preflight says so.
 //!
 //! Since the execution core (PLAN-AUTO-EXECUTION §2.2) the venues are
-//! [`crate::execution::cex::CexVenue`]s and a bot's "market" order goes out
-//! the core's way: an IOC limit at the slippage cap with our client order id,
-//! looked up by that id when the answer is lost, a partial fill retried up to
-//! three times. The bot runtime keeps this narrow interface.
+//! [`crate::execution::cex::CexVenue`]s and a bot's order goes out with our
+//! client order id, looked up by that id when the answer is lost, a partial
+//! fill retried up to three times. The bot runtime keeps this narrow interface.
+//!
+//! An order has no price limit: when the system says so it goes, even if the
+//! price moves in those seconds (user rule, 2026-11-05). A market order where
+//! the venue has one, otherwise the most aggressive IOC order the venue accepts.
 //!
 //! Private calls go to the venue's sandbox when the exchange row says so
 //! (Binance spot testnet, Bybit demo trading); public market data always
@@ -26,7 +29,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::execution::cex::CexVenue;
-use crate::execution::venue::{free_balance, ExecutionVenue, Instrument, MarketType, OrderReport, OrderRequest, OrderStatus, Side};
+use crate::execution::venue::{free_balance, ExecutionVenue, Instrument, MarketType, OrderReport, OrderRequest, OrderStatus, Side, MARKET_DEPTHS};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -356,8 +359,6 @@ pub struct LiveBroker {
     /// The venue's quote when it is not the bot pair's (a BTC/USDT signal
     /// trades BTC/USDC on Hyperliquid).
     venue_quote: Option<String>,
-    /// The IOC cap against the best price (the core's default 0.5 %).
-    pub max_slippage: f64,
     tag: String,
     sent: AtomicU64,
 }
@@ -390,7 +391,6 @@ impl LiveBroker {
             label,
             sandbox,
             venue_quote,
-            max_slippage: crate::execution::guards::GuardConfig::default().max_slippage,
             tag: uuid::Uuid::new_v4().simple().to_string()[..10].to_string(),
             sent: AtomicU64::new(0),
         }
@@ -433,39 +433,54 @@ impl LiveBroker {
         }
     }
 
-    fn priced(&self, inst: &Instrument, side: Side) -> Result<(crate::execution::venue::OrderBook, f64, f64), String> {
+    /// The book and the best price an order starts from.
+    fn book(&self, inst: &Instrument, side: Side) -> Result<(crate::execution::venue::OrderBook, f64), String> {
         let book = self.venue.order_book(inst)?;
         let best = match side {
             Side::Buy => book.best_ask(),
             Side::Sell => book.best_bid(),
         }
         .ok_or_else(|| format!("{}: the order book is empty", inst.pair()))?;
-        let cap = match side {
-            Side::Buy => best * (1.0 + self.max_slippage),
-            Side::Sell => best * (1.0 - self.max_slippage),
-        };
-        Ok((book, best, inst.round_price(cap, side)))
+        Ok((book, best))
     }
 
-    /// Fill `amount` — quote to spend on a buy, or base — in up to four IOC
-    /// attempts at the cap; one [`Fill`] for all of them. `reduce_only` on
-    /// perp closes.
+    /// Fill `amount` (quote to spend on a buy, or base) at whatever the market
+    /// pays. One [`Fill`] for all attempts; what a thin book leaves over of an
+    /// exit, the runtime retries. `reduce_only` on perp closes.
     fn fill(&self, filters: &SymbolFilters, side: Side, amount: Amount, reduce_only: bool) -> Result<Fill, String> {
         let inst = Instrument { market: self.market, filters: filters.clone() };
+        let market_orders = self.venue.capabilities().market_orders;
         let mut reports: Vec<OrderReport> = Vec::new();
         let mut left = match amount {
             Amount::Quote(q) | Amount::Base(q) => q,
         };
+        let mut depth = 0;
         for _ in 0..=crate::execution::engine::MAX_RETRIES {
-            let (book, best, limit) = self.priced(&inst, side)?;
-            let qty = match amount {
-                // 0.1 % room for a move between reading the book and the order.
-                Amount::Quote(_) => filters.round_qty_down(book.walk_buy_quote(left / 1.001, Some(limit)).base),
-                Amount::Base(_) => filters.round_qty_down(left),
+            // A base amount on a venue with market orders needs nothing from the
+            // book, so a book that cannot be read does not stop a sell.
+            let (qty, limit) = if market_orders && matches!(amount, Amount::Base(_)) {
+                let qty = filters.round_qty_down(left);
+                if qty <= 0.0 || qty + 1e-12 < filters.min_qty {
+                    break;
+                }
+                (qty, 0.0)
+            } else {
+                let (book, best) = match self.book(&inst, side) {
+                    Ok(priced) => priced,
+                    // What already filled must be booked, whatever happens next.
+                    Err(e) if reports.is_empty() => return Err(e),
+                    Err(_) => break,
+                };
+                let qty = match amount {
+                    // 0.1 % room for a move between reading the book and the order.
+                    Amount::Quote(_) => filters.round_qty_down(book.walk_buy_quote(left / 1.001, None).base),
+                    Amount::Base(_) => filters.round_qty_down(left),
+                };
+                if !inst.tradable(qty, best) {
+                    break;
+                }
+                (qty, if market_orders { 0.0 } else { inst.market_worst_price(side, best, depth) })
             };
-            if !inst.tradable(qty, best) {
-                break;
-            }
             let order = OrderRequest {
                 client_order_id: self.next_id(),
                 instrument: inst.clone(),
@@ -473,6 +488,7 @@ impl LiveBroker {
                 qty,
                 limit_price: limit,
                 reduce_only,
+                market: true,
             };
             let report = match self.send(&order) {
                 Ok(report) => report,
@@ -480,10 +496,14 @@ impl LiveBroker {
                 Err(_) => break,
             };
             if report.status == OrderStatus::Rejected {
-                if reports.is_empty() {
+                if !reports.is_empty() {
+                    break;
+                }
+                if market_orders || depth + 1 == MARKET_DEPTHS.len() {
                     return Err(report.message.unwrap_or_else(|| "rejected".into()));
                 }
-                break;
+                depth += 1;
+                continue;
             }
             left -= match amount {
                 Amount::Quote(_) => report.quote_amount + report.fee_in(&filters.quote),
@@ -497,9 +517,7 @@ impl LiveBroker {
                 break;
             }
         }
-        merge_reports(&reports).ok_or_else(|| {
-            format!("nothing filled within the {:.2} % slippage cap", self.max_slippage * 100.0)
-        })
+        merge_reports(&reports).ok_or_else(|| "nothing filled: the market took none of it".to_string())
     }
 }
 
@@ -594,21 +612,22 @@ impl Broker for LiveBroker {
         self.venue.ready()?;
         if !self.venue.capabilities().test_orders {
             return Ok(format!(
-                "{} has no test-order endpoint; lot size, minimum and the slippage cap were checked here, the venue checks the rest when the order goes out",
+                "{} has no test-order endpoint; lot size and minimum were checked here, the venue checks the rest when the order goes out",
                 self.label
             ));
         }
         let inst = Instrument { market: self.market, filters: filters.clone() };
-        let (book, _, limit) = self.priced(&inst, Side::Buy)?;
-        let qty = filters.round_qty_down(book.walk_buy_quote(quote_amount, Some(limit)).base);
-        let order = OrderRequest { client_order_id: self.next_id(), instrument: inst, side: Side::Buy, qty, limit_price: limit, reduce_only: false };
+        let (book, best) = self.book(&inst, Side::Buy)?;
+        let qty = filters.round_qty_down(book.walk_buy_quote(quote_amount, None).base);
+        let limit = if self.venue.capabilities().market_orders { 0.0 } else { inst.market_worst_price(Side::Buy, best, 0) };
+        let order = OrderRequest { client_order_id: self.next_id(), instrument: inst, side: Side::Buy, qty, limit_price: limit, reduce_only: false, market: true };
         self.venue.test_order(&order)
     }
 }
 
 impl std::fmt::Debug for LiveBroker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LiveBroker").field("venue", &self.label).field("max_slippage", &self.max_slippage).finish()
+        f.debug_struct("LiveBroker").field("venue", &self.label).finish()
     }
 }
 
@@ -794,5 +813,215 @@ mod tests {
         assert!(binance.status().is_success(), "binance testnet time: {}", binance.status());
         let bybit = client.get(format!("{}/v5/market/time", Venue::Bybit.private_base(true))).send().unwrap();
         assert!(bybit.status().is_success(), "bybit demo time: {}", bybit.status());
+    }
+}
+
+#[cfg(test)]
+mod exit_tests {
+    use super::*;
+    use crate::execution::venue::{Capabilities, FeeSchedule, OrderBook, VenueBalance, VenuePosition};
+    use std::sync::{Arc, Mutex};
+
+    /// 1 at 100, then 9 ten percent away: a 0.5 % cap would fill only the first.
+    fn thin() -> OrderBook {
+        OrderBook { bids: vec![(100.0, 1.0), (90.0, 9.0)], asks: vec![(100.0, 1.0), (110.0, 9.0)] }
+    }
+
+    fn filters() -> SymbolFilters {
+        SymbolFilters {
+            symbol: "THINUSDT".into(),
+            base: "THIN".into(),
+            quote: "USDT".into(),
+            qty_step: 0.001,
+            min_qty: 0.001,
+            min_notional: 5.0,
+            price_tick: 0.01,
+        }
+    }
+
+    #[derive(Default)]
+    struct ThinVenue {
+        caps: Capabilities,
+        sent: Arc<Mutex<Vec<OrderRequest>>>,
+        /// Refuses a worst price further than this from the best.
+        refuse_beyond: Option<f64>,
+        refuse_all: bool,
+        /// Share of each order that fills, in turn; everything once empty.
+        shares: Mutex<Vec<f64>>,
+    }
+
+    impl ExecutionVenue for ThinVenue {
+        fn label(&self) -> String {
+            "Thin".into()
+        }
+        fn capabilities(&self) -> Capabilities {
+            self.caps
+        }
+        fn ready(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn instruments(&self) -> Result<Vec<Instrument>, String> {
+            Ok(Vec::new())
+        }
+        fn instrument(&self, _pair: &str) -> Result<Instrument, String> {
+            Err("not used".into())
+        }
+        fn balances(&self) -> Result<Vec<VenueBalance>, String> {
+            Ok(Vec::new())
+        }
+        fn positions(&self) -> Result<Vec<VenuePosition>, String> {
+            Ok(Vec::new())
+        }
+        fn order_book(&self, _i: &Instrument) -> Result<OrderBook, String> {
+            Ok(thin())
+        }
+        fn fee_schedule(&self, _i: &Instrument) -> Result<FeeSchedule, String> {
+            Ok(FeeSchedule { maker: 0.0, taker: 0.0 })
+        }
+        fn place(&self, o: &OrderRequest) -> Result<OrderReport, String> {
+            self.sent.lock().unwrap().push(o.clone());
+            let far = (o.limit_price - 100.0).abs() / 100.0;
+            if self.refuse_all || self.refuse_beyond.is_some_and(|max| far > max) {
+                return Ok(OrderReport::empty(&o.client_order_id, OrderStatus::Rejected, "refused"));
+            }
+            let mut shares = self.shares.lock().unwrap();
+            let share = if shares.is_empty() { 1.0 } else { shares.remove(0) };
+            let want = o.qty * share;
+            let limit = if o.market && self.caps.market_orders { None } else { Some(o.limit_price) };
+            let walk = match o.side {
+                Side::Buy => thin().walk_buy_base(want, limit),
+                Side::Sell => thin().walk_sell_base(want, limit),
+            };
+            let status = if walk.base + 1e-9 >= o.qty {
+                OrderStatus::Filled
+            } else if walk.base > 0.0 {
+                OrderStatus::PartiallyFilled
+            } else {
+                OrderStatus::NotFilled
+            };
+            Ok(OrderReport {
+                client_order_id: o.client_order_id.clone(),
+                venue_order_id: format!("v{}", self.sent.lock().unwrap().len()),
+                status,
+                filled_qty: walk.base,
+                base_received: walk.base,
+                avg_price: if walk.base > 0.0 { walk.quote / walk.base } else { 0.0 },
+                quote_amount: walk.quote,
+                fee_asset: "USDT".into(),
+                fee_amount: 0.0,
+                fee_quote: 0.0,
+                fee_estimated: false,
+                message: None,
+            })
+        }
+        fn cancel(&self, _i: &Instrument, _id: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn query_by_client_id(&self, _i: &Instrument, _id: &str) -> Result<Option<OrderReport>, String> {
+            Ok(None)
+        }
+        fn test_order(&self, _o: &OrderRequest) -> Result<String, String> {
+            Ok("ok".into())
+        }
+    }
+
+    fn spot(market_orders: bool) -> Capabilities {
+        Capabilities { spot: true, ioc_limit: true, client_order_ids: true, market_orders, ..Default::default() }
+    }
+
+    fn perp() -> Capabilities {
+        Capabilities { perp: true, ioc_limit: true, client_order_ids: true, ..Default::default() }
+    }
+
+    fn broker(venue: ThinVenue) -> (LiveBroker, Arc<Mutex<Vec<OrderRequest>>>) {
+        let sent = Arc::clone(&venue.sent);
+        (LiveBroker::on(Box::new(venue), "Thin".into(), true, None), sent)
+    }
+
+    #[test]
+    fn a_sell_is_a_market_order_and_sells_everything_at_whatever_it_pays() {
+        let (broker, sent) = broker(ThinVenue { caps: spot(true), ..Default::default() });
+        let fill = broker.market_sell(&filters(), 10.0).unwrap();
+        assert!((fill.base_qty - 10.0).abs() < 1e-9, "everything went, not just the first level");
+        assert!((fill.avg_price - 91.0).abs() < 1e-9, "at 9 % under the best price: that happens");
+        let sent = sent.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert!(sent[0].market);
+        assert!(!sent[0].reduce_only);
+    }
+
+    #[test]
+    fn without_market_orders_an_order_asks_for_a_worst_price_far_away() {
+        let (broker, sent) = broker(ThinVenue { caps: spot(false), ..Default::default() });
+        let fill = broker.market_sell(&filters(), 10.0).unwrap();
+        assert!((fill.base_qty - 10.0).abs() < 1e-9);
+        assert_eq!(sent.lock().unwrap()[0].limit_price, 50.0);
+    }
+
+    #[test]
+    fn a_venue_that_refuses_a_far_price_gets_a_closer_one() {
+        let (broker, sent) = broker(ThinVenue { caps: spot(false), refuse_beyond: Some(0.3), ..Default::default() });
+        let fill = broker.market_sell(&filters(), 10.0).unwrap();
+        assert!((fill.base_qty - 10.0).abs() < 1e-9);
+        let prices: Vec<f64> = sent.lock().unwrap().iter().map(|o| o.limit_price).collect();
+        assert_eq!(prices, vec![50.0, 80.0]);
+    }
+
+    #[test]
+    fn a_refused_exit_is_reported_for_the_runtime_to_retry() {
+        let (broker, sent) = broker(ThinVenue { caps: spot(true), refuse_all: true, ..Default::default() });
+        assert_eq!(broker.market_sell(&filters(), 10.0).unwrap_err(), "refused");
+        assert_eq!(sent.lock().unwrap().len(), 1, "a market order has no closer price to try");
+
+        let (broker, sent) = super::exit_tests::broker(ThinVenue { caps: spot(false), refuse_all: true, ..Default::default() });
+        assert_eq!(broker.market_sell(&filters(), 10.0).unwrap_err(), "refused");
+        assert_eq!(sent.lock().unwrap().len(), 4, "every depth was tried");
+    }
+
+    #[test]
+    fn a_partly_filled_exit_tries_again_and_books_every_fill() {
+        let (broker, sent) = broker(ThinVenue { caps: spot(true), shares: Mutex::new(vec![0.6]), ..Default::default() });
+        let fill = broker.market_sell(&filters(), 10.0).unwrap();
+        assert!((fill.base_qty - 10.0).abs() < 1e-9, "{}", fill.base_qty);
+        let sent = sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert!((sent[1].qty - 4.0).abs() < 1e-9, "only the rest: {}", sent[1].qty);
+        assert!(sent[1].market);
+    }
+
+    #[test]
+    fn closing_on_perp_is_reduce_only_with_no_limit_either_way() {
+        let (broker, sent) = broker(ThinVenue { caps: perp(), ..Default::default() });
+        let fill = broker.close_short(&filters(), 10.0).unwrap();
+        assert!((fill.base_qty - 10.0).abs() < 1e-9);
+        assert!((fill.avg_price - 109.0).abs() < 1e-9);
+        {
+            let s = sent.lock().unwrap();
+            assert!(s[0].market && s[0].reduce_only);
+            assert_eq!(s[0].limit_price, 150.0);
+        }
+        let long_close = broker.market_sell(&filters(), 10.0).unwrap();
+        assert!((long_close.base_qty - 10.0).abs() < 1e-9);
+        let s = sent.lock().unwrap();
+        assert!(s[1].market && s[1].reduce_only);
+        assert_eq!(s[1].limit_price, 50.0);
+    }
+
+    /// The signal counts on the way in too: a buy spends what it was given,
+    /// at whatever the book asks.
+    #[test]
+    fn entries_follow_the_signal_too() {
+        let (broker, sent) = broker(ThinVenue { caps: spot(true), ..Default::default() });
+        let fill = broker.market_buy(&filters(), 1_000.0).unwrap();
+        assert!(fill.base_qty > 9.0, "past the first level: {}", fill.base_qty);
+        assert!(fill.quote_amount <= 1_000.0, "never more than it was given: {}", fill.quote_amount);
+        assert!(sent.lock().unwrap()[0].market);
+
+        let (broker, sent) = super::exit_tests::broker(ThinVenue { caps: perp(), ..Default::default() });
+        let fill = broker.open_short(&filters(), 10.0).unwrap();
+        assert!((fill.base_qty - 10.0).abs() < 1e-9);
+        let s = sent.lock().unwrap();
+        assert!(s[0].market && !s[0].reduce_only);
+        assert_eq!(s[0].limit_price, 50.0);
     }
 }

@@ -126,7 +126,9 @@ pub fn restore_books(conn: &Connection, bot: &Bot, started_at: &str) -> Result<B
             .map(|rest| rest.split(' ').next().unwrap_or("").to_string())
             .filter(|s| !s.is_empty());
         let entry_fees: Vec<ChargedFee> = crate::journal::fees_from_json(fees_json);
+        let closing = notes.as_deref().is_some_and(|n| n.ends_with("· closing"));
         positions.push(Position {
+            closing,
             id,
             pair,
             reserved_margin: if side == "short" { notional } else { 0.0 },
@@ -573,6 +575,7 @@ mod tests {
         let books = Books {
             balance: 0.0,
             positions: vec![Position {
+                closing: false,
                 id: "p".into(),
                 pair: "BTC/USDT".into(),
                 side: "long".into(),
@@ -599,6 +602,7 @@ mod tests {
         let books = Books {
             balance: 0.0,
             positions: vec![Position {
+                closing: false,
                 id: "p".into(),
                 pair: "BTC/USDT".into(),
                 side: "short".into(),

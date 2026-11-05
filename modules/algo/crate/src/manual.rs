@@ -662,7 +662,6 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
         max_order_value: settings.max_order_value,
         daily_turnover_cap: settings.daily_turnover_cap,
         min_liquidation_distance,
-        ..GuardConfig::default()
     });
     let store = SqliteStore { conn: &state.db };
     let record = match &account {
@@ -768,7 +767,17 @@ fn finished(conn: &Connection, run_id: &str) -> bool {
         .optional()
         .ok()
         .flatten()
-        .is_some_and(|s| !matches!(s.as_str(), "running" | "interrupted"))
+        // A partial or failed run has not done what the signal said: it goes on
+        // while its window is open (RunStatus::is_final).
+        .is_some_and(|s| !matches!(s.as_str(), "running" | "interrupted" | "partial" | "failed"))
+}
+
+/// The status a run ended its last attempt with.
+fn run_status(conn: &Connection, run_id: &str) -> Option<String> {
+    conn.query_row("SELECT status FROM execution_runs WHERE id = ?1", params![run_id], |r| r.get::<_, String>(0))
+        .optional()
+        .ok()
+        .flatten()
 }
 
 /// Sleep until the next due time (no polling), wake on settings changes,
@@ -816,7 +825,14 @@ pub fn start(app: AppHandle<Wry>) {
                     retry_at.insert(id.clone(), now + RETRY_EVERY);
                     next = next.min(now + RETRY_EVERY);
                     let (app2, flight, system_id) = (app.clone(), in_flight.clone(), row.system_id.clone());
+                    let run = id.clone();
                     std::thread::spawn(move || {
+                        // A run that keeps failing tells the user once, not every five minutes.
+                        let before = {
+                            let state = app2.state::<AppState>();
+                            let status = state.db.lock().ok().and_then(|db| run_status(&db, &run));
+                            status
+                        };
                         let outcome = attempt(&app2, &system_id, close);
                         if let Ok(mut f) = flight.lock() {
                             f.remove(&system_id);
@@ -832,7 +848,9 @@ pub fn start(app: AppHandle<Wry>) {
                                     let state = app2.state::<AppState>();
                                     SqliteStore { conn: &state.db }.orders(&record.id).unwrap_or_default()
                                 };
-                                notify(&app2, &system_id, &record, &summary(&name, &record, &orders));
+                                if before.as_deref() != Some(record.status.as_str()) {
+                                    notify(&app2, &system_id, &record, &summary(&name, &record, &orders));
+                                }
                             }
                             Ok(None) => {}
                             Err(e) => {
