@@ -271,6 +271,9 @@ pub struct Settings {
     pub custom: Vec<CustomAdapter>,
     /// More accounts of Claude Code and Codex (round 3, card 02).
     pub instances: Vec<Instance>,
+    /// Phone access (round 4, card 1). Changed only through its own commands,
+    /// which check the address.
+    pub phone: crate::phone::PhoneSettings,
     /// The composer's send key: `enter` (Enter sends), `modEnterMultiline`
     /// (Ctrl+Enter once the message has several lines), `modEnter` (always Ctrl+Enter).
     pub send_shortcut: String,
@@ -346,6 +349,7 @@ impl Default for Settings {
             include_general_vault: true,
             custom: Vec::new(),
             instances: Vec::new(),
+            phone: Default::default(),
             send_shortcut: "enter".into(),
             follow_up: "queue".into(),
             notify: "unfocused".into(),
@@ -672,6 +676,8 @@ impl Settings {
     /// page sends; a default the user changes in Settings becomes the start
     /// again, so the change shows on the next new thread.
     pub fn merged_into(mut self, current: &Settings) -> Settings {
+        // The settings page holds a copy: it can never turn phone access on.
+        self.phone = current.phone.clone();
         let mut sticky = current.sticky.clone();
         if self.default_provider != current.default_provider {
             sticky.provider.clear();

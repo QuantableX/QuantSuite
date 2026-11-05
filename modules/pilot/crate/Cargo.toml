@@ -48,6 +48,9 @@ quick-xml = "0.42"
 reqwest = { workspace = true }
 
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+# Phone access (round 4, card 1): pairing, the PIN and the address rules.
+qs-gateway = { path = "../../../crates/qs-gateway" }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # The PTYs: one registry with the console, one output channel, one owner rule.
 tauri-plugin-console = { path = "../../console/crate" }
 # Worktrees: QuantMCP's implementation, never a second one (card 10).

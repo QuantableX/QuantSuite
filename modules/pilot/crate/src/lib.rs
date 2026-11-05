@@ -38,6 +38,7 @@ mod import;
 mod lifecycle;
 mod gitops;
 mod notify;
+mod phone;
 mod pi;
 mod progress;
 mod prompt;
@@ -877,6 +878,12 @@ pub fn init() -> TauriPlugin<Wry> {
                 let app = app.clone();
                 Arc::new(move |thread_id: &str, seq: u64, event: &events::ThreadEvent| {
                     let _ = app.emit(events::EVENT_NAME, events::Envelope { thread_id, seq, event });
+                    // An open phone page looks again (round 4, card 1).
+                    if matches!(event, events::ThreadEvent::Item { .. } | events::ThreadEvent::Turn { .. } | events::ThreadEvent::State { .. } | events::ThreadEvent::Title { .. }) {
+                        if let Some(phone) = app.try_state::<phone::PhoneState>() {
+                            phone.ping(thread_id);
+                        }
+                    }
                     if let events::ThreadEvent::State { state, .. } = event {
                         if state == "waiting" {
                             if let Some(pilot) = app.try_state::<PilotState>() {
@@ -939,6 +946,8 @@ pub fn init() -> TauriPlugin<Wry> {
                 ui_visible: Mutex::new(None),
                 schedule_wake: Arc::new(tokio::sync::Notify::new()),
             });
+            app.manage(phone::PhoneState::default());
+            phone::start_saved(app);
             tauri::async_runtime::spawn(threads::resume_scheduler(app.clone()));
             // Crews (round 2, card 07): workers the close interrupted are stalled; timeouts.
             if let Some(state) = app.try_state::<PilotState>() {
@@ -1101,6 +1110,12 @@ pub fn init() -> TauriPlugin<Wry> {
             schedules::pilot_schedule_delete,
             schedules::pilot_schedule_run_now,
             schedules::pilot_schedule_runs,
+            phone::pilot_phone_status,
+            phone::pilot_phone_set,
+            phone::pilot_phone_set_pin,
+            phone::pilot_phone_pair,
+            phone::pilot_phone_pair_cancel,
+            phone::pilot_phone_revoke,
             guides::pilot_guide_get,
             guides::pilot_guide_write,
             progress::pilot_progress,

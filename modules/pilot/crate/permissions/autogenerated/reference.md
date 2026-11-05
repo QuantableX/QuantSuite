@@ -145,6 +145,12 @@ Default permissions for the pilot module.
 - `allow-pilot-schedule-delete`
 - `allow-pilot-schedule-run-now`
 - `allow-pilot-schedule-runs`
+- `allow-pilot-phone-status`
+- `allow-pilot-phone-set`
+- `allow-pilot-phone-set-pin`
+- `allow-pilot-phone-pair`
+- `allow-pilot-phone-pair-cancel`
+- `allow-pilot-phone-revoke`
 - `allow-pilot-guide-get`
 - `allow-pilot-guide-write`
 - `allow-pilot-progress`
@@ -2900,6 +2906,162 @@ Enables the pilot_paths_exist command without any pre-configured scope.
 <td>
 
 Denies the pilot_paths_exist command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-phone-pair`
+
+</td>
+<td>
+
+Enables the pilot_phone_pair command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-phone-pair`
+
+</td>
+<td>
+
+Denies the pilot_phone_pair command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-phone-pair-cancel`
+
+</td>
+<td>
+
+Enables the pilot_phone_pair_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-phone-pair-cancel`
+
+</td>
+<td>
+
+Denies the pilot_phone_pair_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-phone-revoke`
+
+</td>
+<td>
+
+Enables the pilot_phone_revoke command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-phone-revoke`
+
+</td>
+<td>
+
+Denies the pilot_phone_revoke command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-phone-set`
+
+</td>
+<td>
+
+Enables the pilot_phone_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-phone-set`
+
+</td>
+<td>
+
+Denies the pilot_phone_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-phone-set-pin`
+
+</td>
+<td>
+
+Enables the pilot_phone_set_pin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-phone-set-pin`
+
+</td>
+<td>
+
+Denies the pilot_phone_set_pin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-phone-status`
+
+</td>
+<td>
+
+Enables the pilot_phone_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-phone-status`
+
+</td>
+<td>
+
+Denies the pilot_phone_status command without any pre-configured scope.
 
 </td>
 </tr>
