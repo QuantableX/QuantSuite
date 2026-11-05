@@ -247,9 +247,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .qp-dep { flex: 1; min-height: 0; display: flex; flex-direction: column; font-size: 12.5px; color: var(--qss-text, #e8e8ec); }
-.qp-dep-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px 12px; border-bottom: 1px solid var(--qss-border-subtle, #35353d); }
+.qp-dep-head { display: flex; align-items: center; gap: var(--qss-gap); padding: var(--qss-gap) var(--qss-page-edge); border-bottom: 1px solid var(--qss-border-subtle, #35353d); }
 .qp-dep-head > div { flex: 1; min-width: 0; }
-.qp-dep-head h1 { margin: 0; font-size: 15px; font-weight: 600; }
+.qp-dep-head h1 { margin: 0; font-size: var(--qss-text-title); font-weight: 600; }
 .qp-dep-head p { margin: 2px 0 0; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-dep-project { flex: none; max-width: 220px; }
 .qp-dep-body { flex: 1; min-height: 0; display: flex; container: qp-dep / inline-size; }

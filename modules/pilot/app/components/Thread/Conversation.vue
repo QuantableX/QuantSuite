@@ -103,7 +103,7 @@ const faceState = computed(() => {
 }
 .qp-hero-face { width: 120px; margin-bottom: 4px; }
 .qp-hero-line { margin: -2px 0 0; font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
-.qp-hero-title { margin: 0; font-size: 18px; font-weight: 600; color: var(--qss-text, #d4d4d8); }
+.qp-hero-title { margin: 0; font-size: var(--qss-text-title); font-weight: 600; color: var(--qss-text, #d4d4d8); }
 .qp-hero-text { margin: 0; max-width: 520px; font-size: 12.5px; line-height: 1.55; color: var(--qss-text-muted, #6e6e7a); overflow-wrap: anywhere; }
 .qp-conv-foot { flex-shrink: 0; }
 .qp-conv-banner {

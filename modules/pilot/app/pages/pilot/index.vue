@@ -214,8 +214,8 @@ function restart() {
   padding: 24px;
   text-align: center;
 }
-.qp-empty-face { width: 180px; margin-bottom: 6px; }
-.qp-empty-title { margin: 0; font-size: 16px; font-weight: 600; color: var(--qss-text, #d4d4d8); }
+.qp-empty-face { width: 120px; margin-bottom: 6px; }
+.qp-empty-title { margin: 0; font-size: var(--qss-text-title); font-weight: 600; color: var(--qss-text, #d4d4d8); }
 .qp-empty-text { margin: 0; max-width: 460px; font-size: 12.5px; line-height: 1.55; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-empty-text code { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11.5px; color: var(--qss-text, #d4d4d8); background: var(--qss-bg-card, #292930); padding: 1px 5px; border-radius: 4px; }
 .qp-empty-warn { margin: 6px 0 0; max-width: 460px; font-size: 12px; line-height: 1.5; color: var(--qss-warning, #d29a3f); }

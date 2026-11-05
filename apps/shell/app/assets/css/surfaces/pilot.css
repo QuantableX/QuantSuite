@@ -1,18 +1,1 @@
-/* Today's sizes, until this module is converted to the 1.1.0 density. */
-[data-module='pilot'] {
-  --qss-page-title: clamp(22px, 2vw, 28px);
-  --qss-page-title-weight: 500;
-  --qss-page-title-tracking: -.035em;
-  --qss-page-head-gap: 26px;
-  --qss-empty-gap: 12px;
-  --qss-empty-min: 240px;
-  --qss-empty-pad: 40px 24px;
-  --qss-empty-title: 20px;
-  --qss-empty-title-weight: 500;
-  --qss-empty-title-tracking: -.025em;
-}
-
-[data-module='pilot'] .qp-empty.qp-empty { margin: clamp(20px, 4vw, 64px); border: 1px solid var(--qss-border); border-radius: 20px; background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--qss-text) 4%, transparent), transparent 65%), var(--qss-bg-raised); }
-[data-module='pilot'] .qp-empty-face.qp-empty-face { width: 140px; margin-bottom: 18px; }
-[data-module='pilot'] .qp-empty-title.qp-empty-title { font-size: 28px; font-weight: 500; letter-spacing: -.035em; }
-[data-module='pilot'] .qp-empty-text.qp-empty-text { max-width: 320px; margin-top: 6px; font-size: 13px; }
+/* QuantPilot reads the shared density tokens from its own components. */
