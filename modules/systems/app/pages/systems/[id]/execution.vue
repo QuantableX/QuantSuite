@@ -23,7 +23,8 @@ interface Settings {
   capital: { kind: 'fixed' | 'percent' | 'whole'; value: number }
   run_time: string
   retry_hours: number
-  coverage_policy: string
+  coverage_policy: 'hold_usd' | 'restrict'
+  restricted_symbols: string[]
   max_order_value: number | null
   daily_turnover_cap: number | null
   paper_fee_pct: number
@@ -199,6 +200,17 @@ async function checkCoverage() {
   }
 }
 
+function useMissingCoins() {
+  if (!form.value || !coverage.value) return
+  const merged = new Set([...form.value.restricted_symbols, ...coverage.value.missing].map(c => c.toUpperCase()))
+  form.value.restricted_symbols = [...merged].sort()
+}
+
+function setRestricted(text: string) {
+  if (!form.value) return
+  form.value.restricted_symbols = text.split(/[\s,]+/).map(c => c.trim().toUpperCase()).filter(Boolean)
+}
+
 function numberOrNull(v: string) {
   const n = Number(v)
   return v.trim() === '' || !Number.isFinite(n) ? null : n
@@ -284,11 +296,22 @@ watch(systemId, () => { void load() })
           Runs after the daily close at 00:00 UTC; the run waits for every coin's closed candle and the day's ranking until the window ends, then skips. It never trades on old data.
           One sub-account per system is recommended: a system only trades the capital and coins it owns.
         </p>
+        <label><span class="label">A coin the venue cannot trade</span>
+          <select v-model="form.coverage_policy" class="select">
+            <option value="hold_usd">Hold USD when it is the pick (backtest ≠ live)</option>
+            <option value="restrict">Restrict the universe to tradable coins (backtest = live)</option>
+          </select>
+        </label>
+        <label v-if="form.coverage_policy === 'restrict'"><span class="label">Coins left out of the universe (backtests of this system leave them out too)</span>
+          <input class="input" :value="form.restricted_symbols.join(', ')" placeholder="e.g. HYPE, LEO" @change="setRestricted(($event.target as HTMLInputElement).value)">
+        </label>
         <div class="qs-exec__coverage">
           <button class="btn" :disabled="!form.exchange_id || coverageBusy" @click="checkCoverage">{{ coverageBusy ? 'Checking…' : 'Check coverage' }}</button>
+          <button v-if="form.coverage_policy === 'restrict' && coverage?.missing.length" class="btn" @click="useMissingCoins">Leave the missing coins out</button>
           <span v-if="coverage" :class="coverage.missing.length ? 'qs-exec__warn' : 'qs-exec__ok'">
             {{ coverage.tradable.length }} / {{ coverage.coins.length }} coins tradable on {{ coverage.venue }}
-            <template v-if="coverage.missing.length"> — missing {{ coverage.missing.join(', ') }}: a pick of these is held as USD (backtest ≠ live)</template>
+            <template v-if="coverage.missing.length"> — missing {{ coverage.missing.join(', ') }}{{ form.coverage_policy === 'hold_usd' ? ': a pick of these is held as USD (backtest ≠ live)' : ': leave them out, then save' }}</template>
+            <template v-else-if="view?.settings.coverage_policy === 'restrict' && view.settings.restricted_symbols.length"> — restricted, backtest = live</template>
           </span>
         </div>
       </section>

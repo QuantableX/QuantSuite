@@ -229,6 +229,13 @@ class RunConfig:
     # this at 0 (draws the top of the ranking); SCES sets it (e.g. 5 with
     # top_n=10 → ranks 6..10, the small-cap slice).
     exclude_top_n: int = 0
+    # Coin symbols dropped from every day's ranked universe — Manual
+    # execution's "restrict the universe to tradable coins" (PLAN-AUTO-
+    # EXECUTION §2.3). Applied the same way in backtests, the live signal
+    # and its tracking replay, so backtest = live. The universe shrinks; it
+    # is not refilled from lower ranks. The market filter's TOTAL index
+    # still reads the whole top-N market.
+    exclude_symbols: tuple[str, ...] = ()
     cadence: Cadence = Cadence.DAILY
     start_date: date = field(default_factory=lambda: date.today() - timedelta(days=365 * 3))
     end_date: date = field(default_factory=date.today)

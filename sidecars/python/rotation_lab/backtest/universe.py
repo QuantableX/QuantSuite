@@ -110,6 +110,7 @@ def build_universe_timeline(
     exclude_top_n: int = 0,
     resolution: RankingResolution = RankingResolution.WEEKLY,
     progress=None,
+    exclude_symbols: tuple[str, ...] = (),
 ) -> UniverseTimeline:
     """Resolve the top-N at every rotation date.
 
@@ -135,6 +136,7 @@ def build_universe_timeline(
                 exclude_wrapped=exclude_wrapped,
                 exclude_top_n=exclude_top_n,
                 resolution=resolution,
+                exclude_symbols=exclude_symbols,
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("Universe lookup failed for %s: %s", d, exc)

@@ -74,9 +74,12 @@ pub struct ManualSettings {
     pub run_time: String,
     /// The run may wait for data until this many hours after the close.
     pub retry_hours: u32,
-    /// A pick the venue cannot trade: `hold_usd` (backtest ≠ live). The
-    /// "restrict the universe" option arrives with card 3b.
+    /// A coin the venue cannot trade: `hold_usd` (hold USD when it is the
+    /// pick; backtest ≠ live) or `restrict` (drop `restricted_symbols` from
+    /// the universe in backtest and live alike; card 3b).
     pub coverage_policy: String,
+    /// The coins dropped under `restrict`.
+    pub restricted_symbols: Vec<String>,
     pub max_order_value: Option<f64>,
     pub daily_turnover_cap: Option<f64>,
     pub paper_fee_pct: f64,
@@ -94,6 +97,7 @@ impl Default for ManualSettings {
             run_time: "00:15".into(),
             retry_hours: 6,
             coverage_policy: "hold_usd".into(),
+            restricted_symbols: Vec::new(),
             max_order_value: None,
             daily_turnover_cap: None,
             paper_fee_pct: 0.1,
@@ -125,8 +129,11 @@ impl ManualSettings {
         if self.market == "spot" && self.leverage != 1.0 {
             return Err("Leverage is a perp setting; spot is always 1x.".into());
         }
-        if self.coverage_policy != "hold_usd" {
-            return Err("Only \"hold USD when the pick is not tradable\" exists yet (card 3b adds the restricted universe).".into());
+        if !matches!(self.coverage_policy.as_str(), "hold_usd" | "restrict") {
+            return Err(format!("Unknown coverage policy {:?}.", self.coverage_policy));
+        }
+        if self.restricted_symbols.iter().any(|s| s.trim().is_empty() || s.contains(['/', ' '])) {
+            return Err("Restricted coins are plain symbols like SOL.".into());
         }
         if self.mode != ExecMode::Off && self.exchange_id.as_deref().unwrap_or("").is_empty() {
             return Err("Choose the account the system trades on.".into());
@@ -229,7 +236,49 @@ pub fn save_settings(conn: &Connection, system_id: &str, settings: &ManualSettin
         ],
     )
     .map_err(|e| format!("manual_execution: {e}"))?;
-    load_row(conn, system_id)?.ok_or_else(|| "manual_execution: row missing".into())
+    let row = load_row(conn, system_id)?.ok_or_else(|| "manual_execution: row missing".to_string())?;
+    write_restrictions(conn)?;
+    Ok(row)
+}
+
+/// Every `restrict` system's coins, for QuantSystems to merge into the
+/// engine config of its backtests and live evaluations (card 3b).
+pub fn restrictions(conn: &Connection) -> Result<std::collections::BTreeMap<String, Vec<String>>, String> {
+    let mut stmt = conn
+        .prepare("SELECT system_id, settings_json FROM manual_execution")
+        .map_err(|e| format!("manual_execution: {e}"))?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| format!("manual_execution: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("manual_execution: {e}"))?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(id, json)| {
+            let s: ManualSettings = serde_json::from_str(&json).ok()?;
+            let mut coins: Vec<String> = s.restricted_symbols.iter().map(|c| c.trim().to_uppercase()).collect();
+            coins.sort();
+            coins.dedup();
+            (s.coverage_policy == "restrict" && !coins.is_empty()).then_some((id, coins))
+        })
+        .collect())
+}
+
+fn write_restrictions(conn: &Connection) -> Result<(), String> {
+    if cfg!(test) {
+        // Unit tests never write into a real data root.
+        return Ok(());
+    }
+    let map = restrictions(conn)?;
+    let path = qs_mod_systems::restrictions_path();
+    if map.is_empty() && !path.exists() {
+        return Ok(());
+    }
+    let json = serde_json::to_vec_pretty(&map).map_err(|e| e.to_string())?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    qs_core::paths::write_atomic(&path, &json).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 pub fn set_armed(conn: &Connection, system_id: &str, armed: bool, ack_not_robust: bool) -> Result<(), String> {
@@ -1247,13 +1296,26 @@ mod tests {
             ManualSettings { retry_hours: 0, ..s.clone() },
             ManualSettings { capital: Capital { kind: "percent".into(), value: 150.0 }, ..s.clone() },
             ManualSettings { market: "futures".into(), ..s.clone() },
-            ManualSettings { coverage_policy: "restrict".into(), ..s.clone() },
+            ManualSettings { coverage_policy: "sometimes".into(), ..s.clone() },
+            ManualSettings { restricted_symbols: vec!["SOL/USDT".into()], ..s.clone() },
         ] {
             assert!(bad.validate().is_err());
         }
         set_armed(&conn, "lces", true, false).unwrap();
         assert_eq!(disarm_all(&conn).unwrap(), 1);
         assert!(!load_row(&conn, "lces").unwrap().unwrap().armed);
+    }
+
+    #[test]
+    fn restricted_coins_are_listed_per_system_for_the_backtest() {
+        let conn = db();
+        let mut s = ManualSettings { coverage_policy: "restrict".into(), restricted_symbols: vec!["hype".into(), "LEO".into(), "HYPE".into()], ..ManualSettings::default() };
+        save_settings(&conn, "lces", &s).unwrap();
+        s.coverage_policy = "hold_usd".into();
+        save_settings(&conn, "sces", &s).unwrap();
+        let map = restrictions(&conn).unwrap();
+        assert_eq!(map.len(), 1, "only the restrict policy restricts");
+        assert_eq!(map["lces"], vec!["HYPE", "LEO"]);
     }
 
     #[test]

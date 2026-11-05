@@ -177,6 +177,7 @@ def _build_config(raw: dict[str, Any]) -> RunConfig:
         ),
         top_n=int(raw.get("topN", raw.get("top_n", 5))),
         exclude_top_n=int(raw.get("excludeTopN", raw.get("exclude_top_n", 0))),
+        exclude_symbols=tuple(sorted({str(s).strip().upper() for s in (raw.get("excludeSymbols") or raw.get("exclude_symbols") or []) if str(s).strip()})),
         cadence=Cadence(raw.get("cadence", "daily")),
         start_date=_parse_date(
             raw.get("startDate", raw.get("start_date")),
@@ -307,6 +308,7 @@ def _method_universe(params: dict[str, Any]) -> dict[str, Any]:
         exclude_wrapped=cfg.exclude_wrapped,
         exclude_top_n=cfg.exclude_top_n,
         resolution=cfg.ranking_resolution,
+        exclude_symbols=cfg.exclude_symbols,
     )
     return {
         "onDate": on_date.isoformat(),
@@ -388,6 +390,7 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
         exclude_wrapped=cfg.exclude_wrapped,
         exclude_top_n=cfg.exclude_top_n,
         resolution=cfg.ranking_resolution,
+        exclude_symbols=cfg.exclude_symbols,
     )
     coins = resolved.coins
     if not coins:
@@ -446,7 +449,7 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
         market_indicator = cfg.market_indicator or cfg.indicator
         market_start = history_start(market_indicator)
         market_coins = list(coins)
-        if cfg.exclude_top_n > 0:
+        if cfg.exclude_top_n > 0 or cfg.exclude_symbols:
             market_coins = registry.get_top_n(
                 as_of, cfg.top_n, source=cfg.ranking_source,
                 exclude_stablecoins=cfg.exclude_stablecoins,
