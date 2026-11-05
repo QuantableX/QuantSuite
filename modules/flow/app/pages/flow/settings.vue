@@ -112,24 +112,28 @@ const COLORS: CalendarColor[] = [
                   @change="calendars.update(cal.id, { name: ($event.target as HTMLInputElement).value })"
                 />
               </td>
-              <td class="qp-set__swatches">
-                <button
-                  v-for="c in COLORS"
-                  :key="c"
-                  class="qp-dot qp-set__swatch"
-                  :data-color="c"
-                  :class="{ 'is-on': cal.color === c }"
-                  :aria-label="c"
-                  @click="calendars.update(cal.id, { color: c })"
-                />
+              <td>
+                <div class="qp-set__swatches">
+                  <button
+                    v-for="c in COLORS"
+                    :key="c"
+                    class="qp-dot qp-set__swatch"
+                    :data-color="c"
+                    :class="{ 'is-on': cal.color === c }"
+                    :aria-label="c"
+                    @click="calendars.update(cal.id, { color: c })"
+                  />
+                </div>
               </td>
-              <td class="qp-set__right">
-                <template v-if="confirmingDelete === cal.id">
-                  <span class="qp-set__warn">Deletes its events too.</span>
-                  <button class="qp-btn qp-set__danger" @click="removeCalendar(cal.id)">Delete</button>
-                  <button class="qp-btn" @click="confirmingDelete = null">Cancel</button>
-                </template>
-                <button v-else class="qp-btn" @click="confirmingDelete = cal.id">Delete</button>
+              <td>
+                <div class="qp-set__right">
+                  <template v-if="confirmingDelete === cal.id">
+                    <span class="qp-set__warn">Deletes its events too.</span>
+                    <button class="qp-btn qp-set__danger" @click="removeCalendar(cal.id)">Delete</button>
+                    <button class="qp-btn" @click="confirmingDelete = null">Cancel</button>
+                  </template>
+                  <button v-else class="qp-btn" @click="confirmingDelete = cal.id">Delete</button>
+                </div>
               </td>
             </tr>
           </tbody>
