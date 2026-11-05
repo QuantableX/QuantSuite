@@ -126,10 +126,15 @@ export const GATEWAY_MANIFEST = join(ROOT, 'crates/qs-gateway/remote-manifest.js
 export function combinedManifest() {
   const commands = {}
   const events = new Set()
+  const topics = new Set()
   for (const p of plugins()) {
     const remote = remoteOf(p.manifest)
     for (const c of p.commands) if (remote[c]) commands[`plugin:${p.plugin}|${c}`] = remote[c]
-    if (existsSync(p.manifest)) for (const e of readJson(p.manifest).remote?.events ?? []) events.add(e)
+    if (!existsSync(p.manifest)) continue
+    const json = readJson(p.manifest)
+    for (const e of json.remote?.events ?? []) events.add(e)
+    // The bus topics a server-placed module publishes reach every client (card Server 4/7).
+    if (MODULE_RUN[p.id] === 'server') for (const t of json.publishes ?? []) topics.add(typeof t === 'string' ? t : t.topic)
   }
   const core = readJson(join(ROOT, 'crates/qs-core/remote.json'))
   for (const [c, v] of Object.entries(core.app ?? {})) commands[c] = v
@@ -139,6 +144,7 @@ export function combinedManifest() {
     commands: sorted,
     plugins: core.plugins ?? {},
     events: [...events].sort(),
+    topics: [...topics].filter(Boolean).sort(),
   }
 }
 

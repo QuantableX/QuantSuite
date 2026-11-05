@@ -703,5 +703,26 @@
     "cache:updated",
     "engine:status",
     "eval:progress"
+  ],
+  "topics": [
+    "algo.backtest.completed",
+    "algo.bot.started",
+    "algo.bot.stopped",
+    "algo.trade.executed",
+    "finance.plan.changed",
+    "habit.habit.changed",
+    "market.data.refreshed",
+    "market.symbol.selected",
+    "notes.note.created",
+    "notes.note.updated",
+    "plan.event.created",
+    "plan.event.updated",
+    "script.collection.changed",
+    "script.file.created",
+    "script.file.deleted",
+    "script.file.saved",
+    "systems.backtest.completed",
+    "systems.engine.status",
+    "systems.signal.generated"
   ]
 }

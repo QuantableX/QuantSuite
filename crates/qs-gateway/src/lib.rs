@@ -10,10 +10,14 @@
 //! - [`authz`]: roles against the remote manifest; [`stepup`]: the server PIN.
 //! - [`server`] and [`client`]: the two ends of a connection, WebSocket frames
 //!   from [`protocol`].
+//! - [`events`]: numbered events with a replay buffer; [`files`]: the
+//!   server's file browser, downloads and uploads.
 //! - [`net`]: the addresses the gateway may listen on.
 
 pub mod authz;
 pub mod client;
+pub mod events;
+pub mod files;
 pub mod identity;
 pub mod net;
 pub mod pairing;

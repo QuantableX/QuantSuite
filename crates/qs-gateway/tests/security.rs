@@ -2,7 +2,7 @@
 //! acceptance): pairing, the four words, roles, step-up, revocation, versions,
 //! wrong keys, brute force — and no secret in anything a device receives.
 
-use qs_gateway::client::{self, ClientInfo, ConnectError};
+use qs_gateway::client::{self, ClientInfo, ConnectError, ConnectOptions};
 use qs_gateway::protocol::Refusal;
 use qs_gateway::registry::{DeviceState, Registry};
 use qs_gateway::server::{CallFuture, Dispatch, Hub, HubConfig, Listener};
@@ -51,7 +51,7 @@ async fn server() -> Server {
     let identity = Identity::generate().unwrap();
     let identity_pkcs8 = identity.pkcs8().to_vec();
     let manifest = Arc::new(Manifest::parse(MANIFEST).unwrap());
-    let config = HubConfig { server_name: "homeserver".into(), app_version: "1.0.45".into() };
+    let config = HubConfig::new("homeserver", "1.0.45");
     let hub = Hub::new(identity, Registry::in_memory().unwrap(), manifest, config).unwrap();
     let echo = Arc::new(Echo::default());
     hub.set_dispatch(echo.clone());
@@ -244,9 +244,9 @@ async fn versions_must_match() {
         Err(e) => panic!("{e}"),
         Ok(_) => panic!("connected"),
     };
-    let old = client::connect_speaking(&s.addr(), &device, key, &me("Laptop"), PROTOCOL - 1).await;
+    let old = client::connect_speaking(&s.addr(), &device, key, &me("Laptop"), ConnectOptions::default(), PROTOCOL - 1).await;
     assert_eq!(refusal(old), Refusal::UpdateClient);
-    let new = client::connect_speaking(&s.addr(), &device, key, &me("Laptop"), PROTOCOL + 1).await;
+    let new = client::connect_speaking(&s.addr(), &device, key, &me("Laptop"), ConnectOptions::default(), PROTOCOL + 1).await;
     assert_eq!(refusal(new), Refusal::UpdateServer);
     let mut other = me("Laptop");
     other.manifest = "0000000000000000".into();
