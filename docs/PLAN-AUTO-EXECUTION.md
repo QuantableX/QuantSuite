@@ -59,7 +59,7 @@ One engine for Manual and Automated. Input: a **target** ("hold 100% ETH", "flat
    - the global kill switch is off;
    - the account belongs to this system;
    - live is armed (2.3).
-5. **Execute:** each order carries a client order id made from the run id and the leg. After a crash or restart the engine looks the id up on the venue before it sends anything again, so an order is never sent twice. "Market" orders go out as immediate-or-cancel limit orders at the slippage cap where the venue supports it, so a thin book cannot fill at an absurd price.
+5. **Execute:** each order carries a client order id made from the run id and the leg. After a crash or restart the engine looks the id up on the venue before it sends anything again, so an order is never sent twice. Orders have no price limit (2.6): a market order where the venue has one, otherwise an immediate-or-cancel order with a far worst price.
 6. **Confirm:** fills are read back from the venue. A partial fill retries the rest up to three times, then stops and reports; the scheduler tries a partial or failed run again every 5 minutes while its window is open.
 7. **Book:** journal rows (`trades` gains a source: bot id or system run id), fees in the asset the venue charged, equity.
 8. **Report:** a run record with the signal snapshot, plan, guard results, orders, fills, errors and timings, plus a notification (2.5).

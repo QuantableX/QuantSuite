@@ -662,7 +662,6 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
         max_order_value: settings.max_order_value,
         daily_turnover_cap: settings.daily_turnover_cap,
         min_liquidation_distance,
-        ..GuardConfig::default()
     });
     let store = SqliteStore { conn: &state.db };
     let record = match &account {
