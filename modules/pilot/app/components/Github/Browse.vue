@@ -13,6 +13,7 @@ import { Archive, FolderOpen, GitFork, Lock, LoaderCircle, X } from 'lucide-vue-
 import { openWorkspacePath, useTauriEvent } from '@quantsuite/core'
 import { pilot } from '#pilot/utils/invoke'
 import { timeAgo } from '#pilot/utils/format'
+import { hostWords, type HostId } from '#pilot/utils/github'
 
 interface Remote {
   slug: string
@@ -36,6 +37,8 @@ interface CloneEvent {
   existing: boolean
 }
 
+const props = withDefaults(defineProps<{ host?: HostId }>(), { host: 'github' })
+const site = computed(() => hostWords(props.host).site)
 const emit = defineEmits<{ close: []; opened: [path: string] }>()
 const query = ref('')
 const items = ref<Remote[]>([])
@@ -54,7 +57,7 @@ async function load(next = false) {
   loading.value = true
   error.value = ''
   try {
-    const p = await pilot<{ items: Remote[]; page: number; more: boolean }>('plugin:pilot|pilot_gh_browse', { query: query.value.trim() || null, page: next ? page.value + 1 : 1 })
+    const p = await pilot<{ items: Remote[]; page: number; more: boolean }>('plugin:pilot|pilot_gh_browse', { query: query.value.trim() || null, page: next ? page.value + 1 : 1, host: props.host })
     items.value = next ? [...items.value, ...(p?.items ?? [])] : (p?.items ?? [])
     page.value = p?.page ?? 1
     more.value = p?.more ?? false
@@ -91,7 +94,7 @@ async function clone() {
   result.value = ''
   progress.value = { job: '', phase: 'Starting', percent: 0, done: false, error: null, path: '', existing: false }
   try {
-    job.value = await pilot<string>('plugin:pilot|pilot_gh_clone', { slug: target.value.slug, parent: parent.value.trim(), folder: folder.value.trim() || null })
+    job.value = await pilot<string>('plugin:pilot|pilot_gh_clone', { slug: target.value.slug, parent: parent.value.trim(), folder: folder.value.trim() || null, host: props.host })
   } catch (e) {
     progress.value = null
     error.value = String(e)
@@ -125,7 +128,7 @@ useTauriEvent<CloneEvent>('pilot-gh-clone', async (e) => {
 <template>
   <section class="qp-ghb">
     <header class="qp-ghb-bar">
-      <span class="qp-ghb-title">Browse GitHub</span>
+      <span class="qp-ghb-title">Browse {{ site }}</span>
       <input v-model="query" class="qp-ghb-search" placeholder="Search your and your organizations' repositories — Enter" spellcheck="false" @keydown.enter="load()" />
       <button class="qp-ghb-x" aria-label="Close" @click="emit('close')"><X :size="14" /></button>
     </header>
@@ -150,7 +153,7 @@ useTauriEvent<CloneEvent>('pilot-gh-clone', async (e) => {
       </div>
     </div>
     <div class="qp-ghb-list">
-      <div v-if="loading && !items.length" class="qp-ghb-dim qp-ghb-pad">Asking GitHub…</div>
+      <div v-if="loading && !items.length" class="qp-ghb-dim qp-ghb-pad">Asking {{ site }}…</div>
       <div v-else-if="!items.length && !error" class="qp-ghb-dim qp-ghb-pad">No repositories{{ query ? ' match' : '' }}.</div>
       <div v-for="r in items" :key="r.slug" class="qp-ghb-item">
         <div class="qp-ghb-main">

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-stack-update"
+description = "Enables the pilot_stack_update command without any pre-configured scope."
+commands.allow = ["pilot_stack_update"]
+
+[[permission]]
+identifier = "deny-pilot-stack-update"
+description = "Denies the pilot_stack_update command without any pre-configured scope."
+commands.deny = ["pilot_stack_update"]

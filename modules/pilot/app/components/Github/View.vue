@@ -8,9 +8,11 @@
  * thread linked to its item; its prompt names `#123`, so the item goes
  * along as GitHub context. A row whose item has a thread offers Thread.
  * Everything runs through the signed-in `gh`; nothing else talks to GitHub.
+ * A workspace on GitLab reads the same through `glab` (round 4, card 6), and
+ * requests that build on each other show as one chain with one update.
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { CircleDot, ExternalLink, GitPullRequest, MoreHorizontal, RefreshCw } from 'lucide-vue-next'
+import { CircleDot, ExternalLink, GitPullRequest, Layers, MoreHorizontal, RefreshCw } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useAppStore } from '#pilot/stores/app'
 import { useGitStore } from '#pilot/stores/git'
@@ -20,7 +22,7 @@ import { useSidebarStore } from '#pilot/stores/sidebar'
 import { openExternal } from '#pilot/utils/external'
 import { timeAgo } from '#pilot/utils/format'
 import { saveDrafts, useDrafts } from '#pilot/utils/drafts'
-import { addressReviewPrompt, draftAbout, fixChecksPrompt, REVIEW_LABEL, reviewPrompt, sizeOf, solvePrompt, threadFor } from '#pilot/utils/github'
+import { addressReviewPrompt, draftAbout, fixChecksPrompt, hostWords, REVIEW_LABEL, reviewPrompt, sizeOf, solvePrompt, threadFor, type HostId } from '#pilot/utils/github'
 import type { MenuOption } from '#pilot/utils/models'
 import type { GhIssue, GhPull } from '#pilot/types'
 
@@ -33,6 +35,11 @@ const sidebar = useSidebarStore()
 const drafts = useDrafts()
 
 const current = computed(() => github.repos.find((r) => r.contextId === github.selected) ?? null)
+const host = computed<HostId>(() => current.value?.host ?? 'github')
+const words = computed(() => hostWords(host.value))
+const onGitlab = computed(() => host.value === 'gitlab')
+/** The chain whose update is open, by its first request. */
+const stackOpen = ref<number | null>(null)
 // The Agent review button shows the agent a new thread here starts with (round 2, card 03).
 watch(() => current.value?.contextId, (id) => void (id && store.loadSetup(id)), { immediate: true })
 const pulls = computed(() => (current.value ? github.pulls[current.value.contextId] : undefined))
@@ -50,8 +57,8 @@ const linksOf = (id: string) => (git.links[id] ?? []).filter((l) => l.kind === '
 const search = ref('')
 /** The pull request under a human review (parity 11). */
 const reviewing = ref<number | null>(null)
-/** Browse GitHub (parity 10) instead of a repository. */
-const browsing = ref(false)
+/** Browse a host (parity 10) instead of a repository. */
+const browsing = ref<HostId | null>(null)
 async function openedClone(path: string) {
   await store.refreshContexts()
   await github.loadRepos()
@@ -61,7 +68,7 @@ async function openedClone(path: string) {
     github.select(row.contextId)
     github.setTab('threads')
   }
-  browsing.value = false
+  browsing.value = null
 }
 const task = ref('')
 const busy = ref<string | null>(null)
@@ -76,6 +83,7 @@ function load(force = false) {
 watch(() => [github.selected, github.tab] as const, () => {
   search.value = ''
   menuFor.value = null
+  stackOpen.value = null
   load()
 })
 onMounted(async () => {
@@ -90,8 +98,8 @@ function openThread(id: string) {
 
 const prItem = (pr: GhPull) => ({ kind: 'pr' as const, number: pr.number, url: pr.url, title: pr.title, state: pr.state })
 const issueItem = (i: GhIssue) => ({ kind: 'issue' as const, number: i.number, url: i.url, title: i.title, state: 'open' })
-const threadOfPr = (pr: GhPull) => (current.value ? threadFor(git.links, current.value.url, 'pr', pr.number) : null)
-const threadOfIssue = (i: GhIssue) => (current.value ? threadFor(git.links, current.value.url, 'issue', i.number) : null)
+const threadOfPr = (pr: GhPull) => (current.value ? threadFor(git.links, current.value.url, 'pr', pr.number, host.value) : null)
+const threadOfIssue = (i: GhIssue) => (current.value ? threadFor(git.links, current.value.url, 'issue', i.number, host.value) : null)
 
 function prefill(threadId: string, text: string) {
   drafts.value[threadId] = text
@@ -134,21 +142,22 @@ async function newThread() {
 // ── The row menus ──
 const menuFor = ref<string | null>(null)
 function prMenu(pr: GhPull): MenuOption[] {
+  const failing = onGitlab.value ? pr.note === 'Pipeline must pass' : pr.checks.failed > 0
   return [
     { id: 'open', label: 'Open in thread', description: 'A new thread with the prompt ready for you to finish' },
-    { id: 'fix', label: 'Fix failing checks', description: pr.checks.failing.join(', ') || undefined, disabled: pr.checks.failed === 0, reason: 'No check fails.' },
+    { id: 'fix', label: 'Fix failing checks', description: pr.checks.failing.join(', ') || undefined, disabled: !failing, reason: 'No check fails.' },
     { id: 'address', label: 'Address review comments', description: 'Make the requested changes on its branch', disabled: pr.review !== 'CHANGES_REQUESTED', reason: 'Nobody requested changes.' },
-    { id: 'merge', label: 'Merge when ready', description: 'Checks pass, approved, merges cleanly', disabled: !pr.ready, reason: 'Needs passing checks, an approval and a clean merge.' },
+    { id: 'merge', label: 'Merge when ready', description: onGitlab.value ? 'GitLab says it can merge' : 'Checks pass, approved, merges cleanly', disabled: !pr.ready, reason: pr.note || 'Needs passing checks, an approval and a clean merge.' },
   ]
 }
 async function prAction(pr: GhPull, action: string) {
   menuFor.value = null
   const key = `pr:${pr.number}`
-  if (action === 'open') return start(key, prItem(pr), draftAbout('pr', pr.number, pr.title), false)
-  if (action === 'fix') return start(key, prItem(pr), fixChecksPrompt(pr), true)
-  if (action === 'address') return start(key, prItem(pr), addressReviewPrompt(pr), true)
+  if (action === 'open') return start(key, prItem(pr), draftAbout('pr', pr.number, pr.title, host.value), false)
+  if (action === 'fix') return start(key, prItem(pr), fixChecksPrompt(pr, host.value), true)
+  if (action === 'address') return start(key, prItem(pr), addressReviewPrompt(pr, host.value), true)
   if (action === 'merge' && current.value) {
-    if (!confirm(`Merge pull request #${pr.number} "${pr.title}" on GitHub?`)) return
+    if (!confirm(`Merge ${words.value.change} ${words.value.sign}${pr.number} "${pr.title}" on ${words.value.site}?`)) return
     busy.value = key
     try {
       notice.value = { text: await github.merge(current.value.contextId, pr.number), error: false }
@@ -185,24 +194,25 @@ const CHECK_TITLE = (pr: GhPull) =>
         @click="github.select(r.contextId)"
       >
         <span class="qp-ghv-repo-name">{{ r.name }}</span>
-        <span class="qp-ghv-repo-slug">{{ r.repo.owner }}/{{ r.repo.name }}</span>
+        <span class="qp-ghv-repo-slug">{{ r.repo.owner }}/{{ r.repo.name }}<template v-if="r.host === 'gitlab'"> · GitLab</template></span>
       </button>
       <p v-if="github.reposLoaded && !github.repos.length" class="qp-ghv-none">
-        No workspace has a GitHub remote. Open a folder whose <code>origin</code> is on GitHub as a workspace.
+        No workspace is on {{ github.viewLabel }}. Open a folder whose <code>origin</code> is there as a workspace.
       </p>
-      <button v-if="store.settings?.github !== false" class="qp-ghv-browse" :class="{ on: browsing }" @click="browsing = !browsing">Browse GitHub…</button>
+      <button v-if="github.available" class="qp-ghv-browse" :class="{ on: browsing === 'github' }" @click="browsing = browsing === 'github' ? null : 'github'">Browse GitHub…</button>
+      <button v-if="github.gitlabAvailable" class="qp-ghv-browse" :class="{ on: browsing === 'gitlab' }" @click="browsing = browsing === 'gitlab' ? null : 'gitlab'">Browse GitLab…</button>
     </aside>
 
-    <PilotGithubBrowse v-if="browsing && store.settings?.github !== false" @close="browsing = false" @opened="openedClone" />
+    <PilotGithubBrowse v-if="browsing" :key="browsing" :host="browsing" @close="browsing = null" @opened="openedClone" />
     <PilotGithubReview v-else-if="current && reviewing" :key="`${current.contextId}#${reviewing}`" :context-id="current.contextId" :number="reviewing" @close="reviewing = null" />
     <section v-else-if="current" class="qp-ghv-main">
       <header class="qp-ghv-bar">
         <span class="qp-ghv-title">{{ current.repo.owner }}/{{ current.repo.name }}</span>
-        <button class="qp-ghv-icon" title="Open on GitHub" aria-label="Open on GitHub" @click="openExternal(current.url)"><ExternalLink :size="13" /></button>
+        <button class="qp-ghv-icon" :title="`Open on ${words.site}`" :aria-label="`Open on ${words.site}`" @click="openExternal(current.url)"><ExternalLink :size="13" /></button>
         <div class="qp-ghv-tabs" role="tablist">
           <button role="tab" :aria-selected="github.tab === 'threads'" :class="{ on: github.tab === 'threads' }" @click="github.setTab('threads')">Threads</button>
           <button role="tab" :aria-selected="github.tab === 'pulls'" :class="{ on: github.tab === 'pulls' }" @click="github.setTab('pulls')">
-            Pull requests <span v-if="pulls?.at" class="qp-ghv-count">{{ pulls.rows.length }}</span>
+            {{ words.Changes }} <span v-if="pulls?.at" class="qp-ghv-count">{{ pulls.rows.length }}</span>
           </button>
           <button role="tab" :aria-selected="github.tab === 'issues'" :class="{ on: github.tab === 'issues' }" @click="github.setTab('issues')">
             Issues <span v-if="issues?.at" class="qp-ghv-count">{{ issues.rows.length }}</span>
@@ -213,7 +223,7 @@ const CHECK_TITLE = (pr: GhPull) =>
           v-if="github.tab !== 'threads'"
           v-model="search"
           class="qp-ghv-search"
-          :placeholder="github.tab === 'pulls' ? 'Search pull requests — Enter' : 'Search issues — Enter'"
+          :placeholder="github.tab === 'pulls' ? `Search ${words.Changes.toLowerCase()} — Enter` : 'Search issues — Enter'"
           spellcheck="false"
           @keydown.enter="load(true)"
         />
@@ -244,20 +254,31 @@ const CHECK_TITLE = (pr: GhPull) =>
       <!-- Pull requests -->
       <div v-else-if="github.tab === 'pulls'" class="qp-ghv-list">
         <p v-if="pulls?.error" class="qp-ghv-empty is-error">{{ pulls.error }}</p>
-        <p v-else-if="pulls?.loading && !pulls.rows.length" class="qp-ghv-empty">Loading pull requests…</p>
-        <p v-else-if="pulls?.at !== undefined && !pulls.loading && !pulls.rows.length" class="qp-ghv-empty">No open pull requests{{ search ? ' match' : '' }}.</p>
-        <div v-for="pr in pulls?.rows ?? []" :key="pr.number" class="qp-ghv-row" :data-pr="pr.number">
+        <p v-else-if="pulls?.loading && !pulls.rows.length" class="qp-ghv-empty">Loading {{ words.Changes.toLowerCase() }}…</p>
+        <p v-else-if="pulls?.at !== undefined && !pulls.loading && !pulls.rows.length" class="qp-ghv-empty">No open {{ words.Changes.toLowerCase() }}{{ search ? ' match' : '' }}.</p>
+        <template v-for="pr in pulls?.rows ?? []" :key="pr.number">
+        <div v-if="pr.stack?.first" class="qp-ghv-stack" :data-stack="pr.stack.root">
+          <Layers :size="13" />
+          <span class="qp-ghv-stack-name">A chain of {{ pr.stack.size }}</span>
+          <button class="qp-btn qp-btn-sm" :aria-expanded="stackOpen === pr.stack.root" @click="stackOpen = stackOpen === pr.stack!.root ? null : pr.stack!.root">Update chain…</button>
+        </div>
+        <PilotGithubStackPlan v-if="pr.stack?.first && stackOpen === pr.stack.root && current" :context-id="current.contextId" :root="pr.stack.root" @close="stackOpen = null" />
+        <div class="qp-ghv-row" :class="{ 'is-stacked': pr.stack }" :style="pr.stack ? { marginLeft: `${10 + pr.stack.depth * 14}px` } : undefined" :data-pr="pr.number">
           <GitPullRequest class="qp-ghv-kind" :class="`is-${pr.state}`" :size="14" />
           <div class="qp-ghv-text">
-            <button class="qp-ghv-row-title is-link" :title="`Open #${pr.number} on GitHub`" @click="openExternal(pr.url)">
-              <span class="qp-ghv-num">#{{ pr.number }}</span> {{ pr.title }}
+            <button class="qp-ghv-row-title is-link" :title="`Open ${words.sign}${pr.number} on ${words.site}`" @click="openExternal(pr.url)">
+              <span class="qp-ghv-num">{{ words.sign }}{{ pr.number }}</span> {{ pr.title }}
             </button>
             <div class="qp-ghv-meta">
-              {{ pr.author }} · {{ pr.branch }} · {{ timeAgo(Date.parse(pr.updatedAt)) }}<template v-if="pr.state === 'draft'"> · draft</template>
+              {{ pr.author }} · {{ pr.branch }}<template v-if="pr.base"> → {{ pr.base }}</template> · {{ timeAgo(Date.parse(pr.updatedAt)) }}<template v-if="pr.state === 'draft'"> · draft</template>
             </div>
           </div>
           <span v-if="pr.review" class="qp-ghv-review" :class="`is-${pr.review.toLowerCase()}`">{{ REVIEW_LABEL[pr.review] }}</span>
-          <span class="qp-ghv-checks" :title="CHECK_TITLE(pr)">
+          <span v-if="onGitlab" class="qp-ghv-checks is-words">
+            <span v-if="pr.ready" class="ok">Ready</span>
+            <span v-else-if="pr.note" class="wait">{{ pr.note }}</span>
+          </span>
+          <span v-else class="qp-ghv-checks" :title="CHECK_TITLE(pr)">
             <template v-if="pr.checks.total">
               <span v-if="pr.checks.passed" class="ok">✓ {{ pr.checks.passed }}</span>
               <span v-if="pr.checks.failed" class="bad">✗ {{ pr.checks.failed }}</span>
@@ -265,28 +286,29 @@ const CHECK_TITLE = (pr: GhPull) =>
             </template>
             <span v-else class="none">no checks</span>
           </span>
-          <span class="qp-ghv-size">{{ sizeOf(pr) }}</span>
-          <button class="qp-btn qp-btn-sm" title="Read the changes and post your own review" @click="reviewing = pr.number">Review yourself</button>
+          <span v-if="!onGitlab" class="qp-ghv-size">{{ sizeOf(pr) }}</span>
+          <button v-if="!onGitlab" class="qp-btn qp-btn-sm" title="Read the changes and post your own review" @click="reviewing = pr.number">Review yourself</button>
           <button v-if="threadOfPr(pr)" class="qp-btn qp-btn-sm" title="Go to its thread" @click="openThread(threadOfPr(pr)!)">Thread</button>
           <button
             v-else
             class="qp-btn qp-btn-sm"
             :disabled="busy !== null"
-            title="A thread that checks the pull request out and reviews it"
-            @click="start(`pr:${pr.number}`, prItem(pr), reviewPrompt(pr), true)"
+            :title="`A thread that checks the ${words.change} out and reviews it`"
+            @click="start(`pr:${pr.number}`, prItem(pr), reviewPrompt(pr, host), true)"
           >
             <PilotAgentIcon :agent="store.newThreadAgent(current?.contextId)" :size="12" decorative />
             {{ busy === `pr:${pr.number}` ? 'Starting…' : 'Agent review' }}
           </button>
           <span class="qp-ghv-more">
-            <button class="qp-ghv-icon" :aria-label="`More for #${pr.number}`" @click="menuFor = menuFor === `pr:${pr.number}` ? null : `pr:${pr.number}`">
+            <button class="qp-ghv-icon" :aria-label="`More for ${words.sign}${pr.number}`" @click="menuFor = menuFor === `pr:${pr.number}` ? null : `pr:${pr.number}`">
               <MoreHorizontal :size="14" />
             </button>
             <div v-if="menuFor === `pr:${pr.number}`" class="qp-ghv-pop">
-              <PilotThreadMenuList :options="prMenu(pr)" selected="" :title="`#${pr.number}`" @pick="(id: string) => prAction(pr, id)" @close="menuFor = null" />
+              <PilotThreadMenuList :options="prMenu(pr)" selected="" :title="`${words.sign}${pr.number}`" @pick="(id: string) => prAction(pr, id)" @close="menuFor = null" />
             </div>
           </span>
         </div>
+        </template>
       </div>
 
       <!-- Issues -->
@@ -297,7 +319,7 @@ const CHECK_TITLE = (pr: GhPull) =>
         <div v-for="i in issues?.rows ?? []" :key="i.number" class="qp-ghv-row" :data-issue="i.number">
           <CircleDot class="qp-ghv-kind is-open" :size="14" />
           <div class="qp-ghv-text">
-            <button class="qp-ghv-row-title is-link" :title="`Open #${i.number} on GitHub`" @click="openExternal(i.url)">
+            <button class="qp-ghv-row-title is-link" :title="`Open #${i.number} on ${words.site}`" @click="openExternal(i.url)">
               <span class="qp-ghv-num">#{{ i.number }}</span> {{ i.title }}
             </button>
             <div class="qp-ghv-meta">
@@ -311,7 +333,7 @@ const CHECK_TITLE = (pr: GhPull) =>
             class="qp-btn qp-btn-sm"
             :disabled="busy !== null"
             title="A thread that fixes the issue on a branch of its own"
-            @click="start(`issue:${i.number}`, issueItem(i), solvePrompt(i), true)"
+            @click="start(`issue:${i.number}`, issueItem(i), solvePrompt(i, host), true)"
           >
             {{ busy === `issue:${i.number}` ? 'Starting…' : 'Solve' }}
           </button>
@@ -324,7 +346,7 @@ const CHECK_TITLE = (pr: GhPull) =>
                 :options="issueMenu"
                 selected=""
                 :title="`#${i.number}`"
-                @pick="() => start(`issue:${i.number}`, issueItem(i), draftAbout('issue', i.number, i.title), false)"
+                @pick="() => start(`issue:${i.number}`, issueItem(i), draftAbout('issue', i.number, i.title, host), false)"
                 @close="menuFor = null"
               />
             </div>
@@ -432,6 +454,10 @@ const CHECK_TITLE = (pr: GhPull) =>
 }
 .qp-ghv-notice span { flex: 1; min-width: 0; }
 .qp-ghv-notice.is-error { border-color: color-mix(in srgb, var(--qss-error, #f87171) 40%, transparent); background: color-mix(in srgb, var(--qss-error, #f87171) 9%, transparent); }
+.qp-ghv-stack { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 4px 10px; font-size: 12px; color: var(--qss-text-secondary, #9a9aa5); }
+.qp-ghv-stack-name { flex: 1; min-width: 0; }
+.qp-ghv-checks.is-words { font-family: var(--qss-font-sans, system-ui, sans-serif); font-size: 12px; }
+.qp-ghv-row.is-stacked { border-left: 2px solid var(--qss-border, #47474f); }
 .qp-ghv-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 14px 14px; display: flex; flex-direction: column; gap: 2px; }
 .qp-ghv-new { display: flex; gap: 8px; margin-bottom: 8px; }
 .qp-ghv-new-input {

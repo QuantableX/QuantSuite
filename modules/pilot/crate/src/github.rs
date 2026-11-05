@@ -82,7 +82,7 @@ pub fn pr_list_args(repo: &Repo, search: &str) -> Vec<String> {
         format!("--repo={}", repo.slug()),
         "--state=open".into(),
         format!("--limit={LIST_LIMIT}"),
-        "--json=number,title,state,isDraft,author,updatedAt,url,headRefName,reviewDecision,statusCheckRollup,additions,deletions,mergeable,mergeStateStatus,labels".into(),
+        "--json=number,title,state,isDraft,author,updatedAt,url,headRefName,baseRefName,headRefOid,isCrossRepository,reviewDecision,statusCheckRollup,additions,deletions,mergeable,mergeStateStatus,labels".into(),
     ];
     if !search.trim().is_empty() {
         a.push(format!("--search={}", search.trim()));
@@ -122,6 +122,15 @@ pub fn pr_view_args(repo: &Repo, number: i64) -> Vec<String> {
 
 pub fn merge_args(repo: &Repo, number: i64, method: &str) -> Vec<String> {
     vec!["pr".into(), "merge".into(), number.to_string(), format!("--repo={}", repo.slug()), format!("--{method}")]
+}
+
+/// The merged ones a chain's parent may be among (round 4, card 6).
+pub fn merged_args(repo: &Repo) -> Vec<String> {
+    vec!["pr".into(), "list".into(), format!("--repo={}", repo.slug()), "--state=merged".into(), format!("--limit={LIST_LIMIT}"), "--json=number,headRefName,baseRefName,headRefOid".into()]
+}
+
+pub fn retarget_args(repo: &Repo, number: i64, base: &str) -> Vec<String> {
+    vec!["pr".into(), "edit".into(), number.to_string(), format!("--repo={}", repo.slug()), format!("--base={base}")]
 }
 
 fn gh(cwd: &Path, args: &[String]) -> Result<String, String> {
@@ -312,6 +321,11 @@ pub struct Pull {
     pub state: String,
     pub author: String,
     pub branch: String,
+    /// The branch it goes into: what chains are found from (round 4, card 6).
+    pub base: String,
+    pub head_oid: String,
+    /// From a fork: its branch is not ours to rebase.
+    pub foreign: bool,
     /// `APPROVED` | `CHANGES_REQUESTED` | `REVIEW_REQUIRED` | empty
     pub review: String,
     pub checks: Checks,
@@ -321,6 +335,10 @@ pub struct Pull {
     pub updated_at: String,
     /// Checks pass, approved, merges cleanly: Merge when ready may run.
     pub ready: bool,
+    /// What stands in the way, where the host says it in one word (GitLab).
+    pub note: String,
+    /// Its place in a chain of pull requests.
+    pub stack: Option<crate::stacks::StackPlace>,
 }
 
 /// Merge when ready's rule: every check passed, approved, a clean merge.
@@ -342,6 +360,9 @@ pub fn pull_from(v: &Value) -> Option<Pull> {
         state: if v["isDraft"].as_bool().unwrap_or(false) { "draft" } else { "open" }.into(),
         author: v["author"]["login"].as_str().unwrap_or_default().into(),
         branch: v["headRefName"].as_str().unwrap_or_default().into(),
+        base: v["baseRefName"].as_str().unwrap_or_default().into(),
+        head_oid: v["headRefOid"].as_str().unwrap_or_default().into(),
+        foreign: v["isCrossRepository"].as_bool().unwrap_or(false),
         review: v["reviewDecision"].as_str().unwrap_or_default().into(),
         checks: checks_of(&v["statusCheckRollup"]),
         additions: v["additions"].as_i64().unwrap_or(0),
@@ -349,6 +370,8 @@ pub fn pull_from(v: &Value) -> Option<Pull> {
         labels: names(&v["labels"]),
         updated_at: v["updatedAt"].as_str().unwrap_or_default().into(),
         ready: ready_to_merge(v),
+        note: String::new(),
+        stack: None,
     })
 }
 
@@ -389,6 +412,25 @@ pub fn pulls(cwd: &Path, repo: &Repo, search: &str) -> Result<Vec<Pull>, String>
 pub fn issues(cwd: &Path, repo: &Repo, search: &str) -> Result<Vec<Issue>, String> {
     let v = gh_json(cwd, &issue_list_args(repo, search))?;
     Ok(v.as_array().into_iter().flatten().filter_map(issue_from).collect())
+}
+
+/// What a merged pull request's branch was (round 4, card 6).
+pub fn merged_from(v: &Value) -> Option<crate::stacks::Merged> {
+    Some(crate::stacks::Merged {
+        number: v["number"].as_i64()?,
+        branch: v["headRefName"].as_str()?.to_string(),
+        base: v["baseRefName"].as_str()?.to_string(),
+        head: v["headRefOid"].as_str()?.to_string(),
+    })
+}
+
+pub fn merged(cwd: &Path, repo: &Repo) -> Result<Vec<crate::stacks::Merged>, String> {
+    let v = gh_json(cwd, &merged_args(repo))?;
+    Ok(v.as_array().into_iter().flatten().filter_map(merged_from).collect())
+}
+
+pub fn retarget(cwd: &Path, repo: &Repo, number: i64, base: &str) -> Result<(), String> {
+    gh(cwd, &retarget_args(repo, number, base)).map(|_| ())
 }
 
 /// A row of the composer's `#` menu.
@@ -604,55 +646,31 @@ pub struct RepoRow {
     pub path: String,
     pub repo: Repo,
     pub url: String,
+    /// `github` | `gitlab` (round 4, card 6).
+    pub host: crate::hosts::HostKind,
+    pub domain: String,
 }
 
-/// The GitHub view's repositories: the workspaces whose `origin` is on GitHub (git only).
+/// The view's repositories: the workspaces whose `origin` is on a host that is turned on (git only).
 #[tauri::command(async)]
 pub fn pilot_gh_repos(app: AppHandle) -> Vec<RepoRow> {
-    if !enabled() {
-        return Vec::new();
-    }
     contexts::list(&app)
         .into_iter()
         .filter(|c| c.kind == "workspace")
         .filter_map(|c| {
-            let repo = repo_of(Path::new(&c.path))?;
-            Some(RepoRow { context_id: c.id, name: c.name, path: c.path, url: repo.url(), repo })
+            let r = crate::hosts::repo_if_on(Path::new(&c.path))?;
+            Some(RepoRow { context_id: c.id, name: c.name, path: c.path, url: r.url(), host: r.kind, domain: r.domain, repo: r.repo })
         })
         .collect()
-}
-
-fn workspace(app: &AppHandle, context_id: &str) -> Result<(PathBuf, Repo), String> {
-    let ctx = contexts::resolve(app, context_id).ok_or("unknown workspace")?;
-    let cwd = PathBuf::from(&ctx.path);
-    let repo = repo_of(&cwd).ok_or_else(|| format!("{} has no GitHub remote.", ctx.name))?;
-    Ok((cwd, repo))
-}
-
-#[tauri::command(async)]
-pub fn pilot_gh_pulls(app: AppHandle, context_id: String, search: Option<String>) -> Result<Vec<Pull>, String> {
-    let (cwd, repo) = workspace(&app, &context_id)?;
-    pulls(&cwd, &repo, search.as_deref().unwrap_or_default())
-}
-
-#[tauri::command(async)]
-pub fn pilot_gh_issues(app: AppHandle, context_id: String, search: Option<String>) -> Result<Vec<Issue>, String> {
-    let (cwd, repo) = workspace(&app, &context_id)?;
-    issues(&cwd, &repo, search.as_deref().unwrap_or_default())
-}
-
-#[tauri::command(async)]
-pub fn pilot_gh_merge(app: AppHandle, context_id: String, number: i64) -> Result<String, String> {
-    let (cwd, repo) = workspace(&app, &context_id)?;
-    merge_when_ready(&cwd, &repo, number)
 }
 
 /// A thread started from the GitHub view keeps its pull request or issue.
 #[tauri::command(async)]
 pub fn pilot_gh_link(state: State<'_, PilotState>, id: String, kind: String, number: i64, url: String, title: String, item_state: String) -> Result<Link, String> {
     state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
-    if !matches!(kind.as_str(), "pr" | "issue") || !url.starts_with("https://github.com/") || number <= 0 {
-        return Err("not a GitHub pull request or issue".into());
+    let on_host = url.starts_with("https://github.com/") || crate::gitlab::parse_item_url(&url).is_some();
+    if !matches!(kind.as_str(), "pr" | "issue") || !on_host || number <= 0 {
+        return Err("not a pull request, merge request or issue".into());
     }
     let t = crate::now();
     let link = Link { thread_id: id, kind, url, number, title: title.trim().into(), state: item_state, checked_at: t, created_at: t };
@@ -773,11 +791,11 @@ pub fn destination_check(dest: &Path, slug: &str) -> Result<bool, String> {
     if !dest.is_dir() {
         return Err(format!("{} is a file.", dest.display()));
     }
-    if let Some(r) = repo_of(dest) {
-        if key_of(&r.slug()) == key_of(slug) {
+    if let Some(r) = crate::hosts::repo_of(dest) {
+        if key_of(&r.repo.slug()) == key_of(slug) {
             return Ok(true);
         }
-        return Err(format!("{} is already a checkout of {} — choose another folder.", dest.display(), r.slug()));
+        return Err(format!("{} is already a checkout of {} — choose another folder.", dest.display(), r.repo.slug()));
     }
     let empty = std::fs::read_dir(dest).map(|mut r| r.next().is_none()).unwrap_or(false);
     if !empty {
@@ -907,12 +925,15 @@ mod browse_tests {
 // ── Browse and clone commands ──
 
 #[tauri::command(async)]
-pub fn pilot_gh_browse(app: AppHandle, query: Option<String>, page: Option<u32>) -> Result<BrowsePage, String> {
-    let mut out = browse(query.as_deref().unwrap_or_default(), page.unwrap_or(1))?;
+pub fn pilot_gh_browse(app: AppHandle, query: Option<String>, page: Option<u32>, host: Option<String>) -> Result<BrowsePage, String> {
+    let on_gitlab = host.as_deref() == Some("gitlab");
+    let kind = if on_gitlab { crate::hosts::HostKind::Gitlab } else { crate::hosts::HostKind::Github };
+    let (q, p) = (query.as_deref().unwrap_or_default(), page.unwrap_or(1));
+    let mut out = if on_gitlab { crate::gitlab::browse(&crate::gitlab::default_domain(), q, p)? } else { browse(q, p)? };
     let mut local: std::collections::HashMap<String, Vec<(String, String, String)>> = std::collections::HashMap::new();
     for c in contexts::list(&app).into_iter().filter(|c| c.kind == "workspace") {
-        if let Some(r) = repo_of(Path::new(&c.path)) {
-            local.entry(key_of(&r.slug())).or_default().push((c.id, c.name, c.path));
+        if let Some(r) = crate::hosts::repo_of(Path::new(&c.path)).filter(|r| r.kind == kind) {
+            local.entry(key_of(&r.repo.slug())).or_default().push((c.id, c.name, c.path));
         }
     }
     for r in &mut out.items {
@@ -934,13 +955,20 @@ pub struct CloneEvent {
     pub existing: bool,
 }
 
-/// Clone `owner/name` into `parent/folder` through the signed-in `gh`.
+/// Clone `owner/name` into `parent/folder` through the signed-in `gh` or `glab`.
 /// Progress and the outcome arrive as `pilot-gh-clone` events.
 #[tauri::command(async)]
-pub fn pilot_gh_clone(app: AppHandle, slug: String, parent: String, folder: Option<String>) -> Result<String, String> {
+pub fn pilot_gh_clone(app: AppHandle, slug: String, parent: String, folder: Option<String>, host: Option<String>) -> Result<String, String> {
     use tauri::Emitter;
-    ready()?;
-    let repo = parse_remote(&format!("https://github.com/{}", slug.trim())).ok_or("Not a GitHub repository name.")?;
+    let on_gitlab = host.as_deref() == Some("gitlab");
+    let domain = crate::gitlab::default_domain();
+    let repo = if on_gitlab {
+        crate::gitlab::ready(&domain)?;
+        crate::hosts::parse(&format!("https://{domain}/{}", slug.trim())).filter(|r| r.kind == crate::hosts::HostKind::Gitlab).ok_or("Not a GitLab project path.")?.repo
+    } else {
+        ready()?;
+        parse_remote(&format!("https://github.com/{}", slug.trim())).ok_or("Not a GitHub repository name.")?
+    };
     let parent = PathBuf::from(parent.trim());
     if !parent.is_dir() {
         return Err(format!("{} is not a folder.", parent.display()));
@@ -957,7 +985,8 @@ pub fn pilot_gh_clone(app: AppHandle, slug: String, parent: String, folder: Opti
         return Ok(job);
     }
     let created = !dest.exists();
-    let mut cmd = std::process::Command::new("gh");
+    let program = if on_gitlab { "glab" } else { "gh" };
+    let mut cmd = std::process::Command::new(program);
     cmd.args(["repo", "clone", &repo.slug(), &path, "--", "--progress"])
         .current_dir(&parent)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -970,7 +999,7 @@ pub fn pilot_gh_clone(app: AppHandle, slug: String, parent: String, folder: Opti
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("gh could not start ({e})"))?;
+    let mut child = cmd.spawn().map_err(|e| format!("{program} could not start ({e})"))?;
     let stderr = child.stderr.take();
     let slot = Arc::new(Mutex::new(Some(CloneJob { child, dest: dest.clone(), created })));
     clone_jobs().lock().unwrap_or_else(|p| p.into_inner()).insert(job.clone(), slot.clone());
@@ -1018,7 +1047,7 @@ pub fn pilot_gh_clone(app: AppHandle, slug: String, parent: String, folder: Opti
             if !dest.as_os_str().is_empty() {
                 clean_partial(&dest, created);
             }
-            Some(gh_error(&last))
+            Some(if on_gitlab { crate::gitlab::error_text(&last, &domain) } else { gh_error(&last) })
         };
         let path = if ok { dest.to_string_lossy().into_owned() } else { String::new() };
         let _ = app2.emit("pilot-gh-clone", CloneEvent { job: job2, phase: if ok { "Cloned".into() } else { "Failed".into() }, percent: ok.then_some(100), done: true, error, path, existing: false });

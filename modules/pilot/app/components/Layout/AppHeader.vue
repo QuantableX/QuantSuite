@@ -100,13 +100,13 @@ async function end() {
         <button :class="{ on: app.view === 'conversation' }" :aria-pressed="app.view === 'conversation'" @click="app.setView('conversation')">Conversation</button>
         <button :class="{ on: app.view === 'board' }" :aria-pressed="app.view === 'board'" title="The kanban board of a workspace or General" @click="app.setView('board')">Board</button>
         <button
-          v-if="github.available"
+          v-if="github.viewAvailable"
           :class="{ on: app.view === 'github' }"
           :aria-pressed="app.view === 'github'"
-          title="Pull requests and issues of the workspaces on GitHub"
+          :title="`Pull and merge requests and issues of the workspaces on ${github.viewLabel}`"
           @click="app.setView('github')"
         >
-          GitHub
+          {{ github.viewLabel }}
         </button>
         <button
           :class="{ on: app.view === 'crew' }"
