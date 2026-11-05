@@ -316,6 +316,9 @@ const COLORS: CalendarColor[] = ['slate', 'blue', 'green', 'amber', 'red', 'purp
   inset: 0;
   z-index: 60;
   display: grid;
+  /* A definite track: on an auto row the dialog's max-height follows its own content, and a
+     short window loses Save below the panel's edge. */
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
   background: rgba(0, 0, 0, 0.45);
 }
