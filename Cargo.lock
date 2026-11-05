@@ -5416,7 +5416,7 @@ checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "qs-gateway"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "argon2",
  "chrono",
@@ -5440,7 +5440,7 @@ dependencies = [
 
 [[package]]
 name = "qs-mcp-bridge"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5448,7 +5448,7 @@ dependencies = [
 
 [[package]]
 name = "qs-pty"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "libloading 0.8.9",
  "portable-pty",
@@ -5456,7 +5456,7 @@ dependencies = [
 
 [[package]]
 name = "qs-single-instance"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "log",
  "tauri",
@@ -5467,7 +5467,7 @@ dependencies = [
 
 [[package]]
 name = "quantsuite"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "log",
  "qs-single-instance",
@@ -7249,7 +7249,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-algo"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -7296,7 +7296,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-canvas"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -7334,7 +7334,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-console"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "qs-pty",
@@ -7367,7 +7367,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-finance"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "rusqlite",
@@ -7420,7 +7420,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-habit"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "rusqlite",
@@ -7434,7 +7434,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-hud"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -7458,7 +7458,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-mcp"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "async-stream",
  "axum",
@@ -7484,7 +7484,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-memory"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -7505,7 +7505,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-notes"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -7521,7 +7521,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-pilot"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -7559,7 +7559,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-plan"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -7574,7 +7574,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-qs"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -7605,7 +7605,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-script"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "dunce",
@@ -7660,7 +7660,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-systems"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "arboard",
  "chrono",
@@ -7680,7 +7680,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-terminal"
-version = "1.0.45"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "reqwest 0.12.28",
