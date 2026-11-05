@@ -812,6 +812,9 @@ useEventListener(window, 'click', () => {
 
 <style scoped>
 .canvas-start { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); z-index: 2; width: min(600px, calc(100% - 48px)); }
+/* The stage runs under the floating side panels, so its 100% is wider than what is visible:
+   a narrow window needs a smaller cap, and the buttons then wrap instead of going under the panels. */
+@media (max-width: 1120px) { .canvas-start { width: 480px; } }
 .canvas-start-action { display: inline-flex; align-items: center; gap: 6px; height: var(--qss-ctl-h); padding: 0 10px; border: 1px solid var(--qc-border); border-radius: var(--qss-ctl-radius); background: var(--qc-bg-surface); color: var(--qc-text); font-size: var(--qss-text-label); cursor: pointer; }
 .canvas-start-action:hover { background: var(--qss-bg-hover); }
 .canvas-link-error { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 10px; align-items: center; padding: 6px 12px; border: 1px solid #f87171; border-radius: 8px; background: var(--qc-bg-header); color: #f87171; font-size: 12px; }
