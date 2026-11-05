@@ -337,8 +337,8 @@ const COLORS: CalendarColor[] = ['slate', 'blue', 'green', 'amber', 'red', 'purp
 .qp-ee__head {
   display: flex;
   align-items: center;
-  gap: var(--qss-gap-tight);
-  padding: var(--qss-gap-tight) var(--qss-panel-pad);
+  gap: 8px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--qp-border-subtle);
 }
 
@@ -348,7 +348,7 @@ const COLORS: CalendarColor[] = ['slate', 'blue', 'green', 'amber', 'red', 'purp
   border: none;
   background: transparent;
   color: var(--qp-text);
-  font-size: var(--qss-text-title);
+  font-size: 17px;
   font-weight: 600;
   outline: none;
 }
@@ -375,8 +375,8 @@ const COLORS: CalendarColor[] = ['slate', 'blue', 'green', 'amber', 'red', 'purp
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--qss-gap-tight);
-  padding: var(--qss-panel-pad);
+  gap: 10px;
+  padding: 14px;
   overflow-y: auto;
   /* A computed `visible` on one axis becomes `auto` when the other axis
      scrolls, so this has to be said out loud — otherwise the dialog scrolls
@@ -409,7 +409,7 @@ const COLORS: CalendarColor[] = ['slate', 'blue', 'green', 'amber', 'red', 'purp
 }
 
 .qp-ee__time {
-  flex: 0 1 112px;
+  flex: 0 1 96px;
   min-width: 0;
 }
 
@@ -442,8 +442,8 @@ const COLORS: CalendarColor[] = ['slate', 'blue', 'green', 'amber', 'red', 'purp
 .qp-ee__label {
   flex-shrink: 0;
   width: 64px;
-  color: var(--qp-text-secondary);
-  font-size: var(--qss-text-label);
+  color: var(--qp-text-muted);
+  font-size: 11px;
 }
 
 .qp-ee__colors {
@@ -490,8 +490,8 @@ const COLORS: CalendarColor[] = ['slate', 'blue', 'green', 'amber', 'red', 'purp
 .qp-ee__scope {
   display: flex;
   align-items: center;
-  gap: var(--qss-gap-tight);
-  padding: var(--qss-gap-tight) var(--qss-panel-pad);
+  gap: 8px;
+  padding: 12px 14px;
   border-top: 1px solid var(--qp-border-subtle);
 }
 

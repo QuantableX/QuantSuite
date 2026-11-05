@@ -488,20 +488,21 @@ onUnmounted(() => {
   align-items: baseline;
   justify-content: center;
   gap: 6px;
-  padding: 5px 4px;
+  padding: 8px 4px;
   border-left: 1px solid var(--qp-border-subtle);
 }
 
 .qp-tg__dow {
-  color: var(--qp-text-secondary);
-  font-size: var(--qss-text-meta);
+  color: var(--qp-text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .qp-tg__dom {
   color: var(--qp-text);
-  font-size: var(--qss-text-section);
+  font-size: 15px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 
 .qp-tg__day.is-today .qp-tg__dom {
@@ -531,7 +532,6 @@ onUnmounted(() => {
   padding-right: 8px;
   color: var(--qp-text-muted);
   font-size: 10px;
-  font-variant-numeric: tabular-nums;
   padding-top: 2px;
   text-align: right;
 }

@@ -102,31 +102,31 @@ function openDay(day: Date) {
 }
 
 .qp-mg__weekdays {
-  flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, 1fr);
   border-bottom: 1px solid var(--qp-border);
 }
 
 .qp-mg__weekdays span {
-  padding: 4px 8px;
-  color: var(--qp-text-secondary);
-  font-size: var(--qss-text-meta);
-  font-weight: 500;
+  padding: 6px 8px;
+  color: var(--qp-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .qp-mg__grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, 1fr);
   grid-auto-rows: minmax(0, 1fr);
 }
 
 .qp-mg__cell {
   display: flex;
   flex-direction: column;
-  min-width: 0;
   min-height: 0;
   padding: 2px 3px 4px;
   border-right: 1px solid var(--qp-border-subtle);
@@ -154,9 +154,8 @@ function openDay(day: Date) {
   border-radius: 999px;
   background: transparent;
   color: var(--qp-text-secondary);
-  font-size: var(--qss-text-meta);
+  font-size: 11px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 
@@ -196,7 +195,6 @@ function openDay(day: Date) {
   flex-shrink: 0;
   color: var(--qp-text-secondary);
   font-size: 10px;
-  font-variant-numeric: tabular-nums;
 }
 
 .qp-mg__chip-title {

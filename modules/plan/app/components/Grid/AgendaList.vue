@@ -65,49 +65,37 @@ function timeRange(occ: Occurrence, day: Date): string {
 </template>
 
 <style scoped>
-/* Days side by side once they fit, in reading order: a day's rows stay short and scannable
-   instead of one line stretching across the whole middle. */
 .qp-ag {
   height: 100%;
   min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
-  grid-auto-rows: min-content;
-  align-content: start;
-  gap: 0 calc(var(--qss-gap) * 2);
-  padding: var(--qss-gap-tight) var(--qss-page-edge) var(--qss-page-edge);
+  padding: 8px 4px 24px;
   overflow-y: auto;
 }
 
 .qp-ag__day {
-  min-width: 0;
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  grid-auto-rows: min-content;
-  gap: 0 var(--qss-gap-tight);
-  padding: 6px 0;
+  grid-template-columns: 96px 1fr;
+  gap: 0 12px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--qp-border-subtle);
 }
 
 .qp-ag__head {
   display: flex;
   align-items: baseline;
-  gap: 6px;
-  min-height: var(--qss-row-h);
-  padding-top: 5px;
-  white-space: nowrap;
+  gap: 8px;
+  padding-left: 10px;
 }
 
 .qp-ag__dom {
   color: var(--qp-text);
-  font-size: var(--qss-text-title);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .qp-ag__dow {
-  color: var(--qp-text-secondary);
-  font-size: var(--qss-text-meta);
+  color: var(--qp-text-muted);
+  font-size: 11px;
 }
 
 .qp-ag__head.is-today .qp-ag__dom,
@@ -119,12 +107,11 @@ function timeRange(occ: Occurrence, day: Date): string {
   grid-column: 2;
   display: flex;
   align-items: center;
-  gap: var(--qss-gap-tight);
+  gap: 10px;
   width: 100%;
-  min-height: var(--qss-row-h);
-  padding: 2px 8px;
+  padding: 5px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--qp-radius);
   background: transparent;
   color: var(--qp-text);
   font-size: 13px;
@@ -138,11 +125,9 @@ function timeRange(occ: Occurrence, day: Date): string {
 
 .qp-ag__time {
   flex-shrink: 0;
-  width: 92px;
+  width: 118px;
   color: var(--qp-text-secondary);
-  font-size: var(--qss-text-meta);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  font-size: 11px;
 }
 
 .qp-ag__title {
@@ -155,19 +140,13 @@ function timeRange(occ: Occurrence, day: Date): string {
 
 .qp-ag__where {
   flex-shrink: 0;
-  max-width: 40%;
-  overflow: hidden;
-  color: var(--qp-text-secondary);
-  font-size: var(--qss-text-meta);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--qp-text-muted);
+  font-size: 11px;
 }
 
 .qp-ag__empty {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding-top: 4px;
-  color: var(--qp-text-secondary);
-  font-size: 13px;
+  padding: 40px;
+  color: var(--qp-text-muted);
+  text-align: center;
 }
 </style>
