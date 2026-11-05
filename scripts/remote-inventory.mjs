@@ -129,11 +129,13 @@ export function combinedManifest() {
   const commands = {}
   const events = new Set()
   const topics = new Set()
+  const timeouts = {}
   for (const p of plugins()) {
     const remote = remoteOf(p.manifest)
     for (const c of p.commands) if (remote[c]) commands[`plugin:${p.plugin}|${c}`] = remote[c]
     if (!existsSync(p.manifest)) continue
     const json = readJson(p.manifest)
+    for (const [c, secs] of Object.entries(json.remote?.timeouts ?? {})) timeouts[`plugin:${p.plugin}|${c}`] = secs
     for (const e of json.remote?.events ?? []) events.add(e)
     // The bus topics a server-placed module publishes reach every client (card Server 4/7).
     if (MODULE_RUN[p.id] === 'server') for (const t of json.publishes ?? []) topics.add(typeof t === 'string' ? t : t.topic)
@@ -147,6 +149,8 @@ export function combinedManifest() {
     plugins: core.plugins ?? {},
     events: [...events].sort(),
     topics: [...topics].filter(Boolean).sort(),
+    // Seconds the server waits for these long calls instead of their class's default.
+    timeouts: Object.fromEntries(Object.keys(timeouts).sort().map((k) => [k, timeouts[k]])),
     // Core settings and entities of the server-placed modules live on the
     // server (§6.3.3): the client routes `get_setting`/`set_setting` by scope
     // and the entity commands by module; the server refuses any other scope
@@ -193,6 +197,11 @@ export function inventory() {
     }
     for (const c of Object.keys(remote)) {
       if (!p.commands.includes(c)) problems.push(`${p.id}: remote entry ${c} is not a registered command`)
+    }
+    const timeouts = existsSync(p.manifest) ? readJson(p.manifest).remote?.timeouts ?? {} : {}
+    for (const [c, secs] of Object.entries(timeouts)) {
+      if (!p.commands.includes(c)) problems.push(`${p.id}: timeout for ${c}, which is not a registered command`)
+      if (!Number.isInteger(secs) || secs <= 0) problems.push(`${p.id}: timeout for ${c} must be a number of seconds`)
     }
   }
   const current = existsSync(GATEWAY_MANIFEST) ? readFileSync(GATEWAY_MANIFEST, 'utf8').replace(/\r\n/g, '\n') : ''

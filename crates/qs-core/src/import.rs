@@ -279,6 +279,54 @@ fn pending_file(target: &Path) -> PathBuf {
     target.parent().unwrap_or(target).join(PENDING)
 }
 
+/// What a server keeps of its own when another installation moves onto it
+/// (PLAN-MIGRATION §2.3, card 4): its gateway — the key other PCs pinned,
+/// the paired devices, where it listens, its role — survives the switch.
+#[derive(Default)]
+pub struct Keep {
+    /// The server's `core` settings whose keys start with [`Keep::SETTINGS`].
+    pub settings: Vec<(String, serde_json::Value)>,
+    /// The server's own secrets to carry over (its gateway key).
+    pub secrets: Vec<(String, zeroize::Zeroizing<Vec<u8>>)>,
+    /// The server's data root, for `gateway.db` and its WAL files.
+    pub root: Option<PathBuf>,
+}
+
+impl Keep {
+    /// The settings prefix that belongs to this machine's server role.
+    pub const SETTINGS: &'static str = "server.";
+    /// Secrets of the moving PC that never go onto the server: its own device
+    /// key (the server would hold the key it authenticates that PC by).
+    pub const NEVER_MOVES: &'static str = "gateway.";
+    const GATEWAY_FILES: [&'static str; 3] = ["gateway.db", "gateway.db-wal", "gateway.db-shm"];
+
+    /// The server's gateway and role into the staged root — after the
+    /// verification, which compared the staged root with the bundle.
+    fn apply(&self, staged_root: &Path, vault: Option<&Vault>) -> Result<(), String> {
+        let core = Connection::open(staged_root.join("core.db")).map_err(|e| format!("core.db: {e}"))?;
+        core.execute("DELETE FROM settings WHERE scope = 'core' AND key LIKE 'server.%'", []).map_err(|e| format!("core.db: {e}"))?;
+        for (key, value) in &self.settings {
+            crate::db::set_setting(&core, "core", key, value).map_err(|e| format!("core.db: {e}"))?;
+        }
+        if let Some(root) = &self.root {
+            for name in Self::GATEWAY_FILES {
+                let staged = staged_root.join(name);
+                let _ = std::fs::remove_file(&staged);
+                let own = root.join(name);
+                if own.exists() {
+                    std::fs::copy(&own, &staged).map_err(|e| format!("{name}: {e}"))?;
+                }
+            }
+        }
+        if let Some(v) = vault {
+            for (id, value) in &self.secrets {
+                v.set(id, value)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Import a bundle into a staging folder beside `target_root` and schedule
 /// the switch for the next start. Nothing in `target_root` is touched.
 pub fn import(
@@ -287,6 +335,19 @@ pub fn import(
     target_root: &Path,
     rows: &[PathRow],
     keystore: &dyn KeyStore,
+) -> Result<Report, String> {
+    import_keeping(bundle_file, passphrase, target_root, rows, keystore, None)
+}
+
+/// [`import`] onto a server: `keep` carries the server's own gateway and role
+/// through the switch, and the moving PC's `gateway.*` secrets stay behind.
+pub fn import_keeping(
+    bundle_file: &Path,
+    passphrase: &str,
+    target_root: &Path,
+    rows: &[PathRow],
+    keystore: &dyn KeyStore,
+    keep: Option<&Keep>,
 ) -> Result<Report, String> {
     let parent = target_root.parent().ok_or("the data root has no parent folder")?;
     let staging = parent.join(format!(".quantsuite-import-{}", chrono::Utc::now().format("%Y%m%d%H%M%S")));
@@ -311,10 +372,34 @@ pub fn import(
     let map = PathMap::new(&pairs);
     remap(&staged_root, &map).map_err(fail)?;
     // 5. Secrets.
-    let vault = store_secrets(&staged_root, &opened.secrets, keystore);
-    // 6. Verify what arrived, against the manifest.
-    let checks = verify(&staged_root, &opened.manifest, vault.as_ref().ok(), rows);
-    let ok = checks.iter().all(|c| c.ok) && vault.is_ok();
+    let secrets: Vec<_> = match keep {
+        Some(_) => opened.secrets.iter().filter(|(id, _)| !id.starts_with(Keep::NEVER_MOVES)).cloned().collect(),
+        None => opened.secrets.clone(),
+    };
+    let vault = store_secrets(&staged_root, &secrets, keystore);
+    // 6. Verify what arrived, against the manifest (the left-out device key
+    // is not missing: it was never meant to arrive).
+    let mut checks = verify(&staged_root, &opened.manifest, vault.as_ref().ok(), rows);
+    if keep.is_some() {
+        // Only when every secret that did not arrive is one of the PC's own.
+        let only_own = |d: &str| {
+            let ids: Vec<&str> = d.split('"').skip(1).step_by(2).collect();
+            !ids.is_empty() && ids.iter().all(|id| id.starts_with(Keep::NEVER_MOVES))
+        };
+        for c in checks.iter_mut().filter(|c| !c.ok && c.name == "secrets" && only_own(&c.detail)) {
+            c.ok = true;
+            c.detail = "every secret decrypts here; the moving PC's own device key stays on that PC".into();
+        }
+    }
+    let mut ok = checks.iter().all(|c| c.ok) && vault.is_ok();
+    if let (Some(keep), true) = (keep, ok) {
+        if let Err(e) = keep.apply(&staged_root, vault.as_ref().ok()) {
+            checks.push(Check { name: "server gateway kept".into(), ok: false, detail: e });
+            ok = false;
+        } else {
+            checks.push(Check { name: "server gateway kept".into(), ok: true, detail: "its key, paired devices, address and role".into() });
+        }
+    }
     // 7. Disarmed — a deliberate change after the check.
     disarm(&staged_root, &opened.manifest.machine).map_err(fail)?;
     let report_dir = staged_root.join("migration");
@@ -446,6 +531,53 @@ mod tests {
         )
         .unwrap();
         (root, project)
+    }
+
+    #[test]
+    fn a_move_onto_a_server_keeps_its_gateway_and_leaves_the_pcs_key_behind() {
+        let tmp = Tmp(std::env::temp_dir().join(format!("qs-import-keep-{}", uuid::Uuid::new_v4())));
+        let (old_root, _) = profile(&tmp.0);
+        // The moving PC has a device key and a server connection of its own.
+        {
+            let core = Connection::open(old_root.join("core.db")).unwrap();
+            crate::db::set_setting(&core, "core", "server.connections", &serde_json::json!([{ "id": "x" }])).unwrap();
+            crate::db::set_setting(&core, "core", "server.role", &serde_json::json!("local")).unwrap();
+        }
+        let secrets = vec![
+            ("algo/exchange/e1".to_string(), zeroize::Zeroizing::new(b"SK".to_vec())),
+            ("gateway.device-identity".to_string(), zeroize::Zeroizing::new(b"the PC's private key".to_vec())),
+        ];
+        let exported = crate::bundle::export(&old_root, &tmp.0.join("out"), "correct horse battery", &Default::default(), &secrets, FAST, &AtomicBool::new(false), &mut |_| {}).unwrap();
+
+        // The server: its own gateway.db and role.
+        let server_root = tmp.0.join("server").join("quantsuite");
+        std::fs::create_dir_all(&server_root).unwrap();
+        std::fs::write(server_root.join("gateway.db"), b"the server's paired devices").unwrap();
+        let keep = Keep {
+            settings: vec![
+                ("server.role".into(), serde_json::json!("server")),
+                ("server.gateway.address".into(), serde_json::json!("100.101.102.103:47100")),
+            ],
+            secrets: vec![("gateway.server-identity".into(), zeroize::Zeroizing::new(b"the server's key".to_vec()))],
+            root: Some(server_root.clone()),
+        };
+        let (_, rows) = propose(&exported.path, "correct horse battery", &tmp.0.join("probe"), &server_root).unwrap();
+        let store = MemoryKeyStore::default();
+        let report = import_keeping(&exported.path, "correct horse battery", &server_root, &rows, &store, Some(&keep)).unwrap();
+        assert!(report.ok, "{:?}", report.checks.iter().filter(|c| !c.ok).collect::<Vec<_>>());
+        assert!(report.checks.iter().any(|c| c.name == "server gateway kept" && c.ok));
+
+        let staged = Path::new(&report.staged).join("quantsuite");
+        let core = Connection::open(staged.join("core.db")).unwrap();
+        let get = |k: &str| crate::db::get_setting(&core, "core", k).unwrap();
+        assert_eq!(get("server.role"), Some(serde_json::json!("server")), "still a server after the switch");
+        assert_eq!(get("server.gateway.address"), Some(serde_json::json!("100.101.102.103:47100")));
+        assert_eq!(get("server.connections"), None, "the PC's own connections stay on the PC");
+        assert_eq!(std::fs::read(staged.join("gateway.db")).unwrap(), b"the server's paired devices");
+        let vault = Vault::open(&staged.join("secrets"), &store, None).unwrap();
+        assert_eq!(vault.get("gateway.server-identity").unwrap().unwrap().as_slice(), b"the server's key");
+        assert!(vault.get("gateway.device-identity").unwrap().is_none(), "the PC's key never lands on the server");
+        assert_eq!(vault.get("algo/exchange/e1").unwrap().unwrap().as_slice(), b"SK", "trading keys move");
     }
 
     fn export(root: &Path, out: &Path) -> crate::bundle::Exported {

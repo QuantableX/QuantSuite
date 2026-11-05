@@ -5,6 +5,7 @@
  * re-encrypted under a passphrase that cannot be recovered. Optional parts
  * start as the data inventory says (artifacts, logs and models unticked).
  */
+import SettingsSuiteDataMove from './SettingsSuiteDataMove.vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
@@ -246,6 +247,8 @@ onUnmounted(() => { unlisten?.() })
       </template>
       <p v-if="importError" class="qsu-hint qsd-error">{{ importError }}</p>
     </div>
+
+    <SettingsSuiteDataMove />
 
     <div class="qsu-row qsd-section">
       <div class="qsu-row-text">
