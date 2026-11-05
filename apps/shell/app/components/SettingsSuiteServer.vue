@@ -7,7 +7,12 @@
  * SettingsSuiteServerGateway.
  */
 import { invoke } from '@tauri-apps/api/core'
+import { useServerLink } from '@quantsuite/core'
 import SettingsSuiteServerGateway from './SettingsSuiteServerGateway.vue'
+
+// While this PC uses a server, the health below is the server's (server_status
+// goes there) and this PC's own server switches do not apply (card 5).
+const link = useServerLink()
 
 type Role = 'local' | 'server' | 'client'
 interface Status {
@@ -110,7 +115,18 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <div class="qsu-row">
+    <div v-if="link.isClient.value" class="qsu-row">
+      <div class="qsu-row-text">
+        <p class="qsu-label">This PC uses the server {{ link.status.value?.connection?.name }}</p>
+        <p class="qsu-hint">
+          Trading, research and your personal data come from the server; QuantPilot, QuantCode, QuantCanvas, the
+          console, QuantMCP, memory and the HUD work on this PC. The health below is the server's. To use this PC's
+          own data again, choose "This PC" under Connect to a server.
+        </p>
+      </div>
+    </div>
+
+    <div v-if="!link.isClient.value" class="qsu-row">
       <div class="qsu-row-text">
         <p class="qsu-label">Run as server</p>
         <p class="qsu-hint">
@@ -129,7 +145,7 @@ onUnmounted(() => {
       />
     </div>
 
-    <div class="qsu-row">
+    <div v-if="!link.isClient.value" class="qsu-row">
       <div class="qsu-row-text">
         <p class="qsu-label">Restart QuantSuite when it exits</p>
         <p class="qsu-hint">

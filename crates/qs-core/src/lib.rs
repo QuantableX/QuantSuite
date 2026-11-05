@@ -106,6 +106,11 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::gateway_pair_begin,
             commands::gateway_pair_finish,
             commands::gateway_pair_current,
+            commands::gateway_remote_call,
+            commands::gateway_step_up,
+            commands::gateway_link_status,
+            commands::gateway_link_retry,
+            commands::gateway_use_connection,
             commands::gateway_connections,
             commands::gateway_connection_test,
             commands::gateway_connection_forget,
@@ -148,8 +153,12 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             runtime::install(app.clone());
 
             tray::init(app)?;
-            // A server listens on its chosen address (LAN or tailnet).
+            // A server listens on its chosen address (LAN or tailnet); a
+            // client connects to the server it uses.
             gateway::start(app);
+            if let Ok(conn) = app.state::<Db>().0.lock() {
+                gateway::start_link(app, &conn);
+            }
             // No geometry to restore: the suite window is always maximised
             // (launcher and app differ only by the circular region), and
             // QuantHUD's overlays place themselves in `tauri-plugin-hud`. The

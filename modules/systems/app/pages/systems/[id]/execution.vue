@@ -10,6 +10,7 @@ definePageMeta({ layout: 'systems', path: '/algo/manual/:id/execution' })
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSystemsStore } from '#systems/stores/systems'
+import { useServerLink } from '@quantsuite/core'
 import SystemsSettingsCostPreview from '#systems/components/Settings/CostPreview.vue'
 
 type Mode = 'off' | 'paper' | 'live'
@@ -158,6 +159,10 @@ async function save() {
   }
 }
 
+// On a PC that uses a server, arming live needs a Full device (card Server 5/7);
+// the server then asks for its PIN.
+const link = useServerLink()
+
 async function arm() {
   arming.value = true
   error.value = null
@@ -297,7 +302,12 @@ watch(systemId, () => { void load() })
         <p class="qs-exec__line">Completed paper runs: <strong>{{ view?.paper_runs_done ?? 0 }}</strong></p>
         <label class="qs-exec__tick"><input v-model="ackNotRobust" type="checkbox"> I know this system is not robust</label>
         <div class="qs-exec__buttons">
-          <button class="btn btn-primary" :disabled="arming || dirty || view?.settings.mode !== 'live' || view?.armed" @click="arm">{{ arming ? 'Checking…' : 'Arm Live' }}</button>
+          <button
+            class="btn btn-primary"
+            :disabled="arming || dirty || view?.settings.mode !== 'live' || view?.armed || !link.canTrade.value"
+            :title="link.canTrade.value ? '' : 'This PC may not trade on the server (its role there).'"
+            @click="arm"
+          >{{ arming ? 'Checking…' : 'Arm Live' }}</button>
           <button class="btn" :disabled="!view?.armed" @click="disarm">Disarm</button>
         </div>
         <p v-if="view?.armed" class="qs-exec__line qs-exec__live">Armed {{ utc(view.armed_at) }}: the next run trades real money.</p>

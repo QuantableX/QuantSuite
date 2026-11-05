@@ -138,8 +138,8 @@ async fn next_frame(ws: &mut Ws) -> Option<Frame> {
     None
 }
 
-async fn hello(ws: &mut Ws, protocol: u32, me: &ClientInfo, resume: Option<ResumePoint>) -> Result<Frame, ConnectError> {
-    let f = Frame::Hello { protocol, app: me.app.clone(), manifest: me.manifest.clone(), name: me.name.clone(), resume };
+async fn hello(ws: &mut Ws, protocol: u32, me: &ClientInfo, resume: Option<ResumePoint>, pair: bool) -> Result<Frame, ConnectError> {
+    let f = Frame::Hello { protocol, app: me.app.clone(), manifest: me.manifest.clone(), name: me.name.clone(), resume, pair };
     ws.send(Message::text(f.encode())).await.map_err(|e| ConnectError::Network(e.to_string()))?;
     match tokio::time::timeout(CONNECT_TIMEOUT, next_frame(ws)).await {
         Ok(Some(Frame::Refused { reason, message })) => Err(ConnectError::Refused { reason, message }),
@@ -182,7 +182,7 @@ impl PairingAttempt {
 
 pub async fn pair(addr: &str, identity: &Identity, code: &str, me: &ClientInfo) -> Result<PairingAttempt, String> {
     let (mut ws, server_key) = open(addr, identity, None).await.map_err(|e| e.to_string())?;
-    let server_name = match hello(&mut ws, PROTOCOL, me, None).await.map_err(|e| e.to_string())? {
+    let server_name = match hello(&mut ws, PROTOCOL, me, None, true).await.map_err(|e| e.to_string())? {
         Frame::Unpaired { server } => server,
         Frame::Welcome { .. } => {
             return Err("This PC is already paired with that server. Revoke it under Devices on the server, then pair again.".into())
@@ -267,7 +267,7 @@ pub async fn connect_speaking(
     protocol: u32,
 ) -> Result<Session, ConnectError> {
     let (mut ws, _) = open(addr, identity, Some(server_key)).await?;
-    match hello(&mut ws, protocol, me, opts.resume).await? {
+    match hello(&mut ws, protocol, me, opts.resume, false).await? {
         Frame::Welcome { server, app, device_id, role, epoch, seq, reload, .. } => {
             // Replayed events follow the resume point; otherwise live ones
             // follow the welcome.

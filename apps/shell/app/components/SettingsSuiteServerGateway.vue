@@ -9,6 +9,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { useServerLink } from '@quantsuite/core'
 
 type DeviceRole = 'full' | 'no_trading' | 'read_only'
 interface Iface { name: string; address: string; kind: 'tailnet' | 'lan' | 'loopback' | 'other' }
@@ -71,6 +72,23 @@ const joinMsg = ref<string | null>(null)
 const tests = ref<Record<string, string>>({})
 
 const isServer = computed(() => gw.value?.role === 'server')
+// A client sees the server's devices (and may revoke one with the PIN).
+const isClient = computed(() => gw.value?.role === 'client')
+const link = useServerLink()
+const activeId = computed(() => link.status.value?.connection?.id ?? null)
+const switching = ref(false)
+
+async function useConnection(id: string | null) {
+  switching.value = true
+  error.value = null
+  try {
+    // QuantSuite restarts: the role decides at start whether this PC may trade.
+    await invoke('plugin:qs|gateway_use_connection', { id })
+  } catch (e) {
+    error.value = String(e)
+    switching.value = false
+  }
+}
 const showAudit = ref(false)
 
 function inTauri(): boolean {
@@ -118,6 +136,11 @@ async function loadStatus() {
 }
 
 async function loadServerSide() {
+  if (isClient.value) {
+    devices.value = (await invoke<Device[]>('plugin:qs|gateway_devices').catch(() => [])).filter((d) => d.state !== 'pending')
+    if (showAudit.value) audit.value = await invoke<AuditEntry[]>('plugin:qs|gateway_audit', { limit: 100 }).catch(() => [])
+    return
+  }
   if (!isServer.value) return
   pairing.value = await invoke<Pairing>('plugin:qs|gateway_pairing_status').catch(() => null)
   for (const p of pairing.value?.pending ?? []) grant.value[p.id] ??= 'full'
@@ -400,9 +423,12 @@ onUnmounted(() => {
         </div>
       </div>
 
+    </template>
+
+    <template v-if="gw && (isServer || (isClient && link.online.value))">
       <div class="qsu-row qsv-section">
         <div class="qsu-row-text">
-          <p class="qsu-label">Devices</p>
+          <p class="qsu-label">Devices{{ isClient ? ` paired with ${link.status.value?.connection?.name ?? 'the server'}` : '' }}</p>
           <p v-if="!devices.length" class="qsu-hint">No device is paired yet.</p>
           <table v-else class="qsv-table qsv-devices">
             <tbody>
@@ -470,18 +496,31 @@ onUnmounted(() => {
         <p v-if="joinMsg" class="qsu-hint">{{ joinMsg }}</p>
         <table v-if="connections.length" class="qsv-table">
           <tbody>
+            <tr>
+              <td>This PC</td>
+              <td class="qsv-muted">its own data</td>
+              <td />
+              <td class="qsv-actions">
+                <span v-if="!activeId" class="qsv-badge">in use</span>
+                <button v-else class="qsu-btn qsv-small" :disabled="switching" @click="useConnection(null)">Use</button>
+              </td>
+              <td />
+            </tr>
             <tr v-for="c in connections" :key="c.id">
               <td>{{ c.name }}</td>
               <td class="qsv-mono">{{ c.address }}</td>
               <td>{{ roleLabel(c.role) }}</td>
               <td class="qsv-actions">
+                <span v-if="activeId === c.id" class="qsv-badge">in use</span>
+                <button v-else class="qsu-btn qsv-small" :disabled="switching" title="QuantSuite restarts and works on this server" @click="useConnection(c.id)">Use</button>
                 <button class="qsu-btn qsv-small" @click="testConnection(c)">Test</button>
-                <button class="qsu-btn qsv-small" :disabled="busy" @click="forgetConnection(c)">Forget</button>
+                <button class="qsu-btn qsv-small" :disabled="busy || activeId === c.id" @click="forgetConnection(c)">Forget</button>
               </td>
               <td class="qsv-muted">{{ tests[c.id] ?? '' }}</td>
             </tr>
           </tbody>
         </table>
+        <p v-if="switching" class="qsu-hint">QuantSuite restarts…</p>
       </div>
     </div>
     <p v-if="error" class="qsu-hint qsv-error">{{ error }}</p>
@@ -514,4 +553,5 @@ onUnmounted(() => {
 .qsv-warn { color: var(--qss-warning, #d9a441); }
 .qsv-error { color: var(--qss-error, #e5534b); }
 .qsv-danger { border-color: var(--qss-error, #e5534b); color: var(--qss-error, #e5534b); }
+.qsv-badge { display: inline-block; padding: 2px 8px; margin-right: 6px; border-radius: 999px; font-size: 11px; color: var(--qss-accent-ink); background: var(--qss-accent); }
 </style>

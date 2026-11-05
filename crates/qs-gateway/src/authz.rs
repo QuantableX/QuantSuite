@@ -7,6 +7,7 @@
 //! commands never leave the server. Anything not listed is denied.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -86,6 +87,17 @@ struct Raw {
     events: Vec<String>,
     #[serde(default)]
     topics: Vec<String>,
+    #[serde(default)]
+    data: Data,
+}
+
+/// The core data of server-placed modules (§6.3.3).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Data {
+    #[serde(default)]
+    pub modules: Vec<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -94,6 +106,7 @@ pub struct Manifest {
     plugins: HashMap<String, (Placement, Effect)>,
     events: Vec<String>,
     topics: Vec<String>,
+    data: Data,
     hash: String,
 }
 
@@ -112,7 +125,7 @@ impl Manifest {
         }
         let normalized = json.replace("\r\n", "\n");
         let hash = hex::encode(&Sha256::digest(normalized.as_bytes())[..8]);
-        Ok(Self { commands, plugins, events: raw.events, topics: raw.topics, hash })
+        Ok(Self { commands, plugins, events: raw.events, topics: raw.topics, data: raw.data, hash })
     }
 
     /// The manifest this build was made with.
@@ -121,7 +134,14 @@ impl Manifest {
         BUNDLED.get_or_init(|| {
             Manifest::parse(include_str!("../remote-manifest.json")).unwrap_or_else(|e| {
                 log::error!("{e}");
-                Manifest { commands: HashMap::new(), plugins: HashMap::new(), events: Vec::new(), topics: Vec::new(), hash: "invalid".into() }
+                Manifest {
+                    commands: HashMap::new(),
+                    plugins: HashMap::new(),
+                    events: Vec::new(),
+                    topics: Vec::new(),
+                    data: Data::default(),
+                    hash: "invalid".into(),
+                }
             })
         })
     }
@@ -153,6 +173,11 @@ impl Manifest {
         &self.topics
     }
 
+    /// Modules and settings scopes whose core data lives on the server.
+    pub fn data(&self) -> &Data {
+        &self.data
+    }
+
     pub fn command_count(&self) -> usize {
         self.commands.len()
     }
@@ -181,6 +206,58 @@ pub fn decide(manifest: &Manifest, role: DeviceRole, cmd: &str) -> Decision {
         (DeviceRole::NoTrading, Effect::External) => Decision::Deny("this device may not trade or change keys".into()),
         (_, Effect::Write) => Decision::Allow,
         (DeviceRole::Full, Effect::External) => Decision::StepUp,
+    }
+}
+
+/// The module of an entity id (`<module>:<kind>:<id>`).
+fn module_of(id: &str) -> &str {
+    id.split(':').next().unwrap_or("")
+}
+
+fn arg<'a>(args: &'a Value, path: &[&str]) -> Option<&'a str> {
+    let mut v = args;
+    for p in path {
+        v = v.get(*p)?;
+    }
+    v.as_str()
+}
+
+/// The core's settings and entity commands carry their module in an
+/// argument: a remote device may use them only for the server's data
+/// (§6.3.3) — never the server PC's own appearance, workspaces or gateway.
+pub fn check_data(manifest: &Manifest, cmd: &str, args: &Value) -> Result<(), String> {
+    let d = &manifest.data;
+    let module_ok = |m: Option<&str>| m.is_some_and(|m| d.modules.iter().any(|x| x == m));
+    let ok = match cmd {
+        "plugin:qs|get_settings" | "plugin:qs|get_setting" | "plugin:qs|set_setting" => {
+            arg(args, &["scope"]).is_some_and(|s| d.scopes.iter().any(|x| x == s))
+        }
+        "plugin:qs|upsert_entity" => {
+            let m = arg(args, &["entity", "module"]);
+            module_ok(m) && arg(args, &["entity", "id"]).is_some_and(|id| Some(module_of(id)) == m)
+        }
+        "plugin:qs|list_entities" | "plugin:qs|count_entities" => module_ok(arg(args, &["module"])),
+        "plugin:qs|delete_entity" | "plugin:qs|linked_entities" => module_ok(arg(args, &["id"]).map(module_of)),
+        "plugin:qs|link_entities" | "plugin:qs|unlink_entities" => module_ok(arg(args, &["link", "src"]).map(module_of)),
+        _ => true,
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("{cmd} reaches only the server's own module data from another device"))
+    }
+}
+
+/// Results that could list other data are cut to the server's modules.
+pub fn filter_result(manifest: &Manifest, cmd: &str, result: Value) -> Value {
+    match (cmd, result) {
+        ("plugin:qs|search_entities" | "plugin:qs|linked_entities", Value::Array(items)) => Value::Array(
+            items
+                .into_iter()
+                .filter(|e| e.get("module").and_then(Value::as_str).is_some_and(|m| manifest.data.modules.iter().any(|x| x == m)))
+                .collect(),
+        ),
+        (_, other) => other,
     }
 }
 
@@ -239,6 +316,25 @@ pub(crate) mod tests {
         assert!(m.events().iter().any(|e| e == "bot:log"));
         // A manifest is the same whatever line endings the checkout has.
         assert_eq!(Manifest::parse(&TEST_MANIFEST.replace('\n', "\r\n")).unwrap().hash(), Manifest::parse(TEST_MANIFEST).unwrap().hash());
+    }
+
+    #[test]
+    fn core_data_only_for_the_servers_modules() {
+        let m = Manifest::parse(r#"{"commands":{},"data":{"modules":["notes","algo"],"scopes":["notes","algo","todos"]}}"#).unwrap();
+        let ok = |cmd: &str, args: Value| check_data(&m, cmd, &args).is_ok();
+        assert!(ok("plugin:qs|get_setting", serde_json::json!({ "scope": "notes", "key": "x" })));
+        assert!(ok("plugin:qs|set_setting", serde_json::json!({ "scope": "todos", "key": "sections", "value": [] })));
+        assert!(!ok("plugin:qs|set_setting", serde_json::json!({ "scope": "core", "key": "server.role", "value": "local" })), "the server's own settings");
+        assert!(!ok("plugin:qs|get_settings", serde_json::json!({})));
+        assert!(ok("plugin:qs|upsert_entity", serde_json::json!({ "entity": { "id": "notes:note:1", "module": "notes" } })));
+        assert!(!ok("plugin:qs|upsert_entity", serde_json::json!({ "entity": { "id": "core:workspace:1", "module": "notes" } })), "id and module agree");
+        assert!(!ok("plugin:qs|list_entities", serde_json::json!({})), "everything is not the server's module data");
+        assert!(ok("plugin:qs|list_entities", serde_json::json!({ "module": "algo" })));
+        assert!(!ok("plugin:qs|delete_entity", serde_json::json!({ "id": "core:workspace:1" })));
+        assert!(ok("plugin:qs|link_entities", serde_json::json!({ "link": { "src": "notes:note:1", "dst": "core:workspace:1", "rel": "x" } })));
+        assert!(ok("plugin:notes|list_notes", serde_json::json!({})), "other commands are not data commands");
+        let found = serde_json::json!([{ "id": "notes:note:1", "module": "notes" }, { "id": "core:workspace:1", "module": "core" }]);
+        assert_eq!(filter_result(&m, "plugin:qs|search_entities", found).as_array().unwrap().len(), 1);
     }
 
     #[test]

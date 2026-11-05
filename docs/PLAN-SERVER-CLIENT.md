@@ -1,6 +1,6 @@
 # QuantSuite server and client — one QuantSuite, used from every PC
 
-Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, card 3 (pairing, mutual TLS) and card 4 (gateway: calls, events, keys, files) 2026-11-05 — see §6.3 and §6.3.1–6.3.7. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
+Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, cards 3 (pairing, mutual TLS), 4 (gateway) and 5 (client mode) 2026-11-05 — see §6.3 and §6.3.1–6.3.8. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
 
 ## In short
 
@@ -102,7 +102,7 @@ QuantMCP's port 3100 stays loopback-only on every machine.
 
 ### 6.1 One seam on the client
 
-Client mode wraps `window.__TAURI_INTERNALS__.invoke`. A command the manifest places on the server goes to the gateway; a client command goes to Tauri as today. Event listening (`plugin:event|listen`) and the suite bus are bridged the same way. Module code does not change.
+Client mode routes every `invoke`: a command the manifest places on the server goes to the gateway; a client command goes to Tauri as today. Module code does not change. Built in card 5 (§6.3.8): the seam sits at the import of `@tauri-apps/api/core`, because Tauri's runtime object cannot be wrapped (§6.3.4 risk 10), and events need no seam — the Rust side re-emits the server's events here.
 
 ### 6.2 The remote manifest
 
@@ -289,6 +289,25 @@ Add the dispatch through the webview (about 0.2 ms, §6.3) and the network's rou
 | QuantScript | 1 | 1 | ≈2 ms | ≈25 ms | ≈85 ms |
 
 A batch costs one round trip plus about 0.5 ms; the commands' own time is the same as locally. Over a LAN a page opens as fast as locally. Over a direct tailnet connection (Tailscale finds one in most homes) a cold page waits a few tens of milliseconds longer; over Tailscale's relay a few hundred. Warm pages (kept alive) make 0–2 calls when revisited. Card 5 measures the real pages end to end.
+
+### 6.3.8 Built: client mode (card Server 5/7, 2026-11-05)
+
+| Piece | How |
+|---|---|
+| Profiles | Settings → Server → Connect to a server lists "This PC" and every paired server; "Use" switches and restarts QuantSuite (core settings `server.active_connection` and `server.role = client`). The role decides at start whether this PC may run executors (one trader, card 2), so a switch is a restart, not a reload. A PC that runs as a server cannot use another one. |
+| The link | `qs_core::gateway::Link`: one gateway connection, reconnecting after 1, 2, 5, 10, 20, then every 30 s (or at once with "Try now"), resuming events from where it stopped. The server's Tauri events are emitted here under their own names and its bus events published on this PC's bus, so module `listen` calls and bus subscriptions work unchanged. State changes go out as `server:connection`; after a reconnect, or when events could not be resumed, `server:refresh`. |
+| The seam | A Vite plugin (`apps/shell/nuxt.config.ts`) resolves every import of `@tauri-apps/api/core` in the app's code to `apps/shell/app/seam/core.ts`, which imports the real module and replaces `invoke`. Without a server nothing changes. With one, `routing.mjs` decides: `server` → `plugin:qs\|gateway_remote_call`, `deny` → refused, anything else (client commands, Tauri's own plugins) → Tauri here. The Tauri plugins' guest packages keep their own import; their commands are all `client`. |
+| Core data | The core's settings go by `scope` and its entity commands by module (the manifest's generated `data`: the server-placed modules, plus `todos`): the drawer notes and to-dos, module settings and module entities live on the server; appearance, windows, workspaces and connections on each PC. The entity search asks both and merges (the server's first, without this PC's stale copies). The server refuses these commands for any other scope or module (`check_data`) and cuts search and link results to its modules. `core.setting.changed` and `core.entity.*` of those scopes and modules reach the clients. |
+| Keyed changes | `write` and `external` calls carry an idempotency key. After a timeout or a dropped connection the client asks the server what happened (on the next connection if needed) and sends again only when the server never saw it. |
+| Step-up | A `step_up_required` answer opens the server PIN prompt (`ServerPinPrompt`); the PIN goes to the server once and the call is sent again. |
+| Offline | The title bar shows the server and its state (client mode only). While it is not reachable a banner says "Server … not reachable since 12:03 — reconnecting"; the server's module pages keep their last data, greyed and inert; this PC's own modules keep working. After the reconnect the server's pages load again (a fresh page instance). |
+| Roles | `useServerLink()` (`@quantsuite/core`) gives `canTrade` and `canWrite`: QuantAlgo's Start (live) and QuantSystems' Arm Live are disabled on a device without Full. The server enforces every role anyway. |
+| Versions | A refusal (other version, revoked) shows its message in the banner and the title bar, and the link retries only every 30 s. |
+| Health | Settings → Server shows the server's health while this PC uses it (`server_status` is `server:read`), and the server's devices (revoking one asks for the PIN). |
+
+Also fixed: a revoked PC could not pair again (the server refused its key before pairing). `hello` now says when it pairs; a revoked key may pair again through a new code from the server's screen, and is still refused when it only connects.
+
+Tests: `npm run test:seam` (every manifest command routed per its placement, core data by argument, unlisted and Tauri plugin commands local), `cargo test -p qs-gateway` (data guard, re-pairing a revoked PC), qs-core lib tests. QA between two isolated profiles on this PC (`artifacts/qa-native/qa2.sh`): the client paired, switched to the server (restart), opened Notes, Plan, Finance, Habits, Flow, QuantAlgo, QuantSystems, QuantTerminal and QuantScript through the gateway (121 calls in the server's audit, none refused). A note created on the server appeared on the client, and one created on the client landed in the server's database (the client's stayed empty). QuantAlgo's kill switch (an `external` action) asked for the server PIN, switched on on the server, and off again without a second prompt. With the server process killed, the client showed the banner, "ROOT · offline", and a greyed, inert Finance page, while QuantPilot kept working. After a restart it reconnected within about 20 s, and Finance loaded its data again. Arming a Manual system from the client was not tried (no live-ready system in the QA profile); it is `external` like the kill switch and takes the same path.
 
 ### 6.4 Gateway protocol
 

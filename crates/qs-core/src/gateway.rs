@@ -9,14 +9,21 @@
 //!
 //! **On any PC**: this PC's device key (vault entry [`DEVICE_IDENTITY`]) and its
 //! connection profiles — the servers it paired with and their pinned keys
-//! (core setting [`CONNECTIONS`]). Card 5 routes the UI through them.
+//! (core setting [`CONNECTIONS`]).
+//!
+//! **In client mode** (card Server 5/7; this PC uses one of those servers,
+//! core setting [`ACTIVE`], role `client`): the [`Link`] keeps one connection
+//! open — reconnecting with backoff and resuming events — re-emits the
+//! server's events here so module code keeps its `listen` calls, and carries
+//! the calls the frontend seam (`apps/shell/seam`) routes to the server.
 
 use crate::db::{self, Db};
 use crate::server::{self, Role};
 use crate::vault;
-use qs_gateway::client::{self, ClientInfo, PairingAttempt};
+use qs_gateway::authz::Effect;
+use qs_gateway::client::{self, CallOptions, ClientEvent, ClientInfo, ConnectError, ConnectOptions, PairingAttempt, Session};
 use qs_gateway::files::FileRoots;
-use qs_gateway::protocol::EventKind;
+use qs_gateway::protocol::{CallError, EventKind, ResumePoint};
 use qs_gateway::net::{self, Interface};
 use qs_gateway::registry::{AuditEntry, Device, Registry};
 use qs_gateway::server::{CallFuture, Dispatch, Hub, HubConfig, Listener, Observer, PairingStatus};
@@ -51,6 +58,8 @@ pub struct GatewayState {
     error: Mutex<Option<String>>,
     /// This PC pairing with a server (client side), and what its screen shows.
     attempt: tokio::sync::Mutex<Option<(PairBegun, PairingAttempt)>>,
+    /// Client mode: the connection to the server this PC uses.
+    link: Mutex<Option<Arc<Link>>>,
 }
 
 /// The computer's name, as devices and servers see it.
@@ -108,12 +117,23 @@ pub fn forward_events<R: Runtime>(app: &AppHandle<R>, hub: &Arc<Hub>) {
         });
     }
     let topics: HashSet<String> = hub.manifest().topics().iter().cloned().collect();
+    let data = hub.manifest().data().clone();
     let h = Arc::downgrade(hub);
     app.listen_any(crate::bus::CHANNEL, move |e| {
         let Some(h) = h.upgrade() else { return };
         let Ok(v) = serde_json::from_str::<Value>(e.payload()) else { return };
         let topic = v.get("topic").and_then(Value::as_str).unwrap_or_default().to_string();
-        if topics.contains(&topic) {
+        let p = v.get("payload").cloned().unwrap_or(Value::Null);
+        let field = |k: &str| p.get(k).and_then(Value::as_str).map(String::from);
+        // The core's own topics only for the server's module data (§6.3.3).
+        let core_ok = match topic.as_str() {
+            "core.setting.changed" => field("scope").is_some_and(|s| data.scopes.contains(&s)),
+            "core.entity.upserted" | "core.entity.deleted" => field("module")
+                .or_else(|| field("id").map(|id| id.split(':').next().unwrap_or("").to_string()))
+                .is_some_and(|m| data.modules.contains(&m)),
+            _ => false,
+        };
+        if topics.contains(&topic) || core_ok {
             h.publish(EventKind::Bus, &topic, v);
         }
     });
@@ -540,6 +560,311 @@ pub async fn test_connection<R: Runtime>(app: &AppHandle<R>, c: &Connection) -> 
         millis: t.elapsed().as_millis() as u64,
         health,
     })
+}
+
+// ── client mode: the link to the server this PC uses (card Server 5/7) ─────
+
+/// The connection profile this PC uses (its id), or none: local.
+pub const ACTIVE: &str = "server.active_connection";
+/// Emitted with a [`LinkStatus`] whenever the link changes.
+pub const LINK_EVENT: &str = "server:connection";
+/// Emitted when the server pages must reload their data (a reconnect, or
+/// events that could not be resumed).
+pub const REFRESH_EVENT: &str = "server:refresh";
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkStatus {
+    /// `local` or `client`.
+    pub mode: &'static str,
+    pub connection: Option<Connection>,
+    /// `local`, `connecting`, `online`, `offline` or `refused`.
+    pub state: &'static str,
+    /// Online since, or not reachable since (the last moment it was).
+    pub since: Option<String>,
+    pub message: Option<String>,
+    pub server_app: Option<String>,
+    pub role: Option<DeviceRole>,
+    /// Modules whose pages come from the server.
+    pub server_modules: Vec<String>,
+}
+
+fn now_iso() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+pub struct Link {
+    connection: Connection,
+    session: tokio::sync::RwLock<Option<Arc<Session>>>,
+    status: Mutex<LinkStatus>,
+    resume: Mutex<Option<ResumePoint>>,
+    wake: tokio::sync::Notify,
+}
+
+impl Link {
+    fn new(connection: Connection) -> Self {
+        let status = LinkStatus {
+            mode: "client",
+            connection: Some(connection.clone()),
+            state: "connecting",
+            since: None,
+            message: None,
+            server_app: None,
+            role: Some(connection.role),
+            server_modules: Manifest::bundled().data().modules.clone(),
+        };
+        Self { connection, session: Default::default(), status: Mutex::new(status), resume: Mutex::new(None), wake: Default::default() }
+    }
+
+    fn set<R: Runtime>(&self, app: &AppHandle<R>, f: impl FnOnce(&mut LinkStatus)) {
+        let snapshot = {
+            let mut s = lock(&self.status);
+            f(&mut s);
+            s.clone()
+        };
+        let _ = app.emit(LINK_EVENT, snapshot);
+    }
+
+    fn status(&self) -> LinkStatus {
+        lock(&self.status).clone()
+    }
+
+    /// The open session, waiting up to `wait` for one.
+    async fn session(&self, wait: Duration) -> Option<Arc<Session>> {
+        let until = Instant::now() + wait;
+        loop {
+            if let Some(s) = self.session.read().await.as_ref().filter(|s| !s.is_closed()) {
+                return Some(s.clone());
+            }
+            if Instant::now() >= until {
+                return None;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    fn unreachable(&self) -> Value {
+        let s = self.status();
+        let message = match (s.state, s.message) {
+            ("refused", Some(m)) => m,
+            _ => "The server is not reachable right now.".to_string(),
+        };
+        serde_json::json!({ "code": "offline", "message": message, "since": s.since })
+    }
+}
+
+fn call_error(e: CallError) -> Value {
+    serde_json::json!({ "code": e.code, "message": e.message })
+}
+
+/// This launch's link, if this PC is a client.
+fn link<R: Runtime>(app: &AppHandle<R>) -> Option<Arc<Link>> {
+    let state = app.try_state::<GatewayState>()?;
+    let l = lock(&state.link).clone();
+    l
+}
+
+pub fn link_status<R: Runtime>(app: &AppHandle<R>) -> LinkStatus {
+    link(app).map(|l| l.status()).unwrap_or_else(|| LinkStatus {
+        mode: "local",
+        connection: None,
+        state: "local",
+        since: None,
+        message: None,
+        server_app: None,
+        role: None,
+        server_modules: Manifest::bundled().data().modules.clone(),
+    })
+}
+
+/// At setup: a client connects to the server it uses.
+pub fn start_link<R: Runtime>(app: &AppHandle<R>, conn: &rusqlite::Connection) {
+    if server::role() != Role::Client {
+        return;
+    }
+    let active = setting(conn, ACTIVE).and_then(|v| v.as_str().map(String::from));
+    let found = active.and_then(|id| connections(conn).into_iter().find(|c| c.id == id));
+    let Some(connection) = found else {
+        log::warn!("gateway: this PC is a client, but its server connection is gone");
+        return;
+    };
+    let l = Arc::new(Link::new(connection));
+    *lock(&app.state::<GatewayState>().link) = Some(l.clone());
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move { run_link(app, l).await });
+}
+
+async fn run_link<R: Runtime>(app: AppHandle<R>, link: Arc<Link>) {
+    let refuse = |message: String| {
+        link.set(&app, |s| {
+            s.state = "refused";
+            s.message = Some(message);
+        })
+    };
+    let device = match identity(DEVICE_IDENTITY) {
+        Ok(d) => d,
+        Err(e) => return refuse(e),
+    };
+    let key = match server_key(&link.connection) {
+        Ok(k) => k,
+        Err(e) => return refuse(e),
+    };
+    let me = me(&app);
+    // Seconds between attempts: quick at first, then every 30 s.
+    const BACKOFF: [u64; 6] = [1, 2, 5, 10, 20, 30];
+    let mut failures = 0usize;
+    let mut was_online = false;
+    loop {
+        let resume = *lock(&link.resume);
+        let opts = ConnectOptions { resume, ..Default::default() };
+        match client::connect_with(&link.connection.address, &device, key, &me, opts).await {
+            Ok(s) => {
+                failures = 0;
+                let s = Arc::new(s);
+                *lock(&link.resume) = Some(s.resume_point());
+                *link.session.write().await = Some(s.clone());
+                let (app_v, role, reload) = (s.welcome.app.clone(), s.welcome.role, s.welcome.reload);
+                link.set(&app, |st| {
+                    st.state = "online";
+                    st.since = Some(now_iso());
+                    st.message = None;
+                    st.server_app = Some(app_v);
+                    st.role = Some(role);
+                });
+                // Back after a gap: the server's pages load their data again.
+                if was_online || reload {
+                    let _ = app.emit(REFRESH_EVENT, ());
+                }
+                was_online = true;
+                let pump = tauri::async_runtime::spawn(pump_events(app.clone(), link.clone(), s.clone()));
+                s.closed().await;
+                pump.abort();
+                *link.session.write().await = None;
+                link.set(&app, |st| {
+                    st.state = "offline";
+                    st.since = Some(now_iso());
+                    st.message = Some("The connection to the server was lost; reconnecting.".into());
+                });
+            }
+            Err(e) => {
+                let hard = matches!(e, ConnectError::Refused { .. } | ConnectError::Unpaired | ConnectError::Tls { key_changed: true, .. });
+                let message = e.to_string();
+                link.set(&app, |st| {
+                    st.state = if hard { "refused" } else { "offline" };
+                    // Not reachable since the last moment it was (or the first try).
+                    if st.since.is_none() || st.state == "refused" {
+                        st.since = Some(now_iso());
+                    }
+                    st.message = Some(message);
+                });
+                if hard {
+                    failures = BACKOFF.len() - 1;
+                }
+            }
+        }
+        let wait = Duration::from_secs(BACKOFF[failures.min(BACKOFF.len() - 1)]);
+        failures += 1;
+        tokio::select! {
+            _ = tokio::time::sleep(wait) => {}
+            _ = link.wake.notified() => {}
+        }
+    }
+}
+
+/// The server's events, emitted here under their own names.
+async fn pump_events<R: Runtime>(app: AppHandle<R>, link: Arc<Link>, s: Arc<Session>) {
+    let Some(mut rx) = s.take_events() else { return };
+    let epoch = s.welcome.epoch;
+    while let Some(ev) = rx.recv().await {
+        match ev {
+            ClientEvent::Event { seq, kind, topic, payload } => {
+                match kind {
+                    EventKind::Tauri => {
+                        let _ = app.emit(&topic, payload);
+                    }
+                    EventKind::Bus => {
+                        if let Ok(e) = serde_json::from_value::<crate::bus::Event>(payload) {
+                            let _ = crate::bus::publish(&app, e);
+                        }
+                    }
+                }
+                *lock(&link.resume) = Some(ResumePoint { epoch, last_seq: seq });
+            }
+            ClientEvent::Reload { epoch, seq } => {
+                *lock(&link.resume) = Some(ResumePoint { epoch, last_seq: seq });
+                let _ = app.emit(REFRESH_EVENT, ());
+            }
+        }
+    }
+}
+
+/// How long the client waits for a call of each side-effect class (a little
+/// longer than the server, so the server's own timeout answers first).
+fn client_timeout(effect: Effect) -> Duration {
+    qs_gateway::server::timeout_for(effect) + Duration::from_secs(10)
+}
+
+/// A call the seam routed to the server. Changing calls carry an idempotency
+/// key: after a timeout or a dropped connection the client asks what happened
+/// instead of sending them again (§5).
+pub async fn remote_call<R: Runtime>(app: &AppHandle<R>, cmd: String, args: Value) -> Result<Value, Value> {
+    let link = link(app).ok_or_else(|| serde_json::json!({ "code": "local", "message": "This PC does not use a server." }))?;
+    let effect = Manifest::bundled().lookup(&cmd).map(|e| e.1).unwrap_or(Effect::Read);
+    let timeout = client_timeout(effect);
+    let key = matches!(effect, Effect::Write | Effect::External).then(client::new_key);
+    let session = link.session(Duration::from_secs(3)).await.ok_or_else(|| link.unreachable())?;
+    match session.call_with(&cmd, args.clone(), CallOptions { key: key.clone(), timeout }).await {
+        Ok(v) => Ok(v),
+        Err(e) if key.is_some() && (e.code == "timeout" || e.code == "closed") => {
+            let key = key.unwrap_or_default();
+            let unsure = || {
+                serde_json::json!({ "code": "unknown", "message": "The connection dropped during this change; the server could not be asked whether it took effect. Check before trying again." })
+            };
+            let again = link.session(Duration::from_secs(30)).await.ok_or_else(unsure)?;
+            match again.outcome(&key, timeout).await {
+                Ok(v) => Ok(v),
+                // It never arrived: sending it now is safe (same key).
+                Err(o) if o.code == "unknown" => again.call_with(&cmd, args, CallOptions { key: Some(key), timeout }).await.map_err(call_error),
+                Err(o) if o.code == "closed" || o.code == "timeout" => Err(unsure()),
+                Err(o) => Err(call_error(o)),
+            }
+        }
+        Err(e) => Err(call_error(e)),
+    }
+}
+
+pub async fn step_up<R: Runtime>(app: &AppHandle<R>, pin: &str) -> Result<u64, String> {
+    let link = link(app).ok_or("This PC does not use a server.")?;
+    let s = link.session(Duration::from_secs(3)).await.ok_or("The server is not reachable right now.")?;
+    s.step_up(pin).await
+}
+
+/// Reconnect now instead of waiting for the next attempt.
+pub fn retry<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(l) = link(app) {
+        l.wake.notify_one();
+    }
+}
+
+/// Use a saved connection (`Some(id)`) or this PC's own data (`None`). Takes
+/// effect at the next start: the role decides at setup whether this PC may
+/// run executors (one trader, §5).
+pub fn use_connection(conn: &rusqlite::Connection, id: Option<&str>) -> Result<(), String> {
+    match id {
+        Some(id) => {
+            if !connections(conn).iter().any(|c| c.id == id) {
+                return Err("No such connection.".into());
+            }
+            if server::stored_role(conn) == Some(Role::Server) {
+                return Err("This PC runs as a server. Turn \"Run as server\" off first.".into());
+            }
+            db::set_setting(conn, SCOPE, ACTIVE, &Value::String(id.to_string())).map_err(|e| e.to_string())?;
+            server::set_role(conn, Role::Client)
+        }
+        None => {
+            db::set_setting(conn, SCOPE, ACTIVE, &Value::String(String::new())).map_err(|e| e.to_string())?;
+            server::set_role(conn, Role::Local)
+        }
+    }
 }
 
 #[cfg(test)]

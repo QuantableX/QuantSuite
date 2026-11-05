@@ -10,7 +10,7 @@
 //! audit log, keyed calls run once, and each side-effect class has its
 //! timeout. Revoking a device drops its connections at once.
 
-use crate::authz::{decide, Decision, DeviceRole, Effect, Manifest};
+use crate::authz::{check_data, decide, filter_result, Decision, DeviceRole, Effect, Manifest};
 use crate::events::{EventItem, EventLog};
 use crate::files::{self, FileRoots};
 use crate::identity::Identity;
@@ -436,7 +436,7 @@ impl Hub {
             Ok(Some(Ok(f))) => f,
             _ => return,
         };
-        let Frame::Hello { protocol, app, manifest, name, resume } = hello else {
+        let Frame::Hello { protocol, app, manifest, name, resume, pair } = hello else {
             let _ = send(&mut tx, &refused(Refusal::Protocol, "The first message must be hello.")).await;
             return;
         };
@@ -460,7 +460,7 @@ impl Hub {
         let device = lock(&self.registry).by_key(&key).ok().flatten();
         match device {
             Some(d) if d.state == DeviceState::Paired => self.serve(d, resume, tx, rx, stop).await,
-            Some(d) if d.state == DeviceState::Revoked => {
+            Some(d) if d.state == DeviceState::Revoked && !pair => {
                 self.audit(Some(&d), "connect", "refused", Some("revoked"));
                 let _ = send(&mut tx, &refused(Refusal::Revoked, "This device was removed from the server. Pair it again there.")).await;
             }
@@ -697,8 +697,8 @@ impl Hub {
         let Some(d) = read(&self.dispatch) else {
             return Err(CallError::new("unavailable", "The server is still starting."));
         };
-        match tokio::time::timeout(timeout_for(effect), d.call(cmd, args)).await {
-            Ok(Ok(v)) => Ok(v),
+        match tokio::time::timeout(timeout_for(effect), d.call(cmd.clone(), args)).await {
+            Ok(Ok(v)) => Ok(filter_result(&self.manifest, &cmd, v)),
             Ok(Err(e)) => Err(CallError::new("failed", error_text(e))),
             Err(_) => Err(CallError::new("timeout", "The server gave up waiting for this call. Check whether it took effect.")),
         }
@@ -736,6 +736,11 @@ impl Hub {
                 reply_result(out, id, Err(CallError::new("step_up_required", "Enter the server PIN to do this from another device."))).await;
             }
             Decision::Allow => {
+                if let Err(why) = check_data(&self.manifest, &cmd, &args) {
+                    self.audit(Some(&device), &cmd, "denied", Some(&why));
+                    reply_result(out, id, Err(CallError::new("denied", why))).await;
+                    return;
+                }
                 let effect = self.manifest.lookup(&cmd).map(|e| e.1).unwrap_or(Effect::Read);
                 match key {
                     Some(key) => self.keyed_call(device, id, cmd, args, key, effect, out).await,
