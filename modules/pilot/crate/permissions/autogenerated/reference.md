@@ -161,6 +161,11 @@ Default permissions for the pilot module.
 - `allow-pilot-triggers-status`
 - `allow-pilot-triggers-listen`
 - `allow-pilot-trigger-new-secret`
+- `allow-pilot-deploy-view`
+- `allow-pilot-deploy-save`
+- `allow-pilot-deploy-delete`
+- `allow-pilot-deploy-run`
+- `allow-pilot-agent-deploy`
 - `allow-pilot-guide-get`
 - `allow-pilot-guide-write`
 - `allow-pilot-progress`
@@ -472,6 +477,32 @@ Enables the pilot_agent_crew_wait command without any pre-configured scope.
 <td>
 
 Denies the pilot_agent_crew_wait command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-agent-deploy`
+
+</td>
+<td>
+
+Enables the pilot_agent_deploy command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-agent-deploy`
+
+</td>
+<td>
+
+Denies the pilot_agent_deploy command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1564,6 +1595,110 @@ Enables the pilot_crews command without any pre-configured scope.
 <td>
 
 Denies the pilot_crews command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-deploy-delete`
+
+</td>
+<td>
+
+Enables the pilot_deploy_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-deploy-delete`
+
+</td>
+<td>
+
+Denies the pilot_deploy_delete command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-deploy-run`
+
+</td>
+<td>
+
+Enables the pilot_deploy_run command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-deploy-run`
+
+</td>
+<td>
+
+Denies the pilot_deploy_run command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-deploy-save`
+
+</td>
+<td>
+
+Enables the pilot_deploy_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-deploy-save`
+
+</td>
+<td>
+
+Denies the pilot_deploy_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-deploy-view`
+
+</td>
+<td>
+
+Enables the pilot_deploy_view command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-deploy-view`
+
+</td>
+<td>
+
+Denies the pilot_deploy_view command without any pre-configured scope.
 
 </td>
 </tr>

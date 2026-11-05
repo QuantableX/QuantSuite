@@ -32,7 +32,7 @@ pub use storage::{log_run as log_storage_run, Category as StorageCategory, Clean
 /// 18: thread tags (round 2, card 12).
 /// 19: side chats name their main thread (round 2, card 10).
 /// 20: crews — tasks, members and their message log (round 2, card 07).
-pub const SCHEMA_VERSION: i64 = 27;
+pub const SCHEMA_VERSION: i64 = 28;
 
 #[path = "queue.rs"]
 mod queue;
@@ -47,6 +47,8 @@ mod phone_db;
 pub use phone_db::{PhoneAudit, PhoneDevice};
 #[path = "telegram_db.rs"]
 mod telegram_db;
+#[path = "deploy_db.rs"]
+mod deploy_db;
 #[path = "guides_db.rs"]
 mod guides_db;
 #[path = "progress_db.rs"]
@@ -618,6 +620,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         tx.execute_batch("ALTER TABLE schedules ADD COLUMN trigger_rule TEXT NOT NULL DEFAULT '{\"kind\":\"time\"}';")?;
     }
     tx.execute_batch(schedules_db::TRIGGER_TABLES)?;
+    // Schema 28 (round 4, card 4): deploy history.
+    tx.execute_batch(deploy_db::DEPLOY_TABLES)?;
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;

@@ -69,6 +69,7 @@ function restart() {
     <PilotGithubView v-else-if="app.view === 'github'" />
     <PilotCrewView v-else-if="app.view === 'crew'" />
     <PilotSchedulesView v-else-if="app.view === 'schedules'" />
+    <PilotDeployView v-else-if="app.view === 'deploy'" />
     <!-- The terminals stay mounted under the board (their scrollback); the conversation does not, the board's panel has it. -->
     <div v-show="store.page !== 'usage' && app.view === 'conversation'" class="qp-page">
     <template v-if="session">

@@ -278,6 +278,8 @@ pub struct Settings {
     pub telegram: crate::telegram::TelegramSettings,
     /// The webhook listener (round 4, card 3), changed the same way.
     pub triggers: crate::phone::PhoneSettings,
+    /// Deploy targets by project (round 4, card 4), changed through their own commands.
+    pub deploy: BTreeMap<String, Vec<crate::deploy::DeployTarget>>,
     /// The composer's send key: `enter` (Enter sends), `modEnterMultiline`
     /// (Ctrl+Enter once the message has several lines), `modEnter` (always Ctrl+Enter).
     pub send_shortcut: String,
@@ -356,6 +358,7 @@ impl Default for Settings {
             phone: Default::default(),
             telegram: Default::default(),
             triggers: Default::default(),
+            deploy: BTreeMap::new(),
             send_shortcut: "enter".into(),
             follow_up: "queue".into(),
             notify: "unfocused".into(),
@@ -686,6 +689,7 @@ impl Settings {
         self.phone = current.phone.clone();
         self.telegram = current.telegram.clone();
         self.triggers = current.triggers.clone();
+        self.deploy = current.deploy.clone();
         let mut sticky = current.sticky.clone();
         if self.default_provider != current.default_provider {
             sticky.provider.clear();

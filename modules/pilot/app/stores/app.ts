@@ -25,14 +25,14 @@ function writeText(key: string, value: string) {
   try { localStorage.setItem(key, value) } catch { /* private mode */ }
 }
 
-export type PilotView = 'conversation' | 'board' | 'github' | 'crew' | 'schedules'
+export type PilotView = 'conversation' | 'board' | 'github' | 'crew' | 'schedules' | 'deploy'
 
 export const useAppStore = defineStore('pilot/app', {
   state: () => ({
     sidebarLeftOpen: readBool('qp-sidebar-left', true),
     sidebarRightOpen: readBool('qp-sidebar-right', true),
     /** The main area: the open thread's conversation, the kanban board (card 21), GitHub (card 23), the crew graph (round 2, card 08) or the schedules (round 3, card 03). */
-    view: (['board', 'github', 'crew', 'schedules'].includes(readText('qp-view')) ? readText('qp-view') : 'conversation') as PilotView,
+    view: (['board', 'github', 'crew', 'schedules', 'deploy'].includes(readText('qp-view')) ? readText('qp-view') : 'conversation') as PilotView,
     /** The board shown: a workspace id or `general`; empty until one was picked. */
     boardId: readText('qp-board'),
     /** The thread open beside the board, and the card selected on it. */

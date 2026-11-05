@@ -25,6 +25,7 @@ mod codex;
 mod context;
 mod contexts;
 mod crew;
+mod deploy;
 mod db;
 mod documents;
 mod driver;
@@ -956,6 +957,9 @@ pub fn init() -> TauriPlugin<Wry> {
             phone::start_saved(app);
             app.manage(telegram::TelegramAppState::default());
             telegram::start_saved(app);
+            if let Some(state) = app.try_state::<PilotState>() {
+                deploy::after_restart(&state.db);
+            }
             app.manage(triggers::TriggersState::default());
             triggers::start_saved(app);
             tauri::async_runtime::spawn(threads::resume_scheduler(app.clone()));
@@ -1137,6 +1141,11 @@ pub fn init() -> TauriPlugin<Wry> {
             triggers::pilot_triggers_status,
             triggers::pilot_triggers_listen,
             triggers::pilot_trigger_new_secret,
+            deploy::pilot_deploy_view,
+            deploy::pilot_deploy_save,
+            deploy::pilot_deploy_delete,
+            deploy::pilot_deploy_run,
+            deploy::pilot_agent_deploy,
             guides::pilot_guide_get,
             guides::pilot_guide_write,
             progress::pilot_progress,

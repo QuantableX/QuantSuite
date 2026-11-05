@@ -3316,3 +3316,16 @@ Tests run against a local stand-in for Telegram's API. A debug build reads `QS_T
 - **A webhook** for anything else: `POST /hook/<schedule id>` on a listener that is off by default, on an address phone access's rules allow (loopback, Tailscale, a LAN address with a tick; never public). `X-Hub-Signature-256` over the raw body (GitHub's own header) or a bearer secret, from the vault as `pilot.hook.<id>`, shown once. An unknown id, a paused trigger and a wrong secret all get the same answer. A repeated delivery runs once (its id, else its content). 256 KiB at most. Reaching it from the internet is the user's choice, for example with Tailscale Funnel; QuantSuite never sets that up.
 - **Event text is untrusted.** Anyone who can open an issue writes it. It goes into the prompt between marker lines the event cannot forge, 8 KiB at most, with a line saying it is data. Triggered threads default to **Plan** mode, not Ask as the card first said: a user's own permission rules can auto-allow commands in Ask mode (this user's Claude settings allow Bash), so only Plan actually stops an event from running anything. Choosing another mode shows a warning.
 - **At most 10 runs an hour per trigger**; the rest are recorded as skipped, and a webhook answers 429.
+
+
+### 4/6 — deploy: preview, check, then production (card 2eca1fa3)
+
+`deploy.rs`, `deploy_db.rs` (schema 28), the Deploy page in QuantPilot's header (`Deploy/View.vue`), agent tool `quantsuite.pilot.deploy`. No target was named, so Netlify, Vercel and your own commands; each is a CLI the user installs, and a missing one says how.
+
+- **Two separate steps.** A preview gets its own address and is never called production. Production always needs a person: the page's confirmation, or an agent's request through the approval gate (`external`).
+- **Production wants a good preview of exactly this commit.** A failed or interrupted preview, another commit, another target or uncommitted changes do not count. The user may say to go without one: an explicit tick on the page, which an agent cannot give.
+- **Tokens.** In the vault (`pilot.deploy.<target>`), optional when the CLI is signed in. They reach only the deploy step, through its environment (`NETLIFY_AUTH_TOKEN`, `VERCEL_TOKEN`, `DEPLOY_TOKEN`): never on a command line, never to the build, and taken out of the log if a tool prints them.
+- **A failed build stops before anything goes up.** One deploy per target at a time. The folder must be inside the project. A run cut off by closing QuantSuite counts as failed, with a note that its result is unknown.
+- **History per project:** when, which commit, preview or production, address, result and log (its last 64 KiB).
+
+Tests run real processes against a stand-in CLI. The first real deploy is the user's.
