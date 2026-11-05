@@ -274,7 +274,9 @@
   font-size: var(--qss-ctl-font);
 }
 
-[data-module="systems"] :where(.qs-main) :is(input.input, select.select, button.input) {
+[data-module="systems"] :where(.qs-main) input.input,
+[data-module="systems"] :where(.qs-main) select.select,
+[data-module="systems"] :where(.qs-main) button.input {
   height: var(--qss-ctl-h);
   padding: 0 10px;
   font-size: var(--qss-ctl-font);
