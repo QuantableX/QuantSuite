@@ -148,7 +148,8 @@
 
 /* ---- Journal and Dojo: one panel level, on the same page edge as Metrics and Portfolio ---- */
 [data-module="terminal"] .terminal-workspace {
-  --qss-page-head-gap: 0px;
+  /* With the column gap below this makes the 22px Metrics leaves under its title. */
+  --qss-page-head-gap: 10px;
   display: flex;
   flex-direction: column;
   gap: var(--qss-gap);
