@@ -245,11 +245,9 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .qh-modal__label {
-  color: var(--qh-text-muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  color: var(--qh-text-secondary);
+  font-size: var(--qss-text-label);
+  font-weight: 500;
 }
 
 .qh-modal__label-row {

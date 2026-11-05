@@ -8,6 +8,10 @@ import type { Grouping } from '#habit/types'
 
 const app = useAppStore()
 const habits = useHabitsStore()
+const route = useRoute()
+
+/** The row's title names the tab it sits on, so Progress has one heading, not two. */
+const title = computed(() => (route.path.endsWith('/stats') ? 'Progress' : 'Habits'))
 
 const GROUPINGS: { value: Grouping; label: string }[] = [
   { value: 'week', label: 'CW' },
@@ -20,7 +24,7 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
   <div class="qh-toolbar">
     <div class="qh-hd">
       <div class="qh-hd__mid">
-        <h1 class="qh-hd__title">Habits</h1>
+        <h1 class="qh-hd__title">{{ title }}</h1>
         <button class="qh-hd__new" title="Create a habit — it starts today" @click="habits.openCreate()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
             <path d="M12 5v14 M5 12h14" />
@@ -61,15 +65,15 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
 </template>
 
 <style scoped>
-.qh-toolbar { display: flex; flex-shrink: 0; min-height: 78px; border-bottom: 1px solid var(--qh-border-subtle); }
-.qh-hd__title { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.035em; }
+.qh-toolbar { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--qh-border-subtle); }
+.qh-hd__title { margin: 0; font-size: var(--qss-text-title); font-weight: 600; letter-spacing: -.01em; }
 .qh-hd {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  padding: 6px var(--qss-page-edge);
   flex-wrap: wrap;
 }
 
@@ -77,19 +81,20 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: var(--qss-gap);
 }
 
 .qh-hd__new {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
+  height: var(--qss-ctl-h);
+  padding: 0 10px;
   border: 1px solid var(--qh-border);
-  border-radius: var(--qh-radius);
+  border-radius: var(--qss-ctl-radius);
   background: var(--qh-bg-card);
   color: var(--qh-text-secondary);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
   transition: border-color 120ms ease, color 120ms ease;
 }
@@ -104,7 +109,7 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--qss-gap-tight);
 }
 
 .qh-hd__year {
@@ -116,10 +121,10 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
 .qh-hd__step {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: var(--qss-ctl-h);
   border: none;
-  border-radius: var(--qh-radius);
+  border-radius: 6px;
   background: transparent;
   color: var(--qh-text-muted);
   font-size: 14px;
@@ -132,12 +137,13 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
 }
 
 .qh-hd__now {
-  padding: 3px 8px;
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
   border: none;
-  border-radius: var(--qh-radius);
+  border-radius: 6px;
   background: transparent;
   color: var(--qh-text-secondary);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   font-weight: 600;
   cursor: pointer;
 }
@@ -152,20 +158,27 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
 
 .qh-hd__group {
   display: flex;
-  padding: 2px;
-  border: 1px solid var(--qh-border-subtle);
-  border-radius: var(--qh-radius);
+  gap: 2px;
+  padding: 1px;
+  border: 1px solid var(--qh-border);
+  border-radius: var(--qss-ctl-radius);
   background: var(--qh-bg-raised);
 }
 
 .qh-hd__group-btn {
-  padding: 2px 8px;
+  height: 24px;
+  padding: 0 8px;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
   color: var(--qh-text-muted);
-  font-size: 11px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
+}
+
+.qh-hd__group-btn:hover {
+  background: var(--qh-bg-hover);
+  color: var(--qh-text-secondary);
 }
 
 .qh-hd__group-btn.is-active {
