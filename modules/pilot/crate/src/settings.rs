@@ -274,6 +274,8 @@ pub struct Settings {
     /// Phone access (round 4, card 1). Changed only through its own commands,
     /// which check the address.
     pub phone: crate::phone::PhoneSettings,
+    /// The Telegram bot (round 4, card 2), changed the same way.
+    pub telegram: crate::telegram::TelegramSettings,
     /// The composer's send key: `enter` (Enter sends), `modEnterMultiline`
     /// (Ctrl+Enter once the message has several lines), `modEnter` (always Ctrl+Enter).
     pub send_shortcut: String,
@@ -350,6 +352,7 @@ impl Default for Settings {
             custom: Vec::new(),
             instances: Vec::new(),
             phone: Default::default(),
+            telegram: Default::default(),
             send_shortcut: "enter".into(),
             follow_up: "queue".into(),
             notify: "unfocused".into(),
@@ -678,6 +681,7 @@ impl Settings {
     pub fn merged_into(mut self, current: &Settings) -> Settings {
         // The settings page holds a copy: it can never turn phone access on.
         self.phone = current.phone.clone();
+        self.telegram = current.telegram.clone();
         let mut sticky = current.sticky.clone();
         if self.default_provider != current.default_provider {
             sticky.provider.clear();

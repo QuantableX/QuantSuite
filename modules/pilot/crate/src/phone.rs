@@ -617,11 +617,16 @@ fn authority_of(addr: &SocketAddr) -> String {
 
 // ── In the app ──────────────────────────────────────────────────────────────
 
-struct AppBackend {
+/// QuantPilot itself, for the phone page and the Telegram bot.
+pub(crate) struct AppBackend {
     app: AppHandle,
 }
 
 impl AppBackend {
+    pub(crate) fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+
     fn state(&self) -> State<'_, PilotState> {
         self.app.state::<PilotState>()
     }
@@ -691,7 +696,7 @@ impl Backend for AppBackend {
     }
 }
 
-fn read_pin_hash() -> Result<Option<String>, String> {
+pub(crate) fn read_pin_hash() -> Result<Option<String>, String> {
     qs_core::vault::with_vault(|v| Ok(v.get_string(PIN_SECRET)?.map(|s| s.to_string())))
 }
 
@@ -749,7 +754,7 @@ impl PhoneState {
         let listener = std::net::TcpListener::bind(addr).map_err(|e| format!("Could not listen on {addr}: {e}"))?;
         listener.set_nonblocking(true).map_err(|e| e.to_string())?;
         let shared = Arc::new(Shared {
-            backend: Arc::new(AppBackend { app: app.clone() }),
+            backend: Arc::new(AppBackend::new(app.clone())),
             db,
             pairing: self.pairing.clone(),
             stepups: self.stepups.clone(),

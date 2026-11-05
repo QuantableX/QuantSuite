@@ -7552,6 +7552,7 @@ dependencies = [
  "uuid",
  "webview2-com",
  "windows 0.61.3",
+ "zeroize",
  "zip 9.2.2",
 ]
 

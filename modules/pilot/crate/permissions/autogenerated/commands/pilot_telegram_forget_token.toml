@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-telegram-forget-token"
+description = "Enables the pilot_telegram_forget_token command without any pre-configured scope."
+commands.allow = ["pilot_telegram_forget_token"]
+
+[[permission]]
+identifier = "deny-pilot-telegram-forget-token"
+description = "Denies the pilot_telegram_forget_token command without any pre-configured scope."
+commands.deny = ["pilot_telegram_forget_token"]
