@@ -61,15 +61,15 @@ const VIEWS: Array<{ kind: ViewKind; label: string; icon: string; key: string }>
 </template>
 
 <style scoped>
-.qp-toolbar { display: flex; flex-shrink: 0; min-height: 78px; border-bottom: 1px solid var(--qp-border-subtle); }
+.qp-toolbar { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--qp-border-subtle); }
 .qp-hd {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px 24px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  padding: 6px var(--qss-page-edge);
   flex-wrap: wrap;
 }
 
@@ -77,16 +77,18 @@ const VIEWS: Array<{ kind: ViewKind; label: string; icon: string; key: string }>
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .qp-hd__today {
-  padding: 4px 11px;
+  height: var(--qss-ctl-h);
+  margin-right: 4px;
+  padding: 0 11px;
   border: 1px solid var(--qp-border);
-  border-radius: var(--qp-radius);
+  border-radius: var(--qss-ctl-radius);
   background: var(--qp-bg-card);
   color: var(--qp-text-secondary);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
 }
 
@@ -98,10 +100,10 @@ const VIEWS: Array<{ kind: ViewKind; label: string; icon: string; key: string }>
 .qp-hd__arrow {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: var(--qss-ctl-h);
+  height: var(--qss-ctl-h);
   border: none;
-  border-radius: var(--qp-radius);
+  border-radius: var(--qss-ctl-radius);
   background: transparent;
   color: var(--qp-text-muted);
   cursor: pointer;
@@ -113,12 +115,13 @@ const VIEWS: Array<{ kind: ViewKind; label: string; icon: string; key: string }>
 }
 
 .qp-hd__title {
-  margin-left: 8px;
+  margin-left: 6px;
   overflow: hidden;
   color: var(--qp-text);
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -.03em;
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -126,12 +129,12 @@ const VIEWS: Array<{ kind: ViewKind; label: string; icon: string; key: string }>
 .qp-hd__week {
   flex-shrink: 0;
   margin-left: 8px;
-  padding: 3px 8px;
+  padding: 1px 7px;
   border: 1px solid var(--qp-border-subtle);
-  border-radius: var(--qp-radius);
+  border-radius: 6px;
   color: var(--qp-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--qss-text-meta);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -139,9 +142,9 @@ const VIEWS: Array<{ kind: ViewKind; label: string; icon: string; key: string }>
   display: flex;
   flex-shrink: 0;
   gap: 2px;
-  padding: 3px;
+  padding: 1px;
   border: 1px solid var(--qp-border);
-  border-radius: 10px;
+  border-radius: var(--qss-ctl-radius);
   background: var(--qp-bg-raised);
 }
 
@@ -149,12 +152,13 @@ const VIEWS: Array<{ kind: ViewKind; label: string; icon: string; key: string }>
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 6px 10px;
+  height: 24px;
+  padding: 0 8px;
   border: none;
-  border-radius: var(--qp-radius);
+  border-radius: 6px;
   background: transparent;
   color: var(--qp-text-muted);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
 }
 
