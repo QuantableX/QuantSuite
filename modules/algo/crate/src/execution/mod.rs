@@ -58,6 +58,10 @@ mod tests {
         drop_on: Option<usize>,
         /// Lookups fail this many times.
         query_failures: Mutex<usize>,
+        /// Real market orders.
+        market_orders: bool,
+        /// Refuses a worst price further than this from the best.
+        refuse_beyond: Option<f64>,
     }
 
     impl MockVenue {
@@ -94,7 +98,7 @@ mod tests {
             "Mock".into()
         }
         fn capabilities(&self) -> Capabilities {
-            Capabilities { spot: true, ioc_limit: true, client_order_ids: true, ..Default::default() }
+            Capabilities { spot: true, ioc_limit: true, client_order_ids: true, market_orders: self.market_orders, ..Default::default() }
         }
         fn ready(&self) -> Result<(), String> {
             Ok(())
@@ -135,9 +139,16 @@ mod tests {
             }
             let book = self.order_book(&o.instrument)?;
             let want = o.instrument.filters.round_qty_down(o.qty * self.fill_share);
+            let limit = (!(o.market && self.market_orders)).then_some(o.limit_price);
+            if let (Some(max), Some(limit)) = (self.refuse_beyond, limit) {
+                let best = if o.side == Side::Buy { book.best_ask() } else { book.best_bid() }.unwrap_or(limit);
+                if (limit / best - 1.0).abs() > max + 1e-9 {
+                    return Ok(OrderReport::empty(&o.client_order_id, OrderStatus::Rejected, "price too far from the market"));
+                }
+            }
             let walk = match o.side {
-                Side::Buy => book.walk_buy_base(want, Some(o.limit_price)),
-                Side::Sell => book.walk_sell_base(want, Some(o.limit_price)),
+                Side::Buy => book.walk_buy_base(want, limit),
+                Side::Sell => book.walk_sell_base(want, limit),
             };
             let (base, quote) = (o.instrument.base().to_string(), o.instrument.quote().to_string());
             let fee = walk.quote * 0.001;
@@ -335,13 +346,6 @@ mod tests {
         assert!(rec.errors[0].starts_with("kill_switch"), "{:?}", rec.errors);
         store::set_kill_switch(&conn.lock().unwrap(), false).unwrap();
 
-        // The signal says BTC is worth 110,000$; the venue says 100,000$: a wrong instrument or a broken book.
-        let mut req = request("r7", Target::Flat, "x6");
-        req.reference_prices.insert("BTC".into(), 110_000.0);
-        let rec = Engine::default().run(&SqliteStore { conn: &conn }, &venue, &req).unwrap();
-        assert_eq!(rec.status, RunStatus::GuardStopped);
-        assert!(rec.errors[0].starts_with("price_sanity"), "{:?}", rec.errors);
-
         let engine = Engine::new(GuardConfig { max_order_value: Some(5_000.0), ..GuardConfig::default() });
         let rec = engine.run(&SqliteStore { conn: &conn }, &venue, &request("r8", Target::Flat, "x6")).unwrap();
         assert_eq!(rec.status, RunStatus::GuardStopped);
@@ -409,6 +413,112 @@ mod tests {
         assert_eq!(orders.iter().map(|o| o.state).collect::<Vec<_>>(), vec![OrderState::NotSent, OrderState::Done]);
         assert_ne!(orders[0].client_order_id, orders[1].client_order_id);
         assert!((venue.held("ETH")).abs() < 1e-9, "sold once");
+    }
+
+    /// The signal counts, not the current % points: if it moved a lot since the
+    /// close, that happens. Both legs of a switch go through.
+    #[test]
+    fn a_price_far_from_the_close_stops_neither_the_sell_nor_the_buy() {
+        let conn = db();
+        let venue = MockVenue::new(false);
+        venue.fund("BTC", 0.1);
+        seed(&conn, "x20", &[("BTC", 0.1)]);
+        let mut req = request("r20", Target::Hold("ETH".into()), "x20");
+        req.reference_prices.insert("BTC".into(), 110_000.0); // it fell 9 % since the close
+        req.reference_prices.insert("ETH".into(), 3_000.0); // it rose 33 % since the close
+        let rec = Engine::default().run(&SqliteStore { conn: &conn }, &venue, &req).unwrap();
+        assert_eq!(rec.status, RunStatus::Done, "{:?}", rec.errors);
+        let after = rec.holdings_after.unwrap();
+        assert!(after["ETH"] > 2.0, "{after:?}");
+        assert!(after.get("BTC").copied().unwrap_or(0.0) < 0.001, "{after:?}");
+    }
+
+    /// A thin book fills further from the best price: that happens too.
+    #[test]
+    fn a_thin_book_still_takes_the_whole_order() {
+        let conn = db();
+        let mut venue = MockVenue::new(false);
+        let symbol = venue.instruments.iter().find(|i| i.base() == "BTC").unwrap().filters.symbol.clone();
+        venue.books.insert(symbol, OrderBook { bids: vec![(100_000.0, 0.01), (90_000.0, 1.0)], asks: vec![(100_100.0, 1.0)] });
+        venue.fund("BTC", 0.1);
+        seed(&conn, "x21", &[("BTC", 0.1)]);
+        let rec = Engine::default().run(&SqliteStore { conn: &conn }, &venue, &request("r21", Target::Flat, "x21")).unwrap();
+        assert_eq!(rec.status, RunStatus::Done, "{:?}", rec.errors);
+        let after = rec.holdings_after.unwrap();
+        assert!(after.get("BTC").copied().unwrap_or(0.0) < 0.001, "{after:?}");
+        // 0.01 at 100,000 and 0.09 at 90,000, less the fee: the 0.5 % cap would have stopped this.
+        assert!(after["USDT"] > 9_000.0, "{after:?}");
+    }
+
+    /// Only another coin under the same symbol stops a buy.
+    #[test]
+    fn a_buy_at_a_price_three_times_away_is_the_wrong_coin() {
+        let conn = db();
+        let venue = MockVenue::new(false);
+        venue.fund("USDT", 1_000.0);
+        seed(&conn, "x22", &[("USDT", 1_000.0)]);
+        let mut req = request("r22", Target::Hold("ETH".into()), "x22");
+        req.reference_prices.insert("ETH".into(), 20_000.0);
+        let rec = Engine::default().run(&SqliteStore { conn: &conn }, &venue, &req).unwrap();
+        assert_eq!(rec.status, RunStatus::GuardStopped);
+        assert!(rec.errors[0].starts_with("wrong_coin"), "{:?}", rec.errors);
+        assert_eq!(venue.calls(), 0);
+    }
+
+    /// A venue that refuses a far worst price gets a closer one, in the same run.
+    #[test]
+    fn a_venue_that_refuses_a_far_price_gets_a_closer_one() {
+        let conn = db();
+        let mut venue = MockVenue::new(false);
+        venue.refuse_beyond = Some(0.06);
+        venue.fund("BTC", 0.1);
+        seed(&conn, "x23", &[("BTC", 0.1)]);
+        let rec = Engine::default().run(&SqliteStore { conn: &conn }, &venue, &request("r23", Target::Flat, "x23")).unwrap();
+        assert_eq!(rec.status, RunStatus::Done, "{:?}", rec.errors);
+        assert_eq!(venue.calls(), 3, "50 % and 20 % refused, 5 % taken");
+        assert!(rec.notes.iter().any(|n| n.contains("refused at a worst price 50 %")), "{:?}", rec.notes);
+    }
+
+    /// A run that stopped part way goes on, on its next attempt, and only this
+    /// attempt's orders count towards its retries.
+    #[test]
+    fn a_partial_run_finishes_on_its_next_attempt() {
+        let conn = db();
+        let mut venue = MockVenue::new(false);
+        venue.fill_share = 0.4;
+        venue.fund("BTC", 1.0);
+        seed(&conn, "x24", &[("BTC", 1.0)]);
+        let req = request("r24", Target::Flat, "x24");
+        let rec = Engine::default().run(&SqliteStore { conn: &conn }, &venue, &req).unwrap();
+        assert_eq!(rec.status, RunStatus::Partial);
+        assert!(!rec.status.is_final(), "it has not done what the signal said");
+
+        venue.fill_share = 1.0;
+        let rec = Engine::default().run(&SqliteStore { conn: &conn }, &venue, &req).unwrap();
+        assert_eq!(rec.status, RunStatus::Done, "{:?}", rec.errors);
+        assert!(rec.status.is_final());
+        assert!(rec.holdings_after.unwrap().get("BTC").copied().unwrap_or(0.0) < 0.001);
+        let calls = venue.calls();
+        let rec = Engine::default().run(&SqliteStore { conn: &conn }, &venue, &req).unwrap();
+        assert_eq!(rec.status, RunStatus::Done);
+        assert_eq!(venue.calls(), calls, "done is done");
+    }
+
+    /// A paper run on a venue with real market orders: there is no limit to walk to.
+    #[test]
+    fn paper_fills_market_orders_at_the_book() {
+        let conn = db();
+        let mut market = MockVenue::new(false);
+        market.market_orders = true;
+        let paper = PaperVenue::new(&market, &conn, "system:lces", "x25", 0.001, 0.0);
+        paper.fund_if_empty("USDT", 1_000.0).unwrap();
+        let mut req = request("r25", Target::Hold("ETH".into()), "x25");
+        req.mode = Mode::Paper;
+        req.armed = false;
+        req.initial_capital = Some(1_000.0);
+        let rec = Engine::default().run(&SqliteStore { conn: &conn }, &paper, &req).unwrap();
+        assert_eq!(rec.status, RunStatus::Done, "{:?}", rec.errors);
+        assert!(rec.holdings_after.unwrap()["ETH"] > 0.2);
     }
 
     #[test]

@@ -90,6 +90,16 @@ impl Instrument {
     }
 
     /// Whether `qty` at `price` clears the venue's minimums.
+    /// The worst price of a market-like order at `MARKET_DEPTHS[depth]`.
+    pub fn market_worst_price(&self, side: Side, best: f64, depth: usize) -> f64 {
+        let far = MARKET_DEPTHS[depth.min(MARKET_DEPTHS.len() - 1)];
+        let price = match side {
+            Side::Buy => best * (1.0 + far),
+            Side::Sell => best * (1.0 - far),
+        };
+        self.round_price(price, side)
+    }
+
     pub fn tradable(&self, qty: f64, price: f64) -> bool {
         qty > 0.0 && qty + 1e-12 >= self.filters.min_qty && qty * price + 1e-9 >= self.filters.min_notional
     }
@@ -157,15 +167,23 @@ pub struct OrderRequest {
     pub side: Side,
     /// Base quantity, already on the lot step.
     pub qty: f64,
-    /// The slippage cap, on the tick.
+    /// The worst price, on the tick. Not used when the order goes out as a
+    /// real market order.
     pub limit_price: f64,
     pub reduce_only: bool,
-    /// An exit that must go through whatever the price: a market order where
-    /// the venue has one. A venue without them takes `limit_price` as its worst
-    /// price (IOC), set far enough away to fill like one.
+    /// An order from a system's signal, which goes through whatever the price
+    /// does (user rule, 2026-11-05): a market order where the venue has one. A
+    /// venue without them takes `limit_price` as its worst price (IOC), set far
+    /// enough away to fill like one; see [`MARKET_DEPTHS`].
     #[serde(default)]
     pub market: bool,
 }
+
+/// How far from the best price the worst price of a market-like order is, on a
+/// venue without market orders. It fills against the book like a market order.
+/// The next depth is for a venue that refuses a price that far from the market,
+/// or checks the balance at it.
+pub const MARKET_DEPTHS: [f64; 4] = [0.5, 0.2, 0.05, 0.01];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

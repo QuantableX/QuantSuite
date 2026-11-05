@@ -104,8 +104,8 @@ The trading fee is the same as for any pair (14$ on 10,000$ in the table). The c
 
 ## 7. Execution quality and MEV
 
-- Order-book venues (Binance, Bybit, Hyperliquid, Lighter): immediate-or-cancel limit orders at the slippage cap.
-- Jupiter: quote → swap transaction with a slippage cap (default 50 bps) and a price-impact cap; a quote older than 10 s is refreshed; the transaction is simulated before it is sent; confirmation by signature status; priority fee from recent fees.
+- Order-book venues (Binance, Bybit, Hyperliquid, Lighter): orders from a signal have no price limit since 2026-11-05 (PLAN-AUTO-EXECUTION 2.6): market orders on Binance and Bybit, immediate-or-cancel orders with a far worst price on Hyperliquid and Lighter.
+- Jupiter: quote → swap transaction; since 2026-11-05 an order from a signal takes the slippage Jupiter sets and has no price-impact cap (the 50 bps and impact caps remain for limit orders, which nothing sends now); a quote older than 10 s is refreshed; the transaction is simulated before it is sent; confirmation by signature status; priority fee from recent fees.
 - Every venue: the price-sanity guard compares the venue price with the signal's reference price ([PLAN-AUTO-EXECUTION.md](PLAN-AUTO-EXECUTION.md) §2.2).
 - Switches: a direct pair or through the quote asset, whichever costs less for the size by fees and the live book; through USD when unsure ([PLAN-AUTO-EXECUTION.md](PLAN-AUTO-EXECUTION.md) §2.2, "Route choice"). The instrument mapping (§2) therefore also lists a venue's direct pairs between mapped coins.
 

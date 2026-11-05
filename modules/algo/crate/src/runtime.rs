@@ -1070,7 +1070,7 @@ impl BotRuntime {
 
     /// Book a live sell of `open_positions[idx]`. The proceeds net of a fee
     /// charged in quote come back to the cash; the fees of both legs, valued
-    /// in quote, are in the pnl. The slippage cap can leave a sell part filled:
+    /// in quote, are in the pnl. A thin book can leave a sell part filled:
     /// only what sold is closed and the rest stays a position, unless the
     /// venue would not take an order for it (dust, stays on the exchange).
     fn book_live_exit(&mut self, idx: usize, fill: Fill, now: &str, effects: &mut Vec<Effect>) {
@@ -1602,7 +1602,7 @@ mod tests {
         }
     }
 
-    /// The slippage cap can leave a sell part filled: only what sold is closed,
+    /// A thin book can leave a sell part filled: only what sold is closed,
     /// the rest stays a position and the next close sells it.
     #[test]
     fn a_partly_filled_sell_closes_what_sold_and_keeps_the_rest_open() {

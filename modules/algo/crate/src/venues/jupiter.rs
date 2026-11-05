@@ -783,11 +783,18 @@ impl ExecutionVenue for JupiterVenue {
             // first look at the price; tightened once if the order moved.
             let (bid, ask) = self.synthetic_book(base)?;
             let estimate = if order.side == Side::Buy { ask } else { bid };
-            let Some(bps) = slippage_for(order.side, estimate, order.limit_price) else {
-                return Ok(OrderReport::empty(&order.client_order_id, OrderStatus::NotFilled, "the price is beyond the limit"));
+            // An order from a signal goes whatever the price does: Jupiter sets
+            // the slippage it needs to land, and neither limit below applies.
+            let bps = if order.market {
+                None
+            } else {
+                let Some(bps) = slippage_for(order.side, estimate, order.limit_price) else {
+                    return Ok(OrderReport::empty(&order.client_order_id, OrderStatus::NotFilled, "the price is beyond the limit"));
+                };
+                Some(bps)
             };
             let fetched = Instant::now();
-            let o = self.order(input, output, amount_in, true, Some(bps))?;
+            let o = self.order(input, output, amount_in, true, bps)?;
             let tx_b64 = o["transaction"].as_str().unwrap_or("");
             if tx_b64.is_empty() {
                 let why = o["errorMessage"].as_str().unwrap_or("no transaction in the order");
@@ -799,7 +806,7 @@ impl ExecutionVenue for JupiterVenue {
                 Side::Buy => worst <= order.limit_price * (1.0 + 1e-9),
                 Side::Sell => worst + 1e-12 >= order.limit_price,
             };
-            if !inside {
+            if !inside && !order.market {
                 if attempt < 2 {
                     // The order's own price is the better estimate for the retry.
                     let (bid, ask) = if order.side == Side::Buy { (bid, quoted) } else { (quoted, ask) };
@@ -811,7 +818,7 @@ impl ExecutionVenue for JupiterVenue {
                 return Ok(OrderReport::empty(&order.client_order_id, OrderStatus::NotFilled, format!("worst price {worst} is beyond the limit {}", order.limit_price)));
             }
             let impact = num(&o["priceImpact"]).abs() / 100.0;
-            if impact > MAX_PRICE_IMPACT {
+            if impact > MAX_PRICE_IMPACT && !order.market {
                 return Ok(OrderReport::empty(
                     &order.client_order_id,
                     OrderStatus::NotFilled,
@@ -884,7 +891,10 @@ impl ExecutionVenue for JupiterVenue {
                 (units(&resp["totalInputAmount"]), units(&resp["inputAmountResult"]), units(&resp["outputAmountResult"]), units(&resp["totalOutputAmount"])),
                 network_quote,
             );
-            r.message = Some(format!("{} bps slippage cap, impact {:.3} %", bps, impact * 100.0));
+            r.message = Some(match bps {
+                Some(bps) => format!("{bps} bps slippage cap, impact {:.3} %", impact * 100.0),
+                None => format!("slippage set by Jupiter, impact {:.3} %", impact * 100.0),
+            });
             return Ok(r);
         }
     }
