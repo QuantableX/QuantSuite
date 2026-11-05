@@ -32,6 +32,8 @@ export interface SessionMeta {
   effort: string
   /** Claude Code's fast mode (round 2, card 02). */
   fast?: boolean
+  /** Auto in the model menu (round 4, card 5): each message picks `model`. */
+  autoModel?: boolean
   /** Only in the answer that created or set up a draft: the agent wanted was not available (round 2, card 03). */
   notice?: string
   /** The user's tags (round 2, card 12). */
@@ -91,6 +93,8 @@ export interface PilotContext {
 }
 
 export interface AdapterStatus {
+  /** The Auto tiers it has without settings (round 4, card 5). */
+  autoDefaults?: AutoTiers | null
   id: string
   label: string
   custom: boolean
@@ -288,11 +292,19 @@ export interface GhIssue {
   updatedAt: string
 }
 
+/** Which model each Auto tier means for an agent (round 4, card 5). */
+export interface AutoTiers {
+  light: string
+  standard: string
+  deep: string
+}
+
 export interface ProviderPrefs {
   args: string
   env: Record<string, string>
   models: string[]
   disabled: boolean
+  autoTiers?: AutoTiers
 }
 
 /** `null` / absent inherits the default. */
@@ -689,6 +701,7 @@ export type ThreadEvent =
   | { type: 'usage'; contextTokens: number | null; contextWindow: number | null; costUsd: number | null; inputTokens: number | null; outputTokens: number | null }
   | { type: 'rateLimit'; windows: RateWindow[] }
   | { type: 'title'; title: string }
+  | { type: 'model'; model: string }
   | { type: 'queue'; items: QueueItem[]; held: boolean }
   | { type: 'goal'; goal: ThreadGoal | null }
 

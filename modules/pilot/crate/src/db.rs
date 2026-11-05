@@ -32,7 +32,7 @@ pub use storage::{log_run as log_storage_run, Category as StorageCategory, Clean
 /// 18: thread tags (round 2, card 12).
 /// 19: side chats name their main thread (round 2, card 10).
 /// 20: crews — tasks, members and their message log (round 2, card 07).
-pub const SCHEMA_VERSION: i64 = 28;
+pub const SCHEMA_VERSION: i64 = 29;
 
 #[path = "queue.rs"]
 mod queue;
@@ -81,6 +81,9 @@ pub struct ThreadMeta {
     /// Claude Code's fast mode for this thread (round 2, card 02).
     #[serde(default)]
     pub fast: bool,
+    /// Auto in the model menu (round 4, card 5): each message picks `model`.
+    #[serde(default)]
+    pub auto_model: bool,
     /// Only in the answer that created or set up a draft (round 2, card 03):
     /// the agent wanted was not available. Not stored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -167,7 +170,7 @@ pub fn clean_tags(tags: &[String]) -> Vec<String> {
 const THREAD_COLS: &str = "id, provider, provider_session_id, title, context_id, context_name, cwd, model, mode, \
     created_at, updated_at, cost_usd, input_tokens, output_tokens, last_error, kind, effort, title_source, state, \
     context_tokens, context_window, last_activity_at, pinned, sort_key, settled_at, snoozed_until, auto_settle, workspace_mode, base_branch, \
-    branch, worktree_path, fast, tags, parent_id, instance";
+    branch, worktree_path, fast, tags, parent_id, instance, auto_model";
 
 fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
     Ok(ThreadMeta {
@@ -207,6 +210,7 @@ fn row_thread(r: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMeta> {
         tags: serde_json::from_str(&r.get::<_, String>(32)?).unwrap_or_default(),
         parent_id: r.get(33)?,
         instance: r.get(34)?,
+        auto_model: r.get::<_, i64>(35)? != 0,
     })
 }
 
@@ -622,6 +626,10 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     tx.execute_batch(schedules_db::TRIGGER_TABLES)?;
     // Schema 28 (round 4, card 4): deploy history.
     tx.execute_batch(deploy_db::DEPLOY_TABLES)?;
+    // Schema 29 (round 4, card 5): Auto in the model menu.
+    if !column_exists(&tx, "threads", "auto_model")? {
+        tx.execute_batch("ALTER TABLE threads ADD COLUMN auto_model INTEGER NOT NULL DEFAULT 0;")?;
+    }
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;
@@ -738,7 +746,7 @@ impl Database {
         conn.execute(
             &format!(
                 "INSERT INTO threads ({THREAD_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, \
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35)"
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36)"
             ),
             params![
                 m.id,
@@ -775,7 +783,8 @@ impl Database {
                 m.fast as i64,
                 serde_json::to_string(&clean_tags(&m.tags)).unwrap_or_else(|_| "[]".into()),
                 m.parent_id,
-                m.instance
+                m.instance,
+                m.auto_model as i64
             ],
         )?;
         Ok(())
@@ -973,6 +982,12 @@ impl Database {
     pub fn set_mode(&self, id: &str, mode: &str) -> rusqlite::Result<()> {
         let conn = self.lock();
         conn.execute("UPDATE threads SET mode = ?2 WHERE id = ?1", params![id, mode])?;
+        Ok(())
+    }
+
+    pub fn set_auto_model(&self, id: &str, on: bool) -> rusqlite::Result<()> {
+        let conn = self.lock();
+        conn.execute("UPDATE threads SET auto_model = ?2 WHERE id = ?1", params![id, on as i64])?;
         Ok(())
     }
 
@@ -1674,6 +1689,7 @@ pub(crate) mod tests {
             effort: String::new(),
             title_source: "auto".into(),
             fast: false,
+            auto_model: false,
             notice: None,
             tags: Vec::new(),
             instance: String::new(), parent_id: None,
@@ -1736,6 +1752,29 @@ pub(crate) mod tests {
         assert_eq!(db.items("src", None, 100).unwrap().len(), 6, "the source is untouched");
         assert!(db.copy_turns("src", "dst", "nope").unwrap().is_empty());
         assert_eq!(db.user_messages("src").unwrap(), 3);
+    }
+
+    /// Round 4, card 5: Auto is kept per thread, and an older file gains the
+    /// column with every thread off.
+    #[test]
+    fn auto_is_kept_per_thread_and_old_files_gain_it_off() {
+        let dir = std::env::temp_dir().join(format!("qp-auto-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pilot.db");
+        {
+            let db = Database::open(&path).unwrap();
+            db.insert_session(&thread("a")).unwrap();
+            db.insert_session(&thread("b")).unwrap();
+            db.set_auto_model("a", true).unwrap();
+            assert!(db.get_session("a").unwrap().unwrap().auto_model);
+            assert!(!db.get_session("b").unwrap().unwrap().auto_model);
+            db.set_auto_model("a", false).unwrap();
+            assert!(!db.get_session("a").unwrap().unwrap().auto_model);
+            db.lock().execute_batch("ALTER TABLE threads DROP COLUMN auto_model; PRAGMA user_version = 28;").unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        assert!(!db.get_session("a").unwrap().unwrap().auto_model, "the thread survives the upgrade, off");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Round 2, card 02: fast mode is kept per thread, and a schema-16 file

@@ -3,6 +3,7 @@
 //! a thread. The process work itself is `runtime.rs`; the protocol is
 //! `claude.rs`.
 
+use crate::auto_model;
 use crate::checkpoints::{self, FileChange};
 use crate::claude::{self, ClaudeDriver, LaunchOptions, SessionRef};
 use crate::codex::{self, CodexDriver, CodexOptions};
@@ -141,6 +142,7 @@ pub(crate) fn create(app: &AppHandle, state: &PilotState, req: CreateThread) -> 
         provider_session_id: None,
         title_source: if title.is_empty() { "auto".into() } else { "user".into() },
         fast,
+        auto_model: false,
         notice: None,
         tags: Vec::new(),
         instance,
@@ -824,6 +826,13 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
         transfer = Some(history);
     }
     let settings = lock(&state.settings).clone();
+    // Round 4, card 5: Auto picks the model for this message.
+    let auto_notice = if meta.auto_model && state.runtime.active_turn(&id).is_none() {
+        let count = shown.as_array().map_or(0, Vec::len).max(input.images.len());
+        auto_pick(app, state, &mut meta, &settings, &input, count)
+    } else {
+        None
+    };
     let key = plan_key(&meta, &settings);
     // Images sent without a saved copy (pasted base64) still show up as images.
     let attachments = if shown.as_array().is_some_and(|a| !a.is_empty()) {
@@ -848,6 +857,9 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
         },
         &key,
     )?;
+    if let Some(text) = auto_notice {
+        state.runtime.append_item(&id, &started, ItemKind::Notice, json!({ "text": text, "marker": "setup" }));
+    }
     if let Some(history) = transfer {
         state.runtime.append_item(&id, &started, ItemKind::Notice, json!({ "text": format!(
             "Handoff sent: {} items included, {} shortened, {} omitted; {} saved attachment references. Full saved text is retrievable through history tools. Binary media and native tool state stay in the source.{}",
@@ -869,6 +881,48 @@ fn start_input(app: &AppHandle, state: &PilotState, id: &str, input: TurnInput, 
         let _ = state.db.set_rewind(&id, None);
     }
     Ok(started)
+}
+
+/// Auto's pick for one message: the rules choose a tier, the settings say which
+/// model that means, and the thread goes onto it. Returns what the thread says
+/// about it. Only the model changes, never the account.
+fn auto_pick(app: &AppHandle, state: &PilotState, meta: &mut ThreadMeta, settings: &Settings, input: &TurnInput, attachments: usize) -> Option<String> {
+    let prefs = settings.providers.get(&meta.provider).map(|p| &p.auto_tiers);
+    let tiers = auto_model::tiers_for(&meta.provider, prefs)?;
+    let decision = if input.keep_model {
+        auto_model::Decision::Keep("a follow-up, same model".into())
+    } else {
+        auto_model::decide(&auto_model::Facts {
+            text: input.display.as_deref().unwrap_or(&input.text),
+            attachments,
+            mode: &meta.mode,
+            user_messages: state.db.user_messages(&meta.id).unwrap_or(0),
+            context_tokens: meta.context_tokens.unwrap_or(0),
+        })
+    };
+    if decision == auto_model::Decision::Skip {
+        return None;
+    }
+    // The list as last seen; the CLI is only asked when none was seen yet.
+    let catalog = state
+        .runtime
+        .last_catalog(&meta.provider)
+        .map(|c| with_custom_models(c, settings))
+        .or_else(|| pilot_provider_catalog(app.clone(), app.state::<PilotState>(), meta.provider.clone(), None).ok());
+    let models = catalog.as_ref().map_or(&[][..], |c| c.models.as_slice());
+    let choice = auto_model::choose(&decision, &tiers, models, &meta.model)?;
+    if choice.model != meta.model.trim() {
+        let started_with = plan_key(meta, settings);
+        state.db.set_model(&meta.id, &choice.model).ok()?;
+        meta.model = choice.model.clone();
+        // A live process takes the model when nothing else differs (effort
+        // cannot switch live); otherwise the send below starts a fresh one.
+        if state.runtime.warm_key(&meta.id).as_deref() == Some(started_with.as_str()) {
+            state.runtime.reconfigure(&meta.id, &plan_key(meta, settings), None, Some(&effective_model(meta, settings)));
+        }
+        state.runtime.emit(&meta.id, ThreadEvent::Model { model: choice.model });
+    }
+    Some(choice.notice)
 }
 
 /// The rewind the next launch applies (`{"provider", "at" | "before"}`).
@@ -2307,7 +2361,7 @@ fn resume_now(app: &AppHandle, state: &PilotState, id: &str) -> Result<String, S
     if state.runtime.active_turn(id).is_some() {
         return Err("the agent is already working".into());
     }
-    start_input(app, state, id, TurnInput { text: lifecycle::RESUME_TEXT.into(), ..Default::default() }, json!([]))
+    start_input(app, state, id, TurnInput { text: lifecycle::RESUME_TEXT.into(), keep_model: true, ..Default::default() }, json!([]))
 }
 
 /// The thread's lifecycle facts: scheduled continuation, limit reset, owed history, open TUI.
@@ -2376,6 +2430,9 @@ pub(crate) fn setup_change(before: &ThreadMeta, after: &ThreadMeta) -> Option<St
     }
     if before.fast != after.fast {
         parts.push(if after.fast { "Fast mode on".to_string() } else { "Fast mode off".to_string() });
+    }
+    if before.auto_model != after.auto_model {
+        parts.push(if after.auto_model { "Auto on".to_string() } else { "Auto off".to_string() });
     }
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
@@ -3113,7 +3170,7 @@ fn answer_by_message(app: &AppHandle, state: &PilotState, id: &str, mut item: It
         // Dismissed: nothing goes to the agent.
         return Ok(());
     }
-    start_turn(app, state, id, text, Vec::new()).map(|_| ())
+    start_input(app, state, id, TurnInput { text, keep_model: true, ..Default::default() }, json!([])).map(|_| ())
 }
 
 #[tauri::command(async)]
@@ -3144,6 +3201,7 @@ pub fn pilot_thread_update(
     fast: Option<bool>,
     tags: Option<Vec<String>>,
     instance: Option<String>,
+    auto: Option<bool>,
 ) -> Result<ThreadMeta, String> {
     if let Some(m) = mode.as_deref() {
         if !settings::valid_mode(m) {
@@ -3232,6 +3290,21 @@ pub fn pilot_thread_update(
     if let Some(f) = fast {
         state.db.set_fast(&id, f).map_err(|e| e.to_string())?;
     }
+    // Round 4, card 5: choosing a model by hand turns Auto off. Auto chooses
+    // for each message, so what a model's effort or fast mode was goes with it.
+    match auto.or(model.as_ref().map(|_| false)) {
+        Some(true) => {
+            let tiers = auto_model::tiers_for(&before.provider, lock(&state.settings).providers.get(&before.provider).map(|p| &p.auto_tiers));
+            if tiers.is_none() {
+                return Err(format!("{} has no Auto yet: set its models under Settings → Providers", label_of(&state, &before.provider)));
+            }
+            state.db.set_auto_model(&id, true).map_err(|e| e.to_string())?;
+            state.db.set_effort(&id, "").map_err(|e| e.to_string())?;
+            state.db.set_fast(&id, false).map_err(|e| e.to_string())?;
+        }
+        Some(false) => state.db.set_auto_model(&id, false).map_err(|e| e.to_string())?,
+        None => {}
+    }
     if let Some(t) = tags.as_deref() {
         state.db.set_tags(&id, t).map_err(|e| e.to_string())?;
     }
@@ -3251,7 +3324,7 @@ pub fn pilot_thread_update(
             if provider.is_some() {
                 st.provider = after.provider.clone();
             }
-            if let Some(m) = model.as_deref() {
+            if let Some(m) = model.as_deref().filter(|_| !after.auto_model) {
                 st.model.insert(after.provider.clone(), m.trim().to_string());
             }
             if let Some(e) = effort.as_deref() {
@@ -3541,6 +3614,11 @@ mod tests {
         let after = crate::db::ThreadMeta { model: "opus".into(), effort: String::new(), fast: true, ..base.clone() };
         assert_eq!(setup_change(&base, &after).as_deref(), Some("Model: sonnet → opus · Effort: high → default · Fast mode on"));
         assert_eq!(setup_change(&base, &base), None);
+        // Round 4, card 5: Auto on and off are marked; Auto's own picks are not setup changes.
+        let on = crate::db::ThreadMeta { auto_model: true, ..base.clone() };
+        assert_eq!(setup_change(&base, &on).as_deref(), Some("Auto on"));
+        let by_hand = crate::db::ThreadMeta { model: "opus".into(), auto_model: false, ..on.clone() };
+        assert_eq!(setup_change(&on, &by_hand).as_deref(), Some("Model: sonnet → opus · Auto off"));
     }
 
     /// Round 2, card 12: one repair per failure, never a second in a row.
@@ -3561,7 +3639,7 @@ mod tests {
             id: "t".into(), provider: "claude".into(), provider_session_id: None, title: String::new(), context_id: "general".into(),
             context_name: "General".into(), cwd: ".".into(), model: String::new(), mode: "full".into(), created_at: 0, updated_at: 0,
             cost_usd: 0.0, input_tokens: 0, output_tokens: 0, last_error: None, kind: "chat".into(), effort: String::new(),
-            title_source: "auto".into(), fast: false, notice: None, tags: Vec::new(), instance: String::new(), parent_id: None, state: "idle".into(), context_tokens: None,
+            title_source: "auto".into(), fast: false, auto_model: false, notice: None, tags: Vec::new(), instance: String::new(), parent_id: None, state: "idle".into(), context_tokens: None,
             context_window: None, last_activity_at: 0, pinned: false, sort_key: 0.0, settled_at: None, snoozed_until: None,
             auto_settle: true, workspace_mode: "local".into(), base_branch: String::new(), branch: String::new(), worktree_path: None,
         }

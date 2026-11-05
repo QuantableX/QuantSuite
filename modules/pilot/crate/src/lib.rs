@@ -17,6 +17,7 @@ mod acp;
 mod adapters;
 mod agent_icons;
 mod agent_tools;
+mod auto_model;
 mod browser;
 mod browser_profiles;
 mod checkpoints;
@@ -537,6 +538,7 @@ fn pilot_session_create(app: AppHandle, state: State<'_, PilotState>, req: Creat
         effort: String::new(),
         title_source: "auto".into(),
         fast: false,
+        auto_model: false,
         notice: None,
         tags: Vec::new(),
         instance: String::new(), parent_id: None,

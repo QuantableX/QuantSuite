@@ -17,7 +17,7 @@ import { Check, ChevronRight, Loader2, RefreshCw, Search, Settings2, SquareTermi
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useThreadStore } from '#pilot/stores/thread'
 import { effortsFor, modelRows, type ModelRow } from '#pilot/utils/models'
-import { accountKey, agentRowState, filterAgents, installedFirst, orderModels, placeMenu, placeSubmenu, pushRecent, setupLabel, splitAccountKey, type AgentSetup, type RecentModels } from '#pilot/utils/agentMenu'
+import { accountKey, agentRowState, autoLabel, autoOffered, autoRow, AUTO_ROW, filterAgents, installedFirst, orderModels, placeMenu, placeSubmenu, pushRecent, setupLabel, splitAccountKey, type AgentSetup, type RecentModels } from '#pilot/utils/agentMenu'
 import type { ModelInfo } from '#pilot/types'
 
 const props = withDefaults(
@@ -40,8 +40,12 @@ const props = withDefaults(
     multi?: { provider: string; model: string }[]
     /** Agents without a chat protocol start as a terminal session (new threads only; round 2, card 11). */
     allowTerminal?: boolean
+    /** Offer Auto in the model list: a thread's own menu (round 4, card 5). */
+    allowAuto?: boolean
+    /** The thread is on Auto. */
+    auto?: boolean
   }>(),
-  { prefer: 'below', provider: null, instance: null, model: undefined, effort: undefined, fast: false, project: null, locked: null, title: 'Agent', allowMulti: false, multi: () => [], allowTerminal: false },
+  { prefer: 'below', provider: null, instance: null, model: undefined, effort: undefined, fast: false, project: null, locked: null, title: 'Agent', allowMulti: false, multi: () => [], allowTerminal: false, allowAuto: false, auto: false },
 )
 const emit = defineEmits<{
   pick: [setup: AgentSetup]
@@ -85,7 +89,7 @@ const isOwnRow = (key: string) => key === accountKey(props.provider ?? '', props
 
 /** What picking the agent's row starts with: the thread's own setup, else a new thread's (the one resolver, card 03). */
 function setupOf(id: string): AgentSetup {
-  if (id === props.provider && props.model !== undefined) return { provider: id, model: props.model, effort: props.effort ?? '', fast: props.fast }
+  if (id === props.provider && props.model !== undefined) return { provider: id, model: props.model, effort: props.effort ?? '', fast: props.fast, auto: props.auto }
   const s = store.newThreadSetup(props.project, id)
   return { provider: id, model: s.model, effort: s.effort, fast: false }
 }
@@ -102,6 +106,7 @@ function names(id: string): Record<string, string> {
 }
 function setupText(s: AgentSetup): string {
   if (s.terminal) return 'Terminal session'
+  if (s.auto) return autoLabel(s.model, names(s.provider))
   return setupLabel(s.model, s.effort, names(s.provider)) + (s.fast ? ' · fast' : '')
 }
 
@@ -138,6 +143,8 @@ function readRecent(): RecentModels {
 }
 const recent = ref<RecentModels>(readRecent())
 function remember(s: AgentSetup) {
+  // Auto is not a model to come back to.
+  if (s.auto) return
   recent.value = pushRecent(recent.value, s.provider, s.model)
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(recent.value))
@@ -154,14 +161,30 @@ const subRows = computed(() => {
   if (subQuery.value.trim()) return { recent: [] as ModelRow[], rest: rows }
   return orderModels(rows, recent.value[subProvider.value] ?? [])
 })
-const flatRows = computed(() => [...subRows.value.recent, ...subRows.value.rest])
+/** Auto, above the models (round 4, card 5). */
+const subAuto = computed(() => {
+  const id = subProvider.value
+  const adapter = store.adapters.find((a) => a.id === id)
+  return autoRow(props.allowAuto && Boolean(sub.value) && autoOffered(adapter?.autoDefaults, store.settings?.providers?.[id]?.autoTiers), subQuery.value)
+})
+const flatRows = computed(() => [...subAuto.value, ...subRows.value.recent, ...subRows.value.rest])
+/** The row groups in order, with each one's first row in `flatRows`. */
+const subGroups = computed(() => {
+  const auto = subAuto.value
+  const { recent: first, rest } = subRows.value
+  return [
+    { rows: auto, base: 0, heading: '' },
+    { rows: first, base: auto.length, heading: first.length ? 'Recent' : '' },
+    { rows: rest, base: auto.length + first.length, heading: first.length && rest.length ? 'All models' : '' },
+  ]
+})
 function infoOf(id: string): ModelInfo | undefined {
   return subModels.value.find((m) => (m.id === 'default' ? '' : m.id) === id)
 }
 function effortsOf(id: string): string[] {
   return effortsFor(subModels.value, id)
 }
-const isCurrent = (id: string) => !!sub.value && isOwnRow(sub.value) && props.model !== undefined && id === props.model
+const isCurrent = (id: string) => !!sub.value && isOwnRow(sub.value) && props.model !== undefined && (props.auto ? id === AUTO_ROW : id === props.model)
 const inMulti = (id: string) => props.multi.some((m) => m.provider === subProvider.value && m.model === id)
 /** The effort a model takes when its row (not a chip) is picked: the current one if it has it. */
 function carriedEffort(id: string): string {
@@ -222,6 +245,10 @@ function pickAgent(i: number) {
 }
 function pickModel(id: string, chip?: { kind: 'effort' | 'fast'; value: string }) {
   if (!sub.value) return
+  if (id === AUTO_ROW) {
+    pick({ provider: subProvider.value, model: '', effort: '', fast: false, instance: subInstance.value, auto: true })
+    return
+  }
   const current = isCurrent(id)
   let effort = carriedEffort(id)
   let fast = Boolean(infoOf(id)?.fast) && (isOwnRow(sub.value) ? props.fast : false)
@@ -231,7 +258,7 @@ function pickModel(id: string, chip?: { kind: 'effort' | 'fast'; value: string }
 }
 /** Shift: several models for a new thread's first message (card 10). */
 function toggleMulti(id: string) {
-  if (!props.allowMulti || !sub.value) return false
+  if (!props.allowMulti || !sub.value || id === AUTO_ROW) return false
   const list = [...props.multi]
   if (!list.length && props.provider) list.push({ provider: props.provider, model: props.model ?? '' })
   const at = list.findIndex((m) => m.provider === subProvider.value && m.model === id)
@@ -441,17 +468,16 @@ onBeforeUnmount(() => {
       <div class="qp-am-list">
         <div v-if="loading[subProvider] && !subModels.length" class="qp-am-empty">Asking {{ subAgent.a.label }} for its models…</div>
         <div v-else-if="failed[sub] && !flatRows.length" class="qp-am-empty">The CLI did not report its models. You can still type a model id.</div>
-        <template v-for="(group, g) in [subRows.recent, subRows.rest]" :key="g">
-          <div v-if="g === 0 && group.length" class="qp-am-group">Recent</div>
-          <div v-else-if="g === 1 && subRows.recent.length && group.length" class="qp-am-group">All models</div>
+        <template v-for="(group, g) in subGroups" :key="g">
+          <div v-if="group.heading" class="qp-am-group">{{ group.heading }}</div>
           <div
-            v-for="(m, j) in group"
+            v-for="(m, j) in group.rows"
             :key="m.id + (m.custom ? ':custom' : '')"
             class="qp-am-model"
             role="menuitemradio"
             :aria-checked="isCurrent(m.id)"
-            :class="{ active: (g === 0 ? j : subRows.recent.length + j) === subActive }"
-            @mouseenter="(subActive = g === 0 ? j : subRows.recent.length + j), (subCol = -1)"
+            :class="{ active: group.base + j === subActive }"
+            @mouseenter="(subActive = group.base + j), (subCol = -1)"
             @click="(e: MouseEvent) => onModelClick(e, m.id)"
           >
             <span class="qp-am-mcheck">
@@ -467,7 +493,7 @@ onBeforeUnmount(() => {
                 :key="c.value"
                 class="qp-am-chip"
                 tabindex="-1"
-                :class="{ on: chipOn(m.id, c), focus: (g === 0 ? j : subRows.recent.length + j) === subActive && k === subCol, fast: c.kind === 'fast' }"
+                :class="{ on: chipOn(m.id, c), focus: group.base + j === subActive && k === subCol, fast: c.kind === 'fast' }"
                 :title="c.kind === 'fast' ? 'Fast mode: faster output at a higher price (Claude Code)' : `${m.label} with ${c.value} effort`"
                 @click.stop="pickModel(m.id, c)"
               >

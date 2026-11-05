@@ -376,6 +376,9 @@ export const useThreadStore = defineStore('pilot/thread', {
         case 'title':
           usePilotStore().patchSession(view.id, { title: ev.title })
           break
+        case 'model':
+          usePilotStore().patchSession(view.id, { model: ev.model })
+          break
         case 'queue':
           view.queue = ev.items
           view.queueHeld = ev.held

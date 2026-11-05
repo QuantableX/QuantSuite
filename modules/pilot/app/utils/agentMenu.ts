@@ -5,6 +5,7 @@
  * window. Pure, so the node tests import it.
  */
 import type { ModelRow } from './models'
+import type { AutoTiers } from '../types'
 
 /** What a pick in the menu starts or switches to. */
 export interface AgentSetup {
@@ -16,6 +17,28 @@ export interface AgentSetup {
   terminal?: boolean
   /** The agent account (round 3, card 02); absent or "" = the default account. */
   instance?: string
+  /** Auto (round 4, card 5): each message picks the model. */
+  auto?: boolean
+}
+
+/** The Auto row's id in the model list; never a model id. */
+export const AUTO_ROW = '\u0000auto'
+
+/** Auto is offered for an agent with a model for at least one tier, built in or set by the user. */
+export function autoOffered(defaults: AutoTiers | null | undefined, mine: AutoTiers | null | undefined): boolean {
+  return (['light', 'standard', 'deep'] as const).some((t) => Boolean((mine?.[t] ?? '').trim() || (defaults?.[t] ?? '').trim()))
+}
+
+/** The menu's Auto row, when it is offered and the search does not rule it out. */
+export function autoRow(offered: boolean, query: string): ModelRow[] {
+  const q = query.trim().toLowerCase()
+  if (!offered || (q && !'auto'.startsWith(q))) return []
+  return [{ id: AUTO_ROW, label: 'Auto', detail: 'Picks a model for each message and says why' }]
+}
+
+/** "Auto · Haiku 5.5" in the composer and the menu; "Auto" until the first message. */
+export function autoLabel(model: string, names: Record<string, string> = {}): string {
+  return model ? `Auto · ${names[model] ?? model}` : 'Auto'
 }
 
 /** A menu row's key: the agent, or `agent@account` for another account (round 3, card 02). */

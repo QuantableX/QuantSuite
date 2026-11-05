@@ -662,6 +662,7 @@ fn import_one(app: &tauri::AppHandle, state: &crate::PilotState, provider: &str,
         provider_session_id: Some(summary.session_id.clone()),
         title_source: "auto".into(),
         fast: false,
+        auto_model: false,
         notice: None,
         tags: Vec::new(),
         // A log from an account's home resumes under that account.
