@@ -25,6 +25,7 @@
 
 [data-module="script"] ::-webkit-scrollbar { width: 8px; height: 8px; }
 [data-module="script"] ::-webkit-scrollbar-thumb { background: var(--qss-border); border-radius: 4px; }
+[data-module="script"] ::-webkit-scrollbar-corner { background: transparent; }
 
 [data-module="script"] .mono {
   font-family: var(--qss-font-mono);
@@ -338,9 +339,9 @@
 
 [data-module="script"] .qsc-card {
   border: 1px solid var(--qss-border);
-  border-radius: var(--qss-radius);
-  background: var(--qss-bg-card);
-  padding: 14px 16px;
+  border-radius: var(--qss-panel-radius);
+  background: var(--qss-bg-raised);
+  padding: var(--qss-panel-pad);
 }
 [data-module="script"] .qsc-card.is-flush {
   padding: 0;
@@ -351,20 +352,21 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 [data-module="script"] .qsc-table th {
-  padding: 8px 10px;
+  height: var(--qss-row-h);
+  padding: 2px 10px;
   text-align: left;
-  font-size: 10.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--qss-text-muted);
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
+  color: var(--qss-text-secondary);
   border-bottom: 1px solid var(--qss-border);
   white-space: nowrap;
 }
 [data-module="script"] .qsc-table td {
-  padding: 7px 10px;
+  height: var(--qss-row-h);
+  padding: 2px 10px;
   border-bottom: 1px solid var(--qss-border-subtle);
   vertical-align: middle;
   color: var(--qss-text-secondary);
@@ -402,11 +404,12 @@
 }
 [data-module="script"] .qsc-tabbtn {
   position: relative;
-  min-width: 84px;
-  padding: 6px 14px;
+  height: calc(var(--qss-ctl-h) - 2px);
+  padding: 0 12px;
   border: none;
   background: transparent;
-  color: var(--qss-text-muted);
+  color: var(--qss-text-secondary);
+  white-space: nowrap;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -447,6 +450,13 @@
   color: var(--qss-text-muted);
   white-space: nowrap;
 }
+/* In the middle a tag reads like the text around it; the sidebar's job tag keeps its look. */
+[data-module="script"] :is(.qsf-page, .qst-page) .qsc-tag {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
 [data-module="script"] .qsc-tag.is-ok { color: var(--qss-success); border-color: color-mix(in srgb, var(--qss-success) 45%, transparent); }
 [data-module="script"] .qsc-tag.is-error { color: var(--qss-error); border-color: color-mix(in srgb, var(--qss-error) 45%, transparent); }
 [data-module="script"] .qsc-tag.is-accent { color: var(--qss-text); border-color: var(--qss-text-muted); }
@@ -480,11 +490,9 @@
 [data-module="script"] .qsc-check input { accent-color: var(--qss-accent); }
 
 [data-module="script"] .qsc-label {
-  font-size: 10.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--qss-text-muted);
+  font-size: var(--qss-text-label);
+  font-weight: 500;
+  color: var(--qss-text-secondary);
 }
 [data-module="script"] .qsc-ok { color: var(--qss-success); }
 [data-module="script"] .qsc-err { color: var(--qss-error); }
@@ -501,4 +509,4 @@
 [data-module="script"] .qsf-picker-search .qsc-input { flex: 1; }
 [data-module="script"] .qsf-picker-search .qsc-check { white-space: nowrap; }
 [data-module="script"] .qsf-advanced summary { font-size: 12px; color: var(--qss-text-muted); cursor: pointer; margin: 8px 0; }
-[data-module="script"] .qsf-keys { max-height: 220px; overflow-y: auto; }
+[data-module="script"] .qsf-keys { overflow-y: auto; }

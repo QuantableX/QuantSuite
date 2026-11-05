@@ -158,7 +158,7 @@ function finished(message: string) {
             <p class="qst-hint">Pick the version that matches the bot's timeframe — 1H for 1h bots, 4H for 4h, 1D for daily. Green: certified on that track.</p>
           </div>
 
-          <div class="qst-block">
+          <div class="qst-block qst-block--half">
             <h3>Requirements</h3>
             <p v-if="!manifest.requires.length" class="qst-hint">None — the script stands on its own.</p>
             <ul v-else class="qst-reqs">
@@ -175,7 +175,7 @@ function finished(message: string) {
             <QMarkdownPreview :source="store.detail.readme" tokens="qss" />
           </div>
 
-          <div class="qst-block">
+          <div class="qst-block qst-block--half">
             <h3>Changelog</h3>
             <ul class="qst-changelog">
               <li v-for="c in [...manifest.changelog].reverse()" :key="c.version">
@@ -218,17 +218,18 @@ function finished(message: string) {
   align-items: center;
   justify-content: center;
   flex: 1;
-  padding: 30px;
-  font-size: 12px;
-  color: var(--qss-text-muted);
+  padding: var(--qss-page-edge);
+  font-size: var(--qss-text-label);
+  color: var(--qss-text-secondary);
   text-align: center;
 }
 .qst-detail-head {
   display: flex;
-  align-items: flex-start;
+  flex-shrink: 0;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
   border-bottom: 1px solid var(--qss-border-subtle);
   flex-wrap: wrap;
 }
@@ -236,14 +237,14 @@ function finished(message: string) {
   min-width: 0;
 }
 .qst-detail-title h2 {
-  font-size: 15px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qss-text);
 }
 .qst-detail-title p {
-  margin-top: 2px;
-  font-size: 11.5px;
-  color: var(--qss-text-muted);
+  margin-top: 1px;
+  font-size: var(--qss-text-meta);
+  color: var(--qss-text-secondary);
 }
 .qst-detail-actions {
   display: flex;
@@ -255,25 +256,46 @@ function finished(message: string) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  padding: var(--qss-panel-pad);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: var(--qss-gap);
+}
+/* Everything takes the panel's width; requirements and changelog sit side by side, the README after them. */
+.qst-detail-body > * {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.qst-detail-body > .qst-block--half {
+  grid-column: auto;
+}
+.qst-detail-body > .qst-readme {
+  order: 1;
+}
+.qst-detail-body > .qst-meta {
+  order: 2;
+}
+@container (max-width: 900px) {
+  .qst-detail-body > .qst-block--half {
+    grid-column: 1 / -1;
+  }
 }
 .qst-description {
-  font-size: 12.5px;
-  line-height: 1.55;
+  max-width: 100ch;
+  font-size: var(--qss-text-label);
+  line-height: 1.5;
   color: var(--qss-text);
 }
 .qst-block {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .qst-block h3 {
-  font-size: 12px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
-  color: var(--qss-text-secondary);
+  color: var(--qss-text);
 }
 .qst-versions {
   font-size: 12px;
@@ -283,7 +305,7 @@ function finished(message: string) {
 }
 .qst-sub {
   font-size: 11px;
-  color: var(--qss-text-muted);
+  color: var(--qss-text-secondary);
 }
 .qst-params {
   font-size: 11.5px;
@@ -295,9 +317,9 @@ function finished(message: string) {
 }
 .qst-hint,
 .qst-meta {
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--qss-text-muted);
+  font-size: var(--qss-text-meta);
+  line-height: 1.45;
+  color: var(--qss-text-secondary);
 }
 .qst-reqs,
 .qst-changelog {
@@ -314,6 +336,9 @@ function finished(message: string) {
   flex-wrap: wrap;
 }
 .qst-readme :deep(h1) {
-  font-size: 14px;
+  font-size: var(--qss-text-title);
+}
+.qst-readme :deep(h2) {
+  font-size: var(--qss-text-section);
 }
 </style>

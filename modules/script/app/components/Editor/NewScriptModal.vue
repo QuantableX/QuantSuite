@@ -140,11 +140,9 @@ function trapFocus(e: KeyboardEvent) {
   gap: 4px;
 }
 .qsc-field-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--qss-text-muted);
+  font-size: var(--qss-text-label);
+  font-weight: 500;
+  color: var(--qss-text-secondary);
 }
 .qsc-field-hint {
   font-size: 11px;

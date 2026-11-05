@@ -120,47 +120,55 @@ function reset() {
   min-height: 0;
   overflow: hidden;
 }
+/* States and search share a row when they fit; the rest of the filters below. */
 .qst-filters {
+  flex-shrink: 0;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--qss-gap-tight);
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
   border-bottom: 1px solid var(--qss-border-subtle);
 }
 .qst-states {
   display: flex;
-  gap: 16px;
+  gap: 2px;
   flex-wrap: wrap;
 }
 .qst-states button {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 0 6px;
-  border: 0;
-  border-bottom: 2px solid transparent;
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--qss-ctl-radius);
   background: transparent;
-  font-size: 12px;
-  color: var(--qss-text-muted);
+  font-size: var(--qss-ctl-font);
+  color: var(--qss-text-secondary);
   cursor: pointer;
 }
+.qst-states button:hover {
+  color: var(--qss-text);
+}
 .qst-states button.is-active {
-  border-bottom-color: var(--qss-text);
+  border-color: var(--qss-border);
+  background: var(--qss-bg-card);
   color: var(--qss-text);
 }
 .qst-states button span {
-  font-size: 10.5px;
-  padding: 0 5px;
-  border-radius: 4px;
-  background: var(--qss-bg-hover);
-  color: var(--qss-text-secondary);
+  font-size: 11px;
+  color: var(--qss-text-muted);
 }
 .qst-search {
+  flex: 1 1 180px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
+  height: var(--qss-ctl-h);
   border: 1px solid var(--qss-border);
-  border-radius: 7px;
+  border-radius: var(--qss-ctl-radius);
   padding: 0 10px;
   color: var(--qss-text-muted);
 }
@@ -170,24 +178,24 @@ function reset() {
 .qst-search input {
   flex: 1;
   min-width: 0;
-  height: 30px;
   border: 0;
   outline: 0;
   background: none;
   font-size: 12px;
 }
 .qst-filter-row {
+  flex: 1 1 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--qss-text-label);
 }
 .qst-min {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--qss-text-muted);
+  color: var(--qss-text-secondary);
 }
 .qst-min input {
   width: 58px;
@@ -196,14 +204,14 @@ function reset() {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px;
+  padding: 4px;
 }
 .qst-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   width: 100%;
-  padding: 9px 10px;
+  padding: 5px 8px;
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
@@ -228,7 +236,7 @@ function reset() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qss-text);
 }
@@ -241,8 +249,8 @@ function reset() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
-  color: var(--qss-text-muted);
+  font-size: var(--qss-text-meta);
+  color: var(--qss-text-secondary);
 }
 .qst-row-bottom {
   display: flex;
@@ -252,9 +260,10 @@ function reset() {
 }
 .qst-scores {
   display: flex;
-  gap: 12px;
+  gap: var(--qss-gap);
   font-size: 11px;
   color: var(--qss-text-secondary);
+  font-variant-numeric: tabular-nums;
   min-width: 0;
 }
 .qst-score-group {
@@ -271,15 +280,17 @@ function reset() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 30px 10px;
-  font-size: 12px;
-  color: var(--qss-text-muted);
+  gap: var(--qss-gap-tight);
+  padding: var(--qss-page-edge) var(--qss-gap-tight);
+  font-size: var(--qss-text-label);
+  color: var(--qss-text-secondary);
 }
 .qst-foot {
-  padding: 8px 14px;
+  flex-shrink: 0;
+  padding: 5px var(--qss-panel-pad);
   border-top: 1px solid var(--qss-border-subtle);
-  font-size: 11px;
-  color: var(--qss-text-muted);
+  font-size: var(--qss-text-meta);
+  color: var(--qss-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 </style>

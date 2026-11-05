@@ -190,16 +190,18 @@ function scriptOf(ind: IndicatorInfo): string | null {
             <template v-for="ind in rows" :key="ind.key">
               <tr class="is-clickable qsf-row" :class="{ 'is-open': expanded === ind.key }" @click="toggle(ind.key)">
                 <td class="qsf-cell-name">
-                  <div class="qsf-name">{{ ind.name }} <span v-if="research(ind.key).length" class="muted">· {{ research(ind.key).length }} subversions</span></div>
-                  <div class="qsf-key mono">{{ ind.key }}<span v-if="scriptOf(ind)" class="muted"> · {{ scriptOf(ind) }}</span></div>
-                  <div class="qsf-chips">
-                    <span
-                      v-for="v in versionsOf(ind)"
-                      :key="v.role"
-                      class="qsf-chip"
-                      :class="{ 'is-empty': !v.info, 'is-ok': slotVerdict(v)?.certified }"
-                      :title="slotTitle(v)"
-                    >{{ v.short }} <b class="mono">{{ slotVerdict(v) ? slotVerdict(v)!.score.toFixed(0) : '–' }}</b></span>
+                  <div class="qsf-name-line">
+                    <div class="qsf-name">{{ ind.name }} <span v-if="research(ind.key).length" class="muted">· {{ research(ind.key).length }} subversions</span></div>
+                    <div class="qsf-key mono">{{ ind.key }}<span v-if="scriptOf(ind)" class="muted"> · {{ scriptOf(ind) }}</span></div>
+                    <div class="qsf-chips">
+                      <span
+                        v-for="v in versionsOf(ind)"
+                        :key="v.role"
+                        class="qsf-chip"
+                        :class="{ 'is-empty': !v.info, 'is-ok': slotVerdict(v)?.certified }"
+                        :title="slotTitle(v)"
+                      >{{ v.short }} <b class="mono">{{ slotVerdict(v) ? slotVerdict(v)!.score.toFixed(0) : '–' }}</b></span>
+                    </div>
                   </div>
                 </td>
                 <td class="num mono strong" :title="tracksText(ind)">{{ ind.certification ? +ind.certification.score.toFixed(1) : '—' }}</td>
@@ -311,7 +313,7 @@ function scriptOf(ind: IndicatorInfo): string | null {
                       </table>
                     </div>
 
-                    <div v-if="research(ind.key).length" class="qsc-card">
+                    <div v-if="research(ind.key).length" class="qsf-research">
                       <span class="qsc-label">Research subversions and legacy keys of {{ ind.name }}</span>
                       <div v-for="child in research(ind.key)" :key="child.key" class="qsf-detail-actions">
                         <span>{{ child.variant?.label }}</span>
@@ -346,14 +348,19 @@ function scriptOf(ind: IndicatorInfo): string | null {
 
 <style scoped>
 .qsf-roster {
+  flex: 1 1 0;
+  min-height: 420px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--qss-gap-tight);
+}
+.qsf-roster > * {
+  flex-shrink: 0;
 }
 .qsf-state {
-  padding: 40px 0;
-  text-align: center;
-  font-size: 13px;
+  padding: var(--qss-page-edge) 0;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-label);
 }
 .qsf-filters {
   display: flex;
@@ -371,10 +378,22 @@ function scriptOf(ind: IndicatorInfo): string | null {
   width: 180px;
 }
 .qsf-count {
-  font-size: 11.5px;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-meta);
+  font-variant-numeric: tabular-nums;
 }
-.qsf-table-wrap {
-  overflow-x: auto;
+/* The table takes the height; its rows scroll under a header that stays. */
+.qsf-roster > .qsf-table-wrap.qsc-card {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+.qsf-table > thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--qss-bg-raised);
+  box-shadow: inset 0 -1px 0 var(--qss-border);
 }
 .qsf-table {
   min-width: 680px;
@@ -399,6 +418,38 @@ function scriptOf(ind: IndicatorInfo): string | null {
 .qsf-cell-name {
   overflow: hidden;
   white-space: nowrap;
+}
+/* One line where the width allows: name, key, then the version chips at the end. */
+.qsf-name-line {
+  display: flex;
+  align-items: center;
+  gap: 2px var(--qss-gap);
+  min-width: 0;
+}
+.qsf-name-line .qsf-name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.qsf-name-line .qsf-key {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-top: 0;
+}
+.qsf-name-line .qsf-chips {
+  flex: none;
+  margin-top: 0;
+}
+@container (max-width: 1100px) {
+  .qsf-name-line {
+    flex-wrap: wrap;
+  }
+  .qsf-name-line .qsf-name {
+    flex: 1 1 0;
+  }
+  .qsf-name-line .qsf-key {
+    order: 3;
+    flex: 1 0 100%;
+  }
 }
 .qsf-name,
 .qsf-key {
@@ -429,13 +480,13 @@ function scriptOf(ind: IndicatorInfo): string | null {
 .qsf-detail {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 4px 4px 10px;
-  font-size: 12.5px;
+  gap: var(--qss-gap-tight);
+  padding: 4px 4px var(--qss-gap-tight);
+  font-size: var(--qss-text-label);
 }
 .qsf-hypothesis {
-  line-height: 1.55;
-  max-width: 900px;
+  line-height: 1.5;
+  max-width: 100ch;
   color: var(--qss-text);
 }
 .qsf-inline-label {
@@ -479,15 +530,25 @@ function scriptOf(ind: IndicatorInfo): string | null {
 }
 .qsf-detail-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
 }
+.qsf-research {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: var(--qss-gap-tight);
+  border-top: 1px solid var(--qss-border-subtle);
+}
 .qsf-footer {
-  font-size: 11px;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-meta);
+  line-height: 1.4;
 }
 .qsf-chips {
   display: flex;
   gap: 4px;
-  margin-top: 3px;
   overflow: hidden;
 }
 .qsf-chip {
@@ -497,9 +558,9 @@ function scriptOf(ind: IndicatorInfo): string | null {
   padding: 0 5px;
   border: 1px solid var(--qss-border);
   border-radius: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 16px;
-  color: var(--qss-text-muted);
+  color: var(--qss-text-secondary);
 }
 .qsf-chip b {
   font-weight: 600;
@@ -526,6 +587,13 @@ function scriptOf(ind: IndicatorInfo): string | null {
 .col-version { width: 190px; }
 .col-track { width: 64px; }
 .col-why { width: 190px; }
+/* The parameters column keeps room in a narrow middle. */
+@container (max-width: 1100px) {
+  .col-version { width: 140px; }
+  .col-why { width: 110px; }
+  .qsf-version-table .col-actions { width: 170px; }
+  .qsf-version-table .col-track { width: 56px; }
+}
 .qsf-version-params {
   font-size: 11.5px;
   white-space: normal;

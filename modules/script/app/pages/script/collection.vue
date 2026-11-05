@@ -112,11 +112,13 @@ onActivated(() => void activate())
     </QPageHeading>
 
     <div v-if="store.sourcesError" class="qsc-note is-error" role="alert">{{ store.sourcesError }}</div>
-    <div v-else-if="!store.sourcesLoading && !store.sources.length" class="qst-empty">
-      <h2>No catalog source</h2>
-      <p>Add a GitHub repository or a local catalog folder under Settings → Collection.</p>
+    <QEmptyState
+      v-else-if="!store.sourcesLoading && !store.sources.length"
+      title="No catalog source"
+      description="Add a GitHub repository or a local catalog folder under Settings → Collection."
+    >
       <button class="qsc-btn is-primary" @click="openSettings">Open settings</button>
-    </div>
+    </QEmptyState>
     <div v-else-if="store.catalogError" class="qsc-note is-error qst-error" role="alert">
       <strong>The catalog could not be read.</strong>
       <p>{{ store.catalogError }}</p>
@@ -136,51 +138,49 @@ onActivated(() => void activate())
 
 <style scoped>
 .qst-page {
+  --qss-page-head-gap: 0px;
   height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 22px clamp(16px, 3%, 30px);
-  overflow: hidden;
+  gap: var(--qss-gap);
+  padding: var(--qss-page-edge);
+  overflow: hidden auto;
+  container-type: inline-size;
+}
+.qst-page > * {
+  flex-shrink: 0;
 }
 .qst-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 .qst-source {
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   color: var(--qss-text-secondary);
 }
-.qst-split {
-  flex: 1;
+.qst-page > .qst-split {
+  flex: 1 1 0;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(300px, 5fr) minmax(0, 7fr);
-  gap: 14px;
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--qss-gap);
 }
+/* One column: each panel keeps a usable height and the page scrolls. */
 @container (max-width: 640px) {
-  .qst-split {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  .qst-page > .qst-split {
+    flex: none;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 420px 420px;
   }
 }
 .qst-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 48px 20px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--qss-text-muted);
-}
-.qst-empty h2 {
-  font-size: 15px;
-  color: var(--qss-text);
+  font-size: var(--qss-text-label);
+  color: var(--qss-text-secondary);
 }
 .qst-error {
   display: flex;
