@@ -1,1 +1,17 @@
-/* QuantFlow composes QuantPlan and QuantHabit, and reads the shared density tokens from its own pages. */
+/* Today's sizes, until this module is converted to the 1.1.0 density. */
+[data-module='flow'] {
+  --qss-page-title: clamp(22px, 2vw, 28px);
+  --qss-page-title-weight: 500;
+  --qss-page-title-tracking: -.035em;
+  --qss-page-head-gap: 26px;
+  --qss-empty-gap: 12px;
+  --qss-empty-min: 240px;
+  --qss-empty-pad: 40px 24px;
+  --qss-empty-title: 20px;
+  --qss-empty-title-weight: 500;
+  --qss-empty-title-tracking: -.025em;
+}
+
+[data-module='flow'] .qflow-tabs.qflow-tabs { gap: 6px; }
+[data-module='flow'] .qflow-tabs a { padding: 7px 14px; border: 1px solid transparent; border-radius: 8px; color: var(--qss-text-secondary); }
+[data-module='flow'] .qflow-tabs a.is-active { border-color: var(--qss-border); }
