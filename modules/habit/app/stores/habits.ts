@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import type { Check, DayState, Habit, HabitPatch, StatsOut } from '#habit/types'
-import { todayKey, weekdayOf } from '#habit/utils/dates'
+import { daysOfYear, todayKey, weekdayOf } from '#habit/utils/dates'
 
 /**
  * The habits, the selected year's checks, and that year's statistics.
@@ -17,6 +17,9 @@ export const useHabitsStore = defineStore('habit/habits', () => {
   const checkKeys = ref<Set<string>>(new Set())
   const stats = ref<StatsOut | null>(null)
   const loaded = ref(false)
+
+  /** The month shown in month grouping, 0-11. The sheet draws it, the toolbar pages it. */
+  const month = ref(new Date().getMonth())
 
   /** The day the left panel is checking off. Starts on today. */
   const selectedDay = ref(todayKey())
@@ -48,6 +51,39 @@ export const useHabitsStore = defineStore('habit/habits', () => {
     year.value = value
     await load()
   }
+
+  function prevMonth() {
+    if (month.value > 0) {
+      month.value -= 1
+    } else {
+      month.value = 11
+      void setYear(year.value - 1)
+    }
+  }
+
+  function nextMonth() {
+    if (month.value < 11) {
+      month.value += 1
+    } else {
+      month.value = 0
+      void setYear(year.value + 1)
+    }
+  }
+
+  /** The shown month's average, over the days that had anything to track. */
+  const monthPct = computed(() => {
+    let sum = 0
+    let counted = 0
+    for (const row of daysOfYear(year.value)) {
+      if (row.month !== month.value) continue
+      const p = dayProgress(row.key)
+      if (p.eligible > 0) {
+        sum += p.pct
+        counted += 1
+      }
+    }
+    return counted > 0 ? Math.round(sum / counted) : null
+  })
 
   function selectDay(day: string) {
     selectedDay.value = day
@@ -174,10 +210,14 @@ export const useHabitsStore = defineStore('habit/habits', () => {
     currentYear,
     stats,
     loaded,
+    month,
+    monthPct,
     selectedDay,
     editor,
     load,
     setYear,
+    prevMonth,
+    nextMonth,
     selectDay,
     openCreate,
     openEdit,

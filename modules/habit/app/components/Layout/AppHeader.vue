@@ -5,9 +5,14 @@
 import { useAppStore } from '#habit/stores/app'
 import { useHabitsStore } from '#habit/stores/habits'
 import type { Grouping } from '#habit/types'
+import { MONTHS } from '#habit/utils/dates'
 
 const app = useAppStore()
 const habits = useHabitsStore()
+const route = useRoute()
+
+/** Paging belongs to the day sheet; Progress covers the whole year. */
+const showMonth = computed(() => app.grouping === 'month' && habits.habits.length > 0 && !route.path.endsWith('/stats'))
 
 const GROUPINGS: { value: Grouping; label: string }[] = [
   { value: 'week', label: 'CW' },
@@ -27,6 +32,16 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
           </svg>
           <span>New habit</span>
         </button>
+      </div>
+
+      <!-- One month at a time: ‹ [ September 2026 ] › -->
+      <div v-if="showMonth" class="qh-hd__month">
+        <button class="qh-hd__mbtn" title="Previous month" @click="habits.prevMonth()">‹</button>
+        <div class="qh-hd__mtitle">
+          <strong>{{ MONTHS[habits.month] }} <span class="qh-num">{{ habits.year }}</span></strong>
+          <span v-if="habits.monthPct !== null" class="qh-hd__msub qh-num">{{ habits.monthPct }}% done</span>
+        </div>
+        <button class="qh-hd__mbtn" title="Next month" @click="habits.nextMonth()">›</button>
       </div>
 
       <div class="qh-hd__controls">
@@ -61,16 +76,17 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
 </template>
 
 <style scoped>
-.qh-toolbar { display: flex; flex-shrink: 0; min-height: 78px; border-bottom: 1px solid var(--qh-border-subtle); }
+.qh-toolbar { display: flex; flex-shrink: 0; min-height: 78px; border-bottom: 1px solid var(--qh-border-subtle); container-type: inline-size; }
 .qh-hd__title { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.035em; }
+/* Equal outer columns keep the month in the middle of the page, above the day sheet. */
 .qh-hd {
   flex: 1;
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 16px;
   padding: 16px 24px;
-  flex-wrap: wrap;
 }
 
 .qh-hd__mid {
@@ -99,8 +115,62 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
   color: var(--qh-text);
 }
 
-.qh-hd__controls {
+/* A fixed width: the arrows stay put while paging from May to September. */
+.qh-hd__month {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 240px;
+}
+
+.qh-hd__mbtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 1px solid var(--qh-border-subtle);
+  border-radius: var(--qh-radius);
+  background: var(--qh-bg-card);
+  color: var(--qh-text-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.qh-hd__mbtn:hover {
+  border-color: var(--qh-accent);
+  color: var(--qh-text);
+}
+
+.qh-hd__mtitle {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.qh-hd__mtitle strong {
+  color: var(--qh-text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.qh-hd__mtitle strong .qh-num {
+  color: var(--qh-text-muted);
+  font-weight: 600;
+}
+
+.qh-hd__msub {
+  color: var(--qh-text-muted);
+  font-size: 10px;
+}
+
+.qh-hd__controls {
+  grid-column: 3;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -171,5 +241,12 @@ const GROUPINGS: { value: Grouping; label: string }[] = [
 .qh-hd__group-btn.is-active {
   background: var(--qh-bg-card);
   color: var(--qh-text);
+}
+
+/* No room for three in a row: the month takes a row of its own. */
+@container (max-width: 700px) {
+  .qh-hd { grid-template-columns: auto 1fr; }
+  .qh-hd__controls { grid-column: 2; grid-row: 1; }
+  .qh-hd__month { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
 }
 </style>
