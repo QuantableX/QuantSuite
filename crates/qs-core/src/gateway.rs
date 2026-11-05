@@ -60,6 +60,8 @@ pub struct GatewayState {
     attempt: tokio::sync::Mutex<Option<(PairBegun, PairingAttempt)>>,
     /// Client mode: the connection to the server this PC uses.
     link: Mutex<Option<Arc<Link>>>,
+    /// Bumped by every restart, so an older wait for the address stops.
+    generation: std::sync::atomic::AtomicU64,
 }
 
 /// The computer's name, as devices and servers see it.
@@ -235,8 +237,44 @@ fn parse_address(address: &str) -> Result<SocketAddr, String> {
         .map_err(|_| format!("{a} is not an address like 100.101.102.103:{}.", qs_gateway::DEFAULT_PORT))
 }
 
-/// (Re)starts listening on the configured address; stops without one.
+/// (Re)starts listening on the configured address; stops without one. When
+/// the address is not on this machine yet — a tailnet address before
+/// Tailscale has connected after a reboot — it keeps trying every 15 s
+/// (card Server 6/7).
 pub async fn restart<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let generation = app.state::<GatewayState>().generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    match bind(app).await {
+        Err(Bind::Absent(ip, message)) => {
+            *lock(&app.state::<GatewayState>().error) = Some(message.clone());
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { wait_for_address(app, ip, generation).await });
+            Err(message)
+        }
+        Err(Bind::Failed(e)) => Err(e),
+        Ok(()) => Ok(()),
+    }
+}
+
+async fn wait_for_address<R: Runtime>(app: AppHandle<R>, ip: std::net::IpAddr, generation: u64) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        if app.state::<GatewayState>().generation.load(std::sync::atomic::Ordering::SeqCst) != generation {
+            return;
+        }
+        if net::has_address(&ip) && bind(&app).await.is_ok() {
+            log::info!("gateway: {ip} appeared, listening");
+            return;
+        }
+    }
+}
+
+enum Bind {
+    /// The address is not on this machine (yet).
+    Absent(std::net::IpAddr, String),
+    Failed(String),
+}
+
+async fn bind<R: Runtime>(app: &AppHandle<R>) -> Result<(), Bind> {
     let state = app.state::<GatewayState>();
     let old = lock(&state.listener).take();
     if let Some(l) = old {
@@ -245,15 +283,21 @@ pub async fn restart<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     }
     let (address, every) = {
         let db = app.state::<Db>();
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let conn = db.0.lock().map_err(|e| Bind::Failed(e.to_string()))?;
         configured(&conn)
     };
     let Some(address) = address else {
         *lock(&state.error) = None;
         return Ok(());
     };
+    let addr = parse_address(&address).map_err(Bind::Failed)?;
+    if !net::has_address(&addr.ip()) {
+        let what = if net::kind_of(&addr.ip()) == "tailnet" { "Tailscale is not connected yet" } else { "this network is not connected" };
+        let message = format!("Waiting for {} to appear on this PC ({what}); QuantSuite keeps trying.", addr.ip());
+        log::info!("gateway: {message}");
+        return Err(Bind::Absent(addr.ip(), message));
+    }
     let result = async {
-        let addr = parse_address(&address)?;
         net::check_listen(&addr, every)?;
         let h = hub(app)?;
         h.listen(addr).await
@@ -268,7 +312,7 @@ pub async fn restart<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         Err(e) => {
             log::warn!("gateway: {e}");
             *lock(&state.error) = Some(e.clone());
-            Err(e)
+            Err(Bind::Failed(e))
         }
     }
 }
@@ -303,6 +347,10 @@ pub struct GatewayStatus {
     pub default_port: u16,
     pub interfaces: Vec<Interface>,
     pub computer: String,
+    /// The listening address is reachable from the whole internet.
+    pub listening_public: bool,
+    /// Tailscale on this PC (card Server 6/7).
+    pub tailnet: net::Tailnet,
 }
 
 pub fn status<R: Runtime>(app: &AppHandle<R>, conn: &rusqlite::Connection) -> GatewayStatus {
@@ -321,6 +369,10 @@ pub fn status<R: Runtime>(app: &AppHandle<R>, conn: &rusqlite::Connection) -> Ga
         default_port: qs_gateway::DEFAULT_PORT,
         interfaces: net::interfaces(),
         computer: computer_name(),
+        listening_public: listening(app)
+            .and_then(|a| a.parse::<SocketAddr>().ok())
+            .is_some_and(|a| net::is_public(&a.ip())),
+        tailnet: net::tailscale_status(),
     }
 }
 
@@ -586,6 +638,10 @@ pub struct LinkStatus {
     pub role: Option<DeviceRole>,
     /// Modules whose pages come from the server.
     pub server_modules: Vec<String>,
+    /// The last ping's round trip (connection quality, card Server 6/7).
+    pub rtt_ms: Option<f64>,
+    /// Connections made again since QuantSuite started.
+    pub reconnects: u32,
 }
 
 fn now_iso() -> String {
@@ -611,6 +667,8 @@ impl Link {
             server_app: None,
             role: Some(connection.role),
             server_modules: Manifest::bundled().data().modules.clone(),
+            rtt_ms: None,
+            reconnects: 0,
         };
         Self { connection, session: Default::default(), status: Mutex::new(status), resume: Mutex::new(None), wake: Default::default() }
     }
@@ -625,7 +683,11 @@ impl Link {
     }
 
     fn status(&self) -> LinkStatus {
-        lock(&self.status).clone()
+        let mut s = lock(&self.status).clone();
+        if let Ok(guard) = self.session.try_read() {
+            s.rtt_ms = guard.as_ref().and_then(|x| x.rtt()).map(|d| (d.as_secs_f64() * 1000.0 * 10.0).round() / 10.0);
+        }
+        s
     }
 
     /// The open session, waiting up to `wait` for one.
@@ -673,6 +735,8 @@ pub fn link_status<R: Runtime>(app: &AppHandle<R>) -> LinkStatus {
         server_app: None,
         role: None,
         server_modules: Manifest::bundled().data().modules.clone(),
+        rtt_ms: None,
+        reconnects: 0,
     })
 }
 
@@ -723,12 +787,16 @@ async fn run_link<R: Runtime>(app: AppHandle<R>, link: Arc<Link>) {
                 *lock(&link.resume) = Some(s.resume_point());
                 *link.session.write().await = Some(s.clone());
                 let (app_v, role, reload) = (s.welcome.app.clone(), s.welcome.role, s.welcome.reload);
+                let again = was_online;
                 link.set(&app, |st| {
                     st.state = "online";
                     st.since = Some(now_iso());
                     st.message = None;
                     st.server_app = Some(app_v);
                     st.role = Some(role);
+                    if again {
+                        st.reconnects += 1;
+                    }
                 });
                 // Back after a gap: the server's pages load their data again.
                 if was_online || reload {

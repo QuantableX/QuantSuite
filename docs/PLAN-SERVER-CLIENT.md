@@ -1,6 +1,6 @@
 # QuantSuite server and client — one QuantSuite, used from every PC
 
-Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, cards 3 (pairing, mutual TLS), 4 (gateway) and 5 (client mode) 2026-11-05 — see §6.3 and §6.3.1–6.3.8. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
+Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, cards 3 (pairing, mutual TLS), 4 (gateway), 5 (client mode) and 6 (over the internet) 2026-11-05 — see §6.3 and §6.3.1–6.3.9; the test from outside (§7.1) is yours. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
 
 ## In short
 
@@ -75,6 +75,8 @@ QuantMCP's port 3100 stays loopback-only on every machine.
 | Headscale | Self-hosted Tailscale control server — choose it if you want no third party at all. Same clients. |
 | Plain WireGuard | Works; you manage keys, port forwarding on one UDP port and dynamic DNS yourself. |
 | Router port forwarding to QuantSuite | Rejected: the whole internet can knock. |
+
+**Headscale, set up** (only if you want no third party): run Headscale (https://github.com/juanfont/headscale) on a machine reachable from the internet (a small VPS; the home server itself would need a forwarded port, which this plan avoids), create a user and a pre-auth key (`headscale users create you`, `headscale preauthkeys create --user you`), and sign each PC in with the normal Tailscale app pointed at it: `tailscale up --login-server https://headscale.example.com --authkey <key>`. QuantSuite sees the same 100.x addresses and MagicDNS names; nothing else changes.
 | Cloudflare Tunnel | Rejected for this: TLS ends at Cloudflare, so a third party sits inside the trading connection. |
 
 ### 4.3 What if …
@@ -309,6 +311,20 @@ Also fixed: a revoked PC could not pair again (the server refused its key before
 
 Tests: `npm run test:seam` (every manifest command routed per its placement, core data by argument, unlisted and Tauri plugin commands local), `cargo test -p qs-gateway` (data guard, re-pairing a revoked PC), qs-core lib tests. QA between two isolated profiles on this PC (`artifacts/qa-native/qa2.sh`): the client paired, switched to the server (restart), opened Notes, Plan, Finance, Habits, Flow, QuantAlgo, QuantSystems, QuantTerminal and QuantScript through the gateway (121 calls in the server's audit, none refused). A note created on the server appeared on the client, and one created on the client landed in the server's database (the client's stayed empty). QuantAlgo's kill switch (an `external` action) asked for the server PIN, switched on on the server, and off again without a second prompt. With the server process killed, the client showed the banner, "ROOT · offline", and a greyed, inert Finance page, while QuantPilot kept working. After a restart it reconnected within about 20 s, and Finance loaded its data again. Arming a Manual system from the client was not tried (no live-ready system in the QA profile); it is `external` like the kill switch and takes the same path.
 
+### 6.3.9 Built: over the internet (card Server 6/7, 2026-11-05)
+
+| Piece | How |
+|---|---|
+| Tailscale on this PC | `qs_gateway::net::tailscale_status` runs `tailscale status --json` (PATH, then the default install folders; at most 3 s, no console window) and reads this PC's name, MagicDNS name, 100.x addresses and the other devices with their online state. |
+| Server | Settings → Server → Use it from anywhere: Tailscale's state here, "Listen on the tailnet address" (one click), and "Your other PCs connect with homeserver.tail1234.ts.net" once it listens there. The address list puts tailnet addresses first (card 3). |
+| Boot order | When the chosen address is not on the PC yet — the tailnet address before Tailscale has connected after a reboot — the gateway says "Waiting for 100.x to appear on this PC (Tailscale is not connected yet); QuantSuite keeps trying" and binds within 15 s of the address appearing. A new choice cancels the wait. |
+| Public address | Listening on an address the whole internet can reach (not private, tailnet, loopback or link-local) shows a warning under the address. `0.0.0.0` still needs its explicit tick (card 3). |
+| Client | The same section lists your tailnet devices with their online state; "Use" fills a server's MagicDNS name (or 100.x address) into "Connect to a server". The network path does not matter to identity: the pinned server key does. |
+| Connection quality | The client pings right after connecting and every 10 s; the round trip, the reconnects since start and "online since" show in Settings → Server and in the title bar chip's tooltip. |
+| Guide | The steps for the server and for each client are in the same section, with the Headscale alternative (§4.2). |
+
+Tests: `cargo test -p qs-gateway` (parsing `tailscale status --json` — running, logged out, MagicDNS, online first; public and present addresses; the round trip after connecting). QA on this PC (Tailscale is not installed here): the guide shows "not installed" with the download button; a tailnet address that is not there gives the waiting message and switching back to 127.0.0.1 binds at once; the client showed "Connected to ROOT: 1.0 ms round trip · 1 reconnect". The test over a real tailnet is §7.1.
+
 ### 6.4 Gateway protocol
 
 WebSocket over TLS. Frames: `hello` (protocol version, device), `call` {id, cmd, args, idempotencyKey}, `result` {id, ok | error}, `event` {seq, topic, payload}, `resume` {lastSeq}, `cancel` {id}, binary chunks for files. Limits: frame size, timeouts per side-effect class, a rate limit per device.
@@ -331,6 +347,30 @@ Phase 1: Windows — the same build, WebView2 is there, the Python sidecars are 
 **Every day:** at 00:15 UTC the server trades. At 08:00 you open QuantSuite on the PC; it connects and shows the night's runs. In a café the laptop does the same through Tailscale.
 
 **Laptop lost:** on the PC, Settings → Server → Devices → "Laptop" → Revoke.
+
+### 7.1 The test from outside (card Server 6/7 — yours)
+
+What you need: the server at home with QuantSuite in server mode and Tailscale; a laptop with QuantSuite and Tailscale, signed in with the same Tailscale account; a phone with a hotspot.
+
+1. **Server.** Settings → Server → Use it from anywhere: Tailscale shows "This PC in your tailnet: …". Click "Listen on the tailnet address". Set a server PIN if there is none.
+2. **Laptop at home first.** Settings → Server → Use it from anywhere: the server is listed as online. Click "Use" next to it, then pair with the code from the server (compare the four words on both screens). "Use" the new connection; QuantSuite restarts and the title bar shows the server.
+3. **Leave the home network.** Turn the laptop's Wi-Fi to the phone's hotspot (not your home Wi-Fi). Within half a minute the title bar shows the server again (it reconnects by itself).
+4. **Work.** Open Notes, Plan, Finance, QuantAlgo and QuantSystems: they show the server's data. Create a note; on the server it is there.
+5. **External action.** QuantAlgo → Stop all trading: the server PIN is asked. Enter it; on the server the kill switch is on. Allow trading again.
+6. **Quality.** Settings → Server: note the round trip and the reconnects.
+7. **Nothing is open to the internet.** Find the home's public IP (on the server: https://ifconfig.me). From the laptop, still on the hotspot but with Tailscale **off**: `Test-NetConnection <public IP> -Port 47100` in PowerShell must say `TcpTestSucceeded : False`. Optional, a full scan from outside: `nmap -Pn -p 1-65535 <public IP>` shows no open QuantSuite port (47100) and no 3100.
+8. **And without Tailscale on the laptop**, QuantSuite on the laptop shows the server as not reachable.
+
+Results (fill in after the run):
+
+| Check | Result |
+|---|---|
+| Reconnected on the hotspot, seconds | |
+| Phase-1 pages with the server's data | |
+| PIN asked for "Stop all trading" | |
+| Round trip at home (LAN via tailnet), ms | |
+| Round trip on the hotspot, ms | |
+| Port 47100 on the public IP without the tailnet | |
 
 ## 8. Cards
 

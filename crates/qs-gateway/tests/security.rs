@@ -87,6 +87,14 @@ async fn pair_use_and_roles() {
     let c = client::connect(&s.addr(), &device, server_key, &me("Laptop")).await.unwrap();
     assert_eq!(c.welcome.role, DeviceRole::Full);
     assert_eq!(c.welcome.server, "homeserver");
+    // The first ping goes out at once; its round trip is the connection's quality.
+    for _ in 0..50 {
+        if c.rtt().is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(c.rtt().is_some_and(|r| r < std::time::Duration::from_secs(1)));
     let r = c.call("plugin:notes|list_notes", json!({ "q": 1 })).await.unwrap();
     assert_eq!(r["cmd"], "plugin:notes|list_notes");
     assert_eq!(c.call("plugin:notes|create_note", json!({})).await.unwrap()["cmd"], "plugin:notes|create_note");

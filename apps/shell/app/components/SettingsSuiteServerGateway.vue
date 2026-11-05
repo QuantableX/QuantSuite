@@ -10,6 +10,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useServerLink } from '@quantsuite/core'
+import SettingsSuiteServerTailnet from './SettingsSuiteServerTailnet.vue'
 
 type DeviceRole = 'full' | 'no_trading' | 'read_only'
 interface Iface { name: string; address: string; kind: 'tailnet' | 'lan' | 'loopback' | 'other' }
@@ -24,6 +25,8 @@ interface GatewayStatus {
   default_port: number
   interfaces: Iface[]
   computer: string
+  listening_public: boolean
+  tailnet: InstanceType<typeof SettingsSuiteServerTailnet>['$props']['tailnet']
 }
 interface PendingDevice { id: string; name: string; fingerprint: string; words: string[] }
 interface Pairing { code: string | null; secs_left: number; locked_secs: number; pending: PendingDevice[]; qr_svg: string | null }
@@ -170,6 +173,22 @@ const listenTarget = computed(() => {
   return host ? `${host.includes(':') ? `[${host}]` : host}:${port.value}` : null
 })
 
+async function listenOnTailnet(ip: string) {
+  pickAddress.value = ip
+  everyInterface.value = false
+  await saveListen()
+}
+
+/** Connection quality while this PC uses a server (card Server 6/7). */
+const quality = computed(() => {
+  const s = link.status.value
+  if (!s || s.mode !== 'client' || s.state !== 'online') return null
+  const rtt = s.rtt_ms != null ? `${s.rtt_ms < 10 ? s.rtt_ms.toFixed(1) : Math.round(s.rtt_ms)} ms round trip` : 'measuring the round trip…'
+  const since = s.since ? new Date(s.since) : null
+  const at = since ? `${String(since.getHours()).padStart(2, '0')}:${String(since.getMinutes()).padStart(2, '0')}` : ''
+  return `Connected to ${s.connection?.name ?? 'the server'}: ${rtt} · ${s.reconnects} reconnect${s.reconnects === 1 ? '' : 's'} · online since ${at}`
+})
+
 async function saveListen(off = false) {
   await run(async () => {
     gw.value = await invoke<GatewayStatus>('plugin:qs|gateway_configure', {
@@ -305,11 +324,16 @@ async function forgetConnection(c: Connection) {
 
 let unlisten: UnlistenFn | null = null
 let tick: ReturnType<typeof setInterval> | null = null
+let rttPoll: ReturnType<typeof setInterval> | null = null
 onMounted(async () => {
   await load()
   if (inTauri()) {
     unlisten = await listen('server:gateway', () => loadServerSide())
   }
+  // The round trip changes without an event: read it while the page is open.
+  rttPoll = setInterval(() => {
+    if (link.isClient.value) void link.reload()
+  }, 5000)
   // The code's countdown.
   tick = setInterval(() => {
     const p = pairing.value
@@ -323,6 +347,7 @@ onMounted(async () => {
 onUnmounted(() => {
   unlisten?.()
   if (tick) clearInterval(tick)
+  if (rttPoll) clearInterval(rttPoll)
 })
 </script>
 
@@ -362,6 +387,10 @@ onUnmounted(() => {
             <span v-if="gw.fingerprint"> Server key <span class="qsv-mono">{{ gw.fingerprint.slice(0, 19) }}…</span></span>
           </p>
           <p v-if="gw.error" class="qsu-hint qsv-error">{{ gw.error }}</p>
+          <p v-if="gw.listening_public" class="qsu-hint qsv-warn">
+            This is a public address: anyone on the internet can reach the gateway's port. Paired keys still keep them
+            out, but use the tailnet or LAN address instead — no open port at all.
+          </p>
         </div>
       </div>
 
@@ -472,9 +501,25 @@ onUnmounted(() => {
       </div>
     </template>
 
+    <SettingsSuiteServerTailnet
+      v-if="gw && gw.role === 'server'"
+      :tailnet="gw.tailnet"
+      role="server"
+      :listening="gw.listening"
+      @pick="listenOnTailnet"
+    />
+    <SettingsSuiteServerTailnet
+      v-if="gw && gw.role !== 'server'"
+      :tailnet="gw.tailnet"
+      :role="gw.role"
+      :listening="null"
+      @pick="(a) => (joinAddress = a)"
+    />
+
     <div v-if="gw && gw.role !== 'server'" class="qsu-row qsv-section">
       <div class="qsu-row-text">
         <p class="qsu-label">Connect to a server</p>
+        <p v-if="quality" class="qsu-hint">{{ quality }}</p>
         <p class="qsu-hint">
           Pair this PC with your QuantSuite server once. On the server: Settings → Server → Pair a device shows the code.
           This PC's key stays in its own vault; the server's key is pinned.
