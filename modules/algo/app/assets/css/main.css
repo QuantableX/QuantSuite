@@ -274,7 +274,8 @@
   font-size: var(--qss-ctl-font);
 }
 
-[data-module="algo"] .main-content :is(input.input, select.input) {
+[data-module="algo"] .main-content input.input,
+[data-module="algo"] .main-content select.input {
   height: var(--qss-ctl-h);
   padding-block: 0;
   font-size: var(--qss-ctl-font);
