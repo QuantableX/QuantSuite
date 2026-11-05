@@ -222,34 +222,36 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
 </template>
 
 <style scoped>
-.qfunds { height: 100%; overflow: auto; scrollbar-gutter: stable; padding: 24px; container-type: inline-size; }
+.qfunds { height: 100%; overflow: auto; scrollbar-gutter: stable; padding: var(--qss-page-edge); container-type: inline-size; }
 .qfunds h2, .qfunds h3, .qfunds p { margin: 0; }
-.qfunds h2 { font-size: 20px; font-weight: 600; }
-.qfunds h3 { font-size: 13px; font-weight: 650; }
+.qfunds h2 { font-size: var(--qss-text-title); font-weight: 600; letter-spacing: -.01em; }
+.qfunds h3 { font-size: var(--qss-text-section); font-weight: 600; }
 .qfunds-section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
 .qfunds-section-head p { color: var(--qf-text-muted); margin-top: 5px; font-size: 12px; }
-.qfunds-detail { min-width: 0; max-width: 1040px; margin: 0 auto; padding-bottom: 24px; }
-.qfunds-allocation { max-width: 1040px; margin: 0 auto 24px; padding: 20px; border: 1px solid var(--qf-border-subtle); border-radius: var(--qf-radius-lg); background: var(--qf-bg-raised); }
-.qfunds-balance { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 28px 0 22px; }
-.qfunds-balance > span { color: var(--qf-text-secondary); font-size: 12px; }
-.qfunds-balance > strong { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.025em; overflow-wrap: anywhere; }
-.qfunds-balance small { font-size: 10px; color: var(--qf-text-muted); }
-.qfunds-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 16px; border: 1px solid var(--qf-border-subtle); border-radius: var(--qf-radius-lg); background: var(--qf-bg-raised); }
+.qfunds-detail { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--qss-gap); align-items: stretch; }
+.qfunds-detail > .qfunds-section-head,
+.qfunds-detail > .qfunds-entry-actions,
+.qfunds-detail > .qfunds-section { grid-column: 1 / -1; }
+.qfunds-allocation { padding: var(--qss-panel-pad); border: 1px solid var(--qf-border-subtle); border-radius: var(--qss-panel-radius); background: var(--qf-bg-raised); }
+.qfunds-balance { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; min-width: 200px; padding: var(--qss-panel-pad); border: 1px solid var(--qf-border-subtle); border-radius: var(--qss-panel-radius); background: var(--qf-bg-raised); }
+.qfunds-balance > span { color: var(--qf-text-secondary); font-size: var(--qss-text-label); }
+.qfunds-balance > strong { font-size: var(--qss-text-metric); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.qfunds-balance small { font-size: 11px; color: var(--qf-text-muted); }
+.qfunds-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: var(--qss-gap); padding: var(--qss-panel-pad); border: 1px solid var(--qf-border-subtle); border-radius: var(--qss-panel-radius); background: var(--qf-bg-raised); }
 .qfunds-metrics > div { display: flex; flex-direction: column; gap: 5px; }
 .qfunds-metrics span { color: var(--qf-text-muted); font-size: 11px; }
 .qfunds-metrics strong { font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .qfunds-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.qfunds-entry-actions { margin-top: 18px; }
-.qfunds-section { border-top: 1px solid var(--qf-border-subtle); margin-top: 28px; padding-top: 16px; }
+.qfunds-section { border-top: 1px solid var(--qf-border-subtle); padding-top: var(--qss-gap); }
 .qfunds .qfunds-hint { color: var(--qf-text-muted); font-size: 11px; line-height: 1.6; margin: 8px 0; }
 .qfunds-text-btn { background: transparent; border: 0; color: var(--qf-text-muted); padding: 4px; font-size: 11px; cursor: pointer; }
 .qfunds-text-btn:hover { color: var(--qf-text); }
 .qfunds button:disabled { opacity: .5; cursor: default; }
-.qfunds-table-scroll { overflow-x: auto; margin-top: 12px; }
+.qfunds-table-scroll { overflow-x: auto; margin-top: var(--qss-gap-tight); }
 .qfunds-table-scroll:focus-visible { outline: 1px solid var(--qf-text-muted); outline-offset: -1px; }
 .qfunds-history { width: 100%; min-width: 760px; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
-.qfunds-history th { text-align: left; color: var(--qf-text-muted); font-size: 10px; font-weight: 500; }
-.qfunds-history th, .qfunds-history td { padding: 10px 8px; border-bottom: 1px solid var(--qf-border-subtle); }
+.qfunds-history th { text-align: left; color: var(--qf-text-muted); font-size: 11px; font-weight: 500; }
+.qfunds-history th, .qfunds-history td { height: var(--qss-row-h); padding: 4px 8px; border-bottom: 1px solid var(--qf-border-subtle); }
 .qfunds-history td { overflow: hidden; text-overflow: ellipsis; }
 .qfunds-history small { display: block; color: var(--qf-text-muted); font-size: 10px; }
 .qfunds-history .qfunds-number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -267,7 +269,7 @@ watch([() => route.query.fund, () => route.query.action, () => store.loading, di
 .qfunds-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .qfunds-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 @container (max-width: 650px) {
+  .qfunds-detail { grid-template-columns: minmax(0, 1fr); }
   .qfunds-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .qfunds-balance > strong { font-size: 28px; }
 }
 </style>

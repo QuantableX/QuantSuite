@@ -28,81 +28,109 @@ const money = (cents: number) => formatCents(cents, app.settings.currency)
 
 <template>
   <div class="qf-plan">
-    <div class="qf-plan__scroll">
-      <div class="qf-plan__sheet">
-        <QPageHeading class="qf-plan__heading" title="Monthly plan" />
-        <p v-if="plan.error" class="qf-plan__error" role="alert">{{ plan.error }}</p>
-        <FinancePlanSection
-          kind="income"
-          title="Income"
-          :total-cents="plan.summary.incomeCents"
-        />
+    <QPageHeading class="qf-plan__heading" title="Monthly plan" />
+    <p v-if="plan.error" class="qf-plan__error" role="alert">{{ plan.error }}</p>
 
-        <FinancePlanSection
-          kind="saving"
-          title="Saving & investing"
-          :total-cents="plan.summary.savingCents"
-        />
+    <!-- Side by side, so the whole month and its leftover are on screen at once. -->
+    <div class="qf-plan__cols">
+      <FinancePlanSection
+        kind="income"
+        title="Income"
+        :total-cents="plan.summary.incomeCents"
+      />
 
-        <FinancePlanSection
-          kind="expense"
-          title="Fixed costs"
-          :total-cents="plan.summary.expenseCents"
-        />
+      <FinancePlanSection
+        kind="saving"
+        title="Saving & investing"
+        :total-cents="plan.summary.savingCents"
+      />
 
-        <footer class="qf-plan__foot" :class="{ 'is-over': plan.overspent }">
-          <div class="qf-plan__leftover">
-            <span class="qf-plan__leftover-label">
-              {{ plan.overspent ? 'Short by' : 'Leftover' }}
-            </span>
-            <strong class="qf-num">{{ money(Math.abs(plan.summary.leftoverCents)) }}</strong>
-            <span class="qf-plan__per">per month</span>
-          </div>
-          <p class="qf-plan__note">
-            <template v-if="plan.overspent">
-              Planned spending exceeds income.
-            </template>
-            <template v-else>
-              Available for variable spending.
-            </template>
-          </p>
-        </footer>
-      </div>
+      <FinancePlanSection
+        kind="expense"
+        title="Fixed costs"
+        :total-cents="plan.summary.expenseCents"
+      />
     </div>
+
+    <footer class="qf-plan__foot" :class="{ 'is-over': plan.overspent }">
+      <div class="qf-plan__leftover">
+        <span class="qf-plan__leftover-label">
+          {{ plan.overspent ? 'Short by' : 'Leftover' }}
+        </span>
+        <strong class="qf-num">{{ money(Math.abs(plan.summary.leftoverCents)) }}</strong>
+        <span class="qf-plan__per">per month</span>
+      </div>
+      <p class="qf-plan__note">
+        <template v-if="plan.overspent">
+          Planned spending exceeds income.
+        </template>
+        <template v-else>
+          Available for variable spending.
+        </template>
+      </p>
+    </footer>
   </div>
 </template>
 
 <style scoped>
-.qf-plan__sheet .qf-plan__heading { margin-bottom: 0; }
-.qf-plan__error { color: var(--qf-negative); font-size: 12px; }
+.qf-plan__heading.qf-plan__heading { margin-bottom: 0; }
+.qf-plan__error { margin: 0; color: var(--qf-negative); font-size: 12px; }
 .qf-plan {
-  height: 100%;
-  min-height: 0;
-}
-
-.qf-plan__scroll {
-  height: 100%;
-  overflow-y: auto;
-}
-
-.qf-plan__sheet {
   display: flex;
   flex-direction: column;
-  gap: 26px;
-  width: min(820px, 100%);
-  margin: 0 auto;
-  padding: 20px 18px 32px;
+  gap: var(--qss-gap);
+  height: 100%;
+  min-height: 0;
+  padding: var(--qss-page-edge);
+  overflow-y: auto;
+  container-type: inline-size;
+}
+
+/* The columns take the height; each scrolls its own rows, the page does not scroll. */
+.qf-plan__cols {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--qss-gap);
 }
 
 .qf-plan__foot {
+  flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 16px 18px;
+  gap: var(--qss-gap);
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
   border: 1px solid var(--qf-border);
-  border-radius: var(--qf-radius-lg);
+  border-radius: var(--qss-panel-radius);
   background: var(--qf-bg-raised);
+}
+
+/* A row needs about 400px or its name input collapses: two columns next, income above saving. */
+@container (max-width: 1180px) {
+  .qf-plan__cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .qf-plan__cols > :nth-child(3) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
+/* One column: one after the other, and the page scrolls. */
+@container (max-width: 780px) {
+  .qf-plan__cols {
+    flex: none;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+  .qf-plan__cols > :nth-child(3) {
+    grid-column: auto;
+    grid-row: auto;
+  }
 }
 
 .qf-plan__foot.is-over {
@@ -117,17 +145,15 @@ const money = (cents: number) => formatCents(cents, app.settings.currency)
 }
 
 .qf-plan__leftover-label {
-  color: var(--qf-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--qf-text-secondary);
+  font-size: var(--qss-text-label);
+  font-weight: 500;
 }
 
 .qf-plan__leftover strong {
   color: var(--qf-flow-leftover);
-  font-size: 28px;
-  font-weight: 700;
+  font-size: var(--qss-text-metric);
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
@@ -143,8 +169,7 @@ const money = (cents: number) => formatCents(cents, app.settings.currency)
 .qf-plan__note {
   margin: 0;
   color: var(--qf-text-muted);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   line-height: 1.5;
-  text-align: right;
 }
 </style>

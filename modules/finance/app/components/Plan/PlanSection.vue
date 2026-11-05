@@ -209,7 +209,7 @@ async function addRow() {
 </template>
 
 <style scoped>
-.qf-pl__fund { display: flex; flex-wrap: wrap; gap: 12px; padding: 0 6px 4px 25px; }
+.qf-pl__fund { display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 0 6px 4px 25px; }
 .qf-pl__fund .qf-pl__fund-link { padding-block: 1px; }
 .qf-pl__fund-link { border: 0; background: transparent; padding: 3px 0; color: var(--qf-text-muted); font-size: 11px; cursor: pointer; text-align: left; }
 .qf-pl__fund-link:hover { color: var(--qf-text); }
@@ -217,17 +217,21 @@ async function addRow() {
 .qf-pl {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--qss-gap-tight);
+  min-height: 0;
+  padding: var(--qss-panel-pad);
+  border: 1px solid var(--qss-border);
+  border-radius: var(--qss-panel-radius);
+  background: var(--qss-bg-raised);
   container-type: inline-size;
 }
 
 .qf-pl__head {
+  flex-shrink: 0;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--qf-border-subtle);
+  gap: var(--qss-gap);
 }
 
 .qf-pl__title {
@@ -240,10 +244,8 @@ async function addRow() {
 .qf-pl__title h2 {
   margin: 0;
   color: var(--qf-text);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: var(--qss-text-section);
+  font-weight: 600;
 }
 
 .qf-pl__hint {
@@ -253,14 +255,23 @@ async function addRow() {
 
 .qf-pl__total {
   color: var(--qf-text);
-  font-size: 15px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
 }
 
+/* A long list scrolls inside its own panel. */
 .qf-pl__rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.qf-pl__rows > * {
+  flex-shrink: 0;
 }
 
 .qf-pl__row {
@@ -323,12 +334,13 @@ async function addRow() {
 }
 
 .qf-pl__amount {
-  flex: 0 0 118px;
+  flex: 0 0 84px;
   min-width: 0;
+  text-align: right;
 }
 
 .qf-pl__every {
-  flex: 0 0 118px;
+  flex: 0 0 96px;
   min-width: 0;
   border-color: transparent;
   background: transparent;
@@ -343,10 +355,15 @@ async function addRow() {
   color: var(--qf-text);
 }
 
+/* Only a line that is not paid monthly has a per-month figure. */
 .qf-pl__monthly {
-  flex: 0 0 78px;
+  flex: 0 0 auto;
   color: var(--qf-text-muted);
   font-size: 11px;
+}
+
+.qf-pl__monthly:empty {
+  display: none;
 }
 
 .qf-pl__more,
@@ -433,10 +450,9 @@ async function addRow() {
   color: var(--qf-text);
 }
 
-@container (max-width: 600px) {
+@container (max-width: 400px) {
   .qf-pl__monthly { display: none; }
-  .qf-pl__amount { flex-basis: 96px; }
-  .qf-pl__every { flex-basis: 108px; }
+  .qf-pl__every { flex-basis: 84px; }
   .qf-pl__title { flex-wrap: wrap; gap: 4px 10px; }
 }
 </style>

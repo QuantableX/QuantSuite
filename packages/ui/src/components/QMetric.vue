@@ -25,15 +25,15 @@ defineProps<{
 }
 
 .qmt-k {
-  font-size: 9.5px;
+  font-size: var(--qss-text-meta);
   color: var(--qss-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
 }
 
 .qmt-v {
-  margin-top: 2px;
-  font: 500 13.5px/18px var(--qss-font-mono);
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -.01em;
   font-variant-numeric: tabular-nums;
   color: var(--qss-text);
   overflow: hidden;
