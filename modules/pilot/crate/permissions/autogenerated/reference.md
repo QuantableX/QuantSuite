@@ -174,6 +174,9 @@ Default permissions for the pilot module.
 - `allow-pilot-progress-pin`
 - `allow-pilot-provider-update`
 - `allow-pilot-gh-status`
+- `allow-pilot-gl-status`
+- `allow-pilot-stack-plan`
+- `allow-pilot-stack-update`
 - `allow-pilot-diagnostics`
 - `allow-pilot-export-logs`
 - `allow-pilot-attention-badge`
@@ -2616,6 +2619,32 @@ Denies the pilot_git_status command without any pre-configured scope.
 <tr>
 <td>
 
+`pilot:allow-pilot-gl-status`
+
+</td>
+<td>
+
+Enables the pilot_gl_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-gl-status`
+
+</td>
+<td>
+
+Denies the pilot_gl_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `pilot:allow-pilot-guide-get`
 
 </td>
@@ -4377,6 +4406,58 @@ Enables the pilot_skills command without any pre-configured scope.
 <td>
 
 Denies the pilot_skills command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-stack-plan`
+
+</td>
+<td>
+
+Enables the pilot_stack_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-stack-plan`
+
+</td>
+<td>
+
+Denies the pilot_stack_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-stack-update`
+
+</td>
+<td>
+
+Enables the pilot_stack_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-stack-update`
+
+</td>
+<td>
+
+Denies the pilot_stack_update command without any pre-configured scope.
 
 </td>
 </tr>

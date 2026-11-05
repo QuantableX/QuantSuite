@@ -11,7 +11,8 @@ import { usePilotStore } from '#pilot/stores/pilot'
 import { useGitStore } from '#pilot/stores/git'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useAppStore } from '#pilot/stores/app'
-import type { GhIssue, GhPull, GhRef, GhRepo, GhRepoRow } from '#pilot/types'
+import { hostWords } from '#pilot/utils/github'
+import type { GhIssue, GhPull, GhRef, GhRepo, GhRepoRow, StackOutcome, StackPlan } from '#pilot/types'
 
 const FRESH_MS = 60_000
 
@@ -39,6 +40,9 @@ export const useGithubStore = defineStore('pilot/github', {
     /** `gh` installed and signed in; null until checked. */
     signedIn: null as boolean | null,
     statusError: '',
+    /** The same for `glab` (round 4, card 6). */
+    gitlabSignedIn: null as boolean | null,
+    gitlabError: '',
     /** Thread → its GitHub repository (null: not on GitHub). */
     repoOf: {} as Record<string, GhRepo | null>,
     /** `owner/name` → the `#` menu's recent rows. */
@@ -56,14 +60,32 @@ export const useGithubStore = defineStore('pilot/github', {
     on(): boolean {
       return usePilotStore().settings?.github !== false
     },
-    /** The GitHub view and the `#` menu exist. */
+    /** GitHub's own: the `#` menu. */
     available(): boolean {
       return this.on && this.signedIn === true
+    },
+    gitlabOn(): boolean {
+      return usePilotStore().settings?.gitlab !== false
+    },
+    gitlabAvailable(): boolean {
+      return this.gitlabOn && this.gitlabSignedIn === true
+    },
+    /** The view of pull and merge requests exists when either host can answer. */
+    viewAvailable(): boolean {
+      return this.available || this.gitlabAvailable
+    },
+    viewLabel(): string {
+      if (this.available && this.gitlabAvailable) return 'GitHub · GitLab'
+      return this.gitlabAvailable ? 'GitLab' : 'GitHub'
     },
   },
 
   actions: {
     async loadStatus() {
+      await Promise.all([this.loadGithubStatus(), this.loadGitlabStatus()])
+    },
+
+    async loadGithubStatus() {
       if (!this.on) {
         this.signedIn = false
         return
@@ -75,6 +97,21 @@ export const useGithubStore = defineStore('pilot/github', {
       } catch (e) {
         this.signedIn = false
         this.statusError = e instanceof Error ? e.message : String(e)
+      }
+    },
+
+    async loadGitlabStatus() {
+      if (!this.gitlabOn) {
+        this.gitlabSignedIn = false
+        return
+      }
+      try {
+        await pilot('plugin:pilot|pilot_gl_status')
+        this.gitlabSignedIn = true
+        this.gitlabError = ''
+      } catch (e) {
+        this.gitlabSignedIn = false
+        this.gitlabError = e instanceof Error ? e.message : String(e)
       }
     },
 
@@ -164,6 +201,18 @@ export const useGithubStore = defineStore('pilot/github', {
       return done
     },
 
+    /** What updating a chain would do (round 4, card 6). */
+    stackPlan(contextId: string, root: number): Promise<StackPlan | null> {
+      return pilot<StackPlan>('plugin:pilot|pilot_stack_plan', { contextId, root })
+    },
+
+    /** Runs the plan that was shown; refused when it would now do something else. */
+    async stackUpdate(contextId: string, root: number, planId: string): Promise<StackOutcome | null> {
+      const out = await pilot<StackOutcome>('plugin:pilot|pilot_stack_update', { contextId, root, planId })
+      await this.loadPulls(contextId, true)
+      return out
+    },
+
     /**
      * A thread for a pull request or issue: in the workspace (a worktree for
      * work on a branch), linked to the item, then either sent at once or left
@@ -176,7 +225,8 @@ export const useGithubStore = defineStore('pilot/github', {
       opts: { send: boolean; worktree: boolean; prefill?: (threadId: string, text: string) => void }
     ): Promise<string | null> {
       const store = usePilotStore()
-      const meta = await store.createThread({ contextId, title: `#${item.number} ${item.title}`.slice(0, 60), workspaceMode: opts.worktree ? 'worktree' : undefined })
+      const sign = item.kind === 'pr' ? hostWords(this.repos.find((r) => r.contextId === contextId)?.host).sign : '#'
+      const meta = await store.createThread({ contextId, title: `${sign}${item.number} ${item.title}`.slice(0, 60), workspaceMode: opts.worktree ? 'worktree' : undefined })
       if (!meta) return null
       await pilot('plugin:pilot|pilot_gh_link', { id: meta.id, kind: item.kind, number: item.number, url: item.url, title: item.title, itemState: item.state }).catch(() => null)
       await useGitStore().loadLinks()

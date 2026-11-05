@@ -38,7 +38,9 @@ mod github;
 mod guides;
 mod import;
 mod lifecycle;
+mod gitlab;
 mod gitops;
+mod hosts;
 mod notify;
 mod phone;
 mod pi;
@@ -53,6 +55,7 @@ mod schedules;
 mod settings;
 mod shell;
 mod skills;
+mod stacks;
 mod signals;
 mod terminals;
 mod threads;
@@ -261,6 +264,7 @@ fn pilot_settings_set(state: State<'_, PilotState>, settings: Settings) -> Resul
     settings::write(&state.data_dir, &settings)?;
     agent_icons::prune(&state.data_dir, &custom_ids(&settings));
     github::set_enabled(settings.github);
+    gitlab::set_enabled(settings.gitlab);
     *lock(&state.settings) = settings.clone();
     Ok(settings)
 }
@@ -848,6 +852,7 @@ pub fn init() -> TauriPlugin<Wry> {
             let db = Arc::new(Database::open(&data_dir.join("pilot.db"))?);
             let settings = settings::read(&data_dir);
             github::set_enabled(settings.github);
+            gitlab::set_enabled(settings.gitlab);
 
             let sink: Sink = {
                 let app = app.clone();
@@ -1087,9 +1092,12 @@ pub fn init() -> TauriPlugin<Wry> {
             github::pilot_gh_repo,
             github::pilot_gh_refs,
             github::pilot_gh_repos,
-            github::pilot_gh_pulls,
-            github::pilot_gh_issues,
-            github::pilot_gh_merge,
+            hosts::pilot_gh_pulls,
+            hosts::pilot_gh_issues,
+            hosts::pilot_gh_merge,
+            hosts::pilot_stack_plan,
+            hosts::pilot_stack_update,
+            hosts::pilot_gl_status,
             github::pilot_gh_link,
             threads::pilot_files_list,
             threads::pilot_file_read,

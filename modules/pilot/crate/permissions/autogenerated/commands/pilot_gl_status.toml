@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-gl-status"
+description = "Enables the pilot_gl_status command without any pre-configured scope."
+commands.allow = ["pilot_gl_status"]
+
+[[permission]]
+identifier = "deny-pilot-gl-status"
+description = "Denies the pilot_gl_status command without any pre-configured scope."
+commands.deny = ["pilot_gl_status"]

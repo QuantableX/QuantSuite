@@ -1987,16 +1987,18 @@ pub fn pilot_pr_refresh(state: State<'_, PilotState>, id: String, force: Option<
     let meta = state.db.get_session(&id).map_err(|e| e.to_string())?.ok_or("unknown thread")?;
     let force = force.unwrap_or(false);
     let t = now();
-    if !github::enabled() {
-        return state.db.links(Some(&id)).map_err(|e| e.to_string());
-    }
     for mut l in state.db.links(Some(&id)).map_err(|e| e.to_string())? {
         let live = matches!(l.state.as_str(), "open" | "draft");
         if !matches!(l.kind.as_str(), "pr" | "issue") || !(force || (live && t - l.checked_at > 5 * 60 * 1000)) {
             continue;
         }
+        // Each host's links ask its own CLI, and only while it is turned on.
+        let on_gitlab = crate::gitlab::parse_item_url(&l.url).is_some();
+        if !(if on_gitlab { crate::gitlab::enabled() } else { github::enabled() }) {
+            continue;
+        }
         // One question per item for all threads that link it (parity 10).
-        let fresh = github::shared_state(&l.url, || if l.kind == "issue" { github::issue_state(Path::new(&meta.cwd), &l.url) } else { gitops::pr_view(Path::new(&meta.cwd), &l.url) });
+        let fresh = github::shared_state(&l.url, || if on_gitlab { crate::gitlab::item_state(Path::new(&meta.cwd), &l.url) } else if l.kind == "issue" { github::issue_state(Path::new(&meta.cwd), &l.url) } else { gitops::pr_view(Path::new(&meta.cwd), &l.url) });
         if let Ok((title, st)) = fresh {
             l.title = title;
             l.state = st;

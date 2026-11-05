@@ -117,7 +117,7 @@ useTauriEvent<{ id: string; state: string }>('console-session', (payload) => {
 
 // Whether GitHub is there: the GitHub view's toggle and the `#` menu (card 23).
 const github = useGithubStore()
-watch(() => store.settings?.github, () => void github.loadStatus(), { immediate: true })
+watch(() => [store.settings?.github, store.settings?.gitlab], () => void github.loadStatus(), { immediate: true })
 onMounted(() => {
   if (!inActiveKeepAliveTree()) return
   void store.load()

@@ -14,6 +14,8 @@ const store = usePilotStore()
 const github = useGithubStore()
 const gh = ref<{ ok: boolean; text: string } | null>(null)
 const checking = ref(false)
+const gl = ref<{ ok: boolean; text: string } | null>(null)
+const checkingGl = ref(false)
 const commitStyle = ref<'repository' | 'standard'>('repository')
 const notice = ref('')
 
@@ -32,10 +34,26 @@ async function check() {
     checking.value = false
   }
 }
+async function checkGitlab() {
+  if (store.settings?.gitlab === false) {
+    gl.value = null
+    return
+  }
+  checkingGl.value = true
+  try {
+    await pilot('plugin:pilot|pilot_gl_status')
+    gl.value = { ok: true, text: 'GitLab CLI signed in — merge requests, issues and Browse work for workspaces on GitLab.' }
+  } catch (e) {
+    gl.value = { ok: false, text: e instanceof Error ? e.message : String(e) }
+  } finally {
+    checkingGl.value = false
+  }
+}
 onMounted(async () => {
   if (!store.settings) await store.loadSettings()
   commitStyle.value = store.settings?.commitStyle ?? 'repository'
   void check()
+  void checkGitlab()
 })
 watch(() => store.settings?.commitStyle, (v) => v && (commitStyle.value = v))
 
@@ -44,6 +62,13 @@ async function setGithub(on: boolean) {
   github.repoOf = {}
   await github.loadStatus()
   void check()
+  notice.value = 'Saved.'
+}
+
+async function setGitlab(on: boolean) {
+  await store.saveSettings({ gitlab: on }, { quiet: true })
+  await github.loadStatus()
+  void checkGitlab()
   notice.value = 'Saved.'
 }
 
@@ -66,6 +91,17 @@ async function saveStyle() {
       <button class="qp-btn qp-btn-sm" :disabled="checking" @click="check">{{ checking ? 'Checking…' : 'Check again' }}</button>
     </div>
     <p v-if="store.settings?.github !== false && gh && !gh.ok" class="qp-settings-desc">Run <code>gh auth login</code> in a terminal (the drawer's works), then check again.</p>
+
+    <h3 class="qp-settings-title">GitLab</h3>
+    <label class="qp-check" data-gitlab-switch>
+      <input type="checkbox" :checked="store.settings?.gitlab !== false" @change="setGitlab(($event.target as HTMLInputElement).checked)" />
+      <span>Use GitLab <em>— merge requests, issues and Browse for workspaces on GitLab, through the signed-in <code>glab</code>; off, no <code>glab</code> process runs</em></span>
+    </label>
+    <div v-if="store.settings?.gitlab !== false" class="qp-gh" :class="{ ok: gl?.ok, bad: gl && !gl.ok }" data-gitlab-status>
+      <span class="qp-dot" />
+      <span>{{ checkingGl && !gl ? 'Checking the GitLab CLI…' : gl?.text }}</span>
+      <button class="qp-btn qp-btn-sm" :disabled="checkingGl" @click="checkGitlab">{{ checkingGl ? 'Checking…' : 'Check again' }}</button>
+    </div>
 
     <h3 class="qp-settings-title">Commit messages</h3>
     <label class="qp-settings-field">

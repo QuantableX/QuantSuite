@@ -224,6 +224,8 @@ export interface PilotSettings {
   projects: Record<string, ProjectPrefs>
   /** GitHub through `gh` (card 23); off = no `gh` process at all. */
   github?: boolean
+  /** GitLab through `glab` (round 4, card 6). */
+  gitlab?: boolean
   /** While recording, threads with one of these tags are hidden (round 2, card 12). */
   hideTagsWhileRecording?: string[]
   /** Crews (round 2, card 07): workers at once, a worker's time limit, own worktrees. */
@@ -246,6 +248,9 @@ export interface GhRepoRow {
   path: string
   repo: GhRepo
   url: string
+  /** Which host its `origin` is on (round 4, card 6). */
+  host: 'github' | 'gitlab'
+  domain: string
 }
 
 /** A row of the composer's `#` menu. */
@@ -272,6 +277,11 @@ export interface GhPull {
   state: 'open' | 'draft'
   author: string
   branch: string
+  /** The branch it goes into. */
+  base: string
+  headOid: string
+  /** From a fork: not ours to rebase. */
+  foreign: boolean
   review: '' | 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED'
   checks: GhChecks
   additions: number
@@ -280,6 +290,33 @@ export interface GhPull {
   updatedAt: string
   /** Checks pass, approved, merges cleanly. */
   ready: boolean
+  /** What stands in the way, where the host says it in one word (GitLab). */
+  note: string
+  /** Its place in a chain (round 4, card 6). */
+  stack: StackPlace | null
+}
+
+export interface StackPlace {
+  root: number
+  depth: number
+  size: number
+  first: boolean
+}
+
+/** What updating a chain would do, shown before anything does. */
+export interface StackPlan {
+  id: string
+  root: number
+  steps: { kind: 'rebase' | 'push' | 'retarget'; text: string; command: string }[]
+  blocked: string | null
+}
+
+export interface StackOutcome {
+  ok: boolean
+  message: string
+  steps: { text: string; status: 'done' | 'failed' | 'skipped' | 'dropped'; detail: string }[]
+  conflict: string[]
+  notes: string[]
 }
 
 export interface GhIssue {

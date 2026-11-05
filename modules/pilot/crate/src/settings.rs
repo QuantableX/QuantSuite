@@ -329,6 +329,8 @@ pub struct Settings {
     pub projects: BTreeMap<String, ProjectPrefs>,
     /// GitHub through `gh` (card 23); off = no `gh` process at all.
     pub github: bool,
+    /// GitLab through `glab` (round 4, card 6); off = no `glab` process at all.
+    pub gitlab: bool,
     /// Settings → Storage (parity 19): cleanup rules, all off by default.
     pub storage: crate::db::StoragePolicy,
     /// What the user chose last; new threads start with it (round 2, card 03).
@@ -380,6 +382,7 @@ impl Default for Settings {
             text_size: "default".into(),
             panel_motion_ms: 160,
             github: true,
+            gitlab: true,
             storage: crate::db::StoragePolicy::default(),
             render_math: true,
             projects: BTreeMap::new(),
