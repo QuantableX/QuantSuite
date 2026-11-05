@@ -130,7 +130,7 @@ watch(
 </script>
 
 <template>
-  <div ref="scrollEl" class="qh-grid">
+  <div ref="scrollEl" class="qh-grid" :class="{ 'qh-grid--month': app.grouping === 'month' }">
     <div v-if="habits.habits.length" class="qh-grid__inner">
       <div v-if="app.grouping === 'month'" class="qh-grid__monthnav">
         <button class="qh-grid__mbtn" title="Previous month" @click="prevMonth">‹</button>
@@ -207,6 +207,26 @@ watch(
   width: min(880px, 100%);
   margin: 0 auto;
   padding: 16px 24px 32px;
+}
+
+/* A month fits the page: its rows share the height instead of scrolling. In a window too short
+   for that they stop at a readable height and the sheet scrolls after all. */
+.qh-grid--month .qh-grid__inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-block: 8px;
+}
+
+.qh-grid--month .qh-grid__monthnav {
+  flex-shrink: 0;
+}
+
+.qh-grid--month .qh-grid__row {
+  flex: 1 1 0;
+  min-height: 19px;
+  max-height: 34.5px;
+  padding-block: 0;
 }
 
 /* One month at a time: ‹ [ September 2026 ] › */
