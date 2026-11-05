@@ -171,7 +171,7 @@ onMounted(() => {
 .qp-ticket .qp-ticket-sides--manage { grid-template-columns: 1fr 1fr 1.4fr; }
 .qp-ticket::backdrop { background: #0009; }.qp-ticket form, .qp-ticket fieldset { display: flex; flex-direction: column; gap: 10px; }.qp-ticket fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .qp-ticket header, .qp-ticket footer, .qp-ticket-amount-head, .qp-ticket-portions, .qp-ticket-preview > div, .qp-ticket-picker-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.qp-ticket h2 { margin: 0; font-size: var(--qss-text-title); font-weight: 600; overflow-wrap: anywhere; }.qp-ticket header > div { min-width: 0; overflow-wrap: anywhere; }.qp-ticket header button { flex-shrink: 0; }
+.qp-ticket h2 { margin: 0; font-size: 19px; font-weight: 600; overflow-wrap: anywhere; }.qp-ticket header > div { min-width: 0; overflow-wrap: anywhere; }.qp-ticket header button { flex-shrink: 0; }
 .qp-ticket h3 { font-size: 11px; font-weight: 500; color: var(--text-secondary); margin: 8px 0; }
 .qp-ticket label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-secondary); }
 .qp-ticket input, .qp-ticket textarea { width: 100%; min-width: 0; padding: 9px 10px; color: var(--text-primary); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
@@ -179,7 +179,7 @@ onMounted(() => {
 .qp-ticket small, .qp-ticket p { font-size: 10px; color: var(--text-secondary); line-height: 1.5; margin: 0; }.qp-ticket small { display: block; }
 .qp-ticket-sides, .qp-ticket-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }.qp-ticket-sides button[aria-pressed='true'] { border-color: var(--accent); background: var(--surface-3); font-weight: 600; }
 .qp-ticket-amount-head { margin-bottom: -8px; }.qp-ticket-amount-head button { padding: 3px 7px; font-size: 10px; background: transparent; border-color: transparent; }.qp-ticket-amount-head button[aria-pressed='true'] { background: var(--surface-3); }
-.qp-ticket .qp-ticket-amount { font-size: var(--qss-text-metric); padding: 12px; font-variant-numeric: tabular-nums; }.qp-ticket-portions { gap: 4px; margin-top: -6px; }.qp-ticket-portions span { flex: 1; font-size: 10px; color: var(--text-secondary); min-width: 0; overflow-wrap: anywhere; }.qp-ticket-portions button { padding: 4px 7px; font-size: 10px; }
+.qp-ticket .qp-ticket-amount { font-size: 26px; padding: 12px; font-variant-numeric: tabular-nums; }.qp-ticket-portions { gap: 4px; margin-top: -6px; }.qp-ticket-portions span { flex: 1; font-size: 10px; color: var(--text-secondary); min-width: 0; overflow-wrap: anywhere; }.qp-ticket-portions button { padding: 4px 7px; font-size: 10px; }
 .qp-ticket-preview { display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 12px; font-size: 11px; }.qp-ticket-preview span { color: var(--text-secondary); }.qp-ticket-preview strong { font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; min-width: 0; }
 .qp-ticket-details summary { cursor: pointer; font-size: 11px; color: var(--text-secondary); }.qp-ticket-details > div, .qp-ticket-details > label { margin-top: 12px; }
 .qp-ticket-funding > button { padding: 0; background: transparent; border: 0; font-size: 10px; color: var(--text-secondary); }.qp-ticket-funding > div { display: flex; flex-direction: column; gap: 8px; padding: 12px; margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; }

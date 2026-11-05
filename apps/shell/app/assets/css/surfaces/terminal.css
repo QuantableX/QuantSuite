@@ -1,1 +1,9 @@
-/* QuantTerminal reads the shared density tokens from its own pages and stylesheet. */
+/* Trade journal and Dojo use the old page title, the same line as Metrics; their pages read the shared density from the module stylesheet. */
+[data-module='terminal'] {
+  --qss-page-title: 27px;
+  --qss-page-title-weight: 500;
+  --qss-page-title-tracking: -0.7px;
+}
+
+[data-module='terminal'] :is(.metrics-shell, .metrics-page) { --surface-2: var(--qss-bg-raised); }
+[data-module='terminal'] .metric-card.metric-card { border-radius: 14px; }

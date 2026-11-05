@@ -166,7 +166,7 @@ async function submit() {
 .qp-editor.qp-editor--embedded footer { bottom: -22px; }
 .qp-editor form { display: flex; flex-direction: column; gap: 16px; }
 .qp-editor header, .qp-editor footer, .qp-editor__paging { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.qp-editor h2 { font-size: var(--qss-text-title); font-weight: 600; margin: 0; }
+.qp-editor h2 { font-size: 18px; font-weight: 600; margin: 0; }
 .qp-editor label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-secondary); }
 .qp-editor input, .qp-editor select, .qp-editor textarea { width: 100%; min-width: 0; padding: 8px 10px; color: var(--text-primary); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
 .qp-editor button { padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text-primary); cursor: pointer; font-size: 12px; }

@@ -76,7 +76,7 @@ const pct = (v: number | null) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.t
 
 <template>
   <aside class="score-context">
-    <div class="context-heading"><Info :size="13" /><span>Read the score</span></div>
+    <div class="context-heading"><Info :size="13" /><span>READ THE SCORE</span></div>
     <div class="score-reading">
       <strong>{{ formatValue(latest?.value, binding.unit) }}</strong
       ><span>{{ binding.unit }}</span>
@@ -98,7 +98,7 @@ const pct = (v: number | null) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.t
       </div>
       <div class="percentile-track"><i :style="{ width: `${rank}%` }" /></div>
     </div>
-    <div class="outcomes-heading"><span>After similar scores</span></div>
+    <div class="outcomes-heading"><span>AFTER SIMILAR SCORES</span></div>
     <div class="score-range">
       <label
         >From<input
@@ -175,7 +175,7 @@ const pct = (v: number | null) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.t
 
 <style scoped>
 .score-context {
-  padding: var(--qss-panel-pad);
+  padding: 12px 14px;
   min-height: 0;
   overflow: visible;
   align-self: start;
@@ -189,8 +189,9 @@ const pct = (v: number | null) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.t
   align-items: center;
   gap: 7px;
   color: var(--text-secondary);
-  font-size: var(--qss-text-section);
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.09em;
 }
 .score-reading {
   display: flex;
@@ -199,12 +200,11 @@ const pct = (v: number | null) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.t
   margin: 8px 0 5px;
 }
 .score-reading strong {
-  font-size: var(--qss-text-metric);
+  font-size: 32px;
   line-height: 1;
   font-weight: 600;
   font-family: var(--qss-font-mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -1px;
 }
 .score-reading span {
   font-size: 12px;
@@ -248,7 +248,7 @@ p {
 .percentile-track i {
   display: block;
   height: 100%;
-  background: var(--text-secondary);
+  background: #70b5e8;
   border-radius: 3px;
 }
 .outcomes-heading {
@@ -277,7 +277,7 @@ p {
   background: var(--surface-0);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  border-radius: var(--qss-ctl-radius);
+  border-radius: 4px;
   font-family: var(--qss-font-mono);
   font-size: 11px;
 }
@@ -295,7 +295,6 @@ table {
   border-collapse: collapse;
   font-size: 12px;
   font-family: var(--qss-font-mono);
-  font-variant-numeric: tabular-nums;
 }
 th {
   color: var(--muted);
@@ -350,7 +349,7 @@ td:first-child {
 .method-dialog button {
   border: 0;
   background: transparent;
-  color: var(--text-primary);
+  color: #70b5e8;
   font-size: 11px;
   cursor: pointer;
   padding: 0;
@@ -375,5 +374,11 @@ td:first-child {
 }
 .method-dialog a {
   font-size: 12px;
+}
+@media (max-width: 1050px) {
+  .score-context {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
 }
 </style>
