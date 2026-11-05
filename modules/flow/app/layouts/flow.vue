@@ -34,7 +34,8 @@ const tabs = [
 <style scoped>
 .qflow-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--qss-text); }
 .qflow-surface { flex: 1; min-height: 0; }
-.qflow-tabs { display: flex; align-items: center; gap: 4px; padding: 0 16px; }
-.qflow-tabs a { padding: 5px 12px; border-radius: 6px; color: var(--qss-text-muted); font-size: 12px; text-decoration: none; white-space: nowrap; }
+.qflow-tabs { display: flex; align-items: center; gap: 6px; padding: 0 16px; }
+.qflow-tabs a { padding: 5px 12px; border: 1px solid transparent; border-radius: 6px; color: var(--qss-text-muted); font-size: 12px; text-decoration: none; white-space: nowrap; }
 .qflow-tabs a:hover, .qflow-tabs a.is-active { background: var(--qss-bg-card); color: var(--qss-text); }
+.qflow-tabs a.is-active { border-color: var(--qss-border); }
 </style>

@@ -52,12 +52,12 @@ const COLORS: CalendarColor[] = [
 
 <template>
   <div class="qp-set">
-    <div class="qp-set__card">
-      <header class="qp-set__head">
-        <h1>Settings</h1>
-        <span class="qp-set__sub">QuantFlow v{{ runtimeConfig.public.appVersion }}</span>
-      </header>
+    <header class="qp-set__head">
+      <h1>Settings</h1>
+      <span class="qp-set__sub">QuantFlow v{{ runtimeConfig.public.appVersion }}</span>
+    </header>
 
+    <div class="qp-set__panels">
       <section class="qp-set__section">
         <h2>Grid</h2>
         <div class="qp-set__grid">
@@ -100,7 +100,7 @@ const COLORS: CalendarColor[] = [
         </label>
       </section>
 
-      <section class="qp-set__section">
+      <section class="qp-set__section qp-set__section--calendars">
         <h2>Calendars</h2>
         <table>
           <tbody>
@@ -112,16 +112,18 @@ const COLORS: CalendarColor[] = [
                   @change="calendars.update(cal.id, { name: ($event.target as HTMLInputElement).value })"
                 />
               </td>
-              <td class="qp-set__swatches">
-                <button
-                  v-for="c in COLORS"
-                  :key="c"
-                  class="qp-dot qp-set__swatch"
-                  :data-color="c"
-                  :class="{ 'is-on': cal.color === c }"
-                  :aria-label="c"
-                  @click="calendars.update(cal.id, { color: c })"
-                />
+              <td class="qp-set__colors">
+                <div class="qp-set__swatches">
+                  <button
+                    v-for="c in COLORS"
+                    :key="c"
+                    class="qp-dot qp-set__swatch"
+                    :data-color="c"
+                    :class="{ 'is-on': cal.color === c }"
+                    :aria-label="c"
+                    @click="calendars.update(cal.id, { color: c })"
+                  />
+                </div>
               </td>
               <td class="qp-set__right">
                 <template v-if="confirmingDelete === cal.id">
@@ -136,7 +138,7 @@ const COLORS: CalendarColor[] = [
         </table>
       </section>
 
-      <section class="qp-set__section">
+      <section class="qp-set__section qp-set__section--data">
         <h2>Calendar data</h2>
         <p class="qp-set__hint">
           Back up your calendars, events and reminders.
@@ -151,77 +153,91 @@ const COLORS: CalendarColor[] = [
 
 <style scoped>
 .qp-set {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
   height: 100%;
-  padding: 28px;
+  min-height: 0;
+  padding: var(--qss-page-edge);
   overflow: auto;
   background: var(--qp-bg);
-}
-
-.qp-set__card {
-  max-width: 820px;
-  margin: 0 auto;
-  padding: 24px;
-  border: 1px solid var(--qp-border);
-  border-radius: var(--qp-radius-lg);
-  background: var(--qp-bg-raised);
+  container-type: inline-size;
 }
 
 .qp-set__head {
+  flex-shrink: 0;
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 20px;
+  gap: var(--qss-gap);
 }
 
 .qp-set__head h1 {
   margin: 0;
-  font-size: 21px;
-  font-weight: 700;
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  letter-spacing: -.01em;
 }
 
 .qp-set__sub {
-  color: var(--qp-text-muted);
-  font-size: 11px;
+  color: var(--qp-text-secondary);
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Three panels side by side: the calendar list gets the widest, its colours stay on one line. */
+.qp-set__panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: var(--qss-gap);
 }
 
 .qp-set__section {
-  padding: 18px 0;
-  border-top: 1px solid var(--qp-border-subtle);
+  min-width: 0;
+  padding: var(--qss-panel-pad);
+  border: 1px solid var(--qp-border-subtle);
+  border-radius: var(--qss-panel-radius);
+  background: var(--qp-bg-raised);
 }
 
 .qp-set__section h2 {
-  margin: 0 0 10px;
-  color: var(--qp-text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  margin: 0 0 var(--qss-gap-tight);
+  color: var(--qp-text);
+  font-size: var(--qss-text-section);
+  font-weight: 600;
 }
 
 .qp-set__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .qp-set__grid label {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .qp-set__label {
-  color: var(--qp-text-muted);
-  font-size: 11px;
+  color: var(--qp-text-secondary);
+  font-size: var(--qss-text-label);
+}
+
+.qp-set .qp-input,
+.qp-set .qp-select {
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
+  font-size: var(--qss-text-label);
 }
 
 .qp-set__check {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--qss-gap-tight);
+  margin-top: var(--qss-gap-tight);
   color: var(--qp-text-secondary);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
 }
 
 table {
@@ -229,16 +245,41 @@ table {
   border-collapse: collapse;
 }
 
+/* A calendar's row wraps its colours under the name when the panel is narrow. */
+tr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--qss-gap);
+  padding: 6px 0;
+  border-top: 1px solid var(--qp-border-subtle);
+}
+
+tr:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+tr:last-child {
+  padding-bottom: 0;
+}
+
 td {
-  padding: 7px 6px 7px 0;
-  border-bottom: 1px solid var(--qp-border-subtle);
-  vertical-align: middle;
+  padding: 0;
+}
+
+td:first-child {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.qp-set__colors {
+  flex: 0 0 auto;
 }
 
 .qp-set__swatches {
   display: flex;
   gap: 4px;
-  width: 190px;
 }
 
 .qp-set__swatch {
@@ -255,15 +296,24 @@ td {
 }
 
 .qp-set__right {
+  flex: 0 0 auto;
+  margin-left: auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
+}
+
+.qp-set .qp-btn {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--qss-text-label);
+  white-space: nowrap;
 }
 
 .qp-set__warn {
-  color: var(--qp-text-muted);
-  font-size: 11px;
+  color: var(--qp-text-secondary);
+  font-size: var(--qss-text-meta);
 }
 
 .qp-set__danger:hover {
@@ -272,16 +322,17 @@ td {
 }
 
 .qp-set__hint {
-  margin: 0 0 10px;
-  color: var(--qp-text-muted);
-  font-size: 12px;
+  margin: 0 0 var(--qss-gap-tight);
+  color: var(--qp-text-secondary);
+  font-size: var(--qss-text-label);
   line-height: 1.5;
 }
 
 .qp-set__ok,
 .qp-set__err {
-  margin: 8px 0 0;
-  font-size: 12px;
+  margin: var(--qss-gap-tight) 0 0;
+  font-size: var(--qss-text-label);
+  overflow-wrap: anywhere;
 }
 
 .qp-set__ok {
@@ -297,6 +348,22 @@ code {
   border-radius: 4px;
   background: var(--qp-bg-input);
   font-family: var(--qss-font-mono, monospace);
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
+}
+
+/* Two columns, with the data group running under both. */
+@container (max-width: 1100px) {
+  .qp-set__panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .qp-set__section--data {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (max-width: 640px) {
+  .qp-set__panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>
