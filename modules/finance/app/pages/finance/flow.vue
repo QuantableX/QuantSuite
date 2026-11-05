@@ -20,8 +20,7 @@ const money = (cents: number) => formatCents(cents, app.settings.currency)
 
 <template>
   <div class="qf-flow">
-    <div class="qf-flow__top">
-      <div class="qf-flow__stats">
+    <div class="qf-flow__stats">
       <QMetric label="Income" :value="money(plan.summary.incomeCents)" tone="up" />
       <QMetric label="Saving" :value="money(plan.summary.savingCents)" />
       <QMetric label="Fixed" :value="money(plan.summary.expenseCents)" tone="down" />
@@ -40,14 +39,13 @@ const money = (cents: number) => formatCents(cents, app.settings.currency)
         label="Savings incl. leftover"
         :value="`${plan.summary.savingsRate}%`"
       />
-      </div>
+    </div>
 
-      <div class="qf-flow__toolbar">
-        <span>Monthly budget</span>
-        <div class="qf-flow__switch" role="group" aria-label="Chart type">
-          <button type="button" :aria-pressed="app.flowChartMode !== 'pie'" @click="app.flowChartMode = 'sankey'">Sankey</button>
-          <button type="button" :aria-pressed="app.flowChartMode === 'pie'" @click="app.flowChartMode = 'pie'">Pie chart</button>
-        </div>
+    <div class="qf-flow__toolbar">
+      <span>Monthly budget</span>
+      <div class="qf-flow__switch" role="group" aria-label="Chart type">
+        <button type="button" :aria-pressed="app.flowChartMode !== 'pie'" @click="app.flowChartMode = 'sankey'">Sankey</button>
+        <button type="button" :aria-pressed="app.flowChartMode === 'pie'" @click="app.flowChartMode = 'pie'">Pie chart</button>
       </div>
     </div>
     <div class="qf-flow__chart" :class="{ 'qf-flow__chart--pie': app.flowChartMode === 'pie' }">
@@ -73,38 +71,30 @@ const money = (cents: number) => formatCents(cents, app.settings.currency)
 .qf-flow {
   display: flex;
   flex-direction: column;
-  gap: var(--qss-gap);
   height: 100%;
   min-height: 0;
-  padding: var(--qss-page-edge);
-}
-
-/* One row for the figures and the chart switch: the chart keeps the height. */
-.qf-flow__top {
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--qss-gap);
+  padding: 14px 18px 18px;
 }
 
 .qf-flow__stats {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--qss-gap);
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--qf-border-subtle);
 }
 
 .qf-flow__chart {
   flex: 1;
   min-height: 0;
+  padding-top: 8px;
 }
-.qf-flow__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--qss-gap); }
+.qf-flow__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 0; }
 .qf-flow__toolbar > span { font-size: 11px; color: var(--qf-text-muted); }
 .qf-flow__switch { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--qf-border-subtle); border-radius: var(--qf-radius); background: var(--qf-bg-raised); }
 .qf-flow__switch button { padding: 5px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--qf-text-secondary); font-size: 12px; cursor: pointer; }
 .qf-flow__switch button[aria-pressed='true'] { background: var(--qf-bg-hover); color: var(--qf-text); }
 .qf-flow__switch button:focus-visible { outline: 2px solid var(--qf-accent); outline-offset: 1px; }
-.qf-flow__chart--pie { overflow: auto; padding: var(--qss-panel-pad); border: 1px solid var(--qf-border-subtle); border-radius: var(--qss-panel-radius); background: var(--qf-bg-raised); }
+.qf-flow__chart--pie { overflow: auto; padding: 16px; border: 1px solid var(--qf-border-subtle); border-radius: var(--qf-radius-lg); background: var(--qf-bg-raised); }
 .qf-flow__deficit { margin: 0 0 16px; padding: 10px 12px; border-left: 3px solid var(--qf-negative); background: var(--qf-bg-card); color: var(--qf-text-secondary); font-size: 12px; }
 </style>
