@@ -326,6 +326,10 @@ function onCreated(_bot: unknown, started: boolean) {
   background: color-mix(in srgb, var(--qa-error) 6%, transparent);
 }
 
+.row--error td.cell-actions {
+  background: color-mix(in srgb, var(--qa-error) 6%, var(--qss-bg-raised));
+}
+
 .cell-name {
   min-width: 180px;
 }

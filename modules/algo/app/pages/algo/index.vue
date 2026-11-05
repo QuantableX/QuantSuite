@@ -500,6 +500,7 @@ onDeactivated(() => {
 .kv__label {
   color: var(--qa-text-muted);
   font-size: var(--qss-text-label);
+  white-space: nowrap;
 }
 
 .kv__value {
@@ -649,6 +650,25 @@ onDeactivated(() => {
 .empty-state {
   font-size: var(--qss-text-label);
   padding: var(--qss-gap-tight) 0;
+}
+
+/* Tighter before the counts have to go above their details. */
+@container algo-overview (max-width: 1000px) {
+  .dashboard__top {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 3fr);
+  }
+
+  .bots-glance {
+    column-gap: var(--qss-gap);
+  }
+
+  .stat-strip {
+    gap: var(--qss-gap);
+  }
+
+  .kv-grid {
+    column-gap: var(--qss-gap);
+  }
 }
 
 /* The counts go above their details before the details get cramped. */
