@@ -103,7 +103,7 @@ function openDay(day: Date) {
 
 .qp-mg__weekdays {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   border-bottom: 1px solid var(--qp-border);
 }
 
@@ -120,11 +120,12 @@ function openDay(day: Date) {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   grid-auto-rows: minmax(0, 1fr);
 }
 
 .qp-mg__cell {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;

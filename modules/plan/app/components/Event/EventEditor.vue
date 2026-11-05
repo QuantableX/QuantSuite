@@ -409,7 +409,7 @@ const COLORS: CalendarColor[] = ['slate', 'blue', 'green', 'amber', 'red', 'purp
 }
 
 .qp-ee__time {
-  flex: 0 1 96px;
+  flex: 0 1 112px;
   min-width: 0;
 }
 
