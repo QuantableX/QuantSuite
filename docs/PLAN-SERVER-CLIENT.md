@@ -1,6 +1,6 @@
 # QuantSuite server and client — one QuantSuite, used from every PC
 
-Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, cards 3 (pairing, mutual TLS), 4 (gateway), 5 (client mode) and 6 (over the internet) 2026-11-05 — see §6.3 and §6.3.1–6.3.9; the test from outside (§7.1) is yours. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
+Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, cards 3 (pairing, mutual TLS), 4 (gateway), 5 (client mode), 6 (over the internet) and 7 (developer modules decided: they stay on each PC) 2026-11-05 — see §6.3 and §6.3.1–6.3.10; the test from outside (§7.1) is yours. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
 
 ## In short
 
@@ -325,6 +325,20 @@ Tests: `npm run test:seam` (every manifest command routed per its placement, cor
 
 Tests: `cargo test -p qs-gateway` (parsing `tailscale status --json` — running, logged out, MagicDNS, online first; public and present addresses; the round trip after connecting). QA on this PC (Tailscale is not installed here): the guide shows "not installed" with the download button; a tailnet address that is not there gives the waiting message and switching back to 127.0.0.1 binds at once; the client showed "Connected to ROOT: 1.0 ms round trip · 1 reconnect". The test over a real tailnet is §7.1.
 
+### 6.3.10 Decided: the developer modules stay on each PC (card Server 7/7, 2026-11-05)
+
+Your workflow today: you code on this desktop with several agents (Claude Code, Codex, …); the repositories, their worktrees, the agents' sign-ins and QuantPilot's threads are on this PC. The server is for trading and your personal data. A laptop may join later, in a café.
+
+| Question | Options, with what happens | Decision |
+|---|---|---|
+| Memory vaults and kanban boards | **A — per PC** (as today). A Claude Code on the laptop writes a memory into the laptop's vault; the desktop's agents see it only after you move it (the migration bundle) or rewrite it. **B — one truth on the server**: every PC's QuantMCP passes `quantsuite.memory.*` and the kanban tools to the server. The laptop's agent writes, the desktop's agent reads it at once — but a card claimed on the laptop has its worktree in the laptop's checkout, which the desktop cannot open, and a vault's `base/` describes one PC's folder. **C — hybrid**: only the general vault and the General board on the server, the project vaults and boards per PC. | **A.** You code on one PC; B and C bring cross-PC claims and folder paths that point nowhere, for agents that today all run here. Revisit (C first) once you code on two PCs. |
+| QuantPilot | Threads run where the folders and the agent CLIs are. **Remote threads**: a client starts and steers a thread that runs on the server — the server would then hold your agents' sign-ins and run agents next to the trading. **Local only**. | **Local only.** The trading server runs no coding agents. |
+| Console | **A remote shell** on the server, Full role + server PIN, every session audited. **None.** | **None.** A shell is the widest door into the machine that trades. For server administration use Remote Desktop or Tailscale SSH over the tailnet (with Tailscale's own access rules). |
+| QuantCode / QuantCanvas | Edit server folders through the gateway's files, or local only. | **Local only.** The file browser and transfers (§6.5) cover imports and exports of the server-placed modules. |
+| Code index and worktrees | They follow the folders they index. | **Local**, with their folders. |
+
+Built: `scripts/remote-inventory.mjs` refuses (the manifest check fails) any `server` placement for pilot, canvas, console, mcp, memory and hud, and `npm run test:seam` checks that none of their commands is routed to a server. QuantMCP's port 3100 stays loopback-only on every PC (unchanged). In client mode these modules keep working on the PC you sit at (QA of card 5: QuantPilot worked through a server outage).
+
 ### 6.4 Gateway protocol
 
 WebSocket over TLS. Frames: `hello` (protocol version, device), `call` {id, cmd, args, idempotencyKey}, `result` {id, ok | error}, `event` {seq, topic, payload}, `resume` {lastSeq}, `cancel` {id}, binary chunks for files. Limits: frame size, timeouts per side-effect class, a rate limit per device.
@@ -392,7 +406,7 @@ Results (fill in after the run):
 | Server OS | Windows | Same build and sidecars; Linux needs the service-layer refactor |
 | Dispatch on the server | B: `Webview::on_message` with the app's invoke key (card 1, about 0.2 ms per async call on the mock runtime) | No Tauri patch, no JS hop; A needs the same hidden webview plus two WebView2 crossings |
 | Phase-1 modules on the server | Trading + personal data | The reason for a server is 24/7 trading and one truth for your data |
-| Developer modules | Local per PC in phase 1 | They work on the PC's own folders and agent CLIs |
+| Developer modules | Local per PC, also in phase 2 (card 7, §6.3.10); no remote console | They work on the PC's own folders and agent CLIs; you code on one PC; the trading server runs no shell for others |
 | Auth | Paired device keys + mutual TLS + server PIN for external actions | Passwords alone are guessable; a key on a revocable device is not |
 
 ## 10. Options — not planned unless you ask
