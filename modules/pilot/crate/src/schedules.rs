@@ -52,6 +52,18 @@ impl Default for Recurrence {
     }
 }
 
+/// What starts a schedule (round 4, card 3): its time rule, or an event.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Trigger {
+    #[default]
+    Time,
+    /// New issues, pull requests, pushes or failed CI runs of a repository.
+    Github { repo: String, events: Vec<String>, #[serde(default)] branch: String },
+    /// A signed POST to the listener.
+    Webhook,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Schedule {
@@ -66,6 +78,7 @@ pub struct Schedule {
     /// The agent account (round 3, card 02); "" = the default one.
     pub instance: String,
     pub recurrence: Recurrence,
+    pub trigger: Trigger,
     pub enabled: bool,
     /// `skip` | `once` — what a slot found late does.
     pub missed: String,
@@ -240,7 +253,7 @@ fn tick(app: &AppHandle) -> Option<i64> {
     let list = state.db.schedules().ok()?;
     let mut changed = false;
     let mut next: Option<i64> = None;
-    for s in list.iter().filter(|s| s.enabled) {
+    for s in list.iter().filter(|s| s.enabled && s.trigger == Trigger::Time) {
         let t = now();
         let since = s.last_slot.unwrap_or(s.created_at);
         if let Some(slot) = last_due(&s.recurrence, since, t, &Local) {
@@ -389,7 +402,7 @@ fn start(app: &AppHandle, state: &PilotState, s: &Schedule, manual: bool) -> Out
 
 fn with_status(state: &PilotState, mut s: Schedule) -> Schedule {
     let t = now();
-    s.next_due = if s.enabled { next_after(&s.recurrence, t.max(s.last_slot.unwrap_or(s.created_at)), &Local) } else { None };
+    s.next_due = if s.enabled && s.trigger == Trigger::Time { next_after(&s.recurrence, t.max(s.last_slot.unwrap_or(s.created_at)), &Local) } else { None };
     s.last_run = state.db.schedule_runs(&s.id, 1).ok().and_then(|r| r.into_iter().next());
     s
 }
@@ -422,7 +435,17 @@ pub(crate) fn save(state: &PilotState, mut s: Schedule) -> Result<Schedule, Stri
     if s.prompt.is_empty() {
         return Err("The prompt is empty.".into());
     }
-    validate(&s.recurrence)?;
+    let timed = s.trigger == Trigger::Time;
+    if timed {
+        validate(&s.recurrence)?;
+    } else {
+        crate::triggers::validate(&s.trigger)?;
+        // Event text comes from outside: unless the user chose otherwise, the
+        // agent can only read and propose. "Default" could be Full access.
+        if s.mode.trim().is_empty() {
+            s.mode = "plan".into();
+        }
+    }
     s.name = s.name.trim().to_string();
     if s.name.is_empty() {
         s.name = name_from(&s.prompt);
@@ -453,7 +476,11 @@ pub(crate) fn save(state: &PilotState, mut s: Schedule) -> Result<Schedule, Stri
             s.last_slot = if b.recurrence != s.recurrence || (s.enabled && !b.enabled) { Some(t) } else { b.last_slot };
         }
     }
-    if s.enabled && next_after(&s.recurrence, t, &Local).is_none() {
+    // A changed trigger, or one coming back on, starts from what exists now.
+    if !timed && before.as_ref().map_or(true, |b| b.trigger != s.trigger || (s.enabled && !b.enabled)) && !s.id.is_empty() {
+        state.db.trigger_forget(&s.id).map_err(|e| e.to_string())?;
+    }
+    if timed && s.enabled && next_after(&s.recurrence, t, &Local).is_none() {
         return Err("That time has passed — pick one in the future.".into());
     }
     s.updated_at = t;
@@ -479,6 +506,7 @@ pub fn pilot_schedule_set_enabled(app: AppHandle, state: State<'_, PilotState>, 
 #[tauri::command(async)]
 pub fn pilot_schedule_delete(app: AppHandle, state: State<'_, PilotState>, id: String) -> Result<(), String> {
     state.db.delete_schedule(&id).map_err(|e| e.to_string())?;
+    crate::triggers::forget(&id);
     changed(&app, &state);
     Ok(())
 }

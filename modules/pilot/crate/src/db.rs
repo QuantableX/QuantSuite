@@ -32,7 +32,7 @@ pub use storage::{log_run as log_storage_run, Category as StorageCategory, Clean
 /// 18: thread tags (round 2, card 12).
 /// 19: side chats name their main thread (round 2, card 10).
 /// 20: crews — tasks, members and their message log (round 2, card 07).
-pub const SCHEMA_VERSION: i64 = 26;
+pub const SCHEMA_VERSION: i64 = 27;
 
 #[path = "queue.rs"]
 mod queue;
@@ -613,6 +613,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     tx.execute_batch(phone_db::PHONE_TABLES)?;
     // Schema 26 (round 4, card 2): the Telegram bot's linked chat and offset.
     tx.execute_batch(telegram_db::TELEGRAM_TABLES)?;
+    // Schema 27 (round 4, card 3): what starts a schedule, and the events seen.
+    if !column_exists(&tx, "schedules", "trigger_rule")? {
+        tx.execute_batch("ALTER TABLE schedules ADD COLUMN trigger_rule TEXT NOT NULL DEFAULT '{\"kind\":\"time\"}';")?;
+    }
+    tx.execute_batch(schedules_db::TRIGGER_TABLES)?;
     if added_order {
         // Until the user drags, the order is the order of activity.
         tx.execute_batch("UPDATE threads SET sort_key = last_activity_at;")?;

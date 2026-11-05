@@ -158,6 +158,9 @@ Default permissions for the pilot module.
 - `allow-pilot-telegram-pair-cancel`
 - `allow-pilot-telegram-unlink`
 - `allow-pilot-telegram-forget-token`
+- `allow-pilot-triggers-status`
+- `allow-pilot-triggers-listen`
+- `allow-pilot-trigger-new-secret`
 - `allow-pilot-guide-get`
 - `allow-pilot-guide-write`
 - `allow-pilot-progress`
@@ -5201,6 +5204,84 @@ Enables the pilot_thread_update command without any pre-configured scope.
 <td>
 
 Denies the pilot_thread_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-trigger-new-secret`
+
+</td>
+<td>
+
+Enables the pilot_trigger_new_secret command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-trigger-new-secret`
+
+</td>
+<td>
+
+Denies the pilot_trigger_new_secret command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-triggers-listen`
+
+</td>
+<td>
+
+Enables the pilot_triggers_listen command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-triggers-listen`
+
+</td>
+<td>
+
+Denies the pilot_triggers_listen command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:allow-pilot-triggers-status`
+
+</td>
+<td>
+
+Enables the pilot_triggers_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pilot:deny-pilot-triggers-status`
+
+</td>
+<td>
+
+Denies the pilot_triggers_status command without any pre-configured scope.
 
 </td>
 </tr>

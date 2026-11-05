@@ -56,6 +56,7 @@ mod terminals;
 mod threads;
 mod telegram;
 mod tracking;
+mod triggers;
 mod usage;
 mod watch;
 
@@ -955,6 +956,8 @@ pub fn init() -> TauriPlugin<Wry> {
             phone::start_saved(app);
             app.manage(telegram::TelegramAppState::default());
             telegram::start_saved(app);
+            app.manage(triggers::TriggersState::default());
+            triggers::start_saved(app);
             tauri::async_runtime::spawn(threads::resume_scheduler(app.clone()));
             // Crews (round 2, card 07): workers the close interrupted are stalled; timeouts.
             if let Some(state) = app.try_state::<PilotState>() {
@@ -963,6 +966,7 @@ pub fn init() -> TauriPlugin<Wry> {
             tauri::async_runtime::spawn(crew::watchdog(app.clone()));
             // Scheduled prompts (round 3, card 03): one task, asleep until the next slot.
             tauri::async_runtime::spawn(schedules::scheduler(app.clone()));
+            tauri::async_runtime::spawn(triggers::poller(app.clone()));
             app.manage(browser::BrowserState::default());
 
             qs_core::tray::register_entry(
@@ -1130,6 +1134,9 @@ pub fn init() -> TauriPlugin<Wry> {
             telegram::pilot_telegram_pair_cancel,
             telegram::pilot_telegram_unlink,
             telegram::pilot_telegram_forget_token,
+            triggers::pilot_triggers_status,
+            triggers::pilot_triggers_listen,
+            triggers::pilot_trigger_new_secret,
             guides::pilot_guide_get,
             guides::pilot_guide_write,
             progress::pilot_progress,

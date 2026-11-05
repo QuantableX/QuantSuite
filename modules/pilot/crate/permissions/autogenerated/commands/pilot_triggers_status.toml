@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pilot-triggers-status"
+description = "Enables the pilot_triggers_status command without any pre-configured scope."
+commands.allow = ["pilot_triggers_status"]
+
+[[permission]]
+identifier = "deny-pilot-triggers-status"
+description = "Denies the pilot_triggers_status command without any pre-configured scope."
+commands.deny = ["pilot_triggers_status"]

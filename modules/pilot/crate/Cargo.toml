@@ -53,6 +53,8 @@ qs-gateway = { path = "../../../crates/qs-gateway" }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # The Telegram bot's token in memory (round 4, card 2).
 zeroize = "1"
+# Signed webhooks (round 4, card 3).
+hmac = "0.12"
 # The PTYs: one registry with the console, one output channel, one owner rule.
 tauri-plugin-console = { path = "../../console/crate" }
 # Worktrees: QuantMCP's implementation, never a second one (card 10).

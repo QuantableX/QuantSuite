@@ -68,6 +68,18 @@ pub fn run(program: &str, cwd: &Path, args: &[&str], timeout: Duration) -> Resul
     }
 }
 
+/// [`run`] without the cap, for output that means nothing unless it is whole:
+/// JSON from `gh` (a page of real issues is easily past the cap).
+pub fn run_whole(program: &str, cwd: &Path, args: &[&str], timeout: Duration) -> Result<String, String> {
+    let (ok, out, err) = crate::providers::run_capture_split(command(program, cwd, args), timeout)
+        .map_err(|e| format!("{program} {}: {e}", args.first().copied().unwrap_or_default()))?;
+    if ok {
+        Ok(out.trim_end().to_string())
+    } else {
+        Err(failure(&err, &out))
+    }
+}
+
 fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
     run("git", cwd, args, LOCAL)
 }
@@ -608,6 +620,22 @@ pub fn pr_view(cwd: &Path, url: &str) -> Result<(String, String), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Real output past the cap: `run` cuts it, `run_whole` does not.
+    #[test]
+    fn output_that_must_be_whole_is_not_cut() {
+        let dir = std::env::temp_dir().join(format!("qs-whole-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let big = "x".repeat(OUTPUT_CAP + 5000);
+        std::fs::write(dir.join("big.txt"), &big).unwrap();
+        run("git", &dir, &["init", "-q"], LOCAL).unwrap();
+        let id = run("git", &dir, &["hash-object", "-w", "big.txt"], LOCAL).unwrap();
+        let args = ["cat-file", "-p", id.as_str()];
+        assert!(run("git", &dir, &args, LOCAL).unwrap().len() < big.len(), "run still cuts");
+        assert_eq!(run_whole("git", &dir, &args, LOCAL).unwrap(), big);
+        assert!(run_whole("git", &dir, &["cat-file", "-p", "nope"], LOCAL).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn ai_credits_are_recognized_and_stripped() {

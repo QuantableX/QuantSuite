@@ -4,7 +4,7 @@
 //! run at most once, however often the engine wakes.
 
 use super::Database;
-use crate::schedules::{Recurrence, Schedule, ScheduleRun};
+use crate::schedules::{Recurrence, Schedule, ScheduleRun, Trigger};
 use rusqlite::{params, OptionalExtension, Row};
 
 pub(crate) const SCHEDULE_TABLES: &str = "
@@ -41,7 +41,18 @@ pub(crate) const SCHEDULE_TABLES: &str = "
     CREATE INDEX IF NOT EXISTS schedule_runs_at ON schedule_runs(schedule_id, at);
 ";
 
-const SCHEDULE_COLS: &str = "id, name, prompt, context_id, provider, model, effort, mode, instance, recurrence, enabled, missed, target, thread_id, last_slot, created_at, updated_at";
+/// Schema 27 (round 4, card 3): events already seen per trigger. The first look
+/// at a GitHub kind leaves a `baseline:` row.
+pub(crate) const TRIGGER_TABLES: &str = "
+    CREATE TABLE IF NOT EXISTS trigger_seen (
+        schedule_id TEXT NOT NULL,
+        key TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (schedule_id, key)
+    );
+";
+
+const SCHEDULE_COLS: &str = "id, name, prompt, context_id, provider, model, effort, mode, instance, recurrence, enabled, missed, target, thread_id, last_slot, created_at, updated_at, trigger_rule";
 const RUN_COLS: &str = "id, schedule_id, slot, at, status, thread_id, note, manual";
 
 fn schedule_row(r: &Row<'_>) -> rusqlite::Result<Schedule> {
@@ -65,6 +76,9 @@ fn schedule_row(r: &Row<'_>) -> rusqlite::Result<Schedule> {
         last_slot: r.get(14)?,
         created_at: r.get(15)?,
         updated_at: r.get(16)?,
+        // An unreadable trigger (a newer build's) never starts by itself: as a
+        // webhook it needs a signed delivery, and it never runs on the time rule.
+        trigger: serde_json::from_str(&r.get::<_, String>(17)?).unwrap_or(Trigger::Webhook),
         next_due: None,
         last_run: None,
     })
@@ -100,8 +114,8 @@ impl Database {
         let recurrence = serde_json::to_string(&s.recurrence).unwrap_or_default();
         self.lock().execute(
             &format!(
-                "INSERT INTO schedules ({SCHEDULE_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
-                 ON CONFLICT(id) DO UPDATE SET name = ?2, prompt = ?3, context_id = ?4, provider = ?5, model = ?6, effort = ?7, mode = ?8,
+                "INSERT INTO schedules ({SCHEDULE_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+                 ON CONFLICT(id) DO UPDATE SET trigger_rule = ?18, name = ?2, prompt = ?3, context_id = ?4, provider = ?5, model = ?6, effort = ?7, mode = ?8,
                    instance = ?9, recurrence = ?10, enabled = ?11, missed = ?12, target = ?13, thread_id = ?14, last_slot = ?15, updated_at = ?17"
             ),
             params![
@@ -121,7 +135,8 @@ impl Database {
                 s.thread_id,
                 s.last_slot,
                 s.created_at,
-                s.updated_at
+                s.updated_at,
+                serde_json::to_string(&s.trigger).unwrap_or_else(|_| "{\"kind\":\"time\"}".into())
             ],
         )?;
         Ok(())
@@ -131,7 +146,36 @@ impl Database {
     pub fn delete_schedule(&self, id: &str) -> rusqlite::Result<()> {
         let conn = self.lock();
         conn.execute("DELETE FROM schedule_runs WHERE schedule_id = ?1", params![id])?;
+        conn.execute("DELETE FROM trigger_seen WHERE schedule_id = ?1", params![id])?;
         conn.execute("DELETE FROM schedules WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn trigger_seen(&self, schedule_id: &str, key: &str) -> rusqlite::Result<bool> {
+        Ok(self
+            .lock()
+            .query_row("SELECT 1 FROM trigger_seen WHERE schedule_id = ?1 AND key = ?2", params![schedule_id, key], |_| Ok(()))
+            .optional()?
+            .is_some())
+    }
+
+    /// True when this event was not seen before.
+    pub fn trigger_mark(&self, schedule_id: &str, key: &str, at: i64) -> rusqlite::Result<bool> {
+        Ok(self.lock().execute("INSERT OR IGNORE INTO trigger_seen (schedule_id, key, at) VALUES (?1, ?2, ?3)", params![schedule_id, key, at])? == 1)
+    }
+
+    /// Keeps the newest `keep` events; a kind's baseline stays.
+    pub fn trigger_prune(&self, schedule_id: &str, keep: i64) -> rusqlite::Result<()> {
+        self.lock().execute(
+            "DELETE FROM trigger_seen WHERE schedule_id = ?1 AND key NOT LIKE 'baseline:%' AND rowid NOT IN
+             (SELECT rowid FROM trigger_seen WHERE schedule_id = ?1 AND key NOT LIKE 'baseline:%' ORDER BY at DESC, rowid DESC LIMIT ?2)",
+            params![schedule_id, keep],
+        )?;
+        Ok(())
+    }
+
+    pub fn trigger_forget(&self, schedule_id: &str) -> rusqlite::Result<()> {
+        self.lock().execute("DELETE FROM trigger_seen WHERE schedule_id = ?1", params![schedule_id])?;
         Ok(())
     }
 

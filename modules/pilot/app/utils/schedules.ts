@@ -3,7 +3,7 @@
  * and a new schedule's starting values. The engine is in the crate
  * (crate/src/schedules.rs); times are local wall-clock times.
  */
-import type { Recurrence, Schedule } from '#pilot/types'
+import type { Recurrence, Schedule, Trigger } from '#pilot/types'
 
 /** Monday-first, as the crate counts (1 = Monday … 7 = Sunday). */
 export const DAYS = [
@@ -25,6 +25,25 @@ export function localLabel(at: string): string {
 }
 
 /** "Every day at 08:00", "Weekdays at 08:00", "Mon, Wed at 18:30", "Every 6 hours from Nov 4, 08:00", "Once, Nov 4, 08:00". */
+export const GITHUB_EVENTS: { id: string; label: string }[] = [
+  { id: 'issue_opened', label: 'New issue' },
+  { id: 'pr_opened', label: 'New pull request' },
+  { id: 'pr_updated', label: 'Pull request updated' },
+  { id: 'push', label: 'New commit' },
+  { id: 'ci_failed', label: 'CI run failed' },
+]
+
+/** When a schedule runs: its time rule, or the event that starts it. */
+export function describeWhen(s: { recurrence: Recurrence; trigger?: Trigger }): string {
+  const t = s.trigger ?? { kind: 'time' as const }
+  if (t.kind === 'webhook') return 'On a webhook'
+  if (t.kind === 'github') {
+    const names = t.events.map((e) => GITHUB_EVENTS.find((g) => g.id === e)?.label.toLowerCase() ?? e)
+    return `${t.repo}: ${names.join(', ')}`
+  }
+  return describeRecurrence(s.recurrence)
+}
+
 export function describeRecurrence(r: Recurrence): string {
   switch (r.kind) {
     case 'once':
@@ -111,6 +130,7 @@ export function blankSchedule(base: Partial<Schedule> = {}): Schedule {
     recurrence: { kind: 'weekdays', time: '09:00' },
     enabled: true,
     missed: 'skip',
+    trigger: { kind: 'time' },
     target: 'new',
     threadId: null,
     lastSlot: null,

@@ -601,13 +601,13 @@ pub fn check_address(address: &str, port: u16, lan_ok: bool) -> Result<SocketAdd
     let addr = SocketAddr::new(ip, port);
     net::check_listen(&addr, false)?;
     if ip.is_unspecified() {
-        return Err("Phone access never listens on every network. Choose one address.".into());
+        return Err("QuantSuite never listens on every network here. Choose one address.".into());
     }
     match net::kind_of(&ip) {
         "tailnet" | "loopback" => Ok(addr),
         "lan" if lan_ok => Ok(addr),
         "lan" => Err("A local network address is plain HTTP: anyone on the same Wi-Fi could read the PIN. Tick the box to accept that, or use Tailscale.".into()),
-        _ => Err("This looks like a public address, and phone access never listens on one. Use your Tailscale address.".into()),
+        _ => Err("This looks like a public address, and QuantSuite never listens on one. Use your Tailscale address.".into()),
     }
 }
 
