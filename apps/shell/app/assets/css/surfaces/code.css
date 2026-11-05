@@ -1,0 +1,14 @@
+/* Today's sizes, until this module is converted to the 1.1.0 density. */
+[data-module='code'] {
+  --qss-page-title: clamp(22px, 2vw, 28px);
+  --qss-page-title-weight: 500;
+  --qss-page-title-tracking: -.035em;
+  --qss-page-head-gap: 26px;
+  --qss-empty-gap: 12px;
+  --qss-empty-min: 240px;
+  --qss-empty-pad: 40px 24px;
+  --qss-empty-title: 20px;
+  --qss-empty-title-weight: 500;
+  --qss-empty-title-tracking: -.025em;
+}
+

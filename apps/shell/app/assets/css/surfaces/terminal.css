@@ -1,0 +1,30 @@
+/* Today's sizes, until this module is converted to the 1.1.0 density. */
+[data-module='terminal'] {
+  --qss-page-title: clamp(22px, 2vw, 28px);
+  --qss-page-title-weight: 500;
+  --qss-page-title-tracking: -.035em;
+  --qss-page-head-gap: 26px;
+  --qss-empty-gap: 12px;
+  --qss-empty-min: 240px;
+  --qss-empty-pad: 40px 24px;
+  --qss-empty-title: 20px;
+  --qss-empty-title-weight: 500;
+  --qss-empty-title-tracking: -.025em;
+}
+
+[data-module='terminal'] :is(.metrics-shell, .metrics-page) { --surface-2: var(--qss-bg-raised); }
+[data-module='terminal'] .metric-card.metric-card { border-radius: 14px; }
+[data-module='terminal'] .terminal-workspace { padding: var(--qss-surface-padding); container: terminal-workspace / inline-size; }
+[data-module='terminal'] .terminal-workspace .card { border: 1px solid var(--qss-border); border-radius: 14px; background: var(--qss-bg-raised); overflow: hidden; }
+[data-module='terminal'] .terminal-workspace > .grid { gap: 16px; }
+[data-module='terminal'] .terminal-workspace > .grid > .card { padding: 20px; }
+[data-module='terminal'] .terminal-workspace table th { padding-block: 14px; }
+[data-module='terminal'] .terminal-workspace table td { padding-block: 14px; }
+[data-module='terminal'] .terminal-workspace .btn-primary { color: var(--qss-accent-ink); }
+@container terminal-workspace (max-width: 850px) {
+  [data-module='terminal'] .terminal-workspace > .grid-cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container terminal-workspace (max-width: 520px) {
+  [data-module='terminal'] .terminal-workspace > .grid-cols-3,
+  [data-module='terminal'] .terminal-workspace > .grid-cols-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

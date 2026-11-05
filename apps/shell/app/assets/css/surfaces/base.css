@@ -1,0 +1,19 @@
+/* What every module shares. Module surfaces keep the dashboard's tonal hierarchy; the dashboard,
+   editor internals and transparent HUD windows stay independent. */
+[data-module]:not([data-module='hud']) {
+  --qss-module-chrome: color-mix(in srgb, var(--qss-bg) 65%, var(--qss-bg-raised));
+  --qss-text-muted: color-mix(in srgb, var(--qss-text) 64%, var(--qss-bg));
+  --qss-surface-padding: clamp(20px, 2.4vw, 36px);
+  --qss-surface-radius: 16px;
+}
+
+[data-module]:not([data-module='hud']) :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--qss-accent);
+  outline-offset: 3px;
+}
+
+/* Explicit control classes avoid touching Monaco, xterm, charts or note content. */
+[data-module] .btn.btn,
+[data-module] :is(.qf-btn, .qh-btn, .qp-btn, .qsc-btn) {
+  border-radius: 8px;
+}
