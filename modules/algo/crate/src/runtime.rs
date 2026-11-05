@@ -61,6 +61,9 @@ pub struct Position {
     pub entry_order_id: Option<String>,
     /// The entry fee in the asset it was charged in.
     pub entry_fees: Vec<ChargedFee>,
+    /// The system said close and it has not gone yet: the bot keeps selling
+    /// on every poll, and the journal row says so for a restart.
+    pub closing: bool,
 }
 
 impl Position {
@@ -80,12 +83,14 @@ impl Position {
         closed.entry_fee = self.entry_fee * share;
         closed.reserved_margin = self.reserved_margin * share;
         closed.entry_fees = fees(share);
+        closed.closing = false;
         let mut rest = self.clone();
         rest.id = Uuid::new_v4().to_string();
         rest.quantity = self.quantity - qty;
         rest.entry_fee = self.entry_fee - closed.entry_fee;
         rest.reserved_margin = self.reserved_margin - closed.reserved_margin;
         rest.entry_fees = fees(1.0 - share);
+        rest.closing = true;
         (closed, rest)
     }
 }
@@ -152,9 +157,12 @@ pub enum Effect {
     },
     /// The equity changed — snapshot it and announce (`bot:equity`).
     Equity,
-    /// Three order errors in a row (PLAN-AUTO-EXECUTION §2.6): stop the bot
+    /// Three refused entries in a row (PLAN-AUTO-EXECUTION §2.6): stop the bot
     /// with this reason and tell the user.
     Pause { reason: String },
+    /// Tell the user and keep going: an exit that keeps being refused must
+    /// not stop the bot, because that would stop the selling.
+    Alert { reason: String },
 }
 
 /// Order errors in a row that pause a live bot.
@@ -327,6 +335,7 @@ impl BotRuntime {
         fees.extend(exit_fee.filter(|f| f.amount > 0.0));
         let notes = match (&position.entry_order_id, exit_order_id) {
             (Some(entry), Some(exit)) => Some(format!("live · entry order {entry} · exit order {exit}")),
+            (Some(entry), None) if position.closing => Some(format!("live · entry order {entry} · closing")),
             (Some(entry), None) => Some(format!("live · entry order {entry}")),
             _ => None,
         };
@@ -464,6 +473,7 @@ impl BotRuntime {
             quantity,
             entry_fee,
             reserved_margin: if opening == "short" { notional } else { 0.0 },
+            closing: false,
             entry_time: now.to_string(),
             entry_order_id: None,
             entry_fees: vec![ChargedFee { asset: self.quote_asset(), amount: entry_fee }],
@@ -781,6 +791,7 @@ impl BotRuntime {
             quantity: fill.base_qty,
             entry_fee: fill.fee_quote,
             reserved_margin: fill.quote_amount,
+            closing: false,
             entry_time: now.to_string(),
             entry_order_id: Some(fill.order_id.clone()),
             entry_fees: vec![ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }],
@@ -821,9 +832,7 @@ impl BotRuntime {
         effects.push(if stays_open {
             Effect::Log {
                 level: "warn",
-                message: format!(
-                    "Only part of the order filled within the slippage cap: {left:.8} {base} is still open. The next close signal, or Close positions, closes it."
-                ),
+                message: format!("Only part of the order filled: {left:.8} {base} is still open. The bot keeps closing it on every poll until it is gone."),
             }
         } else {
             Effect::Log {
@@ -849,9 +858,9 @@ impl BotRuntime {
             Err(e) => {
                 effects.push(Effect::Log {
                     level: "error",
-                    message: format!("Live cover of {} {} rejected: {e}; the short stays open.", filters.qty_string(position.quantity), self.base_asset()),
+                    message: format!("Live cover of {} {} rejected: {e}; the short stays open and the bot keeps trying.", filters.qty_string(position.quantity), self.base_asset()),
                 });
-                self.order_error(&e, effects);
+                self.exit_refused(idx, &e, effects);
                 return;
             }
         };
@@ -938,16 +947,72 @@ impl BotRuntime {
                 effects.push(Effect::Log {
                     level: "error",
                     message: format!(
-                        "Live sell of {} {} rejected: {e}; the position stays open.",
+                        "Live sell of {} {} rejected: {e}; the position stays open and the bot keeps trying.",
                         filters.qty_string(position.quantity), self.base_asset()
                     ),
                 });
-                self.order_error(&e, effects);
+                self.exit_refused(idx, &e, effects);
             }
         }
     }
 
-    /// Count a refused order; the third in a row pauses the bot.
+    /// An exit the venue refused: the position is marked as closing, so every
+    /// poll tries again. The third refusal in a row tells the user; it does not
+    /// pause the bot, because a pause would stop the selling.
+    fn exit_refused(&mut self, idx: usize, error: &str, effects: &mut Vec<Effect>) {
+        self.order_errors += 1;
+        if !self.open_positions[idx].closing {
+            self.open_positions[idx].closing = true;
+            let position = self.open_positions[idx].clone();
+            let row = self.trade_row(&position, None, None, None, position.entry_fee, None, None);
+            effects.push(Effect::Trade(Box::new(row)));
+        }
+        if self.order_errors == ORDER_ERROR_STREAK {
+            effects.push(Effect::Alert {
+                reason: format!("{} {} could not be closed {} times in a row and the bot keeps trying. The last answer: {error}", self.pair, self.open_positions[idx].side, self.order_errors),
+            });
+        }
+    }
+
+    /// Whether an exit is still waiting to go through.
+    pub fn has_closing(&self) -> bool {
+        self.open_positions.iter().any(|p| p.closing)
+    }
+
+    /// One more try at every exit that has not gone through (each poll).
+    pub fn retry_exits(&mut self, now: &str) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        if self.mode != Mode::Live {
+            return effects;
+        }
+        let closing: Vec<usize> = self.open_positions.iter().enumerate().filter(|(_, p)| p.closing).map(|(i, _)| i).collect();
+        for idx in closing.into_iter().rev() {
+            let position = self.open_positions[idx].clone();
+            // Too small for any order: retrying could never work.
+            if self.filters.as_ref().is_some_and(|f| !orderable(f, position.quantity, self.last_price)) {
+                let mut settled = position.clone();
+                settled.closing = false;
+                let row = self.trade_row(&settled, None, None, None, settled.entry_fee, None, None);
+                effects.push(Effect::Trade(Box::new(row)));
+                effects.push(Effect::Alert {
+                    reason: format!("{:.8} {} is too small for the venue to take an order; close it on the exchange.", position.quantity, self.base_asset()),
+                });
+                self.open_positions[idx] = settled;
+                continue;
+            }
+            if position.side == "short" {
+                self.cover_live(idx, now, &mut effects);
+            } else {
+                self.sell_live(idx, now, &mut effects);
+            }
+        }
+        if !effects.is_empty() {
+            effects.push(Effect::Equity);
+        }
+        effects
+    }
+
+    /// Count a refused entry; the third in a row pauses the bot.
     fn order_error(&mut self, error: &str, effects: &mut Vec<Effect>) {
         self.order_errors += 1;
         if self.order_errors >= ORDER_ERROR_STREAK {
@@ -970,6 +1035,7 @@ impl BotRuntime {
             quantity: fill.base_received,
             entry_fee: fill.fee_quote,
             reserved_margin: 0.0,
+            closing: false,
             entry_time: now.to_string(),
             entry_order_id: Some(fill.order_id.clone()),
             entry_fees: vec![ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }],
@@ -1330,24 +1396,136 @@ mod tests {
         }
     }
 
+    fn pauses(effects: &[Effect]) -> usize {
+        effects.iter().filter(|e| matches!(e, Effect::Pause { .. })).count()
+    }
+
+    fn alerts(effects: &[Effect]) -> usize {
+        effects.iter().filter(|e| matches!(e, Effect::Alert { .. })).count()
+    }
+
     #[test]
-    fn three_refused_orders_in_a_row_pause_the_bot_and_a_fill_resets_the_count() {
+    fn three_refused_buys_in_a_row_pause_the_bot_and_a_fill_resets_the_count() {
         let refused = || Err::<Fill, String>("Insufficient balance".into());
-        let mut rt = live_runtime(vec![refused(), refused(), Ok(buy_fill_fee_in_base()), refused(), refused(), refused()]);
-        let pauses = |e: &[Effect]| e.iter().filter(|e| matches!(e, Effect::Pause { .. })).count();
+        let mut rt = live_runtime(vec![refused(), refused(), Ok(buy_fill_fee_in_base())]);
         assert_eq!(pauses(&rt.place(buy(0.0), "t0")), 0);
         assert_eq!(pauses(&rt.place(buy(0.0), "t1")), 0);
         assert_eq!(rt.order_errors, 2);
         rt.place(buy(0.0), "t2");
         assert_eq!(rt.order_errors, 0, "the fill reset the streak");
-        // The open long blocks further buys; sells are refused three times.
-        let sell = || OrderRequest { side: OrderSide::Sell, pair: "BTC/USDT".into(), quantity: 0.0, position_size: None, reverse: false };
-        assert_eq!(pauses(&rt.place(sell(), "t3")), 0);
-        assert_eq!(pauses(&rt.place(sell(), "t4")), 0);
-        let effects = rt.place(sell(), "t5");
+
+        let mut rt = live_runtime(vec![refused(), refused(), refused()]);
+        rt.place(buy(0.0), "t0");
+        rt.place(buy(0.0), "t1");
+        let effects = rt.place(buy(0.0), "t2");
         assert_eq!(pauses(&effects), 1);
         assert!(matches!(effects.iter().find(|e| matches!(e, Effect::Pause { .. })), Some(Effect::Pause { reason }) if reason.contains("3 order errors")));
-        assert_eq!(rt.open_positions.len(), 1, "a pause never sells");
+    }
+
+    /// When the system says close, the bot keeps selling. A refusal tells the
+    /// user but never pauses the bot: a pause would stop the selling.
+    #[test]
+    fn a_refused_exit_keeps_trying_until_it_sells_and_never_pauses() {
+        let refused = || Err::<Fill, String>("Binance 500: try later".into());
+        let mut rt = live_runtime(vec![
+            Ok(fill_of("buy-1", 64_000.0, 0.01)),
+            refused(),
+            refused(),
+            refused(),
+            Ok(fill_of("sell-1", 63_000.0, 0.01)),
+        ]);
+        rt.place(buy(0.0), "t0");
+        assert!(!rt.has_closing());
+        assert!(rt.retry_exits("t0").is_empty(), "nothing to retry without a close signal");
+        assert_eq!(calls(&rt).len(), 1);
+
+        let first = rt.place(sell(0.0), "t1");
+        assert!(rt.has_closing());
+        assert_eq!(pauses(&first), 0);
+        let row = trades(&first)[0];
+        assert_eq!(row.exit_price, None);
+        assert!(row.notes.as_deref().unwrap().ends_with("· closing"), "{:?}", row.notes);
+
+        let second = rt.retry_exits("t2");
+        assert_eq!((pauses(&second), alerts(&second)), (0, 0));
+        assert!(trades(&second).is_empty(), "the row already says closing");
+        let third = rt.retry_exits("t3");
+        assert_eq!((pauses(&third), alerts(&third)), (0, 1), "the user hears of it once");
+        assert_eq!(rt.open_positions.len(), 1, "still there, still trying");
+
+        let fourth = rt.retry_exits("t4");
+        assert!(rt.open_positions.is_empty());
+        assert!(!rt.has_closing());
+        assert_eq!(rt.order_errors, 0);
+        assert_eq!(trades(&fourth)[0].exit_price, Some(63_000.0));
+        assert_eq!(calls(&rt).len(), 5);
+    }
+
+    /// What a thin book leaves over goes on the next poll, without a new signal.
+    #[test]
+    fn the_rest_of_a_partly_filled_exit_sells_on_the_next_poll() {
+        let mut rt = live_runtime(vec![
+            Ok(fill_of("buy-1", 64_000.0, 0.01)),
+            Ok(fill_of("sell-1", 65_000.0, 0.006)),
+            Ok(fill_of("sell-2", 64_500.0, 0.004)),
+        ]);
+        rt.place(buy(0.0), "t0");
+        rt.place(sell(0.0), "t1");
+        assert!(rt.has_closing());
+        let effects = rt.retry_exits("t2");
+        assert_eq!(calls(&rt)[2], "sell 0.004");
+        assert!(rt.open_positions.is_empty());
+        assert_eq!(trades(&effects)[0].exit_price, Some(64_500.0));
+    }
+
+    /// A rest of a short does the same, through a cover.
+    #[test]
+    fn the_rest_of_a_partly_closed_short_covers_on_the_next_poll() {
+        let mut rt = live_runtime(Vec::new());
+        rt.broker = Some(Box::new(MockBroker {
+            fills: RefCell::new(VecDeque::from(vec![
+                Ok(fill_of("short-1", 64_000.0, 0.01)),
+                Ok(fill_of("cover-1", 60_000.0, 0.006)),
+                Err("Hyperliquid: try later".to_string()),
+                Ok(fill_of("cover-2", 61_000.0, 0.004)),
+            ])),
+            calls: RefCell::new(Vec::new()),
+            perp: true,
+        }));
+        rt.place(sell(0.0), "t0");
+        rt.place(buy(0.0), "t1");
+        assert!(rt.has_closing());
+        rt.retry_exits("t2");
+        assert_eq!(rt.open_positions.len(), 1, "refused, still trying");
+        rt.retry_exits("t3");
+        assert!(rt.open_positions.is_empty());
+        assert_eq!(calls(&rt)[3], "cover 0.004");
+    }
+
+    /// A position under the venue's minimum can never sell: the bot says so
+    /// once and stops asking.
+    #[test]
+    fn a_position_too_small_to_sell_stops_being_retried() {
+        let mut rt = live_runtime(vec![Ok(fill_of("buy-1", 64_000.0, 0.01)), Err("Filter failure: NOTIONAL".to_string())]);
+        rt.place(buy(0.0), "t0");
+        rt.place(sell(0.0), "t1");
+        assert!(rt.has_closing());
+        rt.last_price = 400.0; // 0.01 BTC is now worth 4 USDT, under the 5 USDT minimum
+        let effects = rt.retry_exits("t2");
+        assert_eq!(alerts(&effects), 1);
+        assert!(!rt.has_closing());
+        assert_eq!(rt.open_positions.len(), 1, "it stays on the books, and on the exchange");
+        assert_eq!(calls(&rt).len(), 2, "no order was sent for it");
+        assert!(rt.retry_exits("t3").is_empty());
+    }
+
+    /// Paper fills at once, so it has nothing to retry.
+    #[test]
+    fn a_paper_bot_has_no_exits_to_retry() {
+        let mut rt = runtime();
+        rt.place(buy(0.0), "t0");
+        rt.open_positions[0].closing = true;
+        assert!(rt.retry_exits("t1").is_empty());
     }
 
     #[test]
@@ -1519,6 +1697,7 @@ mod tests {
         assert!((books.positions[0].quantity - 0.004).abs() < 1e-12);
         assert!((books.positions[0].entry_fee - 0.256).abs() < 1e-9);
         assert_eq!(books.positions[0].entry_order_id.as_deref(), Some("buy-1"));
+        assert!(books.positions[0].closing, "a restart keeps selling the rest");
         assert!((books.balance - rt.balance).abs() < 1e-9, "{} vs {}", books.balance, rt.balance);
         let closed_qty: f64 = conn.query_row("SELECT quantity FROM trades WHERE id = ?1", [&opened], |r| r.get(0)).unwrap();
         assert!((closed_qty - 0.006).abs() < 1e-12, "the closed row covers what closed");
@@ -1544,6 +1723,7 @@ mod tests {
         assert_eq!(books.positions[0].id, rt.open_positions[0].id);
         assert!((books.positions[0].quantity - 0.004).abs() < 1e-12);
         assert!((books.positions[0].reserved_margin - 256.0).abs() < 1e-9);
+        assert!(books.positions[0].closing, "a restart keeps covering the rest");
         assert!((books.balance - rt.balance).abs() < 1e-9, "{} vs {}", books.balance, rt.balance);
     }
 

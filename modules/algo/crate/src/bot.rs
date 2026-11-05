@@ -29,8 +29,11 @@ use crate::execution::venue::MarketType;
 use crate::exchanges::{
     fetch_exchange_pairs_for_provider,
     load_credentials,
+    candle_finished,
+    candles_missed_since,
     fetch_latest_market_candle,
     fetch_recent_market_candles,
+    poll_market,
     market_candle_json,
 };
 use crate::logs::{push_bot_log, push_bot_log_for};
@@ -308,6 +311,10 @@ fn apply_effects(
                 notify_strategy_trade(stdin, runtime, &trade_id, &pair, &side, price, quantity, pnl, action);
             }
             Effect::Equity => emit_equity(app_handle, runtime, true),
+            Effect::Alert { reason } => {
+                push_bot_log_for(app_handle, Some(&runtime.bot_id), "error", reason.clone());
+                crate::manual::toast_line(app_handle, "QuantAlgo · Bot exit", &reason);
+            }
             Effect::Pause { reason } => {
                 // The stop path takes this runtime's lock: pause from outside it.
                 let (app, bot_id) = (app_handle.clone(), runtime.bot_id.clone());
@@ -1288,10 +1295,26 @@ fn start_bot_with(
                 Vec::new()
             }
         };
-    let initial_candle = match startup_candles.pop() {
-        Some(candle) => candle,
-        None => fetch_latest_market_candle(&exchange_provider, &bot.pair, &bot.timeframe)?,
+    // The newest row is the current price. The strategy only ever sees finished
+    // candles, so the forming one is not a signal at the start either.
+    let mark_price = match startup_candles.last() {
+        Some(candle) => candle.close,
+        None => fetch_latest_market_candle(&exchange_provider, &bot.pair, &bot.timeframe)?.close,
     };
+    let started_now = Utc::now();
+    startup_candles.retain(|c| candle_finished(c, &bot.timeframe, started_now));
+    // A resumed bot acts on what closed while it was down: its signals still count.
+    let missed = if restored.is_some() {
+        let heartbeat: Option<String> = {
+            let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+            db.query_row("SELECT heartbeat_at FROM bots WHERE id = ?1", params![bot.id], |r| r.get(0)).unwrap_or(None)
+        };
+        candles_missed_since(&startup_candles, &bot.timeframe, heartbeat.as_deref())
+    } else {
+        0
+    };
+    let replay = startup_candles.split_off(startup_candles.len() - missed);
+    let last_finished_time = replay.last().or(startup_candles.last()).map(|c| c.time.clone());
     let warmup_json = startup_candles
         .iter()
         .map(|c| market_candle_json(c, &bot.pair))
@@ -1323,7 +1346,7 @@ fn start_bot_with(
         pair: bot.pair.clone(),
         mode,
         balance: restored.as_ref().map(|(b, _)| b.balance).unwrap_or(bot.budget),
-        last_price: initial_candle.close,
+        last_price: mark_price,
         open_positions: restored.as_ref().map(|(b, _)| b.positions.clone()).unwrap_or_default(),
         fee_rate: run.fee / 100.0,
         slippage_pct: run.slippage,
@@ -1402,7 +1425,12 @@ fn start_bot_with(
         });
     }
 
-    let quote_asset = bot.pair.split('/').nth(1).unwrap_or("USDT").to_string();
+    // From the runtime, not the budget: a resumed strategy must know what it
+    // holds, or a long-only one would never sell.
+    let (start_balance, start_positions) = {
+        let rt = runtime.lock().map_err(|e| format!("Lock: {e}"))?;
+        (rt.balance_json(), rt.positions_json())
+    };
     write_json_line(
         &stdin,
         json!({
@@ -1411,9 +1439,9 @@ fn start_bot_with(
             "params": {
                 "params": strategy_params,
                 "pair": bot.pair,
-                "balance": { quote_asset: bot.budget },
-                "positions": {},
-                "mark_price": initial_candle.close,
+                "balance": start_balance,
+                "positions": start_positions,
+                "mark_price": mark_price,
                 "candles": warmup_json,
             }
         }),
@@ -1438,10 +1466,9 @@ fn start_bot_with(
             return Err(message);
         }
     }
-    write_json_line(
-        &stdin,
-        json!({ "method": "on_candle", "params": market_candle_json(&initial_candle, &bot.pair) }),
-    )?;
+    for candle in &replay {
+        write_json_line(&stdin, json!({ "method": "on_candle", "params": market_candle_json(candle, &bot.pair) }))?;
+    }
 
     {
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
@@ -1470,8 +1497,9 @@ fn start_bot_with(
         Some(&bot.id),
         "info",
         format!(
-            "{} bot '{}' started on {} {} ({}); warmed with {} prior candles.",
-            mode.as_str(), bot.name, bot.pair, bot.timeframe, exchange_provider, warmup_json.len()
+            "{} bot '{}' started on {} {} ({}); warmed with {} prior candles. It acts when a candle closes{}.",
+            mode.as_str(), bot.name, bot.pair, bot.timeframe, exchange_provider, warmup_json.len(),
+            if replay.is_empty() { String::new() } else { format!("; {} closed while it was down", replay.len()) }
         ),
     );
     if let Ok(rt) = runtime.lock() {
@@ -1489,7 +1517,7 @@ fn start_bot_with(
         let timeframe = bot.timeframe.clone();
         let provider = exchange_provider.clone();
         let bot_id = bot.id.clone();
-        let mut last_candle_time = Some(initial_candle.time.clone());
+        let mut last_candle_time = last_finished_time;
         std::thread::spawn(move || {
             let mut idx = 0_usize;
             // Health (PLAN-AUTO-EXECUTION §2.6): no new candle for two bar
@@ -1503,14 +1531,32 @@ fn start_bot_with(
             // half minute is plenty for any of them.
             let poll_seconds = 30;
             while !stop.load(Ordering::Relaxed) {
-                match fetch_latest_market_candle(&provider, &pair, &timeframe) {
-                    Ok(candle) => {
+                // An exit that has not gone through comes first, whatever the
+                // feed does: while one is open, the feed cannot stop the bot.
+                let closing = match runtime.lock() {
+                    Ok(mut rt) => {
+                        let now = Utc::now().to_rfc3339();
+                        let effects = rt.retry_exits(&now);
+                        apply_effects(&app, &stdin, &rt, effects);
+                        rt.has_closing()
+                    }
+                    Err(_) => false,
+                };
+                match poll_market(&provider, &pair, &timeframe) {
+                    Ok(poll) => {
                         consecutive_errors = 0;
                         crate::unattended::heartbeat(&app, &bot_id);
-                        let is_new = last_candle_time.as_deref() != Some(candle.time.as_str());
+                        let is_new = match (&poll.finished, &last_candle_time) {
+                            (Some(candle), Some(last)) => candle.time != *last,
+                            _ => false,
+                        };
+                        // Started without warm-up: from this candle on.
+                        if last_candle_time.is_none() {
+                            last_candle_time = poll.finished.as_ref().map(|c| c.time.clone());
+                        }
                         if is_new {
                             last_new_candle = Instant::now();
-                        } else if crate::unattended::feed_stale(last_new_candle.elapsed().as_secs(), &timeframe) {
+                        } else if !closing && crate::unattended::feed_stale(last_new_candle.elapsed().as_secs(), &timeframe) {
                             let reason = format!("no new {timeframe} candle from {provider} for two bar lengths");
                             let (app2, id2) = (app.clone(), bot_id.clone());
                             std::thread::spawn(move || crate::unattended::pause_bot(&app2, &id2, &reason));
@@ -1521,24 +1567,24 @@ fn start_bot_with(
                             last_snapshot = Instant::now();
                         }
                         if let Ok(mut rt) = runtime.lock() {
-                            rt.last_price = candle.close;
+                            rt.last_price = poll.price;
                             emit_equity(&app, &rt, snapshot);
                         }
-                        if is_new {
+                        if let (true, Some(candle)) = (is_new, &poll.finished) {
                             let _ = write_json_line(
                                 &stdin,
-                                json!({ "method": "on_candle", "params": market_candle_json(&candle, &pair) }),
+                                json!({ "method": "on_candle", "params": market_candle_json(candle, &pair) }),
                             );
                             last_candle_time = Some(candle.time.clone());
-                            push_bot_log_for(&app, Some(&bot_id), "info", format!("Market candle {provider} {pair} close {:.4}", candle.close));
+                            push_bot_log_for(&app, Some(&bot_id), "info", format!("Market candle {provider} {pair} closed at {:.4} (open {:.4}, high {:.4}, low {:.4})", candle.close, candle.open, candle.high, candle.low));
                         } else if idx == 0 || idx % 6 == 0 {
-                            push_bot_log_for(&app, Some(&bot_id), "info", format!("Market price {provider} {pair} close {:.4}", candle.close));
+                            push_bot_log_for(&app, Some(&bot_id), "info", format!("Market price {provider} {pair} {:.4}", poll.price));
                         }
                     }
                     Err(err) => {
                         consecutive_errors += 1;
                         push_bot_log_for(&app, Some(&bot_id), "warn", format!("Public market data fetch failed for {provider} {pair}: {err}"));
-                        if consecutive_errors >= 3 {
+                        if consecutive_errors >= 3 && !closing {
                             emit_bot_error(
                                 &app,
                                 Some(&bot_id),

@@ -852,6 +852,7 @@ impl Exec<'_> {
         let seq = self.orders.len() as u32 + 1;
         let client_order_id = format!("qs{}-{:02}", compact(&self.req.run_id), seq);
         let request = OrderRequest {
+            market: false,
             client_order_id: client_order_id.clone(),
             instrument: inst.clone(),
             side,

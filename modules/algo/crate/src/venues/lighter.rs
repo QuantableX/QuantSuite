@@ -670,6 +670,8 @@ impl ExecutionVenue for LighterVenue {
             client_order_ids: true,
             sub_accounts: true,
             test_orders: false,
+            // An IOC order at a far price stands in for one, see LiveBroker::exit.
+            market_orders: false,
         }
     }
 

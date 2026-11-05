@@ -29,6 +29,8 @@ pub struct Capabilities {
     pub sub_accounts: bool,
     /// A dry run the venue validates but never executes (Binance `order/test`).
     pub test_orders: bool,
+    /// Real market orders: `OrderRequest::market` goes out as one.
+    pub market_orders: bool,
 }
 
 /// One tradable market: the lot and price rules plus the market type.
@@ -158,6 +160,11 @@ pub struct OrderRequest {
     /// The slippage cap, on the tick.
     pub limit_price: f64,
     pub reduce_only: bool,
+    /// An exit that must go through whatever the price: a market order where
+    /// the venue has one. A venue without them takes `limit_price` as its worst
+    /// price (IOC), set far enough away to fill like one.
+    #[serde(default)]
+    pub market: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

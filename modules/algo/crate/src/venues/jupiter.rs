@@ -677,7 +677,7 @@ impl ExecutionVenue for JupiterVenue {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities { spot: true, perp: false, ioc_limit: true, client_order_ids: true, sub_accounts: false, test_orders: false }
+        Capabilities { spot: true, perp: false, ioc_limit: true, client_order_ids: true, sub_accounts: false, test_orders: false, market_orders: false }
     }
 
     fn ready(&self) -> Result<(), String> {

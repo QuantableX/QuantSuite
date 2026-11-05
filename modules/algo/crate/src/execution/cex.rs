@@ -288,16 +288,48 @@ impl CexVenue {
     }
 
     fn binance_order_params(order: &OrderRequest) -> Vec<(&'static str, String)> {
-        vec![
+        let mut params = vec![
             ("symbol", order.instrument.filters.symbol.clone()),
             ("side", if order.side == Side::Buy { "BUY" } else { "SELL" }.to_string()),
-            ("type", "LIMIT".to_string()),
-            ("timeInForce", "IOC".to_string()),
-            ("quantity", order.instrument.filters.qty_string(order.qty)),
-            ("price", order.instrument.price_string(order.limit_price)),
-            ("newClientOrderId", order.client_order_id.clone()),
-            ("newOrderRespType", "FULL".to_string()),
-        ]
+        ];
+        if order.market {
+            params.push(("type", "MARKET".to_string()));
+            params.push(("quantity", order.instrument.filters.qty_string(order.qty)));
+        } else {
+            params.push(("type", "LIMIT".to_string()));
+            params.push(("timeInForce", "IOC".to_string()));
+            params.push(("quantity", order.instrument.filters.qty_string(order.qty)));
+            params.push(("price", order.instrument.price_string(order.limit_price)));
+        }
+        params.push(("newClientOrderId", order.client_order_id.clone()));
+        params.push(("newOrderRespType", "FULL".to_string()));
+        params
+    }
+
+    fn bybit_order_body(order: &OrderRequest) -> Value {
+        let filters = &order.instrument.filters;
+        let side = if order.side == Side::Buy { "Buy" } else { "Sell" };
+        if order.market {
+            return json!({
+                "category": "spot",
+                "symbol": filters.symbol,
+                "side": side,
+                "orderType": "Market",
+                "marketUnit": "baseCoin",
+                "qty": filters.qty_string(order.qty),
+                "orderLinkId": order.client_order_id,
+            });
+        }
+        json!({
+            "category": "spot",
+            "symbol": filters.symbol,
+            "side": side,
+            "orderType": "Limit",
+            "timeInForce": "IOC",
+            "qty": filters.qty_string(order.qty),
+            "price": order.instrument.price_string(order.limit_price),
+            "orderLinkId": order.client_order_id,
+        })
     }
 
     // ── Bybit ──
@@ -422,6 +454,7 @@ impl ExecutionVenue for CexVenue {
             client_order_ids: true,
             sub_accounts: true,
             test_orders: self.venue == Venue::Binance,
+            market_orders: true,
         }
     }
 
@@ -547,16 +580,7 @@ impl ExecutionVenue for CexVenue {
                 Ok(binance_report(&resp, filters, &order.client_order_id))
             }
             Venue::Bybit => {
-                let body = json!({
-                    "category": "spot",
-                    "symbol": filters.symbol,
-                    "side": if order.side == Side::Buy { "Buy" } else { "Sell" },
-                    "orderType": "Limit",
-                    "timeInForce": "IOC",
-                    "qty": filters.qty_string(order.qty),
-                    "price": order.instrument.price_string(order.limit_price),
-                    "orderLinkId": order.client_order_id,
-                });
+                let body = Self::bybit_order_body(order);
                 self.bybit_signed(reqwest::Method::POST, "/v5/order/create", None, Some(&body))?;
                 let row = self.bybit_settled_row(&filters.symbol, &order.client_order_id)?;
                 Ok(bybit_report(&row, filters, &order.client_order_id))
@@ -737,6 +761,55 @@ mod tests {
         assert_eq!(levels(&json!([["100.5", "2"], ["0", "1"], ["99", "0"]])), vec![(100.5, 2.0)]);
         assert_eq!(urlencode("qs3f-01"), "qs3f-01");
         assert_eq!(urlencode("a b/c"), "a%20b%2Fc");
+    }
+
+    #[test]
+    fn an_exit_goes_out_as_a_market_order_with_no_price() {
+        let filters = SymbolFilters {
+            symbol: "BTCUSDT".into(),
+            base: "BTC".into(),
+            quote: "USDT".into(),
+            qty_step: 0.00001,
+            min_qty: 0.00001,
+            min_notional: 5.0,
+            price_tick: 0.01,
+        };
+        let mut order = OrderRequest {
+            client_order_id: "qsb1-0001".into(),
+            instrument: Instrument { market: crate::execution::venue::MarketType::Spot, filters },
+            side: Side::Sell,
+            qty: 0.5,
+            limit_price: 0.0,
+            reduce_only: false,
+            market: true,
+        };
+        let params = CexVenue::binance_order_params(&order);
+        let get = |k: &str| params.iter().find(|(n, _)| *n == k).map(|(_, v)| v.clone());
+        assert_eq!(get("type").as_deref(), Some("MARKET"));
+        assert_eq!(get("side").as_deref(), Some("SELL"));
+        assert_eq!(get("quantity").as_deref(), Some("0.5"));
+        assert_eq!(get("newClientOrderId").as_deref(), Some("qsb1-0001"));
+        assert_eq!(get("newOrderRespType").as_deref(), Some("FULL"));
+        assert_eq!(get("price"), None);
+        assert_eq!(get("timeInForce"), None);
+        let body = CexVenue::bybit_order_body(&order);
+        assert_eq!(body["orderType"], "Market");
+        assert_eq!(body["marketUnit"], "baseCoin");
+        assert_eq!(body["qty"], "0.5");
+        assert_eq!(body["orderLinkId"], "qsb1-0001");
+        assert!(body.get("price").is_none());
+
+        // An entry stays an IOC limit at its cap.
+        order.market = false;
+        order.limit_price = 100_500.0;
+        let params = CexVenue::binance_order_params(&order);
+        let get = |k: &str| params.iter().find(|(n, _)| *n == k).map(|(_, v)| v.clone());
+        assert_eq!(get("type").as_deref(), Some("LIMIT"));
+        assert_eq!(get("timeInForce").as_deref(), Some("IOC"));
+        assert_eq!(get("price").as_deref(), Some("100500"));
+        let body = CexVenue::bybit_order_body(&order);
+        assert_eq!(body["orderType"], "Limit");
+        assert_eq!(body["timeInForce"], "IOC");
     }
 
     #[test]

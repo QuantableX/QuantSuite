@@ -1073,6 +1073,8 @@ impl ExecutionVenue for HyperliquidVenue {
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {
+            // An IOC order at a far price stands in for one, see LiveBroker::exit.
+            market_orders: false,
             spot: self.market == MarketType::Spot,
             perp: self.market == MarketType::Perp,
             ioc_limit: true,

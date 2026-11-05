@@ -1,7 +1,7 @@
 use base64::Engine as _;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
-use chrono::{NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use rusqlite::params;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -709,6 +709,49 @@ pub(crate) fn market_candle_json(candle: &PaperMarketCandle, pair: &str) -> Valu
         "volume": candle.volume,
         "pair": pair,
     })
+}
+
+/// How long after a bar's end its candle counts as finished: the bar's last
+/// trades are in by then, and a slightly fast clock cannot read a forming one.
+const FINISHED_GRACE_SECONDS: i64 = 2;
+
+fn candle_end(candle: &PaperMarketCandle, timeframe: &str) -> Option<DateTime<Utc>> {
+    let open = DateTime::parse_from_rfc3339(&candle.time).ok()?.with_timezone(&Utc);
+    Some(open + chrono::Duration::seconds(crate::unattended::bar_seconds(timeframe) as i64))
+}
+
+/// Whether a candle's bar is over at `now`. Decided by the time, because the
+/// providers differ in whether and where they return the forming candle.
+pub(crate) fn candle_finished(candle: &PaperMarketCandle, timeframe: &str, now: DateTime<Utc>) -> bool {
+    candle_end(candle, timeframe).is_some_and(|end| now >= end + chrono::Duration::seconds(FINISHED_GRACE_SECONDS))
+}
+
+/// How many of `candles` (oldest first) ended after the bot's last heartbeat:
+/// they closed while it was down, so a resumed bot still has to act on them.
+pub(crate) fn candles_missed_since(candles: &[PaperMarketCandle], timeframe: &str, heartbeat: Option<&str>) -> usize {
+    let Some(beat) = heartbeat.and_then(|h| DateTime::parse_from_rfc3339(h).ok()) else {
+        return 0;
+    };
+    let grace = chrono::Duration::seconds(FINISHED_GRACE_SECONDS);
+    candles.iter().filter(|c| candle_end(c, timeframe).is_some_and(|end| end + grace > beat)).count()
+}
+
+/// What a bot's poll needs from the market.
+#[derive(Debug, Clone)]
+pub(crate) struct MarketPoll {
+    /// The newest price: the mark, and what an order goes out at.
+    pub(crate) price: f64,
+    /// The newest finished candle: the only thing a strategy acts on, as in a
+    /// backtest and in Manual. The forming one is never a signal.
+    pub(crate) finished: Option<PaperMarketCandle>,
+}
+
+pub(crate) fn poll_market(provider: &str, pair: &str, timeframe: &str) -> Result<MarketPoll, String> {
+    let candles = fetch_recent_market_candles(provider, pair, timeframe, 3)?;
+    let price = candles.last().map(|c| c.close).ok_or_else(|| format!("{provider} returned no candles"))?;
+    let now = Utc::now();
+    let finished = candles.iter().rev().find(|c| candle_finished(c, timeframe, now)).cloned();
+    Ok(MarketPoll { price, finished })
 }
 
 /// The provider tests' form: straight from the exchange, no archive.
@@ -2536,5 +2579,74 @@ mod vault_tests {
         assert_eq!(column, None);
         let creds = credentials_from_vault(&db, &vault, "e1", false).unwrap();
         assert_eq!(creds.api_key.as_deref(), Some("AK"));
+    }
+}
+
+#[cfg(test)]
+mod finished_candle_tests {
+    use super::*;
+
+    fn candle(time: &str) -> PaperMarketCandle {
+        PaperMarketCandle { time: time.into(), open: 1.0, high: 2.0, low: 0.5, close: 1.5, volume: 10.0 }
+    }
+
+    fn at(time: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(time).unwrap().with_timezone(&Utc)
+    }
+
+    #[test]
+    fn a_candle_is_finished_only_once_its_bar_is_over() {
+        let hour = candle("2026-11-05T10:00:00+00:00");
+        assert!(!candle_finished(&hour, "1h", at("2026-11-05T10:00:30Z")), "the first seconds of a bar are no signal");
+        assert!(!candle_finished(&hour, "1h", at("2026-11-05T10:59:59Z")));
+        assert!(!candle_finished(&hour, "1h", at("2026-11-05T11:00:01Z")), "the bar's last trades are still coming in");
+        assert!(candle_finished(&hour, "1h", at("2026-11-05T11:00:02Z")));
+
+        let four = candle("2026-11-05T08:00:00+00:00");
+        assert!(!candle_finished(&four, "4h", at("2026-11-05T11:59:00Z")));
+        assert!(candle_finished(&four, "4h", at("2026-11-05T12:00:30Z")));
+
+        let day = candle("2026-11-05T00:00:00+00:00");
+        assert!(!candle_finished(&day, "1d", at("2026-11-05T23:59:59Z")));
+        assert!(candle_finished(&day, "1d", at("2026-11-06T00:00:30Z")));
+
+        assert!(!candle_finished(&candle("not a time"), "1h", at("2026-11-06T00:00:00Z")));
+    }
+
+    #[test]
+    fn a_resumed_bot_counts_what_closed_while_it_was_down() {
+        let rows = [
+            candle("2026-11-05T08:00:00+00:00"),
+            candle("2026-11-05T09:00:00+00:00"),
+            candle("2026-11-05T10:00:00+00:00"),
+        ];
+        assert_eq!(candles_missed_since(&rows, "1h", None), 0);
+        assert_eq!(candles_missed_since(&rows, "1h", Some("garbage")), 0);
+        assert_eq!(candles_missed_since(&rows, "1h", Some("2026-11-05T11:00:30+00:00")), 0, "it saw them all");
+        assert_eq!(candles_missed_since(&rows, "1h", Some("2026-11-05T10:30:00+00:00")), 1);
+        assert_eq!(candles_missed_since(&rows, "1h", Some("2026-11-05T08:30:00+00:00")), 3);
+        assert_eq!(candles_missed_since(&rows, "1h", Some("2026-11-05T11:00:01+00:00")), 1, "too early to have used it");
+    }
+
+    /// Public market data only. Run with `--ignored live_`.
+    #[test]
+    #[ignore]
+    fn live_every_provider_gives_a_finished_candle_and_a_newer_price() {
+        for provider in ["binance", "bybit", "okx", "coinbase", "kraken", "kucoin"] {
+            match poll_market(provider, "BTC/USDT", "1h") {
+                Ok(poll) => {
+                    let candle = poll.finished.unwrap_or_else(|| panic!("{provider}: no finished candle"));
+                    let end = candle_end(&candle, "1h").unwrap();
+                    let age = (Utc::now() - end).num_seconds();
+                    println!(
+                        "{provider}: finished {} O {} H {} L {} C {} V {} | ended {age}s ago | price now {}",
+                        candle.time, candle.open, candle.high, candle.low, candle.close, candle.volume, poll.price
+                    );
+                    assert!((2..=3_602).contains(&age), "{provider}: it is the bar that just ended, not an older one ({age}s)");
+                    assert!(candle.high > candle.low, "{provider}: a whole bar has a range");
+                }
+                Err(e) => println!("{provider}: skipped, {e}"),
+            }
+        }
     }
 }
