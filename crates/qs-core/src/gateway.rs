@@ -15,18 +15,21 @@ use crate::db::{self, Db};
 use crate::server::{self, Role};
 use crate::vault;
 use qs_gateway::client::{self, ClientInfo, PairingAttempt};
+use qs_gateway::files::FileRoots;
+use qs_gateway::protocol::EventKind;
 use qs_gateway::net::{self, Interface};
 use qs_gateway::registry::{AuditEntry, Device, Registry};
 use qs_gateway::server::{CallFuture, Dispatch, Hub, HubConfig, Listener, Observer, PairingStatus};
 use qs_gateway::{DeviceRole, Identity, Manifest};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::ipc::{CallbackFn, InvokeBody, InvokeResponse};
 use tauri::webview::InvokeRequest;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Listener as _, Manager, Runtime};
 
 pub const SERVER_IDENTITY: &str = "gateway.server-identity";
 pub const DEVICE_IDENTITY: &str = "gateway.device-identity";
@@ -73,6 +76,52 @@ fn identity(id: &str) -> Result<Identity, String> {
 
 fn setting(conn: &rusqlite::Connection, key: &str) -> Option<Value> {
     db::get_setting(conn, SCOPE, key).ok().flatten()
+}
+
+/// What other devices may browse, download from and upload to (§6.5): the
+/// data root without the vault, the signing key and the device registry, and
+/// the user's Documents, Downloads and Desktop — never the whole home folder
+/// (it holds SSH keys and the agents' sign-ins).
+pub fn file_roots() -> FileRoots {
+    let root = crate::paths::root();
+    let mut roots = vec![("QuantSuite data".to_string(), root.clone())];
+    for (label, dir) in [("Documents", dirs::document_dir()), ("Downloads", dirs::download_dir()), ("Desktop", dirs::desktop_dir())] {
+        if let Some(d) = dir {
+            roots.push((label.to_string(), d));
+        }
+    }
+    let deny = ["secrets", "signing", "gateway.db", "gateway.db-wal", "gateway.db-shm"].iter().map(|n| root.join(n)).collect();
+    FileRoots { roots, deny, transfers: root.join("transfers") }
+}
+
+/// Hands the events of server-placed modules to the hub (§6.3.2): the Tauri
+/// events in the manifest's `events` and the bus topics in its `topics`.
+pub fn forward_events<R: Runtime>(app: &AppHandle<R>, hub: &Arc<Hub>) {
+    for name in hub.manifest().events().to_vec() {
+        let h = Arc::downgrade(hub);
+        let topic = name.clone();
+        app.listen_any(name, move |e| {
+            if let Some(h) = h.upgrade() {
+                let payload = serde_json::from_str(e.payload()).unwrap_or(Value::Null);
+                h.publish(EventKind::Tauri, &topic, payload);
+            }
+        });
+    }
+    let topics: HashSet<String> = hub.manifest().topics().iter().cloned().collect();
+    let h = Arc::downgrade(hub);
+    app.listen_any(crate::bus::CHANNEL, move |e| {
+        let Some(h) = h.upgrade() else { return };
+        let Ok(v) = serde_json::from_str::<Value>(e.payload()) else { return };
+        let topic = v.get("topic").and_then(Value::as_str).unwrap_or_default().to_string();
+        if topics.contains(&topic) {
+            h.publish(EventKind::Bus, &topic, v);
+        }
+    });
+}
+
+/// Remote calls through the main webview's IPC.
+pub fn webview_dispatch<R: Runtime>(app: &AppHandle<R>) -> Arc<dyn Dispatch> {
+    Arc::new(WebviewDispatch { app: app.clone() })
 }
 
 // ── dispatch through the main webview (option B) ────────────────────────────
@@ -142,10 +191,12 @@ fn hub<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Hub>, String> {
     }
     let registry = Registry::open(&crate::paths::root().join("gateway.db"))?;
     let manifest = Arc::new(Manifest::bundled().clone());
-    let config = HubConfig { server_name: computer_name(), app_version: app.package_info().version.to_string() };
+    let mut config = HubConfig::new(computer_name(), app.package_info().version.to_string());
+    config.files = Some(file_roots());
     let h = Hub::new(identity(SERVER_IDENTITY)?, registry, manifest, config)?;
-    h.set_dispatch(Arc::new(WebviewDispatch { app: app.clone() }));
+    h.set_dispatch(webview_dispatch(app));
     h.set_observer(Arc::new(Notify { app: app.clone() }));
+    forward_events(app, &h);
     *slot = Some(h.clone());
     Ok(h)
 }

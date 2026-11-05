@@ -61,6 +61,7 @@ pub const RULES: &[Rule] = &[
     Rule { pattern: "gateway.db", class: MUST, reason: "the server's paired devices, their roles and the audit log" },
     Rule { pattern: "gateway.db-wal", class: MUST, reason: "gateway.db's write-ahead log" },
     Rule { pattern: "gateway.db-shm", class: MUST, reason: "gateway.db's shared memory" },
+    Rule { pattern: "transfers/", class: ON, reason: "files uploaded from other PCs through the server gateway" },
     Rule { pattern: "last-launch-version", class: MACHINE, reason: "which version last started on this machine" },
     Rule { pattern: "logs/", class: OFF, reason: "log files" },
     Rule { pattern: "secrets/", class: MUST, reason: "the vault — its secrets are re-encrypted under the bundle passphrase, never copied as they are" },
@@ -515,7 +516,7 @@ pub fn find_paths(root: &Path, map: &PathMap) -> Vec<Finding> {
 
 /// The data root's top-level names the suite creates (`paths.rs`).
 pub const TOP_LEVEL: &[&str] =
-    &["core.db", "gateway.db", "logs/", "secrets/", "signing/", "market-data/", "workspaces/x/", "modules/", "last-launch-version"];
+    &["core.db", "gateway.db", "transfers/", "logs/", "secrets/", "signing/", "market-data/", "workspaces/x/", "modules/", "last-launch-version"];
 
 /// A report directory under `root` for a dry run's JSON.
 pub fn report_path(dir: &Path, name: &str) -> PathBuf {

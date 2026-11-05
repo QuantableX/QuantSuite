@@ -110,6 +110,9 @@ impl Registry {
     fn init(conn: Connection) -> Result<Self, String> {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
+             -- Every call writes an audit row: no disk flush per row (WAL keeps
+             -- the database consistent; a power cut can lose the last rows).
+             PRAGMA synchronous = NORMAL;
              PRAGMA busy_timeout = 5000;
              CREATE TABLE IF NOT EXISTS devices (
                  id TEXT PRIMARY KEY,

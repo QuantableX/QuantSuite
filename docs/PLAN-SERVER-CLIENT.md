@@ -1,6 +1,6 @@
 # QuantSuite server and client — one QuantSuite, used from every PC
 
-Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, card 3 (pairing, mutual TLS) 2026-11-05 — see §6.3 and §6.3.1–6.3.6. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
+Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, card 3 (pairing, mutual TLS) and card 4 (gateway: calls, events, keys, files) 2026-11-05 — see §6.3 and §6.3.1–6.3.7. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
 
 ## In short
 
@@ -196,6 +196,7 @@ How they reach a client (card 4): the gateway listens with `listen_any` to every
 7. **Settings by prefix** needs one table of prefixes kept in sync with the modules; a wrong prefix silently writes to the wrong machine.
 8. **One trader.** A client still has the trading plugins compiled. Card 2's guard must stop executors on a connected client, not only hide the UI.
 9. **Version skew.** The manifest is part of the protocol. A client and server with different manifests must refuse to connect (card 4's `hello` carries a manifest hash).
+10. **The seam cannot be patched at runtime** (found in card 4): `window.__TAURI_INTERNALS__` and every function on it (`invoke`, `ipc`, `postMessage`, …) are defined non-writable and non-configurable. Card 5 cannot wrap `invoke` in the page; it must replace the imports instead — a Vite alias for `@tauri-apps/api/core` (and `/event`, whose `listen` calls the package's own `invoke`) pointing at a suite module that routes by the manifest and re-exports the rest.
 
 ### 6.3.5 Built: server mode (card Server 2/7, 2026-11-04)
 
@@ -246,6 +247,48 @@ Commands (core plugin `qs`) and their placement:
 `server_status` is now `server:read`, so every client can show the server's health.
 
 Tests (`cargo test -p qs-gateway`): a wrong server key is refused; unpaired devices may only pair; a revoked device is dropped at once and refused; read-only and no-trading devices are refused what their role forbids; unknown, `client` and `deny` commands are refused; 5 wrong codes lock (the right code and new codes too); an expired code fails; a recorded handshake replayed to the server does not authenticate; the four words differ when either key is swapped; external calls need the PIN and a new PIN ends the grant; versions must match; no private key, seed, PIN or PIN hash appears in anything a device or the screen receives.
+
+### 6.3.7 Built: the gateway (card Server 4/7, 2026-11-05)
+
+Protocol 2 (`crates/qs-gateway/src/protocol.rs`). What it adds to card 3:
+
+| Piece | How |
+|---|---|
+| Calls | `call {id, cmd, args, key?}` → `result {id, ok \| error}`, dispatched through the main webview (§6.3.6). Calls run concurrently. Error codes: `denied`, `step_up_required`, `failed`, `timeout`, `cancelled`, `rate_limited`, `unavailable`, `unknown`. |
+| Timeouts per class | The server waits 60 s for `read`, 30 min for `compute`, 2 min for `write` and `external`. The client's default wait is 5 min; long calls pass their own. |
+| Idempotency | A call with a `key` runs once per device and key. A repeat, or `outcome {id, key}` after a timeout or a reconnect, gets the same result (waiting while it still runs). Results are kept 15 minutes (at most 10,000). `unknown` means the server never saw the key, so sending it again is safe. Keyed calls are never cancelled: their outcome must stay knowable. |
+| Cancel | `cancel {id}` aborts a running unkeyed call or download (the Tauri command itself may still finish). |
+| Events | Tauri events in the manifest's `events` and bus topics in its `topics` (the `publishes` of server-placed modules, generated) get the next sequence number of this server run (`epoch`) and go to every connected device as `event {seq, kind, topic, payload}`. The last 10,000 events (at most 10 minutes) are kept. `hello` carries the client's resume point; `welcome` answers with `epoch`, `seq` and `reload`. The server replays exactly the missed events, then live ones (attached under one lock: no gap, no overlap), or says `reload` (another run, or the events are gone). A connection that falls more than 4,096 events behind gets `reload` too. |
+| Heartbeat | The client pings every 10 s and drops a server it has not heard from in 30 s; the server closes a connection silent for 35 s. |
+| Rate limit | 100 calls per second per device, bursts up to 400; above that `rate_limited`. |
+| Frames | 16 MiB at most; files move in 1 MiB binary chunks (8-byte id, 8-byte offset, data). |
+| Files (§6.5) | `gateway\|fs_list {path?}` lists the roots or one folder, for every role. Roots: the data root without `secrets/`, `signing/` and `gateway.db*`, and the user's Documents, Downloads and Desktop — not the whole home folder (SSH keys, the agents' sign-ins). Paths are resolved (links, `..`) before the check. `download {id, path, offset}` streams a file from `offset` with its SHA-256; the client writes `name.part` and renames it when the whole file's checksum matches, so an interrupted download continues where it stopped. `upload {id, name, size, sha256}` lands in `<data root>/transfers/` (a plain file name, `.part` plus a `.part.meta` with size and checksum, continued when they match); read-only devices may not upload. Every transfer is audited. |
+
+`qs_core::gateway::forward_events` listens to those events in the app; `webview_dispatch` is the dispatcher. The client (`qs_gateway::client::Session`) offers `call`, `call_with` (key, timeout), `outcome`, `cancel`, `take_events`, `resume_point`, `list_files`, `download`, `upload`. Card 5 puts the UI on it.
+
+Tests: `cargo test -p qs-gateway` (27 unit, 10 security, 8 two-process: the server is the `gateway-testserver` binary in its own process) and `cargo test -p tauri-plugin-qs --test gateway_in_app` (a paired device's calls run in a mock Tauri app through its webview; its events — and only the listed ones — reach the device). The two-process tests cover calls of every class and a denied one, a backtest streaming 300 progress events then its result, a disconnect after 800 of 3,000 streamed events resumed without a lost or doubled event, a write that timed out on the client resolved by its key (and after a reconnect) with exactly one run, a 64 MB download and a 16 MB upload interrupted and resumed with matching checksums, the heartbeat, the rate limit and cancel. `-- --ignored one_gigabyte` moved 1 GiB, interrupted at 342 MB and resumed: 6.6 s (154 MB/s, debug build), checksum equal; plus 256 MB the other way.
+
+**Latency.** The gateway's own cost, measured over loopback between two processes (`-- --ignored latency`), per call:
+
+| Build | One call after another | 20 calls at a time |
+|---|---|---|
+| debug | 0.71 ms | 0.25 ms (4,000 calls/s) |
+| release | 0.27 ms | 0.08 ms (11,800 calls/s) |
+
+Add the dispatch through the webview (about 0.2 ms, §6.3) and the network's round trip. What pages ask for when they open cold (counted in the QA app with a logpoint on `invoke`, server-placed calls only):
+
+| Page | Server calls | Parallel batches | Extra over a LAN (≈1 ms) | Over a direct tailnet (≈20 ms) | Over a relayed tailnet (≈80 ms) |
+|---|---|---|---|---|---|
+| Notes | 4 | 2 | ≈3 ms | ≈45 ms | ≈170 ms |
+| Plan | 4 | 2 | ≈3 ms | ≈45 ms | ≈170 ms |
+| Finance | 9 | 2 | ≈4 ms | ≈45 ms | ≈170 ms |
+| Habits | 4 | 1 | ≈2 ms | ≈25 ms | ≈85 ms |
+| QuantAlgo Manual | 6 | 3 | ≈5 ms | ≈65 ms | ≈250 ms |
+| QuantSystems | 6 | 2 | ≈3 ms | ≈45 ms | ≈170 ms |
+| QuantTerminal | 8 | 1 on load, then polling | ≈2 ms | ≈25 ms | ≈85 ms |
+| QuantScript | 1 | 1 | ≈2 ms | ≈25 ms | ≈85 ms |
+
+A batch costs one round trip plus about 0.5 ms; the commands' own time is the same as locally. Over a LAN a page opens as fast as locally. Over a direct tailnet connection (Tailscale finds one in most homes) a cold page waits a few tens of milliseconds longer; over Tailscale's relay a few hundred. Warm pages (kept alive) make 0–2 calls when revisited. Card 5 measures the real pages end to end.
 
 ### 6.4 Gateway protocol
 

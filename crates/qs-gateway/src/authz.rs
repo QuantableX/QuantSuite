@@ -84,6 +84,8 @@ struct Raw {
     plugins: HashMap<String, String>,
     #[serde(default)]
     events: Vec<String>,
+    #[serde(default)]
+    topics: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -91,6 +93,7 @@ pub struct Manifest {
     commands: HashMap<String, (Placement, Effect)>,
     plugins: HashMap<String, (Placement, Effect)>,
     events: Vec<String>,
+    topics: Vec<String>,
     hash: String,
 }
 
@@ -109,7 +112,7 @@ impl Manifest {
         }
         let normalized = json.replace("\r\n", "\n");
         let hash = hex::encode(&Sha256::digest(normalized.as_bytes())[..8]);
-        Ok(Self { commands, plugins, events: raw.events, hash })
+        Ok(Self { commands, plugins, events: raw.events, topics: raw.topics, hash })
     }
 
     /// The manifest this build was made with.
@@ -118,7 +121,7 @@ impl Manifest {
         BUNDLED.get_or_init(|| {
             Manifest::parse(include_str!("../remote-manifest.json")).unwrap_or_else(|e| {
                 log::error!("{e}");
-                Manifest { commands: HashMap::new(), plugins: HashMap::new(), events: Vec::new(), hash: "invalid".into() }
+                Manifest { commands: HashMap::new(), plugins: HashMap::new(), events: Vec::new(), topics: Vec::new(), hash: "invalid".into() }
             })
         })
     }
@@ -142,6 +145,12 @@ impl Manifest {
     /// The Tauri events server-placed modules emit (card 4 forwards them).
     pub fn events(&self) -> &[String] {
         &self.events
+    }
+
+    /// The suite-bus topics server-placed modules publish (card 4 forwards
+    /// them).
+    pub fn topics(&self) -> &[String] {
+        &self.topics
     }
 
     pub fn command_count(&self) -> usize {
