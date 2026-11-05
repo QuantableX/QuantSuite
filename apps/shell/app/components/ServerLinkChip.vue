@@ -26,7 +26,8 @@ const title = computed(() => {
   const s = link.status.value
   if (!s?.connection) return ''
   const role = { full: 'Full', no_trading: 'No trading', read_only: 'Read-only' }[s.role ?? s.connection.role] ?? ''
-  const state = s.message ?? (s.state === 'online' ? `Connected to ${s.connection.address}` : '')
+  const rtt = s.rtt_ms != null ? `, ${Math.round(s.rtt_ms)} ms` : ''
+  const state = s.message ?? (s.state === 'online' ? `Connected to ${s.connection.address}${rtt}` : '')
   return `This PC uses the server ${s.connection.name} (${role}). ${state}`
 })
 

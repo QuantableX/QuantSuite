@@ -19,6 +19,9 @@ export interface ServerLinkStatus {
   server_app: string | null
   role: ServerDeviceRole | null
   server_modules: string[]
+  /** The last ping's round trip (card Server 6/7). */
+  rtt_ms: number | null
+  reconnects: number
 }
 
 const status = ref<ServerLinkStatus | null>(null)
@@ -60,5 +63,12 @@ export function useServerLink() {
     /** Changing data at all. */
     canWrite: computed(() => !isClient.value || status.value?.role !== 'read_only'),
     retry: () => invoke('plugin:qs|gateway_link_retry').catch(() => undefined),
+    /** Reads the state again (the round trip changes without an event). */
+    reload: () =>
+      invoke<ServerLinkStatus>('plugin:qs|gateway_link_status')
+        .then((s) => {
+          status.value = s
+        })
+        .catch(() => undefined),
   }
 }

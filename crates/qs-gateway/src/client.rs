@@ -244,6 +244,8 @@ pub struct Session {
     last_seq: Arc<AtomicU64>,
     next: AtomicU64,
     closed: watch::Receiver<bool>,
+    /// The last ping's round trip, in microseconds (0 before the first pong).
+    rtt_us: Arc<AtomicU64>,
     pub welcome: Welcome,
     tasks: Vec<JoinHandle<()>>,
 }
@@ -305,20 +307,29 @@ impl Session {
         let (ev_tx, ev_rx) = mpsc::channel(EVENT_QUEUE);
         let last_seq = Arc::new(AtomicU64::new(from));
         let ping_every = opts.ping_every;
+        // The round trip of each ping (the connection-quality line, §5).
+        let t0 = std::time::Instant::now();
+        let ping_at = Arc::new(AtomicU64::new(0));
+        let rtt_us = Arc::new(AtomicU64::new(0));
+        let sent = ping_at.clone();
         let writer = tokio::spawn(async move {
+            // The first ping at once: the round trip is known right away.
             let mut ping = tokio::time::interval(ping_every);
-            ping.tick().await;
             loop {
                 tokio::select! {
                     m = queue.recv() => match m {
                         Some(m) => if sink.send(m).await.is_err() { break },
                         None => break,
                     },
-                    _ = ping.tick() => if sink.send(Message::text(Frame::Ping.encode())).await.is_err() { break },
+                    _ = ping.tick() => {
+                        sent.store(t0.elapsed().as_micros() as u64 + 1, Ordering::SeqCst);
+                        if sink.send(Message::text(Frame::Ping.encode())).await.is_err() { break }
+                    }
                 }
             }
             let _ = sink.close().await;
         });
+        let (pinged, rtt) = (ping_at.clone(), rtt_us.clone());
         let (w, t, s, seq) = (waiting.clone(), transfers.clone(), step_up.clone(), last_seq.clone());
         let dead_after = opts.dead_after;
         let reader = tokio::spawn(async move {
@@ -357,6 +368,12 @@ impl Session {
                                 let _ = tx.send(TransferMsg::Done);
                             }
                         }
+                        Ok(Frame::Pong) => {
+                            let at = pinged.load(Ordering::SeqCst);
+                            if at > 0 {
+                                rtt.store((t0.elapsed().as_micros() as u64 + 1).saturating_sub(at).max(1), Ordering::SeqCst);
+                            }
+                        }
                         Ok(f @ Frame::SteppedUp { .. }) => {
                             if let Some(tx) = lock(&s).take() {
                                 let _ = tx.send(f);
@@ -391,8 +408,17 @@ impl Session {
             last_seq,
             next: AtomicU64::new(1),
             closed,
+            rtt_us,
             welcome,
             tasks: vec![writer, reader],
+        }
+    }
+
+    /// The round trip of the last ping, once one came back.
+    pub fn rtt(&self) -> Option<Duration> {
+        match self.rtt_us.load(Ordering::SeqCst) {
+            0 => None,
+            us => Some(Duration::from_micros(us)),
         }
     }
 
