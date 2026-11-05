@@ -211,7 +211,7 @@ async function runNow(id: string) {
 .qp-sched-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; color: var(--qss-text-muted, #6e6e7a); }
 .qp-sched-empty h2 { margin: 4px 0 0; font-size: 15px; font-weight: 600; color: var(--qss-text, #d4d4d8); }
 .qp-sched-empty p { max-width: 440px; margin: 0 0 6px; line-height: 1.55; font-size: 12.5px; }
-.qp-sched-split { flex: 1; min-height: 0; display: flex; }
+.qp-sched-split { flex: 1; min-height: 0; display: flex; container: qp-sched / inline-size; }
 .qp-sched-list { width: 330px; flex-shrink: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-right: 1px solid var(--qss-border-subtle, #35353d); }
 .qp-sched-item { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .qp-sched-item:hover { background: var(--qss-bg-hover, #313139); }
@@ -227,6 +227,14 @@ async function runNow(id: string) {
 .qp-sched-pill.is-on { border-color: color-mix(in srgb, var(--qss-success, #34d399) 50%, transparent); color: var(--qss-success, #34d399); }
 .qp-sched-pill.is-paused { border-color: color-mix(in srgb, var(--qss-warning, #d29a3f) 50%, transparent); color: var(--qss-warning, #d29a3f); }
 .qp-sched-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* The middle is narrower with both bars: the list gives way before the details do. */
+@container qp-sched (max-width: 900px) {
+  .qp-sched-list { width: 250px; }
+}
+@container qp-sched (max-width: 600px) {
+  .qp-sched-list { width: 170px; padding: 6px; }
+  .qp-sched-detail { padding: 12px; }
+}
 .qp-sched-detail { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 16px 20px; }
 .qp-sched-dhead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .qp-sched-dtitle { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 10px; }

@@ -13,6 +13,7 @@ import { defineStore } from 'pinia'
 import { navigateTo } from '#app'
 import { bus, registerWorkspacePath } from '@quantsuite/core'
 import { pilot } from '#pilot/utils/invoke'
+import { useAppStore } from '#pilot/stores/app'
 import { useThreadStore } from '#pilot/stores/thread'
 import { useSidebarStore } from '#pilot/stores/sidebar'
 import { useDrawerStore } from '#pilot/stores/drawer'
@@ -388,14 +389,19 @@ export const usePilotStore = defineStore('pilot/pilot', {
       }
     },
 
-    /** Switch to a thread. Its conversation loads; nothing starts until a message is sent. */
-    async openSession(id: string, fromHistory = false) {
+    /**
+     * Switch to a thread. Its conversation loads; nothing starts until a message
+     * is sent. It is also shown, unless `stay`: the thread beside the board, or
+     * the next one taking over when the open one leaves the list.
+     */
+    async openSession(id: string, fromHistory = false, stay = false) {
       if (!fromHistory && this.activeId && this.activeId !== id) {
         this.history.back = [...this.history.back, this.activeId].slice(-50)
         this.history.forward = []
       }
       this.page = 'thread'
       this.activeId = id
+      if (!stay) useAppStore().showThread()
       useSidebarStore().markRead(id)
       await useThreadStore().open(id)
     },

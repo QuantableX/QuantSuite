@@ -321,9 +321,8 @@ function onFileDrop(e: DragEvent) {
   <div ref="shell" class="qp-shell" :style="appearance" @focusin="onFocusIn" @dragenter="onFileDrag" @dragover="onFileDrag" @dragleave="onFileLeave" @drop="onFileDrop">
     <PilotLayoutAppHeader />
     <div class="qp-body">
-      <!-- The board and GitHub fill the main area: no thread list, no thread panel (cards 21, 23). -->
-      <!-- The crew view follows the open thread, so the thread list stays (round 2, card 08). -->
-      <QSidebar :model-value="app.sidebarLeftOpen && (app.view === 'conversation' || app.view === 'crew')" resizable storage-key="pilot.left">
+      <!-- The same two bars on every tab: only the middle changes (user rule, 2026-11-05). -->
+      <QSidebar :model-value="app.sidebarLeftOpen" resizable storage-key="pilot.left">
         <PilotLayoutLeftSidebar />
       </QSidebar>
       <main class="qp-main">
@@ -336,7 +335,7 @@ function onFileDrop(e: DragEvent) {
         <PilotCrewLog v-if="crews.logOpen" :crew-id="crews.logOpen" />
         <PilotLayoutCompanion v-if="mascot.prefs.on && mascot.prefs.companion" />
       </main>
-      <QRightPanel :model-value="app.sidebarRightOpen && app.view === 'conversation'" storage-key="pilot.right">
+      <QRightPanel :model-value="app.sidebarRightOpen" storage-key="pilot.right">
         <PilotLayoutRightSidebar />
       </QRightPanel>
     </div>

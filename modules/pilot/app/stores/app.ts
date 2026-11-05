@@ -4,6 +4,7 @@
  * session data.
  */
 import { defineStore } from 'pinia'
+import { usePilotStore } from '#pilot/stores/pilot'
 
 function readBool(key: string, fallback: boolean): boolean {
   try {
@@ -40,9 +41,20 @@ export const useAppStore = defineStore('pilot/app', {
     boardCard: null as string | null,
   }),
   actions: {
+    /** A tab shows itself: it also leaves the Usage page, which the bars can open from any tab. */
     setView(view: PilotView) {
       this.view = view
       writeText('qp-view', view)
+      usePilotStore().page = 'thread'
+    },
+    /**
+     * A thread being opened is shown: from a tab about something else, the
+     * conversation takes over. The crew view follows the open thread instead.
+     */
+    showThread() {
+      // Leaving the board by a thread leaves its panel too: coming back must not reopen another thread.
+      if (this.view === 'board') this.boardPanel = null
+      if (this.view !== 'conversation' && this.view !== 'crew') this.setView('conversation')
     },
     setBoard(id: string) {
       if (this.boardId !== id) this.boardCard = null

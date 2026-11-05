@@ -32,7 +32,7 @@ const canResume = computed(() => crew.value && (crew.value.status === 'stopped' 
 
 function open(id: string | null) {
   if (!id) return
-  app.view = 'conversation'
+  app.setView('conversation')
   void store.openSession(id)
 }
 
