@@ -250,14 +250,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: var(--qss-gap-tight);
   padding: 24px;
   text-align: center;
 }
 [data-module="console"] .console-empty h1 {
-  /* UI text size — 14px was one of the one-offs the §3.1 scale forbids. */
-  font-size: 12px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--qss-text);
 }
 [data-module="console"] .console-empty p {
@@ -268,18 +268,20 @@
 [data-module="console"] .console-shells {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
   max-width: 260px;
+  margin-top: 4px;
 }
 [data-module="console"] .console-shell {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 11px;
+  gap: var(--qss-gap-tight);
+  height: var(--qss-row-h);
+  padding: 0 10px;
   border: 1px solid var(--qss-border);
-  border-radius: 6px;
+  border-radius: var(--qss-ctl-radius);
   background: var(--qss-bg-raised);
   color: var(--qss-text);
   font-family: inherit;
@@ -292,15 +294,11 @@
 }
 [data-module="console"] .console-shell-group {
   margin-bottom: 2px;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--qss-text-meta);
   color: var(--qss-text-muted);
 }
 [data-module="console"] .console-shell-hint {
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: var(--qss-text-meta);
   color: var(--qss-text-muted);
 }
 
