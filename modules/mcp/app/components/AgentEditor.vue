@@ -346,38 +346,38 @@ onMounted(() => loadState())
 
 .editor-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 12px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  padding-bottom: var(--qss-gap-tight);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
 
 .editor-header-left {
+  flex: 1;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: baseline;
+  gap: var(--qss-gap);
   min-width: 0;
 }
 
 .editor-title {
-  font-size: 13px;
+  flex-shrink: 0;
+  font-size: var(--qss-text-section);
   font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--text-primary);
   margin: 0;
 }
 
 .editor-path {
-  font-size: 11px;
+  min-width: 0;
+  font-size: var(--qss-text-meta);
   color: var(--text-muted);
-  font-family: monospace;
+  font-family: var(--qss-font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 500px;
 }
 
 .editor-header-right {
@@ -407,20 +407,19 @@ onMounted(() => loadState())
 
 
 .dirty-badge {
-  font-size: 11px;
-  color: #f59e0b;
-  font-weight: 600;
+  font-size: var(--qss-text-meta);
+  color: var(--warning);
+  font-weight: 500;
 }
 
 .hint-bar {
-  padding-bottom: 14px;
+  padding-bottom: var(--qss-gap-tight);
   flex-shrink: 0;
 }
 
 .hint-text {
-  font-size: 12px;
-  color: var(--text-secondary);
-  font-style: italic;
+  font-size: var(--qss-text-meta);
+  color: var(--text-muted);
 }
 
 .editor-empty {
@@ -456,14 +455,14 @@ onMounted(() => loadState())
   flex: 1;
   width: 100%;
   min-height: 0;
-  padding: 14px 16px;
-  background: var(--bg-primary);
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--qss-panel-radius);
   color: var(--text-primary);
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: var(--qss-text-section);
+  line-height: 1.6;
   resize: none;
   box-sizing: border-box;
   transition: border-color var(--transition);
@@ -481,7 +480,7 @@ onMounted(() => loadState())
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--qss-accent-ink);
   border: none;
   border-radius: var(--radius);
   padding: 8px 16px;

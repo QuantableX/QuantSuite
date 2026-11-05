@@ -144,3 +144,8 @@
 [data-module="mcp"] ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* Primary buttons carry dark ink on the light accent, dialogs included. */
+[data-module="mcp"] .btn-primary {
+  color: var(--qss-accent-ink);
+}

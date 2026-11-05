@@ -540,9 +540,10 @@ onUnmounted(() => {
 
 .main-content {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 32px;
+  padding: var(--qss-page-edge);
 }
 
 .right-sidebar-content {
@@ -818,7 +819,7 @@ onUnmounted(() => {
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--qss-accent-ink);
   border: none;
   border-radius: var(--radius);
   padding: 8px 16px;

@@ -146,28 +146,30 @@ function toggleBridgeModule(module: string) {
 
 <template>
   <div class="dashboard">
-    <QPageHeading title="Connections" />
+    <QPageHeading title="Connections">
+      <section class="connection-actions" aria-label="Connection tools">
+        <div class="actions-row">
+          <NuxtLink to="/mcp/mcps" class="action-card">
+            <Plug :size="14" />
+            <span class="action-label">Servers</span>
+            <ArrowUpRight :size="13" class="action-arrow" />
+          </NuxtLink>
+          <NuxtLink to="/mcp/tools" class="action-card">
+            <Wrench :size="14" />
+            <span class="action-label">Tools</span>
+            <ArrowUpRight :size="13" class="action-arrow" />
+          </NuxtLink>
+          <NuxtLink to="/mcp/settings" class="action-card">
+            <Settings2 :size="14" />
+            <span class="action-label">Settings</span>
+            <ArrowUpRight :size="13" class="action-arrow" />
+          </NuxtLink>
+        </div>
+      </section>
+    </QPageHeading>
 
-    <section class="connection-actions" aria-label="Connection tools">
-      <div class="actions-row">
-        <NuxtLink to="/mcp/mcps" class="action-card">
-          <Plug :size="20" />
-          <span class="action-label">Servers</span>
-          <ArrowUpRight :size="15" class="action-arrow" />
-        </NuxtLink>
-        <NuxtLink to="/mcp/tools" class="action-card">
-          <Wrench :size="20" />
-          <span class="action-label">Tools</span>
-          <ArrowUpRight :size="15" class="action-arrow" />
-        </NuxtLink>
-        <NuxtLink to="/mcp/settings" class="action-card">
-          <Settings2 :size="20" />
-          <span class="action-label">Settings</span>
-          <ArrowUpRight :size="15" class="action-arrow" />
-        </NuxtLink>
-      </div>
-    </section>
-
+    <!-- The built-in server and the external ones side by side; a long list scrolls in its panel. -->
+    <div class="dashboard-panels">
     <!-- QuantMCP built-in server — own box -->
     <section class="section">
       <h2 class="section-title">QuantMCP</h2>
@@ -377,72 +379,72 @@ function toggleBridgeModule(module: string) {
       </div>
     </section>
 
-    <div v-if="!loading && totalMcps === 0" class="empty-state">
-      <p class="empty-text">No MCPs configured yet.</p>
+    <QEmptyState v-if="!loading && totalMcps === 0" title="No MCPs configured yet.">
       <NuxtLink to="/mcp/mcps" class="detail-link">Add a server</NuxtLink>
+    </QEmptyState>
     </div>
   </div>
 </template>
 
 <style scoped>
-.dashboard { width: 100%; display: flex; flex-direction: column; height: 100%; }
+.dashboard { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; container-type: inline-size; }
+.dashboard > :deep(.qph) { flex-shrink: 0; }
 
-.page-title { font-size: 24px; font-weight: 600; margin-bottom: 24px; }
+.action-arrow { color: var(--text-muted); }
 
-.section { margin-bottom: 24px; }
-.section { padding: 22px; }
-.connection-actions { margin-bottom: 24px; }
-.action-arrow { margin-left: auto; color: var(--text-muted); }
-.section-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text-secondary); }
-
-/* Actions row */
-.actions-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
+/* Actions row: slim links beside the title */
+.actions-row { display: flex; flex-wrap: wrap; gap: var(--qss-gap-tight); }
 
 .action-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--qss-ctl-h);
+  padding: 0 10px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--text-primary);
+  border-radius: var(--qss-ctl-radius);
+  color: var(--text-secondary);
   transition: all var(--transition);
 }
 
-.action-card:hover { background: var(--bg-hover); border-color: var(--accent); }
-.action-icon { font-size: 20px; }
-.action-label { font-size: 14px; font-weight: 500; }
+.action-card:hover { background: var(--bg-hover); color: var(--text-primary); }
+.action-label { font-size: var(--qss-text-label); font-weight: 500; }
 
-.mcp-section {
-  margin-bottom: 0;
-  flex: 1;
+.dashboard-panels {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--qss-gap);
+  align-items: start;
+}
+
+.section {
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-
-.mcp-list {
-  background: var(--bg-card);
+  max-height: 100%;
+  padding: var(--qss-panel-pad);
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow-y: auto;
-  flex: 1;
+  border-radius: var(--qss-panel-radius);
 }
 
-.mcp-block { border-bottom: 1px solid var(--border); }
+.section-title { flex-shrink: 0; font-size: var(--qss-text-section); font-weight: 600; margin-bottom: var(--qss-gap-tight); color: var(--text-primary); }
+
+.mcp-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+.mcp-block { border-bottom: 1px solid var(--qss-border-subtle); }
 .mcp-block:last-child { border-bottom: none; }
 
 .mcp-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  font-size: 14px;
+  gap: var(--qss-gap-tight);
+  min-height: var(--qss-row-h);
+  font-size: var(--qss-text-section);
 }
 
 .chevron-btn {
@@ -465,27 +467,24 @@ function toggleBridgeModule(module: string) {
 .row-chevron.expanded { transform: rotate(90deg); }
 
 .status-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.dot-running  { background: var(--dot-running); box-shadow: 0 0 6px var(--dot-running), 0 0 14px var(--dot-running-glow); }
-.dot-stopped  { background: var(--dot-stopped); box-shadow: 0 0 6px var(--dot-stopped), 0 0 14px var(--dot-stopped-glow); }
-.dot-error    { background: var(--error); box-shadow: 0 0 6px var(--error), 0 0 14px rgba(255, 71, 87, 0.5); }
-.dot-disabled { background: var(--dot-disabled); box-shadow: 0 0 4px var(--dot-disabled), 0 0 8px var(--dot-disabled-glow); opacity: 0.45; }
+.dot-running  { background: var(--dot-running); }
+.dot-stopped  { background: var(--dot-stopped); }
+.dot-error    { background: var(--error); }
+.dot-disabled { background: var(--dot-disabled); opacity: 0.45; }
 
-.mcp-name { font-weight: 500; }
+.mcp-name { font-weight: 600; }
 
 .badge-tools {
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   color: var(--text-muted);
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1px 7px;
+  font-variant-numeric: tabular-nums;
 }
 
 .mcp-transport {
   margin-left: auto;
   color: var(--text-muted);
-  font-size: 12px;
-  font-family: monospace;
+  font-size: var(--qss-text-meta);
+  font-family: var(--qss-font-mono);
 }
 
 .mcp-row-actions {
@@ -493,14 +492,12 @@ function toggleBridgeModule(module: string) {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  margin-left: 8px;
+  margin-left: var(--qss-gap-tight);
 }
 
 .btn-icon {
-  padding: 4px 6px;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -510,38 +507,35 @@ function toggleBridgeModule(module: string) {
 
 .btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-/* Tool rows — QuantMCP expanded */
-.tool-rows {
-  border-top: 1px solid var(--border);
-}
+/* Tool rows: hairlines inside the one panel */
+.tool-rows { border-top: 1px solid var(--qss-border-subtle); }
 
 .inner-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 16px 9px 42px;
-  font-size: 13px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-primary);
+  gap: var(--qss-gap-tight);
+  min-height: var(--qss-row-h);
+  padding: 2px 4px 2px 26px;
+  font-size: var(--qss-text-label);
+  border-bottom: 1px solid var(--qss-border-subtle);
 }
 .inner-row:last-child { border-bottom: none; }
 
-.inner-name { font-weight: 600; font-family: monospace; min-width: 120px; }
-.inner-detail { flex: 1; color: var(--text-muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inner-name { font-weight: 500; font-family: var(--qss-font-mono); min-width: 120px; }
+.inner-detail { flex: 1; color: var(--text-muted); font-size: var(--qss-text-meta); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inner-toggle { margin-left: auto; flex-shrink: 0; }
 
-.tool-sub-section { border-bottom: 1px solid var(--border); }
+.tool-sub-section { border-bottom: 1px solid var(--qss-border-subtle); }
 .tool-sub-section:last-child { border-bottom: none; }
 
 .sub-section-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px 8px 42px;
-  font-size: 12px;
+  gap: var(--qss-gap-tight);
+  min-height: var(--qss-row-h);
+  padding: 2px 4px 2px 26px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
   user-select: none;
 }
 .sub-section-header:hover { background: var(--bg-hover); }
@@ -549,50 +543,42 @@ function toggleBridgeModule(module: string) {
 .sub-section-label {
   font-weight: 600;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-size: 11px;
+  font-size: var(--qss-text-label);
 }
 
 .native-badge-sm {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-muted);
   background: var(--bg-hover);
-  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0 5px;
-  font-family: sans-serif;
   flex-shrink: 0;
 }
 
-.deep-row { padding-left: 58px !important; }
-.deep-empty { padding-left: 58px !important; }
-.bridge-row { padding-left: 74px !important; }
-.bridge-module .sub-section-label { text-transform: none; letter-spacing: 0; font-family: monospace; }
+.deep-row { padding-left: 42px !important; }
+.deep-empty { padding-left: 42px !important; }
+.bridge-row { padding-left: 58px !important; }
+.bridge-module .sub-section-label { font-family: var(--qss-font-mono); }
 
 .empty-tools {
-  padding: 10px 16px 10px 42px;
-  font-size: 12px;
+  padding: 6px 4px 6px 26px;
+  font-size: var(--qss-text-label);
   color: var(--text-muted);
-  background: var(--bg-primary);
-  border-top: 1px solid var(--border);
 }
 
 /* MCP expanded details */
 .mcp-details {
-  padding: 8px 16px 12px 42px;
-  background: var(--bg-primary);
-  border-top: 1px solid var(--border);
+  padding: 4px 4px var(--qss-gap-tight) 26px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .detail-row {
   display: flex;
   gap: 10px;
-  font-size: 12px;
-  font-family: monospace;
+  font-size: var(--qss-text-meta);
+  font-family: var(--qss-font-mono);
 }
 
 .detail-key { color: var(--text-muted); min-width: 90px; flex-shrink: 0; }
@@ -629,7 +615,8 @@ function toggleBridgeModule(module: string) {
 .toggle-switch input:checked + .toggle-slider { background: var(--accent); }
 .toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); background: white; }
 
-.empty-state { text-align: center; padding: 60px 0; }
-.empty-text { font-size: 16px; color: var(--text-secondary); }
-.empty-sub { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+@container (max-width: 900px) {
+  .dashboard-panels { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; align-content: start; overflow-y: auto; }
+  .section { max-height: none; }
+}
 </style>

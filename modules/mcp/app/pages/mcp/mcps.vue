@@ -134,10 +134,9 @@ function isRunning(id: string) {
       </div>
     </div>
 
-    <div v-else-if="!loading" class="empty-state">
-      <p class="empty-text">No MCPs configured yet.</p>
-      <button class="btn-add empty-btn" @click="openAdd">+ Add MCP</button>
-    </div>
+    <QEmptyState v-else-if="!loading" title="No MCPs configured yet.">
+      <button class="btn-add" @click="openAdd">+ Add MCP</button>
+    </QEmptyState>
 
     <McpFormModal v-model="showModal" :edit-entry="editingMcp" @submit="handleSubmit" />
     <McpConfigModal v-model="showConfig" :mcp-id="configMcp?.id" :mcp-name="configMcp?.name" />
@@ -145,26 +144,30 @@ function isRunning(id: string) {
 </template>
 
 <style scoped>
-.mcps-page { width: 100%; }
+.mcps-page { display: flex; flex-direction: column; gap: var(--qss-gap); width: 100%; height: 100%; min-height: 0; container-type: inline-size; }
 
 .page-header {
+  flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  min-height: var(--qss-ctl-h);
 }
 
-.page-title { font-size: 24px; font-weight: 600; }
-
-.header-actions { display: flex; gap: 8px; }
+.page-title { font-size: var(--qss-text-title); font-weight: 600; letter-spacing: -.01em; }
+.header-actions { display: flex; gap: var(--qss-gap-tight); flex-shrink: 0; }
 
 .btn-secondary {
-  padding: 8px 16px;
+  height: var(--qss-ctl-h);
+  padding: 0 12px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--qss-ctl-radius);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
+  cursor: pointer;
   transition: all var(--transition);
 }
 
@@ -172,32 +175,42 @@ function isRunning(id: string) {
 .btn-secondary:disabled { opacity: 0.5; }
 
 .btn-add {
-  padding: 8px 16px;
+  height: var(--qss-ctl-h);
+  padding: 0 12px;
   background: var(--accent);
   border: none;
-  border-radius: var(--radius);
-  color: var(--bg-primary);
-  font-size: 13px;
+  border-radius: var(--qss-ctl-radius);
+  color: var(--qss-accent-ink);
+  font-size: var(--qss-text-label);
   font-weight: 600;
+  cursor: pointer;
   transition: all var(--transition);
 }
 
 .btn-add:hover { background: var(--accent-hover); }
 
-.mcp-list { display: flex; flex-direction: column; gap: 8px; }
+/* One panel; each server is a two-line row. */
+.mcp-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--qss-panel-radius);
+}
 
 .mcp-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  transition: all var(--transition);
+  gap: var(--qss-gap);
+  min-height: var(--qss-row-h);
+  padding: 6px var(--qss-panel-pad);
+  border-bottom: 1px solid var(--qss-border-subtle);
+  transition: background var(--transition);
 }
 
-.mcp-card:hover { border-color: var(--text-muted); }
+.mcp-card:last-child { border-bottom: none; }
+.mcp-card:hover { background: var(--bg-hover); }
 
 .status-dot {
   width: 8px;
@@ -210,16 +223,27 @@ function isRunning(id: string) {
 .dot-error { background: var(--error); }
 .dot-stopped { background: var(--text-muted); }
 
-.mcp-info { flex: 1; min-width: 0; }
-.mcp-name { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
-.mcp-description { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+.mcp-info {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: var(--qss-gap);
+  align-items: center;
+}
+.mcp-name { grid-column: 1; font-size: var(--qss-text-section); font-weight: 600; }
+.mcp-description { grid-column: 1; font-size: var(--qss-text-label); color: var(--text-secondary); }
 
 .mcp-meta {
+  grid-column: 2;
+  grid-row: 1 / span 2;
   display: flex;
-  gap: 12px;
-  font-size: 12px;
+  flex-wrap: wrap;
+  gap: 2px var(--qss-gap);
+  font-size: var(--qss-text-meta);
   color: var(--text-muted);
-  font-family: monospace;
+  font-family: var(--qss-font-mono);
+  overflow-wrap: anywhere;
 }
 
 .mcp-cmd {
@@ -229,17 +253,15 @@ function isRunning(id: string) {
 .mcp-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
 .btn-icon {
-  padding: 6px 8px;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   transition: all var(--transition);
   line-height: 1;
@@ -249,14 +271,14 @@ function isRunning(id: string) {
 .btn-danger:hover { border-color: var(--error); color: var(--error); }
 
 /* Toggle switch */
-.toggle-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+.toggle-switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; margin-left: 4px; }
 .toggle-switch input { display: none; }
 
 .toggle-slider {
   position: absolute;
   inset: 0;
   background: var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all var(--transition);
 }
@@ -264,20 +286,20 @@ function isRunning(id: string) {
 .toggle-slider::before {
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
   background: var(--text-secondary);
   border-radius: 50%;
   transition: all var(--transition);
 }
 
 .toggle-switch input:checked + .toggle-slider { background: var(--accent); }
-.toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); background: white; }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); background: white; }
 
-.empty-state { text-align: center; padding: 60px 0; }
-.empty-text { font-size: 16px; color: var(--text-secondary); }
-.empty-sub { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
-.empty-btn { margin-top: 20px; }
+@container (max-width: 760px) {
+  .mcp-info { grid-template-columns: minmax(0, 1fr); }
+  .mcp-meta { grid-column: 1; grid-row: auto; }
+}
 </style>

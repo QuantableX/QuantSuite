@@ -64,9 +64,25 @@ async function handleClear() {
 
 <template>
   <div class="logs-page">
+    <!-- The title, the filters and the actions share one row. -->
     <div class="page-header">
-      <div>
-        <h1 class="page-title">Logs</h1>
+      <h1 class="page-title">Logs</h1>
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label class="filter-label">Source</label>
+          <select v-model="filterSource" class="filter-select">
+            <option v-for="s in sources" :key="s" :value="s">{{ s === 'all' ? 'All Sources' : s }}</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">Direction</label>
+          <select v-model="filterDirection" class="filter-select">
+            <option value="all">All</option>
+            <option value="In">In</option>
+            <option value="Out">Out</option>
+          </select>
+        </div>
+        <span class="log-count">{{ filtered.length }} entries</span>
       </div>
       <div class="header-actions">
         <button class="btn-secondary" @click="refresh" :disabled="loading">
@@ -74,24 +90,6 @@ async function handleClear() {
         </button>
         <button class="btn-danger-outline" @click="handleClear">Clear</button>
       </div>
-    </div>
-
-    <div class="filter-bar">
-      <div class="filter-group">
-        <label class="filter-label">Source</label>
-        <select v-model="filterSource" class="filter-select">
-          <option v-for="s in sources" :key="s" :value="s">{{ s === 'all' ? 'All Sources' : s }}</option>
-        </select>
-      </div>
-      <div class="filter-group">
-        <label class="filter-label">Direction</label>
-        <select v-model="filterDirection" class="filter-select">
-          <option value="all">All</option>
-          <option value="In">In</option>
-          <option value="Out">Out</option>
-        </select>
-      </div>
-      <span class="log-count">{{ filtered.length }} entries</span>
     </div>
 
     <div v-if="filtered.length" class="log-list">
@@ -108,34 +106,34 @@ async function handleClear() {
       </div>
     </div>
 
-    <div v-else-if="!loading" class="empty-state">
-      <p class="empty-text">No log entries yet.</p>
-    </div>
+    <QEmptyState v-else-if="!loading" title="No log entries yet." />
   </div>
 </template>
 
 <style scoped>
-.logs-page { width: 100%; display: flex; flex-direction: column; height: 100%; }
+.logs-page { display: flex; flex-direction: column; gap: var(--qss-gap); width: 100%; height: 100%; min-height: 0; container-type: inline-size; }
 
 .page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 16px;
   flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  min-height: var(--qss-ctl-h);
 }
 
-.page-title { font-size: 24px; font-weight: 600; }
-.page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
-.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.page-title { font-size: var(--qss-text-title); font-weight: 600; letter-spacing: -.01em; }
+.header-actions { display: flex; gap: var(--qss-gap-tight); flex-shrink: 0; }
 
 .btn-secondary {
-  padding: 8px 16px;
+  height: var(--qss-ctl-h);
+  padding: 0 12px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--qss-ctl-radius);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
   transition: all var(--transition);
 }
@@ -144,12 +142,13 @@ async function handleClear() {
 .btn-secondary:disabled { opacity: 0.5; }
 
 .btn-danger-outline {
-  padding: 8px 16px;
+  height: var(--qss-ctl-h);
+  padding: 0 12px;
   background: transparent;
   border: 1px solid var(--error);
-  border-radius: var(--radius);
+  border-radius: var(--qss-ctl-radius);
   color: var(--error);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
   transition: all var(--transition);
 }
@@ -157,91 +156,88 @@ async function handleClear() {
 .btn-danger-outline:hover { background: var(--error); color: white; }
 
 .filter-bar {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
-  flex-shrink: 0;
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .filter-group { display: flex; align-items: center; gap: 6px; }
-.filter-label { font-size: 12px; color: var(--text-muted); }
+.filter-label { font-size: var(--qss-text-label); color: var(--text-muted); }
 
 .filter-select {
-  padding: 6px 10px;
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--qss-ctl-radius);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
   outline: none;
 }
 
-.log-count { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+.log-count { font-size: var(--qss-text-meta); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
+/* One panel of rows: who and when on the left, the payload beside it. */
 .log-list {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex: 0 1 auto;
   min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--qss-panel-radius);
 }
 
 .log-entry {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+  column-gap: var(--qss-gap);
+  align-items: start;
+  min-height: var(--qss-row-h);
+  padding: 6px var(--qss-panel-pad);
+  border-bottom: 1px solid var(--qss-border-subtle);
 }
+
+.log-entry:last-child { border-bottom: none; }
 
 .log-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-  font-size: 12px;
+  gap: 2px var(--qss-gap-tight);
+  font-size: var(--qss-text-meta);
 }
 
-.log-time { color: var(--text-muted); font-family: monospace; }
+.log-time { color: var(--text-muted); font-family: var(--qss-font-mono); font-variant-numeric: tabular-nums; }
 
-.log-direction {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: monospace;
-}
-
-.dir-in { background: rgba(46, 213, 115, 0.15); color: #2ed573; }
-.dir-out { background: rgba(100, 150, 255, 0.15); color: #6496ff; }
-
+.log-direction,
 .log-source-type {
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  color: var(--text-muted);
+  padding: 0 6px;
+  border-radius: 6px;
   background: var(--bg-hover);
-  font-family: monospace;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: var(--qss-font-mono);
 }
 
-.type-tool { color: var(--accent); }
+.log-source-type { color: var(--text-muted); }
+.type-tool { color: var(--text-secondary); }
 
 .log-source {
   font-weight: 500;
-  font-size: 13px;
-  font-family: monospace;
+  font-size: var(--qss-text-label);
+  font-family: var(--qss-font-mono);
   color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
 .log-content {
-  font-size: 12px;
-  font-family: monospace;
+  font-size: var(--qss-text-meta);
+  font-family: var(--qss-font-mono);
+  line-height: 1.5;
   color: var(--text-secondary);
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
@@ -250,7 +246,8 @@ async function handleClear() {
   margin: 0;
 }
 
-.empty-state { text-align: center; padding: 60px 0; }
-.empty-text { font-size: 16px; color: var(--text-secondary); }
-.empty-sub { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+@container (max-width: 760px) {
+  .log-entry { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
+  .filter-bar { order: 3; flex-basis: 100%; }
+}
 </style>
