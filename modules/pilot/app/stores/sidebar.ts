@@ -299,7 +299,8 @@ export const useSidebarStore = defineStore('pilot/sidebar', {
       this.hidden[id] = true
       if (store.activeId === id) {
         const next = this.visible.find((r) => r.id !== id)
-        if (next) void store.openSession(next.id)
+        // The next one takes over quietly: whichever tab is open stays.
+        if (next) void store.openSession(next.id, false, true)
         else store.closeSession()
       }
       const timer = setTimeout(() => {

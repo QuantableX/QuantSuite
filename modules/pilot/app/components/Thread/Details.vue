@@ -203,8 +203,14 @@ const written = computed(() => {
   return out
 })
 const changeTotals = computed(() => changes.value.reduce((t, f) => ({ added: t.added + f.added, removed: t.removed + f.removed }), { added: 0, removed: 0 }))
+/** What opens beside the conversation needs it on screen: the panel is on every tab. */
+function atThread(run: () => void) {
+  app.setView('conversation')
+  run()
+}
+
 function allChanges() {
-  inspector.showDiff(thread.value?.worktreePath ? 'branch' : 'uncommitted')
+  atThread(() => inspector.showDiff(thread.value?.worktreePath ? 'branch' : 'uncommitted'))
 }
 
 // ── Branch and PR ──
@@ -492,27 +498,27 @@ const dropLine = computed(() => {
             class="qp-side-row"
             :class="{ on: side.open?.sideId === c.id }"
             :title="`${c.title} — open beside the conversation`"
-            @click="side.show(threadId!, c.id)"
+            @click="atThread(() => side.show(threadId!, c.id))"
           >
             <PilotAgentIcon :agent="c.provider || null" :size="12" :status="sb.statusOf(c.id)" />
             <span class="qp-side-title">{{ c.title.replace(/^Side: /, '') || 'Side chat' }}</span>
           </button>
           <div v-if="!sideChats.length" class="qp-pn-empty">Ask something without touching this run: /btw &lt;question&gt;.</div>
           <div class="qp-actions">
-            <button class="qp-mini" title="A side chat beside this thread — same project, agent and checkout" @click="side.startNew(threadId!)">New side chat</button>
+            <button class="qp-mini" title="A side chat beside this thread — same project, agent and checkout" @click="atThread(() => side.startNew(threadId!))">New side chat</button>
           </div>
         </template>
 
         <!-- Changes -->
         <template v-else-if="s === 'changes'">
-          <button v-for="f in changes" :key="f.path" class="qp-file" :title="`${f.path} — open the diff`" @click="inspector.showDiff('turn', f.turnId, f.path)">
+          <button v-for="f in changes" :key="f.path" class="qp-file" :title="`${f.path} — open the diff`" @click="atThread(() => inspector.showDiff('turn', f.turnId, f.path))">
             <span class="qp-file-line">
               <span class="qp-file-name">{{ basename(f.path) }}</span>
               <span class="qp-file-num mono"><span class="add">+{{ f.added }}</span> <span class="del">−{{ f.removed }}</span></span>
             </span>
             <span class="qp-file-dir">{{ dirname(f.path) }}</span>
           </button>
-          <button v-for="p in written" :key="p" class="qp-file" :title="`${p} — open it`" @click="threadId && inspector.openFile(threadId, p)">
+          <button v-for="p in written" :key="p" class="qp-file" :title="`${p} — open it`" @click="threadId && atThread(() => inspector.openFile(threadId!, p))">
             <span class="qp-file-name">{{ basename(p) }}</span>
             <span class="qp-file-dir">{{ dirname(p) }}</span>
           </button>
@@ -556,7 +562,7 @@ const dropLine = computed(() => {
             class="qp-agent"
             :class="{ on: inspector.open && inspector.tab === 'agent' && threadId && inspector.agent[threadId] === a.callId }"
             :title="`${a.title} — open what it did in the inspector`"
-            @click="threadId && inspector.openAgent(threadId, a.callId)"
+            @click="threadId && atThread(() => inspector.openAgent(threadId!, a.callId))"
           >
             <PilotAgentIcon :agent="thread?.provider || null" :size="12" :status="a.status === 'running' ? 'working' : a.status === 'failed' ? 'error' : null" />
             <span class="qp-agent-title">{{ a.title }}</span>
@@ -571,7 +577,7 @@ const dropLine = computed(() => {
           <div v-for="sv in servers" :key="sv.port" class="qp-srv">
             <span class="qp-srv-port mono" :title="`${sv.url} — from ${sv.label}`">:{{ sv.port }}</span>
             <span class="qp-srv-from" :title="sv.label">{{ sv.label }}</span>
-            <button class="qp-mini" :title="`Open ${sv.url} in the Browser tab`" @click="threadId && inspector.openBrowser(threadId, sv.url)">Open</button>
+            <button class="qp-mini" :title="`Open ${sv.url} in the Browser tab`" @click="threadId && atThread(() => inspector.openBrowser(threadId!, sv.url))">Open</button>
             <button class="qp-mini" :title="sv.ptyId ? 'Ctrl+C in its terminal' : 'End the process that holds the port'" @click="askStop(sv)">Stop</button>
           </div>
           <div v-if="stopping" class="qp-srv-confirm" role="alertdialog">

@@ -182,6 +182,7 @@ const CHECK_TITLE = (pr: GhPull) =>
 </script>
 
 <template>
+  <div class="qp-ghv-box">
   <div class="qp-ghv">
     <aside class="qp-ghv-repos" aria-label="Repositories">
       <div class="qp-ghv-side-head">Repositories</div>
@@ -358,9 +359,11 @@ const CHECK_TITLE = (pr: GhPull) =>
       <p class="qp-ghv-empty">{{ github.reposLoaded ? 'Pick a repository.' : 'Looking for repositories…' }}</p>
     </section>
   </div>
+  </div>
 </template>
 
 <style scoped>
+.qp-ghv-box { flex: 1; min-height: 0; min-width: 0; display: flex; container: qp-ghv / inline-size; }
 .qp-ghv { flex: 1; min-height: 0; display: flex; min-width: 0; }
 .qp-ghv-repos {
   flex-shrink: 0;
@@ -394,7 +397,7 @@ const CHECK_TITLE = (pr: GhPull) =>
 .qp-ghv-browse:hover, .qp-ghv-browse.on { color: var(--qss-text, #d4d4d8); border-color: var(--qss-accent, #7aa2f7); }
 .qp-ghv-none { margin: 6px 8px; font-size: 12px; line-height: 1.5; color: var(--qss-text-muted, #6e6e7a); }
 .qp-ghv-none code { font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 11px; }
-.qp-ghv-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.qp-ghv-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; container: qp-ghv-main / inline-size; }
 .qp-ghv-blank { align-items: center; justify-content: center; }
 .qp-ghv-bar {
   flex-shrink: 0;
@@ -405,7 +408,7 @@ const CHECK_TITLE = (pr: GhPull) =>
   border-bottom: 1px solid var(--qss-border-subtle, #35353d);
 }
 .qp-ghv-title { font-size: 13px; font-weight: 600; color: var(--qss-text, #d4d4d8); white-space: nowrap; }
-.qp-ghv-tabs { display: inline-flex; gap: 2px; margin-left: 8px; }
+.qp-ghv-tabs { display: inline-flex; flex-shrink: 0; gap: 2px; margin-left: 8px; white-space: nowrap; }
 .qp-ghv-tabs button {
   border: none;
   border-radius: 6px;
@@ -421,8 +424,8 @@ const CHECK_TITLE = (pr: GhPull) =>
 .qp-ghv-count { margin-left: 3px; font-family: var(--qss-font-mono, ui-monospace, monospace); font-size: 10.5px; color: var(--qss-text-muted, #6e6e7a); }
 .qp-ghv-spacer { flex: 1; }
 .qp-ghv-search {
-  width: 260px;
-  min-width: 0;
+  flex: 0 1 260px;
+  min-width: 90px;
   padding: 4px 9px;
   border: 1px solid var(--qss-border, #47474f);
   border-radius: 6px;
@@ -488,6 +491,25 @@ const CHECK_TITLE = (pr: GhPull) =>
   text-align: left;
 }
 .qp-ghv-row:hover { background: color-mix(in srgb, var(--qss-bg-hover, #313139) 60%, transparent); }
+/* Narrow: the title takes its own line, its facts and buttons the next. */
+@container qp-ghv-main (max-width: 760px) {
+  .qp-ghv-row:not(.is-thread) { flex-wrap: wrap; row-gap: 4px; }
+  .qp-ghv-row:not(.is-thread) .qp-ghv-text { flex: 1 1 calc(100% - 34px); }
+  .qp-ghv-row:not(.is-thread) .qp-ghv-more { margin-left: auto; }
+}
+@container qp-ghv-main (max-width: 560px) {
+  .qp-ghv-bar { flex-wrap: wrap; }
+  .qp-ghv-spacer { display: none; }
+  .qp-ghv-search { flex: 1 1 120px; }
+}
+/* Very narrow: the repositories go above the list, as one row. */
+@container qp-ghv (max-width: 640px) {
+  .qp-ghv { flex-direction: column; }
+  .qp-ghv-repos { width: auto; flex-direction: row; align-items: stretch; overflow: auto hidden; border-right: none; border-bottom: 1px solid var(--qss-border-subtle, #35353d); }
+  .qp-ghv-repo { flex: none; max-width: 180px; }
+  .qp-ghv-browse { flex: none; margin: 0; }
+  .qp-ghv-side-head { display: none; }
+}
 .qp-ghv-row.is-thread { cursor: pointer; }
 .qp-ghv-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .qp-ghv-row-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

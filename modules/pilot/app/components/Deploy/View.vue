@@ -252,12 +252,16 @@ onBeforeUnmount(() => {
 .qp-dep-head h1 { margin: 0; font-size: 15px; font-weight: 600; }
 .qp-dep-head p { margin: 2px 0 0; color: var(--qss-text-secondary, #9a9aa5); }
 .qp-dep-project { flex: none; max-width: 220px; }
-.qp-dep-body { flex: 1; min-height: 0; display: flex; }
+.qp-dep-body { flex: 1; min-height: 0; display: flex; container: qp-dep / inline-size; }
 .qp-dep-list { flex: none; width: 240px; padding: 10px; overflow-y: auto; border-right: 1px solid var(--qss-border-subtle, #35353d); }
 .qp-dep-item { display: block; width: 100%; padding: 8px 10px; margin-bottom: 4px; border: none; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .qp-dep-item:hover, .qp-dep-item.on { background: var(--qss-bg-card, #292930); }
 .qp-dep-item-name { display: block; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .qp-dep-item-line { display: block; color: var(--qss-text-secondary, #9a9aa5); font-size: 11.5px; }
+@container qp-dep (max-width: 600px) {
+  .qp-dep-list { width: 170px; padding: 6px; }
+  .qp-dep-main { padding: 12px !important; }
+}
 .qp-dep-main { flex: 1; min-width: 0; padding: 14px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .qp-dep-main h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .qp-dep-h3 { margin: 8px 0 0; font-size: 13px; font-weight: 600; }

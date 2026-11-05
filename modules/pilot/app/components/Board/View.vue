@@ -40,7 +40,7 @@ function onBoard(e: Event) {
 
 function openPanel(threadId: string) {
   app.boardPanel = threadId
-  if (store.activeId !== threadId) void store.openSession(threadId)
+  if (store.activeId !== threadId) void store.openSession(threadId, false, true)
 }
 
 /** A click selects the card; one with threads opens its latest beside the board. */
@@ -66,7 +66,7 @@ async function start(card: KanbanCard, setup?: AgentSetup) {
       else await pilot('plugin:pilot|pilot_card_link', { id: term.id, cardId: card.id, title: card.title })
       return
     }
-    const meta = await store.createThread({ contextId: card.workspace_id, title: card.title, ...(setup ?? {}), remember: Boolean(setup) })
+    const meta = await store.createThread({ contextId: card.workspace_id, title: card.title, ...(setup ?? {}), remember: Boolean(setup) }, false)
     if (!meta) {
       error.value = store.lastError || 'The thread could not be created.'
       return
@@ -76,7 +76,7 @@ async function start(card: KanbanCard, setup?: AgentSetup) {
     await pilot('plugin:pilot|pilot_card_link', { id: meta.id, cardId: card.id, title: card.title })
     await git.loadLinks()
     app.boardCard = card.id
-    app.boardPanel = meta.id
+    openPanel(meta.id)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
