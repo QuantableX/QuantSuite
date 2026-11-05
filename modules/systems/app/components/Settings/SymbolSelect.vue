@@ -168,7 +168,7 @@ function navigate(event: KeyboardEvent) {
 .qs-symbol__search input::placeholder { color: var(--qs-text-muted); }
 .qs-symbol__results { min-height: 0; max-height: 310px; overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 16px; scrollbar-width: thin; scrollbar-color: var(--qs-scrollbar-thumb) transparent; }
 .qs-symbol__group + .qs-symbol__group { margin-top: 18px; }
-.qs-symbol__group h3 { margin: 0 0 8px; color: var(--qs-text-muted); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.qs-symbol__group h3 { margin: 0 0 8px; color: var(--qs-text-muted); font-size: var(--qss-text-meta); font-weight: 600; }
 .qs-symbol__options { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
 .qs-symbol__option { display: flex; align-items: center; justify-content: center; box-sizing: border-box; height: 44px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: var(--qs-bg-input); color: var(--qs-text-secondary); cursor: pointer; transition: background 100ms ease, color 100ms ease, border-color 100ms ease; }
 .qs-symbol__option:hover { border-color: var(--qs-border); background: var(--qs-bg-hover); color: var(--qs-text); }

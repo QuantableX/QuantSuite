@@ -121,11 +121,8 @@ function setBreakout(key: keyof Omit<TotalBreakoutConfig, 'trend'>, event: Event
   flex: 1 1 225px;
   min-width: 0;
   width: 225px;
-  height: 32px;
-  padding: 5px 8px;
-  font-size: 12px;
 }
-.qs-market-select--compact .qs-market-select__members { flex: 0 0 32px; width: 32px; }
+.qs-market-select--compact .qs-market-select__members { flex: 0 0 var(--qss-ctl-h); width: var(--qss-ctl-h); }
 .qs-market-select--compact > .qs-market-select__version { flex: 0 0 auto; width: auto; }
 .qs-market-select__lengths { display: flex; gap: 10px; min-width: 0; max-width: 100%; }
 .qs-market-select__lengths label { display: grid; gap: 4px; min-width: 0; font-size: 12px; color: var(--qs-text-secondary); }

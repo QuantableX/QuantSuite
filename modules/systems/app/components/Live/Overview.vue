@@ -38,12 +38,11 @@ const holding = computed(() => {
 .qs-live-overview__body > :deep(.qs-metrics) { overflow: auto; }
 .qs-live-overview__standings { display: flex; flex-direction: column; border-left: 1px solid var(--qs-border); }
 .qs-live-overview__standings > :deep(.card) { flex: 1; min-height: 0; }
-.qs-live-overview__positions { flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 12px; border-top: 1px solid var(--qs-border); font-size: 11px; color: var(--qs-text-muted); }
+.qs-live-overview__positions { flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--qss-gap-tight) var(--qss-gap); padding: var(--qss-gap-tight) var(--qss-panel-pad); border-top: 1px solid var(--qs-border); font-size: var(--qss-text-label); color: var(--qs-text-muted); }
 .qs-live-overview__positions strong { margin-left: 6px; color: var(--qs-text); }
-.qs-live-overview__positions .pill { font-size: 10px; }
-.qs-live-overview__body :deep(.qs-single-live) { padding: 12px 14px; }
+.qs-live-overview__body :deep(.qs-single-live) { padding: var(--qss-panel-pad); }
 .qs-live-overview__body :deep(.qs-single-live__metrics) { gap: 14px; margin: 0 0 12px; }
-.qs-live-overview__empty { padding: 12px 14px; font-size: 13px; color: var(--qs-text-muted); }
+.qs-live-overview__empty { padding: var(--qss-panel-pad); font-size: var(--qss-text-section); color: var(--qs-text-muted); }
 @container live-overview (max-width: 480px) {
   .qs-live-overview__body { grid-template-columns: 1fr; grid-template-rows: 344px minmax(220px, 1fr); min-height: 564px; }
   .qs-live-overview__standings { border-left: 0; border-top: 1px solid var(--qs-border); }

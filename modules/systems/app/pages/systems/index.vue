@@ -23,8 +23,23 @@ const systems = useSystemsStore()
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--qss-gap);
   color: var(--qs-text-muted);
+}
+
+.qs-redirect h1,
+.qs-redirect p {
+  margin: 0;
+}
+
+.qs-redirect h1 {
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  color: var(--qs-text);
+}
+
+.qs-redirect p {
+  font-size: var(--qss-text-section);
 }
 
 .qs-redirect__mark {

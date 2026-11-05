@@ -72,8 +72,8 @@ function fmtCap(cap: number | null): string {
   overflow: hidden;
 }
 
-.qs-rank__title { margin: 0; font-size: 12px; font-weight: 600; }
-.qs-rank--compact .qs-rank__head { padding: 8px 10px; }
+.qs-rank__title { margin: 0; font-size: var(--qss-text-section); font-weight: 600; }
+.qs-rank--compact .qs-rank__head { padding: var(--qss-panel-pad) var(--qss-panel-pad) var(--qss-gap-tight); }
 .qs-rank--compact .qs-rank__row { flex: 0 0 26px; }
 @container live-ranking (max-width: 270px) {
   .qs-rank--compact .qs-rank__cols,
@@ -90,9 +90,7 @@ function fmtCap(cap: number | null): string {
 }
 
 .qs-rank__lbl {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--qss-text-meta);
   color: var(--qs-text-muted);
 }
 
@@ -120,10 +118,9 @@ function fmtCap(cap: number | null): string {
 
 .qs-rank__cols {
   height: 22px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--qs-text-muted);
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
+  color: var(--qs-text-secondary);
   border-bottom: 1px solid var(--qs-border-subtle);
 }
 
@@ -190,9 +187,8 @@ function fmtCap(cap: number | null): string {
 }
 
 .qs-rank__nodata {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--qs-warning);
 }
 

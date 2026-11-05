@@ -211,7 +211,7 @@ function gradeClass(grade: string | null): string {
 .qs-cmp__trigger {
   box-sizing: border-box;
   width: 100%;
-  height: 32px;
+  height: var(--qss-ctl-h);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -219,8 +219,8 @@ function gradeClass(grade: string | null): string {
   border-radius: var(--qs-radius);
   background: var(--qs-bg-input);
   color: var(--qs-text);
-  padding: 5px 10px;
-  font-size: 12px;
+  padding: 0 10px;
+  font-size: var(--qss-ctl-font);
   cursor: pointer;
   outline: none;
   transition: border-color var(--qs-transition);
@@ -327,10 +327,8 @@ function gradeClass(grade: string | null): string {
   cursor: default;
   padding-top: 5px;
   padding-bottom: 5px;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--qs-text-muted);
+  font-size: var(--qss-text-meta);
+  color: var(--qs-text-secondary);
   border-bottom: 1px solid var(--qs-border-subtle);
   border-radius: 0;
   margin-bottom: 4px;

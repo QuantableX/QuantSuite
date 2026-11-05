@@ -170,7 +170,7 @@ watch(
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 28px;
+  padding: var(--qss-page-edge);
 }
 
 .qs-shell__error { display: flex; gap: 12px; align-items: center; padding: 12px; color: var(--qs-error); font-size: 13px; }

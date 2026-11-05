@@ -286,18 +286,19 @@ const slipPct = computed({
 <style scoped>
 .qs-form {
   min-width: 0;
-  padding: 16px 20px 20px;
+  padding: var(--qss-panel-pad);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas: 'heading heading' 'universe signals' 'window signals' 'costs signals';
+  grid-template-rows: auto auto auto 1fr;
   column-gap: 24px;
   align-content: start;
 }
 
 .qs-form__heading {
   grid-area: heading;
-  margin: 0 0 8px;
-  font-size: 13px;
+  margin: 0 0 var(--qss-gap-tight);
+  font-size: var(--qss-text-section);
   font-weight: 600;
 }
 
@@ -310,8 +311,8 @@ const slipPct = computed({
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 0;
+  gap: var(--qss-gap-tight);
+  padding: var(--qss-gap-tight) 0 var(--qss-gap);
   border-top: 1px solid var(--qs-border-subtle);
 }
 
@@ -320,10 +321,9 @@ const slipPct = computed({
 }
 
 .qs-form__legend {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--qs-accent);
+  font-size: var(--qss-text-label);
+  font-weight: 600;
+  color: var(--qs-text);
 }
 
 .qs-form__hint {
@@ -336,7 +336,7 @@ const slipPct = computed({
 .qs-form__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .qs-form__grid > * { min-width: 0; }
@@ -356,8 +356,6 @@ const slipPct = computed({
 .qs-form__members :deep(.qs-cmp__trigger) {
   width: 100%;
   justify-content: space-between;
-  padding: 8px 12px;
-  font-size: inherit;
 }
 
 .qs-form__members :deep(.qs-cmp__panel) {

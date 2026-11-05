@@ -24,32 +24,33 @@ defineProps<{ system?: SystemMeta }>()
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: var(--qss-gap-tight);
   text-align: center;
-  padding: 40px;
+  padding: var(--qss-page-edge);
 }
 
 .qs-planned__mark {
-  font-size: 52px;
+  font-size: 20px;
   color: var(--qs-accent);
 }
 
 .qs-planned__title {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
 }
 
 .qs-planned__desc {
   margin: 0;
-  max-width: 520px;
+  max-width: 80ch;
+  font-size: var(--qss-text-section);
   color: var(--qs-text-secondary);
 }
 
 .qs-planned__note {
   margin: 0;
-  max-width: 480px;
-  font-size: 13px;
+  max-width: 80ch;
+  font-size: var(--qss-text-label);
   color: var(--qs-text-muted);
 }
 </style>

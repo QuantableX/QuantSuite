@@ -155,55 +155,50 @@ useTauriEvent('cache:updated', () => refresh())
 
 <style scoped>
 .qs-cache {
-  padding: 12px 14px;
+  padding: var(--qss-panel-pad);
 }
 
 .qs-cache__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: var(--qss-gap-tight);
 }
 
 .qs-cache__title {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
 }
 
-.qs-cache__refresh {
-  width: 26px;
-  height: 26px;
+.qs-cache__head .qs-cache__refresh {
+  width: var(--qss-ctl-h);
   padding: 0;
 }
 
+/* Figures on the panel's own ground. */
 .qs-cache__stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  margin-bottom: var(--qss-gap);
 }
 
 .qs-cache__stat {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 8px 10px;
-  border: 1px solid var(--qs-border-subtle);
-  border-radius: var(--qs-radius);
-  background: var(--qs-bg-input);
+  min-width: 0;
 }
 
 .qs-cache__num {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--qs-text);
 }
 
 .qs-cache__lbl {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--qss-text-meta);
   color: var(--qs-text-muted);
 }
 
@@ -216,12 +211,7 @@ useTauriEvent('cache:updated', () => refresh())
 .qs-cache__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-}
-
-.qs-cache__actions .btn {
-  font-size: 12px;
-  padding: 6px 10px;
+  gap: 6px;
 }
 
 .qs-cache__error {

@@ -161,42 +161,47 @@ async function toggleEngine() {
 </template>
 
 <style scoped>
+/* The page is the main area: identity on one row, the form and the side panels
+   take the rest and scroll inside when the signal parameters get long. */
 .qs-settings {
   container: manual-settings / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--qss-gap);
   width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
-.qs-settings__tabs { display: none; }
+.qs-settings__tabs { display: none; flex-shrink: 0; }
 
-.qs-settings__identity { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 140px minmax(190px, 1fr); gap: 12px; padding: 16px; }
+.qs-settings__identity { flex-shrink: 0; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 120px minmax(204px, 1fr) minmax(0, 3fr) auto; gap: var(--qss-gap); padding: var(--qss-panel-pad); }
 .qs-settings__identity label { min-width: 0; }
-.qs-settings__description { grid-column: 1 / 4; }
-.qs-settings__manage { display: flex; gap: 8px; align-items: flex-end; justify-content: flex-end; }
-.qs-settings__confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--qs-error); font-size: 13px; }
+.qs-settings__manage { display: flex; gap: var(--qss-gap-tight); align-items: flex-end; justify-content: flex-end; }
+.qs-settings__confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--qss-gap-tight); color: var(--qs-error); font-size: var(--qss-text-section); }
 .qs-settings__confirm span { flex: 1; }
 
 .qs-settings__head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .qs-settings__title {
   overflow-wrap: anywhere;
   margin: 0;
-  font-size: 17px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
 }
 
 .qs-settings__engine {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
+  padding: 1px 8px;
   border: 1px solid var(--qs-border);
   border-radius: 999px;
   font-size: 11px;
@@ -222,14 +227,9 @@ async function toggleEngine() {
 .qs-settings__actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--qss-gap-tight);
   flex-shrink: 0;
   margin-left: auto;
-}
-
-.qs-settings__actions .btn {
-  padding: 6px 14px;
-  font-size: 13px;
 }
 
 .qs-settings__saved {
@@ -240,7 +240,7 @@ async function toggleEngine() {
 
 .qs-settings__error {
   flex-shrink: 0;
-  padding: 8px 12px;
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
   border: 1px solid color-mix(in srgb, var(--qs-error) 50%, var(--qs-border));
   border-radius: var(--qs-radius);
   background: color-mix(in srgb, var(--qs-error) 12%, transparent);
@@ -249,17 +249,26 @@ async function toggleEngine() {
 }
 
 .qs-settings__grid {
+  flex: 1 1 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 14px;
+  gap: var(--qss-gap);
   align-items: stretch;
+}
+
+.qs-settings .qs-settings__form {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .qs-settings__side {
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--qss-gap);
 }
 
 /* Cards keep their own height and only the last one fills the column: shared
@@ -271,6 +280,21 @@ async function toggleEngine() {
 
 .qs-settings__side-card:last-child {
   flex: 1 1 auto;
+}
+
+/* Wide: the form's sections side by side, a third column for the signals. */
+@container manual-settings (min-width: 1240px) {
+  .qs-settings .qs-settings__form {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas: 'heading heading heading' 'universe window signals' 'universe costs signals';
+    grid-template-rows: auto auto 1fr;
+  }
+}
+
+/* Identity on two rows before its fields get cramped. */
+@container manual-settings (max-width: 1239px) {
+  .qs-settings__identity { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 130px minmax(170px, 1fr); }
+  .qs-settings__description { grid-column: 1 / 4; }
 }
 
 @container manual-settings (max-width: 950px) {
@@ -287,7 +311,10 @@ async function toggleEngine() {
     cursor: pointer;
   }
   .qs-settings__tabs button[aria-pressed='true'] { color: var(--qs-text); border-bottom-color: var(--qs-accent); }
-  .qs-settings__grid { grid-template-columns: minmax(0, 1fr); }
+  /* One tab at a time at its own height: the main area scrolls if it must. */
+  .qs-settings__grid { flex: none; grid-template-columns: minmax(0, 1fr); }
+  .qs-settings .qs-settings__form,
+  .qs-settings__side { overflow-y: visible; }
   [data-panel='configuration'] .qs-settings__form { grid-template-areas: 'universe universe' 'window costs'; }
   [data-panel='configuration'] .qs-settings__form :deep(.qs-form__section--universe .qs-form__grid) { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
   [data-panel='configuration'] .qs-settings__form :deep(.qs-form__section--signals) { display: none; }

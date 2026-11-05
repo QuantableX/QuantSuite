@@ -112,20 +112,20 @@ useTauriEvent<RankingArchiveStatus>('engine:ranking_archive', payload => { archi
 
 <style scoped>
 .qs-prov {
-  padding: 12px 14px;
+  padding: var(--qss-panel-pad);
 }
 
 .qs-prov__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: var(--qss-gap-tight);
+  margin-bottom: var(--qss-gap-tight);
 }
 
 .qs-prov__title {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
 }
 
@@ -135,7 +135,7 @@ useTauriEvent<RankingArchiveStatus>('engine:ranking_archive', payload => { archi
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--qss-gap-tight);
 }
 
 .qs-prov__item {
@@ -179,9 +179,9 @@ useTauriEvent<RankingArchiveStatus>('engine:ranking_archive', payload => { archi
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--qs-border);
+  margin-top: var(--qss-gap);
+  padding-top: var(--qss-gap);
+  border-top: 1px solid var(--qs-border-subtle);
 }
 
 .qs-prov__archive-head,

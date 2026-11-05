@@ -372,10 +372,10 @@ onUnmounted(() => {
 
 <style scoped>
 .qs-chart {
-  padding: 12px 14px;
+  padding: var(--qss-panel-pad);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--qss-gap-tight);
   min-height: 0;
 }
 
@@ -396,7 +396,7 @@ onUnmounted(() => {
 
 .qs-chart__title {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
 }
 
@@ -422,7 +422,7 @@ onUnmounted(() => {
 }
 
 .qs-chart__ctrl--on {
-  color: var(--qs-bg);
+  color: var(--qss-accent-ink);
   background: var(--qs-accent);
   border-color: var(--qs-accent);
 }

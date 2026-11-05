@@ -292,20 +292,20 @@ watch(systemId, () => { void load() })
           <label><span class="label">Paper fee (%)</span><input v-model.number="form.paper_fee_pct" class="input" type="number" min="0" max="1" step="0.01"></label>
           <label><span class="label">Paper slippage (%)</span><input v-model.number="form.paper_slippage_pct" class="input" type="number" min="0" max="1" step="0.01"></label>
         </div>
-        <p class="qs-exec__hint">
+        <p class="qs-exec__hint qs-exec__full">
           Runs after the daily close at 00:00 UTC; the run waits for every coin's closed candle and the day's ranking until the window ends, then skips. It never trades on old data.
           One sub-account per system is recommended: a system only trades the capital and coins it owns.
         </p>
-        <label><span class="label">A coin the venue cannot trade</span>
+        <label class="qs-exec__half"><span class="label">A coin the venue cannot trade</span>
           <select v-model="form.coverage_policy" class="select">
             <option value="hold_usd">Hold USD when it is the pick (backtest ≠ live)</option>
             <option value="restrict">Restrict the universe to tradable coins (backtest = live)</option>
           </select>
         </label>
-        <label v-if="form.coverage_policy === 'restrict'"><span class="label">Coins left out of the universe (backtests of this system leave them out too)</span>
+        <label v-if="form.coverage_policy === 'restrict'" class="qs-exec__half"><span class="label">Coins left out of the universe (backtests of this system leave them out too)</span>
           <input class="input" :value="form.restricted_symbols.join(', ')" placeholder="e.g. HYPE, LEO" @change="setRestricted(($event.target as HTMLInputElement).value)">
         </label>
-        <div class="qs-exec__coverage">
+        <div class="qs-exec__coverage qs-exec__full">
           <button class="btn" :disabled="!form.exchange_id || coverageBusy" @click="checkCoverage">{{ coverageBusy ? 'Checking…' : 'Check coverage' }}</button>
           <button v-if="form.coverage_policy === 'restrict' && coverage?.missing.length" class="btn" @click="useMissingCoins">Leave the missing coins out</button>
           <span v-if="coverage" :class="coverage.missing.length ? 'qs-exec__warn' : 'qs-exec__ok'">
@@ -394,41 +394,55 @@ watch(systemId, () => { void load() })
 </template>
 
 <style scoped>
-.qs-exec { display: flex; flex-direction: column; gap: 14px; width: 100%; height: 100%; min-height: 0; }
-.qs-exec__head { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-.qs-exec__title { font-size: 16px; font-weight: 600; color: var(--qs-text); }
-.qs-exec__status { padding: 2px 10px; border: 1px solid var(--qs-border); border-radius: 999px; font-size: 12px; color: var(--qs-text-muted); }
+/* Settings and arming side by side, the runs take the full width underneath and scroll inside. */
+.qs-exec { container: manual-exec / inline-size; display: flex; flex-direction: column; gap: var(--qss-gap); width: 100%; height: 100%; min-height: 0; }
+.qs-exec__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--qss-gap-tight) var(--qss-gap); flex-shrink: 0; }
+.qs-exec__title { margin: 0; font-size: var(--qss-text-title); font-weight: 600; letter-spacing: -.01em; color: var(--qs-text); }
+.qs-exec__status { padding: 1px 8px; border: 1px solid var(--qs-border); border-radius: 999px; font-size: 11px; color: var(--qs-text-muted); }
 .qs-exec__status[data-tone='ok'] { color: var(--qs-success); }
 .qs-exec__status[data-tone='warn'] { color: var(--qs-warning); }
 .qs-exec__status[data-tone='live'] { color: var(--qs-error); border-color: color-mix(in srgb, var(--qs-error) 50%, var(--qs-border)); }
-.qs-exec__next { font-size: 12px; color: var(--qs-text-muted); }
-.qs-exec__actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.qs-exec__saved { font-size: 12px; color: var(--qs-success); }
-.qs-exec__error { padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--qs-error) 50%, var(--qs-border)); border-radius: var(--qs-radius); color: var(--qs-error); font-size: 13px; flex-shrink: 0; }
-.qs-exec__grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 14px; }
-.qs-exec__settings { grid-row: 1 / span 2; display: flex; flex-direction: column; gap: 10px; padding: 16px; min-height: 0; overflow: auto; }
-.qs-exec__settings label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.qs-exec__pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.qs-exec__arm { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-.qs-exec__runs { padding: 16px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-.qs-exec__table { flex: 1 1 auto; min-height: 0; overflow: auto; }
-.qs-exec__table table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.qs-exec__table th { text-align: left; color: var(--qs-text-muted); font-weight: 500; padding: 4px 6px; border-bottom: 1px solid var(--qs-border-subtle); position: sticky; top: 0; background: var(--qs-bg-card, var(--qs-bg)); }
-.qs-exec__table td { padding: 5px 6px; border-bottom: 1px solid var(--qs-border-subtle); }
+.qs-exec__next { font-size: var(--qss-text-label); color: var(--qs-text-muted); }
+.qs-exec__actions { margin-left: auto; display: flex; align-items: center; gap: var(--qss-gap-tight); }
+.qs-exec__saved { font-size: var(--qss-text-label); color: var(--qs-success); }
+.qs-exec__error { padding: var(--qss-gap-tight) var(--qss-panel-pad); border: 1px solid color-mix(in srgb, var(--qs-error) 50%, var(--qs-border)); border-radius: var(--qs-radius); color: var(--qs-error); font-size: var(--qss-text-section); flex-shrink: 0; }
+.qs-exec__grid { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); grid-template-rows: auto minmax(180px, 1fr); gap: var(--qss-gap); }
+.qs-exec__settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; align-content: start; gap: var(--qss-gap-tight) var(--qss-gap); padding: var(--qss-panel-pad); min-height: 0; overflow: auto; }
+.qs-exec__settings label { display: flex; flex-direction: column; min-width: 0; }
+.qs-exec__pair { display: contents; }
+.qs-exec__full { grid-column: 1 / -1; }
+.qs-exec__half { grid-column: span 2; }
+.qs-exec__arm { padding: var(--qss-panel-pad); display: flex; flex-direction: column; gap: var(--qss-gap-tight); min-height: 0; overflow: auto; }
+.qs-exec__runs { grid-column: 1 / -1; padding: var(--qss-panel-pad); display: flex; flex-direction: column; gap: var(--qss-gap-tight); min-height: 0; overflow: hidden; }
+.qs-exec__table { flex: 1 1 0; min-height: 0; overflow: auto; }
+.qs-exec__table table { width: 100%; border-collapse: collapse; font-size: var(--qss-text-label); font-variant-numeric: tabular-nums; }
+.qs-exec__table th { text-align: left; color: var(--qs-text-secondary); font-size: var(--qss-text-meta); font-weight: 500; padding: 4px 6px; border-bottom: 1px solid var(--qs-border); position: sticky; top: 0; background: var(--qss-bg-raised); }
+.qs-exec__table td { height: var(--qss-row-h); padding: 4px 6px; border-bottom: 1px solid var(--qs-border-subtle); }
 .qs-exec__table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .qs-exec__row { cursor: pointer; }
 .qs-exec__row:hover { background: var(--qs-bg-hover); }
 .qs-exec__detail td { color: var(--qs-text-secondary); }
 .qs-exec__detail ul { margin: 4px 0; padding-left: 16px; }
-.qs-exec__h2 { font-size: 13px; font-weight: 600; color: var(--qs-text); }
-.qs-exec__line { font-size: 13px; color: var(--qs-text-secondary); }
-.qs-exec__tick { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--qs-text-secondary); }
-.qs-exec__buttons { display: flex; gap: 8px; }
-.qs-exec__checks { margin: 0; padding-left: 0; list-style: none; font-size: 12px; }
-.qs-exec__hint { font-size: 12px; color: var(--qs-text-muted); }
-.qs-exec__note { font-size: 12px; color: var(--qs-text-muted); }
-.qs-exec__coverage { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.qs-exec__h2 { margin: 0; font-size: var(--qss-text-section); font-weight: 600; color: var(--qs-text); }
+.qs-exec__line { margin: 0; font-size: var(--qss-text-label); color: var(--qs-text-secondary); }
+.qs-exec__tick { display: flex; align-items: center; gap: 6px; font-size: var(--qss-text-label); color: var(--qs-text-secondary); }
+.qs-exec__buttons { display: flex; gap: var(--qss-gap-tight); }
+.qs-exec__checks { margin: 0; padding-left: 0; list-style: none; font-size: var(--qss-text-label); }
+.qs-exec__hint { margin: 0; font-size: var(--qss-text-label); line-height: 1.45; color: var(--qs-text-muted); }
+.qs-exec__note { margin: 0; font-size: var(--qss-text-label); color: var(--qs-text-muted); }
+.qs-exec__coverage { display: flex; flex-wrap: wrap; align-items: center; gap: var(--qss-gap-tight) var(--qss-gap); font-size: var(--qss-text-label); }
 .qs-exec__ok { color: var(--qs-success); }
 .qs-exec__warn { color: var(--qs-warning); }
 .qs-exec__live { color: var(--qs-error); }
+
+@container manual-exec (max-width: 1100px) {
+  .qs-exec__settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qs-exec__half { grid-column: 1 / -1; }
+}
+
+/* One column: one after the other, and the main area scrolls. */
+@container manual-exec (max-width: 700px) {
+  .qs-exec__grid { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+  .qs-exec__runs { min-height: 200px; }
+}
 </style>
