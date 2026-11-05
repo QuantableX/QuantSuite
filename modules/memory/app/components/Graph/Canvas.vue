@@ -339,7 +339,7 @@ function fit(members = simNodes) {
   const bw = maxX - minX + pad * 2
   const bh = maxY - minY + pad * 2
   const availableWidth = w
-  const fitted = Math.min(1.6, Math.max(MIN_GRAPH_ZOOM, Math.min(availableWidth / bw, (h - (props.immersive ? 88 : 0)) / bh)))
+  const fitted = Math.min(1.6, Math.max(MIN_GRAPH_ZOOM, Math.min(availableWidth / bw, (h - (props.immersive ? 160 : 0)) / bh)))
   scale = props.immersive ? Math.max(MIN_GRAPH_ZOOM, Math.floor(fitted * 20) / 20) : fitted
   tx = availableWidth / 2 - ((minX + maxX) / 2) * scale
   ty = h / 2 - ((minY + maxY) / 2) * scale
@@ -355,7 +355,7 @@ function resetView() {
   const maxY = simNodes.length ? Math.max(...simNodes.map(n => n.y)) : h / 2
   scale = DEFAULT_GRAPH_ZOOM
   tx = w / 2 - (minX + maxX) / 2
-  ty = h / 2 - (minY + maxY) / 2
+  ty = h / 2 + (props.immersive ? 30 : 0) - (minY + maxY) / 2
   userMoved = false
   emit('zoom', scale)
   scheduleDraw()
@@ -479,7 +479,7 @@ function stars(w: number, h: number, dpr: number): HTMLCanvasElement {
   for (let i = 0; i < Math.min(200, w * h / 7000); i++) {
     const x = ((i * 137.508 + 23) % 997) / 997 * w
     const y = ((i * i * 71.31 + 131) % 991) / 991 * h
-    ctx.fillStyle = i % 5 === 0 ? '#c9c9d1' : '#9a9aa3'
+    ctx.fillStyle = i % 5 === 0 ? '#a99bff' : '#b2c8e5'
     ctx.globalAlpha = i % 7 === 0 ? 0.35 : 0.13
     ctx.fillRect(x, y, i % 7 === 0 ? 1.5 : 1, i % 7 === 0 ? 1.5 : 1)
   }
@@ -931,7 +931,7 @@ function focusNode(id: string) {
   hovered = null
   const { w, h } = size()
   tx = w / 2 - node.x * scale
-  ty = h / 2 - node.y * scale
+  ty = h / 2 + (props.immersive ? 30 : 0) - node.y * scale
   userMoved = true
   emit('zoom', scale)
   scheduleDraw()
@@ -1050,7 +1050,7 @@ defineExpose({
   touch-action: none;
 }
 .qm-graph--immersive {
-  background: var(--qss-bg-chrome);
+  background: radial-gradient(ellipse at 28% 38%, #21193740, transparent 55%), radial-gradient(ellipse at 76% 70%, #0c2c3540, transparent 55%), #0b0d16;
 }
-.qm-graph-canvas:focus-visible { outline: 1px solid var(--qm-text-secondary); outline-offset: -3px; }
+.qm-graph-canvas:focus-visible { outline: 1px solid #a99bff; outline-offset: -3px; }
 </style>
