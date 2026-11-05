@@ -131,7 +131,10 @@ fn gh(cwd: &Path, args: &[String]) -> Result<String, String> {
 }
 
 fn gh_json(cwd: &Path, args: &[String]) -> Result<Value, String> {
-    let out = gh(cwd, args)?;
+    ready()?;
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    // Whole: a list cut at the output cap is not JSON any more.
+    let out = gitops::run_whole("gh", cwd, &argv, GH_TIMEOUT)?;
     serde_json::from_str(&out).map_err(|e| format!("gh answered something else: {e}"))
 }
 

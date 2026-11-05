@@ -13,7 +13,7 @@ import { usePilotStore } from '#pilot/stores/pilot'
 import { useAppStore } from '#pilot/stores/app'
 import { useSchedulesStore } from '#pilot/stores/schedules'
 import { useThreadStore } from '#pilot/stores/thread'
-import { describeRecurrence, inLabel, runLabel, whenLabel } from '#pilot/utils/schedules'
+import { describeWhen, inLabel, runLabel, whenLabel } from '#pilot/utils/schedules'
 import { MODES } from '#pilot/utils/models'
 import type { Schedule } from '#pilot/types'
 
@@ -55,11 +55,12 @@ function agentText(s: Schedule): string {
 const modeText = (m: string) => MODES.find((x) => x.id === m)?.label ?? 'Default'
 function stateOf(s: Schedule): { label: string; tone: string } {
   if (!s.enabled) return { label: 'Paused', tone: 'paused' }
-  if (!s.nextDue) return { label: 'Done', tone: 'done' }
+  if (!s.nextDue && s.trigger.kind === 'time') return { label: 'Done', tone: 'done' }
   return { label: 'On', tone: 'on' }
 }
 function nextText(s: Schedule): string {
   if (!s.enabled) return 'Paused'
+  if (s.trigger.kind !== 'time') return 'When an event arrives'
   if (!s.nextDue) return 'Nothing left to run'
   return `${whenLabel(s.nextDue, now.value)} · ${inLabel(s.nextDue, now.value)}`
 }
@@ -95,7 +96,7 @@ async function runNow(id: string) {
     <header class="qp-sched-head">
       <div class="qp-sched-head-text">
         <h1>Schedules</h1>
-        <p>Prompts that run on their own at the times you set — while QuantSuite is open.</p>
+        <p>Prompts that run on their own, at the times you set or when an event arrives, while QuantSuite is open.</p>
       </div>
       <button class="qp-btn qp-btn-primary" @click="startNew()"><Plus :size="13" /> New schedule</button>
     </header>
@@ -122,7 +123,7 @@ async function runNow(id: string) {
             <span class="qp-sched-item-name">{{ s.name }}</span>
             <span class="qp-sched-pill" :class="`is-${stateOf(s).tone}`">{{ stateOf(s).label }}</span>
           </span>
-          <span class="qp-sched-item-line">{{ describeRecurrence(s.recurrence) }} · {{ contextName(s.contextId) }}</span>
+          <span class="qp-sched-item-line">{{ describeWhen(s) }} · {{ contextName(s.contextId) }}</span>
           <span class="qp-sched-item-line">
             <span>{{ nextText(s) }}</span>
             <span v-if="s.lastRun" class="qp-sched-last" :class="`is-${runTone(s.lastRun.status)}`">· {{ runLabel(s.lastRun.status, s.lastRun.manual) }} {{ whenLabel(s.lastRun.at, now) }}</span>
@@ -157,7 +158,7 @@ async function runNow(id: string) {
           <p v-if="schedules.error" class="qp-sched-err" role="alert">{{ schedules.error }}</p>
 
           <dl class="qp-sched-facts">
-            <div><dt>When</dt><dd>{{ describeRecurrence(current.recurrence) }}</dd></div>
+            <div><dt>When</dt><dd>{{ describeWhen(current) }}</dd></div>
             <div><dt>Next run</dt><dd>{{ nextText(current) }}</dd></div>
             <div><dt>Project</dt><dd>{{ contextName(current.contextId) }}</dd></div>
             <div>
@@ -176,7 +177,7 @@ async function runNow(id: string) {
                 <template v-else>Starts a new thread</template>
               </dd>
             </div>
-            <div><dt>If missed</dt><dd>{{ current.missed === 'once' ? 'Runs once when QuantSuite starts' : 'Skipped' }}</dd></div>
+            <div v-if="current.trigger.kind === 'time'"><dt>If missed</dt><dd>{{ current.missed === 'once' ? 'Runs once when QuantSuite starts' : 'Skipped' }}</dd></div>
           </dl>
 
           <div class="qp-sched-promptview">{{ current.prompt }}</div>

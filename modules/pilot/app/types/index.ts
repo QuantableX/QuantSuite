@@ -1052,6 +1052,9 @@ export interface ScheduleRun {
   manual: boolean
 }
 
+/** What starts a schedule (round 4, card 3). */
+export type Trigger = { kind: 'time' } | { kind: 'github'; repo: string; events: string[]; branch: string } | { kind: 'webhook' }
+
 export interface Schedule {
   id: string
   name: string
@@ -1063,6 +1066,7 @@ export interface Schedule {
   mode: string
   instance: string
   recurrence: Recurrence
+  trigger: Trigger
   enabled: boolean
   missed: 'skip' | 'once'
   target: 'new' | 'same'

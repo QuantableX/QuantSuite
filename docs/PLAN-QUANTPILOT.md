@@ -3306,3 +3306,13 @@ The user on the roadmap (card 91212da8): "plan each idea as a card and implement
 - **Restarts.** The read position is saved before an update is acted on, so nothing runs twice; updates from before the bot was on are skipped. A wrong token stops polling and says so; everything else backs off and retries.
 
 Tests run against a local stand-in for Telegram's API. A debug build reads `QS_TELEGRAM_API` for that; a release always talks to Telegram. The first real message is the user's.
+
+
+### 3/6 — triggers: GitHub events and webhooks (card 8e1e6600)
+
+`triggers.rs`, `Schedule.trigger` (schema 27: `schedules.trigger_rule`, `trigger_seen`), What starts it in the schedule editor, `Schedules/Listener.vue`. A trigger is a kind of schedule, so history, overlap, target thread and mode stay the schedule's; Run now runs the prompt alone.
+
+- **GitHub by outbound polling** through `gh api`, once a minute, reads only: new issue, new pull request, pull request updated (a new head commit), new commit on a branch, failed CI run. Nothing needs to reach this PC. The first look at a kind is its baseline, so what exists when a trigger starts, changes or comes back on never fires. An event is marked seen before it runs, so a restart cannot run it twice.
+- **A webhook** for anything else: `POST /hook/<schedule id>` on a listener that is off by default, on an address phone access's rules allow (loopback, Tailscale, a LAN address with a tick; never public). `X-Hub-Signature-256` over the raw body (GitHub's own header) or a bearer secret, from the vault as `pilot.hook.<id>`, shown once. An unknown id, a paused trigger and a wrong secret all get the same answer. A repeated delivery runs once (its id, else its content). 256 KiB at most. Reaching it from the internet is the user's choice, for example with Tailscale Funnel; QuantSuite never sets that up.
+- **Event text is untrusted.** Anyone who can open an issue writes it. It goes into the prompt between marker lines the event cannot forge, 8 KiB at most, with a line saying it is data. Triggered threads default to **Plan** mode, not Ask as the card first said: a user's own permission rules can auto-allow commands in Ask mode (this user's Claude settings allow Bash), so only Plan actually stops an event from running anything. Choosing another mode shows a warning.
+- **At most 10 runs an hour per trigger**; the rest are recorded as skipped, and a webhook answers 429.

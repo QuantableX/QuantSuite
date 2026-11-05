@@ -7529,6 +7529,7 @@ dependencies = [
  "chrono-tz",
  "dirs 5.0.1",
  "futures-util",
+ "hmac 0.12.1",
  "ignore",
  "image 0.25.10",
  "memchr",
