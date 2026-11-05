@@ -62,11 +62,11 @@ function getStars(score: number): number {
 </script>
 
 <template>
-  <div class="space-y-3" v-if="lesson && track && module_ && challenge">
+  <div v-if="lesson && track && module_ && challenge" class="dojo-challenge">
     <!-- Breadcrumb -->
     <div class="flex items-center gap-1.5 flex-wrap">
       <button
-        class="text-[11px] font-medium transition-colors hover:brightness-125"
+        class="text-[12px] font-medium transition-colors hover:brightness-125"
         style="color: var(--accent)"
         @click="emit('back-to-overview')"
       >
@@ -74,40 +74,37 @@ function getStars(score: number): number {
       </button>
       <ChevronRight class="w-3 h-3" style="color: var(--muted)" />
       <button
-        class="text-[11px] font-medium transition-colors hover:brightness-125"
-        :style="{ color: track.color }"
+        class="text-[12px] font-medium transition-colors hover:brightness-125"
+        style="color: var(--text-secondary)"
         @click="emit('back')"
       >
         {{ track.name }}
       </button>
       <ChevronRight class="w-3 h-3" style="color: var(--muted)" />
-      <span class="text-[11px]" style="color: var(--text-secondary)">{{ lesson.title }}</span>
+      <span class="text-[12px]" style="color: var(--text-secondary)">{{ lesson.title }}</span>
     </div>
 
     <!-- Challenge header -->
-    <div class="card p-4">
-      <div class="flex items-center gap-3 mb-3">
-        <div class="p-2.5 rounded-lg" :style="{ backgroundColor: track.color + '18' }">
-          <Swords class="w-5 h-5" :style="{ color: track.color }" />
-        </div>
-        <div>
-          <h2 class="text-sm font-bold" style="color: var(--text-primary)">{{ challenge.title }}</h2>
-          <p class="text-[11px]" style="color: var(--text-secondary)">{{ challenge.description }}</p>
-        </div>
+    <div class="card dojo-challenge-head">
+      <Swords class="w-4 h-4 flex-shrink-0" style="color: var(--text-secondary)" />
+      <div class="min-w-0">
+        <h2>{{ challenge.title }}</h2>
+        <p>{{ challenge.description }}</p>
       </div>
     </div>
 
+    <div class="dojo-challenge-body">
     <!-- Scenario -->
-    <div class="card p-4">
-      <h4 class="text-[11px] font-semibold mb-2 uppercase tracking-wider" style="color: var(--accent)">Scenario</h4>
-      <p class="text-[11px] leading-relaxed whitespace-pre-line" style="color: var(--text-secondary)">{{ challenge.scenario }}</p>
+    <div class="card p-3">
+      <h4>Scenario</h4>
+      <p class="text-[12px] leading-relaxed whitespace-pre-line" style="color: var(--text-secondary)">{{ challenge.scenario }}</p>
     </div>
 
     <!-- Outcome display (after submission) -->
     <template v-if="submitted && chosenOutcome">
-      <div class="card p-4">
+      <div class="card p-3">
         <div class="flex items-center justify-between mb-3">
-          <h4 class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--text-primary)">Outcome</h4>
+          <h4 class="dojo-challenge-h">Outcome</h4>
           <div class="flex items-center gap-2">
             <div class="flex gap-0.5">
               <Star
@@ -138,12 +135,12 @@ function getStars(score: number): number {
 
         <!-- All options summary -->
         <div class="mt-4 pt-3 border-t" style="border-color: var(--border)">
-          <h5 class="text-[10px] font-semibold mb-2 uppercase tracking-wider" style="color: var(--muted)">All Options</h5>
+          <h5 class="dojo-challenge-h5">All Options</h5>
           <div class="space-y-1.5">
             <div
               v-for="(opt, idx) in challenge.options"
               :key="idx"
-              class="flex items-center justify-between text-[10px] p-2 rounded"
+              class="flex items-center justify-between text-[12px] px-2 py-1 rounded"
               :style="{
                 backgroundColor: idx === selectedOption ? getScoreColor(opt.score) + '0a' : 'transparent',
               }"
@@ -167,8 +164,7 @@ function getStars(score: number): number {
           </button>
           <button
             v-if="nextLesson"
-            class="px-4 py-2 rounded-md text-[11px] font-semibold text-white flex items-center gap-1.5"
-            :style="{ backgroundColor: track.color }"
+            class="btn-primary flex items-center gap-1.5"
             @click="emit('select-lesson', nextLesson.id)"
           >
             Next Lesson
@@ -180,13 +176,13 @@ function getStars(score: number): number {
 
     <!-- Options (before submission) -->
     <template v-else>
-      <div class="card p-4">
-        <h4 class="text-[11px] font-semibold mb-3 uppercase tracking-wider" style="color: var(--text-primary)">What do you do?</h4>
+      <div class="card p-3">
+        <h4>What do you do?</h4>
         <div class="space-y-2">
           <button
             v-for="(opt, idx) in challenge.options"
             :key="idx"
-            class="w-full p-3 rounded-lg text-left text-[11px] transition-all border leading-relaxed"
+            class="w-full px-3 py-2 rounded-lg text-left text-[12px] transition-all border leading-relaxed"
             style="border-color: var(--border); color: var(--text-primary); background-color: var(--surface-1)"
             @click="submit(idx)"
           >
@@ -196,4 +192,30 @@ function getStars(score: number): number {
       </div>
     </template>
   </div>
+  </div>
 </template>
+
+<style scoped>
+.dojo-challenge { display: flex; flex-direction: column; gap: var(--qss-gap); font-variant-numeric: tabular-nums; }
+.dojo-challenge-head {
+  display: flex;
+  align-items: center;
+  gap: var(--qss-gap);
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
+}
+.dojo-challenge-head h2 { margin: 0; color: var(--text-primary); font-size: var(--qss-text-section); font-weight: 600; }
+.dojo-challenge-head p { margin: 1px 0 0; color: var(--text-secondary); font-size: var(--qss-text-meta); }
+/* The scenario next to what you decide. */
+.dojo-challenge-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--qss-gap);
+}
+.dojo-challenge-body h4 { margin: 0 0 var(--qss-gap-tight); color: var(--text-primary); font-size: var(--qss-text-section); font-weight: 600; }
+.dojo-challenge-body h4.dojo-challenge-h { margin: 0; }
+.dojo-challenge-h5 { margin: 0 0 4px; color: var(--text-secondary); font-size: var(--qss-text-label); font-weight: 600; }
+@container terminal-workspace (max-width: 760px) {
+  .dojo-challenge-body { grid-template-columns: minmax(0, 1fr); }
+}
+</style>

@@ -114,313 +114,255 @@ function formatPnl(v: number): string {
 </script>
 
 <template>
-  <div class="terminal-workspace space-y-4 h-full overflow-y-auto">
+  <div class="terminal-workspace qj">
     <!-- Header -->
     <QPageHeading title="Trade journal">
-      <div class="flex items-center gap-2">
-        <button
-          class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium transition-all hover:brightness-110"
-          style="background-color: var(--surface-2); color: var(--text-secondary)"
-          @click="showImportExport = true"
-        >
-          <Download class="w-3 h-3" />
-          Import/Export
-        </button>
-        <button class="btn-primary flex items-center gap-2 text-xs" @click="openNewTrade">
-          <Plus class="w-3.5 h-3.5" />
-          Log Trade
-        </button>
-      </div>
+      <button class="qj-btn" @click="showImportExport = true">
+        <Download class="w-3 h-3" />
+        Import/Export
+      </button>
+      <button class="btn-primary flex items-center gap-2" @click="openNewTrade">
+        <Plus class="w-3.5 h-3.5" />
+        Log Trade
+      </button>
     </QPageHeading>
 
-    <!-- Stats Row -->
-    <div class="grid grid-cols-6 gap-3">
-      <div class="card p-3">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-[10px] font-medium uppercase tracking-wider" style="color: var(--muted)">Total PnL</span>
-          <DollarSign class="w-3.5 h-3.5" style="color: var(--muted)" />
-        </div>
-        <div class="text-lg font-bold font-mono" :style="{ color: store.totalPnl >= 0 ? 'var(--positive)' : 'var(--negative)' }">
-          {{ formatPnl(store.totalPnl) }}
-        </div>
+    <!-- Stats: one panel, the PnL leads -->
+    <div class="card qj-stats">
+      <div class="qj-stat">
+        <span class="qj-stat__label">Total PnL <DollarSign class="w-3 h-3" /></span>
+        <span class="qj-stat__row">
+          <strong class="is-lead" :style="{ color: store.totalPnl >= 0 ? 'var(--positive)' : 'var(--negative)' }">{{ formatPnl(store.totalPnl) }}</strong>
+        </span>
       </div>
-      <div class="card p-3">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-[10px] font-medium uppercase tracking-wider" style="color: var(--muted)">Win Rate</span>
-          <Target class="w-3.5 h-3.5" style="color: var(--muted)" />
-        </div>
-        <div class="text-lg font-bold font-mono" :style="{ color: store.winRate >= 50 ? 'var(--positive)' : 'var(--negative)' }">
-          {{ store.winRate.toFixed(1) }}%
-        </div>
-        <span class="text-[10px]" style="color: var(--text-secondary)">{{ store.winningTrades.length }}W / {{ store.losingTrades.length }}L</span>
+      <div class="qj-stat">
+        <span class="qj-stat__label">Win Rate <Target class="w-3 h-3" /></span>
+        <span class="qj-stat__row">
+          <strong :style="{ color: store.winRate >= 50 ? 'var(--positive)' : 'var(--negative)' }">{{ store.winRate.toFixed(1) }}%</strong>
+          <small>{{ store.winningTrades.length }}W / {{ store.losingTrades.length }}L</small>
+        </span>
       </div>
-      <div class="card p-3">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-[10px] font-medium uppercase tracking-wider" style="color: var(--muted)">Profit Factor</span>
-          <Activity class="w-3.5 h-3.5" style="color: var(--muted)" />
-        </div>
-        <div class="text-lg font-bold font-mono" :style="{ color: store.profitFactor >= 1 ? 'var(--positive)' : 'var(--negative)' }">
-          {{ store.profitFactor === Infinity ? '∞' : store.profitFactor.toFixed(2) }}
-        </div>
+      <div class="qj-stat">
+        <span class="qj-stat__label">Profit Factor <Activity class="w-3 h-3" /></span>
+        <span class="qj-stat__row">
+          <strong :style="{ color: store.profitFactor >= 1 ? 'var(--positive)' : 'var(--negative)' }">{{ store.profitFactor === Infinity ? '∞' : store.profitFactor.toFixed(2) }}</strong>
+        </span>
       </div>
-      <div class="card p-3">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-[10px] font-medium uppercase tracking-wider" style="color: var(--muted)">Total Trades</span>
-          <BarChart3 class="w-3.5 h-3.5" style="color: var(--muted)" />
-        </div>
-        <div class="text-lg font-bold font-mono" style="color: var(--text-primary)">
-          {{ store.trades.length }}
-        </div>
+      <div class="qj-stat">
+        <span class="qj-stat__label">Total Trades <BarChart3 class="w-3 h-3" /></span>
+        <span class="qj-stat__row"><strong>{{ store.trades.length }}</strong></span>
       </div>
-      <div class="card p-3">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-[10px] font-medium uppercase tracking-wider" style="color: var(--muted)">Open</span>
-          <Clock class="w-3.5 h-3.5" style="color: var(--muted)" />
-        </div>
-        <div class="text-lg font-bold font-mono" style="color: var(--accent)">
-          {{ store.openTrades.length }}
-        </div>
+      <div class="qj-stat">
+        <span class="qj-stat__label">Open <Clock class="w-3 h-3" /></span>
+        <span class="qj-stat__row"><strong>{{ store.openTrades.length }}</strong></span>
       </div>
-      <div class="card p-3">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-[10px] font-medium uppercase tracking-wider" style="color: var(--muted)">Best Trade</span>
-          <TrendingUp class="w-3.5 h-3.5" style="color: var(--muted)" />
-        </div>
-        <div class="text-lg font-bold font-mono" style="color: var(--positive)">
-          {{ store.bestTrade ? formatPnl(store.bestTrade.pnl ?? 0) : '0.00$' }}
-        </div>
+      <div class="qj-stat">
+        <span class="qj-stat__label">Best Trade <TrendingUp class="w-3 h-3" /></span>
+        <span class="qj-stat__row">
+          <strong style="color: var(--positive)">{{ store.bestTrade ? formatPnl(store.bestTrade.pnl ?? 0) : '0.00$' }}</strong>
+        </span>
       </div>
     </div>
 
-    <!-- Tab Navigation -->
-    <div class="flex items-center gap-1" style="border-bottom: 1px solid var(--border)">
-      <button
-        v-for="tab in ([{ key: 'trades', label: 'Trades', icon: BarChart3 }, { key: 'analytics', label: 'Analytics', icon: Activity }, { key: 'calendar', label: 'Calendar', icon: Calendar }] as const)"
-        :key="tab.key"
-        class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-all -mb-px"
-        :style="{
-          color: activeTab === tab.key ? 'var(--accent)' : 'var(--text-secondary)',
-          borderBottom: activeTab === tab.key ? '2px solid var(--accent)' : '2px solid transparent',
-        }"
-        @click="activeTab = tab.key"
-      >
-        <component :is="tab.icon" class="w-3.5 h-3.5" />
-        {{ tab.label }}
-      </button>
+    <!-- Tabs, and the trades' filters and sort on the same row -->
+    <div class="qj-bar">
+      <div class="qj-group">
+        <button
+          v-for="tab in ([{ key: 'trades', label: 'Trades', icon: BarChart3 }, { key: 'analytics', label: 'Analytics', icon: Activity }, { key: 'calendar', label: 'Calendar', icon: Calendar }] as const)"
+          :key="tab.key"
+          class="qj-chip"
+          :class="{ 'is-on': activeTab === tab.key }"
+          @click="activeTab = tab.key"
+        >
+          <component :is="tab.icon" class="w-3.5 h-3.5" />
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <template v-if="activeTab === 'trades'">
+        <span class="qj-sep" />
+        <button class="qj-chip" :class="{ 'is-on': showFilters }" @click="showFilters = !showFilters">
+          <Filter class="w-3 h-3" />
+          Filters
+          <span v-if="hasActiveFilters" class="qj-dot" />
+        </button>
+
+        <!-- Quick side filter -->
+        <div class="qj-group">
+          <button
+            v-for="opt in (['all', 'long', 'short'] as const)"
+            :key="opt"
+            class="qj-chip"
+            :class="{ 'is-on': store.filters.side === opt }"
+            @click="store.filters.side = opt"
+          >
+            {{ opt === 'all' ? 'All Sides' : opt.charAt(0).toUpperCase() + opt.slice(1) }}
+          </button>
+        </div>
+        <span class="qj-sep" />
+        <div class="qj-group">
+          <button
+            v-for="opt in (['all', 'open', 'closed'] as const)"
+            :key="opt"
+            class="qj-chip"
+            :class="{ 'is-on': store.filters.status === opt }"
+            @click="store.filters.status = opt"
+          >
+            {{ opt === 'all' ? 'All Status' : opt.charAt(0).toUpperCase() + opt.slice(1) }}
+          </button>
+        </div>
+
+        <span class="qj-spacer" />
+
+        <!-- Sort -->
+        <div class="qj-group">
+          <ArrowUpDown class="w-3 h-3" style="color: var(--muted)" />
+          <button
+            v-for="sf in (['date', 'pnl', 'pair'] as const)"
+            :key="sf"
+            class="qj-chip"
+            :class="{ 'is-on': store.sortField === sf }"
+            @click="store.setSort(sf)"
+          >
+            {{ sf.charAt(0).toUpperCase() + sf.slice(1) }}
+            <template v-if="store.sortField === sf">{{ store.sortDir === 'desc' ? '↓' : '↑' }}</template>
+          </button>
+        </div>
+      </template>
     </div>
 
     <!-- Trades Tab -->
     <template v-if="activeTab === 'trades'">
-      <!-- Filter Bar -->
-      <div class="space-y-2">
-        <div class="flex items-center gap-2">
-          <button
-            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium transition-all"
-            :style="{
-              backgroundColor: showFilters ? 'var(--accent)' : 'var(--surface-2)',
-              color: showFilters ? '#fff' : 'var(--text-secondary)',
-            }"
-            @click="showFilters = !showFilters"
-          >
-            <Filter class="w-3 h-3" />
-            Filters
-            <span v-if="hasActiveFilters" class="w-1.5 h-1.5 rounded-full" style="background-color: var(--accent)" />
-          </button>
-
-          <!-- Quick side filter -->
-          <div class="flex gap-1">
-            <button
-              v-for="opt in (['all', 'long', 'short'] as const)"
-              :key="opt"
-              class="px-2.5 py-1 rounded text-[11px] font-medium transition-all"
-              :style="{
-                backgroundColor: store.filters.side === opt ? 'var(--accent)' : 'var(--surface-2)',
-                color: store.filters.side === opt ? '#fff' : 'var(--text-secondary)',
-              }"
-              @click="store.filters.side = opt"
-            >
-              {{ opt === 'all' ? 'All Sides' : opt.charAt(0).toUpperCase() + opt.slice(1) }}
-            </button>
-          </div>
-          <div class="w-px h-4" style="background-color: var(--border)" />
-          <div class="flex gap-1">
-            <button
-              v-for="opt in (['all', 'open', 'closed'] as const)"
-              :key="opt"
-              class="px-2.5 py-1 rounded text-[11px] font-medium transition-all"
-              :style="{
-                backgroundColor: store.filters.status === opt ? 'var(--accent)' : 'var(--surface-2)',
-                color: store.filters.status === opt ? '#fff' : 'var(--text-secondary)',
-              }"
-              @click="store.filters.status = opt"
-            >
-              {{ opt === 'all' ? 'All Status' : opt.charAt(0).toUpperCase() + opt.slice(1) }}
-            </button>
-          </div>
-
-          <div class="flex-1" />
-
-          <!-- Sort -->
-          <div class="flex items-center gap-1">
-            <ArrowUpDown class="w-3 h-3" style="color: var(--muted)" />
-            <button
-              v-for="sf in (['date', 'pnl', 'pair'] as const)"
-              :key="sf"
-              class="px-2 py-1 rounded text-[11px] font-medium transition-all"
-              :style="{
-                backgroundColor: store.sortField === sf ? 'var(--accent)' : 'var(--surface-2)',
-                color: store.sortField === sf ? '#fff' : 'var(--text-secondary)',
-              }"
-              @click="store.setSort(sf)"
-            >
-              {{ sf.charAt(0).toUpperCase() + sf.slice(1) }}
-              <template v-if="store.sortField === sf">{{ store.sortDir === 'desc' ? '↓' : '↑' }}</template>
-            </button>
+      <!-- Expanded Filters -->
+      <div v-if="showFilters" class="card qj-filters">
+        <div>
+          <label>Date From</label>
+          <input v-model="store.filters.dateFrom" type="date" class="qj-input" />
+        </div>
+        <div>
+          <label>Date To</label>
+          <input v-model="store.filters.dateTo" type="date" class="qj-input" />
+        </div>
+        <div>
+          <label>Pair</label>
+          <div class="relative">
+            <Search class="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2" style="color: var(--muted)" />
+            <input v-model="store.filters.pair" type="text" placeholder="Search..." class="qj-input pl-7" />
           </div>
         </div>
-
-        <!-- Expanded Filters -->
-        <div v-if="showFilters" class="card p-3 grid grid-cols-5 gap-3">
-          <div>
-            <label class="text-[10px] font-medium mb-1 block" style="color: var(--muted)">Date From</label>
-            <input v-model="store.filters.dateFrom" type="date" class="w-full px-2 py-1.5 rounded text-[11px]" style="background-color: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary); outline: none" />
-          </div>
-          <div>
-            <label class="text-[10px] font-medium mb-1 block" style="color: var(--muted)">Date To</label>
-            <input v-model="store.filters.dateTo" type="date" class="w-full px-2 py-1.5 rounded text-[11px]" style="background-color: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary); outline: none" />
-          </div>
-          <div>
-            <label class="text-[10px] font-medium mb-1 block" style="color: var(--muted)">Pair</label>
-            <div class="relative">
-              <Search class="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2" style="color: var(--muted)" />
-              <input v-model="store.filters.pair" type="text" placeholder="Search..." class="w-full pl-7 pr-2 py-1.5 rounded text-[11px]" style="background-color: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary); outline: none" />
-            </div>
-          </div>
-          <div>
-            <label class="text-[10px] font-medium mb-1 block" style="color: var(--muted)">Strategy</label>
-            <select v-model="store.filters.strategy" class="w-full px-2 py-1.5 rounded text-[11px]" style="background-color: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary); outline: none">
-              <option value="">All</option>
-              <option v-for="s in store.allStrategies" :key="s" :value="s">{{ s }}</option>
-            </select>
-          </div>
-          <div class="flex items-end">
-            <button
-              v-if="hasActiveFilters"
-              class="flex items-center gap-1 px-2.5 py-1.5 rounded text-[11px] font-medium transition-all hover:brightness-110"
-              style="background-color: var(--surface-2); color: var(--text-secondary)"
-              @click="clearFilters"
-            >
-              <X class="w-3 h-3" />
-              Clear
-            </button>
-          </div>
+        <div>
+          <label>Strategy</label>
+          <select v-model="store.filters.strategy" class="qj-input">
+            <option value="">All</option>
+            <option v-for="s in store.allStrategies" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+        <div class="flex items-end">
+          <button v-if="hasActiveFilters" class="qj-btn" @click="clearFilters">
+            <X class="w-3 h-3" />
+            Clear
+          </button>
         </div>
       </div>
 
-      <!-- Trade Table -->
-      <div class="card overflow-hidden">
-        <!-- Table Header -->
-        <div class="grid grid-cols-[80px_100px_60px_90px_90px_70px_90px_1fr] gap-2 px-4 py-2 text-[10px] font-semibold uppercase tracking-wider" style="color: var(--muted); border-bottom: 1px solid var(--border); background-color: var(--surface-2)">
-          <span>Date</span>
-          <span>Pair</span>
-          <span>Side</span>
-          <span>Entry</span>
-          <span>Exit</span>
-          <span>Size</span>
-          <span>PnL</span>
-          <span>Notes</span>
-        </div>
-
-        <!-- Trade Rows -->
-        <template v-for="trade in store.filteredTrades" :key="trade.id">
-          <div
-            class="grid grid-cols-[80px_100px_60px_90px_90px_70px_90px_1fr] gap-2 px-4 py-3 items-center transition-colors cursor-pointer hover:bg-[var(--surface-2)]"
-            style="border-bottom: 1px solid var(--border)"
-            @click="toggleExpand(trade.id)"
-          >
-            <span class="text-[11px] font-mono" style="color: var(--text-secondary)">
-              {{ trade.date.slice(5) }}
-            </span>
-            <span class="text-xs font-semibold" style="color: var(--text-primary)">
-              {{ trade.pair }}
-            </span>
-            <span class="flex items-center gap-1">
-              <ArrowUpRight v-if="trade.side === 'long'" class="w-3 h-3" style="color: var(--positive)" />
-              <ArrowDownRight v-else class="w-3 h-3" style="color: var(--negative)" />
-              <span class="text-[11px] font-medium" :style="{ color: trade.side === 'long' ? 'var(--positive)' : 'var(--negative)' }">
-                {{ trade.side }}
-              </span>
-            </span>
-            <span class="text-[11px] font-mono" style="color: var(--text-primary)">
-              {{ trade.entry.toLocaleString('en-US') }}$
-            </span>
-            <span class="text-[11px] font-mono" style="color: var(--text-primary)">
-              {{ trade.exit ? trade.exit.toLocaleString('en-US') + '$' : '—' }}
-            </span>
-            <span class="text-[11px] font-mono" style="color: var(--text-secondary)">
-              {{ trade.size }}
-            </span>
-            <span v-if="trade.pnl !== null" class="text-[11px] font-bold font-mono" :style="{ color: trade.pnl >= 0 ? 'var(--positive)' : 'var(--negative)' }">
-              {{ formatPnl(trade.pnl) }}
-            </span>
-            <span v-else class="flex items-center gap-1 text-[11px] font-medium" style="color: var(--accent)">
-              <Clock class="w-3 h-3" /> Open
-            </span>
-            <div class="flex items-center gap-2 min-w-0">
-              <span class="text-[11px] truncate" style="color: var(--text-secondary)">{{ trade.notes }}</span>
-              <div class="flex gap-1 shrink-0">
-                <span
-                  v-for="tag in trade.tags.slice(0, 2)"
-                  :key="tag"
-                  class="text-[9px] font-medium px-1.5 py-0.5 rounded"
-                  style="background-color: var(--surface-3); color: var(--muted)"
-                >
-                  {{ tag }}
-                </span>
-                <span v-if="trade.tags.length > 2" class="text-[9px] font-medium px-1 py-0.5" style="color: var(--muted)">
-                  +{{ trade.tags.length - 2 }}
-                </span>
-              </div>
-              <component
-                :is="expandedTradeId === trade.id ? ChevronUp : ChevronDown"
-                class="w-3 h-3 shrink-0 ml-auto"
-                style="color: var(--muted)"
-              />
+      <!-- Trade Table: the rows scroll inside the panel -->
+      <div class="card qj-table">
+        <div class="qj-table__scroll">
+          <div class="qj-table__inner">
+            <!-- Table Header -->
+            <div class="qj-row qj-row--head">
+              <span>Date</span>
+              <span>Pair</span>
+              <span>Side</span>
+              <span class="qj-num">Entry</span>
+              <span class="qj-num">Exit</span>
+              <span class="qj-num">Size</span>
+              <span class="qj-num">PnL</span>
+              <span>Notes</span>
             </div>
+
+            <!-- Trade Rows -->
+            <template v-for="trade in store.filteredTrades" :key="trade.id">
+              <div class="qj-row qj-row--trade" @click="toggleExpand(trade.id)">
+                <span class="text-[11px] font-mono" style="color: var(--text-secondary)">
+                  {{ trade.date.slice(5) }}
+                </span>
+                <span class="text-xs font-semibold truncate" style="color: var(--text-primary)">
+                  {{ trade.pair }}
+                </span>
+                <span class="flex items-center gap-1">
+                  <ArrowUpRight v-if="trade.side === 'long'" class="w-3 h-3" style="color: var(--positive)" />
+                  <ArrowDownRight v-else class="w-3 h-3" style="color: var(--negative)" />
+                  <span class="text-[11px] font-medium" :style="{ color: trade.side === 'long' ? 'var(--positive)' : 'var(--negative)' }">
+                    {{ trade.side }}
+                  </span>
+                </span>
+                <span class="qj-num text-[11px] font-mono" style="color: var(--text-primary)">
+                  {{ trade.entry.toLocaleString('en-US') }}$
+                </span>
+                <span class="qj-num text-[11px] font-mono" style="color: var(--text-primary)">
+                  {{ trade.exit ? trade.exit.toLocaleString('en-US') + '$' : '—' }}
+                </span>
+                <span class="qj-num text-[11px] font-mono" style="color: var(--text-secondary)">
+                  {{ trade.size }}
+                </span>
+                <span v-if="trade.pnl !== null" class="qj-num text-[11px] font-bold font-mono" :style="{ color: trade.pnl >= 0 ? 'var(--positive)' : 'var(--negative)' }">
+                  {{ formatPnl(trade.pnl) }}
+                </span>
+                <span v-else class="qj-num flex items-center gap-1 text-[11px] font-medium" style="color: var(--accent)">
+                  <Clock class="w-3 h-3" /> Open
+                </span>
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-[11px] truncate" style="color: var(--text-secondary)">{{ trade.notes }}</span>
+                  <div class="flex gap-1 shrink-0">
+                    <span
+                      v-for="tag in trade.tags.slice(0, 2)"
+                      :key="tag"
+                      class="text-[11px] font-medium px-1.5 rounded"
+                      style="background-color: var(--surface-3); color: var(--text-secondary)"
+                    >
+                      {{ tag }}
+                    </span>
+                    <span v-if="trade.tags.length > 2" class="text-[11px] font-medium px-1" style="color: var(--muted)">
+                      +{{ trade.tags.length - 2 }}
+                    </span>
+                  </div>
+                  <component
+                    :is="expandedTradeId === trade.id ? ChevronUp : ChevronDown"
+                    class="w-3 h-3 shrink-0 ml-auto"
+                    style="color: var(--muted)"
+                  />
+                </div>
+              </div>
+
+              <!-- Expanded Detail -->
+              <TerminalJournalTradeDetail
+                v-if="expandedTradeId === trade.id"
+                :trade="trade"
+                @edit="openEditTrade"
+                @delete="handleDeleteTrade"
+                @close="openCloseTrade"
+              />
+            </template>
           </div>
 
-          <!-- Expanded Detail -->
-          <TerminalJournalTradeDetail
-            v-if="expandedTradeId === trade.id"
-            :trade="trade"
-            @edit="openEditTrade"
-            @delete="handleDeleteTrade"
-            @close="openCloseTrade"
-          />
-        </template>
-
-        <!-- Empty state -->
-        <div v-if="store.filteredTrades.length === 0" class="p-8 text-center">
-          <BarChart3 class="w-8 h-8 mx-auto mb-2" style="color: var(--muted)" />
-          <p class="text-xs" style="color: var(--muted)">No trades match your filters</p>
-          <button
-            v-if="hasActiveFilters"
-            class="mt-2 text-[11px] font-medium"
-            style="color: var(--accent)"
-            @click="clearFilters"
-          >Clear filters</button>
+          <!-- Empty state -->
+          <QEmptyState v-if="store.filteredTrades.length === 0" title="No trades match your filters">
+            <button v-if="hasActiveFilters" class="qj-btn" @click="clearFilters">Clear filters</button>
+          </QEmptyState>
         </div>
       </div>
     </template>
 
     <!-- Analytics Tab -->
-    <TerminalJournalTradeAnalytics v-if="activeTab === 'analytics'" />
+    <div v-if="activeTab === 'analytics'" class="qj-pane">
+      <TerminalJournalTradeAnalytics />
+    </div>
 
     <!-- Calendar Tab -->
-    <TerminalJournalCalendarHeatmap
-      v-if="activeTab === 'calendar'"
-      @select-date="onCalendarSelectDate"
-    />
+    <div v-if="activeTab === 'calendar'" class="qj-pane">
+      <TerminalJournalCalendarHeatmap @select-date="onCalendarSelectDate" />
+    </div>
 
     <!-- Modals -->
     <TerminalJournalTradeFormModal
@@ -438,3 +380,161 @@ function formatPnl(v: number): string {
     />
   </div>
 </template>
+
+<style scoped>
+.qj-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--qss-ctl-h);
+  padding: 0 10px;
+  border-radius: var(--qss-ctl-radius);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--qss-ctl-font);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.qj-btn:hover { filter: brightness(1.1); }
+
+/* One panel, split by hairlines; the shadows are clipped at the panel's own edge. */
+.qj-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  overflow: hidden;
+}
+.qj-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
+  box-shadow: -1px 0 0 var(--border), 0 -1px 0 var(--border);
+}
+.qj-stat__label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--qss-text-label);
+}
+.qj-stat__label svg { flex-shrink: 0; color: var(--muted); }
+.qj-stat__row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+.qj-stat__row strong {
+  color: var(--text-primary);
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  line-height: 28px;
+  overflow-wrap: anywhere;
+}
+.qj-stat__row strong.is-lead { font-size: var(--qss-text-metric); letter-spacing: -.02em; }
+.qj-stat__row small { color: var(--text-secondary); font-size: var(--qss-text-meta); }
+
+.qj-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--qss-gap-tight);
+}
+.qj-group { display: flex; align-items: center; gap: 2px; }
+.qj-sep { width: 1px; height: 16px; background: var(--border); }
+.qj-spacer { flex: 1 1 0; }
+.qj-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--qss-ctl-radius);
+  color: var(--text-secondary);
+  font-size: var(--qss-ctl-font);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.qj-chip:hover { color: var(--text-primary); }
+.qj-chip.is-on {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.qj-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.qj-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--qss-gap);
+  padding: var(--qss-panel-pad);
+}
+.qj-filters label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: var(--qss-text-label);
+}
+.qj-input {
+  width: 100%;
+  height: var(--qss-ctl-h);
+  padding-inline: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--qss-ctl-radius);
+  outline: none;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--qss-ctl-font);
+}
+.qj-input.pl-7 { padding-left: 28px; }
+
+/* The table takes the height; its rows scroll, the page does not. */
+.qj > .qj-table {
+  flex: 1 1 0;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.qj-table__scroll { flex: 1 1 0; min-height: 0; overflow: auto; }
+.qj-table__inner { min-width: 720px; }
+.qj-row {
+  display: grid;
+  grid-template-columns: 56px minmax(90px, 1fr) 64px minmax(90px, 1fr) minmax(90px, 1fr) minmax(56px, .7fr) minmax(90px, 1fr) minmax(0, 3fr);
+  align-items: center;
+  column-gap: var(--qss-gap);
+  min-height: var(--qss-row-h);
+  padding-inline: var(--qss-panel-pad);
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+.qj-row--head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
+}
+.qj-row--trade { cursor: pointer; transition: background-color .12s; }
+.qj-row--trade:hover { background: var(--surface-2); }
+.qj-num { justify-self: end; text-align: right; }
+
+.qj > .qj-pane { flex: 1 1 0; min-height: 0; overflow: hidden auto; }
+
+@container terminal-workspace (max-width: 850px) {
+  .qj-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .qj-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container terminal-workspace (max-width: 520px) {
+  .qj-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qj-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qj-spacer { display: none; }
+}
+</style>

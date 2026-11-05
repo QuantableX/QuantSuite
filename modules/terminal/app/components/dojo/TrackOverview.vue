@@ -17,31 +17,29 @@ const iconMap: Record<string, any> = {
 </script>
 
 <template>
-  <div>
-    <h3 class="text-xs font-semibold mb-3" style="color: var(--text-secondary)">Learning Tracks</h3>
-    <div class="grid grid-cols-2 gap-3">
+  <section>
+    <h3 class="dojo-tracks__title">Learning Tracks</h3>
+    <div class="dojo-tracks">
       <button
         v-for="track in dojo.tracks"
         :key="track.id"
-        class="card p-4 flex flex-col gap-3 text-left transition-all hover:brightness-110"
+        class="card dojo-track transition-all hover:brightness-110"
         @click="emit('select-track', track.id)"
       >
-        <div class="flex items-center gap-3">
-          <div class="p-2.5 rounded-lg" :style="{ backgroundColor: track.color + '18' }">
-            <component :is="iconMap[track.icon]" class="w-5 h-5" :style="{ color: track.color }" />
-          </div>
+        <div class="dojo-track__head">
+          <component :is="iconMap[track.icon]" class="w-4 h-4 flex-shrink-0" style="color: var(--text-secondary)" />
           <div class="min-w-0 flex-1">
-            <h3 class="text-sm font-semibold truncate" style="color: var(--text-primary)">{{ track.name }}</h3>
-            <p class="text-[11px] truncate" style="color: var(--text-secondary)">{{ track.description }}</p>
+            <h3>{{ track.name }}</h3>
+            <p>{{ track.description }}</p>
           </div>
         </div>
 
-        <div>
-          <div class="flex justify-between text-[10px] mb-1">
-            <span style="color: var(--muted)">
+        <div class="mt-auto">
+          <div class="dojo-track__line">
+            <span>
               {{ dojo.trackProgress[track.id]?.completed ?? 0 }} / {{ dojo.trackProgress[track.id]?.total ?? 0 }} lessons
             </span>
-            <span style="color: var(--muted)">{{ dojo.trackProgress[track.id]?.percent ?? 0 }}%</span>
+            <span>{{ dojo.trackProgress[track.id]?.percent ?? 0 }}%</span>
           </div>
           <div class="w-full h-1.5 rounded-full" style="background-color: var(--surface-3)">
             <div
@@ -51,16 +49,64 @@ const iconMap: Record<string, any> = {
           </div>
         </div>
 
-        <div class="flex items-center justify-between mt-auto">
-          <span class="text-[10px]" style="color: var(--muted)">
-            {{ track.modules.length }} modules
-          </span>
-          <div class="flex items-center gap-1 text-[10px]" :style="{ color: track.color }">
+        <div class="dojo-track__line">
+          <span>{{ track.modules.length }} modules</span>
+          <span class="flex items-center gap-1">
             <Zap class="w-3 h-3" />
-            <span>{{ dojo.trackProgress[track.id]?.xp ?? 0 }} XP</span>
-          </div>
+            {{ dojo.trackProgress[track.id]?.xp ?? 0 }} XP
+          </span>
         </div>
       </button>
     </div>
-  </div>
+  </section>
 </template>
+
+<style scoped>
+.dojo-tracks__title {
+  margin: 0 0 var(--qss-gap-tight);
+  color: var(--text-primary);
+  font-size: var(--qss-text-section);
+  font-weight: 600;
+}
+.dojo-tracks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--qss-gap);
+}
+.dojo-track {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap-tight);
+  padding: var(--qss-panel-pad);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.dojo-track__head { display: flex; gap: var(--qss-gap-tight); }
+.dojo-track__head svg { margin-top: 2px; }
+.dojo-track h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--qss-text-section);
+  font-weight: 600;
+}
+.dojo-track p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--qss-text-meta);
+  line-height: 1.35;
+}
+.dojo-track__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: var(--qss-text-meta);
+}
+.dojo-track .mt-auto .dojo-track__line { margin-bottom: 4px; }
+@container terminal-workspace (max-width: 1180px) {
+  .dojo-tracks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container terminal-workspace (max-width: 520px) {
+  .dojo-tracks { grid-template-columns: minmax(0, 1fr); }
+}
+</style>

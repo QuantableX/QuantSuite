@@ -61,11 +61,11 @@ function markComplete() {
 </script>
 
 <template>
-  <div class="space-y-3" v-if="lesson && track && module_">
+  <div v-if="lesson && track && module_" class="dojo-lesson-view">
     <!-- Breadcrumb -->
     <div class="flex items-center gap-1.5 flex-wrap">
       <button
-        class="text-[11px] font-medium transition-colors hover:brightness-125"
+        class="text-[12px] font-medium transition-colors hover:brightness-125"
         style="color: var(--accent)"
         @click="emit('back-to-overview')"
       >
@@ -73,108 +73,153 @@ function markComplete() {
       </button>
       <ChevronRight class="w-3 h-3" style="color: var(--muted)" />
       <button
-        class="text-[11px] font-medium transition-colors hover:brightness-125"
-        :style="{ color: track.color }"
+        class="text-[12px] font-medium transition-colors hover:brightness-125"
+        style="color: var(--text-secondary)"
         @click="emit('back')"
       >
         {{ track.name }}
       </button>
       <ChevronRight class="w-3 h-3" style="color: var(--muted)" />
-      <span class="text-[11px]" style="color: var(--text-secondary)">{{ module_.name }}</span>
+      <span class="text-[12px]" style="color: var(--text-secondary)">{{ module_.name }}</span>
     </div>
 
     <!-- Lesson header -->
-    <div class="card p-4">
-      <div class="flex items-start gap-3">
-        <div
-          class="p-2.5 rounded-lg flex-shrink-0"
-          :style="{ backgroundColor: track.color + '18' }"
+    <div class="card dojo-lesson-head">
+      <component :is="typeIcons[lesson.type]" class="w-4 h-4 flex-shrink-0" style="color: var(--text-secondary)" />
+      <div class="flex-1 min-w-0">
+        <h2>{{ lesson.title }}</h2>
+        <p>{{ lesson.description }}</p>
+      </div>
+      <div class="dojo-lesson-tags">
+        <span class="dojo-tag">{{ lesson.type }}</span>
+        <span
+          class="dojo-tag"
+          :style="{ backgroundColor: difficultyColors[lesson.difficulty] + '18', color: difficultyColors[lesson.difficulty] }"
         >
-          <component :is="typeIcons[lesson.type]" class="w-5 h-5" :style="{ color: track.color }" />
-        </div>
-        <div class="flex-1 min-w-0">
-          <h2 class="text-sm font-bold" style="color: var(--text-primary)">{{ lesson.title }}</h2>
-          <p class="text-[11px] mt-0.5" style="color: var(--text-secondary)">{{ lesson.description }}</p>
-          <div class="flex items-center gap-3 mt-2 flex-wrap">
-            <span
-              class="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase"
-              :style="{ backgroundColor: track.color + '18', color: track.color }"
-            >
-              {{ lesson.type }}
-            </span>
-            <span
-              class="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase"
-              :style="{ backgroundColor: difficultyColors[lesson.difficulty] + '18', color: difficultyColors[lesson.difficulty] }"
-            >
-              {{ lesson.difficulty }}
-            </span>
-            <span class="text-[10px] flex items-center gap-1" style="color: var(--muted)">
-              <Clock class="w-3 h-3" />
-              {{ lesson.estimatedMinutes }} min
-            </span>
-            <span class="text-[10px] flex items-center gap-1" style="color: var(--accent)">
-              <Zap class="w-3 h-3" />
-              +{{ xpMap[lesson.type] }} XP
-            </span>
-            <span v-if="isCompleted" class="text-[10px] flex items-center gap-1" style="color: var(--positive)">
-              <Check class="w-3 h-3" />
-              Completed
-            </span>
-          </div>
-        </div>
+          {{ lesson.difficulty }}
+        </span>
+        <span class="flex items-center gap-1">
+          <Clock class="w-3 h-3" />
+          {{ lesson.estimatedMinutes }} min
+        </span>
+        <span class="flex items-center gap-1">
+          <Zap class="w-3 h-3" />
+          +{{ xpMap[lesson.type] }} XP
+        </span>
+        <span v-if="isCompleted" class="flex items-center gap-1" style="color: var(--positive)">
+          <Check class="w-3 h-3" />
+          Completed
+        </span>
       </div>
     </div>
 
     <!-- Content -->
-    <div class="card p-4 lesson-content" v-html="lesson.content" />
+    <div class="card lesson-content" v-html="lesson.content" />
 
-    <!-- Complete button -->
-    <div class="card p-3 flex items-center justify-between" v-if="lesson.type === 'theory' || lesson.type === 'exercise'">
-      <div v-if="justCompleted" class="flex items-center gap-2">
-        <Check class="w-4 h-4" style="color: var(--positive)" />
-        <span class="text-xs font-medium" style="color: var(--positive)">+{{ xpMap[lesson.type] }} XP earned!</span>
-      </div>
-      <div v-else-if="isCompleted" class="flex items-center gap-2">
-        <Check class="w-4 h-4" style="color: var(--positive)" />
-        <span class="text-xs" style="color: var(--text-secondary)">Lesson completed</span>
-      </div>
-      <div v-else />
-      <button
-        v-if="!isCompleted"
-        class="px-4 py-2 rounded-md text-xs font-semibold text-white transition-colors"
-        :style="{ backgroundColor: track.color }"
-        @click="markComplete"
-      >
-        Mark as Complete
-      </button>
-    </div>
-
-    <!-- Navigation -->
-    <div class="flex items-center justify-between">
+    <!-- Previous, completion and next on one row -->
+    <div class="dojo-lesson-foot">
       <button
         v-if="prevLesson"
-        class="card px-3 py-2 flex items-center gap-2 text-[11px] font-medium transition-colors hover:brightness-110"
-        style="color: var(--text-secondary)"
+        class="dojo-lesson-nav"
+        :title="prevLesson.title"
         @click="emit('select-lesson', prevLesson.id)"
       >
-        <ChevronLeft class="w-3.5 h-3.5" />
-        {{ prevLesson.title }}
+        <ChevronLeft class="w-3.5 h-3.5 flex-shrink-0" />
+        <span class="truncate">{{ prevLesson.title }}</span>
       </button>
-      <div v-else />
+      <span v-else />
+      <div v-if="lesson.type === 'theory' || lesson.type === 'exercise'" class="dojo-lesson-complete">
+        <div v-if="justCompleted" class="flex items-center gap-2">
+          <Check class="w-4 h-4" style="color: var(--positive)" />
+          <span class="text-xs font-medium" style="color: var(--positive)">+{{ xpMap[lesson.type] }} XP earned!</span>
+        </div>
+        <div v-else-if="isCompleted" class="flex items-center gap-2">
+          <Check class="w-4 h-4" style="color: var(--positive)" />
+          <span class="text-xs" style="color: var(--text-secondary)">Lesson completed</span>
+        </div>
+        <button
+          v-if="!isCompleted"
+          class="btn-primary"
+          @click="markComplete"
+        >
+          Mark as Complete
+        </button>
+      </div>
+      <span v-else />
       <button
         v-if="nextLesson"
-        class="card px-3 py-2 flex items-center gap-2 text-[11px] font-medium transition-colors hover:brightness-110"
-        style="color: var(--text-secondary)"
+        class="dojo-lesson-nav justify-self-end"
+        :title="nextLesson.title"
         @click="emit('select-lesson', nextLesson.id)"
       >
-        {{ nextLesson.title }}
-        <ChevronRight class="w-3.5 h-3.5" />
+        <span class="truncate">{{ nextLesson.title }}</span>
+        <ChevronRight class="w-3.5 h-3.5 flex-shrink-0" />
       </button>
     </div>
   </div>
 </template>
 
 <style>
+.dojo-lesson-view { display: flex; flex-direction: column; gap: var(--qss-gap); }
+.dojo-lesson-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
+}
+.dojo-lesson-head h2 { margin: 0; color: var(--text-primary); font-size: var(--qss-text-section); font-weight: 600; }
+.dojo-lesson-head p { margin: 1px 0 0; color: var(--text-secondary); font-size: var(--qss-text-meta); }
+.dojo-lesson-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--qss-gap);
+  color: var(--text-secondary);
+  font-size: var(--qss-text-meta);
+}
+.dojo-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.dojo-lesson-foot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--qss-gap);
+  min-height: var(--qss-ctl-h);
+}
+.dojo-lesson-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  width: fit-content;
+  height: var(--qss-ctl-h);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--qss-ctl-radius);
+  color: var(--text-secondary);
+  font-size: var(--qss-ctl-font);
+  font-weight: 500;
+}
+.dojo-lesson-nav:hover { background: var(--surface-2); color: var(--text-primary); }
+.dojo-lesson-complete { display: flex; align-items: center; gap: var(--qss-gap); }
+
+/* Prose keeps a reading measure; a wide page gets a second column instead of longer lines. */
+.lesson-content {
+  padding: var(--qss-panel-pad);
+  columns: 2 52ch;
+  column-gap: 32px;
+}
+.lesson-content .concept-box,
+.lesson-content .example-box { break-inside: avoid; }
+
 .lesson-content h3 {
   font-size: 14px;
   font-weight: 700;
@@ -203,7 +248,7 @@ function markComplete() {
 }
 
 .lesson-content code {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--qss-font-mono);
   font-size: 11px;
   background-color: var(--surface-3);
   color: var(--accent);
@@ -212,8 +257,7 @@ function markComplete() {
 }
 
 .lesson-content .concept-box {
-  background-color: var(--accent);
-  background-color: rgba(99, 102, 241, 0.08);
+  background-color: var(--surface-2);
   border-left: 3px solid var(--accent);
   padding: 10px 12px;
   border-radius: 0 6px 6px 0;

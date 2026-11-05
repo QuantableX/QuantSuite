@@ -127,45 +127,31 @@ const monthLabels = computed(() => {
 
 <template>
   <div class="card p-3">
-    <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">Trading Calendar</h3>
+    <h3 class="qjc-title">Trading Calendar</h3>
 
-    <!-- Month labels -->
-    <div class="flex gap-[3px] mb-1 ml-7">
-      <template v-for="(label, i) in monthLabels" :key="i">
-        <span
-          class="text-[9px] absolute"
-          :style="{ color: 'var(--muted)', left: (label.offset * 15 + 28) + 'px' }"
-        />
-      </template>
-      <div class="flex gap-[3px]">
-        <div v-for="(week, wi) in weeks" :key="wi" class="relative" style="width: 12px">
-          <span
-            v-if="monthLabels.find(l => l.offset === wi)"
-            class="text-[9px] absolute -top-3.5 left-0 whitespace-nowrap"
-            style="color: var(--muted)"
-          >
+    <div class="qjc" :style="{ '--weeks': weeks.length }">
+      <!-- Month labels -->
+      <span />
+      <div class="qjc-weeks qjc-months">
+        <div v-for="(week, wi) in weeks" :key="wi" class="relative">
+          <span v-if="monthLabels.find(l => l.offset === wi)" class="qjc-month">
             {{ monthLabels.find(l => l.offset === wi)?.name }}
           </span>
         </div>
       </div>
-    </div>
 
-    <!-- Day labels + Grid -->
-    <div class="flex gap-1">
       <!-- Day of week labels -->
-      <div class="flex flex-col gap-[3px] pt-0">
-        <span v-for="(d, i) in ['S', 'M', 'T', 'W', 'T', 'F', 'S']" :key="i" class="text-[9px] h-3 flex items-center justify-end pr-1" style="color: var(--muted)">
-          {{ i % 2 === 1 ? d : '' }}
-        </span>
+      <div class="qjc-days">
+        <span v-for="(d, i) in ['S', 'M', 'T', 'W', 'T', 'F', 'S']" :key="i">{{ i % 2 === 1 ? d : '' }}</span>
       </div>
 
       <!-- Weeks grid -->
-      <div class="flex gap-[3px]">
-        <div v-for="(week, wi) in weeks" :key="wi" class="flex flex-col gap-[3px]">
+      <div class="qjc-weeks">
+        <div v-for="(week, wi) in weeks" :key="wi" class="qjc-week">
           <div
             v-for="(day, di) in week"
             :key="di"
-            class="w-3 h-3 rounded-sm transition-all"
+            class="qjc-day transition-all"
             :class="{ 'cursor-pointer hover:brightness-125': !day.blank && day.count > 0 }"
             :style="{ backgroundColor: getDayColor(day) }"
             @mouseenter="onHover(day, $event)"
@@ -178,23 +164,23 @@ const monthLabels = computed(() => {
 
     <!-- Legend -->
     <div class="flex items-center gap-2 mt-3">
-      <span class="text-[10px]" style="color: var(--muted)">Less</span>
+      <span class="text-[11px]" style="color: var(--muted)">Less</span>
       <div class="w-3 h-3 rounded-sm" style="background-color: var(--surface-2)" />
       <div class="w-3 h-3 rounded-sm" style="background-color: rgba(239, 68, 68, 0.5)" />
       <div class="w-3 h-3 rounded-sm" style="background-color: rgba(239, 68, 68, 0.9)" />
       <div class="w-3 h-3 rounded-sm" style="background-color: rgba(34, 197, 94, 0.5)" />
       <div class="w-3 h-3 rounded-sm" style="background-color: rgba(34, 197, 94, 0.9)" />
-      <span class="text-[10px]" style="color: var(--muted)">More</span>
-      <span class="text-[10px] ml-2" style="color: var(--muted)">Loss</span>
-      <span class="text-[10px]" style="color: var(--muted)">/</span>
-      <span class="text-[10px]" style="color: var(--muted)">Profit</span>
+      <span class="text-[11px]" style="color: var(--muted)">More</span>
+      <span class="text-[11px] ml-2" style="color: var(--muted)">Loss</span>
+      <span class="text-[11px]" style="color: var(--muted)">/</span>
+      <span class="text-[11px]" style="color: var(--muted)">Profit</span>
     </div>
 
     <!-- Tooltip -->
     <Teleport to="body">
       <div
         v-if="hoveredDay"
-        class="fixed z-50 px-2.5 py-1.5 rounded text-[10px] pointer-events-none"
+        class="fixed z-50 px-2.5 py-1.5 rounded text-[11px] pointer-events-none"
         :style="{
           left: hoveredDay.x + 12 + 'px',
           top: hoveredDay.y - 40 + 'px',
@@ -212,3 +198,46 @@ const monthLabels = computed(() => {
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.qjc-title {
+  margin: 0 0 var(--qss-gap);
+  color: var(--text-primary);
+  font-size: var(--qss-text-section);
+  font-weight: 600;
+}
+/* Bigger than the old 12px cells where there is room, without turning into tiles. */
+.qjc {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 4px;
+  overflow-x: auto;
+}
+.qjc-weeks {
+  display: grid;
+  grid-template-columns: repeat(var(--weeks), minmax(10px, 36px));
+  gap: 3px;
+}
+.qjc-months { height: 16px; }
+.qjc-month {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--text-secondary);
+  font-size: var(--qss-text-meta);
+  white-space: nowrap;
+}
+.qjc-days,
+.qjc-week {
+  display: grid;
+  grid-template-rows: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+.qjc-days span {
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.qjc-day { aspect-ratio: 1; border-radius: 3px; }
+</style>

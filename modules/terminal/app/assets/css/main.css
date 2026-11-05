@@ -143,3 +143,36 @@
     border-color: var(--accent);
   }
 }
+
+
+
+/* ---- Journal and Dojo: one page edge, one panel level ---- */
+[data-module="terminal"] .terminal-workspace {
+  --qss-page-head-gap: 0px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
+  height: 100%;
+  min-height: 0;
+  padding: var(--qss-page-edge);
+  overflow-y: auto;
+  container: terminal-workspace / inline-size;
+}
+
+[data-module="terminal"] .terminal-workspace > * {
+  flex-shrink: 0;
+}
+
+[data-module="terminal"] .terminal-workspace .card {
+  border: 1px solid var(--qss-border);
+  border-radius: var(--qss-panel-radius);
+  background: var(--qss-bg-raised);
+}
+
+[data-module="terminal"] .terminal-workspace .btn-primary {
+  height: var(--qss-ctl-h);
+  padding: 0 12px;
+  border-radius: var(--qss-ctl-radius);
+  color: var(--qss-accent-ink);
+  font-size: var(--qss-ctl-font);
+}

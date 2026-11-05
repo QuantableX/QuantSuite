@@ -73,11 +73,11 @@ const nextLesson = computed(() => currentIndex.value < moduleLessons.value.lengt
 </script>
 
 <template>
-  <div class="space-y-3" v-if="lesson && track && module_">
+  <div v-if="lesson && track && module_" class="dojo-quiz">
     <!-- Breadcrumb -->
     <div class="flex items-center gap-1.5 flex-wrap">
       <button
-        class="text-[11px] font-medium transition-colors hover:brightness-125"
+        class="text-[12px] font-medium transition-colors hover:brightness-125"
         style="color: var(--accent)"
         @click="emit('back-to-overview')"
       >
@@ -85,52 +85,37 @@ const nextLesson = computed(() => currentIndex.value < moduleLessons.value.lengt
       </button>
       <ChevronRight class="w-3 h-3" style="color: var(--muted)" />
       <button
-        class="text-[11px] font-medium transition-colors hover:brightness-125"
-        :style="{ color: track.color }"
+        class="text-[12px] font-medium transition-colors hover:brightness-125"
+        style="color: var(--text-secondary)"
         @click="emit('back')"
       >
         {{ track.name }}
       </button>
       <ChevronRight class="w-3 h-3" style="color: var(--muted)" />
-      <span class="text-[11px]" style="color: var(--text-secondary)">{{ lesson.title }}</span>
+      <span class="text-[12px]" style="color: var(--text-secondary)">{{ lesson.title }}</span>
     </div>
 
     <!-- Quiz complete -->
     <template v-if="quizComplete">
-      <div class="card p-6 text-center">
-        <div
-          class="w-14 h-14 rounded-full mx-auto flex items-center justify-center mb-3"
-          :style="{
-            backgroundColor: score >= 80 ? 'rgba(8,153,129,0.15)' : score >= 50 ? 'rgba(255,152,0,0.15)' : 'rgba(242,54,69,0.15)',
-            color: score >= 80 ? 'var(--positive)' : score >= 50 ? 'var(--warning)' : 'var(--negative)',
-          }"
-        >
-          <Trophy class="w-7 h-7" />
-        </div>
-        <h3 class="text-sm font-bold mb-1" style="color: var(--text-primary)">Quiz Complete!</h3>
-        <div class="text-2xl font-bold mb-1" :style="{ color: score >= 80 ? 'var(--positive)' : score >= 50 ? 'var(--warning)' : 'var(--negative)' }">
+      <div class="card dojo-quiz-done">
+        <Trophy class="w-5 h-5 flex-shrink-0" :style="{ color: score >= 80 ? 'var(--positive)' : score >= 50 ? 'var(--warning)' : 'var(--negative)' }" />
+        <h3>Quiz Complete!</h3>
+        <strong :style="{ color: score >= 80 ? 'var(--positive)' : score >= 50 ? 'var(--warning)' : 'var(--negative)' }">
           {{ score }}%
-        </div>
-        <p class="text-[11px] mb-1" style="color: var(--text-secondary)">
-          {{ answers.filter(a => a.correct).length }} / {{ questions.length }} correct
-        </p>
-        <div class="flex items-center justify-center gap-1 text-[11px] mb-4" style="color: var(--accent)">
+        </strong>
+        <span>{{ answers.filter(a => a.correct).length }} / {{ questions.length }} correct</span>
+        <span class="flex items-center gap-1">
           <Zap class="w-3 h-3" />
           +{{ Math.round(25 * (score / 100)) }} XP earned
-        </div>
-        <div class="flex items-center justify-center gap-3">
-          <button
-            class="px-4 py-2 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
-            style="background-color: var(--surface-3); color: var(--text-secondary)"
-            @click="retry"
-          >
+        </span>
+        <div class="dojo-quiz-actions">
+          <button class="dojo-quiz-btn" @click="retry">
             <RotateCcw class="w-3.5 h-3.5" />
             Retry
           </button>
           <button
             v-if="nextLesson"
-            class="px-4 py-2 rounded-md text-xs font-semibold text-white flex items-center gap-1.5"
-            :style="{ backgroundColor: track.color }"
+            class="btn-primary flex items-center gap-1.5"
             @click="emit('select-lesson', nextLesson.id)"
           >
             Next Lesson
@@ -145,7 +130,7 @@ const nextLesson = computed(() => currentIndex.value < moduleLessons.value.lengt
       <!-- Progress -->
       <div class="card p-3">
         <div class="flex items-center justify-between mb-2">
-          <span class="text-[11px] font-medium" style="color: var(--text-secondary)">
+          <span class="text-[12px] font-medium" style="color: var(--text-secondary)">
             Question {{ currentQuestion + 1 }} of {{ questions.length }}
           </span>
           <span class="text-[11px]" style="color: var(--muted)">
@@ -169,17 +154,17 @@ const nextLesson = computed(() => currentIndex.value < moduleLessons.value.lengt
       </div>
 
       <!-- Question -->
-      <div class="card p-4">
-        <h3 class="text-xs font-semibold mb-4" style="color: var(--text-primary)">
+      <div class="card p-3">
+        <h3 class="dojo-quiz-q">
           {{ currentQ.question }}
         </h3>
 
         <!-- Options -->
-        <div class="space-y-2">
+        <div class="dojo-quiz-options">
           <button
             v-for="(option, idx) in currentQ.options"
             :key="idx"
-            class="w-full p-3 rounded-lg text-left text-[11px] transition-all border"
+            class="w-full px-3 py-2 rounded-lg text-left text-[12px] transition-all border"
             :style="{
               borderColor: answered
                 ? idx === currentQ.correctIndex
@@ -228,14 +213,14 @@ const nextLesson = computed(() => currentIndex.value < moduleLessons.value.lengt
         <!-- Explanation -->
         <div
           v-if="answered"
-          class="mt-3 p-3 rounded-lg text-[11px] leading-relaxed"
+          class="mt-3 p-3 rounded-lg text-[12px] leading-relaxed"
           :style="{
             backgroundColor: isCorrect ? 'rgba(8,153,129,0.06)' : 'rgba(242,54,69,0.06)',
             borderLeft: '3px solid ' + (isCorrect ? 'var(--positive)' : 'var(--negative)'),
             color: 'var(--text-secondary)',
           }"
         >
-          <strong :style="{ color: isCorrect ? 'var(--positive)' : 'var(--negative)' }">
+          <strong class="mr-1" :style="{ color: isCorrect ? 'var(--positive)' : 'var(--negative)' }">
             {{ isCorrect ? 'Correct!' : 'Incorrect' }}
           </strong>
           <span> {{ currentQ.explanation }}</span>
@@ -244,8 +229,7 @@ const nextLesson = computed(() => currentIndex.value < moduleLessons.value.lengt
         <!-- Next button -->
         <div v-if="answered" class="mt-3 flex justify-end">
           <button
-            class="px-4 py-2 rounded-md text-xs font-semibold text-white"
-            :style="{ backgroundColor: track.color }"
+            class="btn-primary"
             @click="nextQuestion"
           >
             {{ currentQuestion < questions.length - 1 ? 'Next Question' : 'See Results' }}
@@ -255,3 +239,37 @@ const nextLesson = computed(() => currentIndex.value < moduleLessons.value.lengt
     </template>
   </div>
 </template>
+
+<style scoped>
+.dojo-quiz { display: flex; flex-direction: column; gap: var(--qss-gap); }
+.dojo-quiz-done {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  padding: var(--qss-panel-pad);
+  color: var(--text-secondary);
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
+}
+.dojo-quiz-done h3 { margin: 0; color: var(--text-primary); font-size: var(--qss-text-section); font-weight: 600; }
+.dojo-quiz-done strong { font-size: var(--qss-text-metric); font-weight: 600; }
+.dojo-quiz-actions { display: flex; gap: var(--qss-gap-tight); margin-left: auto; }
+.dojo-quiz-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--qss-ctl-h);
+  padding: 0 10px;
+  border-radius: var(--qss-ctl-radius);
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  font-size: var(--qss-ctl-font);
+  font-weight: 500;
+}
+.dojo-quiz-q { margin: 0 0 var(--qss-gap); color: var(--text-primary); font-size: var(--qss-text-section); font-weight: 600; }
+.dojo-quiz-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--qss-gap-tight); }
+@container terminal-workspace (max-width: 760px) {
+  .dojo-quiz-options { grid-template-columns: minmax(0, 1fr); }
+}
+</style>

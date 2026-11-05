@@ -478,7 +478,7 @@ onBeforeUnmount(() => {
             />
           </div>
           <footer class="formula-strip">
-            <span>FORMULA</span><code>{{ selectedBinding.formula }}</code
+            <span>Formula</span><code>{{ selectedBinding.formula }}</code
             ><span class="scope-label"
               >Indicator: {{ selected.symbol }} · Price: {{ comparisonAsset }}/{{ quote }}</span
             >
@@ -623,9 +623,10 @@ onBeforeUnmount(() => {
   --muted: color-mix(in srgb, var(--text-primary) 72%, var(--surface-1));
 }
 .metrics-page {
+  --surface-2: var(--qss-bg-raised);
   height: 100%;
   overflow: auto;
-  padding: var(--qss-surface-padding, 24px);
+  padding: var(--qss-page-edge);
   min-width: 0;
   color: var(--text-primary);
   container: metrics / inline-size;
@@ -665,29 +666,28 @@ onBeforeUnmount(() => {
 }
 .metrics-topbar {
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 22px;
+  gap: var(--qss-gap);
+  margin-bottom: var(--qss-gap);
   flex-shrink: 0;
 }
 .brand {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: baseline;
+  gap: var(--qss-gap);
 }
 h1 {
   margin: 0;
-  font-size: 27px;
-  font-weight: 500;
-  letter-spacing: -0.7px;
-  line-height: 36px;
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: var(--qss-ctl-h);
 }
 h1 span {
   color: var(--text-secondary);
 }
 .brand-meta {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
 }
 .topbar-actions {
   gap: 16px;
@@ -699,8 +699,9 @@ h1 span {
 }
 .feed-counter strong {
   font-family: var(--qss-font-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--qss-text-section);
 }
 .feed-counter i,
 .coverage-line i {
@@ -722,9 +723,10 @@ button {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 10px;
+  height: var(--qss-ctl-h);
+  padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--qss-ctl-radius);
   font-size: 12px;
   background: var(--surface-1);
   color: var(--text-primary);
@@ -743,10 +745,13 @@ button:disabled {
   cursor: wait;
 }
 .feed-errors {
-  margin-bottom: 12px;
+  flex-shrink: 0;
+  max-height: 30%;
+  overflow-y: auto;
+  margin-bottom: var(--qss-gap);
   border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));
-  border-radius: 5px;
-  padding: 10px 12px;
+  border-radius: var(--qss-ctl-radius);
+  padding: 5px 12px;
   font-size: 12px;
   color: var(--warning);
 }
@@ -770,7 +775,7 @@ button:disabled {
   flex: 1;
   min-height: 0;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--qss-panel-radius);
   background: var(--surface-1);
   overflow: hidden;
   scroll-margin-top: 8px;
@@ -787,8 +792,8 @@ button:disabled {
 .analysis-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: var(--qss-gap-tight) 10px;
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   flex-shrink: 0;
@@ -803,9 +808,10 @@ button:disabled {
   font-size: 11px;
 }
 .analysis-controls select {
+  height: var(--qss-ctl-h);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 7px 24px 7px 8px;
+  border-radius: var(--qss-ctl-radius);
+  padding: 0 24px 0 8px;
   background: var(--surface-0);
   color: var(--text-primary);
   font-size: 12px;
@@ -821,12 +827,14 @@ button:disabled {
   margin-left: auto;
 }
 .periods button {
+  height: var(--qss-ctl-h);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--qss-ctl-radius);
   color: var(--text-secondary);
   font-size: 12px;
-  padding: 7px 8px;
+  font-variant-numeric: tabular-nums;
+  padding: 0 8px;
 }
 .periods button.active {
   color: var(--text-primary);
@@ -843,12 +851,13 @@ button:disabled {
 .coverage-line {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 2px 14px;
   flex-wrap: wrap;
-  padding: 8px 12px;
+  padding: 5px var(--qss-panel-pad);
   border-bottom: 1px solid var(--border);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 .coverage-line > span:first-child {
@@ -869,8 +878,8 @@ button:disabled {
   cursor: pointer;
 }
 .early-toggle[aria-pressed='true'] {
-  color: #70b5e8;
-  border-color: #70b5e8;
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
 }
 .coverage-gaps {
   color: #e7ad53;
@@ -893,17 +902,13 @@ button:disabled {
 .formula-strip {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 2px 10px;
   flex-wrap: wrap;
-  padding: 8px 12px;
+  padding: 5px var(--qss-panel-pad);
   border-top: 1px solid var(--border);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   flex-shrink: 0;
-}
-.formula-strip > span:first-child {
-  font-size: 10px;
-  letter-spacing: 0.05em;
 }
 code {
   color: var(--text-secondary);
@@ -942,7 +947,7 @@ code {
 }
 .metric-library {
   /* Clear the page's bottom padding so the library starts below the initial viewport. */
-  margin-top: max(22px, var(--qss-surface-padding, 24px));
+  margin-top: max(22px, var(--qss-page-edge));
 }
 .library-heading {
   display: flex;
@@ -953,9 +958,9 @@ code {
 .library-heading h2 {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 17px;
-  font-weight: 550;
+  gap: var(--qss-gap-tight);
+  font-size: var(--qss-text-section);
+  font-weight: 600;
   margin: 0;
 }
 .library-heading h2 > span {
@@ -968,9 +973,10 @@ code {
   gap: 5px;
 }
 .library-tabs button {
+  height: var(--qss-ctl-h);
   border: 1px solid transparent;
-  border-radius: 5px;
-  padding: 7px 10px;
+  border-radius: var(--qss-ctl-radius);
+  padding: 0 10px;
   font-size: 12px;
   background: transparent;
   color: var(--text-secondary);
@@ -1021,27 +1027,26 @@ code {
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 10px;
+  gap: var(--qss-gap-tight);
 }
 .metric-card {
   position: relative;
   isolation: isolate;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--qss-panel-radius);
   background: var(--surface-1);
   overflow: hidden;
-  padding: 12px;
+  padding: var(--qss-panel-pad);
   transition:
     border-color 0.15s,
     background 0.15s;
 }
 .metric-card:not(.is-unavailable):hover {
-  border-color: #70b5e8;
-  background: color-mix(in srgb, #70b5e8 4%, var(--surface-1));
+  border-color: var(--text-secondary);
 }
 .metric-card.is-selected {
-  border-color: #70b5e8;
+  border-color: var(--text-primary);
 }
 .card-hit-target {
   position: absolute;
@@ -1055,7 +1060,7 @@ code {
   background: transparent;
 }
 .card-hit-target:focus-visible {
-  outline: 2px solid #70b5e8;
+  outline: 2px solid var(--text-primary);
   outline-offset: -3px;
 }
 .metric-card-head {
@@ -1068,11 +1073,7 @@ code {
   align-items: center;
   justify-content: center;
   color: var(--metric-accent, var(--text-secondary));
-  background: color-mix(in srgb, var(--metric-accent, var(--text-secondary)) 8%, transparent);
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
+  width: 16px;
   flex-shrink: 0;
 }
 .metric-card-head > div {
@@ -1082,9 +1083,8 @@ code {
 .metric-category {
   display: block;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.3;
-  text-transform: uppercase;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1123,9 +1123,9 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin: 5px 0 4px;
-  min-height: 66px;
+  gap: var(--qss-gap);
+  margin: 4px 0;
+  min-height: 56px;
   color: var(--text-primary);
 }
 .card-reading > div {
@@ -1133,15 +1133,15 @@ h3 {
 }
 .card-reading strong {
   display: block;
-  font-size: 23px;
-  line-height: 1.15;
-  letter-spacing: -0.5px;
-  font-weight: 550;
+  font-size: var(--qss-text-title);
+  line-height: 1.2;
+  font-weight: 600;
   font-family: var(--qss-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 .card-unit {
   margin-left: 5px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   font-weight: 400;
   letter-spacing: 0;
@@ -1169,7 +1169,7 @@ h3 {
 }
 .card-interpretation span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .card-status {
   display: flex;
@@ -1177,7 +1177,7 @@ h3 {
   justify-content: space-between;
   flex-wrap: wrap;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.3;
 }
 .metric-description {
@@ -1195,11 +1195,11 @@ h3 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin: 12px 0;
+  margin: var(--qss-gap-tight) 0;
   color: var(--muted);
 }
 .unavailable-reading > span:first-child {
-  font-size: 25px;
+  font-size: var(--qss-text-title);
 }
 .unavailable-reading > span:last-child {
   display: flex;
@@ -1211,7 +1211,7 @@ h3 {
   opacity: 0.55;
 }
 .empty-library {
-  padding: 35px;
+  padding: var(--qss-page-edge);
   display: flex;
   gap: 12px;
   align-items: center;
@@ -1223,8 +1223,8 @@ h3 {
   display: flex;
   gap: 7px;
   align-items: center;
-  margin-top: 18px;
-  font-size: 11px;
+  margin-top: var(--qss-gap);
+  font-size: var(--qss-text-meta);
   line-height: 1.5;
   color: var(--muted);
 }
@@ -1240,7 +1240,7 @@ button:focus-visible,
 select:focus-visible,
 input:focus-visible,
 summary:focus-visible {
-  outline: 2px solid #70b5e8;
+  outline: 2px solid var(--text-primary);
   outline-offset: 2px;
 }
 @container analysis (max-width: 1000px) {

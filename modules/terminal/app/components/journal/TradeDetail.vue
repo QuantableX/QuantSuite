@@ -28,7 +28,7 @@ const EMOTION_MAP: Record<string, { emoji: string; label: string }> = {
       <div class="space-y-2 flex-1">
         <!-- Strategy & Exchange -->
         <div class="flex items-center gap-3">
-          <span v-if="trade.strategy" class="text-[11px] font-medium px-2 py-0.5 rounded" style="background-color: var(--accent); color: #fff">
+          <span v-if="trade.strategy" class="text-[11px] font-medium px-2 py-0.5 rounded" style="background-color: var(--accent); color: var(--qss-accent-ink)">
             {{ trade.strategy }}
           </span>
           <span class="text-[11px]" style="color: var(--text-secondary)">{{ trade.exchange }}</span>
@@ -46,7 +46,7 @@ const EMOTION_MAP: Record<string, { emoji: string; label: string }> = {
           <span
             v-for="tag in trade.tags"
             :key="tag"
-            class="text-[10px] font-medium px-2 py-0.5 rounded"
+            class="text-[11px] font-medium px-2 py-0.5 rounded"
             style="background-color: var(--surface-3); color: var(--muted)"
           >
             {{ tag }}
@@ -77,7 +77,7 @@ const EMOTION_MAP: Record<string, { emoji: string; label: string }> = {
         <button
           v-if="trade.status === 'open'"
           class="flex items-center gap-1 px-2.5 py-1.5 rounded text-[11px] font-medium transition-all hover:brightness-125"
-          style="background-color: var(--accent); color: #fff"
+          style="background-color: var(--accent); color: var(--qss-accent-ink)"
           @click="emit('close', trade)"
         >
           <Clock class="w-3 h-3" />
