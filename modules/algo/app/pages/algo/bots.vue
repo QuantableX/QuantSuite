@@ -120,7 +120,7 @@ function onCreated(_bot: unknown, started: boolean) {
 <template>
   <div class="bots-page">
     <div class="bots-page__header">
-      <div>
+      <div class="bots-page__heading">
         <h2 class="bots-page__title">Bots</h2>
         <p class="bots-page__subtitle text-muted">
           {{ botsStore.runningCount }} running
@@ -139,13 +139,15 @@ function onCreated(_bot: unknown, started: boolean) {
       <button class="btn btn-sm" @click="actionError = null">Dismiss</button>
     </div>
 
-    <div v-if="!botsStore.list.length" class="bots-page__empty card">
-      <p class="empty__title">No bots yet</p>
-      <p class="empty__desc text-muted">
-        Choose a strategy, exchange, and budget to create a bot.
-      </p>
+    <QEmptyState
+      v-if="!botsStore.list.length"
+      class="bots-page__empty"
+      compact
+      title="No bots yet"
+      description="Choose a strategy, exchange, and budget to create a bot."
+    >
       <button class="btn btn-primary" @click="showCreate = true">New bot</button>
-    </div>
+    </QEmptyState>
 
     <div v-else class="card bots-table-wrap">
       <table class="table bots-table">
@@ -231,71 +233,72 @@ function onCreated(_bot: unknown, started: boolean) {
 </template>
 
 <style scoped>
+/* The table panel is as tall as its rows and scrolls inside once it reaches the page's height. */
 .bots-page {
   height: 100%;
   overflow-y: auto;
-  padding: 20px;
+  padding: var(--qss-page-edge);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--qss-gap);
 }
 
 .bots-page__header {
+  flex-shrink: 0;
   display: flex;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--qss-gap);
+}
+
+.bots-page__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--qss-gap);
+  min-width: 0;
 }
 
 .bots-page__title {
-  font-size: 16px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--qa-text);
 }
 
 .bots-page__subtitle {
-  font-size: 13px;
-  margin-top: 4px;
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
 }
 
 .bots-page__actions {
   display: flex;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
   flex-shrink: 0;
 }
 
 .bots-page__error {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-}
-
-.bots-page__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 48px 24px;
-  text-align: center;
-}
-
-.empty__title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--qa-text);
-}
-
-.empty__desc {
-  font-size: 13px;
-  max-width: 420px;
-  line-height: 1.5;
+  gap: var(--qss-gap);
+  font-size: var(--qss-text-section);
 }
 
 .bots-table-wrap {
+  flex: 0 1 auto;
+  min-height: 0;
   padding: 0;
-  overflow-x: auto;
+  overflow: auto;
+}
+
+.bots-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--qss-bg-raised);
 }
 
 .bots-table th.num,
@@ -303,8 +306,28 @@ function onCreated(_bot: unknown, started: boolean) {
   text-align: right;
 }
 
+/* One line per bot; a narrow window scrolls the panel sideways, the actions stay in reach. */
+.bots-table td:not(.cell-name) {
+  white-space: nowrap;
+}
+
+.bots-table th:last-child,
+.bots-table td.cell-actions {
+  position: sticky;
+  right: 0;
+  background: var(--qss-bg-raised);
+}
+
+.bots-table th:last-child {
+  z-index: 2;
+}
+
 .row--error td {
   background: color-mix(in srgb, var(--qa-error) 6%, transparent);
+}
+
+.row--error td.cell-actions {
+  background: color-mix(in srgb, var(--qa-error) 6%, var(--qss-bg-raised));
 }
 
 .cell-name {
@@ -314,7 +337,7 @@ function onCreated(_bot: unknown, started: boolean) {
 .name-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
 }
 
 .name {
@@ -350,13 +373,12 @@ function onCreated(_bot: unknown, started: boolean) {
 
 .mode {
   display: inline-block;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border: 1px solid var(--qa-border);
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+  border: 1px solid var(--qa-border-subtle);
   color: var(--qa-text-secondary);
 }
 
@@ -366,11 +388,13 @@ function onCreated(_bot: unknown, started: boolean) {
 }
 
 .small {
-  font-size: 10px;
+  font-size: 11px;
   margin-left: 4px;
 }
 
-.cell-actions {
+/* A row stays 32px tall with its 28px buttons. */
+.bots-table td.cell-actions {
+  padding-block: 2px;
   white-space: nowrap;
   text-align: right;
 }
@@ -378,7 +402,8 @@ function onCreated(_bot: unknown, started: boolean) {
 .cell-actions .btn {
   margin-left: 4px;
 }
+
 .perp-positions {
-  margin-top: 12px;
+  margin: var(--qss-gap-tight) var(--qss-panel-pad);
 }
 </style>

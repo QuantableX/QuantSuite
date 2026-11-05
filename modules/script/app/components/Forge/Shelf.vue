@@ -81,15 +81,20 @@ function refresh() {
 
 <style scoped>
 .qsf-shelf {
+  flex: 1 1 0;
+  min-height: 240px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--qss-gap-tight);
+}
+.qsf-shelf > * {
+  flex-shrink: 0;
 }
 .qsf-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--qss-gap);
 }
 .qsf-head-actions {
   display: flex;
@@ -97,16 +102,28 @@ function refresh() {
   flex-shrink: 0;
 }
 .qsf-note {
-  font-size: 12px;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
 }
-.qsf-table-wrap {
-  overflow-x: auto;
+/* The table takes the height; its rows scroll under a header that stays. */
+.qsf-shelf > .qsf-table-wrap.qsc-card {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+.qsf-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--qss-bg-raised);
+  box-shadow: inset 0 -1px 0 var(--qss-border);
 }
 .qsf-empty {
-  text-align: center;
-  padding: 24px 12px;
+  padding: var(--qss-gap-tight) 10px;
 }
 .qsf-foot {
-  font-size: 11px;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-meta);
 }
 </style>

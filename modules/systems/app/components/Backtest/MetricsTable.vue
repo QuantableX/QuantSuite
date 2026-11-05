@@ -139,13 +139,13 @@ function tone(value: number | null | undefined, kind?: Tone): string {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 12px 14px;
+  padding: var(--qss-panel-pad);
 }
 
 .qs-metrics__title {
   flex-shrink: 0;
-  margin: 0 0 10px;
-  font-size: 13px;
+  margin: 0 0 var(--qss-gap-tight);
+  font-size: var(--qss-text-section);
   font-weight: 600;
 }
 
@@ -161,7 +161,8 @@ function tone(value: number | null | undefined, kind?: Tone): string {
   width: 100%;
   height: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
   line-height: 20px;
 }
 
@@ -170,21 +171,14 @@ function tone(value: number | null | undefined, kind?: Tone): string {
   padding: 0 10px;
   text-align: right;
   color: var(--qs-text-secondary);
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .qs-metrics__col {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
   border-bottom: 1px solid var(--qs-border);
-}
-
-/* Trend keys read exactly as typed and as the chips show them. */
-.qs-metrics__col--kind {
-  text-transform: none;
-  letter-spacing: 0;
 }
 
 .qs-metrics__rowlabel {
@@ -192,7 +186,7 @@ function tone(value: number | null | undefined, kind?: Tone): string {
   position: sticky;
   left: 0;
   z-index: 1;
-  background: var(--qs-bg-card);
+  background: var(--qss-bg-raised);
 }
 
 /* The strategy column is what every other column is read against, so it gets a
@@ -228,7 +222,7 @@ function tone(value: number | null | undefined, kind?: Tone): string {
 
 .qs-metrics__row--highlight .qs-metrics__val,
 .qs-metrics__row--highlight .qs-metrics__rowlabel {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .qs-metrics__row--highlight .qs-metrics__rowlabel {

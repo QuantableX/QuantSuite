@@ -7,7 +7,7 @@ import type { CanvasWindow as CanvasWindowType, WindowType, FilePreviewKind } fr
 import { useEventListener } from '@vueuse/core'
 import { inActiveKeepAliveTree, useTauriEvent } from '@quantsuite/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import { AppWindow, Globe, Images, LayoutDashboard, MessageSquare, PenTool, Terminal } from 'lucide-vue-next'
+import { Globe, Images, LayoutDashboard, MessageSquare, PenTool, Terminal } from 'lucide-vue-next'
 import { terminalHasFocus } from '../../utils/terminalFocus'
 import { useCanvasActions, useCanvasEdges } from '../../utils/canvasLinks'
 import type { KanbanCard } from '@quantsuite/core'
@@ -655,13 +655,12 @@ useEventListener(window, 'click', () => {
   >
     <div v-if="!windows.length && workspaceId" class="canvas-start" @mousedown.stop @wheel.stop>
       <QEmptyState title="Empty canvas" description="Add a window or drop a file here.">
-        <template #icon><AppWindow :size="24" /></template>
-        <button class="canvas-start-action" @click="createWindow('terminal', true)"><Terminal :size="16" /> Terminal</button>
-        <button class="canvas-start-action" @click="createWindow('spec', true)"><LayoutDashboard :size="16" /> Kanban</button>
-        <button class="canvas-start-action" @click="createWindow('browser', true)"><Globe :size="16" /> Browser</button>
-        <button class="canvas-start-action" @click="createWindow('chat', true)"><MessageSquare :size="16" /> Chat</button>
-        <button class="canvas-start-action" @click="createWindow('artboard', true)"><PenTool :size="16" /> Artboard</button>
-        <button class="canvas-start-action" @click="createWindow('moodboard', true)"><Images :size="16" /> Moodboard</button>
+        <button class="canvas-start-action" @click="createWindow('terminal', true)"><Terminal :size="14" /> Terminal</button>
+        <button class="canvas-start-action" @click="createWindow('spec', true)"><LayoutDashboard :size="14" /> Kanban</button>
+        <button class="canvas-start-action" @click="createWindow('browser', true)"><Globe :size="14" /> Browser</button>
+        <button class="canvas-start-action" @click="createWindow('chat', true)"><MessageSquare :size="14" /> Chat</button>
+        <button class="canvas-start-action" @click="createWindow('artboard', true)"><PenTool :size="14" /> Artboard</button>
+        <button class="canvas-start-action" @click="createWindow('moodboard', true)"><Images :size="14" /> Moodboard</button>
       </QEmptyState>
     </div>
 
@@ -812,8 +811,11 @@ useEventListener(window, 'click', () => {
 </template>
 
 <style scoped>
-.canvas-start { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); z-index: 2; width: min(500px, calc(100% - 48px)); border: 1px solid var(--qc-border); border-radius: 20px; background: var(--qc-bg-header); box-shadow: 0 18px 60px rgb(0 0 0 / .12); }
-.canvas-start-action { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--qc-border); border-radius: 9px; background: var(--qc-bg-surface); color: var(--qc-text); font-size: 12px; cursor: pointer; }
+.canvas-start { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); z-index: 2; width: min(600px, calc(100% - 48px)); }
+/* The stage runs under the floating side panels, so its 100% is wider than what is visible:
+   a narrow window needs a smaller cap, and the buttons then wrap instead of going under the panels. */
+@media (max-width: 1120px) { .canvas-start { width: 480px; } }
+.canvas-start-action { display: inline-flex; align-items: center; gap: 6px; height: var(--qss-ctl-h); padding: 0 10px; border: 1px solid var(--qc-border); border-radius: var(--qss-ctl-radius); background: var(--qc-bg-surface); color: var(--qc-text); font-size: var(--qss-text-label); cursor: pointer; }
 .canvas-start-action:hover { background: var(--qss-bg-hover); }
 .canvas-link-error { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 10px; align-items: center; padding: 6px 12px; border: 1px solid #f87171; border-radius: 8px; background: var(--qc-bg-header); color: #f87171; font-size: 12px; }
 .canvas-link-error button { border: 1px solid var(--qc-border); border-radius: 6px; background: transparent; color: var(--qc-text); font-size: 11px; padding: 2px 8px; cursor: pointer; }

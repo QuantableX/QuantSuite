@@ -25,160 +25,240 @@ const typeColors: Record<string, string> = {
 </script>
 
 <template>
-  <div class="space-y-3">
-    <!-- Stats row -->
-    <div class="grid grid-cols-4 gap-2">
-      <div class="card p-3 text-center">
-        <div class="flex items-center justify-center gap-1 mb-1">
+  <div class="dojo-dash">
+    <!-- Where you stand: one panel, split by spacing -->
+    <section class="card dojo-progress">
+      <div class="dojo-stats">
+        <div class="dojo-stat">
           <Star class="w-3.5 h-3.5" style="color: var(--accent)" />
+          <strong>{{ dojo.progress.level }}</strong>
+          <span>Level</span>
         </div>
-        <div class="text-lg font-bold" style="color: var(--text-primary)">{{ dojo.progress.level }}</div>
-        <div class="text-[9px]" style="color: var(--muted)">Level</div>
-      </div>
-      <div class="card p-3 text-center">
-        <div class="flex items-center justify-center gap-1 mb-1">
+        <div class="dojo-stat">
           <Zap class="w-3.5 h-3.5" style="color: var(--warning)" />
+          <strong>{{ dojo.progress.totalXP }}</strong>
+          <span>Total XP</span>
         </div>
-        <div class="text-lg font-bold" style="color: var(--text-primary)">{{ dojo.progress.totalXP }}</div>
-        <div class="text-[9px]" style="color: var(--muted)">Total XP</div>
-      </div>
-      <div class="card p-3 text-center">
-        <div class="flex items-center justify-center gap-1 mb-1">
+        <div class="dojo-stat">
           <Flame class="w-3.5 h-3.5" style="color: var(--negative)" />
+          <strong>{{ dojo.progress.currentStreak }}</strong>
+          <span>Day Streak</span>
         </div>
-        <div class="text-lg font-bold" style="color: var(--text-primary)">{{ dojo.progress.currentStreak }}</div>
-        <div class="text-[9px]" style="color: var(--muted)">Day Streak</div>
-      </div>
-      <div class="card p-3 text-center">
-        <div class="flex items-center justify-center gap-1 mb-1">
+        <div class="dojo-stat">
           <BookOpen class="w-3.5 h-3.5" style="color: var(--positive)" />
+          <strong>{{ dojo.overallProgress.completed }}</strong>
+          <span>Completed</span>
         </div>
-        <div class="text-lg font-bold" style="color: var(--text-primary)">{{ dojo.overallProgress.completed }}</div>
-        <div class="text-[9px]" style="color: var(--muted)">Completed</div>
       </div>
-    </div>
 
-    <!-- XP progress to next level -->
-    <div class="card p-3">
-      <div class="flex items-center justify-between mb-1.5">
-        <span class="text-[11px] font-medium" style="color: var(--text-secondary)">
-          Level {{ dojo.progress.level }} Progress
-        </span>
-        <span class="text-[10px]" style="color: var(--muted)">
-          {{ dojo.xpToNextLevel }} XP to Level {{ dojo.progress.level + 1 }}
-        </span>
+      <!-- XP progress to next level -->
+      <div class="dojo-level">
+        <div class="dojo-level__head">
+          <span>Level {{ dojo.progress.level }} Progress</span>
+          <small>{{ dojo.xpToNextLevel }} XP to Level {{ dojo.progress.level + 1 }}</small>
+        </div>
+        <div class="w-full h-2 rounded-full" style="background-color: var(--surface-3)">
+          <div
+            class="h-full rounded-full transition-all"
+            style="background-color: var(--accent)"
+            :style="{ width: dojo.xpProgressPercent + '%' }"
+          />
+        </div>
       </div>
-      <div class="w-full h-2 rounded-full" style="background-color: var(--surface-3)">
-        <div
-          class="h-full rounded-full transition-all"
-          style="background-color: var(--accent)"
-          :style="{ width: dojo.xpProgressPercent + '%' }"
-        />
-      </div>
-    </div>
 
-    <!-- Track completion circles -->
-    <div class="card p-3">
-      <h4 class="text-[11px] font-semibold mb-3" style="color: var(--text-secondary)">Track Progress</h4>
-      <div class="grid grid-cols-4 gap-3">
-        <div v-for="track in dojo.tracks" :key="track.id" class="text-center">
-          <div class="relative w-12 h-12 mx-auto mb-1.5">
-            <svg class="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
-              <path
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                fill="none"
-                stroke="var(--surface-3)"
-                stroke-width="3"
-              />
-              <path
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                fill="none"
-                :stroke="track.color"
-                stroke-width="3"
-                stroke-linecap="round"
-                :stroke-dasharray="`${dojo.trackProgress[track.id]?.percent ?? 0}, 100`"
-              />
-            </svg>
-            <div class="absolute inset-0 flex items-center justify-center">
-              <span class="text-[10px] font-bold" style="color: var(--text-primary)">
-                {{ dojo.trackProgress[track.id]?.percent ?? 0 }}%
-              </span>
+      <!-- Streak info -->
+      <div class="dojo-streak">
+        <Flame class="w-4 h-4 flex-shrink-0" style="color: var(--negative)" />
+        <div>
+          <strong>{{ dojo.progress.currentStreak }} day streak</strong>
+          <small>Longest: {{ dojo.progress.longestStreak }} days</small>
+        </div>
+        <small class="dojo-streak__lessons">{{ dojo.overallProgress.completed }} / {{ dojo.overallProgress.total }} lessons</small>
+      </div>
+    </section>
+
+    <!-- The learning tracks come between the progress and the details. -->
+    <slot />
+
+    <div class="dojo-lower" :class="{ 'has-activity': dojo.recentActivity.length > 0 }">
+      <!-- Track completion circles -->
+      <section class="card p-3">
+        <h4>Track Progress</h4>
+        <div class="dojo-rings">
+          <div v-for="track in dojo.tracks" :key="track.id" class="text-center">
+            <div class="relative w-12 h-12 mx-auto mb-1.5">
+              <svg class="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
+                <path
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  fill="none"
+                  stroke="var(--surface-3)"
+                  stroke-width="3"
+                />
+                <path
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  fill="none"
+                  :stroke="track.color"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  :stroke-dasharray="`${dojo.trackProgress[track.id]?.percent ?? 0}, 100`"
+                />
+              </svg>
+              <div class="absolute inset-0 flex items-center justify-center">
+                <span class="text-[11px] font-semibold" style="color: var(--text-primary)">
+                  {{ dojo.trackProgress[track.id]?.percent ?? 0 }}%
+                </span>
+              </div>
+            </div>
+            <span class="dojo-rings__name">
+              {{ track.name.split(' ')[0] }}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Achievements -->
+      <section class="card p-3">
+        <h4>Achievements</h4>
+        <div class="dojo-achievements">
+          <div
+            v-for="achievement in dojo.allAchievements"
+            :key="achievement.id"
+            class="dojo-achievement"
+            :class="{ 'is-unlocked': dojo.unlockedAchievements.some(a => a.id === achievement.id) }"
+          >
+            <component
+              :is="dojo.unlockedAchievements.some(a => a.id === achievement.id) ? achievementIcons[achievement.icon] || Trophy : Lock"
+              class="w-4 h-4 flex-shrink-0"
+              :style="{
+                color: dojo.unlockedAchievements.some(a => a.id === achievement.id)
+                  ? '#ffd700'
+                  : 'var(--muted)',
+              }"
+            />
+            <div class="min-w-0">
+              <strong>{{ achievement.name }}</strong>
+              <small>{{ achievement.description }}</small>
             </div>
           </div>
-          <span class="text-[9px] leading-tight block" style="color: var(--text-secondary)">
-            {{ track.name.split(' ')[0] }}
-          </span>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <!-- Achievements -->
-    <div class="card p-3">
-      <h4 class="text-[11px] font-semibold mb-3" style="color: var(--text-secondary)">Achievements</h4>
-      <div class="grid grid-cols-3 gap-2">
-        <div
-          v-for="achievement in dojo.allAchievements"
-          :key="achievement.id"
-          class="p-2 rounded-lg text-center"
-          :style="{
-            backgroundColor: dojo.unlockedAchievements.some(a => a.id === achievement.id)
-              ? 'rgba(255, 215, 0, 0.08)'
-              : 'var(--surface-2)',
-            opacity: dojo.unlockedAchievements.some(a => a.id === achievement.id) ? 1 : 0.5,
-          }"
-        >
-          <component
-            :is="dojo.unlockedAchievements.some(a => a.id === achievement.id) ? achievementIcons[achievement.icon] || Trophy : Lock"
-            class="w-5 h-5 mx-auto mb-1"
-            :style="{
-              color: dojo.unlockedAchievements.some(a => a.id === achievement.id)
-                ? '#ffd700'
-                : 'var(--muted)',
-            }"
-          />
-          <div class="text-[9px] font-semibold" style="color: var(--text-primary)">{{ achievement.name }}</div>
-          <div class="text-[8px]" style="color: var(--muted)">{{ achievement.description }}</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recent activity -->
-    <div class="card p-3" v-if="dojo.recentActivity.length > 0">
-      <h4 class="text-[11px] font-semibold mb-2" style="color: var(--text-secondary)">Recent Activity</h4>
-      <div class="space-y-1.5">
-        <div
-          v-for="item in dojo.recentActivity"
-          :key="item.id"
-          class="flex items-center gap-2 text-[10px]"
-        >
+      <!-- Recent activity -->
+      <section v-if="dojo.recentActivity.length > 0" class="card p-3">
+        <h4>Recent Activity</h4>
+        <div class="dojo-activity">
           <div
-            class="w-1.5 h-1.5 rounded-full flex-shrink-0"
-            :style="{ backgroundColor: typeColors[item.type] || 'var(--muted)' }"
-          />
-          <span style="color: var(--text-secondary)">{{ item.title }}</span>
-          <span class="text-[9px] ml-auto flex-shrink-0 uppercase font-medium" :style="{ color: typeColors[item.type] || 'var(--muted)' }">
-            {{ item.type }}
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Streak info -->
-    <div class="card p-3 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <Flame class="w-4 h-4" style="color: var(--negative)" />
-        <div>
-          <div class="text-[11px] font-medium" style="color: var(--text-primary)">
-            {{ dojo.progress.currentStreak }} day streak
-          </div>
-          <div class="text-[9px]" style="color: var(--muted)">
-            Longest: {{ dojo.progress.longestStreak }} days
+            v-for="item in dojo.recentActivity"
+            :key="item.id"
+            class="flex items-center gap-2 text-[12px]"
+          >
+            <div
+              class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              :style="{ backgroundColor: typeColors[item.type] || 'var(--muted)' }"
+            />
+            <span class="truncate" style="color: var(--text-secondary)" :title="item.title">{{ item.title }}</span>
+            <span class="dojo-activity__type ml-auto flex-shrink-0" :style="{ color: typeColors[item.type] || 'var(--muted)' }">
+              {{ item.type }}
+            </span>
           </div>
         </div>
-      </div>
-      <div class="text-[10px]" style="color: var(--text-secondary)">
-        {{ dojo.overallProgress.completed }} / {{ dojo.overallProgress.total }} lessons
-      </div>
+      </section>
     </div>
   </div>
 </template>
+
+<style scoped>
+.dojo-dash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
+  font-variant-numeric: tabular-nums;
+}
+.dojo-progress {
+  display: grid;
+  grid-template-columns: auto minmax(200px, 1fr) auto;
+  align-items: center;
+  gap: var(--qss-gap) 24px;
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
+}
+.dojo-stats { display: flex; flex-wrap: wrap; gap: var(--qss-gap) 24px; }
+.dojo-stat {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 6px;
+}
+.dojo-stat strong {
+  color: var(--text-primary);
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  line-height: 1.25;
+}
+.dojo-stat span {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: var(--qss-text-meta);
+  white-space: nowrap;
+}
+.dojo-level { min-width: 0; }
+.dojo-level__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: var(--qss-text-label);
+}
+.dojo-level__head small { color: var(--text-secondary); font-size: var(--qss-text-meta); }
+.dojo-streak { display: flex; align-items: center; gap: 8px; }
+.dojo-streak strong,
+.dojo-streak small { display: block; white-space: nowrap; }
+.dojo-streak strong { color: var(--text-primary); font-size: var(--qss-text-label); font-weight: 500; }
+.dojo-streak small { color: var(--text-secondary); font-size: var(--qss-text-meta); }
+.dojo-streak__lessons { margin-left: var(--qss-gap); }
+
+.dojo-lower {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr);
+  gap: var(--qss-gap);
+}
+.dojo-lower.has-activity { grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr) minmax(240px, 1fr); }
+.dojo-lower h4 {
+  margin: 0 0 var(--qss-gap-tight);
+  color: var(--text-primary);
+  font-size: var(--qss-text-section);
+  font-weight: 600;
+}
+.dojo-rings { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--qss-gap-tight); }
+.dojo-rings__name { display: block; color: var(--text-secondary); font-size: var(--qss-text-meta); line-height: 1.2; }
+.dojo-achievements {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--qss-gap) var(--qss-gap);
+}
+.dojo-achievement { display: flex; gap: var(--qss-gap-tight); min-width: 0; }
+.dojo-achievement strong,
+.dojo-achievement small { display: block; }
+.dojo-achievement strong { color: var(--text-secondary); font-size: var(--qss-text-label); font-weight: 500; }
+.dojo-achievement.is-unlocked strong { color: var(--text-primary); font-weight: 600; }
+.dojo-achievement small { color: var(--text-secondary); font-size: var(--qss-text-meta); line-height: 1.35; }
+.dojo-activity { display: flex; flex-direction: column; gap: 6px; max-height: 118px; overflow-y: auto; }
+.dojo-activity__type { font-size: var(--qss-text-meta); font-weight: 500; text-transform: capitalize; }
+
+@container terminal-workspace (max-width: 1180px) {
+  .dojo-progress { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .dojo-level { grid-column: 1 / -1; grid-row: 2; }
+  .dojo-streak { justify-self: end; }
+  .dojo-lower.has-activity { grid-template-columns: minmax(260px, 1fr) minmax(240px, 1fr); }
+  .dojo-lower.has-activity > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+}
+@container terminal-workspace (max-width: 760px) {
+  .dojo-progress { grid-template-columns: minmax(0, 1fr); }
+  .dojo-streak { justify-self: start; }
+  .dojo-level { grid-row: auto; }
+  .dojo-lower,
+  .dojo-lower.has-activity { grid-template-columns: minmax(0, 1fr); }
+  .dojo-lower.has-activity > :nth-child(2) { grid-row: auto; }
+  .dojo-achievements { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+</style>

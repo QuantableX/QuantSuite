@@ -112,20 +112,20 @@ function pnlTone(value: number | null): string {
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px 14px;
+  padding: var(--qss-panel-pad);
 }
 
 .qs-forced__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: var(--qss-gap-tight);
+  margin-bottom: var(--qss-gap-tight);
 }
 
 .qs-forced__title {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
 }
 
@@ -134,8 +134,6 @@ function pnlTone(value: number | null): string {
 .qs-forced__pick {
   width: auto;
   margin-left: auto;
-  padding: 3px 9px;
-  font-size: 12px;
 }
 
 .qs-forced__table {
@@ -154,12 +152,12 @@ function pnlTone(value: number | null): string {
 }
 
 .qs-forced__row--head {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--qs-text-muted);
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
+  color: var(--qs-text-secondary);
   border-bottom: 1px solid var(--qs-border);
-  padding-bottom: 8px;
+  padding-top: 0;
+  padding-bottom: 6px;
 }
 
 .qs-forced__rows {

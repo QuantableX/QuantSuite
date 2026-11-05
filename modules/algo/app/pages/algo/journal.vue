@@ -115,7 +115,7 @@ onUnmounted(stopListening)
 
     <template v-else>
       <!-- The switch picks the mode every number on this page belongs to -->
-      <div class="journal__top">
+      <div class="journal__top card">
         <div class="journal__stats">
           <AlgoJournalStatsHeader v-if="journalStore.stats" :stats="journalStore.stats" />
         </div>
@@ -160,7 +160,8 @@ onUnmounted(stopListening)
         </div>
       </div>
 
-      <!-- Trade Table: its own block, scrolls inside -->
+      <!-- Trade Table: its own block, scrolls inside; the detail of a trade opens beside it -->
+      <div class="journal__lower" :class="{ 'journal__lower--detail': selectedTrade }">
       <div class="journal__table card">
         <AlgoJournalTradeTable
           :trades="journalStore.trades"
@@ -280,35 +281,33 @@ onUnmounted(stopListening)
           </div>
         </div>
       </Transition>
+      </div>
     </template>
   </div>
 </template>
 
 <style scoped>
-/* One screen: the page never scrolls. Stats, bot table and calendar keep
-   their size; the trade table takes the rest in its own card and scrolls
-   inside (user, 2026-09-07). */
+/* One screen: the page does not scroll where it fits. Stats, bot table and
+   calendar keep their size; the trade table takes the rest in its own panel
+   and scrolls inside (user, 2026-09-07). */
 .journal {
+  container-type: inline-size;
   height: 100%;
-  overflow: hidden;
-  padding: 16px 20px;
+  overflow-y: auto;
+  padding: var(--qss-page-edge);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--qss-gap);
 }
 
 .journal__loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  font-size: 14px;
+  font-size: var(--qss-text-section);
 }
 
 .journal__top {
   display: flex;
-  align-items: stretch;
-  gap: 12px;
+  align-items: center;
+  gap: var(--qss-gap) 24px;
   flex-shrink: 0;
 }
 
@@ -325,16 +324,15 @@ onUnmounted(stopListening)
   border: 1px solid var(--qa-border);
   border-radius: var(--qa-radius);
   overflow: hidden;
-  background: var(--qa-bg-card);
+  background: var(--qa-bg);
 }
 
 .mode-switch__btn {
-  width: 76px;
-  padding: 8px 0;
+  width: 60px;
+  height: calc(var(--qss-ctl-h) - 2px);
   text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: var(--qss-text-label);
+  font-weight: 500;
   border: none;
   background: transparent;
   color: var(--qa-text-muted);
@@ -352,23 +350,28 @@ onUnmounted(stopListening)
 
 .mode-switch__btn.active {
   background: var(--qa-accent);
-  color: var(--qa-bg);
+  color: var(--qss-accent-ink);
 }
 
 .journal__breakdown {
   flex: 0 1 auto;
-  min-height: 120px;
+  min-height: 72px;
   max-height: 30%;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
-/* The one calendar takes the full width — 53 weeks need it. */
+.journal__breakdown > * {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+/* The one calendar takes the full width: 53 weeks need it. */
 .journal__calendar {
   flex-shrink: 0;
 }
 
 .calendar-card {
-  padding: 10px 14px 12px;
   min-width: 0;
 }
 
@@ -376,38 +379,49 @@ onUnmounted(stopListening)
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--qss-gap);
+  margin-bottom: 4px;
 }
 
 .calendar-card__label {
-  font-size: 12px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
 }
 
 .calendar-card__meta {
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   color: var(--qa-text-muted);
 }
 
+/* The rest of the page: the trades, with a trade's detail beside them. */
+.journal__lower {
+  flex: 1 1 0;
+  min-height: 220px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--qss-gap);
+}
+
+.journal__lower--detail {
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
 
 .journal__table {
-  flex: 1 1 auto;
-  min-height: 120px;
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
   padding: 0;
 }
 
 .empty-state {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
 }
 
-/* Detail Panel — below the table, never past the screen */
+/* Detail Panel: next to the table, never past the screen */
 .journal__detail {
-  flex: 0 1 auto;
+  min-width: 0;
   min-height: 0;
-  max-height: 40%;
   overflow: auto;
 }
 
@@ -415,57 +429,54 @@ onUnmounted(stopListening)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: var(--qss-gap-tight);
 }
 
 .detail__title {
-  font-size: 14px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
 }
 
 .detail__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  margin-bottom: var(--qss-gap);
 }
 
 .detail__field {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .detail__label {
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--qa-text-muted);
 }
 
 .detail__value {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   color: var(--qa-text);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .detail__notes {
   border-top: 1px solid var(--qa-border-subtle);
-  padding-top: 16px;
+  padding-top: var(--qss-gap);
 }
 
 .detail__textarea {
   resize: vertical;
   min-height: 80px;
-  margin-bottom: 8px;
+  margin-bottom: var(--qss-gap-tight);
   font-family: inherit;
   line-height: 1.5;
-}
-
-.detail__save-btn {
-  margin-top: 4px;
 }
 
 /* Slide transition */
@@ -478,5 +489,16 @@ onUnmounted(stopListening)
 .slide-leave-to {
   opacity: 0;
   transform: translateY(8px);
+}
+
+@container (max-width: 760px) {
+  .journal__top {
+    flex-wrap: wrap;
+  }
+
+  .journal__lower--detail {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(160px, 1fr) minmax(0, 1fr);
+  }
 }
 </style>

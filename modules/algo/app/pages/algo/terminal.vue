@@ -90,49 +90,50 @@ function toggleAutoScroll() {
 .terminal-page {
   display: flex;
   flex-direction: column;
+  gap: var(--qss-gap);
   height: 100%;
   overflow: hidden;
+  padding: var(--qss-page-edge);
 }
 
 .terminal-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  height: 44px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
   flex-shrink: 0;
-  padding: 0 16px;
-  background: var(--qa-bg-card);
-  border-bottom: 1px solid var(--qa-border);
 }
 
 .terminal-toolbar__left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--qss-gap);
+  min-width: 0;
 }
 
 .terminal-toolbar__title {
-  font-size: 13px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--qa-text);
+  white-space: nowrap;
 }
 
 .terminal-toolbar__select {
   width: auto;
   min-width: 200px;
-  padding: 4px 28px 4px 10px;
-  font-size: 12px;
 }
 
 .terminal-toolbar__right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
 }
 
 .btn--active {
   background: var(--qa-accent);
-  color: var(--qa-bg);
+  color: var(--qss-accent-ink);
   border-color: var(--qa-accent);
 }
 
@@ -142,8 +143,10 @@ function toggleAutoScroll() {
 }
 
 .terminal-container {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
+  border: 1px solid var(--qa-border);
+  border-radius: var(--qss-panel-radius);
 }
 </style>

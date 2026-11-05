@@ -8,7 +8,6 @@
  * memory and layout work.
  */
 import { useEditorStore } from '#code-root/stores/editor'
-import { FileCode2 } from 'lucide-vue-next'
 import { useBookmarksStore } from '#code-root/stores/bookmarks'
 import type { EditorMarker } from '@quantsuite/ui'
 import type { EditorGroup } from '#code-root/shared/types'
@@ -154,7 +153,6 @@ defineExpose({
     <!-- Nothing open in this group -->
     <div v-else class="empty">
       <QEmptyState title="No file open" description="Choose a file from the explorer.">
-        <template #icon><FileCode2 :size="24" /></template>
         <span class="empty-hint"><kbd>Ctrl</kbd> <kbd>P</kbd> Quick open</span>
       </QEmptyState>
     </div>
@@ -265,10 +263,6 @@ defineExpose({
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin: 24px;
-  border: 1px solid var(--qss-border);
-  border-radius: 18px;
-  background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--qss-text) 4%, transparent), transparent 65%), var(--qss-bg-raised);
 }
 .empty-title {
   font-size: 13px;

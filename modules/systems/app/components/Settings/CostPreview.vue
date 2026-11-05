@@ -80,8 +80,8 @@ async function run() {
 
 <style scoped>
 .qs-cost { display: flex; flex-direction: column; gap: 6px; }
-.qs-cost__line { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.qs-cost__label { font-weight: 600; color: var(--qs-text); }
+.qs-cost__line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--qss-gap-tight); font-size: var(--qss-text-label); }
+.qs-cost__label { font-weight: 600; color: var(--qs-text); white-space: nowrap; }
 .qs-cost__coin { width: 70px; }
 .qs-cost__text { font-size: 12px; color: var(--qs-text-secondary); }
 .qs-cost__list { margin: 0; padding-left: 16px; font-size: 12px; color: var(--qs-text-secondary); }

@@ -23,10 +23,9 @@ const rows = computed(() =>
 
 <template>
   <div class="qsc-library">
-    <QPageHeading title="Indicator library">
-      <button class="qsc-btn is-primary" @click="wb.newScriptOpen = true"><Plus :size="15" /> New script</button>
-    </QPageHeading>
-    <div class="qsc-library-controls">
+    <!-- Title, filters, search, sort and the action on one row where they fit. -->
+    <div class="qsc-library-head">
+      <QPageHeading class="qsc-library-title" title="Indicator library" />
       <div class="qsc-library-filters" aria-label="Library filters">
         <button
           v-for="f in LIBRARY_FILTERS"
@@ -38,20 +37,19 @@ const rows = computed(() =>
           {{ f.label }}<span>{{ wb.filterCounts[f.id] }}</span>
         </button>
       </div>
-      <div class="qsc-library-search-row">
-        <label class="qsc-library-search"
-          ><Search :size="15" /><input
-            v-model="wb.search"
-            type="search"
-            aria-label="Search indicator library"
-            placeholder="Search names, files, indicators…"
-            spellcheck="false"
-        /></label>
-        <select v-model="sort" class="qsc-select" aria-label="Sort scripts">
-          <option value="name">Name A–Z</option>
-          <option value="recent">Recently modified</option>
-        </select>
-      </div>
+      <label class="qsc-library-search"
+        ><Search :size="14" /><input
+          v-model="wb.search"
+          type="search"
+          aria-label="Search indicator library"
+          placeholder="Search names, files, indicators…"
+          spellcheck="false"
+      /></label>
+      <select v-model="sort" class="qsc-select qsc-library-sort" aria-label="Sort scripts">
+        <option value="name">Name A–Z</option>
+        <option value="recent">Recently modified</option>
+      </select>
+      <button class="qsc-btn is-primary qsc-library-new" @click="wb.newScriptOpen = true"><Plus :size="15" /> New script</button>
     </div>
     <div v-if="wb.listingError" class="qsc-note is-error" role="alert">
       <strong>Scripts could not be loaded.</strong>
@@ -68,63 +66,64 @@ const rows = computed(() =>
           }}<template v-if="wb.search"> matching “{{ wb.search }}”</template></span
         ><span>{{ wb.indicatorCount }} registered indicators</span>
       </div>
-      <div v-if="rows.length" class="qsc-script-grid">
-        <article
-          v-for="entry in rows"
-          :key="entry.file"
-          class="qsc-script-card"
-          :class="{ 'is-opening': wb.openingFile === entry.file }"
-        >
-          <div class="qsc-card-top">
-            <FileCode2 :size="18" /><span>{{
-              entry.registered ? 'Indicator script' : 'Utility'
-            }}</span
-            ><button
-              class="qsc-icon-btn"
-              :aria-label="`${wb.favorites.includes(entry.file) ? 'Unfavorite' : 'Favorite'} ${entry.file}`"
-              :aria-pressed="wb.favorites.includes(entry.file)"
-              @click="wb.toggleFavorite(entry.file)"
-            >
-              <Star :size="14" :fill="wb.favorites.includes(entry.file) ? 'currentColor' : 'none'" />
+      <!-- The list scrolls here; the title row and the Forge link stay on screen. -->
+      <div class="qsc-library-scroll">
+        <div v-if="rows.length" class="qsc-script-grid">
+          <article
+            v-for="entry in rows"
+            :key="entry.file"
+            class="qsc-script-card"
+            :class="{ 'is-opening': wb.openingFile === entry.file }"
+          >
+            <div class="qsc-card-top">
+              <FileCode2 :size="14" /><span>{{
+                entry.registered ? 'Indicator script' : 'Utility'
+              }}</span
+              ><button
+                class="qsc-icon-btn"
+                :aria-label="`${wb.favorites.includes(entry.file) ? 'Unfavorite' : 'Favorite'} ${entry.file}`"
+                :aria-pressed="wb.favorites.includes(entry.file)"
+                @click="wb.toggleFavorite(entry.file)"
+              >
+                <Star :size="14" :fill="wb.favorites.includes(entry.file) ? 'currentColor' : 'none'" />
+              </button>
+            </div>
+            <button class="qsc-card-open" :aria-label="`Open ${entry.file}`" @click="wb.openScript(entry.file)">
+              <h2>{{ scriptTitle(entry) }}</h2>
+              <span class="mono qsc-card-file">{{ entry.file }}</span>
+              <p v-if="entry.summary">{{ entry.summary }}</p>
             </button>
-          </div>
-          <button class="qsc-card-open" :aria-label="`Open ${entry.file}`" @click="wb.openScript(entry.file)">
-            <h2>{{ scriptTitle(entry) }}</h2>
-            <span class="mono qsc-card-file">{{ entry.file }}</span>
-            <p v-if="entry.summary">{{ entry.summary }}</p>
-          </button>
-          <div class="qsc-card-bottom">
-            <span class="qsc-chip" :class="wb.isDirty(entry.file) ? 'is-warn' : scriptStatus(entry).tone">{{
-              wb.isDirty(entry.file) ? 'Unsaved changes' : scriptStatus(entry).label
-            }}</span
-            ><span :title="`Modified ${timeAgo(entry.modified)}`"
-              >{{ entry.registered }} {{ entry.registered === 1 ? 'indicator' : 'indicators' }}</span
-            >
-          </div>
-        </article>
-      </div>
-      <div v-else-if="!wb.listing.scripts.some((script) => script.kind === 'script')" class="qsc-library-empty">
-        <FileCode2 :size="25" />
-        <h2>Your script library is empty</h2>
-        <p>Add your Python indicator files to this folder, or create a new script.</p>
-        <p class="mono" style="overflow-wrap: anywhere">{{ wb.listing.indicators_dir }}</p>
-        <button class="qsc-btn" :disabled="wb.listingLoading" @click="wb.loadListing(true)">Refresh library</button>
-      </div>
-      <div v-else class="qsc-library-empty">
-        <Search :size="25" />
-        <h2>
-          {{ wb.libraryFilter === 'favorites' && !wb.search ? 'No favorites yet' : 'No matching scripts' }}
-        </h2>
-        <p>
-          {{
+            <div class="qsc-card-bottom">
+              <span class="qsc-chip" :class="wb.isDirty(entry.file) ? 'is-warn' : scriptStatus(entry).tone">{{
+                wb.isDirty(entry.file) ? 'Unsaved changes' : scriptStatus(entry).label
+              }}</span
+              ><span :title="`Modified ${timeAgo(entry.modified)}`"
+                >{{ entry.registered }} {{ entry.registered === 1 ? 'indicator' : 'indicators' }}</span
+              >
+            </div>
+          </article>
+        </div>
+        <QEmptyState
+          v-else-if="!wb.listing.scripts.some((script) => script.kind === 'script')"
+          title="Your script library is empty"
+          description="Add your Python indicator files to this folder, or create a new script."
+        >
+          <span class="mono qsc-library-path">{{ wb.listing.indicators_dir }}</span>
+          <button class="qsc-btn" :disabled="wb.listingLoading" @click="wb.loadListing(true)">Refresh library</button>
+        </QEmptyState>
+        <QEmptyState
+          v-else
+          :title="wb.libraryFilter === 'favorites' && !wb.search ? 'No favorites yet' : 'No matching scripts'"
+          :description="
             wb.libraryFilter === 'favorites' && !wb.search
               ? 'Star a script to save it here.'
               : 'Try another search or switch to all scripts.'
-          }}
-        </p>
-        <button class="qsc-btn" @click="resetFilters">
-          <X :size="13" /> Reset filters
-        </button>
+          "
+        >
+          <button class="qsc-btn" @click="resetFilters">
+            <X :size="13" /> Reset filters
+          </button>
+        </QEmptyState>
       </div>
     </template>
     <footer class="qsc-library-foot">
@@ -135,56 +134,88 @@ const rows = computed(() =>
 
 <style scoped>
 .qsc-library {
+  --qss-page-head-gap: 0px;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap-tight);
+  padding: var(--qss-page-edge);
   overflow: auto;
-  padding: 22px clamp(16px, 3%, 32px);
   container-type: inline-size;
+}
+.qsc-library > * {
+  flex-shrink: 0;
+}
+/* One row where it fits. Narrower, the title keeps sort and action, and the filters and search get their own row. */
+.qsc-library-head {
+  display: grid;
+  grid-template-columns: auto auto minmax(160px, 1fr) auto auto;
+  grid-template-areas: 'title filters search sort new';
+  align-items: center;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+}
+.qsc-library-title { grid-area: title; }
+.qsc-library-filters { grid-area: filters; }
+.qsc-library-search { grid-area: search; }
+.qsc-library-sort { grid-area: sort; }
+.qsc-library-new { grid-area: new; }
+@container (max-width: 1040px) {
+  .qsc-library-head {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'title title sort new'
+      'filters search search search';
+  }
+}
+@container (max-width: 660px) {
+  .qsc-library-head {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'title sort new'
+      'filters filters filters'
+      'search search search';
+  }
 }
 .qsc-library-filters {
   display: flex;
-  gap: 20px;
-  border-bottom: 1px solid var(--qss-border);
-  margin-bottom: 16px;
   flex-wrap: wrap;
+  gap: 2px;
 }
 .qsc-library-filters button {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 0 12px;
-  font-size: 12px;
+  gap: 6px;
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--qss-ctl-radius);
   background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--qss-text-muted);
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-ctl-font);
   cursor: pointer;
 }
+.qsc-library-filters button:hover {
+  color: var(--qss-text);
+}
 .qsc-library-filters button.is-active {
-  border-bottom-color: var(--qss-text);
+  border-color: var(--qss-border);
+  background: var(--qss-bg-card);
   color: var(--qss-text);
 }
 .qsc-library-filters button span {
-  font-size: 10px;
-  padding: 0 5px;
-  border-radius: 4px;
-  background: var(--qss-bg-hover);
-  color: var(--qss-text-secondary);
-}
-.qsc-library-search-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 18px;
+  color: var(--qss-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 .qsc-library-search {
-  min-width: min(220px, 100%);
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 9px;
-  flex: 1;
+  gap: 8px;
+  height: var(--qss-ctl-h);
   border: 1px solid var(--qss-border);
-  border-radius: 7px;
-  padding: 0 11px;
+  border-radius: var(--qss-ctl-radius);
+  padding: 0 10px;
   color: var(--qss-text-muted);
 }
 .qsc-library-search:focus-within {
@@ -196,30 +227,38 @@ const rows = computed(() =>
   outline: 0;
   background: none;
   min-width: 0;
-  height: 34px;
-  font-size: 12px;
-}
-.qsc-library-search-row select {
-  height: 36px;
+  font-size: var(--qss-ctl-font);
 }
 .qsc-library-caption {
   display: flex;
   justify-content: space-between;
-  color: var(--qss-text-muted);
-  font-size: 11px;
-  margin-bottom: 12px;
+  gap: var(--qss-gap);
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-meta);
+  font-variant-numeric: tabular-nums;
+}
+.qsc-library > .qsc-library-scroll {
+  flex: 1 1 0;
+  min-height: 120px;
+  overflow-y: auto;
+}
+.qsc-library-path {
+  flex: 1 0 100%;
+  font-size: var(--qss-text-meta);
+  color: var(--qss-text-secondary);
+  overflow-wrap: anywhere;
 }
 .qsc-script-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: var(--qss-gap);
 }
 .qsc-script-card {
   min-width: 0;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--qss-border);
-  border-radius: 9px;
+  border-radius: var(--qss-panel-radius);
   background: var(--qss-bg-raised);
   overflow: hidden;
   transition: border-color 0.12s;
@@ -231,10 +270,10 @@ const rows = computed(() =>
 .qsc-card-top {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 14px 14px 0;
-  color: var(--qss-text-muted);
-  font-size: 10px;
+  gap: 6px;
+  padding: var(--qss-gap-tight) var(--qss-panel-pad) 0;
+  color: var(--qss-text-secondary);
+  font-size: 11px;
 }
 .qsc-card-top .qsc-icon-btn {
   margin-left: auto;
@@ -247,65 +286,56 @@ const rows = computed(() =>
   text-align: left;
   border: 0;
   background: transparent;
-  padding: 10px 16px 16px;
+  padding: 4px var(--qss-panel-pad) var(--qss-gap-tight);
   cursor: pointer;
   flex: 1;
 }
 .qsc-card-open h2 {
-  font-size: 14px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qss-text);
   overflow-wrap: anywhere;
 }
 .qsc-card-file {
   display: block;
-  font-size: 10px;
-  color: var(--qss-text-muted);
-  margin-top: 3px;
+  font-size: 11px;
+  color: var(--qss-text-secondary);
+  margin-top: 1px;
   overflow-wrap: anywhere;
 }
 .qsc-card-open p {
-  margin-top: 12px;
-  font-size: 12px;
+  margin-top: 6px;
+  font-size: var(--qss-text-label);
   color: var(--qss-text-secondary);
-  line-height: 1.65;
+  line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .qsc-card-bottom {
-  padding: 10px 14px;
+  padding: 6px var(--qss-panel-pad);
   border-top: 1px solid var(--qss-border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  font-size: 10px;
-  color: var(--qss-text-muted);
+  font-size: 11px;
+  color: var(--qss-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
-.qsc-library-empty,
 .qsc-library-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 50px 20px;
-  color: var(--qss-text-muted);
-  text-align: center;
-}
-.qsc-library-empty h2 {
-  color: var(--qss-text);
-  font-size: 15px;
+  padding: var(--qss-page-edge) 0;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-label);
 }
 .qsc-library-foot {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 11px;
+  gap: var(--qss-gap);
+  font-size: var(--qss-text-meta);
   color: var(--qss-text-muted);
-  padding-top: 24px;
 }
 .qsc-library-foot a {
   display: inline-flex;
@@ -313,10 +343,5 @@ const rows = computed(() =>
   gap: 7px;
   color: var(--qss-text-secondary);
   text-decoration: none;
-}
-@container (max-width: 660px) {
-  .qsc-library-filters {
-    gap: 13px;
-  }
 }
 </style>

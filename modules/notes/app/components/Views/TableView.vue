@@ -75,9 +75,11 @@ async function addRow() {
 }
 
 .qn-table__scroll {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
   overflow: auto;
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qss-panel-radius);
 }
 
 table {
@@ -85,26 +87,27 @@ table {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 thead th {
   position: sticky;
   top: 0;
   z-index: 2;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--qn-border);
-  background: var(--qn-bg);
-  color: var(--qn-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  height: var(--qss-row-h);
+  padding: 0 10px;
+  border-bottom: 1px solid var(--qn-border-subtle);
+  background: var(--qn-bg-sidebar);
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
   text-align: left;
   white-space: nowrap;
 }
 
 tbody td {
-  padding: 2px 4px;
+  height: var(--qss-row-h);
+  padding: 0 4px;
   border-bottom: 1px solid var(--qn-border-subtle);
   vertical-align: middle;
 }
@@ -118,12 +121,14 @@ tbody tr:hover td {
   position: sticky;
   left: 0;
   z-index: 1;
+  width: 30%;
   min-width: 240px;
   background: var(--qn-bg);
 }
 
 thead .qn-table__title-col {
   z-index: 3;
+  background: var(--qn-bg-sidebar);
 }
 
 tbody tr:hover .qn-table__title-col {
@@ -135,7 +140,8 @@ tbody tr:hover .qn-table__title-col {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 8px;
+  height: 28px;
+  padding: 0 6px;
   border: none;
   border-radius: 6px;
   background: transparent;
@@ -161,21 +167,30 @@ tbody tr:hover .qn-table__title-col {
   white-space: nowrap;
 }
 
+/* A row stays one line; a long tag list scrolls the table sideways instead. */
+tbody :deep(.qn-cell__value) {
+  flex-wrap: nowrap;
+}
+
+/* Only there to close the row: the property columns share the width. */
 .qn-table__pad {
-  width: 100%;
+  width: 0;
+  padding: 0;
 }
 
 .qn-table__new td {
+  padding: 0;
   border-bottom: none;
 }
 
 .qn-table__new-btn {
   width: 100%;
-  padding: 9px 10px;
+  height: var(--qss-row-h);
+  padding: 0 10px;
   border: none;
   background: transparent;
   color: var(--qn-text-muted);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
   text-align: left;
   cursor: pointer;
 }
@@ -183,5 +198,12 @@ tbody tr:hover .qn-table__title-col {
 .qn-table__new-btn:hover {
   background: var(--qn-bg-hover);
   color: var(--qn-text);
+}
+
+/* A sticky 240px title leaves too little beside it in the narrowest middle. */
+@container (max-width: 560px) {
+  .qn-table__title-col {
+    min-width: 160px;
+  }
 }
 </style>

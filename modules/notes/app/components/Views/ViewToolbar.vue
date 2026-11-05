@@ -199,10 +199,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 </template>
 
 <style scoped>
+/* Shares the title row: fills what the tabs leave, with New note at the far end. */
 .qn-vt {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   padding: 6px 0;
 }
 
@@ -211,12 +215,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 }
 
 .qn-vt__btn {
-  padding: 5px 9px;
+  height: var(--qss-ctl-h);
+  padding: 0 9px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--qn-text-muted);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -235,12 +241,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 }
 
 .qn-vt__primary {
-  padding: 5px 11px;
+  height: var(--qss-ctl-h);
+  padding: 0 11px;
   border: 1px solid var(--qn-border);
-  border-radius: 6px;
+  border-radius: var(--qss-ctl-radius);
   background: var(--qn-bg-card);
   color: var(--qn-text-secondary);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -257,7 +265,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   width: 200px;
   padding: 4px;
   border: 1px solid var(--qn-border);
-  border-radius: 10px;
+  border-radius: var(--qss-panel-radius);
   background: var(--qn-bg-sidebar);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
 }
@@ -279,7 +287,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   border-radius: 6px;
   background: transparent;
   color: var(--qn-text-secondary);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   text-align: left;
   cursor: pointer;
 }
@@ -297,7 +305,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   margin: 0;
   padding: 8px;
   color: var(--qn-text-muted);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   line-height: 1.4;
 }
 
@@ -316,23 +324,25 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 .qn-vt__input,
 .qn-vt__select {
   width: 100%;
-  padding: 5px 8px;
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
   border: 1px solid var(--qn-border);
   border-radius: 6px;
   background: var(--qn-bg-input);
   color: var(--qn-text);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   font-family: inherit;
   outline: none;
 }
 
 .qn-vt__submit {
-  padding: 6px;
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
   border: 1px solid var(--qn-border);
   border-radius: 6px;
   background: var(--qn-bg-card);
   color: var(--qn-text);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
 }
 

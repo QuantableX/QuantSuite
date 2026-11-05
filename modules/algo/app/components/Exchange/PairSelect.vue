@@ -79,6 +79,7 @@ function onChange(e: Event) {
 
 <template>
   <div class="pair-select">
+    <div class="pair-select__controls">
     <input
       v-if="pairs.length > 12"
       v-model="filter"
@@ -102,6 +103,7 @@ function onChange(e: Event) {
       <option v-else-if="pairs.length === 0" value="">No pairs listed</option>
       <option v-for="p in filtered" :key="p" :value="p">{{ p }}</option>
     </select>
+    </div>
     <p v-if="error" class="pair-select__error">{{ error }}</p>
     <p v-else-if="pairs.length" class="pair-select__meta">
       {{ pairs.length.toLocaleString('en-US') }} pairs listed
@@ -111,11 +113,30 @@ function onChange(e: Event) {
 </template>
 
 <style scoped>
+/* Filter and list side by side once the field is wide enough for both. */
 .pair-select {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+}
+
+.pair-select__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+@container (min-width: 320px) {
+  .pair-select__controls {
+    flex-direction: row;
+  }
+
+  .pair-select__controls > * {
+    flex: 1 1 0;
+    min-width: 0;
+  }
 }
 
 .pair-select__filter {

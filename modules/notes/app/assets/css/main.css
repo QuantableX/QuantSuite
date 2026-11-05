@@ -121,7 +121,8 @@
 
 
 
-[data-module="notes"] ::-webkit-scrollbar-track {
+[data-module="notes"] ::-webkit-scrollbar-track,
+[data-module="notes"] ::-webkit-scrollbar-corner {
   background: var(--qn-scrollbar-track);
 }
 

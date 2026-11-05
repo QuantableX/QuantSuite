@@ -234,11 +234,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 .qn-cell__value {
   min-width: 0;
   width: 100%;
+  min-height: 28px;
   display: flex;
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
-  padding: 4px 6px;
+  padding: 2px 6px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
@@ -253,6 +254,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 }
 
 .qn-cell--readonly .qn-cell__value {
+  min-height: 0;
   cursor: default;
   padding: 0;
 }
@@ -277,7 +279,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 
 .qn-cell__input {
   width: 100%;
-  padding: 3px 6px;
+  height: 28px;
+  padding: 0 6px;
   border: 1px solid var(--qn-accent);
   border-radius: 6px;
   background: var(--qn-bg-input);
@@ -313,7 +316,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   z-index: 40;
   width: 220px;
   border: 1px solid var(--qn-border);
-  border-radius: 10px;
+  border-radius: var(--qss-panel-radius);
   background: var(--qn-bg-sidebar);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
   overflow: hidden;

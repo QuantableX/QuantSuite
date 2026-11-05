@@ -131,10 +131,10 @@ function keyLine(ex: Exchange): { text: string, tone: 'muted' | 'warn' } {
 }
 
 .exchange-card {
-  background: var(--qa-bg-card);
+  background: var(--qss-bg-raised);
   border: 1px solid var(--qa-border);
-  border-radius: var(--qa-radius);
-  padding: 12px;
+  border-radius: var(--qss-panel-radius);
+  padding: var(--qss-panel-pad);
   cursor: pointer;
   transition: all var(--qa-transition);
   border-left: 3px solid transparent;
@@ -150,19 +150,22 @@ function keyLine(ex: Exchange): { text: string, tone: 'muted' | 'warn' } {
 
 .card-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  gap: var(--qss-gap-tight);
+  margin-bottom: 6px;
 }
 
 .card-info {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--qss-gap-tight);
+  min-width: 0;
 }
 
 .exchange-name {
-  font-size: 14px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qa-text);
 }
@@ -172,16 +175,11 @@ function keyLine(ex: Exchange): { text: string, tone: 'muted' | 'warn' } {
   gap: 6px;
 }
 
-.provider-badge {
-  font-size: 10px;
-}
-
-.type-badge {
-  font-size: 10px;
+.exchange-card .pill {
+  padding: 0 8px;
 }
 
 .sandbox-badge {
-  font-size: 10px;
   color: var(--qa-warning);
 }
 

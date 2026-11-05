@@ -1,0 +1,24 @@
+/* Today's sizes, until this module is converted to the 1.1.0 density. */
+[data-module='mcp'] {
+  --qss-page-title: clamp(22px, 2vw, 28px);
+  --qss-page-title-weight: 500;
+  --qss-page-title-tracking: -.035em;
+  --qss-page-head-gap: 26px;
+  --qss-empty-gap: 12px;
+  --qss-empty-min: 240px;
+  --qss-empty-pad: 40px 24px;
+  --qss-empty-title: 20px;
+  --qss-empty-title-weight: 500;
+  --qss-empty-title-tracking: -.025em;
+}
+
+[data-module='mcp'] .btn-primary {
+  color: var(--qss-accent-ink);
+}
+[data-module='mcp'] .main-content.main-content { padding: var(--qss-surface-padding); }
+[data-module='mcp'] .page-title.page-title { font-size: 27px; font-weight: 500; letter-spacing: -.035em; }
+[data-module='mcp'] .page-header.page-header { margin-bottom: 28px; }
+[data-module='mcp'] :is(.stat-card.stat-card, .section.section, .mcp-card.mcp-card, .tool-card.tool-card, .script-card.script-card) { border: 1px solid var(--qss-border); border-radius: 14px; background: var(--qss-bg-raised); }
+[data-module='mcp'] .stat-value.stat-value { font-size: 32px; font-weight: 500; letter-spacing: -.04em; }
+[data-module='mcp'] .action-card.action-card { background: var(--qss-bg-raised); border-radius: 14px; padding: 24px 20px; }
+[data-module='mcp'] .section-title.section-title { font-size: 15px; font-weight: 500; }

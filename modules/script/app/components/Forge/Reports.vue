@@ -73,27 +73,41 @@ watch(
 </template>
 
 <style scoped>
+/* The list next to the report; each scrolls inside its own panel. */
 .qsf-reports {
+  flex: 1 1 0;
+  min-height: 320px;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--qss-gap);
 }
-.qsf-list {
+.qsf-reports > .qsf-list.qsc-card {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px;
-  max-height: 640px;
+  min-height: 0;
+  padding: var(--qss-gap-tight);
   overflow-y: auto;
 }
 .qsf-list .qsc-input {
+  flex-shrink: 0;
   margin-bottom: 6px;
 }
+.qsf-list > * {
+  flex-shrink: 0;
+}
 .qsf-empty {
-  padding: 24px 8px;
-  font-size: 13px;
-  text-align: center;
+  padding: var(--qss-gap-tight);
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-label);
+}
+@container (max-width: 640px) {
+  .qsf-reports {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+    min-height: 420px;
+  }
 }
 .qsf-item {
   display: flex;
@@ -102,7 +116,7 @@ watch(
   gap: 2px;
   position: relative;
   width: 100%;
-  padding: 7px 10px;
+  padding: 5px 8px;
   border: none;
   border-radius: 6px;
   background: transparent;
@@ -118,7 +132,7 @@ watch(
   color: var(--qss-text);
 }
 .qsf-item-name {
-  font-size: 12.5px;
+  font-size: var(--qss-text-label);
   font-weight: 600;
 }
 .qsf-item-meta {
@@ -126,7 +140,8 @@ watch(
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: var(--qss-text-muted);
+  color: var(--qss-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 .qsf-item-tf {
   height: 16px;
@@ -145,9 +160,10 @@ watch(
   font-size: 12px;
   color: var(--qss-success);
 }
-.qsf-body {
-  min-height: 300px;
-  padding: 18px 22px;
-  overflow-x: auto;
+.qsf-reports > .qsf-body.qsc-card {
+  min-height: 0;
+  min-width: 0;
+  padding: var(--qss-panel-pad);
+  overflow: auto;
 }
 </style>

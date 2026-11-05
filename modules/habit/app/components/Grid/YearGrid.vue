@@ -17,35 +17,13 @@ const habits = useHabitsStore()
 
 const today = computed(() => todayKey())
 
-// ─── Month paging (month grouping only) ───────────────────────────────────
-
-const month = ref(new Date().getMonth())
-
 /** Entering month view lands on the month you live in, not on January. */
 watch(
   () => app.grouping,
   (g) => {
-    if (g === 'month' && habits.year === habits.currentYear) month.value = new Date().getMonth()
+    if (g === 'month' && habits.year === habits.currentYear) habits.month = new Date().getMonth()
   }
 )
-
-function prevMonth() {
-  if (month.value > 0) {
-    month.value -= 1
-  } else {
-    month.value = 11
-    void habits.setYear(habits.year - 1)
-  }
-}
-
-function nextMonth() {
-  if (month.value < 11) {
-    month.value += 1
-  } else {
-    month.value = 0
-    void habits.setYear(habits.year + 1)
-  }
-}
 
 // ─── Sections ─────────────────────────────────────────────────────────────
 
@@ -65,10 +43,10 @@ const sections = computed<Section[]>(() => {
   if (app.grouping === 'month') {
     return [
       {
-        key: `m${month.value}-${habits.year}`,
-        label: MONTHS[month.value]!,
+        key: `m${habits.month}-${habits.year}`,
+        label: MONTHS[habits.month]!,
         sub: '',
-        rows: days.filter((r) => r.month === month.value),
+        rows: days.filter((r) => r.month === habits.month),
       },
     ]
   }
@@ -108,8 +86,6 @@ function sectionPct(section: Section): number | null {
   return counted > 0 ? Math.round(sum / counted) : null
 }
 
-const monthPct = computed(() => (sections.value[0] ? sectionPct(sections.value[0]) : null))
-
 // ─── Scroll ───────────────────────────────────────────────────────────────
 
 /** Land on today, not on January 1st — the row you came to tick. */
@@ -130,17 +106,8 @@ watch(
 </script>
 
 <template>
-  <div ref="scrollEl" class="qh-grid">
+  <div ref="scrollEl" class="qh-grid" :class="{ 'qh-grid--month': app.grouping === 'month' }">
     <div v-if="habits.habits.length" class="qh-grid__inner">
-      <div v-if="app.grouping === 'month'" class="qh-grid__monthnav">
-        <button class="qh-grid__mbtn" title="Previous month" @click="prevMonth">‹</button>
-        <div class="qh-grid__mtitle">
-          <strong>{{ MONTHS[month] }} <span class="qh-num">{{ habits.year }}</span></strong>
-          <span v-if="monthPct !== null" class="qh-grid__msub qh-num">{{ monthPct }}% done</span>
-        </div>
-        <button class="qh-grid__mbtn" title="Next month" @click="nextMonth">›</button>
-      </div>
-
       <template v-for="section in sections" :key="section.key">
         <div v-if="app.grouping === 'week'" class="qh-grid__section">
           <span class="qh-grid__section-label">{{ section.label }}</span>
@@ -209,61 +176,19 @@ watch(
   padding: 16px 24px 32px;
 }
 
-/* One month at a time: ‹ [ September 2026 ] › */
-.qh-grid__monthnav {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 4px 8px;
-  background: var(--qh-bg);
-}
-
-.qh-grid__mbtn {
+/* A month fits the page in 31 equal rows, so a day is the same height in every month and only a
+   31-day month reaches the bottom. In a window too short for that the rows stop at a readable
+   height and the sheet scrolls after all. */
+.qh-grid--month .qh-grid__inner {
   display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border: 1px solid var(--qh-border-subtle);
-  border-radius: var(--qh-radius);
-  background: var(--qh-bg-card);
-  color: var(--qh-text-muted);
-  font-size: 15px;
-  cursor: pointer;
+  grid-template-rows: repeat(31, minmax(19px, 1fr));
+  height: 100%;
+  padding-block: 8px;
 }
 
-.qh-grid__mbtn:hover {
-  border-color: var(--qh-accent);
-  color: var(--qh-text);
-}
-
-.qh-grid__mtitle {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-}
-
-.qh-grid__mtitle strong {
-  color: var(--qh-text);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.qh-grid__mtitle strong .qh-num {
-  color: var(--qh-text-muted);
-  font-weight: 600;
-}
-
-.qh-grid__msub {
-  color: var(--qh-text-muted);
-  font-size: 10px;
+.qh-grid--month .qh-grid__row {
+  min-height: 0;
+  padding-block: 0;
 }
 
 .qh-grid__section {

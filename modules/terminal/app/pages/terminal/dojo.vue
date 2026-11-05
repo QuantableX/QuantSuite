@@ -61,34 +61,34 @@ watch(selectedLessonId, (id) => {
 </script>
 
 <template>
-  <div class="terminal-workspace space-y-4 h-full overflow-y-auto">
-    <!-- Header -->
-    <QPageHeading title="Dojo" :meta="`${dojo.overallProgress.completed}/${dojo.overallProgress.total} lessons`" />
-
-    <!-- Top stats bar -->
-    <div class="flex items-center gap-3 flex-wrap">
-      <div class="flex items-center gap-1.5 text-[11px]">
-        <Star class="w-3.5 h-3.5" style="color: var(--accent)" />
-        <span class="font-semibold" style="color: var(--text-primary)">Lv.{{ dojo.progress.level }}</span>
+  <div class="terminal-workspace">
+    <!-- Header. In a track or lesson the stats share its row; the overview has them in its progress panel. -->
+    <QPageHeading title="Dojo" :meta="`${dojo.overallProgress.completed}/${dojo.overallProgress.total} lessons`">
+      <div v-if="viewMode !== 'overview'" class="flex items-center gap-3 flex-wrap">
+        <div class="flex items-center gap-1.5 text-[12px]">
+          <Star class="w-3.5 h-3.5" style="color: var(--accent)" />
+          <span class="font-semibold" style="color: var(--text-primary)">Lv.{{ dojo.progress.level }}</span>
+        </div>
+        <div class="flex items-center gap-1.5 text-[12px]">
+          <Zap class="w-3.5 h-3.5" style="color: var(--warning)" />
+          <span style="color: var(--text-secondary)">{{ dojo.progress.totalXP }} XP</span>
+        </div>
+        <div class="flex items-center gap-1.5 text-[12px]">
+          <Flame class="w-3.5 h-3.5" style="color: var(--negative)" />
+          <span style="color: var(--text-secondary)">{{ dojo.progress.currentStreak }} day streak</span>
+        </div>
+        <div class="flex items-center gap-1.5 text-[12px]">
+          <BookOpen class="w-3.5 h-3.5" style="color: var(--positive)" />
+          <span style="color: var(--text-secondary)">{{ dojo.overallProgress.completed }}/{{ dojo.overallProgress.total }} lessons</span>
+        </div>
       </div>
-      <div class="flex items-center gap-1.5 text-[11px]">
-        <Zap class="w-3.5 h-3.5" style="color: var(--warning)" />
-        <span style="color: var(--text-secondary)">{{ dojo.progress.totalXP }} XP</span>
-      </div>
-      <div class="flex items-center gap-1.5 text-[11px]">
-        <Flame class="w-3.5 h-3.5" style="color: var(--negative)" />
-        <span style="color: var(--text-secondary)">{{ dojo.progress.currentStreak }} day streak</span>
-      </div>
-      <div class="flex items-center gap-1.5 text-[11px]">
-        <BookOpen class="w-3.5 h-3.5" style="color: var(--positive)" />
-        <span style="color: var(--text-secondary)">{{ dojo.overallProgress.completed }}/{{ dojo.overallProgress.total }} lessons</span>
-      </div>
-    </div>
+    </QPageHeading>
 
     <!-- Overview Mode -->
     <template v-if="viewMode === 'overview'">
-      <TerminalDojoProgressDashboard />
-      <TerminalDojoTrackOverview @select-track="selectTrack" />
+      <TerminalDojoProgressDashboard>
+        <TerminalDojoTrackOverview @select-track="selectTrack" />
+      </TerminalDojoProgressDashboard>
     </template>
 
     <!-- Track Detail Mode -->

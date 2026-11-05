@@ -73,22 +73,25 @@ function pnlClass(value: number): string {
 </template>
 
 <style scoped>
+/* The panel scrolls its rows; the page caps how tall it may get. */
 .breakdown {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  min-height: 0;
 }
 
 .breakdown__bots {
+  flex: 0 1 auto;
+  min-height: 0;
   padding: 0;
-  overflow-x: auto;
+  overflow: auto;
 }
 
 .breakdown__table thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--qa-bg-card);
+  background: var(--qss-bg-raised);
 }
 
 .breakdown__table {
@@ -117,12 +120,11 @@ function pnlClass(value: number): string {
 
 .mode-tag {
   display: inline-block;
-  padding: 1px 6px;
+  padding: 0 6px;
   border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
   color: var(--qa-text-secondary);
   border: 1px solid var(--qa-border-subtle);
 }

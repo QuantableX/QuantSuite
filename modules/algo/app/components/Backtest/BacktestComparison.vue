@@ -139,27 +139,27 @@ const statRows = computed<StatRow[]>(() => {
 .comparison {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--qss-gap);
 }
 
 .section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--qss-gap-tight);
 }
 
 .section-title {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
-  color: var(--qa-text-secondary);
+  color: var(--qa-text);
 }
 
 /* Legend */
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  padding: 8px 0;
+  gap: var(--qss-gap);
+  padding: 4px 0;
 }
 
 .legend-item {
@@ -184,7 +184,7 @@ const statRows = computed<StatRow[]>(() => {
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--qa-border);
-  border-radius: var(--qa-radius);
+  border-radius: var(--qss-panel-radius);
 }
 
 .col-header {

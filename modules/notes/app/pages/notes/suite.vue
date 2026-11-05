@@ -79,99 +79,117 @@ onUnmounted(() => off?.())
 
 <template>
   <div class="qn-suite">
-    <aside class="qn-suite-list">
-      <header class="qn-suite-list-head">
-        <div>
-          <h2>Suite notes</h2>
-          <p>{{ noteCount }} shared with the drawer &amp; HUD</p>
+    <div class="qn-suite-panes">
+      <aside class="qn-suite-list">
+        <header class="qn-suite-list-head">
+          <div>
+            <h2>Suite notes</h2>
+            <p>{{ noteCount }} shared with the drawer &amp; HUD</p>
+          </div>
+          <button class="qn-suite-add" title="Add section" @click="addSection">+</button>
+        </header>
+
+        <div v-for="s in sections" :key="s.id" class="qn-suite-section">
+          <div class="qn-suite-section-head">
+            <input v-model="s.name" class="qn-suite-section-name" @change="persist" />
+            <button class="qn-suite-mini" title="Add note" @click="addNote(s.id)">+</button>
+            <button class="qn-suite-mini" title="Delete section" @click="deleteSection(s.id)">&times;</button>
+          </div>
+          <button
+            v-for="n in s.notes"
+            :key="n.id"
+            class="qn-suite-note"
+            :class="{ 'is-active': selected?.noteId === n.id }"
+            @click="selected = { sectionId: s.id, noteId: n.id }"
+          >
+            {{ n.title || 'Untitled' }}
+          </button>
         </div>
-        <button class="qn-suite-add" title="Add section" @click="addSection">+</button>
-      </header>
 
-      <div v-for="s in sections" :key="s.id" class="qn-suite-section">
-        <div class="qn-suite-section-head">
-          <input v-model="s.name" class="qn-suite-section-name" @change="persist" />
-          <button class="qn-suite-mini" title="Add note" @click="addNote(s.id)">+</button>
-          <button class="qn-suite-mini" title="Delete section" @click="deleteSection(s.id)">&times;</button>
+        <p v-if="loaded && !sections.length" class="qn-suite-hint">
+          Nothing shared yet — add a section, or capture from the drawer or the HUD overlay.
+        </p>
+      </aside>
+
+      <main class="qn-suite-editor">
+        <template v-if="selectedNote">
+          <input
+            class="qn-suite-title"
+            :value="selectedNote.title"
+            placeholder="Title"
+            @input="selectedNote!.title = ($event.target as HTMLInputElement).value; persist()"
+          />
+          <textarea
+            class="qn-suite-content"
+            :value="selectedNote.content"
+            placeholder="Write — every window sees this note."
+            @input="selectedNote!.content = ($event.target as HTMLTextAreaElement).value; persist()"
+          />
+          <footer class="qn-suite-foot">
+            <span>Shared across the suite — drawer, HUD overlay and here are one note.</span>
+            <button @click="deleteNote(selected!.sectionId, selected!.noteId)">Delete note</button>
+          </footer>
+        </template>
+        <div v-else class="qn-suite-empty">
+          <p>Select a shared note to edit it with room to breathe.</p>
+          <span>QuantNotes' own pages stay under Pages — this surface is the suite-wide quick notes.</span>
         </div>
-        <button
-          v-for="n in s.notes"
-          :key="n.id"
-          class="qn-suite-note"
-          :class="{ 'is-active': selected?.noteId === n.id }"
-          @click="selected = { sectionId: s.id, noteId: n.id }"
-        >
-          {{ n.title || 'Untitled' }}
-        </button>
-      </div>
-
-      <p v-if="loaded && !sections.length" class="qn-suite-hint">
-        Nothing shared yet — add a section, or capture from the drawer or the HUD overlay.
-      </p>
-    </aside>
-
-    <main class="qn-suite-editor">
-      <template v-if="selectedNote">
-        <input
-          class="qn-suite-title"
-          :value="selectedNote.title"
-          placeholder="Title"
-          @input="selectedNote!.title = ($event.target as HTMLInputElement).value; persist()"
-        />
-        <textarea
-          class="qn-suite-content"
-          :value="selectedNote.content"
-          placeholder="Write — every window sees this note."
-          @input="selectedNote!.content = ($event.target as HTMLTextAreaElement).value; persist()"
-        />
-        <footer class="qn-suite-foot">
-          <span>Shared across the suite — drawer, HUD overlay and here are one note.</span>
-          <button @click="deleteNote(selected!.sectionId, selected!.noteId)">Delete note</button>
-        </footer>
-      </template>
-      <div v-else class="qn-suite-empty">
-        <p>Select a shared note to edit it with room to breathe.</p>
-        <span>QuantNotes' own pages stay under Pages — this surface is the suite-wide quick notes.</span>
-      </div>
-    </main>
+      </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* A list and its detail, side by side as two panels. */
 .qn-suite {
-  display: flex;
   height: 100%;
   min-height: 0;
+  padding: var(--qss-page-edge);
   background: var(--qn-bg);
   color: var(--qn-text);
+  container-type: inline-size;
+}
+
+.qn-suite-panes {
+  display: flex;
+  gap: var(--qss-gap);
+  height: 100%;
+  min-height: 0;
 }
 
 .qn-suite-list {
-  width: 280px;
+  width: 260px;
   flex-shrink: 0;
   overflow-y: auto;
-  border-right: 1px solid var(--qn-border);
+  padding: var(--qss-panel-pad);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qss-panel-radius);
   background: var(--qn-bg-sidebar);
-  padding: 14px 12px;
 }
 
 .qn-suite-list-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 14px;
+  gap: var(--qss-gap-tight);
+  margin-bottom: var(--qss-gap);
 }
 .qn-suite-list-head h2 {
   margin: 0;
-  font: 600 13px/1.3 inherit;
   color: var(--qn-text);
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
 }
 .qn-suite-list-head p {
   margin: 2px 0 0;
-  font-size: 11px;
-  color: var(--qn-text-muted);
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-meta);
+  font-variant-numeric: tabular-nums;
 }
 .qn-suite-add {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   width: 24px;
@@ -189,22 +207,22 @@ onUnmounted(() => off?.())
 }
 
 .qn-suite-section {
-  margin-bottom: 12px;
+  margin-bottom: var(--qss-gap);
 }
 .qn-suite-section-head {
   display: flex;
   align-items: center;
   gap: 2px;
+  height: 24px;
 }
 .qn-suite-section-name {
   flex: 1;
   min-width: 0;
   border: none;
   background: none;
-  color: var(--qn-text-muted);
-  font: 600 10.5px/1.8 inherit;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-label);
+  font-weight: 600;
 }
 .qn-suite-section-name:focus {
   outline: none;
@@ -223,7 +241,8 @@ onUnmounted(() => off?.())
   cursor: pointer;
   opacity: 0;
 }
-.qn-suite-section-head:hover .qn-suite-mini {
+.qn-suite-section-head:hover .qn-suite-mini,
+.qn-suite-mini:focus-visible {
   opacity: 1;
 }
 .qn-suite-mini:hover {
@@ -234,12 +253,13 @@ onUnmounted(() => off?.())
 .qn-suite-note {
   display: block;
   width: 100%;
-  padding: 6px 9px;
+  height: 28px;
+  padding: 0 8px;
   border: none;
   border-radius: 7px;
   background: none;
   color: var(--qn-text-secondary);
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -256,9 +276,10 @@ onUnmounted(() => off?.())
 }
 
 .qn-suite-hint {
-  margin: 10px 2px;
-  color: var(--qn-text-muted);
-  font-size: 11.5px;
+  margin: 0;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-label);
+  line-height: 1.5;
 }
 
 .qn-suite-editor {
@@ -266,49 +287,65 @@ onUnmounted(() => off?.())
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: clamp(18px, 4vh, 40px) clamp(20px, 6vw, 96px);
-  gap: 12px;
+  gap: var(--qss-gap-tight);
+  padding: var(--qss-panel-pad);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qss-panel-radius);
 }
 
 .qn-suite-title {
+  flex-shrink: 0;
+  width: 100%;
   border: none;
   background: none;
   color: var(--qn-text);
-  font: 600 22px/1.25 inherit;
+  font-size: var(--qss-text-title);
+  font-weight: 600;
   letter-spacing: -0.01em;
+  line-height: 1.3;
 }
 .qn-suite-title:focus {
   outline: none;
 }
 
+/* The text keeps a reading measure, not the panel. */
 .qn-suite-content {
-  flex: 1;
+  flex: 1 1 0;
+  width: 100%;
+  max-width: 80ch;
   min-height: 0;
   resize: none;
   border: none;
   background: none;
   color: var(--qn-text-secondary);
-  font: 400 14px/1.75 inherit;
+  font-size: 14px;
+  line-height: 1.7;
 }
 .qn-suite-content:focus {
   outline: none;
 }
 
 .qn-suite-foot {
+  flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  color: var(--qn-text-muted);
-  font-size: 11px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  padding-top: var(--qss-gap-tight);
+  border-top: 1px solid var(--qn-border-subtle);
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-meta);
 }
 .qn-suite-foot button {
-  padding: 4px 10px;
+  height: 26px;
+  padding: 0 10px;
   border: 1px solid var(--qn-border);
-  border-radius: 6px;
+  border-radius: var(--qss-ctl-radius);
   background: none;
-  color: var(--qn-text-muted);
-  font-size: 11px;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-label);
+  white-space: nowrap;
   cursor: pointer;
 }
 .qn-suite-foot button:hover {
@@ -316,18 +353,31 @@ onUnmounted(() => off?.())
   border-color: color-mix(in srgb, var(--qn-error, #ff4757) 45%, var(--qn-border));
 }
 
+/* No note picked yet: a plain line at the start of the panel, where the title will be. */
 .qn-suite-empty {
-  margin: auto;
-  max-width: 46ch;
-  text-align: center;
+  max-width: 80ch;
 }
 .qn-suite-empty p {
-  margin: 0 0 6px;
-  color: var(--qn-text-secondary);
-  font-size: 13px;
+  margin: 0 0 2px;
+  color: var(--qn-text);
+  font-size: var(--qss-text-section);
 }
 .qn-suite-empty span {
-  color: var(--qn-text-muted);
-  font-size: 11.5px;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-label);
+}
+
+@container (max-width: 620px) {
+  .qn-suite-panes {
+    flex-direction: column;
+  }
+  .qn-suite-list {
+    width: 100%;
+    flex: 0 1 40%;
+  }
+  .qn-suite-editor {
+    flex: 1 1 0;
+    min-height: 0;
+  }
 }
 </style>

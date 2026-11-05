@@ -122,6 +122,21 @@
   --qss-module-header-h: 51px;
   --qss-sidebar-w: 220px;
 
+  /* Density of the area between the module header and the two sidebars (1.1.0, the
+     "Balanced" choice). Modules read these rather than hardcoding their own framing:
+     one page edge, one panel level, full width, weight before size. */
+  --qss-page-edge: 16px;
+  --qss-gap: 12px;
+  --qss-gap-tight: 8px;
+  --qss-panel-pad: 12px;
+  --qss-panel-radius: 10px;
+  --qss-row-h: 32px;
+  --qss-text-title: 15px;
+  --qss-text-section: 13px;
+  --qss-text-label: 12px;
+  --qss-text-meta: 11.5px;
+  --qss-text-metric: 22px;
+
   /* Wordmark sizing (V3.1). The PNGs in packages/ui/src/assets/logos are all
      exported 1280px wide and cropped tight to their ink, so their intrinsic
      HEIGHT already is the cap height: size a wordmark by height and every

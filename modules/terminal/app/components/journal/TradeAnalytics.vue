@@ -126,10 +126,10 @@ function formatPnl(v: number): string {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="qja">
     <!-- Equity Curve -->
-    <div class="card p-3">
-      <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">Equity Curve</h3>
+    <div class="card p-3 qja-wide">
+      <h3>Equity Curve</h3>
       <div v-if="equityCurve.length" class="flex items-end gap-[2px] h-32">
         <div
           v-for="(point, i) in equityCurve"
@@ -142,7 +142,7 @@ function formatPnl(v: number): string {
             alignSelf: point.cumPnl >= 0 ? 'flex-end' : 'flex-end',
           }"
         >
-          <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded text-[9px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10" style="background-color: var(--surface-3); color: var(--text-primary)">
+          <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded text-[11px] font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10" style="background-color: var(--surface-3); color: var(--text-primary)">
             {{ point.date }} · {{ formatPnl(point.cumPnl) }}
           </div>
         </div>
@@ -153,10 +153,9 @@ function formatPnl(v: number): string {
     </div>
 
     <!-- Win/Loss Distribution + Streaks -->
-    <div class="grid grid-cols-2 gap-3">
-      <!-- Win/Loss -->
+          <!-- Win/Loss -->
       <div class="card p-3">
-        <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">Win / Loss Distribution</h3>
+        <h3>Win / Loss Distribution</h3>
         <div class="flex items-center gap-2 mb-2">
           <span class="text-[11px] font-semibold" style="color: var(--positive)">{{ store.winningTrades.length }}W</span>
           <div class="flex-1 h-4 rounded overflow-hidden flex" style="background-color: var(--surface-2)">
@@ -174,18 +173,18 @@ function formatPnl(v: number): string {
         <div class="grid grid-cols-2 gap-2 text-center">
           <div>
             <div class="text-sm font-bold font-mono" style="color: var(--positive)">{{ formatPnl(store.avgWin) }}</div>
-            <div class="text-[10px]" style="color: var(--muted)">Avg Win</div>
+            <div class="text-[11px]" style="color: var(--muted)">Avg Win</div>
           </div>
           <div>
             <div class="text-sm font-bold font-mono" style="color: var(--negative)">{{ formatPnl(store.avgLoss) }}</div>
-            <div class="text-[10px]" style="color: var(--muted)">Avg Loss</div>
+            <div class="text-[11px]" style="color: var(--muted)">Avg Loss</div>
           </div>
         </div>
       </div>
 
       <!-- Streaks -->
       <div class="card p-3">
-        <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">Streaks</h3>
+        <h3>Streaks</h3>
         <div class="space-y-2">
           <div class="flex items-center justify-between">
             <span class="text-[11px]" style="color: var(--text-secondary)">Current</span>
@@ -207,11 +206,10 @@ function formatPnl(v: number): string {
           </div>
         </div>
       </div>
-    </div>
 
     <!-- PnL by Pair -->
     <div class="card p-3">
-      <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">PnL by Pair</h3>
+      <h3>PnL by Pair</h3>
       <div class="space-y-2">
         <div v-for="item in pnlByPair" :key="item.pair" class="flex items-center gap-3">
           <span class="text-[11px] font-semibold w-20 shrink-0" style="color: var(--text-primary)">{{ item.pair }}</span>
@@ -241,10 +239,10 @@ function formatPnl(v: number): string {
 
     <!-- PnL by Day of Week -->
     <div class="card p-3">
-      <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">PnL by Day of Week</h3>
-      <div class="flex items-end gap-2 h-24">
-        <div v-for="day in pnlByDay" :key="day.name" class="flex-1 flex flex-col items-center gap-1">
-          <div class="text-[9px] font-mono" :style="{ color: day.pnl >= 0 ? 'var(--positive)' : 'var(--negative)' }">
+      <h3>PnL by Day of Week</h3>
+      <div class="flex items-end gap-2 min-h-24">
+        <div v-for="day in pnlByDay" :key="day.name" class="flex-1 min-w-0 flex flex-col items-center gap-1">
+          <div class="qja-day-value font-mono" :title="day.count > 0 ? formatPnl(day.pnl) : undefined" :style="{ color: day.pnl >= 0 ? 'var(--positive)' : 'var(--negative)' }">
             {{ day.count > 0 ? formatPnl(day.pnl) : '' }}
           </div>
           <div
@@ -254,14 +252,14 @@ function formatPnl(v: number): string {
               backgroundColor: day.count > 0 ? (day.pnl >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--surface-2)',
             }"
           />
-          <span class="text-[10px]" style="color: var(--muted)">{{ day.name }}</span>
+          <span class="text-[11px]" style="color: var(--muted)">{{ day.name }}</span>
         </div>
       </div>
     </div>
 
     <!-- PnL by Strategy -->
     <div class="card p-3">
-      <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">PnL by Strategy</h3>
+      <h3>PnL by Strategy</h3>
       <div class="space-y-2">
         <div v-for="item in pnlByStrategy" :key="item.strategy" class="flex items-center gap-3">
           <span class="text-[11px] font-medium w-28 shrink-0" style="color: var(--text-primary)">{{ item.strategy }}</span>
@@ -271,7 +269,7 @@ function formatPnl(v: number): string {
               :style="{ width: Math.min(item.winRate, 100) + '%', backgroundColor: item.winRate >= 50 ? 'var(--positive)' : 'var(--negative)' }"
             />
           </div>
-          <span class="text-[10px] font-mono w-10 text-right shrink-0" style="color: var(--text-secondary)">{{ item.winRate }}%</span>
+          <span class="text-[11px] font-mono w-10 text-right shrink-0" style="color: var(--text-secondary)">{{ item.winRate }}%</span>
           <span class="text-[11px] font-mono font-semibold w-20 text-right shrink-0" :style="{ color: item.pnl >= 0 ? 'var(--positive)' : 'var(--negative)' }">
             {{ formatPnl(item.pnl) }}
           </span>
@@ -281,11 +279,11 @@ function formatPnl(v: number): string {
 
     <!-- Monthly Performance -->
     <div class="card p-3">
-      <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">Monthly Performance</h3>
+      <h3>Monthly Performance</h3>
       <div class="overflow-x-auto">
-        <table class="w-full">
+        <table class="w-full qja-table">
           <thead>
-            <tr class="text-[10px] uppercase tracking-wider" style="color: var(--muted)">
+            <tr class="qja-head">
               <th class="text-left py-1 pr-3">Month</th>
               <th class="text-right py-1 px-2">Trades</th>
               <th class="text-right py-1 px-2">Win Rate</th>
@@ -310,18 +308,47 @@ function formatPnl(v: number): string {
 
     <!-- Emotion Analysis -->
     <div class="card p-3">
-      <h3 class="text-xs font-semibold mb-3" style="color: var(--text-primary)">Emotion Analysis</h3>
+      <h3>Emotion Analysis</h3>
       <div class="space-y-2">
         <div v-for="item in emotionAnalysis" :key="item.emotion" class="flex items-center gap-3 py-1" style="border-bottom: 1px solid var(--border)">
           <span class="text-[11px] w-28 shrink-0" style="color: var(--text-primary)">{{ item.label }}</span>
-          <span class="text-[10px] font-mono w-8 text-center" style="color: var(--text-secondary)">{{ item.count }}</span>
-          <span class="text-[10px] font-mono w-10 text-right" :style="{ color: item.winRate >= 50 ? 'var(--positive)' : 'var(--negative)' }">{{ item.winRate }}%</span>
+          <span class="text-[11px] font-mono w-8 text-center" style="color: var(--text-secondary)">{{ item.count }}</span>
+          <span class="text-[11px] font-mono w-10 text-right" :style="{ color: item.winRate >= 50 ? 'var(--positive)' : 'var(--negative)' }">{{ item.winRate }}%</span>
           <span class="text-[11px] font-mono font-semibold w-16 text-right" :style="{ color: item.avgPnl >= 0 ? 'var(--positive)' : 'var(--negative)' }">
             {{ formatPnl(item.avgPnl) }}
           </span>
-          <span class="text-[10px]" style="color: var(--muted)">avg/trade</span>
+          <span class="text-[11px]" style="color: var(--muted)">avg/trade</span>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Three columns: wide space is more panels, not longer bars. */
+.qja {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--qss-gap);
+  font-variant-numeric: tabular-nums;
+}
+.qja-wide { grid-column: span 2; }
+.qja h3 {
+  margin: 0 0 var(--qss-gap-tight);
+  color: var(--text-primary);
+  font-size: var(--qss-text-section);
+  font-weight: 600;
+}
+.qja-head { color: var(--text-secondary); font-size: var(--qss-text-meta); }
+.qja-head th { font-weight: 500; }
+/* The day's value shrinks with its column, the column never pushes the panel wider. */
+.qja-day-value { max-width: 100%; overflow: hidden; font-size: 10px; white-space: nowrap; }
+.qja-table td { height: var(--qss-row-h); padding-block: 0; }
+@container terminal-workspace (max-width: 1000px) {
+  .qja { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container terminal-workspace (max-width: 620px) {
+  .qja { grid-template-columns: minmax(0, 1fr); }
+  .qja-wide { grid-column: auto; }
+}
+</style>

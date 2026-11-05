@@ -122,10 +122,15 @@
   background: var(--qs-scrollbar-thumb-hover);
 }
 
+[data-module="systems"] ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 [data-module="systems"] .card {
-  background: var(--qs-bg-card);
+  background: var(--qss-bg-raised);
   border: 1px solid var(--qs-border);
-  border-radius: var(--qs-radius-lg);
+  border-radius: var(--qss-panel-radius);
+  box-shadow: none;
 }
 
 [data-module="systems"] .btn {
@@ -154,7 +159,7 @@
 
 [data-module="systems"] .btn-primary {
   background: var(--qs-accent);
-  color: var(--qs-bg);
+  color: var(--qss-accent-ink);
   border-color: var(--qs-accent);
 }
 
@@ -259,6 +264,46 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--qs-text-secondary);
+}
+
+/* The middle runs at the shared density. The rail, the right panel and the
+   group editor keep their own control sizes and labels. */
+[data-module="systems"] :where(.qs-main) .btn {
+  height: var(--qss-ctl-h);
+  padding: 0 var(--qss-panel-pad);
+  font-size: var(--qss-ctl-font);
+}
+
+[data-module="systems"] :where(.qs-main) input.input,
+[data-module="systems"] :where(.qs-main) select.select,
+[data-module="systems"] :where(.qs-main) button.input {
+  height: var(--qss-ctl-h);
+  padding: 0 10px;
+  font-size: var(--qss-ctl-font);
+}
+
+[data-module="systems"] :where(.qs-main) textarea.input {
+  padding: 6px 10px;
+  font-size: var(--qss-ctl-font);
+}
+
+[data-module="systems"] :where(.qs-main) .label {
+  margin-bottom: 4px;
+  font-size: var(--qss-text-label);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+[data-module="systems"] :where(.qs-main) .pill {
+  padding: 1px 8px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+[data-module="systems"] :where(.qs-main) .qs-check {
+  min-height: var(--qss-ctl-h);
+  padding: 0 10px;
+  border-radius: var(--qs-radius);
 }
 
 [data-module="systems"] .drag-region {

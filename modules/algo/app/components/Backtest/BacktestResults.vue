@@ -9,6 +9,14 @@ const props = defineProps<{
 
 const stats = computed(() => props.result.stats)
 
+// The chart takes a height in pixels: hand it what its panel has free. A detached
+// page (warm cache) measures 0 and keeps the last real size.
+const chartBox = ref<HTMLElement | null>(null)
+const chartHeight = ref(240)
+useResizeObserver(chartBox, ([entry]) => {
+  if (entry && entry.contentRect.height > 0) chartHeight.value = Math.floor(entry.contentRect.height)
+})
+
 const statCards = computed(() => [
   {
     label: 'Total Return',
@@ -57,27 +65,27 @@ const statCards = computed(() => [
 
 <template>
   <div class="backtest-results">
-    <!-- Stats grid -->
-    <div class="stats-grid">
+    <!-- Stats, one strip -->
+    <div class="stats-grid card">
       <div v-for="stat in statCards" :key="stat.label" class="stat-card">
         <div class="stat-label">{{ stat.label }}</div>
-        <div class="stat-value" :class="stat.colorClass">
-          {{ stat.value }}
-        </div>
-        <div v-if="stat.sub" class="stat-sub" :class="stat.colorClass">
-          {{ stat.sub }}
+        <div class="stat-figure">
+          <span class="stat-value" :class="stat.colorClass">{{ stat.value }}</span>
+          <span v-if="stat.sub" class="stat-sub" :class="stat.colorClass">{{ stat.sub }}</span>
         </div>
       </div>
     </div>
 
     <!-- Equity curve chart -->
-    <div class="section">
+    <div class="section section--chart card">
       <div class="section-title">Equity Curve</div>
-      <AlgoBacktestEquityCurveChart :data="result.equity_curve" />
+      <div ref="chartBox" class="chart-box">
+        <AlgoBacktestEquityCurveChart :data="result.equity_curve" :height="chartHeight" />
+      </div>
     </div>
 
     <!-- Trade list -->
-    <div class="section">
+    <div class="section section--trades card">
       <div class="section-title">Trades</div>
       <div class="table-wrap">
         <table class="table">
@@ -127,76 +135,114 @@ const statCards = computed(() => [
 .backtest-results {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--qss-gap);
 }
 
-/* Stats grid */
+/* Stats: one panel, figures in a row, the return carries the weight */
 .stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--qss-gap-tight) 24px;
 }
 
 .stat-card {
-  background: var(--qa-bg-card);
-  border: 1px solid var(--qa-border);
-  border-radius: var(--qa-radius);
-  padding: 12px;
+  flex: 1 1 96px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .stat-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
   color: var(--qa-text-muted);
+  white-space: nowrap;
+}
+
+.stat-figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
 }
 
 .stat-value {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--qa-text);
-  font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card:first-child {
+  flex: 1.6 1 164px;
+}
+
+.stat-card:first-child .stat-value {
+  font-size: var(--qss-text-metric);
+  letter-spacing: -.02em;
+  line-height: 1.1;
 }
 
 .stat-sub {
-  font-size: 12px;
-  font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Sections */
+/* Sections: the chart and the trades share the height */
 .section {
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--qss-gap-tight);
+}
+
+.section--chart {
+  flex-grow: 5;
+}
+
+.section--trades {
+  flex-grow: 4;
+  overflow: hidden;
 }
 
 .section-title {
-  font-size: 13px;
+  flex-shrink: 0;
+  font-size: var(--qss-text-section);
   font-weight: 600;
-  color: var(--qa-text-secondary);
+  color: var(--qa-text);
+}
+
+/* The chart takes a height in pixels: it gets what this box has free. */
+.chart-box {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Trade table */
 .table-wrap {
+  flex: 1 1 0;
+  min-height: 0;
   overflow: auto;
-  max-height: 400px;
-  border: 1px solid var(--qa-border);
-  border-radius: var(--qa-radius);
 }
 
 .table-wrap .table th {
   position: sticky;
   top: 0;
-  background: var(--qa-bg-card);
+  background: var(--qss-bg-raised);
   z-index: 1;
+}
+
+.table-wrap .table td {
+  white-space: nowrap;
 }
 
 .mono {
   font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--qss-text-label);
 }
 </style>

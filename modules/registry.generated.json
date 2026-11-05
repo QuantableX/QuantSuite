@@ -1803,6 +1803,35 @@
       }
     },
     {
+      "tool": "quantsuite.pilot.deploy",
+      "module": "pilot",
+      "name": "deploy",
+      "command": "plugin:pilot|pilot_agent_deploy",
+      "description": "Deploy the calling thread's project to one of the targets the user set up on QuantPilot's Deploy page. stage is preview (the default) or production. A preview publishes a draft at its own address, which is not production; say that when you report it. Production also needs a good preview of the same commit. Each call waits for the user's approval. Returns the address, or the end of the log when it fails.",
+      "sideEffects": "external",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The target's name or id."
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "preview",
+              "production"
+            ]
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "tool": "quantsuite.pilot.run_project",
       "module": "pilot",
       "name": "run_project",

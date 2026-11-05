@@ -167,7 +167,6 @@ function run() {
     </template>
 
     <div v-else-if="!state.isRunning" class="qs-empty">
-      <span class="qs-empty__mark">◈</span>
       <p>No backtest results. Choose your parameters, then run a backtest.</p>
     </div>
   </div>
@@ -182,7 +181,7 @@ function run() {
   container: manual-backtest / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--qss-gap);
   height: 100%;
 }
 
@@ -192,14 +191,15 @@ function run() {
   align-items: center;
   flex-wrap: nowrap;
   min-width: 0;
-  gap: 16px;
+  gap: var(--qss-gap);
 }
 
 .qs-backtest__title {
   flex-shrink: 0;
   margin: 0;
-  font-size: 17px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
 }
 
 .qs-backtest__status {
@@ -253,9 +253,7 @@ function run() {
   box-sizing: border-box;
   flex: 0 0 104px;
   width: 104px;
-  height: 32px;
-  padding: 5px 10px;
-  border-radius: var(--qs-radius);
+  height: var(--qss-ctl-h);
   white-space: nowrap;
 }
 
@@ -264,10 +262,7 @@ function run() {
   box-sizing: border-box;
   flex: 0 0 128px;
   width: 128px;
-  height: 32px;
   white-space: nowrap;
-  padding: 6px 14px;
-  font-size: 13px;
 }
 
 .qs-backtest__progress {
@@ -305,39 +300,35 @@ function run() {
 
 .qs-backtest__error {
   flex-shrink: 0;
-  padding: 8px 12px;
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
   border: 1px solid color-mix(in srgb, var(--qs-error) 50%, var(--qs-border));
   border-radius: var(--qs-radius);
   background: color-mix(in srgb, var(--qs-error) 12%, transparent);
   color: var(--qs-error);
-  font-size: 13px;
+  font-size: var(--qss-text-section);
 }
 
 .qs-backtest__notice {
   flex-shrink: 0;
-  padding: 10px 12px;
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
   border: 1px solid var(--qs-border);
   border-radius: var(--qs-radius);
-  background: var(--qs-bg-card);
+  background: var(--qss-bg-raised);
   color: var(--qs-text-secondary);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
 }
 
 .qs-backtest__notice ul { margin: 6px 0 0; padding-left: 20px; }
 
 .qs-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--qs-text-muted);
+  padding: var(--qss-gap);
+  text-align: center;
+  font-size: var(--qss-text-section);
+  color: var(--qs-text-secondary);
 }
 
-.qs-empty__mark {
-  font-size: 32px;
-  color: var(--qs-accent);
+.qs-empty p {
+  margin: 0;
 }
 
 /* A small window keeps the primary signal and Run on one row. Secondary
@@ -346,7 +337,7 @@ function run() {
   .qs-backtest__head { gap: 12px; }
   .qs-backtest__signals { justify-content: flex-end; }
   .qs-backtest__options { display: block; position: relative; flex-shrink: 0; }
-  .qs-backtest__options-toggle { display: inline-flex; height: 32px; padding: 5px 10px; font-size: 12px; }
+  .qs-backtest__options-toggle { display: inline-flex; padding: 0 10px; }
   .qs-backtest__parameters {
     display: none;
     position: absolute;
@@ -354,10 +345,10 @@ function run() {
     right: 0;
     z-index: 20;
     width: min(350px, calc(100cqw - 140px));
-    padding: 14px;
+    padding: var(--qss-panel-pad);
     border: 1px solid var(--qs-border);
-    border-radius: var(--qs-radius-lg);
-    background: var(--qs-bg-card);
+    border-radius: var(--qss-panel-radius);
+    background: var(--qss-bg-raised);
     box-shadow: 0 12px 30px #0004;
   }
   .qs-backtest__options.is-open .qs-backtest__parameters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

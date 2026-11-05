@@ -1,5 +1,37 @@
 # QuantSuite — Design System
 
+> ## 1.1.0 (2026-11-05) — density of the middle area, module by module
+>
+> The titlebar, rail, bottom strip, `QModuleHeader` (including its top-right
+> layout), both 220px sidebars and the text icons are fixed. The overhaul only
+> touches the area between the header and the sidebars, and page titles stay in
+> the page.
+>
+> **Density tokens** in `shell.css`: `--qss-page-edge` 16px, `--qss-gap` 12px,
+> `--qss-gap-tight` 8px, `--qss-panel-pad` 12px, `--qss-panel-radius` 10px,
+> `--qss-row-h` 32px, and the type steps `--qss-text-title` 15px,
+> `--qss-text-section` 13px, `--qss-text-label` 12px, `--qss-text-meta` 11.5px,
+> `--qss-text-metric` 22px. The rules that go with them: full width with prose
+> capped near 80ch, one panel level (never a card in a card), a page that fills
+> its height with long lists scrolling inside their own panel, weight before
+> size, sentence-case labels, and no frame or gradient around an empty state.
+>
+> **Where it applies is the user's decision per module, not a suite-wide rule.**
+> They reviewed it running and chose:
+>
+> - **Density:** QuantAlgo, Manual, QuantScript, QuantNotes, QuantPilot,
+>   QuantSpace (Code, Canvas, Console), the Settings dialog, and QuantTerminal's
+>   Trade journal and Dojo.
+> - **Old framing, deliberately:** QuantMCP, QuantMemory, QuantFinance, QuantFlow
+>   (Calendar, Habits, Progress), and QuantTerminal's Metrics and Portfolio. Do
+>   not apply the density here without asking.
+>
+> Each module's look lives in `apps/shell/app/assets/css/surfaces/<module>.css`,
+> so one module can change or be reverted alone. A file that opens with "Today's
+> sizes" pins its module's old `QPageHeading` and `QEmptyState` values. Trade
+> journal and Dojo use the old title line so that it matches Metrics: 27px,
+> weight 500, on `--qss-surface-padding`.
+
 > ## UN-PARKED with V3 (2026-08-15) — partially shipped
 >
 > The 2026-08-11 "no new design" decision was reversed. What shipped:

@@ -229,7 +229,7 @@ function handleTest() {
 
 <template>
   <Teleport to="body">
-    <div v-if="visible !== false" class="modal-backdrop" @click="onBackdropClick">
+    <div v-if="visible !== false" class="modal-backdrop" data-module="algo" @click="onBackdropClick">
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title">{{ modalTitle }}</h3>
@@ -755,8 +755,6 @@ function handleTest() {
   color: var(--qa-text-muted);
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 3px;

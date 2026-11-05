@@ -2,8 +2,9 @@
 /**
  * The gallery view — cards in a grid, cover image first.
  *
- * A note with no cover gets a tinted plate built from its id rather than a
- * grey box, so a wall of coverless notes still reads as distinct cards.
+ * A note with no cover gets a plate whose tone comes from its id, so a wall of
+ * coverless notes still reads as distinct cards. Grey tones only: the suite is
+ * monochrome, and colour is reserved for what the user picks.
  */
 import { useSchemaStore } from '#notes/stores/schema'
 import { useNotesStore } from '#notes/stores/notes'
@@ -28,11 +29,11 @@ const minWidth = computed(() => {
   }
 })
 
-/** A stable hue per note — same note, same plate, across reloads. */
+/** A stable tone per note — same note, same plate, across reloads. */
 function plate(note: NoteSummary): string {
   let hash = 0
   for (const ch of note.id) hash = (hash * 31 + ch.charCodeAt(0)) % 360
-  return `linear-gradient(135deg, hsl(${hash} 22% 26%), hsl(${(hash + 40) % 360} 20% 18%))`
+  return `hsl(0 0% ${16 + (hash % 9)}%)`
 }
 
 async function addCard() {
@@ -79,34 +80,32 @@ async function addCard() {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding-bottom: 16px;
 }
 
 .qn-gallery__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--qn-card-min), 1fr));
-  gap: 12px;
-  padding: 4px 2px;
+  gap: var(--qss-gap);
 }
 
 .qn-gallery__card {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--qn-border);
-  border-radius: 10px;
-  background: var(--qn-bg-card);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qss-panel-radius);
+  background: var(--qn-bg-sidebar);
   overflow: hidden;
   cursor: pointer;
-  transition: border-color var(--qss-dur-fast, 120ms) ease, transform var(--qss-dur-fast, 120ms) ease;
+  transition: border-color var(--qss-dur-fast, 120ms) ease;
 }
 
 .qn-gallery__card:hover {
   border-color: var(--qn-accent);
-  transform: translateY(-2px);
 }
 
 .qn-gallery__cover {
-  height: 92px;
+  flex-shrink: 0;
+  height: 72px;
   display: grid;
   place-items: center;
   background-size: cover;
@@ -120,7 +119,7 @@ async function addCard() {
 }
 
 .qn-gallery__body {
-  padding: 10px 12px 12px;
+  padding: var(--qss-gap-tight) 10px 10px;
 }
 
 .qn-gallery__body h3 {
@@ -134,17 +133,18 @@ async function addCard() {
 .qn-gallery__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 8px;
+  gap: 4px 6px;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 .qn-gallery__add {
-  min-height: 140px;
+  min-height: 112px;
   border: 1px dashed var(--qn-border);
-  border-radius: 10px;
+  border-radius: var(--qss-panel-radius);
   background: transparent;
   color: var(--qn-text-muted);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
 }
 

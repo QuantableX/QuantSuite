@@ -152,11 +152,11 @@ watch(moduleSections, (sections) => {
 
 .qsm-panel {
   display: flex;
-  width: min(840px, calc(100vw - 32px));
-  height: 580px;
-  max-height: 80%;
+  width: min(960px, calc(100vw - 32px));
+  height: 680px;
+  max-height: 86%;
   border: 1px solid var(--qss-border);
-  border-radius: 18px;
+  border-radius: 14px;
   overflow: hidden;
   background: var(--qss-bg);
   box-shadow: 0 20px 60px rgb(0 0 0 / 0.4);
@@ -165,7 +165,7 @@ watch(moduleSections, (sections) => {
 .qsm-nav {
   width: 190px;
   flex-shrink: 0;
-  padding: 20px 10px;
+  padding: var(--qss-gap) 10px;
   border-right: 1px solid var(--qss-border);
   background: var(--qss-bg-raised);
   overflow-y: auto;
@@ -182,10 +182,8 @@ watch(moduleSections, (sections) => {
 .qsm-nav-label {
   margin: 0 0 4px;
   padding: 0 10px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
   color: var(--qss-text-muted);
 }
 
@@ -225,13 +223,13 @@ watch(moduleSections, (sections) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 22px 28px 18px;
+  padding: var(--qss-gap) var(--qss-page-edge);
   border-bottom: 1px solid var(--qss-border-subtle);
 }
 
 .qsm-title {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
   color: var(--qss-text);
 }
@@ -257,7 +255,7 @@ watch(moduleSections, (sections) => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 28px;
+  padding: var(--qss-page-edge);
 }
 
 .qsm-empty {

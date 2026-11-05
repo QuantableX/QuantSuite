@@ -322,7 +322,8 @@ function verdictFor(j: ForgeJob): string {
       <p v-if="forge.runError" class="qsc-err qsf-error">{{ forge.runError }}</p>
     </div>
 
-    <!-- The job -->
+    <!-- The job and the earlier ones, in their own scrolling column -->
+    <div class="qsf-job-col">
     <div v-if="job" class="qsc-card qsf-job">
       <div class="qsf-job-head">
         <div class="qsf-job-title">
@@ -551,36 +552,87 @@ function verdictFor(j: ForgeJob): string {
         </tbody>
       </table>
     </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* The form on top in two columns, the results below it at the full width their
+   many columns need; those scroll on their own and the page stays put. */
 .qsf-jobs {
+  flex: 1 1 0;
+  min-height: 460px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--qss-gap);
 }
 .qsf-form {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
+  grid-template-rows: auto repeat(6, auto) minmax(0, 1fr);
+  gap: var(--qss-gap-tight) var(--qss-page-edge);
+}
+.qsf-form > * {
+  grid-column: 2;
+  min-width: 0;
+}
+.qsf-form > .qsf-kinds {
+  grid-column: 1 / -1;
+}
+.qsf-form > .qsf-pick {
+  grid-column: 1;
+  grid-row: 2 / -1;
+}
+/* Refresh shelf has no picker: its options take the whole panel. */
+.qsf-form:not(:has(.qsf-pick)) > * {
+  grid-column: 1 / -1;
+}
+.qsf-job-col {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 140px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--qss-gap);
+}
+.qsf-job-col > * {
+  flex-shrink: 0;
+}
+@container (max-width: 760px) {
+  .qsf-form {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+  .qsf-form > *,
+  .qsf-form > .qsf-pick {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+.qsf-kinds .qsc-tabbar {
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 .qsf-kinds {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
   flex-wrap: wrap;
 }
 .qsf-hint {
-  font-size: 12px;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-label);
 }
 .qsf-pick {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
 }
 .qsf-pick-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
@@ -591,10 +643,13 @@ function verdictFor(j: ForgeJob): string {
   margin-left: 8px;
   font-size: 12px;
 }
+/* A long list scrolls inside the picker; it never pushes the results away. */
 .qsf-keys {
+  max-height: 168px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 2px 12px;
+  align-content: start;
+  gap: 2px var(--qss-gap);
 }
 .qsf-key {
   display: flex;
@@ -624,7 +679,8 @@ function verdictFor(j: ForgeJob): string {
 }
 .qsf-key-score {
   font-size: 11px;
-  color: var(--qss-text-muted);
+  color: var(--qss-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 .qsf-track {
   display: flex;
@@ -644,7 +700,7 @@ function verdictFor(j: ForgeJob): string {
 .qsf-counts {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--qss-gap);
 }
 .qsf-counts label {
   display: flex;
@@ -652,11 +708,11 @@ function verdictFor(j: ForgeJob): string {
   gap: 4px;
 }
 .qsf-num {
-  width: 120px;
+  width: 110px;
 }
 .qsf-note {
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--qss-text-label);
+  line-height: 1.45;
 }
 .qsf-run {
   display: flex;
@@ -664,7 +720,11 @@ function verdictFor(j: ForgeJob): string {
   gap: 10px;
 }
 .qsf-workers {
-  font-size: 11px;
+  overflow: hidden;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .qsf-error {
   font-size: 12px;
@@ -673,7 +733,7 @@ function verdictFor(j: ForgeJob): string {
 .qsf-job {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--qss-gap-tight);
 }
 .qsf-job-head {
   display: flex;
@@ -688,20 +748,32 @@ function verdictFor(j: ForgeJob): string {
   flex-wrap: wrap;
 }
 .qsf-job-kind {
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
   color: var(--qss-text);
 }
 .qsf-job-meta {
-  font-size: 12px;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
 }
 .qsf-table-scroll {
   overflow-x: auto;
 }
 .qsf-ind {
-  display: block;
   font-weight: 600;
   color: var(--qss-text);
+  white-space: nowrap;
+}
+.qsf-ind-key,
+.qsf-table-scroll td {
+  white-space: nowrap;
+}
+.qsf-table-scroll td.qsf-folds {
+  white-space: normal;
+}
+.qsf-ind + .qsf-ind-key {
+  margin-left: var(--qss-gap-tight);
 }
 .qsf-ind-key {
   font-size: 11px;
@@ -742,7 +814,8 @@ function verdictFor(j: ForgeJob): string {
   word-break: break-all;
 }
 .qsf-empty {
-  font-size: 13px;
+  color: var(--qss-text-secondary);
+  font-size: var(--qss-text-label);
 }
 .qsf-history-ind {
   font-size: 11px;

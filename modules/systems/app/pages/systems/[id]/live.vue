@@ -65,7 +65,6 @@ function run() {
     </template>
 
     <div v-else-if="!state.loading" class="qs-empty">
-      <span class="qs-empty__mark">◈</span>
       <p>Set your live start day in Settings, then run an evaluation to track performance, standings and holdings through today.</p>
     </div>
   </div>
@@ -78,7 +77,7 @@ function run() {
   container: manual-live / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--qss-gap);
   height: 100%;
   min-height: 0;
 }
@@ -87,14 +86,15 @@ function run() {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--qss-gap);
   flex-shrink: 0;
 }
 
 .qs-live__title {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
 }
 
 .qs-live__notice { flex-shrink: 0; margin: 0; font-size: 12px; color: var(--qs-warning); }
@@ -114,10 +114,7 @@ function run() {
   box-sizing: border-box;
   flex: 0 0 128px;
   width: 128px;
-  height: 32px;
   white-space: nowrap;
-  padding: 6px 14px;
-  font-size: 13px;
 }
 
 .qs-live__progress {
@@ -155,7 +152,7 @@ function run() {
 
 .qs-live__error {
   flex-shrink: 0;
-  padding: 8px 12px;
+  padding: var(--qss-gap-tight) var(--qss-panel-pad);
   border: 1px solid color-mix(in srgb, var(--qs-error) 50%, var(--qs-border));
   border-radius: var(--qs-radius);
   background: color-mix(in srgb, var(--qs-error) 12%, transparent);
@@ -164,18 +161,14 @@ function run() {
 }
 
 .qs-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--qs-text-muted);
+  padding: var(--qss-gap);
+  text-align: center;
+  font-size: var(--qss-text-section);
+  color: var(--qs-text-secondary);
 }
 
-.qs-empty__mark {
-  font-size: 32px;
-  color: var(--qs-accent);
+.qs-empty p {
+  margin: 0;
 }
 
 </style>

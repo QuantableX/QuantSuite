@@ -49,51 +49,67 @@ async function create() {
 </script>
 
 <template>
-  <form class="card qs-new" @submit.prevent="create">
-    <div>
+  <form class="qs-new" @submit.prevent="create">
+    <div class="qs-new__head">
       <h1>New strategy</h1>
       <p>Start fresh or copy a strategy’s settings. Every name and setting can be changed later.</p>
     </div>
-    <label class="qs-new__field">
-      <span class="label">Name</span>
-      <input v-model="name" class="input" required autofocus placeholder="My strategy" :disabled="busy" />
-    </label>
-    <label class="qs-new__field">
-      <span class="label">Short label <span class="qs-new__optional">(optional)</span></span>
-      <input v-model="short" class="input" placeholder="Shown alongside the name" :disabled="busy" />
-    </label>
-    <label class="qs-new__field">
-      <span class="label">Starting settings</span>
-      <select v-model="sourceId" class="select" :disabled="busy">
-        <option value="">Default settings</option>
-        <option v-for="s in systems.systems" :key="s.id" :value="s.id">Copy {{ s.name }}</option>
-      </select>
-    </label>
-    <label v-if="!sourceId" class="qs-new__field">
-      <span class="label">System mode</span>
-      <select v-model="mode" class="select" :disabled="busy">
-        <option value="rotation">Evaluation Rotation System</option><option value="single_asset">Single Asset</option>
-      </select>
-    </label>
-    <SystemsSettingsSingleAssetForm v-if="!sourceId && mode === 'single_asset'" v-model="singleAsset" :disabled="busy" />
-    <label class="qs-new__field">
-      <span class="label">Description <span class="qs-new__optional">(optional)</span></span>
-      <textarea v-model="description" class="input" rows="3" :disabled="busy" />
-    </label>
-    <p v-if="error" class="qs-new__error" role="alert">{{ error }}</p>
-    <div class="qs-new__actions">
-      <button type="button" class="btn" :disabled="busy" @click="router.push('/algo/manual')">Cancel</button>
-      <button class="btn btn-primary" :disabled="busy || !name.trim()">{{ busy ? 'Creating…' : 'Create strategy' }}</button>
+    <div class="card qs-new__panel">
+      <label class="qs-new__field">
+        <span class="label">Name</span>
+        <input v-model="name" class="input" required autofocus placeholder="My strategy" :disabled="busy" />
+      </label>
+      <label class="qs-new__field">
+        <span class="label">Short label <span class="qs-new__optional">(optional)</span></span>
+        <input v-model="short" class="input" placeholder="Shown alongside the name" :disabled="busy" />
+      </label>
+      <label class="qs-new__field">
+        <span class="label">Starting settings</span>
+        <select v-model="sourceId" class="select" :disabled="busy">
+          <option value="">Default settings</option>
+          <option v-for="s in systems.systems" :key="s.id" :value="s.id">Copy {{ s.name }}</option>
+        </select>
+      </label>
+      <label v-if="!sourceId" class="qs-new__field">
+        <span class="label">System mode</span>
+        <select v-model="mode" class="select" :disabled="busy">
+          <option value="rotation">Evaluation Rotation System</option><option value="single_asset">Single Asset</option>
+        </select>
+      </label>
+      <SystemsSettingsSingleAssetForm v-if="!sourceId && mode === 'single_asset'" class="qs-new__full" v-model="singleAsset" :disabled="busy" />
+      <label class="qs-new__field qs-new__full">
+        <span class="label">Description <span class="qs-new__optional">(optional)</span></span>
+        <textarea v-model="description" class="input" rows="3" :disabled="busy" />
+      </label>
+      <p v-if="error" class="qs-new__error qs-new__full" role="alert">{{ error }}</p>
+      <div class="qs-new__actions qs-new__full">
+        <button type="button" class="btn" :disabled="busy" @click="router.push('/algo/manual')">Cancel</button>
+        <button class="btn btn-primary" :disabled="busy || !name.trim()">{{ busy ? 'Creating…' : 'Create strategy' }}</button>
+      </div>
     </div>
   </form>
 </template>
 
 <style scoped>
-.qs-new { display: flex; flex-direction: column; gap: 18px; max-width: 640px; margin: 12px auto; padding: 24px; }
-.qs-new h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; }
-.qs-new p { margin: 0; color: var(--qs-text-secondary); font-size: 13px; }
-.qs-new__field { display: flex; flex-direction: column; gap: 4px; }
+.qs-new { container: manual-new / inline-size; display: flex; flex-direction: column; gap: var(--qss-gap); }
+.qs-new__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--qss-gap); }
+.qs-new h1 { margin: 0; font-size: var(--qss-text-title); font-weight: 600; letter-spacing: -.01em; }
+.qs-new p { margin: 0; color: var(--qs-text-secondary); font-size: var(--qss-text-label); }
+.qs-new__panel { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--qss-gap); padding: var(--qss-panel-pad); }
+.qs-new__field { display: flex; flex-direction: column; min-width: 0; }
+.qs-new__full { grid-column: 1 / -1; }
 .qs-new__optional { color: var(--qs-text-muted); font-weight: 400; }
-.qs-new__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.qs-new__actions { display: flex; justify-content: flex-end; gap: var(--qss-gap-tight); }
 .qs-new .qs-new__error { color: var(--qs-error); }
+.qs-new__panel :deep(.qs-single-form__grid) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.qs-new__panel :deep(.qs-single-form__wide) { grid-column: auto; }
+
+@container manual-new (max-width: 900px) {
+  .qs-new__panel,
+  .qs-new__panel :deep(.qs-single-form__grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container manual-new (max-width: 460px) {
+  .qs-new__panel { grid-template-columns: minmax(0, 1fr); }
+}
 </style>

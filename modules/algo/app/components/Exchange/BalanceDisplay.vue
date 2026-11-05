@@ -56,26 +56,28 @@ function formatBalance(value: number, asset: string): string {
       </div>
 
       <!-- Asset table -->
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Asset</th>
-            <th>Total</th>
-            <th>Available</th>
-            <th>In Positions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="b in sortedBalances" :key="b.asset">
-            <td class="asset-cell">
-              <span class="asset-name">{{ b.asset }}</span>
-            </td>
-            <td class="mono">{{ formatBalance(b.total, b.asset) }}</td>
-            <td class="mono">{{ formatBalance(b.available, b.asset) }}</td>
-            <td class="mono">{{ formatBalance(b.in_positions, b.asset) }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="asset-table">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>Total</th>
+              <th>Available</th>
+              <th>In Positions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="b in sortedBalances" :key="b.asset">
+              <td class="asset-cell">
+                <span class="asset-name">{{ b.asset }}</span>
+              </td>
+              <td class="mono">{{ formatBalance(b.total, b.asset) }}</td>
+              <td class="mono">{{ formatBalance(b.available, b.asset) }}</td>
+              <td class="mono">{{ formatBalance(b.in_positions, b.asset) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </template>
   </div>
 </template>
@@ -84,39 +86,55 @@ function formatBalance(value: number, asset: string): string {
 .balance-display {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--qss-gap);
 }
 
+/* Figures on the panel's own ground: the total carries the weight. */
 .summary-row {
+  flex-shrink: 0;
   display: flex;
-  gap: 16px;
   flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--qss-gap-tight) 32px;
 }
 
 .summary-item {
-  background: var(--qa-bg-card);
-  border: 1px solid var(--qa-border);
-  border-radius: var(--qa-radius);
-  padding: 14px 18px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  min-width: 140px;
+  gap: 2px;
+  min-width: 0;
 }
 
 .summary-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
   color: var(--qa-text-muted);
 }
 
 .summary-value {
-  font-size: 20px;
+  font-size: 15px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--qa-text);
+}
+
+.summary-item:first-child .summary-value {
+  font-size: var(--qss-text-metric);
+  line-height: 1.1;
+  letter-spacing: -.02em;
+}
+
+.asset-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.asset-table .table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--qss-bg-raised);
 }
 
 .asset-cell {
@@ -128,9 +146,8 @@ function formatBalance(value: number, asset: string): string {
 }
 
 .empty-state {
-  padding: 32px;
-  text-align: center;
+  padding: var(--qss-gap-tight) 0;
   color: var(--qa-text-muted);
-  font-size: 13px;
+  font-size: var(--qss-text-section);
 }
 </style>

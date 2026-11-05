@@ -89,7 +89,7 @@ watch(
 
     <div class="toolbar-right">
       <button class="btn btn-sm" @click="emit('create')">
-        <span class="btn-icon">+</span>
+        <span class="toolbar-glyph">+</span>
         New
       </button>
       <button
@@ -97,7 +97,7 @@ watch(
         :disabled="!strategy"
         @click="emit('remove')"
       >
-        <span class="btn-icon">&times;</span>
+        <span class="toolbar-glyph">&times;</span>
         Delete
       </button>
       <button
@@ -105,7 +105,7 @@ watch(
         :disabled="isSaving || !strategy"
         @click="emit('save')"
       >
-        <span class="btn-icon">&#10003;</span>
+        <span class="toolbar-glyph">&#10003;</span>
         {{ isSaving ? 'Saving...' : 'Save' }}
       </button>
       <button
@@ -113,7 +113,7 @@ watch(
         :disabled="isSaving || !strategy"
         @click="emit('validate')"
       >
-        <span class="btn-icon">&#10003;</span>
+        <span class="toolbar-glyph">&#10003;</span>
         Validate
       </button>
       <button
@@ -121,7 +121,7 @@ watch(
         :disabled="!strategy"
         @click="emit('runBacktest')"
       >
-        <span class="btn-icon">&#10697;</span>
+        <span class="toolbar-glyph">&#10697;</span>
         Run Backtest
       </button>
       <button
@@ -129,7 +129,7 @@ watch(
         :disabled="!strategy"
         @click="emit('deploy')"
       >
-        <span class="btn-icon">&#9654;</span>
+        <span class="toolbar-glyph">&#9654;</span>
         New Bot
       </button>
     </div>
@@ -137,39 +137,41 @@ watch(
 </template>
 
 <style scoped>
+/* The page's title row: the strategy's name, its actions on the same line. */
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  height: 44px;
-  padding: 0 16px;
-  background: var(--qa-bg-card);
-  border-bottom: 1px solid var(--qa-border);
+  gap: var(--qss-gap-tight) var(--qss-gap);
   flex-shrink: 0;
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--qss-gap-tight);
   min-width: 0;
 }
 
 .toolbar-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  gap: 6px;
+  min-width: 0;
 }
 
 .name-display {
   background: none;
   border: none;
   color: var(--qa-text);
-  font-size: 14px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 2px 6px;
+  margin-left: -6px;
   border-radius: 4px;
   transition: background var(--qa-transition);
   white-space: nowrap;
@@ -186,30 +188,30 @@ watch(
   background: var(--qa-bg-input);
   border: 1px solid var(--qa-accent);
   color: var(--qa-text);
-  font-size: 14px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
-  padding: 4px 8px;
+  padding: 2px 6px;
   border-radius: 4px;
   outline: none;
   max-width: 300px;
 }
 
 .name-placeholder {
-  font-size: 14px;
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--qa-text-muted);
 }
 
-.btn-icon {
-  font-size: 12px;
+.toolbar-glyph {
+  font-size: var(--qss-text-label);
   line-height: 1;
 }
 
 .mode-badge {
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 500;
   border: 1px solid var(--qa-success);
   border-radius: 9999px;
   color: var(--qa-success);

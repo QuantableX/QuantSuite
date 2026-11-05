@@ -195,8 +195,6 @@ function formatDateLabel(dateStr: string): string {
 .heatmap {
   position: relative;
   min-width: 0;
-  /* 53 columns of at most ~24 px: the cells grow with the width up to that. */
-  max-width: 1420px;
 }
 
 .month-labels {
@@ -252,10 +250,12 @@ function formatDateLabel(dateStr: string): string {
   min-width: 0;
 }
 
+/* Square until the width would make the year too tall, then as wide as there is room. */
 .day-cell {
   display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
+  max-height: 15px;
   border-radius: 3px;
   cursor: pointer;
   transition: opacity var(--qa-transition);

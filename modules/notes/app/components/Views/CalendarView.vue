@@ -154,14 +154,16 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--qss-gap-tight);
 }
 
 .qn-cal__bar {
+  flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--qss-gap-tight) var(--qss-gap);
 }
 
 .qn-cal__nav {
@@ -171,11 +173,11 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 }
 
 .qn-cal__nav button {
-  min-width: 26px;
-  height: 26px;
+  min-width: var(--qss-ctl-h);
+  height: var(--qss-ctl-h);
   padding: 0 8px;
   border: 1px solid var(--qn-border);
-  border-radius: 6px;
+  border-radius: var(--qss-ctl-radius);
   background: var(--qn-bg-card);
   color: var(--qn-text-secondary);
   font-size: 13px;
@@ -188,31 +190,32 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 }
 
 .qn-cal__month {
-  min-width: 150px;
+  min-width: 118px;
   padding: 0 6px;
   color: var(--qn-text);
-  font-size: 13px;
+  font-size: var(--qss-text-section);
   font-weight: 600;
+  text-align: center;
 }
 
-.qn-cal__today {
-  font-size: 12px !important;
+.qn-cal__nav .qn-cal__today {
+  margin-left: 4px;
+  font-size: var(--qss-text-label);
 }
 
 .qn-cal__hint {
   color: var(--qn-text-muted);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
 }
 
 .qn-cal__weekdays {
+  flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 1px;
-  color: var(--qn-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
 }
 
 .qn-cal__weekdays span {
@@ -220,21 +223,22 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 }
 
 .qn-cal__grid {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   grid-auto-rows: minmax(0, 1fr);
   gap: 1px;
-  border: 1px solid var(--qn-border);
-  border-radius: 8px;
-  background: var(--qn-border);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qss-panel-radius);
+  background: var(--qn-border-subtle);
   overflow: hidden;
 }
 
 .qn-cal__cell {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   padding: 4px 5px;
   background: var(--qn-bg);
@@ -266,8 +270,9 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   min-width: 18px;
   height: 18px;
   color: var(--qn-text-secondary);
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .qn-cal__add {
@@ -283,7 +288,8 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   opacity: 0;
 }
 
-.qn-cal__cell:hover .qn-cal__add {
+.qn-cal__cell:hover .qn-cal__add,
+.qn-cal__add:focus-visible {
   opacity: 1;
 }
 
@@ -303,15 +309,15 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 }
 
 .qn-cal__event {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-shrink: 0;
+  max-width: 100%;
+  display: block;
   padding: 2px 5px;
   border: none;
   border-radius: 4px;
   background: var(--qn-bg-card);
   color: var(--qn-text);
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
   line-height: 1.35;
   text-align: left;
   white-space: nowrap;
@@ -320,24 +326,27 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   cursor: pointer;
 }
 
+.qn-cal__event > :deep(.qn-icon) {
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+
 .qn-cal__event:hover {
   background: var(--qn-bg-hover);
 }
 
 .qn-cal__undated {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  padding-top: 4px;
-  border-top: 1px solid var(--qn-border-subtle);
 }
 
 .qn-cal__undated-label {
-  color: var(--qn-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-meta);
+  font-weight: 500;
 }
 </style>
