@@ -35,13 +35,14 @@ onBeforeUnmount(() => { request++ })
 </template>
 
 <style scoped>
-.qm-review { padding: 18px 0; font-size: 12px; }
-.qm-review-head { display: flex; justify-content: space-between; align-items: center; color: var(--qm-text-muted); }
-button { padding: 6px 10px; border: 1px solid var(--qm-border); border-radius: 4px; background: var(--qm-bg); color: var(--qm-text); }
-article { padding: 18px 0; border-bottom: 1px solid var(--qm-border); }
-article > a { font-size: 14px; color: var(--qm-text); }
-p, .qm-review-related { color: var(--qm-text-muted); line-height: 1.6; }
+.qm-review { flex: 1 1 0; min-height: 0; overflow-y: auto; font-size: var(--qss-text-label); }
+.qm-review-head { display: flex; justify-content: space-between; align-items: center; gap: var(--qss-gap); padding-bottom: var(--qss-gap-tight); color: var(--qm-text-muted); font-size: var(--qss-text-meta); font-variant-numeric: tabular-nums; }
+button { height: var(--qss-ctl-h); padding: 0 10px; border: 1px solid var(--qm-border-subtle); border-radius: 8px; background: var(--qm-bg-raised); color: var(--qm-text-secondary); font-size: var(--qss-text-label); cursor: pointer; }
+button:hover { color: var(--qm-text); background: var(--qm-bg-hover); }
+article { padding: var(--qss-gap-tight) 0; border-top: 1px solid var(--qm-border-subtle); }
+article > a { font-size: var(--qss-text-section); font-weight: 600; color: var(--qm-text); }
+p, .qm-review-related { margin: 2px 0 0; color: var(--qm-text-muted); line-height: 1.5; }
 .qm-review-proposal { color: var(--qm-text-secondary); }
-.qm-review-related { display: flex; flex-wrap: wrap; gap: 8px; }
+.qm-review-related { display: flex; flex-wrap: wrap; gap: 4px 8px; }
 a { color: var(--qm-text-secondary); }
 </style>

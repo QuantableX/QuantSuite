@@ -44,17 +44,23 @@ async function recall() {
   </section>
 </template>
 <style scoped>
-.qm-recall { padding: 18px 0; font-size: 12px; }
-form > label { display: grid; gap: 8px; }
-input:not([type=checkbox]), select { min-width: 0; border: 1px solid var(--qm-border); background: var(--qm-bg); color: var(--qm-text); border-radius: 4px; padding: 8px; }
-.qm-recall-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 12px; }
-.qm-recall-options label { display: flex; gap: 6px; align-items: center; }
-button { border: 1px solid var(--qm-border); border-radius: 4px; background: var(--qm-bg-raised); color: var(--qm-text); padding: 8px 14px; }
-article { border-bottom: 1px solid var(--qm-border); padding: 18px 0; }
-article > a { color: var(--qm-text); font-size: 14px; }
-p { color: var(--qm-text-muted); line-height: 1.6; }
-.qm-recall > p { margin: 12px 0; }
-article > p { margin: 6px 0; }
-blockquote { white-space: pre-wrap; overflow-wrap: anywhere; margin: 12px 0; padding: 12px; border-left: 2px solid var(--qm-border); color: var(--qm-text-secondary); line-height: 1.6; }
-code { color: var(--qm-text-muted); font-size: 11px; }
+.qm-recall { flex: 1 1 0; min-height: 0; overflow-y: auto; font-size: var(--qss-text-label); container-type: inline-size; }
+/* The question and how to ask it share one row. */
+form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--qss-gap-tight) var(--qss-gap); }
+form > label { flex: 1 1 320px; min-width: 0; display: flex; align-items: center; gap: var(--qss-gap-tight); }
+form > label input { flex: 1; }
+input:not([type=checkbox]), select { min-width: 0; height: var(--qss-ctl-h); border: 1px solid var(--qm-border-subtle); background: var(--qm-bg-raised); color: var(--qm-text); border-radius: 8px; padding: 0 8px; }
+select { max-width: 200px; }
+.qm-recall-options { display: flex; flex-wrap: wrap; gap: var(--qss-gap-tight) var(--qss-gap); align-items: center; }
+.qm-recall-options label { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+button { height: var(--qss-ctl-h); border: 1px solid var(--qm-border-subtle); border-radius: 8px; background: var(--qm-bg-raised); color: var(--qm-text); padding: 0 12px; cursor: pointer; }
+button:hover:not(:disabled) { background: var(--qm-bg-hover); }
+button:disabled { opacity: .5; cursor: default; }
+article { border-top: 1px solid var(--qm-border-subtle); padding: var(--qss-gap-tight) 0; }
+article > a { color: var(--qm-text); font-size: var(--qss-text-section); font-weight: 600; }
+p { margin: 0; color: var(--qm-text-muted); line-height: 1.5; }
+.qm-recall > p { margin: var(--qss-gap-tight) 0; font-size: var(--qss-text-meta); font-variant-numeric: tabular-nums; }
+article > p { margin: 2px 0; font-size: var(--qss-text-meta); }
+blockquote { max-width: 80ch; white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--qss-gap-tight) 0; padding: 0 0 0 var(--qss-gap); border-left: 2px solid var(--qm-border); color: var(--qm-text-secondary); line-height: 1.5; }
+code { color: var(--qm-text-muted); font-family: var(--qss-font-mono); font-size: 11px; }
 </style>

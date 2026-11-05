@@ -239,7 +239,7 @@ async function removeMemory() {
 </template>
 
 <style scoped>
-.qm-editor-error { padding: 10px 16px; color: var(--qss-error); font-size: 12px; }
+.qm-editor-error { margin: 0; padding: 6px var(--qss-page-edge); color: var(--qss-error); font-size: var(--qss-text-label); }
 .qm-editor-error button { color: var(--qm-text); text-decoration: underline; }
 .qm-editor-page {
   display: flex;
@@ -270,20 +270,22 @@ async function removeMemory() {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: var(--qss-gap-tight);
+  padding: 6px var(--qss-page-edge);
   border-bottom: 1px solid var(--qm-border-subtle);
-  background: var(--qm-bg-raised);
 }
 
 .qm-title {
+  min-width: 0;
+  margin-left: -8px;
   padding: 3px 8px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--qm-text);
-  font-size: 14px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
+  letter-spacing: -.01em;
   cursor: text;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -307,14 +309,15 @@ async function removeMemory() {
   border-radius: 6px;
   background: var(--qm-bg);
   color: var(--qm-text);
-  font-size: 14px;
+  font-size: var(--qss-text-title);
   font-weight: 600;
   outline: none;
 }
 
 .qm-dirty {
-  color: var(--qm-link-broken);
-  font-size: 10px;
+  flex-shrink: 0;
+  color: var(--qm-text-muted);
+  font-size: var(--qss-text-meta);
 }
 
 .qm-bar-spacer {
@@ -322,35 +325,38 @@ async function removeMemory() {
 }
 
 .qm-view-toggle {
+  flex-shrink: 0;
   display: flex;
   gap: 2px;
+  height: var(--qss-ctl-h);
   padding: 2px;
-  border-radius: 7px;
-  background: var(--qm-bg);
+  border: 1px solid var(--qm-border-subtle);
+  border-radius: 8px;
 }
 
 .qm-view-btn {
-  padding: 3px 10px;
+  padding: 0 10px;
   border: none;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--qm-text-muted);
-  font-size: 11px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
   text-transform: capitalize;
 }
 .qm-view-btn.is-active {
-  background: var(--qm-bg-card);
+  background: var(--qm-bg-hover);
   color: var(--qm-text);
 }
 
 .qm-icon-btn {
   display: grid;
+  flex-shrink: 0;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: var(--qss-ctl-h);
+  height: var(--qss-ctl-h);
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--qm-text-secondary);
   cursor: pointer;
@@ -375,5 +381,10 @@ async function removeMemory() {
 
 .qm-editor-split[data-mode='split'] .qm-pane-preview {
   border-left: 1px solid var(--qm-border-subtle);
+}
+
+/* Prose keeps its measure however wide the pane gets; tables and code may use the room. */
+.qm-pane-preview :deep(.q-md > :not(pre, table)) {
+  max-width: 80ch;
 }
 </style>
