@@ -131,7 +131,7 @@ watch(
 
 <template>
   <div ref="scrollEl" class="qh-grid">
-    <div v-if="habits.habits.length" class="qh-grid__inner" :class="{ 'is-month': app.grouping === 'month' }">
+    <div v-if="habits.habits.length" class="qh-grid__inner">
       <div v-if="app.grouping === 'month'" class="qh-grid__monthnav">
         <button class="qh-grid__mbtn" title="Previous month" @click="prevMonth">‹</button>
         <div class="qh-grid__mtitle">
@@ -141,9 +141,7 @@ watch(
         <button class="qh-grid__mbtn" title="Next month" @click="nextMonth">›</button>
       </div>
 
-      <!-- One row per week, one column per weekday, so the width carries the days instead of a
-           single 880px list. Every day stays a button, in calendar order, for Tab and Enter. -->
-      <section v-for="section in sections" :key="section.key" class="qh-grid__group">
+      <template v-for="section in sections" :key="section.key">
         <div v-if="app.grouping === 'week'" class="qh-grid__section">
           <span class="qh-grid__section-label">{{ section.label }}</span>
           <span class="qh-grid__section-sub qh-num">{{ section.sub }}</span>
@@ -152,47 +150,44 @@ watch(
           </span>
         </div>
 
-        <div class="qh-grid__days">
-          <button
-            v-for="(row, index) in section.rows"
-            :key="row.key"
-            type="button"
-            class="qh-grid__row"
-            :class="{
-              'is-today': row.key === today,
-              'is-selected': row.key === habits.selectedDay,
-              'is-weekend': row.weekday >= 5,
-              'is-future': row.key > today,
-            }"
-            :style="index === 0 ? { '--qh-first-column': row.weekday + 1 } : undefined"
-            :data-today="row.key === today || undefined"
-            @click="habits.selectDay(row.key)"
-          >
-            <span class="qh-grid__day qh-num">{{ dayLabel(row) }}</span>
+        <button
+          v-for="row in section.rows"
+          :key="row.key"
+          type="button"
+          class="qh-grid__row"
+          :class="{
+            'is-today': row.key === today,
+            'is-selected': row.key === habits.selectedDay,
+            'is-weekend': row.weekday >= 5,
+            'is-future': row.key > today,
+          }"
+          :data-today="row.key === today || undefined"
+          @click="habits.selectDay(row.key)"
+        >
+          <span class="qh-grid__day qh-num">{{ dayLabel(row) }}</span>
 
-            <span class="qh-grid__bar" :class="{ 'is-full': habits.dayProgress(row.key).pct === 100 }">
-              <span
-                v-if="habits.dayProgress(row.key).eligible > 0"
-                class="qh-grid__fill"
-                :style="{ width: `${habits.dayProgress(row.key).pct}%` }"
-              />
-            </span>
+          <span class="qh-grid__bar" :class="{ 'is-full': habits.dayProgress(row.key).pct === 100 }">
+            <span
+              v-if="habits.dayProgress(row.key).eligible > 0"
+              class="qh-grid__fill"
+              :style="{ width: `${habits.dayProgress(row.key).pct}%` }"
+            />
+          </span>
 
-            <span class="qh-grid__count qh-num">
-              <template v-if="habits.dayProgress(row.key).eligible > 0">
-                {{ habits.dayProgress(row.key).done }}/{{ habits.dayProgress(row.key).eligible }}
-              </template>
-              <template v-else>–</template>
-            </span>
+          <span class="qh-grid__count qh-num">
+            <template v-if="habits.dayProgress(row.key).eligible > 0">
+              {{ habits.dayProgress(row.key).done }}/{{ habits.dayProgress(row.key).eligible }}
+            </template>
+            <template v-else>–</template>
+          </span>
 
-            <span class="qh-grid__pct qh-num">
-              <template v-if="habits.dayProgress(row.key).eligible > 0">
-                {{ habits.dayProgress(row.key).pct }}%
-              </template>
-            </span>
-          </button>
-        </div>
-      </section>
+          <span class="qh-grid__pct qh-num">
+            <template v-if="habits.dayProgress(row.key).eligible > 0">
+              {{ habits.dayProgress(row.key).pct }}%
+            </template>
+          </span>
+        </button>
+      </template>
     </div>
 
     <QEmptyState v-else title="No habits yet">
@@ -206,40 +201,34 @@ watch(
   position: relative;
   height: 100%;
   overflow-y: auto;
-  container-type: inline-size;
 }
 
 .qh-grid__inner {
-  display: flex;
-  flex-direction: column;
-  gap: var(--qss-gap-tight);
-  padding: var(--qss-gap) var(--qss-page-edge) var(--qss-page-edge);
+  width: min(880px, 100%);
+  margin: 0 auto;
+  padding: 16px 24px 32px;
 }
 
-/* One month at a time: ‹ [ September 2026 ] ›, and the month fills the height. */
-.qh-grid__inner.is-month {
-  height: 100%;
-}
-
+/* One month at a time: ‹ [ September 2026 ] › */
 .qh-grid__monthnav {
   position: sticky;
   top: 0;
   z-index: 2;
-  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: var(--qss-gap-tight);
+  gap: 8px;
+  padding: 10px 4px 8px;
   background: var(--qh-bg);
 }
 
 .qh-grid__mbtn {
   display: grid;
   place-items: center;
-  width: var(--qss-ctl-h);
-  height: var(--qss-ctl-h);
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
   border: 1px solid var(--qh-border-subtle);
-  border-radius: var(--qss-ctl-radius);
+  border-radius: var(--qh-radius);
   background: var(--qh-bg-card);
   color: var(--qh-text-muted);
   font-size: 15px;
@@ -255,99 +244,69 @@ watch(
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: var(--qss-gap-tight);
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
 }
 
 .qh-grid__mtitle strong {
   color: var(--qh-text);
-  font-size: var(--qss-text-section);
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .qh-grid__mtitle strong .qh-num {
-  color: var(--qh-text-secondary);
+  color: var(--qh-text-muted);
   font-weight: 600;
 }
 
 .qh-grid__msub {
-  color: var(--qh-text-secondary);
-  font-size: var(--qss-text-meta);
-}
-
-/* The week's label sits in a column of its own, in line with its seven days. */
-.qh-grid__group {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  column-gap: var(--qss-gap-tight);
-  align-items: center;
-}
-
-.qh-grid__inner.is-month .qh-grid__group {
-  flex: 1 1 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  color: var(--qh-text-muted);
+  font-size: 10px;
 }
 
 .qh-grid__section {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
   align-items: baseline;
-  column-gap: 6px;
+  gap: 8px;
+  padding: 12px 10px 5px;
+  background: var(--qh-bg);
 }
 
 .qh-grid__section-label {
   color: var(--qh-text);
-  font-size: var(--qss-text-label);
-  font-weight: 600;
-  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .qh-grid__section-sub {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  color: var(--qh-text-secondary);
-  font-size: 11px;
+  color: var(--qh-text-muted);
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+  font-size: 10px;
 }
 
 .qh-grid__section-pct {
-  justify-self: end;
-  color: var(--qh-text-secondary);
-  font-size: var(--qss-text-meta);
+  margin-left: auto;
+  color: var(--qh-text-muted);
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+  font-size: 10px;
 }
 
-.qh-grid__days {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
-}
-
-.qh-grid__inner.is-month .qh-grid__days {
-  flex: 1 1 0;
-  min-height: 0;
-  grid-auto-rows: minmax(52px, 1fr);
-}
-
-/* A day: its label and figures on one line, the bar under them. */
 .qh-grid__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-areas:
-    'day count pct'
-    'bar bar bar';
-  align-content: center;
-  align-items: baseline;
-  gap: 4px var(--qss-gap-tight);
-  grid-column-start: var(--qh-first-column, auto);
-  min-width: 0;
-  min-height: 44px;
-  padding: 4px var(--qss-gap-tight);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
   border: 1px solid transparent;
-  border-radius: var(--qss-ctl-radius);
-  background: var(--qh-bg-raised);
+  border-radius: var(--qh-radius);
+  background: transparent;
   cursor: pointer;
   text-align: left;
 }
@@ -357,7 +316,7 @@ watch(
 }
 
 .qh-grid__row.is-weekend {
-  background: color-mix(in srgb, var(--qh-bg-raised) 40%, transparent);
+  background: color-mix(in srgb, var(--qh-bg-raised) 55%, transparent);
 }
 
 .qh-grid__row.is-weekend:hover {
@@ -379,31 +338,26 @@ watch(
 }
 
 .qh-grid__day {
-  grid-area: day;
-  min-width: 0;
-  overflow: hidden;
+  flex-shrink: 0;
+  width: 58px;
   color: var(--qh-text-secondary);
-  font-size: var(--qss-text-meta);
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+  font-size: 11px;
 }
 
 .qh-grid__bar {
-  grid-area: bar;
-  display: block;
+  flex: 1;
   min-width: 0;
-  height: 6px;
-  border-radius: 3px;
+  height: 8px;
+  border-radius: 4px;
   background: var(--qh-bg-card);
   overflow: hidden;
-}
-
-.qh-grid__row.is-selected .qh-grid__bar {
-  background: var(--qh-bg-hover);
 }
 
 .qh-grid__fill {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: 4px;
   background: color-mix(in srgb, var(--qh-check) 78%, var(--qh-bg-card));
   transition: width 140ms ease;
 }
@@ -413,62 +367,21 @@ watch(
 }
 
 .qh-grid__count {
-  grid-area: count;
+  flex-shrink: 0;
+  width: 34px;
   color: var(--qh-text-muted);
-  font-size: 11px;
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+  font-size: 10px;
   text-align: right;
 }
 
 .qh-grid__pct {
-  grid-area: pct;
+  flex-shrink: 0;
+  width: 38px;
   color: var(--qh-text-secondary);
-  font-size: var(--qss-text-meta);
+  font-family: var(--qss-font-mono, ui-monospace, monospace);
+  font-size: 11px;
   text-align: right;
 }
 
-/* Narrower: the week's label moves above its days. */
-@container (max-width: 1040px) {
-  .qh-grid__group {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 4px;
-  }
-  .qh-grid__section {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    grid-template-columns: auto auto minmax(0, 1fr);
-    padding-block: 2px;
-    background: var(--qh-bg);
-  }
-  .qh-grid__section-sub {
-    grid-column: auto;
-    grid-row: auto;
-  }
-}
-
-/* Too narrow for seven columns: one line per day, as a plain list. */
-@container (max-width: 700px) {
-  .qh-grid__inner.is-month {
-    height: auto;
-  }
-  .qh-grid__inner.is-month .qh-grid__group,
-  .qh-grid__inner.is-month .qh-grid__days {
-    flex: none;
-  }
-  .qh-grid__days,
-  .qh-grid__inner.is-month .qh-grid__days {
-    grid-template-columns: minmax(0, 1fr);
-    grid-auto-rows: auto;
-    gap: 0;
-  }
-  .qh-grid__row {
-    grid-template-columns: 52px minmax(0, 1fr) 30px 38px;
-    grid-template-areas: 'day bar count pct';
-    align-items: center;
-    grid-column-start: auto;
-    min-height: var(--qss-row-h);
-    padding: 0 var(--qss-gap-tight);
-    background: transparent;
-  }
-}
 </style>
