@@ -133,7 +133,7 @@ function toggleCiTool(name: string) {
 <template>
   <div class="tools-page">
     <div class="page-header">
-      <div class="page-title-row">
+      <div>
         <h1 class="page-title">Tools</h1>
         <p class="page-subtitle">{{ preferencesReady ? enabledQuantmcpToolCount : 'Loading' }} / {{ quantmcpToolCount }} tools enabled for AI clients</p>
       </div>
@@ -145,14 +145,10 @@ function toggleCiTool(name: string) {
       </div>
     </div>
 
-    <div class="exposure-notes">
-      <p class="exposure-help">Disable tools you don't need to reduce token usage. Group switches keep your individual choices. These settings apply to all QuantMCP clients.</p>
-      <p class="exposure-help">Connected clients are notified automatically. Reconnect or start a new chat if your client still shows disabled tools.</p>
-    </div>
+    <p class="exposure-help">Disable tools you don't need to reduce token usage. Group switches keep your individual choices. These settings apply to all QuantMCP clients.</p>
+    <p class="exposure-help">Connected clients are notified automatically. Reconnect or start a new chat if your client still shows disabled tools.</p>
     <p v-if="error" class="exposure-error" role="alert">{{ error }} <button class="btn-secondary" :disabled="loading || saving" @click="refresh">Retry</button></p>
 
-    <!-- Every group is one row of one panel; the open ones scroll inside it. -->
-    <div class="tools-body">
     <!-- Codebase Tools (built into QuantMCP) -->
     <section v-if="codebaseIndexTools.length" class="tool-section">
       <div class="section-heading">
@@ -423,12 +419,13 @@ function toggleCiTool(name: string) {
             </div>
           </div>
         </div>
-        <QEmptyState v-else-if="!loading" compact title="No custom tools defined yet." description="Create tools that will be served by the built-in QuantMCP server.">
-          <button class="btn-add" @click="openAdd">+ Add Tool</button>
-        </QEmptyState>
+        <div v-else-if="!loading" class="empty-state">
+          <p class="empty-text">No custom tools defined yet.</p>
+          <p class="empty-sub">Create tools that will be served by the built-in QuantMCP server.</p>
+          <button class="btn-add empty-btn" @click="openAdd">+ Add Tool</button>
+        </div>
       </div>
     </section>
-    </div>
 
     <McpToolFormModal v-model="showModal" :edit-tool="editingTool" @submit="handleSubmit" />
     <McpToolTestModal v-model="showTest" :tool="testingTool" />
@@ -441,37 +438,35 @@ function toggleCiTool(name: string) {
 </template>
 
 <style scoped>
-.tools-page { display: flex; flex-direction: column; gap: var(--qss-gap); width: 100%; height: 100%; min-height: 0; container-type: inline-size; }
-.exposure-notes { flex-shrink: 0; }
-.exposure-help { font-size: var(--qss-text-meta); line-height: 1.5; color: var(--text-muted); }
-.exposure-error { flex-shrink: 0; padding: 6px var(--qss-panel-pad); border: 1px solid var(--error); border-radius: var(--qss-ctl-radius); color: var(--error); font-size: var(--qss-text-label); }
+.tools-page { width: 100%; }
+.exposure-help { font-size: 12px; line-height: 1.6; color: var(--text-muted); margin-bottom: 12px; max-width: 900px; }
+.exposure-error { padding: 12px; margin: 12px 0; border: 1px solid var(--error); border-radius: var(--radius); color: var(--error); }
+.section-heading { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.section-heading .section-label { margin-bottom: 0; min-width: 0; }
 .tool-off .tool-name { color: var(--text-secondary); }
 .tool-name, .tool-description, .tool-script { overflow-wrap: anywhere; }
+.section-toggle { background: none; border: none; color: inherit; font: inherit; text-align: left; padding: 0; }
+.section-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 .page-header {
-  flex-shrink: 0;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: var(--qss-gap-tight) var(--qss-gap);
-  min-height: var(--qss-ctl-h);
+  margin-bottom: 24px;
 }
 
-.page-title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--qss-gap); min-width: 0; }
-.page-title { font-size: var(--qss-text-title); font-weight: 600; letter-spacing: -.01em; }
-.page-subtitle { font-size: var(--qss-text-meta); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.page-title { font-size: 24px; font-weight: 600; }
+.page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 
-.header-actions { display: flex; gap: var(--qss-gap-tight); flex-shrink: 0; }
+.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
 .btn-secondary {
-  height: var(--qss-ctl-h);
-  padding: 0 12px;
+  padding: 8px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--qss-ctl-radius);
+  border-radius: var(--radius);
   color: var(--text-secondary);
-  font-size: var(--qss-text-label);
+  font-size: 13px;
   transition: all var(--transition);
 }
 
@@ -479,71 +474,90 @@ function toggleCiTool(name: string) {
 .btn-secondary:disabled { opacity: 0.5; }
 
 .btn-add {
-  height: var(--qss-ctl-h);
-  padding: 0 12px;
+  padding: 8px 16px;
   background: var(--accent);
   border: none;
-  border-radius: var(--qss-ctl-radius);
-  color: var(--qss-accent-ink);
-  font-size: var(--qss-text-label);
+  border-radius: var(--radius);
+  color: var(--bg-primary);
+  font-size: 13px;
   font-weight: 600;
   transition: all var(--transition);
 }
 
 .btn-add:hover { background: var(--accent-hover); }
 
-.tools-body {
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--qss-panel-radius);
-}
+.tool-list { display: flex; flex-direction: column; gap: 8px; }
 
-.tool-section + .tool-section { border-top: 1px solid var(--qss-border-subtle); }
-
-/* The group row stays in view, with its switch, while its tools scroll under it. */
-.section-heading {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+.tool-card {
   display: flex;
   align-items: center;
-  gap: var(--qss-gap);
-  min-height: var(--qss-row-h);
-  padding: 2px var(--qss-panel-pad);
-  background: var(--bg-secondary);
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition);
 }
 
-.section-label {
-  min-width: 0;
-  font-size: var(--qss-text-section);
-  font-weight: 600;
-  color: var(--text-primary);
+.tool-card:hover { border-color: var(--text-muted); }
+
+.tool-info { flex: 1; min-width: 0; }
+.tool-name { font-size: 15px; font-weight: 600; margin-bottom: 2px; font-family: monospace; }
+.tool-description { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+
+.tool-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: monospace;
 }
 
-.section-toggle {
+.tool-actions {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0;
-  background: none;
-  border: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
+  flex-shrink: 0;
+}
+
+.btn-icon {
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 14px;
   cursor: pointer;
+  transition: all var(--transition);
+  line-height: 1;
+}
+
+.btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-danger:hover { border-color: var(--error); color: var(--error); }
+
+.tool-section { margin-bottom: 24px; }
+
+.section-label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.section-toggle {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   user-select: none;
 }
 
 .section-toggle:hover { color: var(--text-primary); }
-.section-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 .section-chevron {
   display: inline-block;
-  width: 12px;
-  color: var(--text-muted);
   font-size: 12px;
   transition: transform var(--transition);
 }
@@ -553,129 +567,81 @@ function toggleCiTool(name: string) {
 }
 
 .section-count {
-  font-size: var(--qss-text-meta);
-  color: var(--text-muted);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-
-.tool-list { display: flex; flex-direction: column; }
-
-.tool-card {
-  display: flex;
-  align-items: center;
-  gap: var(--qss-gap);
-  min-height: var(--qss-row-h);
-  padding: 4px var(--qss-panel-pad) 4px 30px;
-  border-top: 1px solid var(--qss-border-subtle);
-  transition: background var(--transition);
-}
-
-.tool-card:hover { background: var(--bg-hover); }
-
-/* Wide space becomes columns: name, what it does, its parameters. */
-.tool-info {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) auto;
-  column-gap: var(--qss-gap);
-  align-items: baseline;
-}
-.tool-name { font-size: var(--qss-text-label); font-weight: 500; font-family: var(--qss-font-mono); }
-.tool-description { font-size: var(--qss-text-label); line-height: 1.45; color: var(--text-secondary); }
-
-.tool-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 2px var(--qss-gap-tight);
-  max-width: 320px;
-  font-size: var(--qss-text-meta);
-  color: var(--text-muted);
-  font-family: var(--qss-font-mono);
-}
-
-.tool-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.btn-icon {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all var(--transition);
-  line-height: 1;
-}
-
-.btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
-.btn-danger:hover { border-color: var(--error); color: var(--error); }
-
-.native-badge,
-.ci-badge {
   font-size: 11px;
   color: var(--text-muted);
-  background: var(--bg-hover);
-  border-radius: 6px;
-  padding: 0 5px;
-  margin-left: 4px;
-  font-family: var(--qss-font-sans);
   font-weight: 400;
-  vertical-align: 1px;
+  margin-left: 4px;
+}
+
+.native-badge {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  font-family: sans-serif;
+  font-weight: 400;
+  vertical-align: middle;
+}
+
+.ci-badge {
+  font-size: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 8px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  font-family: sans-serif;
+  font-weight: 400;
+  vertical-align: middle;
 }
 
 .ci-tool-card { cursor: pointer; }
 
 .bridge-module-label {
-  display: flex;
-  align-items: center;
-  gap: var(--qss-gap);
-  min-height: var(--qss-row-h);
-  padding: 2px var(--qss-panel-pad) 2px 30px;
-  border-top: 1px solid var(--qss-border-subtle);
-  font-size: var(--qss-text-label);
+  display: flex; align-items: center; gap: 12px; padding: 12px 0;
+  font-size: 11px;
   font-weight: 600;
-  font-family: var(--qss-font-mono);
-  color: var(--text-secondary);
+  font-family: monospace;
+  color: var(--text-muted);
+  margin: 8px 0 0;
 }
+.bridge-module-label:first-child { margin-top: 0; }
 
 .ci-params {
-  grid-column: 1 / -1;
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--qss-border-subtle);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .ci-param-row {
   display: flex;
   align-items: center;
-  gap: var(--qss-gap-tight);
-  font-size: var(--qss-text-label);
+  gap: 8px;
+  font-size: 12px;
   flex-wrap: wrap;
 }
 
 .ci-param-name {
   font-weight: 600;
-  font-family: var(--qss-font-mono);
+  font-family: monospace;
   color: var(--text-primary);
 }
 
 .ci-param-type {
   color: var(--accent);
-  font-family: var(--qss-font-mono);
-  font-size: var(--qss-text-meta);
+  font-family: monospace;
+  font-size: 11px;
 }
 
 .ci-param-required {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--error);
   border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
   border-radius: 4px;
@@ -684,8 +650,8 @@ function toggleCiTool(name: string) {
 
 .ci-param-default {
   color: var(--text-muted);
-  font-family: var(--qss-font-mono);
-  font-size: var(--qss-text-meta);
+  font-family: monospace;
+  font-size: 11px;
 }
 
 .ci-param-desc {
@@ -694,16 +660,21 @@ function toggleCiTool(name: string) {
 }
 
 .ci-param-empty {
-  font-size: var(--qss-text-label);
+  font-size: 12px;
   color: var(--text-muted);
+  font-style: italic;
 }
 
-@container (max-width: 760px) {
-  .tool-info { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
-  .tool-meta { justify-content: flex-start; max-width: none; }
-  .tool-card { flex-wrap: wrap; padding-left: var(--qss-panel-pad); }
+.empty-state { text-align: center; padding: 60px 0; }
+.empty-text { font-size: 16px; color: var(--text-secondary); }
+.empty-sub { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+.empty-btn { margin-top: 20px; }
+@media (max-width: 600px) {
+  .page-header { flex-wrap: wrap; gap: 12px; }
+  .tool-card { flex-wrap: wrap; padding: 12px; }
   .tool-info { flex-basis: 100%; }
   .tool-actions { margin-left: auto; }
-  .section-heading { gap: var(--qss-gap-tight); }
+  .section-heading { gap: 8px; }
 }
+
 </style>

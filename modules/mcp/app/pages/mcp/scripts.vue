@@ -86,9 +86,10 @@ function formatDate(ts: number): string {
       </div>
     </div>
 
-    <QEmptyState v-else-if="!loading" title="No scripts stored yet.">
-      <button class="btn-add" @click="openAdd">+ Add Script</button>
-    </QEmptyState>
+    <div v-else-if="!loading" class="empty-state">
+      <p class="empty-text">No scripts stored yet.</p>
+      <button class="btn-add empty-btn" @click="openAdd">+ Add Script</button>
+    </div>
 
     <McpScriptFormModal
       v-model="showModal"
@@ -99,29 +100,26 @@ function formatDate(ts: number): string {
 </template>
 
 <style scoped>
-.scripts-page { display: flex; flex-direction: column; gap: var(--qss-gap); width: 100%; height: 100%; min-height: 0; container-type: inline-size; }
+.scripts-page { width: 100%; }
 
 .page-header {
-  flex-shrink: 0;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: var(--qss-gap-tight) var(--qss-gap);
-  min-height: var(--qss-ctl-h);
+  margin-bottom: 24px;
 }
 
-.page-title { font-size: var(--qss-text-title); font-weight: 600; letter-spacing: -.01em; }
-.header-actions { display: flex; gap: var(--qss-gap-tight); flex-shrink: 0; }
+.page-title { font-size: 24px; font-weight: 600; }
+.page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
 .btn-secondary {
-  height: var(--qss-ctl-h);
-  padding: 0 12px;
+  padding: 8px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--qss-ctl-radius);
+  border-radius: var(--radius);
   color: var(--text-secondary);
-  font-size: var(--qss-text-label);
+  font-size: 13px;
   cursor: pointer;
   transition: all var(--transition);
 }
@@ -130,13 +128,12 @@ function formatDate(ts: number): string {
 .btn-secondary:disabled { opacity: 0.5; }
 
 .btn-add {
-  height: var(--qss-ctl-h);
-  padding: 0 12px;
+  padding: 8px 16px;
   background: var(--accent);
   border: none;
-  border-radius: var(--qss-ctl-radius);
-  color: var(--qss-accent-ink);
-  font-size: var(--qss-text-label);
+  border-radius: var(--radius);
+  color: var(--bg-primary);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all var(--transition);
@@ -144,85 +141,78 @@ function formatDate(ts: number): string {
 
 .btn-add:hover { background: var(--accent-hover); }
 
-.script-list {
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--qss-panel-radius);
-}
+.script-list { display: flex; flex-direction: column; gap: 8px; }
 
 .script-card {
   display: flex;
   align-items: center;
-  gap: var(--qss-gap);
-  min-height: var(--qss-row-h);
-  padding: 6px var(--qss-panel-pad);
-  border-bottom: 1px solid var(--qss-border-subtle);
-  transition: background var(--transition);
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition);
 }
 
-.script-card:last-child { border-bottom: none; }
-.script-card:hover { background: var(--bg-hover); }
+.script-card:hover { border-color: var(--text-muted); }
 
-/* Name, its first lines and its date read across, not down. */
-.script-info {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr) auto;
-  column-gap: var(--qss-gap);
-  align-items: center;
-}
+.script-info { flex: 1; min-width: 0; }
 
 .script-header-row {
   display: flex;
   align-items: center;
-  gap: var(--qss-gap-tight);
-  min-width: 0;
+  gap: 10px;
+  margin-bottom: 6px;
 }
 
 .script-name {
-  font-size: var(--qss-text-label);
-  font-weight: 500;
-  font-family: var(--qss-font-mono);
-  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: monospace;
 }
 
 .lang-badge {
-  flex-shrink: 0;
-  padding: 0 6px;
-  border-radius: 6px;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
   font-size: 11px;
+  font-weight: 600;
 }
+
+.lang-python { background: rgba(55, 118, 171, 0.2); color: #4da6ff; }
+.lang-js { background: rgba(240, 219, 79, 0.2); color: #f0db4f; }
+.lang-bash { background: rgba(46, 213, 115, 0.2); color: #2ed573; }
+.lang-ps { background: rgba(0, 122, 204, 0.2); color: #5cb3ff; }
 
 .script-preview {
-  font-size: var(--qss-text-meta);
-  font-family: var(--qss-font-mono);
+  font-size: 12px;
+  font-family: monospace;
   color: var(--text-muted);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
   overflow: hidden;
   white-space: pre;
-  max-height: 36px;
-  line-height: 18px;
+  margin: 0 0 6px;
+  max-height: 40px;
 }
 
-.script-meta { font-size: var(--qss-text-meta); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.script-meta { font-size: 12px; color: var(--text-muted); }
 
 .script-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .btn-icon {
+  padding: 6px 8px;
   background: transparent;
   border: 1px solid var(--border);
+  border-radius: var(--radius);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   transition: all var(--transition);
   line-height: 1;
@@ -231,7 +221,8 @@ function formatDate(ts: number): string {
 .btn-icon:hover { background: var(--bg-hover); color: var(--text-primary); }
 .btn-danger:hover { border-color: var(--error); color: var(--error); }
 
-@container (max-width: 760px) {
-  .script-info { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
-}
+.empty-state { text-align: center; padding: 60px 0; }
+.empty-text { font-size: 16px; color: var(--text-secondary); }
+.empty-sub { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+.empty-btn { margin-top: 20px; }
 </style>

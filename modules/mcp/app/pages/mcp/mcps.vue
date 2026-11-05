@@ -134,9 +134,10 @@ function isRunning(id: string) {
       </div>
     </div>
 
-    <QEmptyState v-else-if="!loading" title="No MCPs configured yet.">
-      <button class="btn-add" @click="openAdd">+ Add MCP</button>
-    </QEmptyState>
+    <div v-else-if="!loading" class="empty-state">
+      <p class="empty-text">No MCPs configured yet.</p>
+      <button class="btn-add empty-btn" @click="openAdd">+ Add MCP</button>
+    </div>
 
     <McpFormModal v-model="showModal" :edit-entry="editingMcp" @submit="handleSubmit" />
     <McpConfigModal v-model="showConfig" :mcp-id="configMcp?.id" :mcp-name="configMcp?.name" />
@@ -144,30 +145,26 @@ function isRunning(id: string) {
 </template>
 
 <style scoped>
-.mcps-page { display: flex; flex-direction: column; gap: var(--qss-gap); width: 100%; height: 100%; min-height: 0; container-type: inline-size; }
+.mcps-page { width: 100%; }
 
 .page-header {
-  flex-shrink: 0;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--qss-gap-tight) var(--qss-gap);
-  min-height: var(--qss-ctl-h);
+  margin-bottom: 24px;
 }
 
-.page-title { font-size: var(--qss-text-title); font-weight: 600; letter-spacing: -.01em; }
-.header-actions { display: flex; gap: var(--qss-gap-tight); flex-shrink: 0; }
+.page-title { font-size: 24px; font-weight: 600; }
+
+.header-actions { display: flex; gap: 8px; }
 
 .btn-secondary {
-  height: var(--qss-ctl-h);
-  padding: 0 12px;
+  padding: 8px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--qss-ctl-radius);
+  border-radius: var(--radius);
   color: var(--text-secondary);
-  font-size: var(--qss-text-label);
-  cursor: pointer;
+  font-size: 13px;
   transition: all var(--transition);
 }
 
@@ -175,42 +172,32 @@ function isRunning(id: string) {
 .btn-secondary:disabled { opacity: 0.5; }
 
 .btn-add {
-  height: var(--qss-ctl-h);
-  padding: 0 12px;
+  padding: 8px 16px;
   background: var(--accent);
   border: none;
-  border-radius: var(--qss-ctl-radius);
-  color: var(--qss-accent-ink);
-  font-size: var(--qss-text-label);
+  border-radius: var(--radius);
+  color: var(--bg-primary);
+  font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
   transition: all var(--transition);
 }
 
 .btn-add:hover { background: var(--accent-hover); }
 
-/* One panel; each server is a two-line row. */
-.mcp-list {
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--qss-panel-radius);
-}
+.mcp-list { display: flex; flex-direction: column; gap: 8px; }
 
 .mcp-card {
   display: flex;
   align-items: center;
-  gap: var(--qss-gap);
-  min-height: var(--qss-row-h);
-  padding: 6px var(--qss-panel-pad);
-  border-bottom: 1px solid var(--qss-border-subtle);
-  transition: background var(--transition);
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition);
 }
 
-.mcp-card:last-child { border-bottom: none; }
-.mcp-card:hover { background: var(--bg-hover); }
+.mcp-card:hover { border-color: var(--text-muted); }
 
 .status-dot {
   width: 8px;
@@ -223,27 +210,16 @@ function isRunning(id: string) {
 .dot-error { background: var(--error); }
 .dot-stopped { background: var(--text-muted); }
 
-.mcp-info {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  column-gap: var(--qss-gap);
-  align-items: center;
-}
-.mcp-name { grid-column: 1; font-size: var(--qss-text-section); font-weight: 600; }
-.mcp-description { grid-column: 1; font-size: var(--qss-text-label); color: var(--text-secondary); }
+.mcp-info { flex: 1; min-width: 0; }
+.mcp-name { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+.mcp-description { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
 
 .mcp-meta {
-  grid-column: 2;
-  grid-row: 1 / span 2;
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px var(--qss-gap);
-  font-size: var(--qss-text-meta);
+  gap: 12px;
+  font-size: 12px;
   color: var(--text-muted);
-  font-family: var(--qss-font-mono);
-  overflow-wrap: anywhere;
+  font-family: monospace;
 }
 
 .mcp-cmd {
@@ -253,15 +229,17 @@ function isRunning(id: string) {
 .mcp-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .btn-icon {
+  padding: 6px 8px;
   background: transparent;
   border: 1px solid var(--border);
+  border-radius: var(--radius);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   transition: all var(--transition);
   line-height: 1;
@@ -271,14 +249,14 @@ function isRunning(id: string) {
 .btn-danger:hover { border-color: var(--error); color: var(--error); }
 
 /* Toggle switch */
-.toggle-switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; margin-left: 4px; }
+.toggle-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
 .toggle-switch input { display: none; }
 
 .toggle-slider {
   position: absolute;
   inset: 0;
   background: var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
   transition: all var(--transition);
 }
@@ -286,20 +264,20 @@ function isRunning(id: string) {
 .toggle-slider::before {
   content: '';
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
   background: var(--text-secondary);
   border-radius: 50%;
   transition: all var(--transition);
 }
 
 .toggle-switch input:checked + .toggle-slider { background: var(--accent); }
-.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); background: white; }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); background: white; }
 
-@container (max-width: 760px) {
-  .mcp-info { grid-template-columns: minmax(0, 1fr); }
-  .mcp-meta { grid-column: 1; grid-row: auto; }
-}
+.empty-state { text-align: center; padding: 60px 0; }
+.empty-text { font-size: 16px; color: var(--text-secondary); }
+.empty-sub { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+.empty-btn { margin-top: 20px; }
 </style>

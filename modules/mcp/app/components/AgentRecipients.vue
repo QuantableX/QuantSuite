@@ -227,15 +227,15 @@ onBeforeUnmount(() => dialog.value?.close())
 </template>
 
 <style scoped>
-.recipient-summary { display: flex; align-items: center; gap: var(--qss-gap); flex-shrink: 0; padding-block: var(--qss-gap-tight); margin-bottom: var(--qss-gap-tight); border-block: 1px solid var(--qss-border-subtle); color: var(--text-primary); }
-.summary-mark { display: grid; place-items: center; flex-shrink: 0; color: var(--text-muted); }
-.summary-mark svg { width: 16px; height: 16px; }
+.recipient-summary { display: flex; align-items: center; gap: 14px; flex-shrink: 0; padding: 16px 18px; margin-bottom: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; color: var(--text-primary); }
+.summary-mark { width: 40px; height: 40px; display: grid; place-items: center; flex-shrink: 0; border-radius: 10px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.summary-mark svg { width: 23px; height: 23px; }
 .summary-copy { min-width: 0; flex: 1; }
-.summary-title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--qss-gap-tight); font-size: var(--qss-text-section); font-weight: 600; }
-.summary-count { color: var(--text-muted); font-size: var(--qss-text-meta); font-weight: 400; font-variant-numeric: tabular-nums; }
-.summary-copy p { margin: 0; color: var(--text-secondary); font-size: var(--qss-text-label); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.summary-actions { display: flex; flex-wrap: wrap; gap: var(--qss-gap-tight); }
-.picker-button { min-height: var(--qss-ctl-h); padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--qss-ctl-radius); background: var(--bg-hover); color: var(--text-primary); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.summary-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 13px; font-weight: 600; }
+.summary-count { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.summary-copy p { margin: 5px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.summary-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.picker-button { min-height: 32px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-hover); color: var(--text-primary); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .picker-button:hover:not(:disabled) { border-color: var(--accent); }
 .picker-button.primary { border-color: var(--text-primary); background: var(--text-primary); color: var(--bg-primary); }
 button:disabled { opacity: .4; cursor: not-allowed; }

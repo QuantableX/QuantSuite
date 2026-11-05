@@ -1015,8 +1015,9 @@ onBeforeUnmount(() => {
 /* â”€â”€ Layout â”€â”€ */
 .projects-layout {
   display: flex;
-  height: 100%;
-  min-height: 0;
+  height: calc(100% + 64px);
+  gap: 0;
+  margin: -32px;
   overflow: hidden;
 }
 
@@ -1136,9 +1137,7 @@ onBeforeUnmount(() => {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: var(--qss-gap);
   min-width: 0;
-  container-type: inline-size;
 }
 
 .no-project {
@@ -1158,76 +1157,79 @@ onBeforeUnmount(() => {
 
 .no-project-text {
   color: var(--text-muted);
-  font-size: var(--qss-text-section);
+  font-size: 14px;
 }
 
 /* â”€â”€ Project Header â”€â”€ */
 .project-header {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: var(--qss-gap);
-  min-height: var(--qss-ctl-h);
+  gap: 16px;
+  padding: 24px 28px 16px;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .project-header-info {
-  flex: 1;
   display: flex;
-  align-items: baseline;
-  gap: var(--qss-gap);
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
 }
 
 .project-title {
-  flex-shrink: 0;
-  font-size: var(--qss-text-title);
-  font-weight: 600;
-  letter-spacing: -.01em;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text-primary);
   margin: 0;
   display: flex;
   align-items: center;
-  gap: var(--qss-gap-tight);
+  gap: 8px;
 }
 
 .badge-active {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 999px;
-  padding: 0 7px;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .project-folder {
-  min-width: 0;
-  font-size: var(--qss-text-meta);
+  font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 400px;
 }
 
 .project-header-actions {
   display: flex;
   flex-wrap: wrap;
   max-width: 100%;
-  gap: var(--qss-gap-tight);
+  gap: 8px;
   flex-shrink: 0;
 }
 
 /* â”€â”€ Section title â”€â”€ */
 .section-title {
-  font-size: var(--qss-text-section);
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 12px;
 }
 
 /* ── AgentOS ── */
 .agent-section {
+  padding: 20px 28px;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1236,11 +1238,12 @@ onBeforeUnmount(() => {
 
 .btn-toggled {
   border-color: var(--accent);
-  color: var(--text-primary);
+  color: var(--accent);
 }
 
 /* â”€â”€ Kanban Board â”€â”€ */
 .kanban-section {
+  padding: 20px 28px;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1248,16 +1251,16 @@ onBeforeUnmount(() => {
 }
 
 .kanban-header {
-  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: var(--qss-gap-tight);
-  margin-bottom: var(--qss-gap-tight);
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .kanban-header .section-title {
   white-space: nowrap;
   flex-shrink: 0;
+  margin-bottom: 0;
 }
 
 /* The archive button sits with the board control on the right: it pushes
@@ -1268,15 +1271,15 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: var(--qss-ctl-h);
-  padding: 0 8px;
+  padding: 4px 8px 4px 9px;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--qss-ctl-radius);
+  border-radius: var(--radius);
   color: var(--text-secondary);
   font-family: inherit;
-  font-size: var(--qss-text-label);
+  font-size: 12px;
   font-weight: 500;
+  line-height: 1.4;
   cursor: pointer;
   transition: all var(--transition);
 }
@@ -1308,19 +1311,19 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
 }
 
-.approval-mode-select.approval-mode-select {
+.approval-mode-select {
   width: auto;
+  max-width: 50%;
   min-width: 0;
-  height: var(--qss-ctl-h);
-  padding: 0 6px;
-  border-radius: var(--qss-ctl-radius);
-  font-size: var(--qss-text-label);
+  padding: 4px 8px;
+  font-size: 12px;
   flex-shrink: 1;
 }
 
 .kanban-board {
   display: flex;
-  gap: var(--qss-gap);
+  gap: 12px;
+  padding-bottom: 8px;
   flex: 1;
   min-height: 0;
 }
@@ -1330,26 +1333,41 @@ onBeforeUnmount(() => {
   min-width: 120px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--qss-panel-radius);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
 }
 
+/* Column header accent bar */
+.col-plan {
+  border-top: 3px solid #666;
+}
+.col-work {
+  border-top: 3px solid #666;
+}
+.col-review {
+  border-top: 3px solid #666;
+}
+.col-done {
+  border-top: 3px solid #666;
+}
+
 .col-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: var(--qss-row-h);
-  padding: 0 var(--qss-gap-tight) 0 var(--qss-panel-pad);
-  border-bottom: 1px solid var(--qss-border-subtle);
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
 }
 
 .col-name {
-  font-size: var(--qss-text-section);
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .col-header-side {
@@ -1362,8 +1380,7 @@ onBeforeUnmount(() => {
   background: var(--bg-hover);
   color: var(--text-muted);
   font-size: 11px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
+  font-weight: 600;
   padding: 1px 6px;
   border-radius: 10px;
   min-width: 20px;
@@ -1399,7 +1416,7 @@ onBeforeUnmount(() => {
 
 .col-cards {
   flex: 1;
-  padding: 6px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1419,8 +1436,8 @@ onBeforeUnmount(() => {
 .kanban-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--qss-ctl-radius);
-  padding: 6px 8px;
+  border-radius: var(--radius);
+  padding: 10px;
   margin: 2px 0;
   min-height: 56px;
   /* Natural height: a full column scrolls (.col-cards) instead of squeezing
@@ -1502,7 +1519,7 @@ onBeforeUnmount(() => {
 }
 
 .kanban-column.drag-over .col-cards {
-  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  background: rgba(79, 156, 249, 0.04);
 }
 
 .card-title {
@@ -1524,11 +1541,12 @@ onBeforeUnmount(() => {
 }
 
 .card-priority {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
   border-radius: 3px;
-  text-transform: capitalize;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 .priority-low { background: #2a3a2a; color: #6fbf6f; }
 .priority-medium { background: #3a3520; color: #c8a84e; }
@@ -1536,20 +1554,20 @@ onBeforeUnmount(() => {
 .priority-critical { background: #3a2020; color: #e04040; }
 
 .card-status {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
-  padding: 0 5px;
+  padding: 1px 5px;
   background: var(--bg-hover);
   border-radius: 3px;
 }
 
 .card-agent {
-  font-size: 11px;
-  color: var(--text-secondary);
-  padding: 0 5px;
-  background: var(--bg-hover);
+  font-size: 10px;
+  color: #4a9eff;
+  padding: 1px 5px;
+  background: #1a2a3a;
   border-radius: 3px;
-  max-width: 120px;
+  max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1599,10 +1617,8 @@ onBeforeUnmount(() => {
 
 /* Same dashed pill as the drawer board's "+ Add card" (QDrawerKanban). */
 .add-card-btn {
-  flex-shrink: 0;
-  margin: 0 6px 6px;
-  height: var(--qss-ctl-h);
-  padding: 0 8px;
+  margin: 6px 8px 8px;
+  padding: 6px 9px;
   background: transparent;
   border: 1px dashed var(--border);
   border-radius: 7px;
@@ -1628,61 +1644,45 @@ onBeforeUnmount(() => {
 }
 
 /* â”€â”€ Codebase Indexing â”€â”€ */
-/* One row when the width allows it: heading, both indexes, their settings. The board keeps the height. */
 .indexing-section {
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--qss-gap-tight);
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--border);
 }
 
 .indexing-header {
-  display: contents;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .indexing-header .section-title {
   white-space: nowrap;
   flex-shrink: 0;
-  line-height: var(--qss-row-h);
-}
-
-.badge-indexed,
-.badge-indexing {
-  align-self: center;
+  margin-bottom: 0;
 }
 
 .indexing-actions {
-  order: 2;
   display: flex;
-  gap: var(--qss-gap-tight);
-  align-items: center;
-  min-height: var(--qss-row-h);
+  gap: 8px;
+  margin-left: auto;
+  width: 50%;
+  min-width: min(290px, 100%);
+  max-width: 100%;
 }
 
-.embedding-settings-btn.embedding-settings-btn {
+.embedding-settings-btn {
   flex-shrink: 0;
   white-space: nowrap;
-  height: var(--qss-ctl-h);
-  padding: 0 10px;
-  font-size: var(--qss-text-label);
-  border-radius: var(--qss-ctl-radius);
-  background: var(--bg-card);
-  color: var(--text-secondary);
 }
 
-.index-filter-select.index-filter-select {
+.index-filter-select {
+  flex: 1;
   width: auto;
   min-width: 0;
-  height: var(--qss-ctl-h);
-  padding: 0 6px;
-  border-radius: var(--qss-ctl-radius);
-  font-size: var(--qss-text-label);
-}
-
-.indexing-section > .indexing-desc {
-  order: 3;
-  flex-basis: 100%;
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .badge-indexed {
@@ -1717,38 +1717,33 @@ onBeforeUnmount(() => {
 }
 
 .index-cards {
-  order: 1;
-  flex: 1 1 0;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--qss-gap-tight);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .index-card {
-  min-width: 0;
-  background: var(--bg-secondary);
+  background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--qss-ctl-radius);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
 .index-card-header {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 2px var(--qss-gap-tight);
-  min-height: var(--qss-row-h);
-  padding: 1px var(--qss-gap-tight);
+  gap: 8px;
+  padding: 8px 12px;
 }
 
 .index-card-title {
-  font-size: var(--qss-text-section);
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .index-card-subtitle {
-  font-size: var(--qss-text-meta);
+  font-size: 11px;
   color: var(--text-muted);
   font-weight: 400;
 }
@@ -1759,9 +1754,8 @@ onBeforeUnmount(() => {
 }
 
 .stat-inline {
-  font-size: var(--qss-text-meta);
+  font-size: 11px;
   color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 .index-card-btn {
@@ -1770,7 +1764,7 @@ onBeforeUnmount(() => {
 }
 
 .index-card-result {
-  padding: 0 var(--qss-gap-tight) 4px;
+  padding: 0 12px 8px;
 }
 
 .index-card-off .status-dot,
@@ -1840,18 +1834,28 @@ select.form-input-xs {
 }
 
 .index-result {
-  font-size: var(--qss-text-meta);
-  line-height: 1.45;
-  color: var(--text-secondary);
+  font-size: 12px;
+  color: #22c55e;
   margin: 0;
+  padding: 6px 10px;
+  background: rgba(34, 197, 94, 0.08);
+  border-radius: var(--radius);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.index-result-sm {
+  font-size: 11px;
+  padding: 4px 8px;
 }
 
 .index-result.index-error {
   color: var(--error);
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.2);
 }
 
 .indexing-desc {
-  font-size: var(--qss-text-label);
+  font-size: 13px;
   color: var(--text-muted);
   margin: 0;
   line-height: 1.5;
@@ -1860,9 +1864,9 @@ select.form-input-xs {
 /* â”€â”€ Buttons â”€â”€ */
 .btn-primary {
   background: var(--accent);
-  color: var(--qss-accent-ink);
+  color: #fff;
   border: none;
-  border-radius: var(--qss-ctl-radius);
+  border-radius: var(--radius);
   padding: 8px 16px;
   font-size: 13px;
   font-weight: 500;
@@ -1955,17 +1959,4 @@ select.form-input {
   flex: 1;
 }
 
-@container (max-width: 1040px) {
-  .indexing-section { row-gap: 2px; }
-  .indexing-actions { order: 0; margin-left: auto; }
-  .index-cards { order: 1; flex-basis: 100%; }
-}
-
-@container (max-width: 760px) {
-  .project-header { flex-wrap: wrap; }
-  .project-header-info { flex-basis: 100%; flex-wrap: wrap; }
-  .project-folder { flex-basis: 100%; }
-  .index-cards { grid-template-columns: minmax(0, 1fr); }
-  .kanban-header { flex-wrap: wrap; }
-}
 </style>
