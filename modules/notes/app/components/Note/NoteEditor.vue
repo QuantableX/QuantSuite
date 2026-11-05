@@ -147,77 +147,82 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-if="note" class="qn-ne">
+    <!-- The title row and the toolbar stay put; only the document scrolls. -->
+    <header class="qn-ne__head">
+      <div class="qn-ne__identity">
+        <div class="qn-ne__icon-wrap">
+          <button class="qn-ne__icon" aria-label="Change icon" @click="iconMenu = !iconMenu">
+            <NotesNoteIcon :icon="note.icon" :size="18" />
+          </button>
+          <div v-if="iconMenu" class="qn-ne__icon-menu">
+            <button
+              v-for="icon in NOTE_ICONS"
+              :key="icon.key"
+              :class="{ 'is-active': note.icon === icon.key }"
+              :title="icon.label"
+              @click="setIcon(icon.key)"
+            >
+              <NotesNoteIcon :icon="icon.key" :size="18" />
+            </button>
+            <button class="qn-ne__icon-clear" @click="setIcon(null)">Clear</button>
+          </div>
+        </div>
+
+        <input
+          v-model="titleDraft"
+          class="qn-ne__title"
+          placeholder="Untitled"
+          @blur="commitTitle"
+          @keydown.enter.prevent="commitTitle"
+        />
+      </div>
+
+      <div class="qn-ne__meta">
+        <span>{{ saveState }}</span>
+        <span>{{ note.wordCount }} words</span>
+        <span>Updated {{ updatedLabel }}</span>
+      </div>
+    </header>
+
+    <div class="qn-ne__toolbar">
+      <button :class="{ 'is-active': editor?.isActive('heading', { level: 1 }) }" @click="toggleHeading(1)">H1</button>
+      <button :class="{ 'is-active': editor?.isActive('heading', { level: 2 }) }" @click="toggleHeading(2)">H2</button>
+      <button :class="{ 'is-active': editor?.isActive('heading', { level: 3 }) }" @click="toggleHeading(3)">H3</button>
+      <span class="qn-ne__sep" />
+      <button :class="{ 'is-active': editor?.isActive('bold') }" @click="toggleMark('bold')">Bold</button>
+      <button :class="{ 'is-active': editor?.isActive('italic') }" @click="toggleMark('italic')">Italic</button>
+      <button :class="{ 'is-active': editor?.isActive('strike') }" @click="toggleMark('strike')">Strike</button>
+      <span class="qn-ne__sep" />
+      <button :class="{ 'is-active': editor?.isActive('bulletList') }" @click="toggleList('bullet')">Bullets</button>
+      <button :class="{ 'is-active': editor?.isActive('orderedList') }" @click="toggleList('ordered')">Numbers</button>
+      <button :class="{ 'is-active': editor?.isActive('blockquote') }" @click="toggleBlock('blockquote')">Quote</button>
+      <button :class="{ 'is-active': editor?.isActive('codeBlock') }" @click="toggleBlock('code')">Code</button>
+    </div>
+
     <div class="qn-ne__scroll">
       <div class="qn-ne__shell">
-        <div class="qn-ne__identity">
-          <div class="qn-ne__icon-wrap">
-            <button class="qn-ne__icon" aria-label="Change icon" @click="iconMenu = !iconMenu">
-              <NotesNoteIcon :icon="note.icon" :size="36" :stroke="1.4" />
-            </button>
-            <div v-if="iconMenu" class="qn-ne__icon-menu">
-              <button
-                v-for="icon in NOTE_ICONS"
-                :key="icon.key"
-                :class="{ 'is-active': note.icon === icon.key }"
-                :title="icon.label"
-                @click="setIcon(icon.key)"
-              >
-                <NotesNoteIcon :icon="icon.key" :size="18" />
-              </button>
-              <button class="qn-ne__icon-clear" @click="setIcon(null)">Clear</button>
+        <EditorContent v-if="editor" :editor="editor" class="qn-ne__editor" />
+
+        <!-- Beside the prose: the same cells the table and board edit. -->
+        <aside class="qn-ne__side">
+          <div class="qn-ne__props">
+            <div v-for="property in schema.properties" :key="property.id" class="qn-ne__prop">
+              <span class="qn-ne__prop-name">{{ property.name }}</span>
+              <NotesViewsPropertyCell
+                :note-id="note.id"
+                :property="property"
+                :value="note.properties[property.id]"
+              />
             </div>
           </div>
 
-          <input
-            v-model="titleDraft"
-            class="qn-ne__title"
-            placeholder="Untitled"
-            @blur="commitTitle"
-            @keydown.enter.prevent="commitTitle"
-          />
-        </div>
-
-        <!-- The property block: the same cells the table and board edit. -->
-        <div class="qn-ne__props">
-          <div v-for="property in schema.properties" :key="property.id" class="qn-ne__prop">
-            <span class="qn-ne__prop-name">{{ property.name }}</span>
-            <NotesViewsPropertyCell
-              :note-id="note.id"
-              :property="property"
-              :value="note.properties[property.id]"
-            />
-          </div>
-        </div>
-
-        <div class="qn-ne__meta">
-          <span>{{ saveState }}</span>
-          <span>{{ note.wordCount }} words</span>
-          <span>Updated {{ updatedLabel }}</span>
-        </div>
-
-        <div class="qn-ne__toolbar">
-          <button :class="{ 'is-active': editor?.isActive('heading', { level: 1 }) }" @click="toggleHeading(1)">H1</button>
-          <button :class="{ 'is-active': editor?.isActive('heading', { level: 2 }) }" @click="toggleHeading(2)">H2</button>
-          <button :class="{ 'is-active': editor?.isActive('heading', { level: 3 }) }" @click="toggleHeading(3)">H3</button>
-          <span class="qn-ne__sep" />
-          <button :class="{ 'is-active': editor?.isActive('bold') }" @click="toggleMark('bold')">Bold</button>
-          <button :class="{ 'is-active': editor?.isActive('italic') }" @click="toggleMark('italic')">Italic</button>
-          <button :class="{ 'is-active': editor?.isActive('strike') }" @click="toggleMark('strike')">Strike</button>
-          <span class="qn-ne__sep" />
-          <button :class="{ 'is-active': editor?.isActive('bulletList') }" @click="toggleList('bullet')">Bullets</button>
-          <button :class="{ 'is-active': editor?.isActive('orderedList') }" @click="toggleList('ordered')">Numbers</button>
-          <button :class="{ 'is-active': editor?.isActive('blockquote') }" @click="toggleBlock('blockquote')">Quote</button>
-          <button :class="{ 'is-active': editor?.isActive('codeBlock') }" @click="toggleBlock('code')">Code</button>
-        </div>
-
-        <EditorContent v-if="editor" :editor="editor" class="qn-ne__editor" />
-
-        <section v-if="backlinks.length" class="qn-ne__backlinks">
-          <h2>Linked from</h2>
-          <NuxtLink v-for="link in backlinks" :key="link.noteId" :to="`/notes/n/${link.noteId}`">
-            <NotesNoteIcon :icon="link.icon" :size="14" />{{ link.title }}
-          </NuxtLink>
-        </section>
+          <section v-if="backlinks.length" class="qn-ne__backlinks">
+            <h2>Linked from</h2>
+            <NuxtLink v-for="link in backlinks" :key="link.noteId" :to="`/notes/n/${link.noteId}`">
+              <NotesNoteIcon :icon="link.icon" :size="14" />{{ link.title }}
+            </NuxtLink>
+          </section>
+        </aside>
       </div>
     </div>
   </div>
@@ -226,40 +231,47 @@ onBeforeUnmount(() => {
 <style scoped>
 .qn-ne {
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--qn-bg);
+  container-type: inline-size;
 }
 
-.qn-ne__scroll {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-
-.qn-ne__shell {
-  width: min(820px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 40px 0 120px;
+.qn-ne__head {
+  /* Above the toolbar and the document: the icon menu floats over both. */
+  position: relative;
+  z-index: 4;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--qss-gap);
+  min-height: 40px;
+  padding: 6px var(--qss-page-edge);
 }
 
 .qn-ne__identity {
+  flex: 1 1 280px;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
 }
 
 .qn-ne__icon-wrap {
   position: relative;
+  flex-shrink: 0;
+  margin-left: -5px;
 }
 
 .qn-ne__icon {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: var(--qss-ctl-h);
+  height: var(--qss-ctl-h);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--qss-ctl-radius);
   background: transparent;
   color: var(--qn-text);
   padding: 0;
@@ -283,7 +295,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   padding: 8px;
   border: 1px solid var(--qn-border);
-  border-radius: 10px;
+  border-radius: var(--qss-panel-radius);
   background: var(--qn-bg-sidebar);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
 }
@@ -312,75 +324,57 @@ onBeforeUnmount(() => {
   color: var(--qn-accent);
 }
 
-.qn-ne__icon-clear {
+.qn-ne__icon-menu .qn-ne__icon-clear {
   grid-column: 1 / -1;
-  width: auto !important;
-  height: 26px !important;
+  width: auto;
+  height: 26px;
   margin-top: 2px;
   color: var(--qn-text-muted);
-  font-size: 12px !important;
+  font-size: var(--qss-text-label);
 }
 
 .qn-ne__title {
   flex: 1;
   min-width: 0;
+  height: var(--qss-ctl-h);
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--qn-text);
-  font-size: clamp(30px, 4vw, 42px);
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
   outline: none;
 }
 
-.qn-ne__props {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 18px 0 14px;
-}
-
-.qn-ne__prop {
-  display: grid;
-  grid-template-columns: 140px 1fr;
-  align-items: center;
-  gap: 8px;
-}
-
-.qn-ne__prop-name {
-  color: var(--qn-text-muted);
-  font-size: 12px;
-}
-
 .qn-ne__meta {
+  flex-shrink: 0;
   display: flex;
-  gap: 14px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--qn-border-subtle);
-  color: var(--qn-text-muted);
-  font-size: 11px;
+  flex-wrap: wrap;
+  gap: 2px var(--qss-gap);
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-meta);
+  font-variant-numeric: tabular-nums;
 }
 
 .qn-ne__toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 3;
+  flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 2px;
-  margin: 0 0 8px;
-  padding: 8px 0;
-  background: var(--qn-bg);
+  padding: 0 calc(var(--qss-page-edge) - 8px) 6px;
+  border-bottom: 1px solid var(--qn-border-subtle);
 }
 
 .qn-ne__toolbar button {
-  padding: 5px 9px;
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--qn-text-muted);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
 }
 
@@ -401,30 +395,68 @@ onBeforeUnmount(() => {
   background: var(--qn-border);
 }
 
-.qn-ne__editor {
-  min-height: 400px;
+.qn-ne__scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
 }
 
-.qn-ne__backlinks {
-  margin-top: 48px;
-  padding-top: 16px;
-  border-top: 1px solid var(--qn-border-subtle);
+/* The prose keeps its reading measure; the properties and links take the space beside it. */
+.qn-ne__shell {
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 80ch) minmax(240px, 420px);
+  column-gap: calc(var(--qss-gap) * 2);
+  align-items: stretch;
+  padding: var(--qss-gap) var(--qss-page-edge) var(--qss-page-edge);
+  font-size: 15px;
+}
+
+.qn-ne__editor {
+  min-height: 400px;
+  min-width: 0;
+}
+
+.qn-ne__side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
+  align-self: start;
+}
+
+.qn-ne__props {
+  display: flex;
+  flex-direction: column;
+}
+
+.qn-ne__prop {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--qss-gap-tight);
+  min-height: var(--qss-row-h);
+  border-bottom: 1px solid var(--qn-border-subtle);
+}
+
+.qn-ne__prop-name {
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-label);
 }
 
 .qn-ne__backlinks h2 {
-  margin: 0 0 8px;
-  color: var(--qn-text-muted);
-  font-size: 11px;
+  margin: 0 0 4px;
+  color: var(--qn-text);
+  font-size: var(--qss-text-section);
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .qn-ne__backlinks a {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  min-height: 28px;
+  padding: 0 8px;
   border-radius: 6px;
   color: var(--qn-text-secondary);
   font-size: 13px;
@@ -435,14 +467,43 @@ onBeforeUnmount(() => {
   background: var(--qn-bg-hover);
   color: var(--qn-text);
 }
+
+/* Not enough room beside the prose: properties above it, in columns, and links below it. */
+@container (max-width: 960px) {
+  .qn-ne__shell {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+    row-gap: var(--qss-gap);
+    align-content: start;
+  }
+  .qn-ne__side {
+    display: contents;
+  }
+  .qn-ne__props {
+    order: -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+    column-gap: var(--qss-gap);
+  }
+  .qn-ne__prop {
+    grid-template-columns: minmax(48px, auto) minmax(0, 1fr);
+  }
+  .qn-ne__editor {
+    max-width: 80ch;
+  }
+}
 </style>
 
 <style>
 .qn-ne__doc {
   min-height: 100%;
-  font-size: 16px;
-  line-height: 1.75;
+  font-size: 15px;
+  line-height: 1.65;
   outline: none;
+}
+
+.qn-ne__doc > :first-child {
+  margin-top: 0;
 }
 
 .qn-ne__doc p {
@@ -450,29 +511,41 @@ onBeforeUnmount(() => {
 }
 
 .qn-ne__doc h1 {
-  margin: 1.2em 0 0.3em;
-  font-size: 1.9em;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  margin: 1.1em 0 0.3em;
+  font-size: 1.45em;
+  font-weight: 650;
+  letter-spacing: -0.015em;
 }
 
 .qn-ne__doc h2 {
-  margin: 1.05em 0 0.25em;
-  font-size: 1.5em;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  margin: 1em 0 0.25em;
+  font-size: 1.2em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .qn-ne__doc h3 {
   margin: 0.9em 0 0.2em;
-  font-size: 1.2em;
-  font-weight: 700;
+  font-size: 1.05em;
+  font-weight: 600;
 }
 
 .qn-ne__doc ul,
 .qn-ne__doc ol {
   margin: 0.45em 0;
   padding-left: 1.4em;
+}
+
+.qn-ne__doc ul {
+  list-style: disc;
+}
+
+.qn-ne__doc ol {
+  list-style: decimal;
+}
+
+.qn-ne__doc li > p {
+  margin: 0.1em 0;
 }
 
 .qn-ne__doc blockquote {
@@ -491,9 +564,9 @@ onBeforeUnmount(() => {
 
 .qn-ne__doc pre {
   margin: 0.7em 0;
-  padding: 12px 14px;
-  border: 1px solid var(--qn-border);
-  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qss-ctl-radius);
   background: rgba(0, 0, 0, 0.2);
 }
 

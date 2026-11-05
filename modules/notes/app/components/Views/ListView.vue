@@ -52,11 +52,17 @@ async function addRow() {
 </template>
 
 <style scoped>
+/* One line per note. Where the width allows a second column, a title and its properties stay
+   close together instead of 1300px apart. */
 .qn-list {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding-bottom: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 480px), 1fr));
+  grid-auto-rows: min-content;
+  column-gap: var(--qss-gap);
+  align-content: start;
 }
 
 .qn-list__row {
@@ -64,7 +70,8 @@ async function addRow() {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 10px;
+  min-height: var(--qss-row-h);
+  padding: 2px 8px;
   border: none;
   border-bottom: 1px solid var(--qn-border-subtle);
   background: transparent;
@@ -97,16 +104,18 @@ async function addRow() {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 .qn-list__new {
   width: 100%;
-  padding: 10px;
+  height: var(--qss-row-h);
+  padding: 0 8px;
   border: none;
   background: transparent;
   color: var(--qn-text-muted);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
   text-align: left;
   cursor: pointer;
 }

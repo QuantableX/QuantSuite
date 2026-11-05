@@ -28,9 +28,8 @@ const rows = computed(() => rowsForView(notes.list, view.value, schema.propertyB
     <header class="qn-coll__top">
       <h1 class="qn-coll__name">All notes</h1>
       <NotesViewsViewTabs />
+      <NotesViewsViewToolbar />
     </header>
-
-    <NotesViewsViewToolbar />
 
     <div class="qn-coll__stage">
       <template v-if="view">
@@ -51,34 +50,34 @@ const rows = computed(() => rowsForView(notes.list, view.value, schema.propertyB
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 0 20px;
 }
 
+/* Title, view tabs and the view's toolbar share one row; they wrap when the middle is narrow.
+   The hairline is the rule the active tab sits on. */
 .qn-coll__top {
+  flex-shrink: 0;
   display: flex;
-  align-items: baseline;
-  gap: 20px;
-  padding: 18px 0 0;
-  border-bottom: 1px solid var(--qn-border);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--qss-gap);
+  padding: 0 var(--qss-page-edge);
+  border-bottom: 1px solid var(--qn-border-subtle);
 }
 
 .qn-coll__name {
+  flex-shrink: 0;
   margin: 0;
   color: var(--qn-text);
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .qn-coll__stage {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
-}
-
-.qn-coll__empty {
-  padding: 40px;
-  color: var(--qn-text-muted);
-  font-size: 13px;
-  text-align: center;
+  padding: var(--qss-gap) var(--qss-page-edge) var(--qss-page-edge);
+  container-type: inline-size;
 }
 </style>

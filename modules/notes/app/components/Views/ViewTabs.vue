@@ -56,18 +56,21 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 
 <template>
   <div ref="root" class="qn-tabs">
-    <button
-      v-for="view in schema.views"
-      :key="view.id"
-      class="qn-tabs__tab"
-      :class="{ 'is-active': view.id === schema.activeView?.id }"
-      @click="schema.setActiveView(view.id)"
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path :d="KIND_ICONS[view.kind]" />
-      </svg>
-      <span>{{ view.name }}</span>
-    </button>
+    <!-- Only the tabs scroll: the add menu below has to float out of this row. -->
+    <div class="qn-tabs__list">
+      <button
+        v-for="view in schema.views"
+        :key="view.id"
+        class="qn-tabs__tab"
+        :class="{ 'is-active': view.id === schema.activeView?.id }"
+        @click="schema.setActiveView(view.id)"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path :d="KIND_ICONS[view.kind]" />
+        </svg>
+        <span>{{ view.name }}</span>
+      </button>
+    </div>
 
     <div class="qn-tabs__add-wrap">
       <button class="qn-tabs__add" aria-label="Add view" @click="adding = !adding">+</button>
@@ -85,15 +88,25 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 
 <style scoped>
 .qn-tabs {
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
+}
+
+.qn-tabs__list {
+  align-self: stretch;
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  /* The active tab's underline lands on the hairline under the row. */
+  margin-bottom: -1px;
   overflow-x: auto;
   scrollbar-width: none;
 }
 
-.qn-tabs::-webkit-scrollbar {
+.qn-tabs__list::-webkit-scrollbar {
   display: none;
 }
 
@@ -102,20 +115,19 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  padding: 5px 10px;
+  min-height: 40px;
+  padding: 0 10px;
   border: none;
   border-bottom: 2px solid transparent;
-  border-radius: 6px 6px 0 0;
   background: transparent;
   color: var(--qn-text-muted);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
   cursor: pointer;
   transition: color var(--qss-dur-fast, 120ms) ease, border-color var(--qss-dur-fast, 120ms) ease;
 }
 
 .qn-tabs__tab:hover {
-  color: var(--qn-text-secondary);
-  background: var(--qn-bg-hover);
+  color: var(--qn-text);
 }
 
 .qn-tabs__tab.is-active {
@@ -129,6 +141,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 }
 
 .qn-tabs__add {
+  display: grid;
+  place-items: center;
   width: 24px;
   height: 24px;
   border: none;
@@ -153,7 +167,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   width: 160px;
   padding: 4px;
   border: 1px solid var(--qn-border);
-  border-radius: 10px;
+  border-radius: var(--qss-panel-radius);
   background: var(--qn-bg-sidebar);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
 }
@@ -168,7 +182,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   border-radius: 6px;
   background: transparent;
   color: var(--qn-text-secondary);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   text-align: left;
   cursor: pointer;
 }

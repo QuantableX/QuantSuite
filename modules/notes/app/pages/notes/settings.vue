@@ -54,13 +54,13 @@ async function deleteProperty(id: string) {
 
 <template>
   <div class="qn-settings">
-    <div class="qn-settings__card">
-      <header class="qn-settings__head">
-        <h1>Settings</h1>
-        <span class="qn-settings__sub">QuantNotes v{{ runtimeConfig.public.appVersion }}</span>
-      </header>
+    <header class="qn-settings__head">
+      <h1>Settings</h1>
+      <span class="qn-settings__sub">QuantNotes v{{ runtimeConfig.public.appVersion }}</span>
+    </header>
 
-      <section class="qn-section">
+    <div class="qn-settings__panels">
+      <section class="qn-section qn-section--general">
         <h2>General</h2>
         <div class="qn-grid">
           <label>
@@ -93,7 +93,7 @@ async function deleteProperty(id: string) {
         </div>
       </section>
 
-      <section class="qn-section">
+      <section class="qn-section qn-section--editor">
         <h2>Editor</h2>
         <div class="qn-grid">
           <label class="qn-check">
@@ -111,7 +111,7 @@ async function deleteProperty(id: string) {
         </div>
       </section>
 
-      <section class="qn-section">
+      <section class="qn-section qn-section--properties">
         <h2>Properties</h2>
         <p class="qn-hint">
           The collection's schema. Every note carries these; each view chooses
@@ -138,7 +138,7 @@ async function deleteProperty(id: string) {
         </table>
       </section>
 
-      <section class="qn-section">
+      <section class="qn-section qn-section--data">
         <h2>Data</h2>
         <p class="qn-hint">
           Everything lives in one database under
@@ -154,94 +154,113 @@ async function deleteProperty(id: string) {
 
 <style scoped>
 .qn-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--qss-gap);
   height: 100%;
-  padding: 28px;
+  min-height: 0;
+  padding: var(--qss-page-edge);
   overflow: auto;
   background: var(--qn-bg);
-}
-
-.qn-settings__card {
-  max-width: 820px;
-  margin: 0 auto;
-  padding: 24px;
-  border: 1px solid var(--qn-border);
-  border-radius: var(--qn-radius-lg);
-  background: var(--qn-bg-sidebar);
+  container-type: inline-size;
 }
 
 .qn-settings__head {
+  flex-shrink: 0;
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 20px;
+  gap: var(--qss-gap);
 }
 
 .qn-settings__head h1 {
   margin: 0;
-  font-size: 21px;
-  font-weight: 700;
+  font-size: var(--qss-text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .qn-settings__sub {
-  color: var(--qn-text-muted);
-  font-size: 11px;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Three columns: the short groups beside the property list. */
+.qn-settings__panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--qss-gap);
+}
+
+.qn-section--properties {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+}
+
+.qn-section--data {
+  grid-column: 1 / span 2;
 }
 
 .qn-section {
-  padding: 18px 0;
-  border-top: 1px solid var(--qn-border-subtle);
+  padding: var(--qss-panel-pad);
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qss-panel-radius);
+  background: var(--qn-bg-sidebar);
 }
 
 .qn-section h2 {
-  margin: 0 0 10px;
-  color: var(--qn-text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  margin: 0 0 var(--qss-gap-tight);
+  color: var(--qn-text);
+  font-size: var(--qss-text-section);
+  font-weight: 600;
 }
 
 .qn-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--qss-gap-tight) var(--qss-gap);
+  align-items: end;
 }
 
 .qn-grid label {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .qn-label {
-  color: var(--qn-text-muted);
-  font-size: 11px;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-label);
 }
 
 .qn-input,
 .qn-select {
-  padding: 6px 9px;
+  width: 100%;
+  height: var(--qss-ctl-h);
+  padding: 0 8px;
   border: 1px solid var(--qn-border);
-  border-radius: var(--qn-radius);
+  border-radius: var(--qss-ctl-radius);
   background: var(--qn-bg-input);
   color: var(--qn-text);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
   font-family: inherit;
   outline: none;
 }
 
-.qn-check {
-  flex-direction: row !important;
+.qn-grid .qn-check {
+  flex-direction: row;
   align-items: center;
-  gap: 8px !important;
+  gap: var(--qss-gap-tight);
+  min-height: var(--qss-ctl-h);
   color: var(--qn-text-secondary);
-  font-size: 13px;
+  font-size: var(--qss-text-label);
 }
 
 .qn-hint {
-  margin: 0 0 10px;
-  color: var(--qn-text-muted);
-  font-size: 12px;
+  margin: 0 0 var(--qss-gap-tight);
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-label);
   line-height: 1.5;
 }
 
@@ -251,36 +270,45 @@ table {
 }
 
 td {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--qn-border-subtle);
+  height: var(--qss-row-h);
+  padding: 2px 8px 2px 0;
+  border-top: 1px solid var(--qn-border-subtle);
   color: var(--qn-text);
   font-size: 13px;
 }
 
+td:last-child {
+  padding-right: 0;
+}
+
 .qn-kind {
-  color: var(--qn-text-muted);
-  font-size: 12px;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-label);
+  white-space: nowrap;
 }
 
 .qn-right {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
+  text-align: right;
+}
+
+.qn-right > * + * {
+  margin-left: 6px;
 }
 
 .qn-warn {
-  color: var(--qn-text-muted);
-  font-size: 11px;
+  color: var(--qn-text-secondary);
+  font-size: var(--qss-text-meta);
 }
 
 .qn-btn {
-  padding: 5px 11px;
+  height: 26px;
+  padding: 0 10px;
   border: 1px solid var(--qn-border);
-  border-radius: var(--qn-radius);
+  border-radius: var(--qss-ctl-radius);
   background: var(--qn-bg-card);
   color: var(--qn-text-secondary);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -296,8 +324,8 @@ td {
 
 .qn-ok,
 .qn-err {
-  margin: 8px 0 0;
-  font-size: 12px;
+  margin: var(--qss-gap-tight) 0 0;
+  font-size: var(--qss-text-label);
 }
 
 .qn-ok {
@@ -313,6 +341,24 @@ code {
   border-radius: 4px;
   background: var(--qn-bg-input);
   font-family: var(--qss-font-mono, monospace);
-  font-size: 11px;
+  font-size: var(--qss-text-meta);
+}
+
+/* Two columns: properties beside the data group, under the two short ones. */
+@container (max-width: 1100px) {
+  .qn-settings__panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .qn-section--properties,
+  .qn-section--data {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+@container (max-width: 640px) {
+  .qn-settings__panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

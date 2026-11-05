@@ -115,19 +115,21 @@ async function addTo(key: string | null) {
 .qn-board__scroll {
   height: 100%;
   display: flex;
-  gap: 12px;
-  padding: 4px 2px 12px;
+  gap: var(--qss-gap);
   overflow-x: auto;
   overflow-y: hidden;
 }
 
+/* Lanes share the width. A single lane stops at a readable card width instead of a 1400px card. */
 .qn-board__col {
-  flex: 0 0 272px;
+  flex: 1 1 240px;
+  min-width: 240px;
+  max-width: 520px;
   display: flex;
   flex-direction: column;
   min-height: 0;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--qss-panel-radius);
   transition: border-color var(--qss-dur-fast, 120ms) ease, background var(--qss-dur-fast, 120ms) ease;
 }
 
@@ -137,15 +139,18 @@ async function addTo(key: string | null) {
 }
 
 .qn-board__head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  height: var(--qss-row-h);
+  padding: 0 2px;
 }
 
 .qn-board__count {
   color: var(--qn-text-muted);
-  font-size: 12px;
+  font-size: var(--qss-text-meta);
+  font-variant-numeric: tabular-nums;
 }
 
 .qn-board__cards {
@@ -154,17 +159,17 @@ async function addTo(key: string | null) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 0 8px 8px;
   overflow-y: auto;
 }
 
 .qn-board__card {
-  padding: 9px 11px;
-  border: 1px solid var(--qn-border);
-  border-radius: 8px;
-  background: var(--qn-bg-card);
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--qn-border-subtle);
+  border-radius: var(--qss-ctl-radius);
+  background: var(--qn-bg-sidebar);
   cursor: pointer;
-  transition: border-color var(--qss-dur-fast, 120ms) ease, transform var(--qss-dur-fast, 120ms) ease;
+  transition: border-color var(--qss-dur-fast, 120ms) ease;
 }
 
 .qn-board__card:hover {
@@ -188,17 +193,23 @@ async function addTo(key: string | null) {
 .qn-board__card-props {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 7px;
+  gap: 4px 6px;
+  margin-top: 6px;
+}
+
+.qn-board__card-props:empty {
+  display: none;
 }
 
 .qn-board__add {
-  padding: 7px 9px;
+  flex-shrink: 0;
+  height: var(--qss-ctl-h);
+  padding: 0 10px;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--qss-ctl-radius);
   background: transparent;
   color: var(--qn-text-muted);
-  font-size: 12px;
+  font-size: var(--qss-text-label);
   text-align: left;
   cursor: pointer;
 }
