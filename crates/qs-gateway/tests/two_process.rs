@@ -94,6 +94,18 @@ fn random_file(path: &Path, size: u64, seed: u64) {
     }
 }
 
+/// Waits until the server has written at least `bytes` of a part (the client
+/// queues chunks faster than its writer sends them).
+async fn part_reaches(part: &Path, bytes: u64) {
+    for _ in 0..200 {
+        if std::fs::metadata(part).map(|m| m.len() >= bytes).unwrap_or(false) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    panic!("{} never reached {bytes} bytes", part.display());
+}
+
 fn sha(path: &Path) -> String {
     qs_gateway::files::sha256_file(path).unwrap()
 }
@@ -245,15 +257,57 @@ async fn transfer_round(s: &Server, device: &Identity, size: u64) {
     random_file(&up, size / 4, 42);
     let t = Instant::now();
     assert_eq!(c.upload_until(&up, "up.bin", Some(size / 12)).await.unwrap_err(), "stopped");
+    part_reaches(&s.dir.join("transfers").join("up.bin.part"), 1 << 20).await;
     drop(c);
     let c = connect(s, device, ConnectOptions::default()).await;
     let r = c.upload(&up, "up.bin").await.unwrap();
     let secs = t.elapsed().as_secs_f64();
-    // From what the server had written: chunks still queued when the
-    // connection dropped never arrived.
-    assert!(r.resumed_from > 0 && r.resumed_from <= size / 12 + (1 << 20), "resumed at {}", r.resumed_from);
+    // From what the server had written: some of the chunks still queued
+    // when the connection dropped arrived, the rest did not.
+    assert!(r.resumed_from > 0 && r.resumed_from < size / 4, "resumed at {}", r.resumed_from);
     assert_eq!(sha(&s.dir.join("transfers").join("up.bin")), sha(&up));
     eprintln!("upload of {} MB: {secs:.1} s, resumed at byte {}", (size / 4) >> 20, r.resumed_from);
+}
+
+#[tokio::test]
+async fn a_resumed_upload_whose_part_was_damaged_is_refused_and_starts_over() {
+    let s = server("damaged", &[]);
+    let device = paired(&s).await;
+    let local_dir = s.dir.join("client");
+    std::fs::create_dir_all(&local_dir).unwrap();
+    let up = local_dir.join("bundle.bin");
+    random_file(&up, 8 << 20, 7);
+
+    let c = connect(&s, &device, ConnectOptions::default()).await;
+    assert_eq!(c.upload_until(&up, "bundle.bin", Some(3 << 20)).await.unwrap_err(), "stopped");
+    let part = s.dir.join("transfers").join("bundle.bin.part");
+    part_reaches(&part, 1 << 20).await;
+    drop(c);
+    // The part left on the server is damaged in between.
+    let mut bytes = std::fs::read(&part).unwrap();
+    bytes[1000] ^= 0xff;
+    // Windows refuses the write while the server still closes the dropped attempt's file.
+    let mut written = false;
+    for _ in 0..100 {
+        if std::fs::write(&part, &bytes).is_ok() {
+            written = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(written, "the part could be damaged");
+
+    let c = connect(&s, &device, ConnectOptions::default()).await;
+    let progress = std::sync::Mutex::new(Vec::new());
+    let e = c.upload_with(&up, "bundle.bin", None, &|sent, size| progress.lock().unwrap().push((sent, size))).await.unwrap_err();
+    assert!(e.contains("checksum does not match"), "{e}");
+    assert!(!s.dir.join("transfers").join("bundle.bin").exists(), "nothing damaged arrives");
+    assert!(!part.exists(), "the damaged part is discarded");
+    assert!(progress.lock().unwrap().last().is_some_and(|&(sent, size)| sent == size && size == 8 << 20));
+    // Sent again, it starts over and arrives whole.
+    let r = c.upload(&up, "bundle.bin").await.unwrap();
+    assert_eq!(r.resumed_from, 0);
+    assert_eq!(sha(&s.dir.join("transfers").join("bundle.bin")), sha(&up));
 }
 
 #[tokio::test]

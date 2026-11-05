@@ -30,6 +30,7 @@ pub mod system_path;
 pub mod tray;
 pub mod vault;
 pub mod gateway;
+pub mod movement;
 pub mod window;
 pub mod workspaces;
 
@@ -111,6 +112,15 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::gateway_link_status,
             commands::gateway_link_retry,
             commands::gateway_use_connection,
+            commands::move_info,
+            commands::move_export,
+            commands::move_send,
+            commands::move_cancel,
+            commands::move_remote_propose,
+            commands::move_remote_import,
+            commands::move_finish,
+            commands::move_propose,
+            commands::move_import,
             commands::gateway_connections,
             commands::gateway_connection_test,
             commands::gateway_connection_forget,
@@ -146,6 +156,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             // The server's gateway (devices, pairing, audit) and this PC's
             // connections to servers (PLAN-SERVER-CLIENT §4, card Server 3/7).
             app.manage(gateway::GatewayState::default());
+            // Moving this installation to a server (card Migration 4/4).
+            app.manage(movement::MoveState::default());
             // The broker's entry point for QuantMCP's MCP server (E4). Must
             // come after the states above — a call reads settings and state.
             agent::install(app.clone());

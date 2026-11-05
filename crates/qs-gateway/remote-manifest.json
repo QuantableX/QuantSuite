@@ -605,6 +605,15 @@
     "plugin:qs|link_entities": "server:write",
     "plugin:qs|linked_entities": "server:read",
     "plugin:qs|list_entities": "server:read",
+    "plugin:qs|move_cancel": "client:write",
+    "plugin:qs|move_export": "client:write",
+    "plugin:qs|move_finish": "client:write",
+    "plugin:qs|move_import": "server:external",
+    "plugin:qs|move_info": "client:read",
+    "plugin:qs|move_propose": "server:external",
+    "plugin:qs|move_remote_import": "client:write",
+    "plugin:qs|move_remote_propose": "client:read",
+    "plugin:qs|move_send": "client:write",
     "plugin:qs|process_list": "client:read",
     "plugin:qs|quit": "client:write",
     "plugin:qs|recent_events": "client:read",
@@ -730,6 +739,12 @@
     "systems.engine.status",
     "systems.signal.generated"
   ],
+  "timeouts": {
+    "plugin:qs|bundle_export": 3600,
+    "plugin:qs|bundle_plan": 600,
+    "plugin:qs|move_import": 3600,
+    "plugin:qs|move_propose": 1800
+  },
   "data": {
     "modules": [
       "algo",

@@ -65,6 +65,15 @@ Default permissions for the QuantSuite core plugin: settings, the event bus, the
 - `allow-gateway-link-status`
 - `allow-gateway-link-retry`
 - `allow-gateway-use-connection`
+- `allow-move-info`
+- `allow-move-export`
+- `allow-move-send`
+- `allow-move-cancel`
+- `allow-move-remote-propose`
+- `allow-move-remote-import`
+- `allow-move-finish`
+- `allow-move-propose`
+- `allow-move-import`
 - `allow-gateway-connections`
 - `allow-gateway-connection-test`
 - `allow-gateway-connection-forget`
@@ -1244,6 +1253,240 @@ Enables the list_entities command without any pre-configured scope.
 <td>
 
 Denies the list_entities command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-cancel`
+
+</td>
+<td>
+
+Enables the move_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-cancel`
+
+</td>
+<td>
+
+Denies the move_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-export`
+
+</td>
+<td>
+
+Enables the move_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-export`
+
+</td>
+<td>
+
+Denies the move_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-finish`
+
+</td>
+<td>
+
+Enables the move_finish command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-finish`
+
+</td>
+<td>
+
+Denies the move_finish command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-import`
+
+</td>
+<td>
+
+Enables the move_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-import`
+
+</td>
+<td>
+
+Denies the move_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-info`
+
+</td>
+<td>
+
+Enables the move_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-info`
+
+</td>
+<td>
+
+Denies the move_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-propose`
+
+</td>
+<td>
+
+Enables the move_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-propose`
+
+</td>
+<td>
+
+Denies the move_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-remote-import`
+
+</td>
+<td>
+
+Enables the move_remote_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-remote-import`
+
+</td>
+<td>
+
+Denies the move_remote_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-remote-propose`
+
+</td>
+<td>
+
+Enables the move_remote_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-remote-propose`
+
+</td>
+<td>
+
+Denies the move_remote_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-send`
+
+</td>
+<td>
+
+Enables the move_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-send`
+
+</td>
+<td>
+
+Denies the move_send command without any pre-configured scope.
 
 </td>
 </tr>

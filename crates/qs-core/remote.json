@@ -1,6 +1,8 @@
 {
   "$comment": "The remote manifest of the core plugin (qs), the app's own commands and the shared Tauri plugins (PLAN-SERVER-CLIENT \u00a76.2). Checked by scripts/remote-inventory.mjs and validate-modules.",
   "remote": {
+    "$timeouts": "Seconds the server waits for a long call instead of its class's default (card Migration 4/4).",
+    "timeouts": { "bundle_plan": 600, "bundle_export": 3600, "move_propose": 1800, "move_import": 3600 },
     "commands": {
       "get_settings": "server:read",
       "get_setting": "server:read",
@@ -63,6 +65,15 @@
       "gateway_link_status": "client:read",
       "gateway_link_retry": "client:write",
       "gateway_use_connection": "client:write",
+      "move_info": "client:read",
+      "move_export": "client:write",
+      "move_send": "client:write",
+      "move_cancel": "client:write",
+      "move_remote_propose": "client:read",
+      "move_remote_import": "client:write",
+      "move_finish": "client:write",
+      "move_propose": "server:external",
+      "move_import": "server:external",
       "gateway_connections": "client:read",
       "gateway_connection_test": "client:read",
       "gateway_connection_forget": "client:write"

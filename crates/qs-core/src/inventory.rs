@@ -253,9 +253,14 @@ impl PathMap {
             let start_ok = i == 0 || !chars[i - 1].is_alphanumeric();
             if start_ok {
                 for (old, new) in &self.pairs {
-                    // Match `old` (normalized, `/`-separated) at i.
+                    // Match `old` (normalized, `/`-separated) at i. `width`
+                    // is how many backslashes the store wrote per separator:
+                    // 1 plain, 2 inside JSON text, 4 inside JSON nested in a
+                    // JSON string (a tool call's input in QuantPilot's
+                    // timeline). Fewer backslashes in a row are an escape
+                    // (`\"`, `\n`), never a separator.
                     let mut j = i;
-                    let mut escaped = false;
+                    let mut width = 0usize;
                     let mut ok = true;
                     for oc in old.chars() {
                         if oc == '/' {
@@ -267,7 +272,9 @@ impl PathMap {
                                 ok = false;
                                 break;
                             }
-                            escaped |= j - run_start == 2 && chars[run_start] == '\\';
+                            if width == 0 && chars[run_start] == '\\' {
+                                width = j - run_start;
+                            }
                         } else if j < chars.len() && chars[j].to_lowercase().eq(oc.to_lowercase()) {
                             j += 1;
                         } else {
@@ -278,14 +285,21 @@ impl PathMap {
                     if !ok || !(j == chars.len() || is_sep(chars[j]) || stops(chars[j])) {
                         continue;
                     }
-                    if j + 1 < chars.len() && chars[j] == '\\' && chars[j + 1] == '\\' {
-                        escaped = true;
+                    // A prefix without a separator of its own takes the width
+                    // of the backslashes that follow it.
+                    if width == 0 {
+                        let mut k = j;
+                        while k < chars.len() && chars[k] == '\\' {
+                            k += 1;
+                        }
+                        width = (k - j).max(1);
                     }
                     let sep = if new.contains('\\') { '\\' } else { '/' };
                     let write_sep = |out: &mut String| {
-                        out.push(sep);
-                        if sep == '\\' && escaped {
-                            out.push('\\');
+                        if sep == '\\' {
+                            out.extend(std::iter::repeat('\\').take(width));
+                        } else {
+                            out.push('/');
                         }
                     };
                     for c in new.chars() {
@@ -297,11 +311,28 @@ impl PathMap {
                     }
                     // The tail of this path, separators in the new style.
                     while j < chars.len() && !stops(chars[j]) {
-                        if is_sep(chars[j]) {
-                            while j < chars.len() && is_sep(chars[j]) {
+                        if chars[j] == '/' {
+                            while j < chars.len() && chars[j] == '/' {
                                 j += 1;
                             }
                             write_sep(&mut out);
+                        } else if chars[j] == '\\' {
+                            let run_start = j;
+                            while j < chars.len() && chars[j] == '\\' {
+                                j += 1;
+                            }
+                            let run = j - run_start;
+                            if run < width {
+                                // An escape (`\"` closing a nested string, `\n`): the path ends here.
+                                j = run_start;
+                                break;
+                            }
+                            write_sep(&mut out);
+                            if run > width {
+                                // A separator, then an escape.
+                                j = run_start + width;
+                                break;
+                            }
                         } else {
                             out.push(chars[j]);
                             j += 1;
@@ -404,6 +435,13 @@ pub fn remap_sqlite(conn: &Connection, map: &PathMap) -> Result<usize, String> {
             .collect();
         for (rowid, text) in rows {
             let (new, n) = map.remap_text(&text);
+            // A cell that was JSON stays JSON: should a rewrite break it, the
+            // cell keeps its old paths rather than becoming unreadable.
+            let was_json = text.starts_with(['{', '[']) && serde_json::from_str::<Value>(&text).is_ok();
+            if n > 0 && was_json && serde_json::from_str::<Value>(&new).is_err() {
+                log::warn!("migration: {table}.{col} row {rowid}: path rewrite would break its JSON; kept as it was");
+                continue;
+            }
             if n > 0 {
                 conn.execute(
                     &format!("UPDATE \"{}\" SET \"{}\" = ?1 WHERE rowid = ?2", q(&table), q(&col)),
@@ -597,6 +635,30 @@ mod tests {
         assert!(text.contains("D:/work/B") && text.contains("C:/ProjectsOld/C"), "{text}");
         let map = PathMap::new(&[("C:/Projects/Quant", "E:/Q")]);
         assert_eq!(map.remap_text("C:/Projects/QuantSuite").1, 0, "a longer folder name is a different folder");
+
+        // JSON nested in a JSON string (QuantPilot's timeline stores a tool
+        // call's input that way): four backslashes per separator, and the
+        // backslash before the closing quote is an escape, not a separator.
+        let map = PathMap::new(&[(r"C:\Users\root\clones\qa", "D:/qa")]);
+        let cell = r#"{"input":"{\n  \"file_path\": \"C:\\\\Users\\\\root\\\\clones\\\\qa\\\\r201.txt\"\n}","isError":false}"#;
+        let inner_before: Value = serde_json::from_str(serde_json::from_str::<Value>(cell).unwrap()["input"].as_str().unwrap()).unwrap();
+        assert_eq!(inner_before["file_path"], r"C:\Users\root\clones\qa\r201.txt", "the fixture is JSON nested in JSON");
+        let (text, n) = map.remap_text(cell);
+        assert_eq!(n, 1);
+        assert!(text.contains(r#"\"D:/qa/r201.txt\"\n}"#), "{text}");
+        let outer: Value = serde_json::from_str(&text).expect("still JSON");
+        let inner: Value = serde_json::from_str(outer["input"].as_str().unwrap()).expect("the nested JSON too");
+        assert_eq!(inner["file_path"], "D:/qa/r201.txt");
+        // Into a Windows path the escaping level stays.
+        let map = PathMap::new(&[("C:/Users/root/clones/qa", r"E:\qa")]);
+        let (text, _) = map.remap_text(cell);
+        let outer: Value = serde_json::from_str(&text).expect("still JSON");
+        let inner: Value = serde_json::from_str(outer["input"].as_str().unwrap()).expect("the nested JSON too");
+        assert_eq!(inner["file_path"], r"E:\qa\r201.txt");
+        // A path right before an escaped newline in JSON text.
+        let map = PathMap::new(&[("C:/A", "D:/B")]);
+        let (text, _) = map.remap_text(r#"{"out":"saved C:\\A\\x.txt\nnext"}"#);
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["out"], "saved D:/B/x.txt\nnext");
         assert!(has_absolute_path(r"C:\x") && has_absolute_path("cwd=C:/x") && !has_absolute_path("12:30/x"));
     }
 

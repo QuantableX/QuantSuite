@@ -603,6 +603,17 @@ impl Session {
 
     #[doc(hidden)]
     pub async fn upload_until(&self, local: &Path, name: &str, stop_after: Option<u64>) -> Result<TransferReport, String> {
+        self.upload_with(local, name, stop_after, &|_, _| {}).await
+    }
+
+    /// [`Session::upload`] that reports `(bytes sent, size)` after each chunk.
+    pub async fn upload_with(
+        &self,
+        local: &Path,
+        name: &str,
+        stop_after: Option<u64>,
+        progress: &(dyn Fn(u64, u64) + Send + Sync),
+    ) -> Result<TransferReport, String> {
         let size = tokio::fs::metadata(local).await.map_err(|e| e.to_string())?.len();
         let l = local.to_path_buf();
         let sha256 = tokio::task::spawn_blocking(move || files::sha256_file(&l)).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
@@ -626,10 +637,12 @@ impl Session {
                 .await
                 .map_err(|_| "The connection to the server is closed; the upload continues next time.".to_string())?;
             pos += n as u64;
+            progress(pos, size);
             if stop_after.is_some_and(|s| pos - offset >= s) {
                 return Err("stopped".into());
             }
         }
+        progress(size, size);
         let done = self.request(id, Frame::UploadDone { id }, Duration::from_secs(600)).await.map_err(|e| e.message)?;
         let path = done.get("path").and_then(Value::as_str).unwrap_or_default().to_string();
         Ok(TransferReport { bytes: size, resumed_from: offset, sha256, path })

@@ -89,6 +89,8 @@ struct Raw {
     topics: Vec<String>,
     #[serde(default)]
     data: Data,
+    #[serde(default)]
+    timeouts: HashMap<String, u64>,
 }
 
 /// The core data of server-placed modules (§6.3.3).
@@ -107,6 +109,7 @@ pub struct Manifest {
     events: Vec<String>,
     topics: Vec<String>,
     data: Data,
+    timeouts: HashMap<String, u64>,
     hash: String,
 }
 
@@ -125,7 +128,7 @@ impl Manifest {
         }
         let normalized = json.replace("\r\n", "\n");
         let hash = hex::encode(&Sha256::digest(normalized.as_bytes())[..8]);
-        Ok(Self { commands, plugins, events: raw.events, topics: raw.topics, data: raw.data, hash })
+        Ok(Self { commands, plugins, events: raw.events, topics: raw.topics, data: raw.data, timeouts: raw.timeouts, hash })
     }
 
     /// The manifest this build was made with.
@@ -140,6 +143,7 @@ impl Manifest {
                     events: Vec::new(),
                     topics: Vec::new(),
                     data: Data::default(),
+                    timeouts: HashMap::new(),
                     hash: "invalid".into(),
                 }
             })
@@ -171,6 +175,12 @@ impl Manifest {
     /// them).
     pub fn topics(&self) -> &[String] {
         &self.topics
+    }
+
+    /// How long the server waits for this call, when it is one of the long
+    /// ones (an import, an export) rather than its class's default.
+    pub fn timeout(&self, cmd: &str) -> Option<std::time::Duration> {
+        self.timeouts.get(cmd).map(|s| std::time::Duration::from_secs(*s))
     }
 
     /// Modules and settings scopes whose core data lives on the server.

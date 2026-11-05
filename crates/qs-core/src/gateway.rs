@@ -600,6 +600,12 @@ pub struct ConnectionTest {
     pub health: Value,
 }
 
+/// A connection of its own to a saved server (the move, card Migration 4/4).
+pub async fn open_session<R: Runtime>(app: &AppHandle<R>, c: &Connection) -> Result<Session, String> {
+    let device = identity(DEVICE_IDENTITY)?;
+    client::connect(&c.address, &device, server_key(c)?, &me(app)).await.map_err(|e| e.to_string())
+}
+
 pub async fn test_connection<R: Runtime>(app: &AppHandle<R>, c: &Connection) -> Result<ConnectionTest, String> {
     let device = identity(DEVICE_IDENTITY)?;
     let t = Instant::now();
@@ -877,7 +883,7 @@ fn client_timeout(effect: Effect) -> Duration {
 pub async fn remote_call<R: Runtime>(app: &AppHandle<R>, cmd: String, args: Value) -> Result<Value, Value> {
     let link = link(app).ok_or_else(|| serde_json::json!({ "code": "local", "message": "This PC does not use a server." }))?;
     let effect = Manifest::bundled().lookup(&cmd).map(|e| e.1).unwrap_or(Effect::Read);
-    let timeout = client_timeout(effect);
+    let timeout = Manifest::bundled().timeout(&cmd).map(|t| t + Duration::from_secs(10)).unwrap_or_else(|| client_timeout(effect));
     let key = matches!(effect, Effect::Write | Effect::External).then(client::new_key);
     let session = link.session(Duration::from_secs(3)).await.ok_or_else(|| link.unreachable())?;
     match session.call_with(&cmd, args.clone(), CallOptions { key: key.clone(), timeout }).await {

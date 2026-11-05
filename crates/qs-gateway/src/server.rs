@@ -170,6 +170,9 @@ pub struct Hub {
     keyed: Mutex<HashMap<(String, String), Slot>>,
     buckets: Mutex<HashMap<String, (f64, Instant)>>,
     sums: Mutex<HashMap<PathBuf, Checksum>>,
+    /// Files an upload is writing right now: one writer per file, so a
+    /// resumed upload never interleaves with the attempt that just dropped.
+    uploading: Mutex<std::collections::HashSet<PathBuf>>,
     config: HubConfig,
 }
 
@@ -219,6 +222,7 @@ impl Hub {
             keyed: Mutex::new(HashMap::new()),
             buckets: Mutex::new(HashMap::new()),
             sums: Mutex::new(HashMap::new()),
+            uploading: Mutex::new(std::collections::HashSet::new()),
             config,
         }))
     }
@@ -614,7 +618,11 @@ impl Hub {
         for (_, h) in lock(&running).drain() {
             h.abort();
         }
-        drop(uploads);
+        for (_, mut u) in uploads.drain() {
+            // What arrived stays on disk for the next attempt.
+            let _ = u.file.flush().await;
+            lock(&self.uploading).remove(&u.target);
+        }
         if let Some(v) = lock(&self.live).get_mut(&device.id) {
             v.retain(|(id, _)| *id != sid);
         }
@@ -697,7 +705,8 @@ impl Hub {
         let Some(d) = read(&self.dispatch) else {
             return Err(CallError::new("unavailable", "The server is still starting."));
         };
-        match tokio::time::timeout(timeout_for(effect), d.call(cmd.clone(), args)).await {
+        let limit = self.manifest.timeout(&cmd).unwrap_or_else(|| timeout_for(effect));
+        match tokio::time::timeout(limit, d.call(cmd.clone(), args)).await {
             Ok(Ok(v)) => Ok(filter_result(&self.manifest, &cmd, v)),
             Ok(Err(e)) => Err(CallError::new("failed", error_text(e))),
             Err(_) => Err(CallError::new("timeout", "The server gave up waiting for this call. Check whether it took effect.")),
@@ -927,17 +936,40 @@ impl Hub {
         }
         let begun = async {
             let target = self.files().map_err(|e| e.message)?.upload_target(&name)?;
+            // The attempt that just dropped may still be finishing its last
+            // chunk: wait for it (at most 5 s) rather than write beside it.
+            let mut claimed = false;
+            for _ in 0..50 {
+                if lock(&self.uploading).insert(target.clone()) {
+                    claimed = true;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            if !claimed {
+                return Err("This file is still being written by another upload; try again in a moment.".to_string());
+            }
+            let release = |e: String| {
+                lock(&self.uploading).remove(&target);
+                e
+            };
             let (part, meta) = files::part_paths(&target);
             let tag = format!("{size} {sha256}");
             let resumable = tokio::fs::read_to_string(&meta).await.ok().is_some_and(|m| m == tag);
             let have = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
             let offset = if resumable && have <= size { have } else { 0 };
             if offset == 0 {
-                tokio::fs::write(&meta, tag.as_bytes()).await.map_err(|e| e.to_string())?;
+                tokio::fs::write(&meta, tag.as_bytes()).await.map_err(|e| release(e.to_string()))?;
             }
-            let mut file = tokio::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&part).await.map_err(|e| e.to_string())?;
-            file.set_len(offset).await.map_err(|e| e.to_string())?;
-            file.seek(std::io::SeekFrom::Start(offset)).await.map_err(|e| e.to_string())?;
+            let mut file = tokio::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(&part)
+                .await
+                .map_err(|e| release(e.to_string()))?;
+            file.set_len(offset).await.map_err(|e| release(e.to_string()))?;
+            file.seek(std::io::SeekFrom::Start(offset)).await.map_err(|e| release(e.to_string()))?;
             Ok::<_, String>(Upload { file, part, meta, target, size, sha256, written: offset })
         }
         .await;
@@ -960,10 +992,17 @@ impl Hub {
         } else if u.written + data.len() as u64 > u.size {
             Err("More data than announced.".to_string())
         } else {
-            u.file.write_all(data).await.map_err(|e| e.to_string()).map(|_| u.written += data.len() as u64)
+            // Written through to the OS before the next chunk: the part on disk
+            // is always what `written` says, for a resume after a drop.
+            match u.file.write_all(data).await {
+                Ok(()) => u.file.flush().await.map_err(|e| e.to_string()).map(|_| u.written += data.len() as u64),
+                Err(e) => Err(e.to_string()),
+            }
         };
         if let Err(e) = r {
-            uploads.remove(&id);
+            if let Some(u) = uploads.remove(&id) {
+                lock(&self.uploading).remove(&u.target);
+            }
             reply_result(out, id, Err(CallError::new("failed", e))).await;
         }
     }
@@ -973,6 +1012,7 @@ impl Hub {
             return reply_result(out, id, Err(CallError::new("failed", "No such upload."))).await;
         };
         let device = self.current(device_id);
+        let target = u.target.clone();
         let finished = async {
             u.file.flush().await.map_err(|e| e.to_string())?;
             u.file.sync_all().await.map_err(|e| e.to_string())?;
@@ -992,6 +1032,7 @@ impl Hub {
             Ok(json!({ "path": files::display(&u.target), "size": u.size, "sha256": u.sha256 }))
         }
         .await;
+        lock(&self.uploading).remove(&target);
         self.audit(device.as_ref(), "gateway|upload_done", if finished.is_ok() { "ok" } else { "error" }, finished.as_ref().err().map(String::as_str));
         reply_result(out, id, finished.map_err(|e| CallError::new("failed", e))).await;
     }

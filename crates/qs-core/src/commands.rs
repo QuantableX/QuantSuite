@@ -626,3 +626,70 @@ pub fn gateway_connection_forget(id: String, db_state: State<'_, Db>) -> Result<
     let conn = db_state.0.lock().map_err(map_err)?;
     gateway::forget_connection(&conn, &id)
 }
+
+// ── Moving this installation to the server (PLAN-MIGRATION §2.3, card 4) ──
+
+use crate::movement;
+
+#[tauri::command(async)]
+pub fn move_info(db_state: State<'_, Db>) -> Result<movement::MoveInfo, String> {
+    let conn = db_state.0.lock().map_err(map_err)?;
+    Ok(movement::info(&conn))
+}
+
+/// Step 1 on the PC that moves: the bundle, into `<data root>-move/`.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn move_export<R: Runtime>(
+    app: AppHandle<R>,
+    connection: String,
+    passphrase: String,
+    include: Option<std::collections::BTreeMap<String, bool>>,
+) -> Result<movement::MoveInfo, String> {
+    movement::export(&app, &connection, zeroize::Zeroizing::new(passphrase), include.unwrap_or_default()).await
+}
+
+/// Step 2: the server PIN, then the bundle over the paired connection
+/// (continuing a part the server kept).
+#[tauri::command]
+pub async fn move_send<R: Runtime>(app: AppHandle<R>, connection: String, pin: String) -> Result<serde_json::Value, String> {
+    movement::send(&app, &connection, &pin).await
+}
+
+#[tauri::command(async)]
+pub fn move_cancel<R: Runtime>(app: AppHandle<R>) {
+    movement::cancel(&app)
+}
+
+/// Step 3: the server checks the bundle and proposes the path table.
+#[tauri::command]
+pub async fn move_remote_propose<R: Runtime>(app: AppHandle<R>, passphrase: String) -> Result<serde_json::Value, String> {
+    movement::remote_propose(&app, &passphrase).await
+}
+
+/// Step 4: the server imports; its report.
+#[tauri::command]
+pub async fn move_remote_import<R: Runtime>(app: AppHandle<R>, passphrase: String, rows: Vec<crate::import::PathRow>) -> Result<serde_json::Value, String> {
+    movement::remote_import(&app, &passphrase, rows).await
+}
+
+/// Step 5, after the move was confirmed here: this PC uses the server from
+/// now on — QuantSuite restarts.
+#[tauri::command(async)]
+pub fn move_finish<R: Runtime>(app: AppHandle<R>, connection: String) -> Result<(), String> {
+    movement::finish(&app, &connection)?;
+    app.restart()
+}
+
+/// On the server: check a bundle that arrived from a moving PC.
+#[tauri::command]
+pub async fn move_propose(name: String, passphrase: String) -> Result<serde_json::Value, String> {
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    tauri::async_runtime::spawn_blocking(move || movement::propose(&name, &passphrase)).await.map_err(map_err)?
+}
+
+/// On the server: import it, keeping this server's gateway; restarts after a
+/// green report.
+#[tauri::command]
+pub async fn move_import<R: Runtime>(app: AppHandle<R>, name: String, passphrase: String, rows: Vec<crate::import::PathRow>) -> Result<crate::import::Report, String> {
+    movement::import(&app, name, zeroize::Zeroizing::new(passphrase), rows).await
+}

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-move-remote-import"
+description = "Enables the move_remote_import command without any pre-configured scope."
+commands.allow = ["move_remote_import"]
+
+[[permission]]
+identifier = "deny-move-remote-import"
+description = "Denies the move_remote_import command without any pre-configured scope."
+commands.deny = ["move_remote_import"]
