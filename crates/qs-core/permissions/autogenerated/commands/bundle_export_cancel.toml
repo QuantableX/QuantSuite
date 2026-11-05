@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-bundle-export-cancel"
+description = "Enables the bundle_export_cancel command without any pre-configured scope."
+commands.allow = ["bundle_export_cancel"]
+
+[[permission]]
+identifier = "deny-bundle-export-cancel"
+description = "Denies the bundle_export_cancel command without any pre-configured scope."
+commands.deny = ["bundle_export_cancel"]

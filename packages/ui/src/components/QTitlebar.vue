@@ -36,6 +36,9 @@ const emit = defineEmits<{ (e: 'home'): void }>()
     <!-- No search trigger and no version tag here — the bar stays clean
          (user decision 2026-08-20). The palette is Ctrl+K, or the launcher
          field QuantConsole draws in its own header. -->
+    <!-- The server this PC uses (client mode only, card Server 5/7). -->
+    <slot name="status" />
+
     <span class="qss-spacer" />
 
     <QWindowControls />

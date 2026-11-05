@@ -74,6 +74,7 @@ Default permissions for the mcp module.
 - `allow-write-agent-md`
 - `allow-init-agent-md`
 - `allow-reset-agent-md`
+- `allow-export-everything`
 
 ## Permission Table
 
@@ -496,6 +497,32 @@ Enables the delete_tool command without any pre-configured scope.
 <td>
 
 Denies the delete_tool command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:allow-export-everything`
+
+</td>
+<td>
+
+Enables the export_everything command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:deny-export-everything`
+
+</td>
+<td>
+
+Denies the export_everything command without any pre-configured scope.
 
 </td>
 </tr>

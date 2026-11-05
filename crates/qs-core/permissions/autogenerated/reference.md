@@ -35,6 +35,48 @@ Default permissions for the QuantSuite core plugin: settings, the event bus, the
 - `allow-agent-call-complete`
 - `allow-vault-status`
 - `allow-vault-unlock`
+- `allow-bundle-plan`
+- `allow-bundle-export`
+- `allow-bundle-export-cancel`
+- `allow-import-propose`
+- `allow-import-bundle`
+- `allow-import-status`
+- `allow-server-status`
+- `allow-server-set-role`
+- `allow-server-set-watchdog`
+- `allow-gateway-status`
+- `allow-gateway-configure`
+- `allow-gateway-pairing-start`
+- `allow-gateway-pairing-status`
+- `allow-gateway-pairing-confirm`
+- `allow-gateway-pairing-cancel`
+- `allow-gateway-devices`
+- `allow-gateway-device-rename`
+- `allow-gateway-device-set-role`
+- `allow-gateway-device-revoke`
+- `allow-gateway-device-forget`
+- `allow-gateway-audit`
+- `allow-gateway-set-pin`
+- `allow-gateway-pair-begin`
+- `allow-gateway-pair-finish`
+- `allow-gateway-pair-current`
+- `allow-gateway-remote-call`
+- `allow-gateway-step-up`
+- `allow-gateway-link-status`
+- `allow-gateway-link-retry`
+- `allow-gateway-use-connection`
+- `allow-move-info`
+- `allow-move-export`
+- `allow-move-send`
+- `allow-move-cancel`
+- `allow-move-remote-propose`
+- `allow-move-remote-import`
+- `allow-move-finish`
+- `allow-move-propose`
+- `allow-move-import`
+- `allow-gateway-connections`
+- `allow-gateway-connection-test`
+- `allow-gateway-connection-forget`
 
 ## Permission Table
 
@@ -230,6 +272,84 @@ Denies the autostart_enabled command without any pre-configured scope.
 <tr>
 <td>
 
+`qs:allow-bundle-export`
+
+</td>
+<td>
+
+Enables the bundle_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-bundle-export`
+
+</td>
+<td>
+
+Denies the bundle_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-bundle-export-cancel`
+
+</td>
+<td>
+
+Enables the bundle_export_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-bundle-export-cancel`
+
+</td>
+<td>
+
+Denies the bundle_export_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-bundle-plan`
+
+</td>
+<td>
+
+Enables the bundle_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-bundle-plan`
+
+</td>
+<td>
+
+Denies the bundle_plan command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `qs:allow-count-entities`
 
 </td>
@@ -308,6 +428,630 @@ Denies the emit_event command without any pre-configured scope.
 <tr>
 <td>
 
+`qs:allow-gateway-audit`
+
+</td>
+<td>
+
+Enables the gateway_audit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-audit`
+
+</td>
+<td>
+
+Denies the gateway_audit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-configure`
+
+</td>
+<td>
+
+Enables the gateway_configure command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-configure`
+
+</td>
+<td>
+
+Denies the gateway_configure command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-connection-forget`
+
+</td>
+<td>
+
+Enables the gateway_connection_forget command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-connection-forget`
+
+</td>
+<td>
+
+Denies the gateway_connection_forget command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-connection-test`
+
+</td>
+<td>
+
+Enables the gateway_connection_test command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-connection-test`
+
+</td>
+<td>
+
+Denies the gateway_connection_test command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-connections`
+
+</td>
+<td>
+
+Enables the gateway_connections command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-connections`
+
+</td>
+<td>
+
+Denies the gateway_connections command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-device-forget`
+
+</td>
+<td>
+
+Enables the gateway_device_forget command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-device-forget`
+
+</td>
+<td>
+
+Denies the gateway_device_forget command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-device-rename`
+
+</td>
+<td>
+
+Enables the gateway_device_rename command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-device-rename`
+
+</td>
+<td>
+
+Denies the gateway_device_rename command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-device-revoke`
+
+</td>
+<td>
+
+Enables the gateway_device_revoke command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-device-revoke`
+
+</td>
+<td>
+
+Denies the gateway_device_revoke command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-device-set-role`
+
+</td>
+<td>
+
+Enables the gateway_device_set_role command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-device-set-role`
+
+</td>
+<td>
+
+Denies the gateway_device_set_role command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-devices`
+
+</td>
+<td>
+
+Enables the gateway_devices command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-devices`
+
+</td>
+<td>
+
+Denies the gateway_devices command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-link-retry`
+
+</td>
+<td>
+
+Enables the gateway_link_retry command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-link-retry`
+
+</td>
+<td>
+
+Denies the gateway_link_retry command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-link-status`
+
+</td>
+<td>
+
+Enables the gateway_link_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-link-status`
+
+</td>
+<td>
+
+Denies the gateway_link_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pair-begin`
+
+</td>
+<td>
+
+Enables the gateway_pair_begin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pair-begin`
+
+</td>
+<td>
+
+Denies the gateway_pair_begin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pair-current`
+
+</td>
+<td>
+
+Enables the gateway_pair_current command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pair-current`
+
+</td>
+<td>
+
+Denies the gateway_pair_current command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pair-finish`
+
+</td>
+<td>
+
+Enables the gateway_pair_finish command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pair-finish`
+
+</td>
+<td>
+
+Denies the gateway_pair_finish command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pairing-cancel`
+
+</td>
+<td>
+
+Enables the gateway_pairing_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pairing-cancel`
+
+</td>
+<td>
+
+Denies the gateway_pairing_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pairing-confirm`
+
+</td>
+<td>
+
+Enables the gateway_pairing_confirm command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pairing-confirm`
+
+</td>
+<td>
+
+Denies the gateway_pairing_confirm command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pairing-start`
+
+</td>
+<td>
+
+Enables the gateway_pairing_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pairing-start`
+
+</td>
+<td>
+
+Denies the gateway_pairing_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-pairing-status`
+
+</td>
+<td>
+
+Enables the gateway_pairing_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-pairing-status`
+
+</td>
+<td>
+
+Denies the gateway_pairing_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-remote-call`
+
+</td>
+<td>
+
+Enables the gateway_remote_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-remote-call`
+
+</td>
+<td>
+
+Denies the gateway_remote_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-set-pin`
+
+</td>
+<td>
+
+Enables the gateway_set_pin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-set-pin`
+
+</td>
+<td>
+
+Denies the gateway_set_pin command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-status`
+
+</td>
+<td>
+
+Enables the gateway_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-status`
+
+</td>
+<td>
+
+Denies the gateway_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-step-up`
+
+</td>
+<td>
+
+Enables the gateway_step_up command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-step-up`
+
+</td>
+<td>
+
+Denies the gateway_step_up command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-gateway-use-connection`
+
+</td>
+<td>
+
+Enables the gateway_use_connection command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-gateway-use-connection`
+
+</td>
+<td>
+
+Denies the gateway_use_connection command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `qs:allow-get-setting`
 
 </td>
@@ -353,6 +1097,84 @@ Enables the get_settings command without any pre-configured scope.
 <td>
 
 Denies the get_settings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-import-bundle`
+
+</td>
+<td>
+
+Enables the import_bundle command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-import-bundle`
+
+</td>
+<td>
+
+Denies the import_bundle command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-import-propose`
+
+</td>
+<td>
+
+Enables the import_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-import-propose`
+
+</td>
+<td>
+
+Denies the import_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-import-status`
+
+</td>
+<td>
+
+Enables the import_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-import-status`
+
+</td>
+<td>
+
+Denies the import_status command without any pre-configured scope.
 
 </td>
 </tr>
@@ -431,6 +1253,240 @@ Enables the list_entities command without any pre-configured scope.
 <td>
 
 Denies the list_entities command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-cancel`
+
+</td>
+<td>
+
+Enables the move_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-cancel`
+
+</td>
+<td>
+
+Denies the move_cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-export`
+
+</td>
+<td>
+
+Enables the move_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-export`
+
+</td>
+<td>
+
+Denies the move_export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-finish`
+
+</td>
+<td>
+
+Enables the move_finish command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-finish`
+
+</td>
+<td>
+
+Denies the move_finish command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-import`
+
+</td>
+<td>
+
+Enables the move_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-import`
+
+</td>
+<td>
+
+Denies the move_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-info`
+
+</td>
+<td>
+
+Enables the move_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-info`
+
+</td>
+<td>
+
+Denies the move_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-propose`
+
+</td>
+<td>
+
+Enables the move_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-propose`
+
+</td>
+<td>
+
+Denies the move_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-remote-import`
+
+</td>
+<td>
+
+Enables the move_remote_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-remote-import`
+
+</td>
+<td>
+
+Denies the move_remote_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-remote-propose`
+
+</td>
+<td>
+
+Enables the move_remote_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-remote-propose`
+
+</td>
+<td>
+
+Denies the move_remote_propose command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-move-send`
+
+</td>
+<td>
+
+Enables the move_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-move-send`
+
+</td>
+<td>
+
+Denies the move_send command without any pre-configured scope.
 
 </td>
 </tr>
@@ -561,6 +1617,84 @@ Enables the search_entities command without any pre-configured scope.
 <td>
 
 Denies the search_entities command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-server-set-role`
+
+</td>
+<td>
+
+Enables the server_set_role command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-server-set-role`
+
+</td>
+<td>
+
+Denies the server_set_role command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-server-set-watchdog`
+
+</td>
+<td>
+
+Enables the server_set_watchdog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-server-set-watchdog`
+
+</td>
+<td>
+
+Denies the server_set_watchdog command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:allow-server-status`
+
+</td>
+<td>
+
+Enables the server_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`qs:deny-server-status`
+
+</td>
+<td>
+
+Denies the server_status command without any pre-configured scope.
 
 </td>
 </tr>

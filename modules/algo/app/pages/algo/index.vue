@@ -64,9 +64,18 @@ const killError = ref<string | null>(null)
 async function loadKillSwitch() {
   try {
     killOn.value = await invoke<boolean>('plugin:algo|trading_kill_switch_status')
+    notices.value = await invoke<{ imported: { from: string; at: string } | null; moved: { at: string } | null }>('plugin:algo|trading_notices')
   } catch (e) {
     killError.value = String(e)
   }
+}
+
+// Migration (PLAN-MIGRATION §2.2): an import arrived here, or this machine moved away.
+const notices = ref<{ imported: { from: string; at: string } | null; moved: { at: string } | null }>({ imported: null, moved: null })
+
+async function dismissImported() {
+  await invoke('plugin:algo|trading_notice_dismiss')
+  notices.value = { ...notices.value, imported: null }
 }
 
 async function setKillSwitch(on: boolean) {
@@ -135,6 +144,13 @@ onDeactivated(() => {
         <button v-else class="btn btn-sm kill__btn" @click="killConfirm = true">Stop all trading</button>
       </div>
     </QPageHeading>
+    <div v-if="notices.moved" class="kill__report text-warning">
+      This installation moved to another machine on {{ notices.moved.at.slice(0, 10) }}: trading stays off here. Turn "Stop all trading" off only if you mean to trade from this machine again.
+    </div>
+    <div v-if="notices.imported" class="kill__report">
+      Imported from {{ notices.imported.from }} on {{ notices.imported.at.slice(0, 10) }}: bots are stopped and Manual execution is disarmed. Arm trading on this machine when ready.
+      <button class="btn btn-sm" @click="dismissImported">OK</button>
+    </div>
     <div v-if="killError" class="kill__report text-error">{{ killError }}</div>
     <div v-if="killReport" class="kill__report">
       {{ killReport.bots_stopped }} bot(s) stopped, {{ killReport.systems_disarmed }} system(s) disarmed, {{ killReport.orders_cancelled.length }} order(s) cancelled.
@@ -190,6 +206,13 @@ onDeactivated(() => {
             <span class="kv__label">Strategies</span>
             <span class="kv__value mono">{{ strategiesStore.strategies.length }}</span>
           </div>
+        </div>
+        <div class="exposure-mini">
+          <span class="kv__label">Exposure per venue</span>
+          <AlgoExchangeExposurePanel compact />
+        </div>
+        <div class="exposure-mini">
+          <AlgoExchangePerpPositions />
         </div>
       </div>
 
@@ -296,6 +319,13 @@ onDeactivated(() => {
 </template>
 
 <style scoped>
+.exposure-mini {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .kill {
   display: flex;
   align-items: center;

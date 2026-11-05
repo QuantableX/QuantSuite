@@ -56,6 +56,12 @@ pub fn apply_launch_visibility<R: Runtime>(app: &AppHandle<R>) {
         log::info!("started by autostart — staying in the tray");
         return;
     }
+    // A server runs in the tray; its window opens from the tray for local
+    // admin (PLAN-SERVER-CLIENT §5).
+    if crate::server::starts_hidden() {
+        log::info!("server mode — staying in the tray");
+        return;
+    }
     window::show(app);
 }
 

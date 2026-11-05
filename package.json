@@ -23,6 +23,7 @@
     "check:rust": "cargo clippy --workspace --all-targets",
     "test:mcp": "node scripts/test-mcp-server.mjs",
     "test:script": "node --test scripts/test-script-workbench.mjs",
+    "test:seam": "node --test scripts/test-seam-routing.mjs",
     "check:distribution": "node scripts/check-distribution.mjs",
     "test:distribution": "node --test scripts/test-distribution.mjs",
     "test:systems": "node --test scripts/test-systems-queue.mjs scripts/test-systems-groups.mjs",

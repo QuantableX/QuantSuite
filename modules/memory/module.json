@@ -327,5 +327,47 @@
         "required": ["path", "description"]
       }
     }
-  ]
+  ],
+  "remote": {
+    "commands": {
+      "list_memories": "client:read",
+      "get_memory": "client:read",
+      "create_memory": "client:write",
+      "update_memory": "client:write",
+      "append_memory": "client:write",
+      "rename_memory": "client:write",
+      "set_memory_meta": "client:write",
+      "delete_memory": "client:write",
+      "restore_memory": "client:write",
+      "list_trash": "client:read",
+      "purge_trash": "client:write",
+      "search_memories": "client:read",
+      "get_backlinks": "client:read",
+      "get_graph": "client:read",
+      "get_orphans": "client:read",
+      "get_unresolved_links": "client:read",
+      "suggest_connections": "client:compute",
+      "get_stats": "client:read",
+      "get_vault_info": "client:read",
+      "set_vault_path": "client:write",
+      "reindex_vault": "client:write",
+      "list_tags": "client:read",
+      "list_scopes": "client:read",
+      "sync_base": "client:write",
+      "list_base": "client:read",
+      "get_base": "client:read",
+      "describe_base": "client:read",
+      "memory_context": "client:read",
+      "get_embedding_config": "client:read",
+      "set_embedding_config": "client:write",
+      "index_embeddings": "client:write",
+      "embedding_engine_status": "client:read",
+      "embedding_engine_setup": "client:read",
+      "embedding_engine_stop": "client:write",
+      "embedding_engine_logs": "client:read",
+      "set_memory_quality": "client:write",
+      "review_memory_quality": "client:read",
+      "get_memory_review_queue": "client:read"
+    }
+  }
 }

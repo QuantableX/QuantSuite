@@ -29,6 +29,8 @@ pub struct Capabilities {
     pub sub_accounts: bool,
     /// A dry run the venue validates but never executes (Binance `order/test`).
     pub test_orders: bool,
+    /// Real market orders: `OrderRequest::market` goes out as one.
+    pub market_orders: bool,
 }
 
 /// One tradable market: the lot and price rules plus the market type.
@@ -88,6 +90,16 @@ impl Instrument {
     }
 
     /// Whether `qty` at `price` clears the venue's minimums.
+    /// The worst price of a market-like order at `MARKET_DEPTHS[depth]`.
+    pub fn market_worst_price(&self, side: Side, best: f64, depth: usize) -> f64 {
+        let far = MARKET_DEPTHS[depth.min(MARKET_DEPTHS.len() - 1)];
+        let price = match side {
+            Side::Buy => best * (1.0 + far),
+            Side::Sell => best * (1.0 - far),
+        };
+        self.round_price(price, side)
+    }
+
     pub fn tradable(&self, qty: f64, price: f64) -> bool {
         qty > 0.0 && qty + 1e-12 >= self.filters.min_qty && qty * price + 1e-9 >= self.filters.min_notional
     }
@@ -109,6 +121,25 @@ pub struct VenuePosition {
     pub side: String,
     pub size: f64,
     pub entry_price: f64,
+    /// Perp: where the venue liquidates it, the mark price, the leverage and
+    /// the margin it holds (Venues 4/5).
+    #[serde(default)]
+    pub liquidation_price: Option<f64>,
+    #[serde(default)]
+    pub mark_price: Option<f64>,
+    #[serde(default)]
+    pub leverage: Option<f64>,
+    #[serde(default)]
+    pub margin: Option<f64>,
+}
+
+impl VenuePosition {
+    /// The distance from the mark to the liquidation price, as a share of
+    /// the mark.
+    pub fn liquidation_distance(&self) -> Option<f64> {
+        let (liq, mark) = (self.liquidation_price?, self.mark_price.or(Some(self.entry_price))?);
+        (mark > 0.0).then(|| (mark - liq).abs() / mark)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,10 +167,23 @@ pub struct OrderRequest {
     pub side: Side,
     /// Base quantity, already on the lot step.
     pub qty: f64,
-    /// The slippage cap, on the tick.
+    /// The worst price, on the tick. Not used when the order goes out as a
+    /// real market order.
     pub limit_price: f64,
     pub reduce_only: bool,
+    /// An order from a system's signal, which goes through whatever the price
+    /// does (user rule, 2026-11-05): a market order where the venue has one. A
+    /// venue without them takes `limit_price` as its worst price (IOC), set far
+    /// enough away to fill like one; see [`MARKET_DEPTHS`].
+    #[serde(default)]
+    pub market: bool,
 }
+
+/// How far from the best price the worst price of a market-like order is, on a
+/// venue without market orders. It fills against the book like a market order.
+/// The next depth is for a venue that refuses a price that far from the market,
+/// or checks the balance at it.
+pub const MARKET_DEPTHS: [f64; 4] = [0.5, 0.2, 0.05, 0.01];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -341,6 +385,12 @@ pub trait ExecutionVenue: Send + Sync {
     fn cancel(&self, instrument: &Instrument, client_order_id: &str) -> Result<(), String>;
     /// Client ids of the orders still open on the instrument (IOC orders
     /// never rest, so normally none). Venues without resting orders: none.
+    /// The maintenance margin of a perp instrument, as a share of the
+    /// notional (Hyperliquid: half the initial margin at max leverage).
+    fn maintenance_margin(&self, _instrument: &Instrument) -> Option<f64> {
+        None
+    }
+
     fn open_orders(&self, _instrument: &Instrument) -> Result<Vec<String>, String> {
         Ok(Vec::new())
     }

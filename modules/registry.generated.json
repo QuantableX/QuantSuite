@@ -1553,6 +1553,70 @@
       }
     },
     {
+      "tool": "quantsuite.algo.stop_all_trading",
+      "module": "algo",
+      "name": "stop_all_trading",
+      "command": "plugin:algo|trading_kill_switch",
+      "description": "\"Stop all trading\" (PLAN-AUTO-EXECUTION §2.6): on=true stops every bot, disarms every Manual system and cancels QuantSuite's open orders — it never sells, and reports what stays on the exchanges. on=false allows trading again without re-arming or restarting anything.",
+      "sideEffects": "external",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "on": {
+            "type": "boolean",
+            "description": "true = stop all trading, false = allow it again."
+          }
+        },
+        "required": [
+          "on"
+        ]
+      }
+    },
+    {
+      "tool": "quantsuite.algo.list_venues",
+      "module": "algo",
+      "name": "list_venues",
+      "command": "plugin:algo|venue_list",
+      "description": "Every connected exchange account and what it can execute (PLAN-EXECUTION-VENUES): market types, quote asset, whether the execution core can trade on it.",
+      "sideEffects": "read"
+    },
+    {
+      "tool": "quantsuite.algo.venue_coverage",
+      "module": "algo",
+      "name": "venue_coverage",
+      "command": "plugin:algo|venue_mapping",
+      "description": "Which of the given coins an account's venue can trade, mapped by verified id (never by name), with the direct pairs between them and the coins it does not list.",
+      "sideEffects": "read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "exchange_id": {
+            "type": "string",
+            "description": "The account (list_venues)."
+          },
+          "symbols": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Coin symbols, e.g. a system's universe."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "spot",
+              "perp"
+            ],
+            "description": "spot (default) or perp (Hyperliquid accounts)."
+          }
+        },
+        "required": [
+          "exchange_id",
+          "symbols"
+        ]
+      }
+    },
+    {
       "tool": "quantsuite.algo.list_systems",
       "module": "algo",
       "name": "list_systems",
@@ -2277,6 +2341,35 @@
             "description": "The task's key or id; empty = the whole crew."
           }
         }
+      }
+    },
+    {
+      "tool": "quantsuite.mcp.export_everything",
+      "module": "mcp",
+      "name": "export_everything",
+      "command": "plugin:mcp|export_everything",
+      "description": "Export the whole suite into one encrypted .qsbundle (PLAN-MIGRATION §2.1): every module's data and settings, the vault's secrets re-encrypted under the passphrase. Refuses while live trading is armed. The file holds every key, so this is external: only on the user's explicit request.",
+      "sideEffects": "external",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dest_dir": {
+            "type": "string",
+            "description": "Folder to write <machine>-<date>.qsbundle into."
+          },
+          "passphrase": {
+            "type": "string",
+            "description": "At least 12 characters; it cannot be recovered."
+          },
+          "include": {
+            "type": "object",
+            "description": "Optional parts by inventory pattern to true/false (default: the inventory's defaults)."
+          }
+        },
+        "required": [
+          "dest_dir",
+          "passphrase"
+        ]
       }
     },
     {

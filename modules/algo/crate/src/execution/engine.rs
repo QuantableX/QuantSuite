@@ -8,10 +8,12 @@
 //! 5. Holdings: what the owner held when the run started plus every fill
 //!    of this run, capped at what the venue really holds.
 //! 6. Step until the target holds: the route for a switch (direct pair or
-//!    through the quote asset), sells first, then the buy. Every order is an
-//!    IOC limit at the slippage cap, passes the order guards, is written
-//!    before it is sent, and is booked after. A partial fill is retried up to
-//!    three times, then the run stops and reports. A direct order gets one
+//!    through the quote asset), sells first, then the buy. Every order follows
+//!    the signal whatever the price does: a market order, or on a venue without
+//!    them an IOC order with a far worst price. It passes the order guards, is
+//!    written before it is sent, and is booked after. A partial fill is retried
+//!    up to three times, then the run stops and reports, and the scheduler
+//!    tries the run again while its window is open. A direct order gets one
 //!    attempt; what it leaves goes through the quote asset.
 //! 7. Save holdings and the run record.
 //!
@@ -29,7 +31,7 @@ use serde_json::Value;
 use super::guards::{self, GuardConfig, OrderCheck, RunContext};
 use super::route::{self, DirectMarket, RouteKind, SwitchInputs};
 use super::store::{FillBooking, Holdings, OrderRecord, OrderState, RunRecord, RunStatus, RunStore, Target};
-use super::venue::{free_balance, ExecutionVenue, Instrument, OrderReport, OrderRequest, OrderStatus, Side};
+use super::venue::{MARKET_DEPTHS, free_balance, ExecutionVenue, Instrument, OrderReport, OrderRequest, OrderStatus, Side};
 use crate::runtime::Mode;
 
 /// Partial fills: retries after the first attempt.
@@ -61,7 +63,14 @@ pub struct RunRequest {
     pub initial_capital: Option<f64>,
     /// Or everything it starts with (a whole sub-account); wins over the capital.
     pub initial_holdings: Option<Holdings>,
+    /// Perp: the position's leverage, already checked against the cap
+    /// (Venues 4/5). 1 on spot.
+    pub leverage: f64,
 }
+
+/// A maintenance margin to assume when the venue does not tell one: the
+/// highest Hyperliquid tier (assets with 3x max leverage).
+pub const DEFAULT_MAINTENANCE_MARGIN: f64 = 1.0 / 6.0;
 
 /// One run per account at a time, across every caller in the process.
 pub struct AccountLock(String);
@@ -159,6 +168,13 @@ struct Exec<'a> {
     dusted: HashSet<String>,
     /// The direct order was refused or too small without reaching the venue.
     direct_skipped: bool,
+    /// The venue trades perp: positions instead of balances, shorts allowed.
+    perp: bool,
+    /// Which `MARKET_DEPTHS` the venue accepts, on a venue without market orders.
+    depth: usize,
+    /// Orders from before this attempt at the run: only this attempt's count
+    /// towards its retries.
+    resumed_from: usize,
 }
 
 impl Engine {
@@ -220,8 +236,13 @@ impl Engine {
             return Self::finish(store, rec, RunStatus::Failed, Some(e), t0);
         }
         let caps = venue.capabilities();
-        if !caps.spot || !caps.ioc_limit {
-            let why = format!("{} cannot take spot IOC limit orders, which this engine sends", venue.label());
+        if !(caps.spot || caps.perp) || !caps.ioc_limit {
+            let why = format!("{} cannot take IOC limit orders, which this engine sends", venue.label());
+            return Self::finish(store, rec, RunStatus::Failed, Some(why), t0);
+        }
+        let perp = caps.perp && !caps.spot;
+        if !perp && matches!(req.target, Target::Short(_)) {
+            let why = format!("{} is spot: a short needs a perp market", venue.label());
             return Self::finish(store, rec, RunStatus::Failed, Some(why), t0);
         }
         if !caps.client_order_ids {
@@ -229,6 +250,7 @@ impl Engine {
         }
 
         let orders = store.orders(&req.run_id)?;
+        let resumed_from = orders.len();
         let mut x = Exec {
             engine: self,
             store,
@@ -240,6 +262,9 @@ impl Engine {
             fees: BTreeMap::new(),
             dusted: HashSet::new(),
             direct_skipped: false,
+            perp,
+            depth: 0,
+            resumed_from,
         };
         let outcome = x.settle_open_orders().and_then(|()| x.init_holdings()).and_then(|()| x.drive());
         let Exec { mut rec, holdings, .. } = x;
@@ -391,8 +416,36 @@ impl Exec<'_> {
             .venue
             .balances()
             .map_err(|e| Stop(RunStatus::Failed, format!("reading the balances: {e}")))?;
+        let shorts: Vec<(String, f64)> = if self.perp {
+            self.venue
+                .positions()
+                .map_err(|e| Stop(RunStatus::Failed, format!("reading the positions: {e}")))?
+                .into_iter()
+                .filter(|p| p.side == "short")
+                .map(|p| (p.symbol, p.size))
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.rec.timings.insert("balances".into(), t.elapsed().as_millis() as u64);
+        let quote = self.req.quote.clone();
         for (asset, qty) in holdings.iter_mut() {
+            if self.perp && asset.eq_ignore_ascii_case(&quote) {
+                // On perp the books' cash is margin plus realised PnL, not
+                // the venue's free balance (a short's proceeds stay books).
+                continue;
+            }
+            if *qty < 0.0 {
+                let short = shorts.iter().filter(|(s, _)| s.eq_ignore_ascii_case(asset)).map(|(_, q)| q).sum::<f64>();
+                if -*qty > short + 1e-9 {
+                    self.rec.notes.push(format!(
+                        "{asset}: the system's books say short {}, the venue holds short {short}; using what the venue holds",
+                        -*qty
+                    ));
+                    *qty = -short;
+                }
+                continue;
+            }
             let on_venue = free_balance(&balances, asset);
             if *qty > on_venue + 1e-9 {
                 self.rec.notes.push(format!(
@@ -401,13 +454,13 @@ impl Exec<'_> {
                 *qty = on_venue.max(0.0);
             }
         }
-        holdings.retain(|_, q| *q > 1e-12);
+        holdings.retain(|_, q| q.abs() > 1e-12);
         self.holdings = holdings;
         Ok(())
     }
 
     fn attempts(&self, leg: &str) -> usize {
-        self.orders.iter().filter(|o| o.leg == leg && o.state != OrderState::NotSent).count()
+        self.orders[self.resumed_from..].iter().filter(|o| o.leg == leg && o.state != OrderState::NotSent).count()
     }
 
     /// A leg whose last order filled completely is done: what is left of it
@@ -426,11 +479,15 @@ impl Exec<'_> {
     }
 
     fn drive(&mut self) -> Result<(), Stop> {
+        if self.perp {
+            return self.drive_perp();
+        }
         let quote = self.req.quote.clone();
         let target = match &self.req.target {
             Target::Flat => None,
             Target::Hold(asset) if asset.eq_ignore_ascii_case(&quote) => None,
             Target::Hold(asset) => Some(asset.clone()),
+            Target::Short(_) => return Err(Stop(RunStatus::Failed, "a short needs a perp market".into())),
         };
         for _ in 0..MAX_STEPS {
             // What to sell: every asset the owner holds that is not the target.
@@ -496,7 +553,7 @@ impl Exec<'_> {
                 let leg = format!("sell:{asset}");
                 self.leg_guard(&leg, &inst)?;
                 let reference = self.reference_for(&inst);
-                match self.execute(&leg, &inst, Side::Sell, qty, None, reference)? {
+                match self.execute(&leg, &inst, Side::Sell, qty, None, reference, false)? {
                     OrderOutcome::Refused(e) => return Err(Stop(RunStatus::Failed, format!("{leg}: the venue refused the order: {e}"))),
                     OrderOutcome::TooSmall => {
                         self.rec.dust.push(format!("{asset}: {qty} is below the venue's minimum at the current price and stays as dust"));
@@ -510,7 +567,7 @@ impl Exec<'_> {
                 let leg = format!("buy:{asset}");
                 self.leg_guard(&leg, &inst)?;
                 let reference = self.reference_for(&inst);
-                match self.execute(&leg, &inst, Side::Buy, 0.0, Some(cash), reference)? {
+                match self.execute(&leg, &inst, Side::Buy, 0.0, Some(cash), reference, false)? {
                     OrderOutcome::Refused(e) => return Err(Stop(RunStatus::Failed, format!("{leg}: the venue refused the order: {e}"))),
                     OrderOutcome::TooSmall => return Ok(()),
                     OrderOutcome::Report(_) => {}
@@ -519,6 +576,112 @@ impl Exec<'_> {
             }
         }
         Err(Stop(RunStatus::Failed, format!("the run did not settle after {MAX_STEPS} steps")))
+    }
+
+    /// Perp (Venues 4/5): close every position that is not the target with
+    /// reduce-only orders, then open the target — long or short — at the
+    /// run's leverage on the owner's equity, after the liquidation guard.
+    fn drive_perp(&mut self) -> Result<(), Stop> {
+        let quote = self.req.quote.clone();
+        let (want, dir) = match &self.req.target {
+            Target::Flat => (None, 0.0),
+            Target::Hold(a) if a.eq_ignore_ascii_case(&quote) => (None, 0.0),
+            Target::Hold(a) => (Some(a.clone()), 1.0),
+            Target::Short(a) => (Some(a.clone()), -1.0),
+        };
+        let leverage = self.req.leverage.max(1.0);
+        for _ in 0..MAX_STEPS {
+            // 1. What is held and not the target closes, reduce-only.
+            let held: Vec<(String, f64)> = self
+                .holdings
+                .iter()
+                .filter(|(a, q)| !a.eq_ignore_ascii_case(&quote) && q.abs() > 1e-12)
+                .map(|(a, q)| (a.clone(), *q))
+                .collect();
+            let mut closing = None;
+            for (asset, qty) in held {
+                let keep = want.as_deref() == Some(asset.as_str()) && qty * dir > 0.0;
+                let leg = format!("close:{asset}");
+                if keep || self.dusted.contains(&asset) || self.leg_filled(&leg) {
+                    continue;
+                }
+                let inst = self.instrument(&asset, &quote)?;
+                let q = inst.filters.round_qty_down(qty.abs());
+                if !inst.tradable(q, self.reference(&asset).unwrap_or(0.0)) {
+                    self.rec.dust.push(format!("{asset}: {} left below the venue's minimum stays open", qty));
+                    self.dusted.insert(asset);
+                    continue;
+                }
+                closing = Some((leg, inst, q, if qty > 0.0 { Side::Sell } else { Side::Buy }));
+                break;
+            }
+            if let Some((leg, inst, q, side)) = closing {
+                self.leg_guard(&leg, &inst)?;
+                let reference = self.reference_for(&inst);
+                match self.execute(&leg, &inst, side, q, None, reference, true)? {
+                    OrderOutcome::Refused(e) => return Err(Stop(RunStatus::Failed, format!("{leg}: the venue refused the order: {e}"))),
+                    OrderOutcome::TooSmall => {
+                        self.dusted.insert(inst.base().to_string());
+                    }
+                    OrderOutcome::Report(_) => {}
+                }
+                continue;
+            }
+            // 2. The target, sized on the owner's equity × leverage.
+            let Some(t) = want.clone() else { return Ok(()) };
+            let leg = format!("open:{t}");
+            if self.leg_filled(&leg) {
+                return Ok(());
+            }
+            let inst = self.instrument(&t, &quote)?;
+            let price = self
+                .reference(&t)
+                .ok_or_else(|| Stop(RunStatus::Failed, format!("no reference price for {t}")))?;
+            let position = self.holdings.get(&t).copied().unwrap_or(0.0);
+            let cash = self.holdings.get(&quote).copied().unwrap_or(0.0);
+            let equity = cash + position * price;
+            let fee = self.taker_fee(&inst);
+            let target_qty = equity * leverage * (1.0 - fee) / (price * 1.006);
+            let remaining = inst.filters.round_qty_down(target_qty - position.abs());
+            if equity <= 0.0 || !inst.tradable(remaining, price) {
+                return Ok(());
+            }
+            self.liquidation_guard(&inst, leverage, dir < 0.0)?;
+            self.leg_guard(&leg, &inst)?;
+            let side = if dir > 0.0 { Side::Buy } else { Side::Sell };
+            let reference = self.reference_for(&inst);
+            match self.execute(&leg, &inst, side, remaining, None, reference, false)? {
+                OrderOutcome::Refused(e) => return Err(Stop(RunStatus::Failed, format!("{leg}: the venue refused the order: {e}"))),
+                OrderOutcome::TooSmall => return Ok(()),
+                OrderOutcome::Report(_) => {}
+            }
+        }
+        Err(Stop(RunStatus::Failed, format!("the run did not settle after {MAX_STEPS} steps")))
+    }
+
+    /// Refuse a perp position that would open closer to its liquidation
+    /// price than the user's limit (Venues 4/5).
+    fn liquidation_guard(&mut self, inst: &Instrument, leverage: f64, short: bool) -> Result<(), Stop> {
+        let mmr = self.venue.maintenance_margin(inst).unwrap_or(DEFAULT_MAINTENANCE_MARGIN);
+        let distance = guards::liquidation_distance(leverage, mmr);
+        let check = guards::liquidation_guard(&inst.pair(), distance, self.engine.guards.min_liquidation_distance);
+        let ok = check.ok;
+        let detail = check.detail.clone();
+        if !self.rec.guards.iter().any(|g| g.name == check.name && g.detail == check.detail) {
+            self.rec.guards.push(check);
+        }
+        if !ok {
+            self.save()?;
+            return Err(Stop(RunStatus::GuardStopped, format!("liquidation_distance: {detail}")));
+        }
+        if let Some(price) = self.reference(inst.base()) {
+            let liq = guards::liquidation_price(price, leverage, mmr, short);
+            let line = format!("{} {}x: liquidation near {liq:.4} ({:.1} % away)", inst.pair(), leverage, distance * 100.0);
+            if !self.rec.notes.contains(&line) {
+                self.rec.notes.push(line);
+            }
+        }
+        Ok(())
     }
 
     /// Stop after the first attempt plus `max_retries` retries of a leg.
@@ -592,9 +755,9 @@ impl Exec<'_> {
         let leg = format!("direct:{from}>{to}");
         let reference = self.reference_for(&inst);
         let outcome = if inst.base().eq_ignore_ascii_case(from) {
-            self.execute(&leg, &inst, Side::Sell, qty_from, None, reference)?
+            self.execute(&leg, &inst, Side::Sell, qty_from, None, reference, false)?
         } else {
-            self.execute(&leg, &inst, Side::Buy, 0.0, Some(qty_from), reference)?
+            self.execute(&leg, &inst, Side::Buy, 0.0, Some(qty_from), reference, false)?
         };
         match outcome {
             OrderOutcome::Report(r) if r.status != OrderStatus::Filled => self
@@ -621,8 +784,9 @@ impl Exec<'_> {
         Ok(())
     }
 
-    /// One IOC limit order at the slippage cap: guards, write-ahead, send,
-    /// settle, book. `spend` sizes a buy in the instrument's quote.
+    /// One order from the signal, with no price limit: guards, write-ahead,
+    /// send, settle, book. `spend` sizes a buy in the instrument's quote.
+    #[allow(clippy::too_many_arguments)]
     fn execute(
         &mut self,
         leg: &str,
@@ -631,42 +795,29 @@ impl Exec<'_> {
         qty: f64,
         spend: Option<f64>,
         reference: Option<f64>,
+        reduce_only: bool,
     ) -> Result<OrderOutcome, Stop> {
         let t = Instant::now();
         let book = self
             .venue
             .order_book(inst)
             .map_err(|e| Stop(RunStatus::Failed, format!("{}: order book: {e}", inst.pair())))?;
-        let slip = self.engine.guards.max_slippage;
-        let (best, limit) = match side {
-            Side::Buy => {
-                let best = book.best_ask().ok_or_else(|| Stop(RunStatus::Failed, format!("{}: no asks", inst.pair())))?;
-                (best, inst.round_price(best * (1.0 + slip), Side::Buy))
-            }
-            Side::Sell => {
-                let best = book.best_bid().ok_or_else(|| Stop(RunStatus::Failed, format!("{}: no bids", inst.pair())))?;
-                (best, inst.round_price(best * (1.0 - slip), Side::Sell))
-            }
+        let best = match side {
+            Side::Buy => book.best_ask().ok_or_else(|| Stop(RunStatus::Failed, format!("{}: no asks", inst.pair())))?,
+            Side::Sell => book.best_bid().ok_or_else(|| Stop(RunStatus::Failed, format!("{}: no bids", inst.pair())))?,
         };
+        let market_orders = self.venue.capabilities().market_orders;
+        let limit = if market_orders { 0.0 } else { inst.market_worst_price(side, best, self.depth) };
         let fee = self.taker_fee(inst);
         // A buy is sized from the book, with 0.1 % room for a price move
         // between reading the book and the order arriving.
         let qty = match spend {
-            Some(cash) => inst.filters.round_qty_down(book.walk_buy_quote(cash * (1.0 - fee) / 1.001, Some(limit)).base),
+            Some(cash) => inst.filters.round_qty_down(book.walk_buy_quote(cash * (1.0 - fee) / 1.001, None).base),
             None => inst.filters.round_qty_down(qty),
         };
         if !inst.tradable(qty, best) {
             return Ok(OrderOutcome::TooSmall);
         }
-        let walk = match side {
-            Side::Buy => book.walk_buy_base(qty, None),
-            Side::Sell => book.walk_sell_base(qty, None),
-        };
-        let expected_slippage = if walk.complete && walk.base > 0.0 {
-            (walk.avg_price() / best - 1.0).abs()
-        } else {
-            f64::INFINITY
-        };
         let quote_usd = self.quote_usd(inst)?;
         let mid = book.mid().unwrap_or(best);
         let value = qty * mid * quote_usd;
@@ -681,7 +832,7 @@ impl Exec<'_> {
                 value,
                 venue_price: mid,
                 reference_price: reference,
-                expected_slippage,
+                buying: side == Side::Buy,
                 turnover_today: turnover,
             },
         );
@@ -697,12 +848,13 @@ impl Exec<'_> {
         let seq = self.orders.len() as u32 + 1;
         let client_order_id = format!("qs{}-{:02}", compact(&self.req.run_id), seq);
         let request = OrderRequest {
+            market: true,
             client_order_id: client_order_id.clone(),
             instrument: inst.clone(),
             side,
             qty,
             limit_price: limit,
-            reduce_only: false,
+            reduce_only,
         };
         self.orders.push(OrderRecord {
             client_order_id: client_order_id.clone(),
@@ -724,11 +876,13 @@ impl Exec<'_> {
         let i = self.orders.len() - 1;
         self.store.save_order(&self.orders[i], &self.req.exchange_id).map_err(|e| Stop(RunStatus::Failed, e))?;
 
+        let mut venue_said_no = false;
         let outcome = match self.venue.place(&request) {
             Ok(report) => {
                 self.orders[i].state = OrderState::Done;
                 self.orders[i].report = Some(report.clone());
                 if report.status == OrderStatus::Rejected {
+                    venue_said_no = true;
                     OrderOutcome::Refused(report.message.clone().unwrap_or_else(|| "rejected".into()))
                 } else {
                     OrderOutcome::Report(report)
@@ -761,6 +915,14 @@ impl Exec<'_> {
         };
         self.orders[i].updated_at = now_rfc3339();
         self.store.save_order(&self.orders[i], &self.req.exchange_id).map_err(|e| Stop(RunStatus::Failed, e))?;
+        if let (true, false, OrderOutcome::Refused(why)) = (venue_said_no, market_orders, &outcome) {
+            if self.depth + 1 < MARKET_DEPTHS.len() {
+                self.rec.notes.push(format!("{client_order_id}: refused at a worst price {:.0} % from the best ({why}); closer", MARKET_DEPTHS[self.depth] * 100.0));
+                self.depth += 1;
+                self.save()?;
+                return self.execute(leg, inst, side, qty, spend, reference, reduce_only);
+            }
+        }
         if let OrderOutcome::Report(_) = outcome {
             self.book(i);
         }

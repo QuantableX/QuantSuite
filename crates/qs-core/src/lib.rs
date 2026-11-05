@@ -12,11 +12,15 @@
 pub mod agent;
 pub mod apps;
 pub mod autostart;
+pub mod bundle;
 pub mod bus;
 pub mod commands;
 pub mod diagnostics;
 pub mod embeddings;
+pub mod import;
+pub mod inventory;
 pub mod runtime;
+pub mod server;
 pub mod db;
 pub mod migrations;
 pub mod paths;
@@ -25,6 +29,8 @@ pub mod shutdown;
 pub mod system_path;
 pub mod tray;
 pub mod vault;
+pub mod gateway;
+pub mod movement;
 pub mod window;
 pub mod workspaces;
 
@@ -76,8 +82,53 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::agent_call_complete,
             commands::vault_status,
             commands::vault_unlock,
+            commands::bundle_plan,
+            commands::bundle_export,
+            commands::bundle_export_cancel,
+            commands::import_propose,
+            commands::import_bundle,
+            commands::import_status,
+            commands::server_status,
+            commands::server_set_role,
+            commands::server_set_watchdog,
+            commands::gateway_status,
+            commands::gateway_configure,
+            commands::gateway_pairing_start,
+            commands::gateway_pairing_status,
+            commands::gateway_pairing_confirm,
+            commands::gateway_pairing_cancel,
+            commands::gateway_devices,
+            commands::gateway_device_rename,
+            commands::gateway_device_set_role,
+            commands::gateway_device_revoke,
+            commands::gateway_device_forget,
+            commands::gateway_audit,
+            commands::gateway_set_pin,
+            commands::gateway_pair_begin,
+            commands::gateway_pair_finish,
+            commands::gateway_pair_current,
+            commands::gateway_remote_call,
+            commands::gateway_step_up,
+            commands::gateway_link_status,
+            commands::gateway_link_retry,
+            commands::gateway_use_connection,
+            commands::move_info,
+            commands::move_export,
+            commands::move_send,
+            commands::move_cancel,
+            commands::move_remote_propose,
+            commands::move_remote_import,
+            commands::move_finish,
+            commands::move_propose,
+            commands::move_import,
+            commands::gateway_connections,
+            commands::gateway_connection_test,
+            commands::gateway_connection_forget,
         ]))
         .setup(|app, _api| {
+            // A staged import takes the data root's place before anything
+            // opens it (PLAN-MIGRATION §2.2 step 4).
+            import::apply_pending(&paths::root());
             paths::ensure()?;
 
             // First, so every line below actually lands somewhere, and so the
@@ -90,6 +141,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             // plugin's setup reads its own scope or data directory.
             migrations::run(&conn)?;
             migrations::run_zen_to_notes(&conn)?;
+            // The role (local, server, client) before any module's setup asks
+            // for it: a client never starts executors (PLAN-SERVER-CLIENT §5).
+            server::init(&conn);
             app.manage(Db(std::sync::Mutex::new(conn)));
             app.manage(Bus::new());
             // A map of what the modules run, not an owner of it — module
@@ -99,6 +153,11 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             app.manage(tray::TrayRegistry::default());
             app.manage(shutdown::Teardown::new());
             app.manage(agent::AgentBroker::default());
+            // The server's gateway (devices, pairing, audit) and this PC's
+            // connections to servers (PLAN-SERVER-CLIENT §4, card Server 3/7).
+            app.manage(gateway::GatewayState::default());
+            // Moving this installation to a server (card Migration 4/4).
+            app.manage(movement::MoveState::default());
             // The broker's entry point for QuantMCP's MCP server (E4). Must
             // come after the states above — a call reads settings and state.
             agent::install(app.clone());
@@ -106,6 +165,12 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             runtime::install(app.clone());
 
             tray::init(app)?;
+            // A server listens on its chosen address (LAN or tailnet); a
+            // client connects to the server it uses.
+            gateway::start(app);
+            if let Ok(conn) = app.state::<Db>().0.lock() {
+                gateway::start_link(app, &conn);
+            }
             // No geometry to restore: the suite window is always maximised
             // (launcher and app differ only by the circular region), and
             // QuantHUD's overlays place themselves in `tauri-plugin-hud`. The

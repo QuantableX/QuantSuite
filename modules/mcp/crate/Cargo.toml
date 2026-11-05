@@ -34,6 +34,7 @@ futures = "0.3"
 tower-http = { version = "0.6", features = ["cors"] }
 
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
+zeroize = "1"
 qs-mcp-bridge = { path = "../../../crates/qs-mcp-bridge" }
 
 [lints.rust]

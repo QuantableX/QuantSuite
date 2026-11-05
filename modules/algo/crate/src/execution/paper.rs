@@ -93,9 +93,10 @@ impl<'a> PaperVenue<'a> {
 
     /// The fill a book gives an IOC order, with the paper slippage on top.
     pub fn simulate(&self, order: &OrderRequest, book: &OrderBook) -> OrderReport {
+        let limit = (!order.market).then_some(order.limit_price);
         let walk = match order.side {
-            Side::Buy => book.walk_buy_base(order.qty, Some(order.limit_price)),
-            Side::Sell => book.walk_sell_base(order.qty, Some(order.limit_price)),
+            Side::Buy => book.walk_buy_base(order.qty, limit),
+            Side::Sell => book.walk_sell_base(order.qty, limit),
         };
         let qty = order.instrument.filters.round_qty_down(walk.base);
         if qty <= 0.0 {
@@ -146,6 +147,70 @@ impl ExecutionVenue for PaperVenue<'_> {
     }
 
     fn balances(&self) -> Result<Vec<VenueBalance>, String> {
+        let rows = self.paper_rows()?;
+        // On perp a negative row is a short: a position, not a balance.
+        Ok(rows.into_iter().filter(|b| !self.perp() || b.free >= 0.0).collect())
+    }
+
+    fn positions(&self) -> Result<Vec<VenuePosition>, String> {
+        if !self.perp() {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .paper_rows()?
+            .into_iter()
+            .filter(|b| !matches!(b.asset.as_str(), "USDC" | "USDT" | "USD") && b.free.abs() > 1e-12)
+            .map(|b| VenuePosition {
+                symbol: b.asset,
+                side: if b.free > 0.0 { "long" } else { "short" }.into(),
+                size: b.free.abs(),
+                entry_price: 0.0,
+                liquidation_price: None,
+                mark_price: None,
+                leverage: None,
+                margin: None,
+            })
+            .collect())
+    }
+
+    fn maintenance_margin(&self, instrument: &Instrument) -> Option<f64> {
+        self.market.maintenance_margin(instrument)
+    }
+
+    fn order_book(&self, instrument: &Instrument) -> Result<OrderBook, String> {
+        self.market.order_book(instrument)
+    }
+
+    fn fee_schedule(&self, _instrument: &Instrument) -> Result<FeeSchedule, String> {
+        Ok(FeeSchedule { maker: self.fee_rate, taker: self.fee_rate })
+    }
+
+    fn place(&self, order: &OrderRequest) -> Result<OrderReport, String> {
+        self.place_paper(order)
+    }
+
+    fn cancel(&self, _instrument: &Instrument, _client_order_id: &str) -> Result<(), String> {
+        // IOC: nothing ever rests in the paper book.
+        Ok(())
+    }
+
+    fn query_by_client_id(&self, _instrument: &Instrument, client_order_id: &str) -> Result<Option<OrderReport>, String> {
+        self.paper_order(client_order_id)
+    }
+
+    fn test_order(&self, order: &OrderRequest) -> Result<String, String> {
+        Ok(format!("paper: {} {} {} accepted", order.side.as_str(), order.qty, order.instrument.pair()))
+    }
+}
+
+impl PaperVenue<'_> {
+    /// Paper on a perp book: a sell may open a short (Venues 4/5).
+    fn perp(&self) -> bool {
+        let caps = self.market.capabilities();
+        caps.perp && !caps.spot
+    }
+
+    fn paper_rows(&self) -> Result<Vec<VenueBalance>, String> {
         let conn = self.lock()?;
         let mut stmt = conn
             .prepare("SELECT asset, qty FROM paper_balances WHERE owner = ?1 AND venue = ?2")
@@ -158,20 +223,8 @@ impl ExecutionVenue for PaperVenue<'_> {
         rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
     }
 
-    fn positions(&self) -> Result<Vec<VenuePosition>, String> {
-        Ok(Vec::new())
-    }
-
-    fn order_book(&self, instrument: &Instrument) -> Result<OrderBook, String> {
-        self.market.order_book(instrument)
-    }
-
-    fn fee_schedule(&self, _instrument: &Instrument) -> Result<FeeSchedule, String> {
-        Ok(FeeSchedule { maker: self.fee_rate, taker: self.fee_rate })
-    }
-
-    fn place(&self, order: &OrderRequest) -> Result<OrderReport, String> {
-        if let Some(existing) = self.query_by_client_id(&order.instrument, &order.client_order_id)? {
+    fn place_paper(&self, order: &OrderRequest) -> Result<OrderReport, String> {
+        if let Some(existing) = self.paper_order(&order.client_order_id)? {
             return Ok(existing);
         }
         let book = self.market.order_book(&order.instrument)?;
@@ -184,7 +237,9 @@ impl ExecutionVenue for PaperVenue<'_> {
                 Side::Buy => (Self::balance(&tx, &self.owner, &self.venue_key, &quote)?, report.quote_amount + report.fee_amount, &quote),
                 Side::Sell => (Self::balance(&tx, &self.owner, &self.venue_key, &base)?, report.filled_qty, &base),
             };
-            if need > have + 1e-9 {
+            // On perp a sell opens or adds to a short; the books carry it.
+            let shorting = self.perp() && order.side == Side::Sell;
+            if need > have + 1e-9 && !shorting {
                 OrderReport::empty(
                     &order.client_order_id,
                     OrderStatus::Rejected,
@@ -220,21 +275,12 @@ impl ExecutionVenue for PaperVenue<'_> {
         Ok(report)
     }
 
-    fn cancel(&self, _instrument: &Instrument, _client_order_id: &str) -> Result<(), String> {
-        // IOC: nothing ever rests in the paper book.
-        Ok(())
-    }
-
-    fn query_by_client_id(&self, _instrument: &Instrument, client_order_id: &str) -> Result<Option<OrderReport>, String> {
+    fn paper_order(&self, client_order_id: &str) -> Result<Option<OrderReport>, String> {
         let conn = self.lock()?;
         let json: Option<String> = conn
             .query_row("SELECT report_json FROM paper_orders WHERE client_order_id = ?1", params![client_order_id], |r| r.get(0))
             .optional()
             .map_err(db_err)?;
         json.map(|j| serde_json::from_str(&j).map_err(|e| format!("paper order: {e}"))).transpose()
-    }
-
-    fn test_order(&self, order: &OrderRequest) -> Result<String, String> {
-        Ok(format!("paper: {} {} {} accepted", order.side.as_str(), order.qty, order.instrument.pair()))
     }
 }

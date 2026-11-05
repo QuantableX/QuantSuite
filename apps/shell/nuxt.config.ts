@@ -5,6 +5,26 @@ import tailwindcss from '@tailwindcss/vite'
 
 const uiComponents = fileURLToPath(new URL('../../packages/ui/src/components', import.meta.url))
 
+// The client-mode seam (PLAN-SERVER-CLIENT §6.1, card Server 5/7): every
+// import of `@tauri-apps/api/core` in the app's own code resolves to
+// app/seam/core.ts, which routes `invoke` to the server this PC uses and
+// imports the real module itself. Tauri's runtime object cannot be wrapped —
+// it is non-writable — so the seam sits at the import. Dependencies that
+// bundle their own import (the Tauri plugins' guest code) stay local, as their
+// commands are placed on the PC you sit at.
+const seamCore = fileURLToPath(new URL('./app/seam/core.ts', import.meta.url))
+function tauriSeam() {
+  return {
+    name: 'qs-tauri-seam',
+    enforce: 'pre' as const,
+    resolveId(source: string, importer?: string) {
+      if (source !== '@tauri-apps/api/core') return null
+      const from = (importer ?? '').replace(/\\/g, '/').split('?')[0] ?? ''
+      return from.endsWith('/app/seam/core.ts') ? null : seamCore
+    },
+  }
+}
+
 // The workspace packages, pinned to THIS checkout. npm links
 // `node_modules/@quantsuite/{core,ui}` to the main checkout by absolute path,
 // and a card worktree (`.qs-worktrees/<id>/`) shares the main `node_modules`
@@ -98,7 +118,7 @@ export default defineNuxtConfig({
   vite: {
     // The single Tailwind pass for the whole app. Module stylesheets must NOT
     // carry their own `@import 'tailwindcss'` — see ARCHITECTURE.md §9.
-    plugins: [tailwindcss()],
+    plugins: [tailwindcss(), tauriSeam()],
     clearScreen: false,
     server: { strictPort: true },
     envPrefix: ['VITE_', 'TAURI_'],

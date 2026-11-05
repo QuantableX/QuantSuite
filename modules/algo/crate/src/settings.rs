@@ -23,6 +23,20 @@ pub(crate) fn default_paper_fee_pct() -> f64 {
     DEFAULT_PAPER_FEE_PCT
 }
 
+/// Perp (Venues 4/5): the highest leverage a system or bot may set, and how
+/// far from its liquidation price a position must open.
+pub(crate) const DEFAULT_PERP_MAX_LEVERAGE: f64 = 3.0;
+pub(crate) const DEFAULT_PERP_MIN_LIQUIDATION_DISTANCE_PCT: f64 = 20.0;
+pub(crate) const MAX_PERP_LEVERAGE: f64 = 20.0;
+
+pub(crate) fn default_perp_max_leverage() -> f64 {
+    DEFAULT_PERP_MAX_LEVERAGE
+}
+
+pub(crate) fn default_perp_min_liquidation_distance_pct() -> f64 {
+    DEFAULT_PERP_MIN_LIQUIDATION_DISTANCE_PCT
+}
+
 pub(crate) const DEFAULT_BUDGET: f64 = 10_000.0;
 pub(crate) const MIN_BUDGET: f64 = 100.0;
 pub(crate) const DEFAULT_WARMUP_CANDLES: u32 = 200;
@@ -132,6 +146,8 @@ pub fn get_default_settings() -> AppSettings {
         paper_fee_pct: DEFAULT_PAPER_FEE_PCT,
         default_budget: DEFAULT_BUDGET,
         default_warmup_candles: DEFAULT_WARMUP_CANDLES,
+        perp_max_leverage: DEFAULT_PERP_MAX_LEVERAGE,
+        perp_min_liquidation_distance_pct: DEFAULT_PERP_MIN_LIQUIDATION_DISTANCE_PCT,
         defaults_version: BOT_DEFAULTS_VERSION,
         notify_on_trade: true,
         notify_on_error: true,
@@ -284,6 +300,12 @@ pub(crate) fn validate_app_settings(settings: &AppSettings) -> Result<(), String
     }
     if !(2..=MAX_WARMUP_CANDLES).contains(&settings.default_warmup_candles) {
         return Err(format!("Warm-up candles must be between 2 and {MAX_WARMUP_CANDLES}."));
+    }
+    if !(settings.perp_max_leverage >= 1.0 && settings.perp_max_leverage <= MAX_PERP_LEVERAGE && settings.perp_max_leverage.fract() == 0.0) {
+        return Err(format!("The perp leverage cap is a whole number from 1 to {MAX_PERP_LEVERAGE:.0}."));
+    }
+    if !(settings.perp_min_liquidation_distance_pct >= 0.0 && settings.perp_min_liquidation_distance_pct < 100.0) {
+        return Err("The minimum liquidation distance is between 0 and 100 %.".into());
     }
     Ok(())
 }

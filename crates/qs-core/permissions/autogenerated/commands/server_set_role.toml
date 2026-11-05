@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-server-set-role"
+description = "Enables the server_set_role command without any pre-configured scope."
+commands.allow = ["server_set_role"]
+
+[[permission]]
+identifier = "deny-server-set-role"
+description = "Denies the server_set_role command without any pre-configured scope."
+commands.deny = ["server_set_role"]

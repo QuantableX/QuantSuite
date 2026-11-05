@@ -1,6 +1,6 @@
 # QuantSuite server and client — one QuantSuite, used from every PC
 
-Status: plan, 2026-11-03. Nothing here is built yet. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
+Status: plan, 2026-11-03; card 1 (spike) and card 2 (server mode) done 2026-11-04, cards 3 (pairing, mutual TLS), 4 (gateway), 5 (client mode), 6 (over the internet) and 7 (developer modules decided: they stay on each PC) 2026-11-05 — see §6.3 and §6.3.1–6.3.10; the test from outside (§7.1) is yours. Cards "QuantSuite Server 1/7" to "7/7" on the QuantSuite board. Moving the data onto the server is [PLAN-MIGRATION.md](PLAN-MIGRATION.md).
 
 ## In short
 
@@ -75,6 +75,8 @@ QuantMCP's port 3100 stays loopback-only on every machine.
 | Headscale | Self-hosted Tailscale control server — choose it if you want no third party at all. Same clients. |
 | Plain WireGuard | Works; you manage keys, port forwarding on one UDP port and dynamic DNS yourself. |
 | Router port forwarding to QuantSuite | Rejected: the whole internet can knock. |
+
+**Headscale, set up** (only if you want no third party): run Headscale (https://github.com/juanfont/headscale) on a machine reachable from the internet (a small VPS; the home server itself would need a forwarded port, which this plan avoids), create a user and a pre-auth key (`headscale users create you`, `headscale preauthkeys create --user you`), and sign each PC in with the normal Tailscale app pointed at it: `tailscale up --login-server https://headscale.example.com --authkey <key>`. QuantSuite sees the same 100.x addresses and MagicDNS names; nothing else changes.
 | Cloudflare Tunnel | Rejected for this: TLS ends at Cloudflare, so a third party sits inside the trading connection. |
 
 ### 4.3 What if …
@@ -102,7 +104,7 @@ QuantMCP's port 3100 stays loopback-only on every machine.
 
 ### 6.1 One seam on the client
 
-Client mode wraps `window.__TAURI_INTERNALS__.invoke`. A command the manifest places on the server goes to the gateway; a client command goes to Tauri as today. Event listening (`plugin:event|listen`) and the suite bus are bridged the same way. Module code does not change.
+Client mode routes every `invoke`: a command the manifest places on the server goes to the gateway; a client command goes to Tauri as today. Module code does not change. Built in card 5 (§6.3.8): the seam sits at the import of `@tauri-apps/api/core`, because Tauri's runtime object cannot be wrapped (§6.3.4 risk 10), and events need no seam — the Rust side re-emits the server's events here.
 
 ### 6.2 The remote manifest
 
@@ -117,6 +119,225 @@ Every `module.json` gets a `remote` section: per command `server`, `client` or `
 | C | A Tauri-free service layer per module; Tauri commands and the gateway both call it | True headless daemon (Linux, Docker) | Large refactor of 602 commands |
 
 The spike measures latency and memory of A and B and records the decision here. Going in: B if it works without patching Tauri, otherwise A. C only if a Linux or Docker server becomes a goal.
+
+**Decision (card Server 1/7, 2026-11-04): B.** `crates/qs-core/tests/remote_dispatch_spike.rs` performs calls through `Webview::on_message` with the app's own invoke key (`AppHandle::invoke_key()`, public in Tauri 2.11.5) and a local origin URL, so the ACL resolves exactly as for the UI's own calls. No Tauri patch. Measured on Tauri's mock runtime (the IPC path itself, without WebView2), 2,000 calls each:
+
+| Call (async commands, as every suite command must be) | Option B per call |
+|---|---|
+| read (a list from managed state) | 0.22 ms |
+| write (an insert into managed state) | 0.18 ms |
+| streaming (10 events to listeners, then the result) | 0.24 ms |
+
+Most of that is the async hand-off to Tauri's runtime: the same calls as synchronous commands took 12 µs, 12 µs and 59 µs. Either way it is far below one network round trip.
+
+- A wrong invoke key is dropped without an answer (the key never leaves the server). An unknown command answers with an error.
+- Plugin commands need the ACL to resolve. The server dispatches as its main window's webview, which carries the app's capabilities. A second, restricted capability for remote devices is a card 3 option, not a need.
+- Memory: B needs the server's main webview to exist (hidden in server mode). A needs the same webview plus a JS hop per call, so B costs no more.
+- A was not measured: it needs a live WebView2 window, and the app window is the user's. By design it adds two WebView2 IPC crossings and a JS event round trip on top of exactly the path measured above.
+- C, costed: a Tauri-free service layer for 652 commands means touching every command body and its state access (each plugin's `State<...>` and `AppHandle` use). Estimate: 4 to 6 weeks of refactoring across 15 crates. Only worth it for a Linux or Docker server.
+
+### 6.3.1 The remote manifest, built (card Server 1/7)
+
+Every `module.json` has a `remote` block, and the core plugin (`qs`), the app's own commands and the shared Tauri plugins have `crates/qs-core/remote.json`. Each command is `"name": "<server|client|deny>:<read|compute|write|external>"`. `scripts/validate-modules.mjs` (via `scripts/remote-inventory.mjs`) fails when a registered command (its plugin's `build.rs` list) has no entry, an entry is not of that form, or an entry names no command. `node scripts/remote-inventory.mjs --init` adds a first classification for new commands, which must be reviewed. `--table` prints:
+
+| Plugin | Commands | server | client | deny | read | compute | write | external |
+|---|---|---|---|---|---|---|---|---|
+| pilot | 186 | 0 | 186 | 0 | 73 | 6 | 55 | 52 |
+| algo | 81 | 80 | 0 | 1 | 43 | 10 | 21 | 7 |
+| mcp | 71 | 0 | 71 | 0 | 35 | 1 | 32 | 3 |
+| canvas | 47 | 0 | 47 | 0 | 23 | 1 | 15 | 8 |
+| hud | 47 | 0 | 47 | 0 | 23 | 1 | 18 | 5 |
+| memory | 38 | 0 | 38 | 0 | 22 | 1 | 15 | 0 |
+| core | 37 | 3 | 34 | 0 | 15 | 2 | 20 | 0 |
+| script | 29 | 28 | 0 | 1 | 12 | 3 | 10 | 4 |
+| notes | 26 | 26 | 0 | 0 | 8 | 0 | 18 | 0 |
+| finance | 20 | 20 | 0 | 0 | 7 | 0 | 13 | 0 |
+| plan | 20 | 20 | 0 | 0 | 8 | 0 | 12 | 0 |
+| systems | 18 | 17 | 1 | 0 | 7 | 2 | 9 | 0 |
+| console | 11 | 0 | 11 | 0 | 3 | 0 | 7 | 1 |
+| habit | 11 | 11 | 0 | 0 | 4 | 0 | 7 | 0 |
+| terminal | 10 | 10 | 0 | 0 | 10 | 0 | 0 | 0 |
+| **all** | **652** | 215 | 435 | 2 | 293 | 27 | 252 | 80 |
+
+- **server**: the trading and personal-data modules (§3), plus the bundle export (the data root is the server's).
+- **client**: QuantPilot, QuantCode/Canvas, console, QuantMCP, memory, HUD, the core's settings, entities, windows, autostart and agent broker, the app's update commands, and the shared Tauri plugins (dialog, fs, shell, clipboard, global shortcut, autostart, updater, window/webview/event/app). These act on the PC you sit at.
+- **deny**: `algo/wallet_export_key` (secrets never leave the server) and `script/open_scripts_folder` (the server's explorer). The remote file browser and downloads (card 4) replace dialogs and folders.
+- **external** on the server (server PIN, card 3): arming Manual execution, starting a live bot, closing positions, the kill switch, adding, changing or deleting an exchange key, the collection's GitHub token, and installing research or collection items.
+- The side-effect classes of client commands are informational: they run locally as today.
+
+### 6.3.2 Events a server-placed module emits (card Server 1/7)
+
+| Module | Tauri events (manifest `remote.events`) | Bus topics (`qs://event`) |
+|---|---|---|
+| QuantAlgo | `bot:log` (emitted to the window `main`), `bot:trade`, `bot:heartbeat`, `bot:paused`, `algo:kill-switch`, `algo:manual-run` | `algo.bot.started`, `algo.bot.stopped`, `algo.trade.executed`, `algo.backtest.completed` |
+| QuantSystems | `engine:status`, `eval:progress`, `backtest:complete`, `cache:updated` | `systems.engine.status`, `systems.backtest.completed`, `systems.signal.generated` |
+| QuantScript | none | `script.file.saved`, `script.file.created`, `script.file.deleted`, `script.collection.changed` |
+| QuantTerminal | none | `market.symbol.selected`, `market.data.refreshed` |
+| Finance, Notes, Plan, Habit | none | `finance.plan.changed`, `notes.note.created`, `notes.note.updated`, `plan.event.created`, `plan.event.updated`, `habit.habit.changed` |
+
+How they reach a client (card 4): the gateway listens with `listen_any` to every event in the manifests' `remote.events` and to the bus channel `qs://event`. An event emitted to a window label (`bot:log` to `main`) is still heard. Each event goes out as an `event` frame with a sequence number. The client re-emits it locally under the same name, so module code keeps its `listen` calls. Bus topics of client-placed modules stay local. A client module subscribing to a server topic (QuantPilot listening to `notes.note.updated`) gets it through the bridge.
+
+### 6.3.3 Data split (card Server 1/7)
+
+| `core.db` part | Server | Client | How the client sees both |
+|---|---|---|---|
+| `settings` | Keys of server modules and the shared data plane (`notes/sections`, `todos/sections`: the quick notes and to-dos of the drawer and the HUD are personal data) | Appearance, window layout, HUD placement, the open workspace, connection profiles | Routed by key prefix (card 5) |
+| `entities`, `links` | Entities of server modules (notes, events, finance items, habits, systems, bots) | Workspaces (`module: core, kind: workspace`) and the developer modules' entities | Entity commands route by their `module` argument. The command palette queries both and merges by score (card 5) |
+| `event_log` (bus history) | Its own | Its own | Server events forwarded by the gateway enter the client's log |
+| `secrets` / the vault | Exchange keys, wallets, API wallets (trading keys stay home) | The device key (card 3) | Never synced |
+| Workspace registry, kanban, code index, memory vaults | none | Per PC (phase 1) | Card 7 decides |
+
+### 6.3.4 Risks for cards 2 to 7 (card Server 1/7)
+
+1. **Hidden main webview.** B dispatches through the main window's webview. Server mode (card 2) must keep it alive while hidden, and a close request must hide it, not destroy it.
+2. **Commands that take a `Window` or `Webview` argument** act on the server's hidden window (e.g. positioning). They are placed client-side today; new ones must be too.
+3. **Paths in arguments and results.** Some server commands return or accept local paths (strategy files, backtest exports, the bundle). Card 4's files layer must translate them, or the client shows a server path it cannot open.
+4. **Streaming via `Channel`.** Commands that answer through a Tauri `Channel` (rather than events) need channel forwarding in the gateway. None of the server-placed commands uses one today; the validator could flag new ones.
+5. **Bus echo.** Frontends call `emit_event` themselves. With a bridge, a server topic re-emitted on the client must not be sent back (loop guard by origin id).
+6. **Mixed modules.** QuantAlgo has secrets (`wallet_export_key`, denied) next to ordinary commands. New commands default to the module's placement: a reviewer must check what `--init` guessed.
+7. **Settings by prefix** needs one table of prefixes kept in sync with the modules; a wrong prefix silently writes to the wrong machine.
+8. **One trader.** A client still has the trading plugins compiled. Card 2's guard must stop executors on a connected client, not only hide the UI.
+9. **Version skew.** The manifest is part of the protocol. A client and server with different manifests must refuse to connect (card 4's `hello` carries a manifest hash).
+10. **The seam cannot be patched at runtime** (found in card 4): `window.__TAURI_INTERNALS__` and every function on it (`invoke`, `ipc`, `postMessage`, …) are defined non-writable and non-configurable. Card 5 cannot wrap `invoke` in the page; it must replace the imports instead — a Vite alias for `@tauri-apps/api/core` (and `/event`, whose `listen` calls the package's own `invoke`) pointing at a suite module that routes by the manifest and re-exports the rest.
+
+### 6.3.5 Built: server mode (card Server 2/7, 2026-11-04)
+
+- **Role** (`qs_core::server`): `local` (default), `server` or `client`, stored as the core setting `server.role` and read at setup before any module's setup. `--server` makes a launch a server whatever the setting says. Settings → Server → "Run as server" switches between local and server (from the next start). A PC becomes a client only by connecting to a server (card 5).
+- **Tray only**: a server launch stays in the tray (`main` is created hidden and kept; closing it hides it, as before). The window opens from the tray icon.
+- **Start at boot**: the existing "Start QuantSuite with Windows" entry (HKCU Run) under a dedicated, automatically signed-in Windows user.
+- **Watchdog**: Settings → Server → "Restart QuantSuite when it exits" creates the Task Scheduler entry *QuantSuite Server Watchdog*. It runs `QuantSuite.exe --server --watchdog` every 5 minutes in the user's session (`/IT`). While the suite runs, the single-instance guard swallows that relaunch without showing the window. After a crash or a kill, it starts the suite again in the tray.
+- **One trader**: `qs_core::server::executors_allowed()` refuses on a client. QuantAlgo checks it when a bot starts, when a Manual system is armed, in every nightly attempt, and at startup: no scheduler, no funding reader, no bot resumes on a client. Tested in qs-core.
+- **Health** (Settings → Server): role, version, up since, free disk space for the data root, autostart, watchdog, gateway (none until card 4). From QuantAlgo: whether trading is allowed or the kill switch is on, every bot's status, and the newest nightly run of every Manual system (`server_trading_health`).
+- The Python engines and the Forge run from Rust and keep working without the window.
+
+### 6.3.6 Built: pairing and mutual TLS (card Server 3/7, 2026-11-05)
+
+The Tauri-free crate `crates/qs-gateway` holds the security; `crates/qs-core/src/gateway.rs` hosts it in the app.
+
+| Piece | How |
+|---|---|
+| Keys | Ed25519. The server's key is the vault entry `gateway.server-identity`, each PC's own `gateway.device-identity` — made on first use, never in a command result. The TLS certificate is made from the key at each start and self-signed: what is trusted is the **key**. A fingerprint is SHA-256 of the public key in 16 groups of four hex digits. |
+| TLS | rustls on ring, TLS 1.3 only, Ed25519 only, no session resumption, no early data: every connection is a full handshake with fresh keys. The client pins the server's key (a different key fails the handshake: "the server's key is not the one this PC paired with"). The server requires a client certificate and checks the handshake signature, then looks the key up in `gateway.db`. |
+| Pairing | Settings → Server → Pair a device shows an 8-digit code (OS randomness, valid 5 minutes, used once) and a QR (`quantsuite://pair?addr=…&code=…&key=…`, for a phone app later). 5 wrong codes lock pairing for 15 minutes, new codes included. The PC enters address and code; both screens show four BIP-39 words from SHA-256(`quantsuite-pairing-v1` ‖ server key ‖ device key), 44 bits. The **server's user** allows the device and picks its role; the PC pins the server key only after **its** user confirmed the same words and the server allowed. Either side saying "different" ends it and leaves nothing behind. |
+| Roles | Per device, checked on every call against the remote manifest: |
+| | Full — read, compute, write; `external` after the server PIN |
+| | No trading — read, compute, write; never `external` |
+| | Read-only — read and compute |
+| | `client` and `deny` commands and anything unlisted are refused for every role. A role change applies to the next call. |
+| Manifest | `crates/qs-gateway/remote-manifest.json`, generated by `node scripts/remote-inventory.mjs --write` from every `module.json` and `crates/qs-core/remote.json`, keyed by the invoke name (`plugin:algo|start_bot`). The validator fails when it is stale. Its hash goes into `hello`. |
+| Step-up | The server PIN (6–12 digits, set on the server's screen only) is kept as an Argon2id hash in `gateway.db`. A right PIN is valid 10 minutes for that device; 5 wrong PINs lock the device for 15 minutes; a new PIN ends every grant. |
+| Audit | `gateway.db` → `audit`: every call with its outcome (`ok`, `error`, `denied`, `step_up_required`), connects and refusals, pairing (`paired`, `rejected`, `failed`), step-ups (never the PIN) and the server screen's actions (role, revoke, PIN). The newest 20,000 rows are kept. Settings → Server → Devices → Show the audit log. |
+| Revocation | Revoke closes the device's sockets at once (no goodbye) and ends its PIN grant; it is refused from then on and must pair again. |
+| Versions | `hello` carries the protocol (1) and the manifest hash. Older client → "Update this PC"; newer → "Update the server"; same protocol, other manifest → "Install the same version on both". |
+| Listening | Settings → Server → Where the server listens: the PC's addresses, tailnet (100.64.0.0/10) first, then the home network; port 47100 by default. `0.0.0.0` only with the explicit tick and a warning; port 3100 (QuantMCP) is refused. Restarted at every start of a server. Health shows "listening on …". |
+| Dispatch | An allowed call runs through the main webview's `on_message` with the app's invoke key and the webview's own URL as origin (§6.3, option B), on a blocking thread. |
+| Client side | Settings → Server → Connect to a server (shown when this PC is not a server): pair, then each saved connection (core setting `server.connections`: address, the server's public key, this PC's role) can be tested — it connects and reads the server's health through the gateway — or forgotten. Card 5 routes the UI through the connection. |
+| Data | `gateway.db` (+ `-wal`, `-shm`) at the data root, class *must* in the migration inventory. |
+
+Commands (core plugin `qs`) and their placement:
+
+| Command | Remote manifest | What |
+|---|---|---|
+| `gateway_status`, `gateway_configure` | client | Where the server listens; its key, PIN state, this PC's addresses |
+| `gateway_pairing_start`, `_status`, `_confirm`, `_cancel` | client | Pairing — on the server's own screen only |
+| `gateway_set_pin` | client | The server PIN — on the server's own screen only |
+| `gateway_devices`, `gateway_audit` | server:read | A paired PC sees the devices and the log |
+| `gateway_device_rename`, `gateway_device_forget` | server:write | |
+| `gateway_device_set_role`, `gateway_device_revoke` | server:external | From another PC with the server PIN ("laptop lost: revoke it from the desktop") |
+| `gateway_pair_begin`, `_current`, `_finish`, `gateway_connections`, `gateway_connection_test`, `_forget` | client | This PC's connections to servers; `_current` brings back a pairing whose page was closed |
+
+`server_status` is now `server:read`, so every client can show the server's health.
+
+Tests (`cargo test -p qs-gateway`): a wrong server key is refused; unpaired devices may only pair; a revoked device is dropped at once and refused; read-only and no-trading devices are refused what their role forbids; unknown, `client` and `deny` commands are refused; 5 wrong codes lock (the right code and new codes too); an expired code fails; a recorded handshake replayed to the server does not authenticate; the four words differ when either key is swapped; external calls need the PIN and a new PIN ends the grant; versions must match; no private key, seed, PIN or PIN hash appears in anything a device or the screen receives.
+
+### 6.3.7 Built: the gateway (card Server 4/7, 2026-11-05)
+
+Protocol 2 (`crates/qs-gateway/src/protocol.rs`). What it adds to card 3:
+
+| Piece | How |
+|---|---|
+| Calls | `call {id, cmd, args, key?}` → `result {id, ok \| error}`, dispatched through the main webview (§6.3.6). Calls run concurrently. Error codes: `denied`, `step_up_required`, `failed`, `timeout`, `cancelled`, `rate_limited`, `unavailable`, `unknown`. |
+| Timeouts per class | The server waits 60 s for `read`, 30 min for `compute`, 2 min for `write` and `external`. A long command declares its own in the manifest (`remote.timeouts`, card Migration 4/4: the bundle export, the move's check and import). The client's default wait is 5 min; long calls pass their own. |
+| Idempotency | A call with a `key` runs once per device and key. A repeat, or `outcome {id, key}` after a timeout or a reconnect, gets the same result (waiting while it still runs). Results are kept 15 minutes (at most 10,000). `unknown` means the server never saw the key, so sending it again is safe. Keyed calls are never cancelled: their outcome must stay knowable. |
+| Cancel | `cancel {id}` aborts a running unkeyed call or download (the Tauri command itself may still finish). |
+| Events | Tauri events in the manifest's `events` and bus topics in its `topics` (the `publishes` of server-placed modules, generated) get the next sequence number of this server run (`epoch`) and go to every connected device as `event {seq, kind, topic, payload}`. The last 10,000 events (at most 10 minutes) are kept. `hello` carries the client's resume point; `welcome` answers with `epoch`, `seq` and `reload`. The server replays exactly the missed events, then live ones (attached under one lock: no gap, no overlap), or says `reload` (another run, or the events are gone). A connection that falls more than 4,096 events behind gets `reload` too. |
+| Heartbeat | The client pings every 10 s and drops a server it has not heard from in 30 s; the server closes a connection silent for 35 s. |
+| Rate limit | 100 calls per second per device, bursts up to 400; above that `rate_limited`. |
+| Frames | 16 MiB at most; files move in 1 MiB binary chunks (8-byte id, 8-byte offset, data). |
+| Files (§6.5) | `gateway\|fs_list {path?}` lists the roots or one folder, for every role. Roots: the data root without `secrets/`, `signing/` and `gateway.db*`, and the user's Documents, Downloads and Desktop — not the whole home folder (SSH keys, the agents' sign-ins). Paths are resolved (links, `..`) before the check. `download {id, path, offset}` streams a file from `offset` with its SHA-256; the client writes `name.part` and renames it when the whole file's checksum matches, so an interrupted download continues where it stopped. `upload {id, name, size, sha256}` lands in `<data root>/transfers/` (a plain file name, `.part` plus a `.part.meta` with size and checksum, continued when they match); read-only devices may not upload. Every transfer is audited. |
+
+`qs_core::gateway::forward_events` listens to those events in the app; `webview_dispatch` is the dispatcher. The client (`qs_gateway::client::Session`) offers `call`, `call_with` (key, timeout), `outcome`, `cancel`, `take_events`, `resume_point`, `list_files`, `download`, `upload`. Card 5 puts the UI on it.
+
+Tests: `cargo test -p qs-gateway` (27 unit, 10 security, 8 two-process: the server is the `gateway-testserver` binary in its own process) and `cargo test -p tauri-plugin-qs --test gateway_in_app` (a paired device's calls run in a mock Tauri app through its webview; its events — and only the listed ones — reach the device). The two-process tests cover calls of every class and a denied one, a backtest streaming 300 progress events then its result, a disconnect after 800 of 3,000 streamed events resumed without a lost or doubled event, a write that timed out on the client resolved by its key (and after a reconnect) with exactly one run, a 64 MB download and a 16 MB upload interrupted and resumed with matching checksums, the heartbeat, the rate limit and cancel. `-- --ignored one_gigabyte` moved 1 GiB, interrupted at 342 MB and resumed: 6.6 s (154 MB/s, debug build), checksum equal; plus 256 MB the other way.
+
+**Latency.** The gateway's own cost, measured over loopback between two processes (`-- --ignored latency`), per call:
+
+| Build | One call after another | 20 calls at a time |
+|---|---|---|
+| debug | 0.71 ms | 0.25 ms (4,000 calls/s) |
+| release | 0.27 ms | 0.08 ms (11,800 calls/s) |
+
+Add the dispatch through the webview (about 0.2 ms, §6.3) and the network's round trip. What pages ask for when they open cold (counted in the QA app with a logpoint on `invoke`, server-placed calls only):
+
+| Page | Server calls | Parallel batches | Extra over a LAN (≈1 ms) | Over a direct tailnet (≈20 ms) | Over a relayed tailnet (≈80 ms) |
+|---|---|---|---|---|---|
+| Notes | 4 | 2 | ≈3 ms | ≈45 ms | ≈170 ms |
+| Plan | 4 | 2 | ≈3 ms | ≈45 ms | ≈170 ms |
+| Finance | 9 | 2 | ≈4 ms | ≈45 ms | ≈170 ms |
+| Habits | 4 | 1 | ≈2 ms | ≈25 ms | ≈85 ms |
+| QuantAlgo Manual | 6 | 3 | ≈5 ms | ≈65 ms | ≈250 ms |
+| QuantSystems | 6 | 2 | ≈3 ms | ≈45 ms | ≈170 ms |
+| QuantTerminal | 8 | 1 on load, then polling | ≈2 ms | ≈25 ms | ≈85 ms |
+| QuantScript | 1 | 1 | ≈2 ms | ≈25 ms | ≈85 ms |
+
+A batch costs one round trip plus about 0.5 ms; the commands' own time is the same as locally. Over a LAN a page opens as fast as locally. Over a direct tailnet connection (Tailscale finds one in most homes) a cold page waits a few tens of milliseconds longer; over Tailscale's relay a few hundred. Warm pages (kept alive) make 0–2 calls when revisited. Card 5 measures the real pages end to end.
+
+### 6.3.8 Built: client mode (card Server 5/7, 2026-11-05)
+
+| Piece | How |
+|---|---|
+| Profiles | Settings → Server → Connect to a server lists "This PC" and every paired server; "Use" switches and restarts QuantSuite (core settings `server.active_connection` and `server.role = client`). The role decides at start whether this PC may run executors (one trader, card 2), so a switch is a restart, not a reload. A PC that runs as a server cannot use another one. |
+| The link | `qs_core::gateway::Link`: one gateway connection, reconnecting after 1, 2, 5, 10, 20, then every 30 s (or at once with "Try now"), resuming events from where it stopped. The server's Tauri events are emitted here under their own names and its bus events published on this PC's bus, so module `listen` calls and bus subscriptions work unchanged. State changes go out as `server:connection`; after a reconnect, or when events could not be resumed, `server:refresh`. |
+| The seam | A Vite plugin (`apps/shell/nuxt.config.ts`) resolves every import of `@tauri-apps/api/core` in the app's code to `apps/shell/app/seam/core.ts`, which imports the real module and replaces `invoke`. Without a server nothing changes. With one, `routing.mjs` decides: `server` → `plugin:qs\|gateway_remote_call`, `deny` → refused, anything else (client commands, Tauri's own plugins) → Tauri here. The Tauri plugins' guest packages keep their own import; their commands are all `client`. |
+| Core data | The core's settings go by `scope` and its entity commands by module (the manifest's generated `data`: the server-placed modules, plus `todos`): the drawer notes and to-dos, module settings and module entities live on the server; appearance, windows, workspaces and connections on each PC. The entity search asks both and merges (the server's first, without this PC's stale copies). The server refuses these commands for any other scope or module (`check_data`) and cuts search and link results to its modules. `core.setting.changed` and `core.entity.*` of those scopes and modules reach the clients. |
+| Keyed changes | `write` and `external` calls carry an idempotency key. After a timeout or a dropped connection the client asks the server what happened (on the next connection if needed) and sends again only when the server never saw it. |
+| Step-up | A `step_up_required` answer opens the server PIN prompt (`ServerPinPrompt`); the PIN goes to the server once and the call is sent again. |
+| Offline | The title bar shows the server and its state (client mode only). While it is not reachable a banner says "Server … not reachable since 12:03 — reconnecting"; the server's module pages keep their last data, greyed and inert; this PC's own modules keep working. After the reconnect the server's pages load again (a fresh page instance). |
+| Roles | `useServerLink()` (`@quantsuite/core`) gives `canTrade` and `canWrite`: QuantAlgo's Start (live) and QuantSystems' Arm Live are disabled on a device without Full. The server enforces every role anyway. |
+| Versions | A refusal (other version, revoked) shows its message in the banner and the title bar, and the link retries only every 30 s. |
+| Health | Settings → Server shows the server's health while this PC uses it (`server_status` is `server:read`), and the server's devices (revoking one asks for the PIN). |
+
+Also fixed: a revoked PC could not pair again (the server refused its key before pairing). `hello` now says when it pairs; a revoked key may pair again through a new code from the server's screen, and is still refused when it only connects.
+
+Tests: `npm run test:seam` (every manifest command routed per its placement, core data by argument, unlisted and Tauri plugin commands local), `cargo test -p qs-gateway` (data guard, re-pairing a revoked PC), qs-core lib tests. QA between two isolated profiles on this PC (`artifacts/qa-native/qa2.sh`): the client paired, switched to the server (restart), opened Notes, Plan, Finance, Habits, Flow, QuantAlgo, QuantSystems, QuantTerminal and QuantScript through the gateway (121 calls in the server's audit, none refused). A note created on the server appeared on the client, and one created on the client landed in the server's database (the client's stayed empty). QuantAlgo's kill switch (an `external` action) asked for the server PIN, switched on on the server, and off again without a second prompt. With the server process killed, the client showed the banner, "ROOT · offline", and a greyed, inert Finance page, while QuantPilot kept working. After a restart it reconnected within about 20 s, and Finance loaded its data again. Arming a Manual system from the client was not tried (no live-ready system in the QA profile); it is `external` like the kill switch and takes the same path.
+
+### 6.3.9 Built: over the internet (card Server 6/7, 2026-11-05)
+
+| Piece | How |
+|---|---|
+| Tailscale on this PC | `qs_gateway::net::tailscale_status` runs `tailscale status --json` (PATH, then the default install folders; at most 3 s, no console window) and reads this PC's name, MagicDNS name, 100.x addresses and the other devices with their online state. |
+| Server | Settings → Server → Use it from anywhere: Tailscale's state here, "Listen on the tailnet address" (one click), and "Your other PCs connect with homeserver.tail1234.ts.net" once it listens there. The address list puts tailnet addresses first (card 3). |
+| Boot order | When the chosen address is not on the PC yet — the tailnet address before Tailscale has connected after a reboot — the gateway says "Waiting for 100.x to appear on this PC (Tailscale is not connected yet); QuantSuite keeps trying" and binds within 15 s of the address appearing. A new choice cancels the wait. |
+| Public address | Listening on an address the whole internet can reach (not private, tailnet, loopback or link-local) shows a warning under the address. `0.0.0.0` still needs its explicit tick (card 3). |
+| Client | The same section lists your tailnet devices with their online state; "Use" fills a server's MagicDNS name (or 100.x address) into "Connect to a server". The network path does not matter to identity: the pinned server key does. |
+| Connection quality | The client pings right after connecting and every 10 s; the round trip, the reconnects since start and "online since" show in Settings → Server and in the title bar chip's tooltip. |
+| Guide | The steps for the server and for each client are in the same section, with the Headscale alternative (§4.2). |
+
+Tests: `cargo test -p qs-gateway` (parsing `tailscale status --json` — running, logged out, MagicDNS, online first; public and present addresses; the round trip after connecting). QA on this PC (Tailscale is not installed here): the guide shows "not installed" with the download button; a tailnet address that is not there gives the waiting message and switching back to 127.0.0.1 binds at once; the client showed "Connected to ROOT: 1.0 ms round trip · 1 reconnect". The test over a real tailnet is §7.1.
+
+### 6.3.10 Decided: the developer modules stay on each PC (card Server 7/7, 2026-11-05)
+
+Your workflow today: you code on this desktop with several agents (Claude Code, Codex, …); the repositories, their worktrees, the agents' sign-ins and QuantPilot's threads are on this PC. The server is for trading and your personal data. A laptop may join later, in a café.
+
+| Question | Options, with what happens | Decision |
+|---|---|---|
+| Memory vaults and kanban boards | **A — per PC** (as today). A Claude Code on the laptop writes a memory into the laptop's vault; the desktop's agents see it only after you move it (the migration bundle) or rewrite it. **B — one truth on the server**: every PC's QuantMCP passes `quantsuite.memory.*` and the kanban tools to the server. The laptop's agent writes, the desktop's agent reads it at once — but a card claimed on the laptop has its worktree in the laptop's checkout, which the desktop cannot open, and a vault's `base/` describes one PC's folder. **C — hybrid**: only the general vault and the General board on the server, the project vaults and boards per PC. | **A.** You code on one PC; B and C bring cross-PC claims and folder paths that point nowhere, for agents that today all run here. Revisit (C first) once you code on two PCs. |
+| QuantPilot | Threads run where the folders and the agent CLIs are. **Remote threads**: a client starts and steers a thread that runs on the server — the server would then hold your agents' sign-ins and run agents next to the trading. **Local only**. | **Local only.** The trading server runs no coding agents. |
+| Console | **A remote shell** on the server, Full role + server PIN, every session audited. **None.** | **None.** A shell is the widest door into the machine that trades. For server administration use Remote Desktop or Tailscale SSH over the tailnet (with Tailscale's own access rules). |
+| QuantCode / QuantCanvas | Edit server folders through the gateway's files, or local only. | **Local only.** The file browser and transfers (§6.5) cover imports and exports of the server-placed modules. |
+| Code index and worktrees | They follow the folders they index. | **Local**, with their folders. |
+
+Built: `scripts/remote-inventory.mjs` refuses (the manifest check fails) any `server` placement for pilot, canvas, console, mcp, memory and hud, and `npm run test:seam` checks that none of their commands is routed to a server. QuantMCP's port 3100 stays loopback-only on every PC (unchanged). In client mode these modules keep working on the PC you sit at (QA of card 5: QuantPilot worked through a server outage).
 
 ### 6.4 Gateway protocol
 
@@ -141,6 +362,30 @@ Phase 1: Windows — the same build, WebView2 is there, the Python sidecars are 
 
 **Laptop lost:** on the PC, Settings → Server → Devices → "Laptop" → Revoke.
 
+### 7.1 The test from outside (card Server 6/7 — yours)
+
+What you need: the server at home with QuantSuite in server mode and Tailscale; a laptop with QuantSuite and Tailscale, signed in with the same Tailscale account; a phone with a hotspot.
+
+1. **Server.** Settings → Server → Use it from anywhere: Tailscale shows "This PC in your tailnet: …". Click "Listen on the tailnet address". Set a server PIN if there is none.
+2. **Laptop at home first.** Settings → Server → Use it from anywhere: the server is listed as online. Click "Use" next to it, then pair with the code from the server (compare the four words on both screens). "Use" the new connection; QuantSuite restarts and the title bar shows the server.
+3. **Leave the home network.** Turn the laptop's Wi-Fi to the phone's hotspot (not your home Wi-Fi). Within half a minute the title bar shows the server again (it reconnects by itself).
+4. **Work.** Open Notes, Plan, Finance, QuantAlgo and QuantSystems: they show the server's data. Create a note; on the server it is there.
+5. **External action.** QuantAlgo → Stop all trading: the server PIN is asked. Enter it; on the server the kill switch is on. Allow trading again.
+6. **Quality.** Settings → Server: note the round trip and the reconnects.
+7. **Nothing is open to the internet.** Find the home's public IP (on the server: https://ifconfig.me). From the laptop, still on the hotspot but with Tailscale **off**: `Test-NetConnection <public IP> -Port 47100` in PowerShell must say `TcpTestSucceeded : False`. Optional, a full scan from outside: `nmap -Pn -p 1-65535 <public IP>` shows no open QuantSuite port (47100) and no 3100.
+8. **And without Tailscale on the laptop**, QuantSuite on the laptop shows the server as not reachable.
+
+Results (fill in after the run):
+
+| Check | Result |
+|---|---|
+| Reconnected on the hotspot, seconds | |
+| Phase-1 pages with the server's data | |
+| PIN asked for "Stop all trading" | |
+| Round trip at home (LAN via tailnet), ms | |
+| Round trip on the hotspot, ms | |
+| Port 47100 on the public IP without the tailnet | |
+
 ## 8. Cards
 
 | Card | What | Blocked by |
@@ -159,8 +404,9 @@ Phase 1: Windows — the same build, WebView2 is there, the Python sidecars are 
 |---|---|---|
 | Internet path | Tailscale; Headscale as the self-hosted alternative | No open port, end-to-end encryption, free for personal use |
 | Server OS | Windows | Same build and sidecars; Linux needs the service-layer refactor |
+| Dispatch on the server | B: `Webview::on_message` with the app's invoke key (card 1, about 0.2 ms per async call on the mock runtime) | No Tauri patch, no JS hop; A needs the same hidden webview plus two WebView2 crossings |
 | Phase-1 modules on the server | Trading + personal data | The reason for a server is 24/7 trading and one truth for your data |
-| Developer modules | Local per PC in phase 1 | They work on the PC's own folders and agent CLIs |
+| Developer modules | Local per PC, also in phase 2 (card 7, §6.3.10); no remote console | They work on the PC's own folders and agent CLIs; you code on one PC; the trading server runs no shell for others |
 | Auth | Paired device keys + mutual TLS + server PIN for external actions | Passwords alone are guessable; a key on a revocable device is not |
 
 ## 10. Options — not planned unless you ask

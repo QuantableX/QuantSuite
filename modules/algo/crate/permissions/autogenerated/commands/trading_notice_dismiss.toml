@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-trading-notice-dismiss"
+description = "Enables the trading_notice_dismiss command without any pre-configured scope."
+commands.allow = ["trading_notice_dismiss"]
+
+[[permission]]
+identifier = "deny-trading-notice-dismiss"
+description = "Denies the trading_notice_dismiss command without any pre-configured scope."
+commands.deny = ["trading_notice_dismiss"]

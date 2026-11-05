@@ -33,6 +33,18 @@ hex = "0.4"
 base64 = "0.22"
 zeroize = "1"
 
+# Hyperliquid (PLAN-EXECUTION-VENUES §9): secp256k1 signatures of EIP-712
+# hashes over keccak-256. Own signing instead of the official Rust SDK, which
+# has had no release since May 2025 and builds on the deprecated ethers-rs.
+k256 = { version = "0.14", features = ["ecdsa"] }
+sha3 = "0.12"
+# Solana addresses and keys (Jupiter, Venues 3/5); ed25519 itself comes from ring.
+bs58 = "0.5"
+# Lighter (Venues 5/5): Poseidon2 over Goldilocks and Schnorr over ECgFp5,
+# the curve its API keys sign with (MIT/Apache; the official signer is Go).
+goldilocks-crypto = "0.1.2"
+poseidon-hash = "0.1.4"
+
 qs-core = { package = "tauri-plugin-qs", path = "../../../crates/qs-core" }
 # Manual execution (PLAN-AUTO-EXECUTION §2.3) reads a saved system's config and
 # its live signal through QuantSystems' read-only `signals` API.

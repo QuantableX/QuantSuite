@@ -6,10 +6,14 @@ import { markRaw } from 'vue'
 import { registerSettingsSections } from '@quantsuite/core'
 import SettingsSuiteApps from '../components/SettingsSuiteApps.vue'
 import SettingsSuiteGeneral from '../components/SettingsSuiteGeneral.vue'
+import SettingsSuiteData from '../components/SettingsSuiteData.vue'
+import SettingsSuiteServer from '../components/SettingsSuiteServer.vue'
 
 export default defineNuxtPlugin(() => {
   registerSettingsSections('suite', [
     { id: 'general', label: 'General', component: markRaw(SettingsSuiteGeneral), order: 0 },
     { id: 'apps', label: 'Apps', component: markRaw(SettingsSuiteApps), order: 1 },
+    { id: 'data', label: 'Data', component: markRaw(SettingsSuiteData), order: 2 },
+    { id: 'server', label: 'Server', component: markRaw(SettingsSuiteServer), order: 3 },
   ])
 })

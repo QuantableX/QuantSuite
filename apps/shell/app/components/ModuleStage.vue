@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onActivated, ref, shallowRef, watch } from 'vue'
 import type { NuxtLayouts } from 'nuxt/app'
-import { isModuleEnabled, stageForRoute } from '@quantsuite/core'
+import { isModuleEnabled, stageForRoute, useServerLink } from '@quantsuite/core'
 
 /**
  * One cached stage per module (V3 warm cache). app.vue keys this component by
@@ -21,6 +21,17 @@ import { isModuleEnabled, stageForRoute } from '@quantsuite/core'
 const props = defineProps<{ moduleId: string | null; stageId: string | null }>()
 
 const router = useRouter()
+
+/**
+ * Client mode (card Server 5/7): a module whose pages come from the server
+ * keeps its last data greyed out and without actions while the server is not
+ * reachable, and loads its data again (a fresh page instance) after a
+ * reconnect. This PC's own modules are untouched.
+ */
+const link = useServerLink()
+const fromServer = computed(() => link.isServerModule(props.moduleId))
+const offline = computed(() => fromServer.value && !link.online.value)
+const refreshKey = computed(() => (fromServer.value ? link.refreshTick.value : 0))
 
 /** Vue-router route snapshots are immutable per navigation — safe to hold. */
 const pinned = shallowRef(router.currentRoute.value)
@@ -74,8 +85,14 @@ onActivated(() => {
        each cached stage keeps its own attribute, so hidden trees stay
        correctly scoped. NuxtLayout is required, not optional: without it a
        module's own layout never renders and only its page content appears. -->
-  <div ref="rootEl" class="qss-module-root" :data-module="stageId === 'algo-manual' ? 'systems' : moduleId ?? undefined">
-    <NuxtLayout v-if="!moduleId || isModuleEnabled(moduleId)" :name="layoutName">
+  <div
+    ref="rootEl"
+    class="qss-module-root"
+    :class="{ 'qss-offline': offline }"
+    :data-module="stageId === 'algo-manual' ? 'systems' : moduleId ?? undefined"
+    :inert="offline || undefined"
+  >
+    <NuxtLayout v-if="!moduleId || isModuleEnabled(moduleId)" :key="refreshKey" :name="layoutName">
       <NuxtPage :route="pinned" />
     </NuxtLayout>
   </div>
@@ -99,6 +116,12 @@ onActivated(() => {
     a stacking context — the drawer, a later sibling, always paints on top.
   */
   transform: translateZ(0);
+}
+
+/* The server is not reachable: the last data stays readable, nothing reacts. */
+.qss-module-root.qss-offline > * {
+  opacity: 0.5;
+  filter: grayscale(0.7);
 }
 
 @keyframes qss-module-in {

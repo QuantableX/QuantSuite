@@ -20,6 +20,7 @@ mod data;
 mod db;
 mod exchanges;
 mod execution;
+mod funding;
 mod journal;
 mod logs;
 mod manual;
@@ -29,6 +30,8 @@ mod settings;
 mod smithery;
 mod strategies;
 mod unattended;
+mod venues;
+mod venues_cmd;
 
 // ---------------------------------------------------------------------------
 // Data Structures
@@ -189,6 +192,12 @@ pub struct ExchangeConfig {
     pub wallet_address: Option<String>,
     pub private_key: Option<String>,
     pub rpc_endpoint: Option<String>,
+    /// Hyperliquid: an optional sub-account address.
+    #[serde(default)]
+    pub sub_account: Option<String>,
+    /// Solana wallet: the most it may hold, in USD (arming is refused above).
+    #[serde(default)]
+    pub max_value: Option<f64>,
 }
 
 impl std::fmt::Debug for ExchangeConfig {
@@ -205,6 +214,8 @@ impl std::fmt::Debug for ExchangeConfig {
             .field("wallet_address", &self.wallet_address)
             .field("private_key", &given(&self.private_key))
             .field("rpc_endpoint", &given(&self.rpc_endpoint))
+            .field("sub_account", &self.sub_account)
+            .field("max_value", &self.max_value)
             .finish()
     }
 }
@@ -270,6 +281,12 @@ pub struct AppSettings {
     pub default_budget: f64,
     #[serde(default = "settings::default_warmup_candles")]
     pub default_warmup_candles: u32,
+    /// Perp (Venues 4/5): the leverage cap (default 3x) and the closest a
+    /// position may open to its liquidation price (default 20 %).
+    #[serde(default = "settings::default_perp_max_leverage")]
+    pub perp_max_leverage: f64,
+    #[serde(default = "settings::default_perp_min_liquidation_distance_pct")]
+    pub perp_min_liquidation_distance_pct: f64,
     /// Which set of bot defaults this config has received (`settings::apply_bot_defaults`).
     #[serde(default)]
     pub defaults_version: u32,
@@ -278,7 +295,7 @@ pub struct AppSettings {
     pub notify_on_daily_summary: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct TradeFilters {
     #[serde(default)]
     pub bot_id: Option<String>,
@@ -327,6 +344,10 @@ pub struct TradeStats {
     pub total_pnl: f64,
     pub total_pnl_pct: f64,
     pub avg_duration_secs: f64,
+    /// Perp funding received (negative: paid), inside `total_pnl` but not a
+    /// trade (journal rows with side `funding`, Venues 4/5).
+    #[serde(default)]
+    pub funding: f64,
 }
 
 /// One bot's share of `get_trade_stats_breakdown`. `bot_id` is `None` for
@@ -449,7 +470,15 @@ pub fn init() -> TauriPlugin<Wry> {
 
             // Manual systems trade by themselves after the daily close
             // (PLAN-AUTO-EXECUTION §2.3): the scheduler sleeps until a run is due.
-            manual::start(app.clone());
+            // One trader (PLAN-SERVER-CLIENT §5): a client connected to a
+            // server runs none of the executors; the server does.
+            let executors = qs_core::server::executors_allowed();
+            if executors.is_ok() {
+                manual::start(app.clone());
+                funding::start(app.clone());
+            } else {
+                log::info!(target: "algo", "client mode: no nightly runs, funding or bot resumes here");
+            }
 
             // Reconcile: a bot left "running" by a previous session has no
             // process in this one. It stays stopped unless it asked to resume
@@ -459,7 +488,7 @@ pub fn init() -> TauriPlugin<Wry> {
                 let state = app.state::<AppState>();
                 let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
                 let resumable = unattended::resumable(&db);
-                if !resumable.is_empty() {
+                if !resumable.is_empty() && executors.is_ok() {
                     let handle = app.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_secs(5));
@@ -587,8 +616,20 @@ pub fn init() -> TauriPlugin<Wry> {
             manual::manual_execution_disarm,
             manual::manual_execution_runs,
             manual::manual_execution_coverage,
+            venues_cmd::venue_list,
+            venues_cmd::venue_mapping,
+            venues_cmd::venue_cost_preview,
+            venues_cmd::venue_exposure,
+            venues_cmd::venue_wallet_status,
+            venues_cmd::server_trading_health,
+            venues_cmd::venue_perp_positions,
+            venues_cmd::wallet_export_key,
+            venues_cmd::solana_wallet_status,
             unattended::trading_kill_switch,
             unattended::trading_kill_switch_status,
+            unattended::trading_confirm_move,
+            unattended::trading_notices,
+            unattended::trading_notice_dismiss,
             bot::bot_heartbeats,
             exchanges::add_exchange,
             exchanges::update_exchange,

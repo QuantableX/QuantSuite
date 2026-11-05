@@ -5,7 +5,7 @@ import { useBotsStore } from '#algo/stores/bots'
 import { useStrategiesStore } from '#algo/stores/strategies'
 import { useExchangeStore } from '#algo/stores/exchange'
 import { formatCurrency, formatPnl, formatDuration } from '#algo/utils/format'
-import { inActiveKeepAliveTree } from '@quantsuite/core'
+import { inActiveKeepAliveTree, useServerLink } from '@quantsuite/core'
 import type { BotSnapshot } from '#algo/types'
 
 const router = useRouter()
@@ -62,6 +62,15 @@ async function run(bot: BotSnapshot, action: string, fn: () => Promise<unknown>)
 }
 
 // Live bots place real orders: every action that can touch the account asks once.
+// On a PC that uses a server, this device's role decides (card Server 5/7):
+// live bots need Full, any start needs a role that may change data.
+const link = useServerLink()
+function startBlocked(bot: BotSnapshot): string {
+  if (bot.trading_mode === 'live' && !link.canTrade.value) return 'This PC may not trade on the server (its role there).'
+  if (!link.canWrite.value) return 'This PC may only read on the server.'
+  return ''
+}
+
 function liveVenue(bot: BotSnapshot): string {
   const exchange = exchangeStore.byId(bot.exchange_id)
   return exchange ? `${exchange.name}${exchange.sandbox ? ' (sandbox)' : ''}` : 'the exchange'
@@ -201,7 +210,7 @@ function onCreated(_bot: unknown, started: boolean) {
                 </button>
               </template>
               <template v-else>
-                <button class="btn btn-sm btn-success" :disabled="!!busy[bot.id]" @click="start(bot)">
+                <button class="btn btn-sm btn-success" :disabled="!!busy[bot.id] || !!startBlocked(bot)" :title="startBlocked(bot)" @click="start(bot)">
                   {{ busy[bot.id] === 'start' ? 'Starting…' : 'Start' }}
                 </button>
                 <button class="btn btn-sm" :disabled="!!busy[bot.id]" title="Delete" @click="remove(bot)">
@@ -213,6 +222,8 @@ function onCreated(_bot: unknown, started: boolean) {
           </tr>
         </tbody>
       </table>
+      <!-- Perp positions with their liquidation distance (Venues 4/5). -->
+      <AlgoExchangePerpPositions class="perp-positions" />
     </div>
 
     <AlgoBotCreateModal :visible="showCreate" @close="showCreate = false" @created="onCreated" />
@@ -366,5 +377,8 @@ function onCreated(_bot: unknown, started: boolean) {
 
 .cell-actions .btn {
   margin-left: 4px;
+}
+.perp-positions {
+  margin-top: 12px;
 }
 </style>

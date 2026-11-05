@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-venue-exposure"
+description = "Enables the venue_exposure command without any pre-configured scope."
+commands.allow = ["venue_exposure"]
+
+[[permission]]
+identifier = "deny-venue-exposure"
+description = "Denies the venue_exposure command without any pre-configured scope."
+commands.deny = ["venue_exposure"]

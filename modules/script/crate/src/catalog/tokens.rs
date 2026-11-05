@@ -1,8 +1,10 @@
-//! Tokens of Collection sources — in the OS credential store (Windows Credential
-//! Manager, macOS Keychain, Secret Service), one entry per source id. A
-//! token goes in through `collection_token_set` and out only to GitHub: never
-//! into settings, script.db, logs, events or command results — the UI gets
-//! `has_token`.
+//! Tokens of Collection sources — in the suite's secret vault
+//! (`qs_core::vault`, id `script/collection/<source id>`), so they move with
+//! an export (PLAN-MIGRATION §1.1). They used to sit in the OS credential
+//! store directly, which is bound to this machine; an entry still there is
+//! moved into the vault the first time it is read. A token goes in through
+//! `collection_token_set` and out only to GitHub: never into settings,
+//! script.db, logs, events or command results — the UI gets `has_token`.
 
 #[cfg(test)]
 use std::collections::HashMap;
@@ -16,36 +18,62 @@ pub trait TokenStore: Send + Sync {
     fn clear(&self, source_id: &str) -> Result<(), String>;
 }
 
-const SERVICE: &str = "QuantSuite QuantScript Collection";
+/// The OS credential store service the tokens used before the vault.
+const LEGACY_SERVICE: &str = "QuantSuite QuantScript Collection";
 
+fn vault_id(source_id: &str) -> String {
+    format!("script/collection/{source_id}")
+}
+
+/// The app's token store: the vault, with a one-time move of a token still
+/// in the OS credential store.
 pub struct KeyringTokens;
 
 impl KeyringTokens {
-    fn entry(source_id: &str) -> Result<keyring::Entry, String> {
-        keyring::Entry::new(SERVICE, source_id).map_err(|e| format!("The credential store is not available: {e}"))
+    fn legacy(source_id: &str) -> Option<keyring::Entry> {
+        keyring::Entry::new(LEGACY_SERVICE, source_id).ok()
+    }
+
+    fn legacy_get(source_id: &str) -> Option<String> {
+        Self::legacy(source_id).and_then(|e| e.get_password().ok())
+    }
+
+    fn legacy_clear(source_id: &str) {
+        if let Some(entry) = Self::legacy(source_id) {
+            let _ = entry.delete_credential();
+        }
     }
 }
 
 impl TokenStore for KeyringTokens {
     fn get(&self, source_id: &str) -> Result<Option<String>, String> {
-        match Self::entry(source_id)?.get_password() {
-            Ok(token) => Ok(Some(token)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(format!("Could not read the token from the credential store: {e}")),
+        let id = vault_id(source_id);
+        if let Some(token) = qs_core::vault::with_vault(|v| v.get_string(&id))? {
+            return Ok(Some(token.to_string()));
+        }
+        // Still in the OS credential store: move it into the vault.
+        match Self::legacy_get(source_id) {
+            Some(token) => {
+                qs_core::vault::with_vault(|v| v.set(&id, token.as_bytes()).map(|_| ()))?;
+                Self::legacy_clear(source_id);
+                Ok(Some(token))
+            }
+            None => Ok(None),
         }
     }
 
     fn set(&self, source_id: &str, token: &str) -> Result<(), String> {
-        Self::entry(source_id)?
-            .set_password(token)
-            .map_err(|e| format!("Could not store the token in the credential store: {e}"))
+        qs_core::vault::with_vault(|v| v.set(&vault_id(source_id), token.as_bytes()).map(|_| ()))
+            .map_err(|e| format!("Could not store the token in the vault: {e}"))?;
+        Self::legacy_clear(source_id);
+        Ok(())
     }
 
     fn clear(&self, source_id: &str) -> Result<(), String> {
-        match Self::entry(source_id)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(format!("Could not remove the token from the credential store: {e}")),
-        }
+        qs_core::vault::with_vault(|v| v.delete(&vault_id(source_id)).map(|_| ()))
+            .map_err(|e| format!("Could not remove the token from the vault: {e}"))?;
+        Self::legacy_clear(source_id);
+        Ok(())
     }
 }
 

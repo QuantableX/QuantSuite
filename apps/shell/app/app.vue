@@ -351,7 +351,9 @@ provide('openModule', openModule)
   </div>
 
   <div v-else class="qss-app">
-    <QTitlebar @home="router.push('/')" />
+    <QTitlebar @home="router.push('/')">
+      <template #status><ServerLinkChip /></template>
+    </QTitlebar>
 
     <div class="qss-body">
       <QRail
@@ -370,6 +372,7 @@ provide('openModule', openModule)
         <div v-if="appAvailability.error.value" class="qss-error" role="alert">
           Could not load app settings. Open Settings > Apps to retry.
         </div>
+        <ServerLinkBanner />
         <div v-if="openError" class="qss-error" role="alert">
           <strong>Could not open {{ openError.module }}</strong>
           <span>{{ openError.message }}</span>
@@ -411,6 +414,7 @@ provide('openModule', openModule)
     <!-- The ONE settings surface (V3). Opens on `qss:settings` from any
          module header's gear; suite sections + the module's sections. -->
     <QSettingsModal />
+    <ServerPinPrompt />
   </div>
 </template>
 

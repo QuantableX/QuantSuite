@@ -6,6 +6,7 @@ members = [
     "crates/qs-single-instance",
     "crates/qs-mcp-bridge",
     "crates/qs-pty",
+    "crates/qs-gateway",
     # Module crates, one per landed migration phase.
     "modules/systems/crate",
     "modules/notes/crate",

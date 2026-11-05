@@ -25,11 +25,15 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::bots::{insert_bot, load_bot, set_bot_status, validate_mode, validate_timeframe, Bot, BotDraft};
 use crate::broker::{Broker, LiveBroker, SymbolFilters, Venue};
+use crate::execution::venue::MarketType;
 use crate::exchanges::{
     fetch_exchange_pairs_for_provider,
     load_credentials,
+    candle_finished,
+    candles_missed_since,
     fetch_latest_market_candle,
     fetch_recent_market_candles,
+    poll_market,
     market_candle_json,
 };
 use crate::logs::{push_bot_log, push_bot_log_for};
@@ -129,7 +133,12 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
         .try_state::<AppState>()
         .ok_or_else(|| "App state unavailable".to_string())?;
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+    write_trade(&db, trade)
+}
 
+/// A trade's journal row. A close sets the quantity too: after a partial fill
+/// the row covers only what closed, and the rest has a row of its own.
+pub(crate) fn write_trade(db: &rusqlite::Connection, trade: &Trade) -> Result<(), String> {
     if trade.exit_price.is_none() {
         db.execute(
             "INSERT OR REPLACE INTO trades (id, bot_id, strategy_id, exchange, pair, side, entry_price, exit_price, quantity, entry_time, exit_time, pnl, pnl_pct, fee, is_backtest, backtest_id, notes, created_at, source, fees_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,0,NULL,?15,?16,?17,?18)",
@@ -158,7 +167,7 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
     } else {
         let updated = db
             .execute(
-                "UPDATE trades SET exit_price = ?1, exit_time = ?2, pnl = ?3, pnl_pct = ?4, fee = ?5, notes = ?6, fees_json = ?8 WHERE id = ?7",
+                "UPDATE trades SET exit_price = ?1, exit_time = ?2, pnl = ?3, pnl_pct = ?4, fee = ?5, notes = ?6, fees_json = ?8, quantity = ?9 WHERE id = ?7",
                 params![
                     trade.exit_price,
                     trade.exit_time,
@@ -168,6 +177,7 @@ fn persist_trade(app_handle: &AppHandle, trade: &Trade) -> Result<(), String> {
                     trade.notes,
                     trade.id,
                     crate::journal::fees_to_json(&trade.fees),
+                    trade.quantity,
                 ],
             )
             .map_err(|e| format!("Update trade: {e}"))?;
@@ -301,6 +311,10 @@ fn apply_effects(
                 notify_strategy_trade(stdin, runtime, &trade_id, &pair, &side, price, quantity, pnl, action);
             }
             Effect::Equity => emit_equity(app_handle, runtime, true),
+            Effect::Alert { reason } => {
+                push_bot_log_for(app_handle, Some(&runtime.bot_id), "error", reason.clone());
+                crate::manual::toast_line(app_handle, "QuantAlgo · Bot exit", &reason);
+            }
             Effect::Pause { reason } => {
                 // The stop path takes this runtime's lock: pause from outside it.
                 let (app, bot_id) = (app_handle.clone(), runtime.bot_id.clone());
@@ -489,6 +503,16 @@ pub(crate) struct RunConfig {
     pub fee: f64,
     pub warmup_candles: usize,
     pub strategy_params: Option<Value>,
+    /// Where live orders go when it is not the data exchange
+    /// (PLAN-EXECUTION-VENUES §2: data source and execution venue apart).
+    pub execution_exchange_id: Option<String>,
+    /// Spot, or perp on a Hyperliquid account (Venues 4/5): shorts, funding.
+    pub execution_market: MarketType,
+    /// Perp: isolated leverage (1x default), at most `leverage_cap`.
+    pub leverage: f64,
+    pub leverage_cap: f64,
+    /// A perp position must open at least this far from liquidation (share).
+    pub min_liquidation_distance: f64,
 }
 
 impl RunConfig {
@@ -518,6 +542,19 @@ impl RunConfig {
                 .map(|n| (n as usize).clamp(2, MAX_WARMUP_CANDLES))
                 .unwrap_or(DEFAULT_WARMUP_CANDLES),
             strategy_params: overrides.get("strategy_params").cloned(),
+            execution_exchange_id: overrides
+                .get("execution_exchange_id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty() && *s != bot.exchange_id)
+                .map(String::from),
+            execution_market: if overrides.get("execution_market").and_then(|v| v.as_str()) == Some("perp") {
+                MarketType::Perp
+            } else {
+                MarketType::Spot
+            },
+            leverage: num("leverage", 1.0),
+            leverage_cap: settings.perp_max_leverage,
+            min_liquidation_distance: settings.perp_min_liquidation_distance_pct / 100.0,
         })
     }
 
@@ -534,8 +571,47 @@ impl RunConfig {
         if !(0.0..=MAX_PAPER_FEE_PCT).contains(&self.fee) {
             return Err(format!("Paper fee must be between 0 and {MAX_PAPER_FEE_PCT:.0} percent."));
         }
-        Ok(())
+        if self.execution_market == MarketType::Spot && self.leverage != 1.0 {
+            return Err("Leverage is a perp setting; spot is always 1x.".into());
+        }
+        if self.leverage < 1.0 {
+            return Err("Leverage is 1x or more.".into());
+        }
+        crate::manual::check_leverage(self.leverage, self.leverage_cap)
     }
+}
+
+/// The live broker of a bot's execution account: Binance or Bybit spot, or
+/// Hyperliquid spot or perp at the bot's leverage (Venues 4/5). On perp the
+/// liquidation guard runs first: a position that would open closer to its
+/// liquidation price than the user's limit is refused.
+fn live_broker_for(creds: &crate::exchanges::StoredCredentials, run: &RunConfig, pair: &str) -> Result<LiveBroker, String> {
+    let provider = creds.provider.as_str();
+    if crate::venues::is_perp_dex(provider) {
+        let venue = crate::venues::open_leveraged(creds, run.execution_market, run.leverage as u32)?;
+        venue.ready()?;
+        if run.execution_market == MarketType::Perp {
+            let base = pair.split('/').next().unwrap_or(pair);
+            let inst = venue.instrument(&format!("{base}/USDC"))?;
+            let mmr = venue.maintenance_margin(&inst).unwrap_or(crate::execution::engine::DEFAULT_MAINTENANCE_MARGIN);
+            let distance = crate::execution::guards::liquidation_distance(run.leverage, mmr);
+            let check = crate::execution::guards::liquidation_guard(&inst.pair(), distance, run.min_liquidation_distance);
+            if !check.ok {
+                return Err(format!("liquidation guard: {}", check.detail));
+            }
+        }
+        return Ok(LiveBroker::on_venue(venue, creds.sandbox, "USDC"));
+    }
+    if run.execution_market == MarketType::Perp {
+        return Err(format!("{provider} accounts trade spot only; perp is on Hyperliquid and Lighter accounts."));
+    }
+    if Venue::parse(provider).is_none() {
+        return Err(format!("Live order routing is implemented for Binance, Bybit, Hyperliquid and Lighter; {provider} bots run in paper mode only."));
+    }
+    if creds.api_key.is_empty() || creds.api_secret.is_empty() {
+        return Err("The exchange has no API key and secret stored; add them on the Exchange page.".into());
+    }
+    LiveBroker::new(provider, &creds.api_key, &creds.api_secret, creds.sandbox)
 }
 
 fn check_run_config(
@@ -819,8 +895,9 @@ fn preflight_live(
     bot: &Bot,
     run: &RunConfig,
 ) {
+    let account = run.execution_exchange_id.as_deref().unwrap_or(&bot.exchange_id);
     let creds = match state.db.lock() {
-        Ok(db) => load_credentials(&db, &bot.exchange_id),
+        Ok(db) => load_credentials(&db, account),
         Err(e) => Err(format!("Lock: {e}")),
     };
     let creds = match creds {
@@ -830,48 +907,36 @@ fn preflight_live(
             return;
         }
     };
-    let Some(venue) = Venue::parse(&creds.provider) else {
-        add_preflight_check(
-            checks, has_fatal, app_handle, bot_id, "live_venue", "Live venue", "error",
-            format!("Live order routing is implemented for Binance and Bybit spot; {} bots run in paper mode only.", creds.provider),
-        );
-        return;
-    };
-    add_preflight_check(
-        checks, has_fatal, app_handle, bot_id, "live_venue", "Live venue", if creds.sandbox { "ok" } else { "warn" },
-        if creds.sandbox {
-            format!("{} — sandbox environment (testnet / demo), no real funds", venue.label())
-        } else {
-            format!("{} — PRODUCTION account, real funds", venue.label())
-        },
-    );
-    if creds.api_key.is_empty() || creds.api_secret.is_empty() {
-        add_preflight_check(
-            checks, has_fatal, app_handle, bot_id, "live_credentials", "Exchange credentials", "error",
-            "The exchange has no API key and secret stored; add them on the Exchange page.",
-        );
-        return;
-    }
-    let broker = match LiveBroker::new(&creds.provider, &creds.api_key, &creds.api_secret, creds.sandbox) {
+    let broker = match live_broker_for(&creds, run, &bot.pair) {
         Ok(broker) => broker,
         Err(err) => {
-            add_preflight_check(checks, has_fatal, app_handle, bot_id, "live_credentials", "Exchange credentials", "error", err);
+            add_preflight_check(checks, has_fatal, app_handle, bot_id, "live_venue", "Live venue", "error", err);
             return;
         }
     };
+    let venue = broker.label();
+    let sides = if broker.perp() { format!(", long and short at {}x isolated", run.leverage) } else { ", long-only".into() };
+    add_preflight_check(
+        checks, has_fatal, app_handle, bot_id, "live_venue", "Live venue", if creds.sandbox { "ok" } else { "warn" },
+        if creds.sandbox {
+            format!("{venue}{sides} — sandbox environment (testnet / demo), no real funds")
+        } else {
+            format!("{venue}{sides} — PRODUCTION account, real funds")
+        },
+    );
     let quote = bot.pair.split('/').nth(1).unwrap_or("USDT").to_string();
     let available = match broker.available_balance(&quote) {
         Ok(available) => {
             add_preflight_check(
                 checks, has_fatal, app_handle, bot_id, "live_credentials", "Exchange credentials", "ok",
-                format!("Authenticated with {}; {available:.2} {quote} available", venue.label()),
+                format!("Authenticated with {venue}; {available:.2} {quote} available"),
             );
             available
         }
         Err(err) => {
             add_preflight_check(
                 checks, has_fatal, app_handle, bot_id, "live_credentials", "Exchange credentials", "error",
-                format!("Authentication with {} failed: {err}", venue.label()),
+                format!("Authentication with {venue} failed: {err}"),
             );
             return;
         }
@@ -938,21 +1003,17 @@ fn connect_live(
     bot: &Bot,
     run: &RunConfig,
 ) -> Result<(Box<dyn Broker>, SymbolFilters), String> {
+    let account = run.execution_exchange_id.as_deref().unwrap_or(&bot.exchange_id);
     let creds = {
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
-        load_credentials(&db, &bot.exchange_id)?
+        load_credentials(&db, account)?
     };
-    let venue = Venue::parse(&creds.provider).ok_or_else(|| {
-        format!("Live order routing is implemented for Binance and Bybit spot; {} bots run in paper mode only.", creds.provider)
-    })?;
-    if creds.api_key.is_empty() || creds.api_secret.is_empty() {
-        return Err("The exchange has no API key and secret stored; add them on the Exchange page.".into());
-    }
-    let broker = LiveBroker::new(&creds.provider, &creds.api_key, &creds.api_secret, creds.sandbox)?;
+    let broker = live_broker_for(&creds, run, &bot.pair)?;
+    let venue = broker.label();
     let quote = bot.pair.split('/').nth(1).unwrap_or("USDT").to_string();
     let available = broker
         .available_balance(&quote)
-        .map_err(|e| format!("Authentication with {} failed: {e}", venue.label()))?;
+        .map_err(|e| format!("Authentication with {venue} failed: {e}"))?;
     if bot.budget > available + 1e-9 {
         return Err(format!(
             "Budget {:.2} {quote} exceeds the {available:.2} {quote} available on the exchange.",
@@ -974,14 +1035,15 @@ fn connect_live(
         Some(&bot.id),
         "warn",
         format!(
-            "LIVE bot on {}{}: budget {:.2} {quote} of {available:.2} available; {} lot step {} {}, minimum order {} {quote}; long-only.",
-            venue.label(),
+            "LIVE bot on {}{}: budget {:.2} {quote} of {available:.2} available; {} lot step {} {}, minimum order {} {quote}; {}.",
+            venue,
             if creds.sandbox { " (sandbox)" } else { " (PRODUCTION)" },
             bot.budget,
             filters.symbol,
             filters.qty_string(filters.qty_step),
             filters.base,
             filters.quote_string(filters.min_notional),
+            if broker.perp() { format!("long and short at {}x isolated", run.leverage) } else { "long-only".into() },
         ),
     );
     Ok((Box::new(broker), filters))
@@ -1095,6 +1157,8 @@ pub(crate) async fn start_bot(
     app_handle: AppHandle,
 ) -> Result<Bot, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // A client connected to a server never runs bots (one trader).
+        qs_core::server::executors_allowed()?;
         let state = app_handle.state::<AppState>();
         let bot = {
             let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
@@ -1231,10 +1295,26 @@ fn start_bot_with(
                 Vec::new()
             }
         };
-    let initial_candle = match startup_candles.pop() {
-        Some(candle) => candle,
-        None => fetch_latest_market_candle(&exchange_provider, &bot.pair, &bot.timeframe)?,
+    // The newest row is the current price. The strategy only ever sees finished
+    // candles, so the forming one is not a signal at the start either.
+    let mark_price = match startup_candles.last() {
+        Some(candle) => candle.close,
+        None => fetch_latest_market_candle(&exchange_provider, &bot.pair, &bot.timeframe)?.close,
     };
+    let started_now = Utc::now();
+    startup_candles.retain(|c| candle_finished(c, &bot.timeframe, started_now));
+    // A resumed bot acts on what closed while it was down: its signals still count.
+    let missed = if restored.is_some() {
+        let heartbeat: Option<String> = {
+            let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+            db.query_row("SELECT heartbeat_at FROM bots WHERE id = ?1", params![bot.id], |r| r.get(0)).unwrap_or(None)
+        };
+        candles_missed_since(&startup_candles, &bot.timeframe, heartbeat.as_deref())
+    } else {
+        0
+    };
+    let replay = startup_candles.split_off(startup_candles.len() - missed);
+    let last_finished_time = replay.last().or(startup_candles.last()).map(|c| c.time.clone());
     let warmup_json = startup_candles
         .iter()
         .map(|c| market_candle_json(c, &bot.pair))
@@ -1266,7 +1346,7 @@ fn start_bot_with(
         pair: bot.pair.clone(),
         mode,
         balance: restored.as_ref().map(|(b, _)| b.balance).unwrap_or(bot.budget),
-        last_price: initial_candle.close,
+        last_price: mark_price,
         open_positions: restored.as_ref().map(|(b, _)| b.positions.clone()).unwrap_or_default(),
         fee_rate: run.fee / 100.0,
         slippage_pct: run.slippage,
@@ -1275,6 +1355,7 @@ fn start_bot_with(
         broker: live_broker,
         filters: live_filters,
         order_errors: 0,
+        execution_account: (mode == Mode::Live).then(|| run.execution_exchange_id.clone().unwrap_or_else(|| bot.exchange_id.clone())),
     }));
 
     // stdout: the strategy's RPC, with the startup acknowledgement first
@@ -1344,7 +1425,12 @@ fn start_bot_with(
         });
     }
 
-    let quote_asset = bot.pair.split('/').nth(1).unwrap_or("USDT").to_string();
+    // From the runtime, not the budget: a resumed strategy must know what it
+    // holds, or a long-only one would never sell.
+    let (start_balance, start_positions) = {
+        let rt = runtime.lock().map_err(|e| format!("Lock: {e}"))?;
+        (rt.balance_json(), rt.positions_json())
+    };
     write_json_line(
         &stdin,
         json!({
@@ -1353,9 +1439,9 @@ fn start_bot_with(
             "params": {
                 "params": strategy_params,
                 "pair": bot.pair,
-                "balance": { quote_asset: bot.budget },
-                "positions": {},
-                "mark_price": initial_candle.close,
+                "balance": start_balance,
+                "positions": start_positions,
+                "mark_price": mark_price,
                 "candles": warmup_json,
             }
         }),
@@ -1380,10 +1466,9 @@ fn start_bot_with(
             return Err(message);
         }
     }
-    write_json_line(
-        &stdin,
-        json!({ "method": "on_candle", "params": market_candle_json(&initial_candle, &bot.pair) }),
-    )?;
+    for candle in &replay {
+        write_json_line(&stdin, json!({ "method": "on_candle", "params": market_candle_json(candle, &bot.pair) }))?;
+    }
 
     {
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
@@ -1412,8 +1497,9 @@ fn start_bot_with(
         Some(&bot.id),
         "info",
         format!(
-            "{} bot '{}' started on {} {} ({}); warmed with {} prior candles.",
-            mode.as_str(), bot.name, bot.pair, bot.timeframe, exchange_provider, warmup_json.len()
+            "{} bot '{}' started on {} {} ({}); warmed with {} prior candles. It acts when a candle closes{}.",
+            mode.as_str(), bot.name, bot.pair, bot.timeframe, exchange_provider, warmup_json.len(),
+            if replay.is_empty() { String::new() } else { format!("; {} closed while it was down", replay.len()) }
         ),
     );
     if let Ok(rt) = runtime.lock() {
@@ -1431,7 +1517,7 @@ fn start_bot_with(
         let timeframe = bot.timeframe.clone();
         let provider = exchange_provider.clone();
         let bot_id = bot.id.clone();
-        let mut last_candle_time = Some(initial_candle.time.clone());
+        let mut last_candle_time = last_finished_time;
         std::thread::spawn(move || {
             let mut idx = 0_usize;
             // Health (PLAN-AUTO-EXECUTION §2.6): no new candle for two bar
@@ -1445,14 +1531,32 @@ fn start_bot_with(
             // half minute is plenty for any of them.
             let poll_seconds = 30;
             while !stop.load(Ordering::Relaxed) {
-                match fetch_latest_market_candle(&provider, &pair, &timeframe) {
-                    Ok(candle) => {
+                // An exit that has not gone through comes first, whatever the
+                // feed does: while one is open, the feed cannot stop the bot.
+                let closing = match runtime.lock() {
+                    Ok(mut rt) => {
+                        let now = Utc::now().to_rfc3339();
+                        let effects = rt.retry_exits(&now);
+                        apply_effects(&app, &stdin, &rt, effects);
+                        rt.has_closing()
+                    }
+                    Err(_) => false,
+                };
+                match poll_market(&provider, &pair, &timeframe) {
+                    Ok(poll) => {
                         consecutive_errors = 0;
                         crate::unattended::heartbeat(&app, &bot_id);
-                        let is_new = last_candle_time.as_deref() != Some(candle.time.as_str());
+                        let is_new = match (&poll.finished, &last_candle_time) {
+                            (Some(candle), Some(last)) => candle.time != *last,
+                            _ => false,
+                        };
+                        // Started without warm-up: from this candle on.
+                        if last_candle_time.is_none() {
+                            last_candle_time = poll.finished.as_ref().map(|c| c.time.clone());
+                        }
                         if is_new {
                             last_new_candle = Instant::now();
-                        } else if crate::unattended::feed_stale(last_new_candle.elapsed().as_secs(), &timeframe) {
+                        } else if !closing && crate::unattended::feed_stale(last_new_candle.elapsed().as_secs(), &timeframe) {
                             let reason = format!("no new {timeframe} candle from {provider} for two bar lengths");
                             let (app2, id2) = (app.clone(), bot_id.clone());
                             std::thread::spawn(move || crate::unattended::pause_bot(&app2, &id2, &reason));
@@ -1463,24 +1567,24 @@ fn start_bot_with(
                             last_snapshot = Instant::now();
                         }
                         if let Ok(mut rt) = runtime.lock() {
-                            rt.last_price = candle.close;
+                            rt.last_price = poll.price;
                             emit_equity(&app, &rt, snapshot);
                         }
-                        if is_new {
+                        if let (true, Some(candle)) = (is_new, &poll.finished) {
                             let _ = write_json_line(
                                 &stdin,
-                                json!({ "method": "on_candle", "params": market_candle_json(&candle, &pair) }),
+                                json!({ "method": "on_candle", "params": market_candle_json(candle, &pair) }),
                             );
                             last_candle_time = Some(candle.time.clone());
-                            push_bot_log_for(&app, Some(&bot_id), "info", format!("Market candle {provider} {pair} close {:.4}", candle.close));
+                            push_bot_log_for(&app, Some(&bot_id), "info", format!("Market candle {provider} {pair} closed at {:.4} (open {:.4}, high {:.4}, low {:.4})", candle.close, candle.open, candle.high, candle.low));
                         } else if idx == 0 || idx % 6 == 0 {
-                            push_bot_log_for(&app, Some(&bot_id), "info", format!("Market price {provider} {pair} close {:.4}", candle.close));
+                            push_bot_log_for(&app, Some(&bot_id), "info", format!("Market price {provider} {pair} {:.4}", poll.price));
                         }
                     }
                     Err(err) => {
                         consecutive_errors += 1;
                         push_bot_log_for(&app, Some(&bot_id), "warn", format!("Public market data fetch failed for {provider} {pair}: {err}"));
-                        if consecutive_errors >= 3 {
+                        if consecutive_errors >= 3 && !closing {
                             emit_bot_error(
                                 &app,
                                 Some(&bot_id),

@@ -327,10 +327,369 @@ pub fn vault_status() -> crate::vault::VaultStatus {
     crate::vault::status()
 }
 
+/// Export everything (PLAN-MIGRATION §2.1): what would go in, before it starts.
+#[tauri::command(async)]
+pub fn bundle_plan(include: Option<std::collections::BTreeMap<String, bool>>) -> crate::bundle::PlanSummary {
+    crate::bundle::plan_summary(&paths::root(), &crate::bundle::ExportOptions { include: include.unwrap_or_default() })
+}
+
+/// Write `<machine>-<date>.qsbundle` into `dest_dir`; progress arrives as
+/// `qs:bundle-progress` events. `external` for agents: the file holds every
+/// secret, encrypted under the passphrase.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn bundle_export<R: Runtime>(
+    app: AppHandle<R>,
+    dest_dir: String,
+    passphrase: String,
+    include: Option<std::collections::BTreeMap<String, bool>>,
+) -> Result<serde_json::Value, String> {
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        crate::bundle::export_suite(std::path::Path::new(&dest_dir), &passphrase, include.unwrap_or_default(), &mut |p| {
+            if last.elapsed() >= std::time::Duration::from_millis(250) || p.current == "done" {
+                last = std::time::Instant::now();
+                let _ = tauri::Emitter::emit(&app, "qs:bundle-progress", &p);
+            }
+        })
+    })
+    .await
+    .map_err(|e| format!("Export failed: {e}"))?
+}
+
+/// Import (PLAN-MIGRATION §2.2): check a bundle and propose the path table.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn import_propose(bundle_path: String, passphrase: String) -> Result<serde_json::Value, String> {
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = paths::root();
+        let probe = root.with_file_name(".quantsuite-import-probe");
+        let (manifest, rows) = crate::import::propose(std::path::Path::new(&bundle_path), &passphrase, &probe, &root)?;
+        Ok(serde_json::json!({
+            "machine": manifest.machine,
+            "created_at": manifest.created_at,
+            "suite_version": manifest.suite_version,
+            "files": manifest.files.len(),
+            "bytes": manifest.files.iter().map(|f| f.size).sum::<u64>(),
+            "secrets": manifest.secrets.len(),
+            "rows": rows,
+        }))
+    })
+    .await
+    .map_err(|e| format!("Import failed: {e}"))?
+}
+
+/// Import into a staging folder; the switch happens at the next start.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn import_bundle(
+    bundle_path: String,
+    passphrase: String,
+    rows: Vec<crate::import::PathRow>,
+) -> Result<crate::import::Report, String> {
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::import::import(std::path::Path::new(&bundle_path), &passphrase, &paths::root(), &rows, &crate::vault::OsKeyStore)
+    })
+    .await
+    .map_err(|e| format!("Import failed: {e}"))?
+}
+
+// ── Server mode (PLAN-SERVER-CLIENT §5, card Server 2/7) ─────────────────
+
+#[derive(serde::Serialize)]
+pub struct ServerStatus {
+    #[serde(flatten)]
+    pub health: crate::server::Health,
+    /// The stored role; `role` above is this launch's (`--server` wins).
+    pub stored_role: Option<crate::server::Role>,
+}
+
+/// This installation's role and health: uptime, disk, version, watchdog.
+#[tauri::command(async)]
+pub fn server_status<R: Runtime>(app: AppHandle<R>, db_state: State<'_, Db>) -> Result<ServerStatus, String> {
+    let stored_role = {
+        let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+        crate::server::stored_role(&conn)
+    };
+    let autostart = crate::autostart::is_enabled(&app).ok();
+    let mut health = crate::server::health(&app.package_info().version.to_string(), &paths::root(), crate::server::watchdog_enabled(), autostart);
+    health.gateway = crate::gateway::listening(&app);
+    Ok(ServerStatus { health, stored_role })
+}
+
+/// Make this installation local or a server. `client` comes with a server
+/// connection (card 5), not from here.
+#[tauri::command(async)]
+pub fn server_set_role(role: String, db_state: State<'_, Db>) -> Result<(), String> {
+    let r = crate::server::Role::parse(&role).ok_or_else(|| format!("Unknown role {role:?}."))?;
+    if r == crate::server::Role::Client {
+        return Err("A PC becomes a client by connecting to a server (Settings → Connections).".into());
+    }
+    let conn = db_state.0.lock().map_err(|e| e.to_string())?;
+    crate::server::set_role(&conn, r)
+}
+
+/// Create or remove the Task Scheduler watchdog that restarts the server.
+#[tauri::command(async)]
+pub fn server_set_watchdog(enabled: bool) -> Result<Option<bool>, String> {
+    crate::server::set_watchdog(enabled)?;
+    Ok(crate::server::watchdog_enabled())
+}
+
+/// Whether an import waits for the next start.
+#[tauri::command(async)]
+pub fn import_status() -> Option<String> {
+    crate::import::pending(&paths::root())
+}
+
+#[tauri::command(async)]
+pub fn bundle_export_cancel() {
+    crate::bundle::CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Open the vault with its passphrase — only for machines without an OS
 /// keystore, where the master key sits in a passphrase file.
 #[tauri::command(async)]
 pub fn vault_unlock(passphrase: String) -> crate::vault::VaultStatus {
     let passphrase = zeroize::Zeroizing::new(passphrase);
     crate::vault::unlock(&passphrase)
+}
+
+// ── The gateway (PLAN-SERVER-CLIENT §4, card Server 3/7) ─────────────────
+//
+// On the server: where it listens, pairing, devices, the audit log and the
+// PIN. On any PC: pairing with a server and the saved connections. Devices and
+// the audit are `server` in the remote manifest (a paired PC can revoke a lost
+// laptop); pairing, the PIN and the address only on the server's own screen.
+
+use crate::gateway;
+use tauri::Manager;
+
+#[tauri::command(async)]
+pub fn gateway_status<R: Runtime>(app: AppHandle<R>, db_state: State<'_, Db>) -> Result<gateway::GatewayStatus, String> {
+    let conn = db_state.0.lock().map_err(map_err)?;
+    Ok(gateway::status(&app, &conn))
+}
+
+/// Saves where the server listens (`None`: nowhere) and restarts the listener.
+#[tauri::command]
+pub async fn gateway_configure<R: Runtime>(app: AppHandle<R>, address: Option<String>, every_interface: bool) -> Result<gateway::GatewayStatus, String> {
+    {
+        let db = app.state::<Db>();
+        let conn = db.0.lock().map_err(map_err)?;
+        gateway::configure(&conn, address.as_deref(), every_interface)?;
+    }
+    let restarted = gateway::restart(&app).await;
+    let db = app.state::<Db>();
+    let conn = db.0.lock().map_err(map_err)?;
+    let status = gateway::status(&app, &conn);
+    restarted.map(|_| status)
+}
+
+#[tauri::command(async)]
+pub fn gateway_pairing_start<R: Runtime>(app: AppHandle<R>) -> Result<gateway::PairingView, String> {
+    gateway::pairing_start(&app)
+}
+
+#[tauri::command(async)]
+pub fn gateway_pairing_status<R: Runtime>(app: AppHandle<R>) -> Result<gateway::PairingView, String> {
+    gateway::pairing_status(&app)
+}
+
+/// The server's user compared the four words: a role lets the device in,
+/// none turns it away.
+#[tauri::command(async)]
+pub fn gateway_pairing_confirm<R: Runtime>(app: AppHandle<R>, device_id: String, role: Option<String>) -> Result<(), String> {
+    gateway::pairing_confirm(&app, &device_id, role.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn gateway_pairing_cancel<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    gateway::pairing_cancel(&app)
+}
+
+#[tauri::command(async)]
+pub fn gateway_devices<R: Runtime>(app: AppHandle<R>) -> Result<Vec<gateway::DeviceLine>, String> {
+    gateway::devices(&app)
+}
+
+#[tauri::command(async)]
+pub fn gateway_device_rename<R: Runtime>(app: AppHandle<R>, id: String, name: String) -> Result<qs_gateway::registry::Device, String> {
+    gateway::device_rename(&app, &id, &name)
+}
+
+#[tauri::command(async)]
+pub fn gateway_device_set_role<R: Runtime>(app: AppHandle<R>, id: String, role: String) -> Result<qs_gateway::registry::Device, String> {
+    gateway::device_set_role(&app, &id, &role)
+}
+
+/// Removes a device's access; its connections drop at once.
+#[tauri::command(async)]
+pub fn gateway_device_revoke<R: Runtime>(app: AppHandle<R>, id: String) -> Result<qs_gateway::registry::Device, String> {
+    gateway::device_revoke(&app, &id)
+}
+
+#[tauri::command(async)]
+pub fn gateway_device_forget<R: Runtime>(app: AppHandle<R>, id: String) -> Result<(), String> {
+    gateway::device_forget(&app, &id)
+}
+
+#[tauri::command(async)]
+pub fn gateway_audit<R: Runtime>(app: AppHandle<R>, limit: Option<usize>) -> Result<Vec<qs_gateway::registry::AuditEntry>, String> {
+    gateway::audit(&app, limit.unwrap_or(200))
+}
+
+/// Sets the server PIN (6–12 digits) or, with `None`, removes it. Only an
+/// Argon2id hash is kept.
+#[tauri::command(async)]
+pub fn gateway_set_pin<R: Runtime>(app: AppHandle<R>, pin: Option<String>) -> Result<(), String> {
+    gateway::set_pin(&app, pin.as_deref())
+}
+
+/// This PC pairs with a server: returns the four words to compare.
+#[tauri::command]
+pub async fn gateway_pair_begin<R: Runtime>(app: AppHandle<R>, address: String, code: String) -> Result<gateway::PairBegun, String> {
+    gateway::pair_begin(&app, &address, &code).await
+}
+
+// ── Client mode (card Server 5/7) ──────────────────────────────────────────
+
+/// A call the frontend seam routed to the server this PC uses. Errors are
+/// `{ code, message }` (the seam asks for the PIN on `step_up_required`).
+#[tauri::command]
+pub async fn gateway_remote_call<R: Runtime>(app: AppHandle<R>, cmd: String, args: serde_json::Value) -> Result<serde_json::Value, serde_json::Value> {
+    gateway::remote_call(&app, cmd, args).await
+}
+
+/// Enters the server PIN for `external` actions (valid 10 minutes).
+#[tauri::command]
+pub async fn gateway_step_up<R: Runtime>(app: AppHandle<R>, pin: String) -> Result<u64, String> {
+    gateway::step_up(&app, &pin).await
+}
+
+/// Local, or the server this PC uses and the connection's state.
+#[tauri::command(async)]
+pub fn gateway_link_status<R: Runtime>(app: AppHandle<R>) -> gateway::LinkStatus {
+    gateway::link_status(&app)
+}
+
+#[tauri::command(async)]
+pub fn gateway_link_retry<R: Runtime>(app: AppHandle<R>) {
+    gateway::retry(&app)
+}
+
+/// Switches this PC to a saved server connection (`id`) or back to its own
+/// data (`null`), then restarts QuantSuite: the role decides at start whether
+/// this PC may trade.
+#[tauri::command(async)]
+pub fn gateway_use_connection<R: Runtime>(app: AppHandle<R>, id: Option<String>, db_state: State<'_, Db>) -> Result<(), String> {
+    {
+        let conn = db_state.0.lock().map_err(map_err)?;
+        gateway::use_connection(&conn, id.as_deref().filter(|s| !s.is_empty()))?;
+    }
+    app.restart()
+}
+
+/// The pairing in progress on this PC, if any.
+#[tauri::command]
+pub async fn gateway_pair_current<R: Runtime>(app: AppHandle<R>) -> Result<Option<gateway::PairBegun>, String> {
+    Ok(gateway::pair_current(&app).await)
+}
+
+/// This PC's user compared the words; `accept` saves the connection once the
+/// server's user has confirmed too.
+#[tauri::command]
+pub async fn gateway_pair_finish<R: Runtime>(app: AppHandle<R>, accept: bool) -> Result<Option<gateway::Connection>, String> {
+    gateway::pair_finish(&app, accept).await
+}
+
+#[tauri::command(async)]
+pub fn gateway_connections(db_state: State<'_, Db>) -> Result<Vec<gateway::Connection>, String> {
+    let conn = db_state.0.lock().map_err(map_err)?;
+    Ok(gateway::connections(&conn))
+}
+
+/// Connects to a saved server and reads its health through the connection.
+#[tauri::command]
+pub async fn gateway_connection_test<R: Runtime>(app: AppHandle<R>, id: String) -> Result<gateway::ConnectionTest, String> {
+    let found = {
+        let db = app.state::<Db>();
+        let conn = db.0.lock().map_err(map_err)?;
+        gateway::connections(&conn).into_iter().find(|c| c.id == id)
+    };
+    let c = found.ok_or("No such connection.")?;
+    gateway::test_connection(&app, &c).await
+}
+
+#[tauri::command(async)]
+pub fn gateway_connection_forget(id: String, db_state: State<'_, Db>) -> Result<(), String> {
+    let conn = db_state.0.lock().map_err(map_err)?;
+    gateway::forget_connection(&conn, &id)
+}
+
+// ── Moving this installation to the server (PLAN-MIGRATION §2.3, card 4) ──
+
+use crate::movement;
+
+#[tauri::command(async)]
+pub fn move_info(db_state: State<'_, Db>) -> Result<movement::MoveInfo, String> {
+    let conn = db_state.0.lock().map_err(map_err)?;
+    Ok(movement::info(&conn))
+}
+
+/// Step 1 on the PC that moves: the bundle, into `<data root>-move/`.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn move_export<R: Runtime>(
+    app: AppHandle<R>,
+    connection: String,
+    passphrase: String,
+    include: Option<std::collections::BTreeMap<String, bool>>,
+) -> Result<movement::MoveInfo, String> {
+    movement::export(&app, &connection, zeroize::Zeroizing::new(passphrase), include.unwrap_or_default()).await
+}
+
+/// Step 2: the server PIN, then the bundle over the paired connection
+/// (continuing a part the server kept).
+#[tauri::command]
+pub async fn move_send<R: Runtime>(app: AppHandle<R>, connection: String, pin: String) -> Result<serde_json::Value, String> {
+    movement::send(&app, &connection, &pin).await
+}
+
+#[tauri::command(async)]
+pub fn move_cancel<R: Runtime>(app: AppHandle<R>) {
+    movement::cancel(&app)
+}
+
+/// Step 3: the server checks the bundle and proposes the path table.
+#[tauri::command]
+pub async fn move_remote_propose<R: Runtime>(app: AppHandle<R>, passphrase: String) -> Result<serde_json::Value, String> {
+    movement::remote_propose(&app, &passphrase).await
+}
+
+/// Step 4: the server imports; its report.
+#[tauri::command]
+pub async fn move_remote_import<R: Runtime>(app: AppHandle<R>, passphrase: String, rows: Vec<crate::import::PathRow>) -> Result<serde_json::Value, String> {
+    movement::remote_import(&app, &passphrase, rows).await
+}
+
+/// Step 5, after the move was confirmed here: this PC uses the server from
+/// now on — QuantSuite restarts.
+#[tauri::command(async)]
+pub fn move_finish<R: Runtime>(app: AppHandle<R>, connection: String) -> Result<(), String> {
+    movement::finish(&app, &connection)?;
+    app.restart()
+}
+
+/// On the server: check a bundle that arrived from a moving PC.
+#[tauri::command]
+pub async fn move_propose(name: String, passphrase: String) -> Result<serde_json::Value, String> {
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    tauri::async_runtime::spawn_blocking(move || movement::propose(&name, &passphrase)).await.map_err(map_err)?
+}
+
+/// On the server: import it, keeping this server's gateway; restarts after a
+/// green report.
+#[tauri::command]
+pub async fn move_import<R: Runtime>(app: AppHandle<R>, name: String, passphrase: String, rows: Vec<crate::import::PathRow>) -> Result<crate::import::Report, String> {
+    movement::import(&app, name, zeroize::Zeroizing::new(passphrase), rows).await
 }

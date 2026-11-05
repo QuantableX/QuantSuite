@@ -26,6 +26,8 @@ export const useAppStore = defineStore('algo/app', () => {
     paper_fee_pct: 0.1,
     default_budget: 10000,
     default_warmup_candles: 200,
+    perp_max_leverage: 3,
+    perp_min_liquidation_distance_pct: 20,
     defaults_version: 3,
     notify_on_trade: true,
     notify_on_error: true,

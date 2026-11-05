@@ -379,6 +379,42 @@
           "markdownDescription": "Denies the autostart_enabled command without any pre-configured scope."
         },
         {
+          "description": "Enables the bundle_export command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-bundle-export",
+          "markdownDescription": "Enables the bundle_export command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bundle_export command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-bundle-export",
+          "markdownDescription": "Denies the bundle_export command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bundle_export_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-bundle-export-cancel",
+          "markdownDescription": "Enables the bundle_export_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bundle_export_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-bundle-export-cancel",
+          "markdownDescription": "Denies the bundle_export_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bundle_plan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-bundle-plan",
+          "markdownDescription": "Enables the bundle_plan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bundle_plan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-bundle-plan",
+          "markdownDescription": "Denies the bundle_plan command without any pre-configured scope."
+        },
+        {
           "description": "Enables the count_entities command without any pre-configured scope.",
           "type": "string",
           "const": "allow-count-entities",
@@ -415,6 +451,294 @@
           "markdownDescription": "Denies the emit_event command without any pre-configured scope."
         },
         {
+          "description": "Enables the gateway_audit command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-audit",
+          "markdownDescription": "Enables the gateway_audit command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_audit command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-audit",
+          "markdownDescription": "Denies the gateway_audit command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_configure command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-configure",
+          "markdownDescription": "Enables the gateway_configure command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_configure command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-configure",
+          "markdownDescription": "Denies the gateway_configure command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_connection_forget command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-connection-forget",
+          "markdownDescription": "Enables the gateway_connection_forget command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_connection_forget command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-connection-forget",
+          "markdownDescription": "Denies the gateway_connection_forget command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_connection_test command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-connection-test",
+          "markdownDescription": "Enables the gateway_connection_test command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_connection_test command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-connection-test",
+          "markdownDescription": "Denies the gateway_connection_test command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_connections command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-connections",
+          "markdownDescription": "Enables the gateway_connections command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_connections command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-connections",
+          "markdownDescription": "Denies the gateway_connections command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_device_forget command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-device-forget",
+          "markdownDescription": "Enables the gateway_device_forget command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_device_forget command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-device-forget",
+          "markdownDescription": "Denies the gateway_device_forget command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_device_rename command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-device-rename",
+          "markdownDescription": "Enables the gateway_device_rename command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_device_rename command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-device-rename",
+          "markdownDescription": "Denies the gateway_device_rename command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_device_revoke command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-device-revoke",
+          "markdownDescription": "Enables the gateway_device_revoke command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_device_revoke command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-device-revoke",
+          "markdownDescription": "Denies the gateway_device_revoke command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_device_set_role command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-device-set-role",
+          "markdownDescription": "Enables the gateway_device_set_role command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_device_set_role command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-device-set-role",
+          "markdownDescription": "Denies the gateway_device_set_role command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-devices",
+          "markdownDescription": "Enables the gateway_devices command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-devices",
+          "markdownDescription": "Denies the gateway_devices command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_link_retry command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-link-retry",
+          "markdownDescription": "Enables the gateway_link_retry command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_link_retry command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-link-retry",
+          "markdownDescription": "Denies the gateway_link_retry command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_link_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-link-status",
+          "markdownDescription": "Enables the gateway_link_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_link_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-link-status",
+          "markdownDescription": "Denies the gateway_link_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_pair_begin command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-pair-begin",
+          "markdownDescription": "Enables the gateway_pair_begin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_pair_begin command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-pair-begin",
+          "markdownDescription": "Denies the gateway_pair_begin command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_pair_current command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-pair-current",
+          "markdownDescription": "Enables the gateway_pair_current command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_pair_current command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-pair-current",
+          "markdownDescription": "Denies the gateway_pair_current command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_pair_finish command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-pair-finish",
+          "markdownDescription": "Enables the gateway_pair_finish command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_pair_finish command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-pair-finish",
+          "markdownDescription": "Denies the gateway_pair_finish command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_pairing_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-pairing-cancel",
+          "markdownDescription": "Enables the gateway_pairing_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_pairing_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-pairing-cancel",
+          "markdownDescription": "Denies the gateway_pairing_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_pairing_confirm command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-pairing-confirm",
+          "markdownDescription": "Enables the gateway_pairing_confirm command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_pairing_confirm command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-pairing-confirm",
+          "markdownDescription": "Denies the gateway_pairing_confirm command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_pairing_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-pairing-start",
+          "markdownDescription": "Enables the gateway_pairing_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_pairing_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-pairing-start",
+          "markdownDescription": "Denies the gateway_pairing_start command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_pairing_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-pairing-status",
+          "markdownDescription": "Enables the gateway_pairing_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_pairing_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-pairing-status",
+          "markdownDescription": "Denies the gateway_pairing_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_remote_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-remote-call",
+          "markdownDescription": "Enables the gateway_remote_call command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_remote_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-remote-call",
+          "markdownDescription": "Denies the gateway_remote_call command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_set_pin command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-set-pin",
+          "markdownDescription": "Enables the gateway_set_pin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_set_pin command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-set-pin",
+          "markdownDescription": "Denies the gateway_set_pin command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-status",
+          "markdownDescription": "Enables the gateway_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-status",
+          "markdownDescription": "Denies the gateway_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_step_up command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-step-up",
+          "markdownDescription": "Enables the gateway_step_up command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_step_up command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-step-up",
+          "markdownDescription": "Denies the gateway_step_up command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the gateway_use_connection command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-gateway-use-connection",
+          "markdownDescription": "Enables the gateway_use_connection command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the gateway_use_connection command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-gateway-use-connection",
+          "markdownDescription": "Denies the gateway_use_connection command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_setting command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-setting",
@@ -437,6 +761,42 @@
           "type": "string",
           "const": "deny-get-settings",
           "markdownDescription": "Denies the get_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the import_bundle command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-import-bundle",
+          "markdownDescription": "Enables the import_bundle command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the import_bundle command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-import-bundle",
+          "markdownDescription": "Denies the import_bundle command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the import_propose command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-import-propose",
+          "markdownDescription": "Enables the import_propose command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the import_propose command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-import-propose",
+          "markdownDescription": "Denies the import_propose command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the import_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-import-status",
+          "markdownDescription": "Enables the import_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the import_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-import-status",
+          "markdownDescription": "Denies the import_status command without any pre-configured scope."
         },
         {
           "description": "Enables the link_entities command without any pre-configured scope.",
@@ -473,6 +833,114 @@
           "type": "string",
           "const": "deny-list-entities",
           "markdownDescription": "Denies the list_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-cancel",
+          "markdownDescription": "Enables the move_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-cancel",
+          "markdownDescription": "Denies the move_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_export command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-export",
+          "markdownDescription": "Enables the move_export command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_export command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-export",
+          "markdownDescription": "Denies the move_export command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_finish command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-finish",
+          "markdownDescription": "Enables the move_finish command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_finish command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-finish",
+          "markdownDescription": "Denies the move_finish command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-import",
+          "markdownDescription": "Enables the move_import command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-import",
+          "markdownDescription": "Denies the move_import command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-info",
+          "markdownDescription": "Enables the move_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-info",
+          "markdownDescription": "Denies the move_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_propose command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-propose",
+          "markdownDescription": "Enables the move_propose command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_propose command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-propose",
+          "markdownDescription": "Denies the move_propose command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_remote_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-remote-import",
+          "markdownDescription": "Enables the move_remote_import command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_remote_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-remote-import",
+          "markdownDescription": "Denies the move_remote_import command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_remote_propose command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-remote-propose",
+          "markdownDescription": "Enables the move_remote_propose command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_remote_propose command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-remote-propose",
+          "markdownDescription": "Denies the move_remote_propose command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the move_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-move-send",
+          "markdownDescription": "Enables the move_send command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the move_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-move-send",
+          "markdownDescription": "Denies the move_send command without any pre-configured scope."
         },
         {
           "description": "Enables the open_module_window command without any pre-configured scope.",
@@ -533,6 +1001,42 @@
           "type": "string",
           "const": "deny-search-entities",
           "markdownDescription": "Denies the search_entities command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the server_set_role command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-server-set-role",
+          "markdownDescription": "Enables the server_set_role command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the server_set_role command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-server-set-role",
+          "markdownDescription": "Denies the server_set_role command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the server_set_watchdog command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-server-set-watchdog",
+          "markdownDescription": "Enables the server_set_watchdog command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the server_set_watchdog command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-server-set-watchdog",
+          "markdownDescription": "Denies the server_set_watchdog command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the server_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-server-status",
+          "markdownDescription": "Enables the server_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the server_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-server-status",
+          "markdownDescription": "Denies the server_status command without any pre-configured scope."
         },
         {
           "description": "Enables the set_autostart command without any pre-configured scope.",
@@ -679,10 +1183,10 @@
           "markdownDescription": "Denies the window_toggle command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle, the agent tool catalogue and the secret vault's status (never a secret value). process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`\n- `allow-vault-status`\n- `allow-vault-unlock`",
+          "description": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle, the agent tool catalogue and the secret vault's status (never a secret value). process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`\n- `allow-vault-status`\n- `allow-vault-unlock`\n- `allow-bundle-plan`\n- `allow-bundle-export`\n- `allow-bundle-export-cancel`\n- `allow-import-propose`\n- `allow-import-bundle`\n- `allow-import-status`\n- `allow-server-status`\n- `allow-server-set-role`\n- `allow-server-set-watchdog`\n- `allow-gateway-status`\n- `allow-gateway-configure`\n- `allow-gateway-pairing-start`\n- `allow-gateway-pairing-status`\n- `allow-gateway-pairing-confirm`\n- `allow-gateway-pairing-cancel`\n- `allow-gateway-devices`\n- `allow-gateway-device-rename`\n- `allow-gateway-device-set-role`\n- `allow-gateway-device-revoke`\n- `allow-gateway-device-forget`\n- `allow-gateway-audit`\n- `allow-gateway-set-pin`\n- `allow-gateway-pair-begin`\n- `allow-gateway-pair-finish`\n- `allow-gateway-pair-current`\n- `allow-gateway-remote-call`\n- `allow-gateway-step-up`\n- `allow-gateway-link-status`\n- `allow-gateway-link-retry`\n- `allow-gateway-use-connection`\n- `allow-move-info`\n- `allow-move-export`\n- `allow-move-send`\n- `allow-move-cancel`\n- `allow-move-remote-propose`\n- `allow-move-remote-import`\n- `allow-move-finish`\n- `allow-move-propose`\n- `allow-move-import`\n- `allow-gateway-connections`\n- `allow-gateway-connection-test`\n- `allow-gateway-connection-forget`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle, the agent tool catalogue and the secret vault's status (never a secret value). process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`\n- `allow-vault-status`\n- `allow-vault-unlock`"
+          "markdownDescription": "Default permissions for the QuantSuite core plugin: settings, the event bus, the entity/link store, the process register, window lifecycle, the agent tool catalogue and the secret vault's status (never a secret value). process_list is read-only — start, stop and log tail belong to the module that owns the process, under that module's own permissions.\n#### This default permission set includes:\n\n- `allow-get-settings`\n- `allow-get-setting`\n- `allow-set-setting`\n- `allow-emit-event`\n- `allow-recent-events`\n- `allow-upsert-entity`\n- `allow-delete-entity`\n- `allow-list-entities`\n- `allow-count-entities`\n- `allow-search-entities`\n- `allow-link-entities`\n- `allow-unlink-entities`\n- `allow-linked-entities`\n- `allow-process-list`\n- `allow-set-circular-window`\n- `allow-window-new`\n- `allow-window-show`\n- `allow-window-hide`\n- `allow-window-toggle`\n- `allow-quit`\n- `allow-autostart-enabled`\n- `allow-set-autostart`\n- `allow-app-version`\n- `allow-suite-paths`\n- `allow-agent-tools`\n- `allow-agent-tool-decision`\n- `allow-agent-pending-calls`\n- `allow-agent-call-claim`\n- `allow-agent-call-complete`\n- `allow-vault-status`\n- `allow-vault-unlock`\n- `allow-bundle-plan`\n- `allow-bundle-export`\n- `allow-bundle-export-cancel`\n- `allow-import-propose`\n- `allow-import-bundle`\n- `allow-import-status`\n- `allow-server-status`\n- `allow-server-set-role`\n- `allow-server-set-watchdog`\n- `allow-gateway-status`\n- `allow-gateway-configure`\n- `allow-gateway-pairing-start`\n- `allow-gateway-pairing-status`\n- `allow-gateway-pairing-confirm`\n- `allow-gateway-pairing-cancel`\n- `allow-gateway-devices`\n- `allow-gateway-device-rename`\n- `allow-gateway-device-set-role`\n- `allow-gateway-device-revoke`\n- `allow-gateway-device-forget`\n- `allow-gateway-audit`\n- `allow-gateway-set-pin`\n- `allow-gateway-pair-begin`\n- `allow-gateway-pair-finish`\n- `allow-gateway-pair-current`\n- `allow-gateway-remote-call`\n- `allow-gateway-step-up`\n- `allow-gateway-link-status`\n- `allow-gateway-link-retry`\n- `allow-gateway-use-connection`\n- `allow-move-info`\n- `allow-move-export`\n- `allow-move-send`\n- `allow-move-cancel`\n- `allow-move-remote-propose`\n- `allow-move-remote-import`\n- `allow-move-finish`\n- `allow-move-propose`\n- `allow-move-import`\n- `allow-gateway-connections`\n- `allow-gateway-connection-test`\n- `allow-gateway-connection-forget`"
         }
       ]
     }

@@ -168,7 +168,8 @@ export interface ForgeJob {
 
 // ── Trade ──
 
-export type TradeSide = 'long' | 'short'
+/** `funding`: a perp funding payment row (Venues 4/5), not a trade. */
+export type TradeSide = 'long' | 'short' | 'funding'
 
 export interface Trade {
   id: string
@@ -234,6 +235,8 @@ export interface TradeStats {
   total_pnl: number
   total_pnl_pct: number
   avg_duration_secs: number
+  /** Perp funding received (negative: paid); inside total_pnl, not a trade. */
+  funding?: number
 }
 
 /** One bot's share of `get_trade_stats_breakdown`; `bot_id` is null for the catch-all groups. */
@@ -318,7 +321,7 @@ export type ExchangeType = 'cex' | 'dex'
 
 export type ExchangeProvider =
   | 'binance' | 'bybit' | 'okx' | 'coinbase' | 'kraken' | 'kucoin'
-  | 'uniswap' | 'jupiter' | 'hyperliquid'
+  | 'uniswap' | 'jupiter' | 'hyperliquid' | 'lighter'
 
 export interface Exchange {
   id: string
@@ -359,6 +362,10 @@ export interface ExchangeConfig {
   wallet_address?: string
   private_key?: string
   rpc_endpoint?: string
+  /** Hyperliquid: the sub-account the orders act on. */
+  sub_account?: string
+  /** Solana wallet: the most it may hold, in USD (arming is refused above). */
+  max_value?: number
 }
 
 export interface ConnectionResult {
@@ -486,6 +493,9 @@ export interface AppSettings {
   /** A new bot's budget; the backtest starts with the same capital. */
   default_budget: number
   default_warmup_candles: number
+  /** Perp (Venues 4/5): the leverage cap (default 3x) and the closest a position may open to liquidation (default 20 %). */
+  perp_max_leverage: number
+  perp_min_liquidation_distance_pct: number
   /** Which set of bot defaults the config has received; sent back untouched. */
   defaults_version: number
   notify_on_trade: boolean

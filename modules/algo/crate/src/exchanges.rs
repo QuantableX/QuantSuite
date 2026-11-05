@@ -1,7 +1,7 @@
 use base64::Engine as _;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
-use chrono::{NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use rusqlite::params;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -711,6 +711,49 @@ pub(crate) fn market_candle_json(candle: &PaperMarketCandle, pair: &str) -> Valu
     })
 }
 
+/// How long after a bar's end its candle counts as finished: the bar's last
+/// trades are in by then, and a slightly fast clock cannot read a forming one.
+const FINISHED_GRACE_SECONDS: i64 = 2;
+
+fn candle_end(candle: &PaperMarketCandle, timeframe: &str) -> Option<DateTime<Utc>> {
+    let open = DateTime::parse_from_rfc3339(&candle.time).ok()?.with_timezone(&Utc);
+    Some(open + chrono::Duration::seconds(crate::unattended::bar_seconds(timeframe) as i64))
+}
+
+/// Whether a candle's bar is over at `now`. Decided by the time, because the
+/// providers differ in whether and where they return the forming candle.
+pub(crate) fn candle_finished(candle: &PaperMarketCandle, timeframe: &str, now: DateTime<Utc>) -> bool {
+    candle_end(candle, timeframe).is_some_and(|end| now >= end + chrono::Duration::seconds(FINISHED_GRACE_SECONDS))
+}
+
+/// How many of `candles` (oldest first) ended after the bot's last heartbeat:
+/// they closed while it was down, so a resumed bot still has to act on them.
+pub(crate) fn candles_missed_since(candles: &[PaperMarketCandle], timeframe: &str, heartbeat: Option<&str>) -> usize {
+    let Some(beat) = heartbeat.and_then(|h| DateTime::parse_from_rfc3339(h).ok()) else {
+        return 0;
+    };
+    let grace = chrono::Duration::seconds(FINISHED_GRACE_SECONDS);
+    candles.iter().filter(|c| candle_end(c, timeframe).is_some_and(|end| end + grace > beat)).count()
+}
+
+/// What a bot's poll needs from the market.
+#[derive(Debug, Clone)]
+pub(crate) struct MarketPoll {
+    /// The newest price: the mark, and what an order goes out at.
+    pub(crate) price: f64,
+    /// The newest finished candle: the only thing a strategy acts on, as in a
+    /// backtest and in Manual. The forming one is never a signal.
+    pub(crate) finished: Option<PaperMarketCandle>,
+}
+
+pub(crate) fn poll_market(provider: &str, pair: &str, timeframe: &str) -> Result<MarketPoll, String> {
+    let candles = fetch_recent_market_candles(provider, pair, timeframe, 3)?;
+    let price = candles.last().map(|c| c.close).ok_or_else(|| format!("{provider} returned no candles"))?;
+    let now = Utc::now();
+    let finished = candles.iter().rev().find(|c| candle_finished(c, timeframe, now)).cloned();
+    Ok(MarketPoll { price, finished })
+}
+
 /// The provider tests' form: straight from the exchange, no archive.
 #[cfg(test)]
 pub(crate) fn fetch_historical_candles(config: &BacktestConfig) -> Result<Vec<Value>, String> {
@@ -1275,7 +1318,15 @@ pub(crate) async fn add_exchange(config: ExchangeConfig, state: State<'_, AppSta
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     let sandbox = sandbox_flag(&config)?;
-    let secret = ExchangeSecret::from_config(&config);
+    let mut secret = ExchangeSecret::from_config(&config);
+    if config.provider.eq_ignore_ascii_case("jupiter") {
+        if secret.private_key.is_some() {
+            return Err("QuantSuite generates the Solana wallet itself; importing a key or seed phrase is not offered.".into());
+        }
+        let (address, key) = crate::venues::jupiter::generate_wallet()?;
+        secret.wallet_address = Some(address);
+        secret.private_key = Some(key.to_string());
+    }
 
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
     db.execute(
@@ -1315,7 +1366,14 @@ pub(crate) async fn update_exchange(
 ) -> Result<Exchange, String> {
     let now = Utc::now().to_rfc3339();
     let sandbox = sandbox_flag(&config)?;
-    let update = ExchangeSecret::from_config(&config);
+    let mut update = ExchangeSecret::from_config(&config);
+    if config.provider.eq_ignore_ascii_case("jupiter") {
+        // The generated wallet stays the wallet: no key or address edits.
+        if update.private_key.is_some() {
+            return Err("A Solana wallet's key cannot be replaced; add a new account for a new wallet.".into());
+        }
+        update.wallet_address = None;
+    }
 
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
     let affected = db
@@ -1380,9 +1438,9 @@ pub(crate) fn update_secret(
 /// demo environment may set it (PLAN-QUANTALGO §4.2).
 fn sandbox_flag(config: &ExchangeConfig) -> Result<bool, String> {
     let sandbox = config.sandbox.unwrap_or(false);
-    if sandbox && !crate::broker::Venue::supports_live(&config.provider) {
+    if sandbox && !crate::venues::has_testnet(&config.provider) {
         return Err(format!(
-            "Sandbox mode is available for Binance (spot testnet) and Bybit (demo trading), not {}.",
+            "Sandbox mode is available for Binance (spot testnet), Bybit (demo trading) and Hyperliquid (testnet), not {}.",
             config.provider
         ));
     }
@@ -1396,6 +1454,15 @@ pub(crate) struct StoredCredentials {
     pub api_key: String,
     pub api_secret: String,
     pub passphrase: String,
+    /// Wallet venues (Hyperliquid): the main address, the API wallet's key
+    /// and an optional sub-account.
+    pub wallet_address: String,
+    pub private_key: String,
+    pub sub_account: String,
+    /// Solana wallets: the RPC URL (blank: the public one) and the value cap.
+    pub rpc_endpoint: String,
+    pub max_value: Option<f64>,
+    /// Jupiter's optional API key travels in `api_key`.
     pub sandbox: bool,
 }
 
@@ -1405,6 +1472,7 @@ impl Drop for StoredCredentials {
         self.api_key.zeroize();
         self.api_secret.zeroize();
         self.passphrase.zeroize();
+        self.private_key.zeroize();
     }
 }
 
@@ -1422,6 +1490,11 @@ pub(crate) fn load_credentials(conn: &rusqlite::Connection, exchange_id: &str) -
         api_key: ExchangeSecret::text(&secret.api_key),
         api_secret: ExchangeSecret::text(&secret.api_secret),
         passphrase: ExchangeSecret::text(&secret.passphrase),
+        wallet_address: ExchangeSecret::text(&secret.wallet_address),
+        private_key: ExchangeSecret::text(&secret.private_key),
+        sub_account: ExchangeSecret::text(&secret.sub_account),
+        rpc_endpoint: ExchangeSecret::text(&secret.rpc_endpoint),
+        max_value: secret.max_value.as_deref().and_then(|v| v.parse().ok()),
         sandbox: sandbox != 0,
     })
 }
@@ -1467,6 +1540,15 @@ pub(crate) async fn test_exchange_connection(
         load_credentials(&db, &id)?
     };
     tauri::async_runtime::spawn_blocking(move || {
+        if creds.provider.eq_ignore_ascii_case("hyperliquid") {
+            return crate::venues::test_hyperliquid(&creds.wallet_address, &creds.sub_account, &creds.private_key, creds.sandbox);
+        }
+        if creds.provider.eq_ignore_ascii_case("jupiter") {
+            return crate::venues::test_jupiter(&creds);
+        }
+        if creds.provider.eq_ignore_ascii_case("lighter") {
+            return crate::venues::test_lighter(&creds.sub_account, &creds.api_key, &creds.private_key, creds.sandbox);
+        }
         test_provider_credentials(&creds.provider, &creds.api_key, &creds.api_secret, &creds.passphrase, creds.sandbox)
     })
     .await
@@ -1482,6 +1564,29 @@ pub(crate) async fn test_exchange_credentials(
 ) -> Result<ConnectionResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let sandbox = sandbox_flag(&config)?;
+        if config.provider.eq_ignore_ascii_case("jupiter") {
+            return Ok(ConnectionResult {
+                success: false,
+                message: "QuantSuite generates this wallet when you save it; test it from the list afterwards.".into(),
+                latency_ms: None,
+            });
+        }
+        if config.provider.eq_ignore_ascii_case("lighter") {
+            return crate::venues::test_lighter(
+                config.sub_account.as_deref().unwrap_or(""),
+                config.api_key.as_deref().unwrap_or(""),
+                config.private_key.as_deref().unwrap_or(""),
+                sandbox,
+            );
+        }
+        if config.provider.eq_ignore_ascii_case("hyperliquid") {
+            return crate::venues::test_hyperliquid(
+                config.wallet_address.as_deref().unwrap_or(""),
+                config.sub_account.as_deref().unwrap_or(""),
+                config.private_key.as_deref().unwrap_or(""),
+                sandbox,
+            );
+        }
         test_provider_credentials(
             &config.provider,
             config.api_key.as_deref().unwrap_or(""),
@@ -1831,6 +1936,15 @@ pub(crate) async fn get_balances(exchange_id: String, state: State<'_, AppState>
 /// The signed balance read of one provider — blocking HTTP, so it runs on
 /// the blocking pool (see `get_exchange_pairs`).
 fn fetch_balances(creds: &StoredCredentials) -> Result<Vec<Balance>, String> {
+    if creds.provider.eq_ignore_ascii_case("hyperliquid") {
+        return crate::venues::hyperliquid_balances(creds);
+    }
+    if creds.provider.eq_ignore_ascii_case("jupiter") {
+        return crate::venues::jupiter_balances(creds);
+    }
+    if creds.provider.eq_ignore_ascii_case("lighter") {
+        return crate::venues::lighter_balances(creds);
+    }
     let provider = creds.provider.clone();
     let sandbox = creds.sandbox;
     let api_key = creds.api_key.as_str();
@@ -2387,6 +2501,8 @@ mod vault_tests {
             wallet_address: None,
             private_key: None,
             rpc_endpoint: None,
+            sub_account: None,
+            max_value: None,
         }
     }
 
@@ -2463,5 +2579,74 @@ mod vault_tests {
         assert_eq!(column, None);
         let creds = credentials_from_vault(&db, &vault, "e1", false).unwrap();
         assert_eq!(creds.api_key.as_deref(), Some("AK"));
+    }
+}
+
+#[cfg(test)]
+mod finished_candle_tests {
+    use super::*;
+
+    fn candle(time: &str) -> PaperMarketCandle {
+        PaperMarketCandle { time: time.into(), open: 1.0, high: 2.0, low: 0.5, close: 1.5, volume: 10.0 }
+    }
+
+    fn at(time: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(time).unwrap().with_timezone(&Utc)
+    }
+
+    #[test]
+    fn a_candle_is_finished_only_once_its_bar_is_over() {
+        let hour = candle("2026-11-05T10:00:00+00:00");
+        assert!(!candle_finished(&hour, "1h", at("2026-11-05T10:00:30Z")), "the first seconds of a bar are no signal");
+        assert!(!candle_finished(&hour, "1h", at("2026-11-05T10:59:59Z")));
+        assert!(!candle_finished(&hour, "1h", at("2026-11-05T11:00:01Z")), "the bar's last trades are still coming in");
+        assert!(candle_finished(&hour, "1h", at("2026-11-05T11:00:02Z")));
+
+        let four = candle("2026-11-05T08:00:00+00:00");
+        assert!(!candle_finished(&four, "4h", at("2026-11-05T11:59:00Z")));
+        assert!(candle_finished(&four, "4h", at("2026-11-05T12:00:30Z")));
+
+        let day = candle("2026-11-05T00:00:00+00:00");
+        assert!(!candle_finished(&day, "1d", at("2026-11-05T23:59:59Z")));
+        assert!(candle_finished(&day, "1d", at("2026-11-06T00:00:30Z")));
+
+        assert!(!candle_finished(&candle("not a time"), "1h", at("2026-11-06T00:00:00Z")));
+    }
+
+    #[test]
+    fn a_resumed_bot_counts_what_closed_while_it_was_down() {
+        let rows = [
+            candle("2026-11-05T08:00:00+00:00"),
+            candle("2026-11-05T09:00:00+00:00"),
+            candle("2026-11-05T10:00:00+00:00"),
+        ];
+        assert_eq!(candles_missed_since(&rows, "1h", None), 0);
+        assert_eq!(candles_missed_since(&rows, "1h", Some("garbage")), 0);
+        assert_eq!(candles_missed_since(&rows, "1h", Some("2026-11-05T11:00:30+00:00")), 0, "it saw them all");
+        assert_eq!(candles_missed_since(&rows, "1h", Some("2026-11-05T10:30:00+00:00")), 1);
+        assert_eq!(candles_missed_since(&rows, "1h", Some("2026-11-05T08:30:00+00:00")), 3);
+        assert_eq!(candles_missed_since(&rows, "1h", Some("2026-11-05T11:00:01+00:00")), 1, "too early to have used it");
+    }
+
+    /// Public market data only. Run with `--ignored live_`.
+    #[test]
+    #[ignore]
+    fn live_every_provider_gives_a_finished_candle_and_a_newer_price() {
+        for provider in ["binance", "bybit", "okx", "coinbase", "kraken", "kucoin"] {
+            match poll_market(provider, "BTC/USDT", "1h") {
+                Ok(poll) => {
+                    let candle = poll.finished.unwrap_or_else(|| panic!("{provider}: no finished candle"));
+                    let end = candle_end(&candle, "1h").unwrap();
+                    let age = (Utc::now() - end).num_seconds();
+                    println!(
+                        "{provider}: finished {} O {} H {} L {} C {} V {} | ended {age}s ago | price now {}",
+                        candle.time, candle.open, candle.high, candle.low, candle.close, candle.volume, poll.price
+                    );
+                    assert!((2..=3_602).contains(&age), "{provider}: it is the bar that just ended, not an older one ({age}s)");
+                    assert!(candle.high > candle.low, "{provider}: a whole bar has a range");
+                }
+                Err(e) => println!("{provider}: skipped, {e}"),
+            }
+        }
     }
 }

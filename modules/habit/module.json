@@ -71,5 +71,20 @@
         "required": ["id", "day", "checked"]
       }
     }
-  ]
+  ],
+  "remote": {
+    "commands": {
+      "list_habits": "server:read",
+      "create_habit": "server:write",
+      "update_habit": "server:write",
+      "pause_habit": "server:write",
+      "resume_habit": "server:write",
+      "delete_habit": "server:write",
+      "set_check": "server:write",
+      "year_checks": "server:read",
+      "stats": "server:read",
+      "get_app_settings": "server:read",
+      "update_app_settings": "server:write"
+    }
+  }
 }

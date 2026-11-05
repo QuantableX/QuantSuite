@@ -58,6 +58,17 @@ Outside the data root:
 3. **Workspace ids:** boards, vaults and `workspaces/<id>/` key off the registry id. Remapping a folder must keep its id; card 1 proves it with a test.
 4. **Live databases:** they run in WAL mode, so copying files while the app runs can produce a torn copy. The export uses SQLite's online backup API.
 
+### 1.2 Built (card 1, 2026-11-04)
+
+`crates/qs-core/src/inventory.rs`:
+
+- `RULES` turn the first table above into code: one rule per pattern under the data root, the most specific wins. A test fails when a module of `modules/*/module.json` or a top-level root has no rule. `EXTERNAL` lists the roots outside the data root.
+- `dry_run(root)` walks a data root read-only, with names and sizes only, and totals it per rule. Files no rule covers are listed; the export (card 2) refuses them until they are classified.
+- `PathMap` is the one remapping function: old prefix → new prefix, with the longest prefix first. It accepts any separator (`/`, `\`, or the JSON-escaped `\`) and any case, and matches only on whole path segments, so `C:/Projects/Quant` never matches `C:/Projects/QuantSuite`. The rest of a path takes the new prefix's separator. `remap_json` / `remap_json_file` rewrite every string of a JSON store. `remap_sqlite` rewrites every TEXT cell of every table, so a store nobody listed is covered too. `find_paths` lists every absolute path with its store, location and remap result.
+- Workspace ids: the registry keeps its ids, and a remap changes only the path inside the entity. `workspaces::storage_id` returns the registered id for a folder before it hashes a path. `paths::workspace_dir`, QuantMCP's `ensure_registered_workspace` and the kanban drawer use it, so a moved folder keeps its board, memory vault and `workspaces/<id>/` folder.
+- Secrets: QuantScript's Collection tokens sat in the OS credential store, bound to the machine. They now live in the vault (`script/collection/<source>`); a token still in the credential store moves into the vault the first time it is read. No secret is left outside the vault.
+- Dry run on the user's data (2026-11-04, `artifacts/migration-dryrun-20261104/`): the live root walked read-only with 0 unclassified files. Must-move is 17.1 GB (QuantScript's research runs and the systems research are "must"), optional-on 0.2 GB. In a copy of the 30 JSON and SQLite stores there are 2,523 absolute paths in 13 stores. The largest are console history (1,505), memory notes (588) and kanban cards and worktrees (352); the rest is core.db 35, canvas 21 + 1, hud 7, algo 2 + 1, notes 2 + 1, pilot 1, plus legacy MCP projects. The sample map covers all of them except 645 hits inside memory note prose (other drives, `~/` notation), which are text, not stored paths.
+
 ## 2. The design
 
 ### 2.1 The bundle
@@ -68,6 +79,16 @@ Outside the data root:
 - Before export: the size of each optional part, to tick or untick. The defaults follow the Class column, so `artifacts/`, logs and the Whisper models start unticked; the wizard shows the total before it starts.
 - The export refuses while live bots or live Manual execution are armed and offers to disarm them (disarming never sells).
 - **The passphrase cannot be recovered.** Lost passphrase = unreadable bundle. The wizard says so and asks for it twice.
+
+**Built (card 2, 2026-11-04).** `crates/qs-core/src/bundle.rs`, Settings → Data, and the agent tool `export_everything` (`plugin:mcp|export_everything`, external):
+
+- File format: `QSBUNDLE1
+`, then a JSON header (Argon2id parameters and salt, nonce prefix, chunk size), then 1 MiB chunks of AES-256-GCM. Each chunk is authenticated with the STREAM nonce (prefix, counter, last-chunk flag) and the header as associated data. A changed, reordered, dropped or cut chunk fails, and so does a wrong passphrase. Inside: tar + zstd (level 3).
+- Content: every file the inventory moves (`quantsuite/<path>`, defaults per rule; Settings → Data ticks optional parts). Databases are copied via SQLite's online backup, and `user_version` is recorded as the schema version. `secrets.json` holds the vault's secrets re-encrypted under a key derived from the bundle key, with the secret id as associated data; they exist in plaintext only in memory. `manifest.json` comes last: suite version, machine, source root, per file size, SHA-256, class and schema version, the left-out patterns with reasons, and the secret ids.
+- Folders that are left out are not walked (artifacts can be hundreds of GB). WAL/SHM files and `secrets/` are never copied as they are.
+- Refusals: an unclassified file (named), live trading armed (live bots running or Manual systems armed; "Stop all trading" first, which never sells), not enough free space (the total plus 10 %), and a passphrase under 12 characters. A cancelled or failed export leaves no file: it writes `.part`, then renames.
+- `open(bundle, passphrase, unpack_to)` verifies the passphrase, every chunk and every checksum, and optionally unpacks into a staging folder. Import (card 3) builds on it.
+- Checks: 4 unit tests (round trip with the manifest following the inventory; wrong passphrase, tampered and cut bundles; refusals; a database written to during the export comes out as a consistent snapshot). Profile export of the copy of the user's stores: 29 files, 32.6 MB, of which 14 databases came in through the backup API; the bundle is 13.5 MB and was written in 7.8 s, then opened and verified in 7.0 s.
 
 ### 2.2 Import
 
@@ -80,9 +101,34 @@ Outside the data root:
 7. **Disarmed:** bots stopped, Manual execution not armed (its settings kept). A banner "Arm trading on this machine" is your step.
 8. **Old PC:** you confirm the move there (the import shows a short code to enter). It disarms its executors and shows "Moved to <machine> on <date>"; trading there can only be re-enabled explicitly. Nothing is deleted.
 
+**Built (card 3, 2026-11-04).** `crates/qs-core/src/import.rs`, Settings → Data ("Import from a QuantSuite bundle", "This installation moved to another machine"), and the Trading overview notices:
+
+- Check: one full pass decrypts and verifies the bundle, then the version is compared (a bundle from a newer QuantSuite refuses) and the free space checked. "Check the bundle" stages it once to read its workspace registry and proposes the path table: the old data root becomes this one, and each workspace maps to itself when the folder exists here; otherwise you choose its folder, or leave it empty to link later.
+- Write: everything goes into `.quantsuite-import-<time>/` beside the data root. Every stored path is rewritten there through the one `PathMap` (the JSON stores, every TEXT cell of every database), leaving full-text index tables alone because triggers keep them in step. Secrets go into a new vault in the staged root, under this machine's keystore.
+- Verify: `integrity_check` on every database, rows per table against the manifest (the export now records them), every secret decrypts, every mapped folder exists, and each module's check (QuantAlgo bots table, notes, kanban, pilot, systems config). The report is saved in `migration/import-report-<time>.json` inside the staged root. A failed check never schedules the switch.
+- Disarmed after the check: bots stopped, Manual execution not armed (its settings kept), and an `imported` notice on the Trading overview.
+- Switch: the next start, before anything opens the data root (first line of qs-core's setup), renames the current root to `<root>.before-import-<time>`, which is kept and never deleted, and moves the staged root into place. A failure puts the old root back and records the reason. Deviation from §2.2 step 3: "replace" keeps the old root as that folder instead of writing a second bundle, so no passphrase is needed and nothing is lost.
+- Move code: both machines derive the same eight characters from the bundle key. The exporting machine keeps only its hash, under `core / migration.exports`. Entered there under Settings → Data (`trading_confirm_move`), the code runs "Stop all trading" and leaves a `moved` notice; nothing is deleted, and trading resumes there only if the user turns "Stop all trading" off.
+- Tests: a round trip from one temporary profile to another with a different data root and project folder. Paths are rewritten, the workspace id survives, the checks are green, the move code matches, the live root stays untouched until the next start, the old root is kept, and trading arrives disarmed with the notice. Failures: a wrong passphrase, a tampered bundle, an older target version and a missing folder each come out as a clear message, with no switch scheduled.
+- Not built: offering the import on the very first start of a fresh install (it lives under Settings → Data), and QA between two isolated app profiles (the Rust round trip covers the data path).
+
 ### 2.3 Directly to the server (card 4)
 
 Once pairing exists (Server 3/7) and client mode works (Server 5/7): Settings → Data → "Move this installation to the server". The bundle streams over the paired connection in checksummed, resumable chunks; the server imports and verifies; this PC then connects to the server as a client and keeps its local copy as an archive.
+
+**Built (card 4, 2026-11-05).** `crates/qs-core/src/movement.rs`, `import::import_keeping`, Settings → Data → "Move this installation to the server" (`SettingsSuiteDataMove`):
+
+1. **Export** on the PC that moves (only a PC with its own data — not a server, not a client), with the defaults of "Export everything", into `<data root>-move/`. The bundle's path is kept (`core / migration.move`), so an interrupted move continues with the same file after a restart.
+2. **Send**: a connection of its own to the chosen server (a paired connection with the role Full), the server PIN (the server steps are `external`), then the bundle into the server's `transfers/` in 1 MiB chunks with a progress line. "Stop sending" — or a dropped connection — keeps what arrived; "Continue the move" sends only the rest; the whole file's SHA-256 must match on the server, else the part is discarded and the next send starts over.
+3. **Check** on the server (`move_propose`): the bundle's passphrase travels inside the encrypted connection and is stored nowhere; the server proposes the path table, which you correct on the moving PC.
+4. **Import** on the server (`move_import`, `import_keeping`): as in card 3, plus the server keeps its own gateway — its key (`gateway.server-identity`), `gateway.db` (the paired devices), its `server.*` settings (role, listen address) — and the moving PC's `gateway.*` secrets (its device key) never land on the server. The bundle is deleted after a green report, and the server restarts five seconds later onto the moved data (its old root kept as `<root>.before-import-<time>`, as always).
+5. **Finish** on the moving PC: the report's move code confirms the move here ("Stop all trading" and the "moved" notice, card 3), the local bundle is deleted, and QuantSuite restarts using the server. The local data stays, as an archive and for the modules that stay on each PC.
+
+Long server calls declare their own timeout in the remote manifest (`remote.timeouts` in `crates/qs-core/remote.json`: the bundle export and plan, `move_propose`, `move_import`) instead of their class's two minutes.
+
+Found and fixed on the way: the path rewrite of card 3 broke JSON nested inside a JSON string (QuantPilot's timeline keeps a tool call's input that way, with four backslashes per separator): the backslash escaping the closing quote was taken for a separator, the moved `pilot.db` held malformed JSON, and QuantSuite stopped at start ("PluginInitialization pilot: malformed JSON"). `PathMap` now keeps the separator width the store wrote and treats shorter backslash runs as escapes; and a database cell that was JSON keeps its old text if a rewrite would still break it. Also, a resumed upload could begin beside the attempt that had just dropped and still held the part open: the server now lets one upload write a file at a time (the next waits up to 5 s) and writes each chunk through before the next.
+
+Tests: `import::tests::a_move_onto_a_server_keeps_its_gateway_and_leaves_the_pcs_key_behind`, the nested-JSON cases in `inventory::tests::paths_remap_whatever_the_separators_and_case`, and `two_process::a_resumed_upload_whose_part_was_damaged_is_refused_and_starts_over` (resume and checksum mismatch). QA between two isolated profiles on this PC: the client's populated profile (352 MB bundle) was sent, stopped at 27 % and continued from byte 116,391,936; the server's report was green (every database's integrity and rows, the secrets, both workspaces, the module checks); it restarted onto the moved data with its listen address and paired device; the client then used it and showed its note through the gateway, and its own profile carries "Stop all trading" with the moved notice.
 
 ### 2.4 Steps the import report lists
 

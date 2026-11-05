@@ -38,6 +38,13 @@ pub(crate) struct ExchangeSecret {
     pub private_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rpc_endpoint: Option<String>,
+    /// Hyperliquid: the sub-account the orders act on (PLAN-EXECUTION-VENUES §8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_account: Option<String>,
+    /// A Solana wallet's "max value on this wallet" in USD (§8): above it,
+    /// arming is refused. Not a secret; kept with the account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_value: Option<String>,
 }
 
 impl Drop for ExchangeSecret {
@@ -62,10 +69,12 @@ impl ExchangeSecret {
             wallet_address: present(&config.wallet_address),
             private_key: present(&config.private_key),
             rpc_endpoint: present(&config.rpc_endpoint),
+            sub_account: present(&config.sub_account),
+            max_value: config.max_value.filter(|v| *v > 0.0).map(|v| v.to_string()),
         }
     }
 
-    fn fields_mut(&mut self) -> [&mut Option<String>; 6] {
+    fn fields_mut(&mut self) -> [&mut Option<String>; 8] {
         [
             &mut self.api_key,
             &mut self.api_secret,
@@ -73,6 +82,8 @@ impl ExchangeSecret {
             &mut self.wallet_address,
             &mut self.private_key,
             &mut self.rpc_endpoint,
+            &mut self.sub_account,
+            &mut self.max_value,
         ]
     }
 
@@ -87,6 +98,8 @@ impl ExchangeSecret {
             wallet_address: pick(&update.wallet_address, &self.wallet_address),
             private_key: pick(&update.private_key, &self.private_key),
             rpc_endpoint: pick(&update.rpc_endpoint, &self.rpc_endpoint),
+            sub_account: pick(&update.sub_account, &self.sub_account),
+            max_value: pick(&update.max_value, &self.max_value),
         }
     }
 
@@ -402,6 +415,8 @@ pub(crate) mod tests {
             wallet_address: None,
             private_key: None,
             rpc_endpoint: None,
+            sub_account: None,
+            max_value: None,
         }
     }
 

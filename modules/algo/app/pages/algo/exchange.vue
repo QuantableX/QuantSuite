@@ -71,14 +71,19 @@ async function handleTestConnection(config: ExchangeConfig) {
   isTesting.value = true
   testResult.value = null
   try {
-    if (config.api_key || config.api_secret) {
+    // A Solana wallet is generated on save: only the stored one can be tested.
+    const typed = config.provider !== 'jupiter'
+      && !!(config.api_key || config.api_secret || config.private_key || config.wallet_address)
+    if (typed) {
       testResult.value = await exchangeStore.testCredentials(config)
     } else if (editingExchange.value) {
       testResult.value = await exchangeStore.testConnection(editingExchange.value.id)
     } else {
       testResult.value = {
         success: false,
-        message: 'Enter an API key and secret to test them — both are optional for paper trading and backtests.',
+        message: config.provider === 'jupiter'
+          ? 'QuantSuite generates the wallet when you save; test it afterwards.'
+          : 'Enter an API key and secret to test them — both are optional for paper trading and backtests.',
       }
     }
   } catch (err) {
@@ -201,6 +206,10 @@ onMounted(async () => {
             @select="handleSelect"
             @delete="handleDelete"
           />
+          <div class="card exposure-card">
+            <h3 class="exposure-card__title">Exposure per venue</h3>
+            <AlgoExchangeExposurePanel />
+          </div>
         </div>
 
         <!-- Selected Exchange Detail -->
@@ -414,6 +423,18 @@ onMounted(async () => {
 .detail-panel__actions {
   display: flex;
   gap: 6px;
+}
+
+.exposure-card {
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.exposure-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--qa-text);
+  margin-bottom: 8px;
 }
 
 .detail-panel__balances {

@@ -17,7 +17,7 @@
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::broker::{Broker, Fill, SymbolFilters, Venue};
+use crate::broker::{Broker, Fill, SymbolFilters};
 use crate::{ChargedFee, Trade};
 
 /// Trading mode of a runtime.
@@ -61,6 +61,45 @@ pub struct Position {
     pub entry_order_id: Option<String>,
     /// The entry fee in the asset it was charged in.
     pub entry_fees: Vec<ChargedFee>,
+    /// The system said close and it has not gone yet: the bot keeps selling
+    /// on every poll, and the journal row says so for a restart.
+    pub closing: bool,
+}
+
+impl Position {
+    /// Split at `qty` when an order closed only part of the position. The
+    /// closed part keeps the id (its journal row); the rest gets a new id and
+    /// a row of its own. Entry fee and margin go by share.
+    fn split(&self, qty: f64) -> (Position, Position) {
+        let share = if self.quantity > 0.0 { (qty / self.quantity).min(1.0) } else { 1.0 };
+        let fees = |factor: f64| -> Vec<ChargedFee> {
+            self.entry_fees
+                .iter()
+                .map(|f| ChargedFee { asset: f.asset.clone(), amount: f.amount * factor })
+                .collect()
+        };
+        let mut closed = self.clone();
+        closed.quantity = qty;
+        closed.entry_fee = self.entry_fee * share;
+        closed.reserved_margin = self.reserved_margin * share;
+        closed.entry_fees = fees(share);
+        closed.closing = false;
+        let mut rest = self.clone();
+        rest.id = Uuid::new_v4().to_string();
+        rest.quantity = self.quantity - qty;
+        rest.entry_fee = self.entry_fee - closed.entry_fee;
+        rest.reserved_margin = self.reserved_margin - closed.reserved_margin;
+        rest.entry_fees = fees(1.0 - share);
+        rest.closing = true;
+        (closed, rest)
+    }
+}
+
+/// Whether the venue would take an order for `qty` at `price`. A rest it would
+/// not take can never be closed by an order, so it is dust, not a position.
+fn orderable(filters: &SymbolFilters, qty: f64, price: f64) -> bool {
+    let qty = filters.round_qty_down(qty);
+    qty > 0.0 && qty + 1e-12 >= filters.min_qty && qty * price + 1e-9 >= filters.min_notional
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,9 +157,12 @@ pub enum Effect {
     },
     /// The equity changed — snapshot it and announce (`bot:equity`).
     Equity,
-    /// Three order errors in a row (PLAN-AUTO-EXECUTION §2.6): stop the bot
+    /// Three refused entries in a row (PLAN-AUTO-EXECUTION §2.6): stop the bot
     /// with this reason and tell the user.
     Pause { reason: String },
+    /// Tell the user and keep going: an exit that keeps being refused must
+    /// not stop the bot, because that would stop the selling.
+    Alert { reason: String },
 }
 
 /// Order errors in a row that pause a live bot.
@@ -147,6 +189,8 @@ pub struct BotRuntime {
     pub filters: Option<SymbolFilters>,
     /// Live orders the venue refused in a row; a fill resets it.
     pub order_errors: usize,
+    /// The account a live bot's orders go to (its funding is booked there).
+    pub execution_account: Option<String>,
 }
 
 impl std::fmt::Debug for BotRuntime {
@@ -164,7 +208,7 @@ impl std::fmt::Debug for BotRuntime {
             .field("slippage_pct", &self.slippage_pct)
             .field("risk_per_trade", &self.risk_per_trade)
             .field("max_positions", &self.max_positions)
-            .field("broker", &self.broker.as_ref().map(|b| b.venue()))
+            .field("broker", &self.broker.as_ref().map(|b| b.label()))
             .field("filters", &self.filters)
             .finish()
     }
@@ -223,8 +267,19 @@ impl BotRuntime {
         self.pair.split('/').next().unwrap_or("").to_string()
     }
 
-    pub fn venue(&self) -> Option<Venue> {
-        self.broker.as_ref().map(|b| b.venue())
+    pub fn venue(&self) -> Option<String> {
+        self.broker.as_ref().map(|b| b.label())
+    }
+
+    /// The bot trades perp live (shorts allowed, funding booked).
+    pub fn live_perp(&self) -> bool {
+        self.mode == Mode::Live && self.broker.as_ref().is_some_and(|b| b.perp())
+    }
+
+    /// A funding payment on the bot's position: into its cash, so equity
+    /// and stats show the real cost (Venues 4/5).
+    pub fn book_funding(&mut self, usd: f64) {
+        self.balance += usd;
     }
 
     pub fn balance_json(&self) -> Value {
@@ -280,6 +335,7 @@ impl BotRuntime {
         fees.extend(exit_fee.filter(|f| f.amount > 0.0));
         let notes = match (&position.entry_order_id, exit_order_id) {
             (Some(entry), Some(exit)) => Some(format!("live · entry order {entry} · exit order {exit}")),
+            (Some(entry), None) if position.closing => Some(format!("live · entry order {entry} · closing")),
             (Some(entry), None) => Some(format!("live · entry order {entry}")),
             _ => None,
         };
@@ -417,6 +473,7 @@ impl BotRuntime {
             quantity,
             entry_fee,
             reserved_margin: if opening == "short" { notional } else { 0.0 },
+            closing: false,
             entry_time: now.to_string(),
             entry_order_id: None,
             entry_fees: vec![ChargedFee { asset: self.quote_asset(), amount: entry_fee }],
@@ -454,7 +511,11 @@ impl BotRuntime {
             .collect();
         for idx in indices.into_iter().rev() {
             if self.mode == Mode::Live {
-                self.sell_live(idx, now, &mut effects);
+                if self.open_positions[idx].side == "short" {
+                    self.cover_live(idx, now, &mut effects);
+                } else {
+                    self.sell_live(idx, now, &mut effects);
+                }
                 continue;
             }
             let side_long = self.open_positions[idx].side == "long";
@@ -538,6 +599,9 @@ impl BotRuntime {
             });
             return effects;
         }
+        if self.live_perp() {
+            return self.place_live_perp(req, now, filters);
+        }
         let long_idx = self
             .open_positions
             .iter()
@@ -549,9 +613,14 @@ impl BotRuntime {
                     Some(idx) => {
                         self.sell_live(idx, now, &mut effects);
                         if req.reverse {
+                            let still_long = self.open_positions.iter().any(|p| p.pair == req.pair && p.side == "long");
                             effects.push(Effect::Log {
                                 level: "warn",
-                                message: "Spot live trading is long-only: the long was closed, no short was opened.".into(),
+                                message: if still_long {
+                                    "Spot live trading is long-only: no short was opened, and the long is not fully closed.".into()
+                                } else {
+                                    "Spot live trading is long-only: the long was closed, no short was opened.".into()
+                                },
                             });
                         }
                     }
@@ -626,6 +695,230 @@ impl BotRuntime {
         }
     }
 
+    /// Perp (Venues 4/5): the paper rules live — a sell closes a long or
+    /// opens a short, a buy covers a short or opens a long, `reverse` does
+    /// both. A close that does not go through leaves the other side unopened.
+    fn place_live_perp(&mut self, req: OrderRequest, now: &str, filters: SymbolFilters) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        let opening = req.side.opens();
+        let opposing = req.side.closes();
+        let same = |p: &Position, side: &str| p.pair == req.pair && p.side == side;
+        let opposing_idx = self.open_positions.iter().position(|p| same(p, opposing));
+        if opposing_idx.is_none() && self.open_positions.iter().any(|p| same(p, opening)) {
+            effects.push(Effect::Log {
+                level: "warn",
+                message: format!("One open {opening} position per pair is supported; skipping duplicate {} signal.", req.pair),
+            });
+            return effects;
+        }
+        if let Some(idx) = opposing_idx {
+            if opposing == "long" {
+                self.sell_live(idx, now, &mut effects);
+            } else {
+                self.cover_live(idx, now, &mut effects);
+            }
+            let still_open = self.open_positions.iter().any(|p| same(p, opposing));
+            if still_open || !req.reverse {
+                effects.push(Effect::Equity);
+                return effects;
+            }
+        }
+        if self.open_positions.len() >= self.max_positions {
+            effects.push(Effect::Log {
+                level: "warn",
+                message: format!("Max positions ({}) reached, skipping {opening} entry.", self.max_positions),
+            });
+            effects.push(Effect::Equity);
+            return effects;
+        }
+        let price = self.last_price.max(0.0001);
+        let wanted = if req.quantity > 0.0 {
+            req.quantity * price
+        } else if let Some(fraction) = req.position_size {
+            self.balance * fraction
+        } else {
+            self.balance * self.risk_per_trade / 100.0
+        };
+        let quote_amount = wanted.min(self.balance);
+        let quote = self.quote_asset();
+        if quote_amount < filters.min_notional || quote_amount <= 0.0 {
+            effects.push(Effect::Log {
+                level: "warn",
+                message: format!(
+                    "Budget left for this order ({quote_amount:.2} {quote}) is below the venue minimum of {:.2} {quote}; {opening} skipped.",
+                    filters.min_notional
+                ),
+            });
+            effects.push(Effect::Equity);
+            return effects;
+        }
+        let result = self
+            .broker
+            .as_ref()
+            .map(|b| if opening == "long" { b.market_buy(&filters, quote_amount) } else { b.open_short(&filters, quote_amount / price) })
+            .unwrap_or_else(|| Err("no broker".into()));
+        match result {
+            Ok(fill) => {
+                self.order_errors = 0;
+                if opening == "long" {
+                    self.book_live_entry(fill, now, &mut effects);
+                } else {
+                    self.book_live_short(fill, now, &mut effects);
+                }
+            }
+            Err(e) => {
+                effects.push(Effect::Log {
+                    level: "error",
+                    message: format!("Live {opening} of {quote_amount:.2} {quote} on {} rejected: {e}", req.pair),
+                });
+                self.order_error(&e, &mut effects);
+            }
+        }
+        effects.push(Effect::Equity);
+        effects
+    }
+
+    /// Book a live short: its notional is set aside as margin (1x, like
+    /// paper), the fee leaves the cash.
+    fn book_live_short(&mut self, fill: Fill, now: &str, effects: &mut Vec<Effect>) {
+        let quote = self.quote_asset();
+        self.balance -= fill.quote_amount + fill.fee_from_cash(&quote);
+        let position = Position {
+            id: Uuid::new_v4().to_string(),
+            pair: self.pair.clone(),
+            side: "short".into(),
+            entry_price: fill.avg_price,
+            quantity: fill.base_qty,
+            entry_fee: fill.fee_quote,
+            reserved_margin: fill.quote_amount,
+            closing: false,
+            entry_time: now.to_string(),
+            entry_order_id: Some(fill.order_id.clone()),
+            entry_fees: vec![ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }],
+        };
+        let row = self.trade_row(&position, None, None, None, fill.fee_quote, None, None);
+        effects.push(Effect::Trade(Box::new(row)));
+        effects.push(Effect::Notify {
+            trade_id: position.id.clone(),
+            pair: position.pair.clone(),
+            side: "short".into(),
+            price: fill.avg_price,
+            quantity: fill.base_qty,
+            pnl: 0.0,
+            action: "open",
+        });
+        effects.push(Effect::Log {
+            level: "trade",
+            message: format!(
+                "LIVE shorted {} {} at {:.4} ({:.2} {quote}, fee {:.6} {}) — order {}",
+                self.filters.as_ref().map(|f| f.qty_string(fill.base_qty)).unwrap_or_else(|| format!("{:.6}", fill.base_qty)),
+                self.base_asset(),
+                fill.avg_price,
+                fill.quote_amount,
+                fill.fee_amount,
+                fill.fee_asset,
+                fill.order_id
+            ),
+        });
+        self.open_positions.push(position);
+    }
+
+    /// Log what an order left behind: a rest that stays open, or dust.
+    fn note_rest(&self, stays_open: bool, left: f64, effects: &mut Vec<Effect>) {
+        if left <= 1e-12 {
+            return;
+        }
+        let base = self.base_asset();
+        effects.push(if stays_open {
+            Effect::Log {
+                level: "warn",
+                message: format!("Only part of the order filled: {left:.8} {base} is still open. The bot keeps closing it on every poll until it is gone."),
+            }
+        } else {
+            Effect::Log {
+                level: "info",
+                message: format!("{left:.8} {base} is too small for the venue to take an order and stays on the exchange as dust."),
+            }
+        });
+    }
+
+    /// Buy back a live short, reduce-only. A partial cover keeps the rest of
+    /// the short open with its share of the margin.
+    fn cover_live(&mut self, idx: usize, now: &str, effects: &mut Vec<Effect>) {
+        let (Some(filters), Some(broker)) = (self.filters.clone(), self.broker.as_ref()) else {
+            effects.push(Effect::Log {
+                level: "error",
+                message: "Live order routing is not connected for this bot; the short stays open.".into(),
+            });
+            return;
+        };
+        let position = self.open_positions[idx].clone();
+        let fill = match broker.close_short(&filters, position.quantity) {
+            Ok(fill) => fill,
+            Err(e) => {
+                effects.push(Effect::Log {
+                    level: "error",
+                    message: format!("Live cover of {} {} rejected: {e}; the short stays open and the bot keeps trying.", filters.qty_string(position.quantity), self.base_asset()),
+                });
+                self.exit_refused(idx, &e, effects);
+                return;
+            }
+        };
+        self.order_errors = 0;
+        let quote = self.quote_asset();
+        let qty = fill.base_qty.min(position.quantity);
+        let left = position.quantity - qty;
+        let (closed, rest) = if orderable(&filters, left, fill.avg_price) {
+            let (closed, rest) = position.split(qty);
+            (closed, Some(rest))
+        } else {
+            (position.clone(), None)
+        };
+        let total_fee = closed.entry_fee + fill.fee_quote;
+        let pnl = (position.entry_price - fill.avg_price) * qty - total_fee;
+        self.balance += closed.reserved_margin + (position.entry_price - fill.avg_price) * qty - fill.fee_from_cash(&quote);
+        let row = self.trade_row(
+            &closed,
+            Some(fill.avg_price),
+            Some(now.to_string()),
+            Some(pnl),
+            total_fee,
+            Some(&fill.order_id),
+            Some(ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }),
+        );
+        effects.push(Effect::Trade(Box::new(row)));
+        let stays_open = rest.is_some();
+        if let Some(rest) = rest {
+            // Still short on the venue: it stays a position, with its own row
+            // so a restart finds it in the journal.
+            let row = self.trade_row(&rest, None, None, None, rest.entry_fee, None, None);
+            effects.push(Effect::Trade(Box::new(row)));
+            self.open_positions[idx] = rest;
+        } else {
+            self.open_positions.remove(idx);
+        }
+        effects.push(Effect::Notify {
+            trade_id: closed.id.clone(),
+            pair: closed.pair.clone(),
+            side: "short".into(),
+            price: fill.avg_price,
+            quantity: qty,
+            pnl,
+            action: "close",
+        });
+        effects.push(Effect::Log {
+            level: "trade",
+            message: format!(
+                "LIVE covered {} {} at {:.4} — PnL {pnl:+.2} — order {}",
+                filters.qty_string(qty),
+                self.base_asset(),
+                fill.avg_price,
+                fill.order_id
+            ),
+        });
+        self.note_rest(stays_open, left, effects);
+    }
+
     /// Market-sell `open_positions[idx]` through the broker and book the fill.
     /// A rejected sell leaves the position open — the next signal or a manual
     /// close tries again.
@@ -654,16 +947,72 @@ impl BotRuntime {
                 effects.push(Effect::Log {
                     level: "error",
                     message: format!(
-                        "Live sell of {} {} rejected: {e}; the position stays open.",
+                        "Live sell of {} {} rejected: {e}; the position stays open and the bot keeps trying.",
                         filters.qty_string(position.quantity), self.base_asset()
                     ),
                 });
-                self.order_error(&e, effects);
+                self.exit_refused(idx, &e, effects);
             }
         }
     }
 
-    /// Count a refused order; the third in a row pauses the bot.
+    /// An exit the venue refused: the position is marked as closing, so every
+    /// poll tries again. The third refusal in a row tells the user; it does not
+    /// pause the bot, because a pause would stop the selling.
+    fn exit_refused(&mut self, idx: usize, error: &str, effects: &mut Vec<Effect>) {
+        self.order_errors += 1;
+        if !self.open_positions[idx].closing {
+            self.open_positions[idx].closing = true;
+            let position = self.open_positions[idx].clone();
+            let row = self.trade_row(&position, None, None, None, position.entry_fee, None, None);
+            effects.push(Effect::Trade(Box::new(row)));
+        }
+        if self.order_errors == ORDER_ERROR_STREAK {
+            effects.push(Effect::Alert {
+                reason: format!("{} {} could not be closed {} times in a row and the bot keeps trying. The last answer: {error}", self.pair, self.open_positions[idx].side, self.order_errors),
+            });
+        }
+    }
+
+    /// Whether an exit is still waiting to go through.
+    pub fn has_closing(&self) -> bool {
+        self.open_positions.iter().any(|p| p.closing)
+    }
+
+    /// One more try at every exit that has not gone through (each poll).
+    pub fn retry_exits(&mut self, now: &str) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        if self.mode != Mode::Live {
+            return effects;
+        }
+        let closing: Vec<usize> = self.open_positions.iter().enumerate().filter(|(_, p)| p.closing).map(|(i, _)| i).collect();
+        for idx in closing.into_iter().rev() {
+            let position = self.open_positions[idx].clone();
+            // Too small for any order: retrying could never work.
+            if self.filters.as_ref().is_some_and(|f| !orderable(f, position.quantity, self.last_price)) {
+                let mut settled = position.clone();
+                settled.closing = false;
+                let row = self.trade_row(&settled, None, None, None, settled.entry_fee, None, None);
+                effects.push(Effect::Trade(Box::new(row)));
+                effects.push(Effect::Alert {
+                    reason: format!("{:.8} {} is too small for the venue to take an order; close it on the exchange.", position.quantity, self.base_asset()),
+                });
+                self.open_positions[idx] = settled;
+                continue;
+            }
+            if position.side == "short" {
+                self.cover_live(idx, now, &mut effects);
+            } else {
+                self.sell_live(idx, now, &mut effects);
+            }
+        }
+        if !effects.is_empty() {
+            effects.push(Effect::Equity);
+        }
+        effects
+    }
+
+    /// Count a refused entry; the third in a row pauses the bot.
     fn order_error(&mut self, error: &str, effects: &mut Vec<Effect>) {
         self.order_errors += 1;
         if self.order_errors >= ORDER_ERROR_STREAK {
@@ -686,6 +1035,7 @@ impl BotRuntime {
             quantity: fill.base_received,
             entry_fee: fill.fee_quote,
             reserved_margin: 0.0,
+            closing: false,
             entry_time: now.to_string(),
             entry_order_id: Some(fill.order_id.clone()),
             entry_fees: vec![ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }],
@@ -720,18 +1070,26 @@ impl BotRuntime {
 
     /// Book a live sell of `open_positions[idx]`. The proceeds net of a fee
     /// charged in quote come back to the cash; the fees of both legs, valued
-    /// in quote, are in the pnl. Base the venue could not sell (below the lot
-    /// step) stays on the exchange as dust and is logged.
+    /// in quote, are in the pnl. A thin book can leave a sell part filled:
+    /// only what sold is closed and the rest stays a position, unless the
+    /// venue would not take an order for it (dust, stays on the exchange).
     fn book_live_exit(&mut self, idx: usize, fill: Fill, now: &str, effects: &mut Vec<Effect>) {
-        let position = self.open_positions.remove(idx);
+        let position = self.open_positions[idx].clone();
+        let sold = fill.base_qty.min(position.quantity);
+        let left = position.quantity - sold;
+        let (closed, rest) = if self.filters.as_ref().is_some_and(|f| orderable(f, left, fill.avg_price)) {
+            let (closed, rest) = position.split(sold);
+            (closed, Some(rest))
+        } else {
+            (position.clone(), None)
+        };
         let quote = self.quote_asset();
         let proceeds = fill.quote_amount - fill.fee_from_cash(&quote);
         self.balance += proceeds;
-        let total_fee = position.entry_fee + fill.fee_quote;
-        let pnl = (fill.avg_price - position.entry_price) * fill.base_qty - total_fee;
-        let dust = position.quantity - fill.base_qty;
+        let total_fee = closed.entry_fee + fill.fee_quote;
+        let pnl = (fill.avg_price - position.entry_price) * sold - total_fee;
         let row = self.trade_row(
-            &position,
+            &closed,
             Some(fill.avg_price),
             Some(now.to_string()),
             Some(pnl),
@@ -740,6 +1098,16 @@ impl BotRuntime {
             Some(ChargedFee { asset: fill.fee_asset.clone(), amount: fill.fee_amount }),
         );
         effects.push(Effect::Trade(Box::new(row)));
+        let stays_open = rest.is_some();
+        if let Some(rest) = rest {
+            // Still on the venue: it stays a position, with its own row so a
+            // restart finds it in the journal.
+            let row = self.trade_row(&rest, None, None, None, rest.entry_fee, None, None);
+            effects.push(Effect::Trade(Box::new(row)));
+            self.open_positions[idx] = rest;
+        } else {
+            self.open_positions.remove(idx);
+        }
         effects.push(Effect::Notify {
             trade_id: position.id.clone(),
             pair: position.pair.clone(),
@@ -763,15 +1131,7 @@ impl BotRuntime {
                 fill.order_id
             ),
         });
-        if dust > 1e-12 {
-            effects.push(Effect::Log {
-                level: "info",
-                message: format!(
-                    "{dust:.8} {} below the lot step stays on the exchange as dust.",
-                    self.base_asset()
-                ),
-            });
-        }
+        self.note_rest(stays_open, left, effects);
     }
 }
 
@@ -798,6 +1158,7 @@ mod tests {
             broker: None,
             filters: None,
             order_errors: 0,
+            execution_account: None,
         }
     }
 
@@ -950,17 +1311,27 @@ mod tests {
     struct MockBroker {
         fills: RefCell<VecDeque<Result<Fill, String>>>,
         calls: RefCell<Vec<String>>,
+        perp: bool,
     }
 
     impl MockBroker {
         fn new(fills: Vec<Result<Fill, String>>) -> Self {
-            Self { fills: RefCell::new(fills.into()), calls: RefCell::new(Vec::new()) }
+            Self { fills: RefCell::new(fills.into()), calls: RefCell::new(Vec::new()), perp: false }
         }
     }
 
     impl Broker for MockBroker {
-        fn venue(&self) -> Venue { Venue::Binance }
+        fn label(&self) -> String { "Binance spot (mock)".into() }
         fn sandbox(&self) -> bool { true }
+        fn perp(&self) -> bool { self.perp }
+        fn open_short(&self, f: &SymbolFilters, base_qty: f64) -> Result<Fill, String> {
+            self.calls.borrow_mut().push(format!("short {}", f.qty_string(f.round_qty_down(base_qty))));
+            self.fills.borrow_mut().pop_front().unwrap_or_else(|| Err("no scripted fill".into()))
+        }
+        fn close_short(&self, f: &SymbolFilters, base_qty: f64) -> Result<Fill, String> {
+            self.calls.borrow_mut().push(format!("cover {}", f.qty_string(f.round_qty_down(base_qty))));
+            self.fills.borrow_mut().pop_front().unwrap_or_else(|| Err("no scripted fill".into()))
+        }
         fn symbol_filters(&self, _pair: &str) -> Result<SymbolFilters, String> { Ok(filters()) }
         fn available_balance(&self, _asset: &str) -> Result<f64, String> { Ok(1_000.0) }
         fn market_buy(&self, f: &SymbolFilters, quote_amount: f64) -> Result<Fill, String> {
@@ -1025,24 +1396,136 @@ mod tests {
         }
     }
 
+    fn pauses(effects: &[Effect]) -> usize {
+        effects.iter().filter(|e| matches!(e, Effect::Pause { .. })).count()
+    }
+
+    fn alerts(effects: &[Effect]) -> usize {
+        effects.iter().filter(|e| matches!(e, Effect::Alert { .. })).count()
+    }
+
     #[test]
-    fn three_refused_orders_in_a_row_pause_the_bot_and_a_fill_resets_the_count() {
+    fn three_refused_buys_in_a_row_pause_the_bot_and_a_fill_resets_the_count() {
         let refused = || Err::<Fill, String>("Insufficient balance".into());
-        let mut rt = live_runtime(vec![refused(), refused(), Ok(buy_fill_fee_in_base()), refused(), refused(), refused()]);
-        let pauses = |e: &[Effect]| e.iter().filter(|e| matches!(e, Effect::Pause { .. })).count();
+        let mut rt = live_runtime(vec![refused(), refused(), Ok(buy_fill_fee_in_base())]);
         assert_eq!(pauses(&rt.place(buy(0.0), "t0")), 0);
         assert_eq!(pauses(&rt.place(buy(0.0), "t1")), 0);
         assert_eq!(rt.order_errors, 2);
         rt.place(buy(0.0), "t2");
         assert_eq!(rt.order_errors, 0, "the fill reset the streak");
-        // The open long blocks further buys; sells are refused three times.
-        let sell = || OrderRequest { side: OrderSide::Sell, pair: "BTC/USDT".into(), quantity: 0.0, position_size: None, reverse: false };
-        assert_eq!(pauses(&rt.place(sell(), "t3")), 0);
-        assert_eq!(pauses(&rt.place(sell(), "t4")), 0);
-        let effects = rt.place(sell(), "t5");
+
+        let mut rt = live_runtime(vec![refused(), refused(), refused()]);
+        rt.place(buy(0.0), "t0");
+        rt.place(buy(0.0), "t1");
+        let effects = rt.place(buy(0.0), "t2");
         assert_eq!(pauses(&effects), 1);
         assert!(matches!(effects.iter().find(|e| matches!(e, Effect::Pause { .. })), Some(Effect::Pause { reason }) if reason.contains("3 order errors")));
-        assert_eq!(rt.open_positions.len(), 1, "a pause never sells");
+    }
+
+    /// When the system says close, the bot keeps selling. A refusal tells the
+    /// user but never pauses the bot: a pause would stop the selling.
+    #[test]
+    fn a_refused_exit_keeps_trying_until_it_sells_and_never_pauses() {
+        let refused = || Err::<Fill, String>("Binance 500: try later".into());
+        let mut rt = live_runtime(vec![
+            Ok(fill_of("buy-1", 64_000.0, 0.01)),
+            refused(),
+            refused(),
+            refused(),
+            Ok(fill_of("sell-1", 63_000.0, 0.01)),
+        ]);
+        rt.place(buy(0.0), "t0");
+        assert!(!rt.has_closing());
+        assert!(rt.retry_exits("t0").is_empty(), "nothing to retry without a close signal");
+        assert_eq!(calls(&rt).len(), 1);
+
+        let first = rt.place(sell(0.0), "t1");
+        assert!(rt.has_closing());
+        assert_eq!(pauses(&first), 0);
+        let row = trades(&first)[0];
+        assert_eq!(row.exit_price, None);
+        assert!(row.notes.as_deref().unwrap().ends_with("· closing"), "{:?}", row.notes);
+
+        let second = rt.retry_exits("t2");
+        assert_eq!((pauses(&second), alerts(&second)), (0, 0));
+        assert!(trades(&second).is_empty(), "the row already says closing");
+        let third = rt.retry_exits("t3");
+        assert_eq!((pauses(&third), alerts(&third)), (0, 1), "the user hears of it once");
+        assert_eq!(rt.open_positions.len(), 1, "still there, still trying");
+
+        let fourth = rt.retry_exits("t4");
+        assert!(rt.open_positions.is_empty());
+        assert!(!rt.has_closing());
+        assert_eq!(rt.order_errors, 0);
+        assert_eq!(trades(&fourth)[0].exit_price, Some(63_000.0));
+        assert_eq!(calls(&rt).len(), 5);
+    }
+
+    /// What a thin book leaves over goes on the next poll, without a new signal.
+    #[test]
+    fn the_rest_of_a_partly_filled_exit_sells_on_the_next_poll() {
+        let mut rt = live_runtime(vec![
+            Ok(fill_of("buy-1", 64_000.0, 0.01)),
+            Ok(fill_of("sell-1", 65_000.0, 0.006)),
+            Ok(fill_of("sell-2", 64_500.0, 0.004)),
+        ]);
+        rt.place(buy(0.0), "t0");
+        rt.place(sell(0.0), "t1");
+        assert!(rt.has_closing());
+        let effects = rt.retry_exits("t2");
+        assert_eq!(calls(&rt)[2], "sell 0.004");
+        assert!(rt.open_positions.is_empty());
+        assert_eq!(trades(&effects)[0].exit_price, Some(64_500.0));
+    }
+
+    /// A rest of a short does the same, through a cover.
+    #[test]
+    fn the_rest_of_a_partly_closed_short_covers_on_the_next_poll() {
+        let mut rt = live_runtime(Vec::new());
+        rt.broker = Some(Box::new(MockBroker {
+            fills: RefCell::new(VecDeque::from(vec![
+                Ok(fill_of("short-1", 64_000.0, 0.01)),
+                Ok(fill_of("cover-1", 60_000.0, 0.006)),
+                Err("Hyperliquid: try later".to_string()),
+                Ok(fill_of("cover-2", 61_000.0, 0.004)),
+            ])),
+            calls: RefCell::new(Vec::new()),
+            perp: true,
+        }));
+        rt.place(sell(0.0), "t0");
+        rt.place(buy(0.0), "t1");
+        assert!(rt.has_closing());
+        rt.retry_exits("t2");
+        assert_eq!(rt.open_positions.len(), 1, "refused, still trying");
+        rt.retry_exits("t3");
+        assert!(rt.open_positions.is_empty());
+        assert_eq!(calls(&rt)[3], "cover 0.004");
+    }
+
+    /// A position under the venue's minimum can never sell: the bot says so
+    /// once and stops asking.
+    #[test]
+    fn a_position_too_small_to_sell_stops_being_retried() {
+        let mut rt = live_runtime(vec![Ok(fill_of("buy-1", 64_000.0, 0.01)), Err("Filter failure: NOTIONAL".to_string())]);
+        rt.place(buy(0.0), "t0");
+        rt.place(sell(0.0), "t1");
+        assert!(rt.has_closing());
+        rt.last_price = 400.0; // 0.01 BTC is now worth 4 USDT, under the 5 USDT minimum
+        let effects = rt.retry_exits("t2");
+        assert_eq!(alerts(&effects), 1);
+        assert!(!rt.has_closing());
+        assert_eq!(rt.open_positions.len(), 1, "it stays on the books, and on the exchange");
+        assert_eq!(calls(&rt).len(), 2, "no order was sent for it");
+        assert!(rt.retry_exits("t3").is_empty());
+    }
+
+    /// Paper fills at once, so it has nothing to retry.
+    #[test]
+    fn a_paper_bot_has_no_exits_to_retry() {
+        let mut rt = runtime();
+        rt.place(buy(0.0), "t0");
+        rt.open_positions[0].closing = true;
+        assert!(rt.retry_exits("t1").is_empty());
     }
 
     #[test]
@@ -1105,6 +1588,181 @@ mod tests {
         assert!(logs(&effects).iter().any(|l| l.contains("stays on the exchange as dust")));
     }
 
+    fn fill_of(id: &str, price: f64, qty: f64) -> Fill {
+        Fill {
+            order_id: id.into(),
+            avg_price: price,
+            base_qty: qty,
+            base_received: qty,
+            quote_amount: price * qty,
+            fee_quote: price * qty * 0.001,
+            fee_asset: "USDT".into(),
+            fee_amount: price * qty * 0.001,
+            fee_estimated: false,
+        }
+    }
+
+    /// A thin book can leave a sell part filled: only what sold is closed,
+    /// the rest stays a position and the next close sells it.
+    #[test]
+    fn a_partly_filled_sell_closes_what_sold_and_keeps_the_rest_open() {
+        let mut rt = live_runtime(vec![
+            Ok(fill_of("buy-1", 64_000.0, 0.01)),
+            Ok(fill_of("sell-1", 65_000.0, 0.006)),
+            Ok(fill_of("sell-2", 66_000.0, 0.004)),
+        ]);
+        rt.place(buy(0.0), "t0");
+        let opened = rt.open_positions[0].id.clone();
+
+        rt.last_price = 65_000.0;
+        let effects = rt.place(sell(0.0), "t1");
+        assert_eq!(rt.open_positions.len(), 1, "the rest is still on the exchange, so it stays on the books");
+        let rest = rt.open_positions[0].clone();
+        assert!((rest.quantity - 0.004).abs() < 1e-12);
+        assert_eq!(rest.entry_price, 64_000.0);
+        assert!((rest.entry_fee - 0.256).abs() < 1e-9, "the rest keeps its share of the entry fee");
+        assert_ne!(rest.id, opened);
+
+        let rows = trades(&effects);
+        assert_eq!(rows.len(), 2, "the closed part and the rest's own open row");
+        assert_eq!(rows[0].id, opened);
+        assert!((rows[0].quantity - 0.006).abs() < 1e-12);
+        assert_eq!(rows[0].exit_price, Some(65_000.0));
+        // 1,000 × 0.006 less the entry fee's 60 % share (0.384) and the exit fee (0.39).
+        assert!((rows[0].pnl.unwrap() - 5.226).abs() < 1e-9, "{:?}", rows[0].pnl);
+        assert!((rows[0].fee - 0.774).abs() < 1e-9);
+        assert_eq!(rows[1].id, rest.id);
+        assert_eq!(rows[1].exit_price, None);
+        assert!((rows[1].quantity - 0.004).abs() < 1e-12);
+        let lines = logs(&effects);
+        assert!(lines.iter().any(|l| l.contains("still open")), "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("dust")), "{lines:?}");
+
+        // 1000 − 640 − 0.64 + 390 − 0.39
+        assert!((rt.balance - 748.97).abs() < 1e-9, "{}", rt.balance);
+        assert!((rt.equity() - (748.97 + 0.004 * 65_000.0)).abs() < 1e-9, "the rest still counts in the equity");
+
+        // The next close sells the rest, and the two closes add up.
+        rt.last_price = 66_000.0;
+        let effects = rt.place(sell(0.0), "t2");
+        assert_eq!(calls(&rt)[2], "sell 0.004");
+        assert!(rt.open_positions.is_empty());
+        let last = trades(&effects)[0];
+        assert_eq!(last.id, rest.id);
+        assert!((last.pnl.unwrap() - 7.48).abs() < 1e-9, "{:?}", last.pnl);
+        assert!((rt.balance - 1_012.706).abs() < 1e-9, "{}", rt.balance);
+    }
+
+    /// The rows of a partial close, written to a journal, give back the same
+    /// books after a restart: the rest and the cash, on either side.
+    #[test]
+    fn the_books_after_a_partial_close_come_back_from_the_journal() {
+        let journal = || {
+            let conn = rusqlite::Connection::open_in_memory().unwrap();
+            crate::db::init_db(&conn).unwrap();
+            conn
+        };
+        let write = |conn: &rusqlite::Connection, effects: &[Effect]| {
+            for row in trades(effects) {
+                crate::bot::write_trade(conn, row).unwrap();
+            }
+        };
+        let bot = crate::bots::Bot {
+            id: "bot-1".into(),
+            name: "Bot".into(),
+            strategy_id: "strat".into(),
+            exchange_id: "x".into(),
+            pair: "BTC/USDT".into(),
+            timeframe: "1h".into(),
+            trading_mode: "live".into(),
+            budget: 1_000.0,
+            status: "running".into(),
+            started_at: Some("t".into()),
+            stopped_at: None,
+            last_error: None,
+            config_json: None,
+            created_at: "t".into(),
+            updated_at: "t".into(),
+        };
+
+        // A long.
+        let conn = journal();
+        let mut rt = live_runtime(vec![Ok(fill_of("buy-1", 64_000.0, 0.01)), Ok(fill_of("sell-1", 65_000.0, 0.006))]);
+        write(&conn, &rt.place(buy(0.0), "t0"));
+        let opened = rt.open_positions[0].id.clone();
+        write(&conn, &rt.place(sell(0.0), "t1"));
+        let books = crate::unattended::restore_books(&conn, &bot, "t").unwrap();
+        assert_eq!(books.positions.len(), 1);
+        assert_eq!(books.positions[0].id, rt.open_positions[0].id);
+        assert!((books.positions[0].quantity - 0.004).abs() < 1e-12);
+        assert!((books.positions[0].entry_fee - 0.256).abs() < 1e-9);
+        assert_eq!(books.positions[0].entry_order_id.as_deref(), Some("buy-1"));
+        assert!(books.positions[0].closing, "a restart keeps selling the rest");
+        assert!((books.balance - rt.balance).abs() < 1e-9, "{} vs {}", books.balance, rt.balance);
+        let closed_qty: f64 = conn.query_row("SELECT quantity FROM trades WHERE id = ?1", [&opened], |r| r.get(0)).unwrap();
+        assert!((closed_qty - 0.006).abs() < 1e-12, "the closed row covers what closed");
+        // The entry fee in its asset is split too, not counted twice.
+        let fees: f64 = rt.open_positions[0].entry_fees.iter().map(|f| f.amount).sum();
+        assert!((fees - 0.256).abs() < 1e-9, "{fees}");
+
+        // A short on perp.
+        let conn = journal();
+        let mut rt = live_runtime(Vec::new());
+        rt.broker = Some(Box::new(MockBroker {
+            fills: RefCell::new(VecDeque::from(vec![Ok(fill_of("short-1", 64_000.0, 0.01)), Ok(fill_of("cover-1", 60_000.0, 0.006))])),
+            calls: RefCell::new(Vec::new()),
+            perp: true,
+        }));
+        write(&conn, &rt.place(sell(0.0), "t0"));
+        write(&conn, &rt.place(buy(0.0), "t1"));
+        assert_eq!(rt.open_positions.len(), 1);
+        assert_eq!(rt.open_positions[0].side, "short");
+        assert!((rt.open_positions[0].reserved_margin - 256.0).abs() < 1e-9, "the rest's share of the margin");
+        let books = crate::unattended::restore_books(&conn, &bot, "t").unwrap();
+        assert_eq!(books.positions.len(), 1, "the rest has its own row");
+        assert_eq!(books.positions[0].id, rt.open_positions[0].id);
+        assert!((books.positions[0].quantity - 0.004).abs() < 1e-12);
+        assert!((books.positions[0].reserved_margin - 256.0).abs() < 1e-9);
+        assert!(books.positions[0].closing, "a restart keeps covering the rest");
+        assert!((books.balance - rt.balance).abs() < 1e-9, "{} vs {}", books.balance, rt.balance);
+    }
+
+    /// A rest no order could close is dust: otherwise the position could never
+    /// close, and its open row would block every later buy.
+    #[test]
+    fn a_rest_the_venue_would_not_take_is_dust_not_a_position() {
+        // 0.0001 BTC at 45,000 is 4.50 USDT, under the 5 USDT minimum.
+        let mut rt = live_runtime(vec![Ok(fill_of("buy-1", 45_000.0, 0.01)), Ok(fill_of("sell-1", 45_000.0, 0.0099))]);
+        rt.last_price = 45_000.0;
+        rt.place(buy(0.0), "t0");
+        let effects = rt.place(sell(0.0), "t1");
+        assert!(rt.open_positions.is_empty());
+        assert_eq!(trades(&effects).len(), 1);
+        assert!(logs(&effects).iter().any(|l| l.contains("stays on the exchange as dust")));
+    }
+
+    /// A reverse never opens the other side while part of the long is open.
+    #[test]
+    fn a_partly_closed_long_opens_no_short() {
+        let mut rt = live_runtime(Vec::new());
+        rt.broker = Some(Box::new(MockBroker {
+            fills: RefCell::new(VecDeque::from(vec![Ok(fill_of("buy-1", 64_000.0, 0.01)), Ok(fill_of("sell-1", 65_000.0, 0.006))])),
+            calls: RefCell::new(Vec::new()),
+            perp: true,
+        }));
+        rt.place(buy(0.0), "t0");
+        rt.place(OrderRequest { side: OrderSide::Sell, pair: "BTC/USDT".into(), quantity: 0.0, position_size: None, reverse: true }, "t1");
+        assert_eq!(rt.open_positions.len(), 1);
+        assert_eq!(rt.open_positions[0].side, "long");
+        assert_eq!(calls(&rt).len(), 2, "no order for a short went out");
+
+        // Spot says so too, instead of claiming the long was closed.
+        let mut rt = live_runtime(vec![Ok(fill_of("buy-1", 64_000.0, 0.01)), Ok(fill_of("sell-1", 65_000.0, 0.006))]);
+        rt.place(buy(0.0), "t0");
+        let effects = rt.place(OrderRequest { side: OrderSide::Sell, pair: "BTC/USDT".into(), quantity: 0.0, position_size: None, reverse: true }, "t1");
+        assert!(logs(&effects).iter().any(|l| l.contains("not fully closed")));
+    }
+
     #[test]
     fn spot_live_is_long_only() {
         let mut rt = live_runtime(vec![Ok(buy_fill_fee_in_base()), Ok(Fill {
@@ -1130,6 +1788,49 @@ mod tests {
         assert!(rt.open_positions.is_empty(), "the long was closed");
         assert!(logs(&effects).iter().any(|l| l.contains("no short was opened")));
         assert_eq!(calls(&rt).len(), 2, "one buy, one sell, never a short");
+    }
+
+    fn perp_fill(id: &str, price: f64, qty: f64) -> Fill {
+        Fill {
+            order_id: id.into(),
+            avg_price: price,
+            base_qty: qty,
+            base_received: qty,
+            quote_amount: price * qty,
+            fee_quote: price * qty * 0.00045,
+            fee_asset: "USDT".into(),
+            fee_amount: price * qty * 0.00045,
+            fee_estimated: false,
+        }
+    }
+
+    #[test]
+    fn a_live_perp_bot_shorts_covers_and_reverses() {
+        // Scripted fills: the short, its cover at a lower price, the long.
+        let mut rt = live_runtime(Vec::new());
+        rt.broker = Some(Box::new(MockBroker {
+            fills: RefCell::new(
+                vec![Ok(perp_fill("s1", 64_000.0, 0.0015)), Ok(perp_fill("c1", 60_000.0, 0.0015)), Ok(perp_fill("l1", 60_000.0, 0.0016))].into(),
+            ),
+            calls: RefCell::new(Vec::new()),
+            perp: true,
+        }));
+        rt.place(sell(0.0), "t0");
+        assert_eq!(rt.open_positions.len(), 1);
+        assert_eq!(rt.open_positions[0].side, "short");
+        let margin = rt.open_positions[0].reserved_margin;
+        assert!((margin - 96.0).abs() < 1e-9, "1x: the notional is set aside");
+        let cash_after_open = rt.balance;
+        // A buy with reverse covers the short (reduce-only) and opens a long.
+        rt.place(OrderRequest { side: OrderSide::Buy, pair: "BTC/USDT".into(), quantity: 0.0, position_size: None, reverse: true }, "t1");
+        let calls = calls(&rt);
+        assert!(calls[0].starts_with("short ") && calls[1].starts_with("cover ") && calls[2].starts_with("buy "), "{calls:?}");
+        assert_eq!(rt.open_positions.len(), 1);
+        assert_eq!(rt.open_positions[0].side, "long");
+        // Short PnL: (64,000 − 60,000) × 0.0015 = 6 less the two fees.
+        let back = margin + 6.0 - 60_000.0 * 0.0015 * 0.00045;
+        assert!((rt.balance - (cash_after_open + back - 96.0 - 96.0 * 0.00045)).abs() < 1e-6, "{}", rt.balance);
+        assert!(rt.live_perp());
     }
 
     #[test]

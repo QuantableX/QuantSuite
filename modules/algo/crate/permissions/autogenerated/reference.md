@@ -71,8 +71,20 @@ Default permissions for the algo module.
 - `allow-manual-execution-disarm`
 - `allow-manual-execution-runs`
 - `allow-manual-execution-coverage`
+- `allow-venue-list`
+- `allow-venue-mapping`
+- `allow-venue-cost-preview`
+- `allow-venue-exposure`
+- `allow-venue-wallet-status`
+- `allow-server-trading-health`
+- `allow-venue-perp-positions`
+- `allow-wallet-export-key`
+- `allow-solana-wallet-status`
 - `allow-trading-kill-switch`
 - `allow-trading-kill-switch-status`
+- `allow-trading-confirm-move`
+- `allow-trading-notices`
+- `allow-trading-notice-dismiss`
 - `allow-bot-heartbeats`
 
 ## Permission Table
@@ -1361,6 +1373,32 @@ Denies the save_strategy command without any pre-configured scope.
 <tr>
 <td>
 
+`algo:allow-server-trading-health`
+
+</td>
+<td>
+
+Enables the server_trading_health command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-server-trading-health`
+
+</td>
+<td>
+
+Denies the server_trading_health command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `algo:allow-smithery-cancel`
 
 </td>
@@ -1543,6 +1581,32 @@ Denies the smithery_source command without any pre-configured scope.
 <tr>
 <td>
 
+`algo:allow-solana-wallet-status`
+
+</td>
+<td>
+
+Enables the solana_wallet_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-solana-wallet-status`
+
+</td>
+<td>
+
+Denies the solana_wallet_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `algo:allow-start-bot`
 
 </td>
@@ -1673,6 +1737,32 @@ Denies the test_exchange_credentials command without any pre-configured scope.
 <tr>
 <td>
 
+`algo:allow-trading-confirm-move`
+
+</td>
+<td>
+
+Enables the trading_confirm_move command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-trading-confirm-move`
+
+</td>
+<td>
+
+Denies the trading_confirm_move command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `algo:allow-trading-kill-switch`
 
 </td>
@@ -1718,6 +1808,58 @@ Enables the trading_kill_switch_status command without any pre-configured scope.
 <td>
 
 Denies the trading_kill_switch_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-trading-notice-dismiss`
+
+</td>
+<td>
+
+Enables the trading_notice_dismiss command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-trading-notice-dismiss`
+
+</td>
+<td>
+
+Denies the trading_notice_dismiss command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-trading-notices`
+
+</td>
+<td>
+
+Enables the trading_notices command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-trading-notices`
+
+</td>
+<td>
+
+Denies the trading_notices command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1900,6 +2042,188 @@ Enables the validate_strategy command without any pre-configured scope.
 <td>
 
 Denies the validate_strategy command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-cost-preview`
+
+</td>
+<td>
+
+Enables the venue_cost_preview command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-cost-preview`
+
+</td>
+<td>
+
+Denies the venue_cost_preview command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-exposure`
+
+</td>
+<td>
+
+Enables the venue_exposure command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-exposure`
+
+</td>
+<td>
+
+Denies the venue_exposure command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-list`
+
+</td>
+<td>
+
+Enables the venue_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-list`
+
+</td>
+<td>
+
+Denies the venue_list command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-mapping`
+
+</td>
+<td>
+
+Enables the venue_mapping command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-mapping`
+
+</td>
+<td>
+
+Denies the venue_mapping command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-perp-positions`
+
+</td>
+<td>
+
+Enables the venue_perp_positions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-perp-positions`
+
+</td>
+<td>
+
+Denies the venue_perp_positions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-venue-wallet-status`
+
+</td>
+<td>
+
+Enables the venue_wallet_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-venue-wallet-status`
+
+</td>
+<td>
+
+Denies the venue_wallet_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-wallet-export-key`
+
+</td>
+<td>
+
+Enables the wallet_export_key command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-wallet-export-key`
+
+</td>
+<td>
+
+Denies the wallet_export_key command without any pre-configured scope.
 
 </td>
 </tr>

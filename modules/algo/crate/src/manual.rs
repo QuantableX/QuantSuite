@@ -23,19 +23,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State, Wry};
 
-use crate::execution::cex::CexVenue;
 use crate::execution::engine::{Engine, RunRequest};
 use crate::execution::guards::GuardConfig;
 use crate::execution::paper::PaperVenue;
 use crate::execution::store::{Holdings, OrderRecord, RunRecord, RunStatus, RunStore, SqliteStore, Target};
-use crate::execution::venue::{free_balance, ExecutionVenue};
+use crate::execution::mapping::quote_for;
+use crate::execution::venue::{free_balance, ExecutionVenue, MarketType};
 use crate::runtime::Mode;
 use crate::AppState;
 
 /// The event every finished, skipped or stopped run sends to the pages.
 pub const RUN_EVENT: &str = "algo:manual-run";
 /// The account quote of the CEX venues.
-const QUOTE: &str = "USDT";
 const USD: &str = "USD";
 /// Data that is not there yet is asked again this often inside the window.
 const RETRY_EVERY: ChronoDuration = ChronoDuration::minutes(5);
@@ -65,8 +64,11 @@ pub struct Capital {
 pub struct ManualSettings {
     pub mode: ExecMode,
     pub exchange_id: Option<String>,
-    /// `spot` (perp comes with PLAN-EXECUTION-VENUES).
+    /// `spot`, or `perp` on a venue that has one (Hyperliquid).
     pub market: String,
+    /// Perp: the position's leverage, isolated margin (1x default; capped
+    /// in Settings, Venues 4/5). Always 1 on spot.
+    pub leverage: f64,
     pub capital: Capital,
     /// `HH:MM`, UTC.
     pub run_time: String,
@@ -91,6 +93,7 @@ impl Default for ManualSettings {
             exchange_id: None,
             market: "spot".into(),
             capital: Capital { kind: "fixed".into(), value: 1_000.0 },
+            leverage: 1.0,
             run_time: "00:15".into(),
             retry_hours: 6,
             coverage_policy: "hold_usd".into(),
@@ -117,8 +120,14 @@ impl ManualSettings {
             "percent" => return Err("A share of the balance is between 0 and 100 %.".into()),
             other => return Err(format!("Unknown capital kind {other:?}.")),
         }
-        if self.market != "spot" {
-            return Err("Manual execution trades spot; perp comes with the venue cards.".into());
+        if !matches!(self.market.as_str(), "spot" | "perp") {
+            return Err(format!("Unknown market {:?}.", self.market));
+        }
+        if !self.leverage.is_finite() || self.leverage < 1.0 {
+            return Err("Leverage is 1x or more.".into());
+        }
+        if self.market == "spot" && self.leverage != 1.0 {
+            return Err("Leverage is a perp setting; spot is always 1x.".into());
         }
         if !matches!(self.coverage_policy.as_str(), "hold_usd" | "restrict") {
             return Err(format!("Unknown coverage policy {:?}.", self.coverage_policy));
@@ -352,8 +361,9 @@ pub struct Signal {
     /// Single asset: when the signal's bar closed; its close price.
     pub closed_at: Option<String>,
     pub close: Option<f64>,
-    /// A short asked for on a spot venue: held as cash instead.
-    pub short_on_spot: bool,
+    /// The signal is short (single-asset systems): a short on perp, cash
+    /// on spot.
+    pub short: bool,
 }
 
 /// The engine's `live` result → the signal.
@@ -376,7 +386,7 @@ pub fn parse_signal(live: &Value) -> Result<Signal, String> {
             single_asset: true,
             closed_at: sig.get("closedAt").and_then(|v| v.as_str()).map(String::from),
             close: sig.get("close").and_then(|v| v.as_f64()),
-            short_on_spot: position == "short",
+            short: position == "short",
         });
     }
     let best = live.get("best").and_then(|v| v.as_str());
@@ -395,7 +405,7 @@ pub fn parse_signal(live: &Value) -> Result<Signal, String> {
         single_asset: false,
         closed_at: None,
         close: None,
-        short_on_spot: false,
+        short: false,
     })
 }
 
@@ -429,12 +439,21 @@ pub fn freshness(signal: &Signal, close: NaiveDate, closes: &HashMap<String, f64
 }
 
 /// The run's target and its note: the pick, or USD when the venue cannot
-/// trade it (policy `hold_usd`, flagged backtest ≠ live).
-pub fn target_for(signal: &Signal, tradable: &dyn Fn(&str) -> bool) -> (Target, Vec<String>) {
+/// trade it (policy `hold_usd`, flagged backtest ≠ live). A short signal is a
+/// short on perp and cash on spot (spot stays long-only).
+pub fn target_for(signal: &Signal, tradable: &dyn Fn(&str) -> bool, perp: bool) -> (Target, Vec<String>) {
     let mut notes = Vec::new();
-    if signal.short_on_spot {
-        notes.push("the signal is short; spot is long-only, so the system holds USD (perp comes with Venues 4/5)".into());
-        return (Target::Flat, notes);
+    if signal.short {
+        let coin = signal.scored.first().cloned().unwrap_or_default();
+        if !perp {
+            notes.push("the signal is short; spot is long-only, so the system holds USD (choose Perp to short)".into());
+            return (Target::Flat, notes);
+        }
+        if !tradable(&coin) {
+            notes.push(format!("{coin} has no perp here: holding USD instead (backtest ≠ live)"));
+            return (Target::Flat, notes);
+        }
+        return (Target::Short(coin), notes);
     }
     match &signal.hold {
         None => (Target::Flat, notes),
@@ -446,20 +465,29 @@ pub fn target_for(signal: &Signal, tradable: &dyn Fn(&str) -> bool) -> (Target, 
     }
 }
 
-/// The closed daily candle of `day` for every coin: the venue's own pair when
-/// it lists one, else Binance (the suite's first data source).
-fn reference_closes(provider: &str, coins: &[String], day: NaiveDate, listed: &dyn Fn(&str) -> bool) -> HashMap<String, f64> {
-    let prefix = day.to_string();
+/// The account's venue and market, for its reference prices.
+struct VenueMarket<'a> {
+    provider: &'a str,
+    testnet: bool,
+    market: MarketType,
+    quote: &'a str,
+}
+
+/// The closed daily candle of `day` for every coin: the venue's own market
+/// when it lists one (Hyperliquid's UBTC/USDC for BTC), else Binance (the
+/// suite's first data source).
+fn reference_closes(venue: &VenueMarket, coins: &[String], day: NaiveDate, listed: &dyn Fn(&str) -> bool) -> HashMap<String, f64> {
     let mut out = HashMap::new();
     for coin in coins {
-        let source = if listed(coin) { provider } else { "binance" };
-        let pair = format!("{coin}/{QUOTE}");
-        if let Ok(candles) = crate::exchanges::fetch_recent_market_candles(source, &pair, "1d", 3) {
-            if let Some(c) = candles.iter().find(|c| c.time.starts_with(&prefix)) {
-                if c.close > 0.0 {
-                    out.insert(coin.clone(), c.close);
-                }
-            }
+        let binance = || crate::venues::daily_close("binance", false, MarketType::Spot, coin, "USDT", day);
+        // A venue without candles (Jupiter) falls back to Binance too.
+        let close = if listed(coin) {
+            crate::venues::daily_close(venue.provider, venue.testnet, venue.market, coin, venue.quote, day).or_else(binance)
+        } else {
+            binance()
+        };
+        if let Some(c) = close {
+            out.insert(coin.clone(), c);
         }
     }
     out
@@ -526,24 +554,52 @@ fn exchange_provider(conn: &Connection, exchange_id: &str) -> Result<(String, bo
     .map_err(|_| "the system's account is not connected any more".to_string())
 }
 
-/// The live venue (keys from the vault) of an account.
-fn live_venue(state: &AppState, exchange_id: &str) -> Result<CexVenue, String> {
+/// The leverage against the user's cap (QuantAlgo Settings, default 3x).
+pub fn check_leverage(leverage: f64, cap: f64) -> Result<(), String> {
+    if leverage.fract() != 0.0 {
+        return Err("Leverage is a whole number (1x, 2x, 3x).".into());
+    }
+    if leverage > cap + 1e-9 {
+        return Err(format!(
+            "{leverage}x is above the leverage cap of {cap}x. A rotation system has no reason for leverage; raise the cap in QuantAlgo Settings if you mean it."
+        ));
+    }
+    Ok(())
+}
+
+impl ManualSettings {
+    pub fn market_type(&self) -> MarketType {
+        if self.market == "perp" {
+            MarketType::Perp
+        } else {
+            MarketType::Spot
+        }
+    }
+}
+
+/// The live venue (keys from the vault) of an account, for the system's
+/// market and leverage.
+fn live_venue(state: &AppState, exchange_id: &str, market: MarketType, leverage: f64) -> Result<Box<dyn ExecutionVenue>, String> {
     let creds = {
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
         crate::exchanges::load_credentials(&db, exchange_id)?
     };
-    CexVenue::new(&creds.provider, &creds.api_key, &creds.api_secret, creds.sandbox)
+    crate::venues::open_leveraged(&creds, market, leverage.round() as u32)
 }
 
 /// What a run starts with when the system holds nothing yet.
-fn starting_capital(settings: &ManualSettings, account: Option<&CexVenue>) -> Result<(Option<f64>, Option<Holdings>), String> {
+fn starting_capital(
+    settings: &ManualSettings,
+    account: Option<&dyn ExecutionVenue>,
+    quote: &str,
+) -> Result<(Option<f64>, Option<Holdings>), String> {
     match settings.capital.kind.as_str() {
         "fixed" => Ok((Some(settings.capital.value), None)),
         kind => {
             let venue = account.ok_or("a share of the balance or the whole account needs the account's keys to read it")?;
             let balances = venue.balances()?;
             if kind == "percent" {
-                Ok((Some(free_balance(&balances, QUOTE) * settings.capital.value / 100.0), None))
+                Ok((Some(free_balance(&balances, quote) * settings.capital.value / 100.0), None))
             } else {
                 let all: Holdings = balances.into_iter().filter(|b| b.free > 0.0).map(|b| (b.asset, b.free)).collect();
                 Ok((None, Some(all)))
@@ -555,6 +611,10 @@ fn starting_capital(settings: &ManualSettings, account: Option<&CexVenue>) -> Re
 /// One attempt at the run of `system` for the close at `close`.
 /// `Ok(None)`: the data is not there yet and the window is still open.
 pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Result<Option<RunRecord>, String> {
+    // One trader: a PC that became a client leaves the run to the server.
+    if qs_core::server::executors_allowed().is_err() {
+        return Ok(None);
+    }
     let state = app.state::<AppState>();
     let row = {
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
@@ -563,10 +623,12 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
     let Some(row) = row.filter(|r| r.settings.mode != ExecMode::Off) else { return Ok(None) };
     let settings = row.settings.clone();
     let exchange_id = settings.exchange_id.clone().ok_or("no account chosen")?;
-    let (provider, _) = {
+    let (provider, testnet) = {
         let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
         exchange_provider(&db, &exchange_id)?
     };
+    let market = settings.market_type();
+    let quote = quote_for(&provider);
     let live = settings.mode == ExecMode::Live;
     let rt = parse_run_time(&settings.run_time)?;
 
@@ -576,16 +638,17 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
     let signal = parse_signal(&result)?;
 
     // Coverage and freshness, from the venue's public data.
-    let public = CexVenue::new(&provider, "", "", false)?;
+    let public = crate::venues::public(&provider, testnet, market)?;
     let listed: HashSet<String> = public
         .instruments()?
         .into_iter()
-        .filter(|i| i.quote().eq_ignore_ascii_case(QUOTE))
+        .filter(|i| i.quote().eq_ignore_ascii_case(quote))
         .map(|i| i.base().to_uppercase())
         .collect();
     let is_listed = |coin: &str| listed.contains(&coin.to_uppercase());
     let closed_day = close - ChronoDuration::days(1);
-    let mut closes = reference_closes(&provider, &signal.scored, closed_day, &is_listed);
+    let venue_market = VenueMarket { provider: &provider, testnet, market, quote };
+    let mut closes = reference_closes(&venue_market, &signal.scored, closed_day, &is_listed);
     if let (true, Some(c)) = (signal.single_asset, signal.close) {
         closes.insert(signal.scored[0].clone(), c);
     }
@@ -598,17 +661,28 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
         }
     }
 
-    let (target, notes) = target_for(&signal, &is_listed);
+    let (target, mut notes) = target_for(&signal, &is_listed, market == MarketType::Perp);
     let mut reference_prices: std::collections::BTreeMap<String, f64> = closes.into_iter().collect();
-    reference_prices.insert(QUOTE.into(), 1.0);
-    let account = if live { Some(live_venue(&state, &exchange_id)?) } else { None };
-    let (initial_capital, initial_holdings) = starting_capital(&settings, account.as_ref())?;
+    reference_prices.insert(quote.into(), 1.0);
+    let account = if live { Some(live_venue(&state, &exchange_id, market, settings.leverage)?) } else { None };
+    if let (true, Some(venue)) = (testnet, account.as_deref()) {
+        // Test networks trade play money at prices of their own (testnet
+        // ETH was 499 USDC against a 120 close on 2026-11-04): the 2 % check
+        // against the data source would stop every run there.
+        for (coin, price) in reference_prices.iter_mut().filter(|(c, _)| !c.eq_ignore_ascii_case(quote)) {
+            if let Some(mid) = venue.instrument(&format!("{coin}/{quote}")).and_then(|i| venue.order_book(&i)).ok().and_then(|b| b.mid()) {
+                *price = mid;
+            }
+        }
+        notes.push("test network: its prices are its own, so the price check compares with the venue's mid".into());
+    }
+    let (initial_capital, initial_holdings) = starting_capital(&settings, account.as_deref(), quote)?;
     let req = RunRequest {
         run_id: run_id(system_id, close),
         owner: owner(system_id),
         exchange_id: exchange_id.clone(),
         mode: if live { Mode::Live } else { Mode::Paper },
-        quote: QUOTE.into(),
+        quote: quote.into(),
         target,
         reference_prices,
         data_fresh: fresh.is_ok(),
@@ -626,18 +700,24 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
         }),
         initial_capital,
         initial_holdings,
+        leverage: if market == MarketType::Perp { settings.leverage } else { 1.0 },
     };
+    let min_liquidation_distance = state
+        .settings
+        .lock()
+        .map(|s| s.perp_min_liquidation_distance_pct / 100.0)
+        .unwrap_or(GuardConfig::default().min_liquidation_distance);
     let engine = Engine::new(GuardConfig {
         max_order_value: settings.max_order_value,
         daily_turnover_cap: settings.daily_turnover_cap,
-        ..GuardConfig::default()
+        min_liquidation_distance,
     });
     let store = SqliteStore { conn: &state.db };
     let record = match &account {
-        Some(venue) => engine.run(&store, venue, &req)?,
+        Some(venue) => engine.run(&store, venue.as_ref(), &req)?,
         None => {
             let paper = PaperVenue::new(
-                &public,
+                public.as_ref(),
                 &state.db,
                 &req.owner,
                 &exchange_id,
@@ -645,7 +725,7 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
                 settings.paper_slippage_pct / 100.0,
             );
             if let Some(capital) = req.initial_capital {
-                paper.fund_if_empty(QUOTE, capital)?;
+                paper.fund_if_empty(quote, capital)?;
             }
             engine.run(&store, &paper, &req)?
         }
@@ -736,7 +816,17 @@ fn finished(conn: &Connection, run_id: &str) -> bool {
         .optional()
         .ok()
         .flatten()
-        .is_some_and(|s| !matches!(s.as_str(), "running" | "interrupted"))
+        // A partial or failed run has not done what the signal said: it goes on
+        // while its window is open (RunStatus::is_final).
+        .is_some_and(|s| !matches!(s.as_str(), "running" | "interrupted" | "partial" | "failed"))
+}
+
+/// The status a run ended its last attempt with.
+fn run_status(conn: &Connection, run_id: &str) -> Option<String> {
+    conn.query_row("SELECT status FROM execution_runs WHERE id = ?1", params![run_id], |r| r.get::<_, String>(0))
+        .optional()
+        .ok()
+        .flatten()
 }
 
 /// Sleep until the next due time (no polling), wake on settings changes,
@@ -784,7 +874,14 @@ pub fn start(app: AppHandle<Wry>) {
                     retry_at.insert(id.clone(), now + RETRY_EVERY);
                     next = next.min(now + RETRY_EVERY);
                     let (app2, flight, system_id) = (app.clone(), in_flight.clone(), row.system_id.clone());
+                    let run = id.clone();
                     std::thread::spawn(move || {
+                        // A run that keeps failing tells the user once, not every five minutes.
+                        let before = {
+                            let state = app2.state::<AppState>();
+                            let status = state.db.lock().ok().and_then(|db| run_status(&db, &run));
+                            status
+                        };
                         let outcome = attempt(&app2, &system_id, close);
                         if let Ok(mut f) = flight.lock() {
                             f.remove(&system_id);
@@ -800,7 +897,9 @@ pub fn start(app: AppHandle<Wry>) {
                                     let state = app2.state::<AppState>();
                                     SqliteStore { conn: &state.db }.orders(&record.id).unwrap_or_default()
                                 };
-                                notify(&app2, &system_id, &record, &summary(&name, &record, &orders));
+                                if before.as_deref() != Some(record.status.as_str()) {
+                                    notify(&app2, &system_id, &record, &summary(&name, &record, &orders));
+                                }
                             }
                             Ok(None) => {}
                             Err(e) => {
@@ -879,8 +978,13 @@ pub(crate) fn manual_execution_save(
 ) -> Result<ManualView, String> {
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
     if let Some(id) = settings.exchange_id.as_deref().filter(|id| !id.is_empty()) {
-        exchange_provider(&db, id)?;
+        let (provider, _) = exchange_provider(&db, id)?;
+        if !crate::venues::markets(&provider).contains(&settings.market_type()) {
+            return Err(format!("This {provider} account cannot trade {}; perp is on Hyperliquid accounts.", settings.market));
+        }
     }
+    let cap = state.settings.lock().map(|s| s.perp_max_leverage).unwrap_or(crate::settings::DEFAULT_PERP_MAX_LEVERAGE);
+    check_leverage(settings.leverage, cap)?;
     save_settings(&db, &system_id, &settings)?;
     let out = view(&db, &system_id);
     drop(db);
@@ -941,6 +1045,8 @@ pub(crate) async fn manual_execution_arm(
     app: AppHandle<Wry>,
 ) -> Result<ArmResult, String> {
     let ack = ack_not_robust.unwrap_or(false);
+    // Armed systems run where the data lives: never on a connected client.
+    qs_core::server::executors_allowed()?;
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let (row, paper_runs) = {
@@ -948,10 +1054,17 @@ pub(crate) async fn manual_execution_arm(
             (load_row(&db, &system_id)?.ok_or("Save the Execution settings first.")?, paper_runs_done(&db, &system_id))
         };
         let exchange_id = row.settings.exchange_id.clone().unwrap_or_default();
-        let account = live_venue(&state, &exchange_id).and_then(|venue| {
+        let account = live_venue(&state, &exchange_id, row.settings.market_type(), row.settings.leverage).and_then(|venue| {
             venue.ready()?;
             let balances = venue.balances()?;
-            Ok(format!("{}: {:.2} {QUOTE} free", venue.label(), free_balance(&balances, QUOTE)))
+            let quote = quote_for(&venue.label());
+            // A Solana wallet must hold no more than its cap (PLAN-EXECUTION-VENUES §8).
+            let creds = {
+                let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+                crate::exchanges::load_credentials(&db, &exchange_id)?
+            };
+            let cap = crate::venues::wallet_cap_check(&creds)?.map(|c| format!(", {c}")).unwrap_or_default();
+            Ok(format!("{}: {:.2} {quote} free{cap}", venue.label(), free_balance(&balances, quote)))
         });
         let verdict = robustness_verdict(&research_dir(), &system_id);
         let checks = arming_checks(&row.settings, paper_runs, account, verdict.as_ref(), ack);
@@ -1022,10 +1135,12 @@ pub struct Coverage {
 #[tauri::command(rename_all = "snake_case")]
 pub(crate) async fn manual_execution_coverage(system_id: String, exchange_id: String, app: AppHandle<Wry>) -> Result<Coverage, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let provider = {
+        let (provider, testnet, market) = {
             let state = app.state::<AppState>();
             let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
-            exchange_provider(&db, &exchange_id)?.0
+            let (provider, testnet) = exchange_provider(&db, &exchange_id)?;
+            let market = load_row(&db, &system_id)?.map(|r| r.settings.market_type()).unwrap_or(MarketType::Spot);
+            (provider, testnet, market)
         };
         let config = qs_mod_systems::signals::run_config(&app, &system_id)?;
         let today = Utc::now().date_naive().to_string();
@@ -1040,11 +1155,12 @@ pub(crate) async fn manual_execution_coverage(system_id: String, exchange_id: St
                 .map(|a| a.iter().filter_map(|c| c.get("symbol").and_then(|s| s.as_str())).map(String::from).collect())
                 .unwrap_or_default()
         };
-        let venue = CexVenue::new(&provider, "", "", false)?;
+        let venue = crate::venues::public(&provider, testnet, market)?;
+        let quote = quote_for(&provider);
         let listed: HashSet<String> = venue
             .instruments()?
             .into_iter()
-            .filter(|i| i.quote().eq_ignore_ascii_case(QUOTE))
+            .filter(|i| i.quote().eq_ignore_ascii_case(quote))
             .map(|i| i.base().to_uppercase())
             .collect();
         let (tradable, missing): (Vec<String>, Vec<String>) = coins.iter().cloned().partition(|c| listed.contains(&c.to_uppercase()));
@@ -1094,11 +1210,11 @@ mod tests {
         assert_eq!(s.hold.as_deref(), Some("ETH"));
         assert_eq!(s.scored, vec!["BTC", "ETH", "SOL"]);
         let all = |_: &str| true;
-        assert_eq!(target_for(&s, &all).0, Target::Hold("ETH".into()));
-        assert_eq!(target_for(&parse_signal(&rotation("USD")).unwrap(), &all).0, Target::Flat);
+        assert_eq!(target_for(&s, &all, false).0, Target::Hold("ETH".into()));
+        assert_eq!(target_for(&parse_signal(&rotation("USD")).unwrap(), &all, false).0, Target::Flat);
         // Policy hold_usd: a pick the venue cannot trade is held as USD, flagged.
         let no_eth = |c: &str| c != "ETH";
-        let (target, notes) = target_for(&s, &no_eth);
+        let (target, notes) = target_for(&s, &no_eth, false);
         assert_eq!(target, Target::Flat);
         assert!(notes[0].contains("backtest ≠ live"), "{notes:?}");
         // Single asset: long holds the base, short on spot holds cash.
@@ -1107,12 +1223,30 @@ mod tests {
                    "singleAssetSignal": {"position": position, "close": 100000.0, "closedAt": "2026-11-10T00:00:00Z"}})
         };
         let s = parse_signal(&single("long")).unwrap();
-        assert_eq!(target_for(&s, &all).0, Target::Hold("BTC".into()));
+        assert_eq!(target_for(&s, &all, false).0, Target::Hold("BTC".into()));
         let s = parse_signal(&single("short")).unwrap();
-        let (target, notes) = target_for(&s, &all);
+        let (target, notes) = target_for(&s, &all, false);
         assert_eq!(target, Target::Flat);
         assert!(notes[0].contains("long-only"));
+        // On perp the same signal is a short (Venues 4/5).
+        assert_eq!(target_for(&s, &all, true).0, Target::Short("BTC".into()));
+        let none = |_: &str| false;
+        assert_eq!(target_for(&s, &none, true).0, Target::Flat, "no perp for the coin: cash");
         assert!(parse_signal(&json!({"asOf": "2026-11-10", "best": null, "symbols": []})).is_err(), "no ranking");
+    }
+
+    #[test]
+    fn leverage_stays_under_the_cap_and_off_spot() {
+        assert!(check_leverage(1.0, 3.0).is_ok());
+        assert!(check_leverage(3.0, 3.0).is_ok());
+        assert!(check_leverage(4.0, 3.0).unwrap_err().contains("cap of 3x"));
+        assert!(check_leverage(5.0, 5.0).is_ok(), "the user raised the cap");
+        assert!(check_leverage(1.5, 3.0).is_err());
+        let s = ManualSettings::default();
+        assert_eq!(s.leverage, 1.0, "1x is the default");
+        assert!(ManualSettings { leverage: 2.0, ..s.clone() }.validate().is_err(), "spot is always 1x");
+        assert!(ManualSettings { market: "perp".into(), leverage: 2.0, ..s.clone() }.validate().is_ok());
+        assert!(ManualSettings { market: "perp".into(), leverage: 0.5, ..s }.validate().is_err());
     }
 
     #[test]
@@ -1161,7 +1295,7 @@ mod tests {
             ManualSettings { run_time: "24:61".into(), ..s.clone() },
             ManualSettings { retry_hours: 0, ..s.clone() },
             ManualSettings { capital: Capital { kind: "percent".into(), value: 150.0 }, ..s.clone() },
-            ManualSettings { market: "perp".into(), ..s.clone() },
+            ManualSettings { market: "futures".into(), ..s.clone() },
             ManualSettings { coverage_policy: "sometimes".into(), ..s.clone() },
             ManualSettings { restricted_symbols: vec!["SOL/USDT".into()], ..s.clone() },
         ] {

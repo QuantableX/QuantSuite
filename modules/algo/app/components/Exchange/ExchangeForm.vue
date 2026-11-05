@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { invoke } from '@tauri-apps/api/core'
 import type { Exchange, ExchangeConfig, ExchangeType, ExchangeProvider, ConnectionResult } from '#algo/types'
 
 const props = withDefaults(
@@ -20,7 +21,7 @@ const emit = defineEmits<{
 }>()
 
 const CEX_PROVIDERS: ExchangeProvider[] = ['binance', 'bybit', 'okx', 'coinbase', 'kraken', 'kucoin']
-const DEX_PROVIDERS: ExchangeProvider[] = ['uniswap', 'jupiter', 'hyperliquid']
+const DEX_PROVIDERS: ExchangeProvider[] = ['uniswap', 'jupiter', 'hyperliquid', 'lighter']
 
 const name = ref('')
 const exchangeType = ref<ExchangeType>('cex')
@@ -31,6 +32,8 @@ const passphrase = ref('')
 const walletAddress = ref('')
 const privateKey = ref('')
 const rpcEndpoint = ref('')
+const subAccount = ref('')
+const maxValue = ref<number | null>(null)
 const sandbox = ref(false)
 
 const showApiKey = ref(false)
@@ -45,9 +48,54 @@ const providerOptions = computed(() =>
 )
 
 const needsPassphrase = computed(() => provider.value === 'okx' || provider.value === 'kucoin')
-/** Binance has a spot testnet, Bybit a demo-trading environment; the other venues have none. */
-const supportsSandbox = computed(() => exchangeType.value === 'cex' && (provider.value === 'binance' || provider.value === 'bybit'))
-const sandboxLabel = computed(() => (provider.value === 'binance' ? 'Binance spot testnet' : 'Bybit demo trading'))
+/** Hyperliquid: an API wallet that trades for your main address but cannot withdraw (PLAN-EXECUTION-VENUES §8). */
+const isHyperliquid = computed(() => exchangeType.value === 'dex' && provider.value === 'hyperliquid')
+/** Lighter (Venues 5/5): an API key that trades for an account index; withdrawals only to the account's own L1 address. */
+const isLighter = computed(() => exchangeType.value === 'dex' && provider.value === 'lighter')
+const accountIndex = ref('')
+const apiKeyIndex = ref('')
+/** Jupiter: a Solana wallet QuantSuite generates; never an imported key (§8). */
+const isJupiter = computed(() => exchangeType.value === 'dex' && provider.value === 'jupiter')
+
+/** The generated wallet's key, shown once after a confirmed export. */
+const exportStep = ref<'idle' | 'confirm' | 'shown'>('idle')
+const exportConfirm = ref('')
+const exportedKey = ref('')
+const exportError = ref<string | null>(null)
+const solanaAddress = ref('')
+
+async function loadWallet() {
+  solanaAddress.value = ''
+  if (!props.exchange || props.exchange.provider !== 'jupiter') return
+  try {
+    const w = await invoke<{ address: string }>('plugin:algo|solana_wallet_status', { exchange_id: props.exchange.id })
+    solanaAddress.value = w.address
+  } catch {
+    // The address is optional here; the list shows the error.
+  }
+}
+
+async function exportKey() {
+  if (!props.exchange) return
+  exportError.value = null
+  try {
+    const r = await invoke<{ address: string; secret: string }>('plugin:algo|wallet_export_key', {
+      exchange_id: props.exchange.id,
+      confirm: exportConfirm.value.trim(),
+    })
+    exportedKey.value = r.secret
+    exportStep.value = 'shown'
+  } catch (e) {
+    exportError.value = String(e)
+  }
+}
+/** Binance has a spot testnet, Bybit a demo-trading environment, Hyperliquid a testnet; the other venues have none. */
+const supportsSandbox = computed(
+  () => (exchangeType.value === 'cex' && (provider.value === 'binance' || provider.value === 'bybit')) || isHyperliquid.value || isLighter.value,
+)
+const sandboxLabel = computed(() =>
+  provider.value === 'binance' ? 'Binance spot testnet' : provider.value === 'bybit' ? 'Bybit demo trading' : provider.value === 'lighter' ? 'Lighter testnet' : 'Hyperliquid testnet',
+)
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -55,7 +103,7 @@ function capitalize(s: string): string {
 
 function providerLabel(p: ExchangeProvider): string {
   const name = capitalize(p)
-  return exchangeType.value === 'dex' ? `${name} (stored credentials only)` : name
+  return exchangeType.value === 'dex' && !['hyperliquid', 'jupiter', 'lighter'].includes(p) ? `${name} (stored credentials only)` : name
 }
 
 function resetForm() {
@@ -68,6 +116,14 @@ function resetForm() {
   walletAddress.value = ''
   privateKey.value = ''
   rpcEndpoint.value = ''
+  subAccount.value = ''
+  accountIndex.value = ''
+  apiKeyIndex.value = ''
+  maxValue.value = null
+  exportStep.value = 'idle'
+  exportConfirm.value = ''
+  exportedKey.value = ''
+  exportError.value = null
   sandbox.value = false
   showApiKey.value = false
   showApiSecret.value = false
@@ -80,6 +136,11 @@ function prefillForm() {
     exchangeType.value = props.exchange.exchange_type
     provider.value = props.exchange.provider
     sandbox.value = props.exchange.sandbox
+    exportStep.value = 'idle'
+    exportConfirm.value = ''
+    exportedKey.value = ''
+    exportError.value = null
+    loadWallet()
   } else {
     resetForm()
   }
@@ -130,9 +191,28 @@ function buildConfig(): ExchangeConfig {
     if (passphrase.value) config.passphrase = passphrase.value
     config.sandbox = supportsSandbox.value && sandbox.value
   } else {
-    if (walletAddress.value) config.wallet_address = walletAddress.value
-    if (privateKey.value) config.private_key = privateKey.value
-    if (rpcEndpoint.value) config.rpc_endpoint = rpcEndpoint.value
+    if (walletAddress.value) config.wallet_address = walletAddress.value.trim()
+    if (privateKey.value) config.private_key = privateKey.value.trim()
+    if (isHyperliquid.value) {
+      if (subAccount.value) config.sub_account = subAccount.value.trim()
+      config.sandbox = sandbox.value
+    } else if (rpcEndpoint.value) {
+      config.rpc_endpoint = rpcEndpoint.value
+    }
+    if (isLighter.value) {
+      // Account index and API key index travel in sub_account / api_key.
+      delete config.wallet_address
+      if (accountIndex.value) config.sub_account = accountIndex.value.trim()
+      if (apiKeyIndex.value) config.api_key = apiKeyIndex.value.trim()
+      config.sandbox = sandbox.value
+    }
+    if (isJupiter.value) {
+      // The wallet is generated server-side; only settings travel.
+      delete config.wallet_address
+      delete config.private_key
+      if (apiKey.value) config.api_key = apiKey.value.trim()
+      if (maxValue.value != null && maxValue.value > 0) config.max_value = maxValue.value
+    }
   }
 
   return config
@@ -204,7 +284,43 @@ function handleTest() {
                 {{ providerLabel(p) }}
               </option>
             </select>
-            <p v-if="exchangeType === 'dex'" class="form-note">
+            <div v-if="isHyperliquid" class="form-hint hl-guide">
+              <p>
+                QuantSuite trades through an <strong>API wallet</strong>: it can place and cancel orders for your
+                account but cannot withdraw or transfer. Your main wallet's key or seed phrase is never needed.
+              </p>
+              <ol class="guide">
+                <li>In Hyperliquid's app open <em>More → API</em> and create an API wallet (one per sub-account; never reuse an old one).</li>
+                <li>Approve it with your main wallet. Copy its private key — Hyperliquid shows it once.</li>
+                <li>Paste the key and your main address here. A sub-account address is optional.</li>
+              </ol>
+              <p>
+                Spot and perp hold separate USDC. Moving USDC between them is signed by your main wallet, so you do
+                that in Hyperliquid's app.
+              </p>
+            </div>
+            <div v-else-if="isLighter" class="form-hint hl-guide">
+              <p>
+                QuantSuite trades through a Lighter <strong>API key</strong>. It places and cancels orders; it can also
+                withdraw, but only to your account's own L1 address. Sending funds anywhere else needs your wallet's key,
+                which QuantSuite never asks for.
+              </p>
+              <ol class="guide">
+                <li>In Lighter's app open <em>Settings → API keys</em> and create a key on an index from 2 to 254 (one per system or bot; 0 and 1 are Lighter's own).</li>
+                <li>Copy the key's private key and note your account index (a sub-account has its own).</li>
+                <li>Enter both indexes and the private key here.</li>
+              </ol>
+              <p>Standard Lighter accounts trade without fees. Perp positions use isolated margin, 1x unless you choose more.</p>
+            </div>
+            <div v-else-if="isJupiter" class="form-hint hl-guide">
+              <p>
+                QuantSuite <strong>generates a new Solana wallet</strong> when you save and shows its address. Fund it with
+                the trading capital only: its key can do everything, so it never holds more than the cap below. There is
+                no import — never enter a seed phrase anywhere.
+              </p>
+              <p>Swaps go through Jupiter with a slippage and price-impact cap; a small SOL balance pays the network fees.</p>
+            </div>
+            <p v-else-if="exchangeType === 'dex'" class="form-note">
               DEX credentials can be stored here, but deploy and pair discovery are not supported yet.
             </p>
             <p v-else class="form-hint">
@@ -282,26 +398,104 @@ function handleTest() {
           </template>
 
           <!-- DEX fields -->
-          <template v-if="exchangeType === 'dex'">
+          <template v-if="isJupiter">
+            <div v-if="isEditing" class="form-group">
+              <label class="label">Wallet address</label>
+              <input class="input mono" type="text" :value="solanaAddress || '…'" readonly />
+            </div>
             <div class="form-group">
-              <label class="label">Wallet Address</label>
+              <label class="label">Max value on this wallet (USD)</label>
               <input
-                v-model="walletAddress"
+                v-model.number="maxValue"
+                class="input"
+                type="number"
+                min="0"
+                step="any"
+                :placeholder="isEditing ? 'Leave blank to keep the stored cap' : 'e.g. 1000 — arming is refused above it'"
+              />
+            </div>
+            <div class="form-group">
+              <label class="label">RPC URL <span class="optional">(optional)</span></label>
+              <input
+                v-model="rpcEndpoint"
                 class="input"
                 type="text"
-                placeholder="0x..."
+                :placeholder="isEditing ? 'Leave blank to keep the stored RPC' : 'https://… — blank: the public Solana RPC (rate-limited)'"
                 autocomplete="off"
               />
             </div>
-
             <div class="form-group">
-              <label class="label">Private Key</label>
+              <label class="label">Jupiter API key <span class="optional">(optional — keyless allows one request every 2 seconds)</span></label>
+              <input v-model="apiKey" class="input" type="password" :placeholder="isEditing ? 'Leave blank to keep the stored key' : 'From portal.jup.ag'" autocomplete="off" />
+            </div>
+            <div v-if="isEditing" class="form-group">
+              <label class="label">Wallet key</label>
+              <button v-if="exportStep === 'idle'" type="button" class="btn" @click="exportStep = 'confirm'">Export the key…</button>
+              <div v-else-if="exportStep === 'confirm'" class="export-box">
+                <p class="form-note">Anyone with this key can move everything on the wallet. Type the wallet address to show it.</p>
+                <input v-model="exportConfirm" class="input mono" type="text" placeholder="Wallet address" autocomplete="off" />
+                <div class="export-actions">
+                  <button type="button" class="btn" @click="exportStep = 'idle'">Cancel</button>
+                  <button type="button" class="btn btn-primary" :disabled="exportConfirm.trim() !== solanaAddress" @click="exportKey">Show the key</button>
+                </div>
+                <p v-if="exportError" class="form-note">{{ exportError }}</p>
+              </div>
+              <div v-else class="export-box">
+                <input class="input mono" type="text" :value="exportedKey" readonly />
+                <p class="form-hint">Phantom and the Solana CLI import this format. Close the form when you are done.</p>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="isLighter">
+            <div class="form-group">
+              <label class="label">Account index</label>
+              <input v-model="accountIndex" class="input mono" type="text" inputmode="numeric" :placeholder="isEditing ? 'Leave blank to keep the stored index' : 'e.g. 281474976710654'" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label class="label">API key index</label>
+              <input v-model="apiKeyIndex" class="input mono" type="text" inputmode="numeric" :placeholder="isEditing ? 'Leave blank to keep the stored index' : '2 – 254'" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label class="label">API key private key</label>
               <div class="input-reveal">
                 <input
                   v-model="privateKey"
                   class="input"
                   :type="showPrivateKey ? 'text' : 'password'"
-                  placeholder="Enter private key"
+                  :placeholder="isEditing ? 'Leave blank to keep the stored key' : '0x… (40 bytes)'"
+                  autocomplete="off"
+                />
+                <button type="button" class="reveal-btn" @click="showPrivateKey = !showPrivateKey">{{ showPrivateKey ? 'Hide' : 'Show' }}</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-row">
+                <input v-model="sandbox" type="checkbox" />
+                <span>Testnet — {{ sandboxLabel }}</span>
+              </label>
+              <p class="form-hint">An API key on the testnet (testnet.app.lighter.xyz). Balances, prices and orders all come from the testnet.</p>
+            </div>
+          </template>
+          <template v-else-if="exchangeType === 'dex'">
+            <div class="form-group">
+              <label class="label">{{ isHyperliquid ? 'Main wallet address' : 'Wallet Address' }}</label>
+              <input
+                v-model="walletAddress"
+                class="input"
+                type="text"
+                :placeholder="isEditing ? 'Leave blank to keep the stored address' : '0x...'"
+                autocomplete="off"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="label">{{ isHyperliquid ? 'API wallet private key' : 'Private Key' }}</label>
+              <div class="input-reveal">
+                <input
+                  v-model="privateKey"
+                  class="input"
+                  :type="showPrivateKey ? 'text' : 'password'"
+                  :placeholder="isEditing ? 'Leave blank to keep the stored key' : 'Enter private key'"
                   autocomplete="off"
                 />
                 <button
@@ -314,7 +508,28 @@ function handleTest() {
               </div>
             </div>
 
-            <div class="form-group">
+            <div v-if="isHyperliquid" class="form-group">
+              <label class="label">Sub-account address <span class="optional">(optional)</span></label>
+              <input
+                v-model="subAccount"
+                class="input"
+                type="text"
+                :placeholder="isEditing ? 'Leave blank to keep the stored sub-account' : '0x... — orders act on this sub-account'"
+                autocomplete="off"
+              />
+            </div>
+
+            <div v-if="isHyperliquid" class="form-group">
+              <label class="checkbox-row">
+                <input v-model="sandbox" type="checkbox" />
+                <span>Testnet — {{ sandboxLabel }}</span>
+              </label>
+              <p class="form-hint">
+                An API wallet approved on the testnet. Balances, prices and orders all come from the testnet.
+              </p>
+            </div>
+
+            <div v-else class="form-group">
               <label class="label">RPC Endpoint <span class="optional">(optional)</span></label>
               <input
                 v-model="rpcEndpoint"
@@ -350,7 +565,7 @@ function handleTest() {
             <button
               type="button"
               class="btn"
-              :disabled="exchangeType === 'dex' || isTesting"
+              :disabled="(exchangeType === 'dex' && !isHyperliquid && !isLighter && !(isJupiter && isEditing)) || isTesting"
               @click="handleTest"
             >
               {{ isTesting ? 'Testing…' : 'Test Connection' }}
@@ -449,6 +664,31 @@ function handleTest() {
   font-size: 12px;
   line-height: 1.4;
   color: var(--qa-text-muted);
+}
+
+.export-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.hl-guide p {
+  margin: 0 0 6px;
+}
+
+.hl-guide .guide {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.hl-guide .guide li {
+  margin-bottom: 2px;
 }
 
 .checkbox-row {

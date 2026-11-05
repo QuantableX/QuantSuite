@@ -1,0 +1,95 @@
+{
+ "source": "lighter-sdk 1.1.8 signer DLL, artifacts/lighter-research/gen_kat.py (card Venues 5/5)",
+ "private_key": "0x11111111111111111111111111111111111111111111111111111111111111111111111111111101",
+ "generated_example": {
+  "private": "0x66d87838cab308b78b56cafcf17b0333926fcf9ee3224a1b845f31f15b3c5fb40aa6b81fc3798400",
+  "public": "0x6713eb9d3e3b135dfb7ed46bccf2be929b66079a107a37bec9c08d9601cebf3ee534b96f9a3b2dd3"
+ },
+ "account_index": 12345,
+ "api_key_index": 3,
+ "chain_id": 300,
+ "cases": [
+  {
+   "name": "create_order_ioc_buy",
+   "tx_type": 14,
+   "tx_info": {
+    "AccountIndex": 12345,
+    "ApiKeyIndex": 3,
+    "MarketIndex": 1,
+    "ClientOrderIndex": 7,
+    "BaseAmount": 123,
+    "Price": 345678,
+    "IsAsk": 0,
+    "Type": 0,
+    "TimeInForce": 0,
+    "ReduceOnly": 0,
+    "TriggerPrice": 0,
+    "OrderExpiry": 0,
+    "ExpiredAt": 1793818421074,
+    "Nonce": 1000,
+    "Sig": "8IzMoWhh+uSYvM47+41as6OqdVBB/AOfdGEtb+iY48e3/mXDlwIcNUnpEhft4U5KyVZhpSimK2GC/afL4J2aqVY8D5M9fz4KZaynZZuGk1k=",
+    "L2TxAttributes": null
+   },
+   "tx_hash": "95f2b91e27e4b196eea1fd459d2b40cf7688db92dfcfb34b2e719e75c24256cb5a4e32e30b6716f0",
+   "message_to_sign": null
+  },
+  {
+   "name": "create_order_ioc_sell_reduce",
+   "tx_type": 14,
+   "tx_info": {
+    "AccountIndex": 12345,
+    "ApiKeyIndex": 3,
+    "MarketIndex": 0,
+    "ClientOrderIndex": 281474976710655,
+    "BaseAmount": 5000,
+    "Price": 80123,
+    "IsAsk": 1,
+    "Type": 0,
+    "TimeInForce": 0,
+    "ReduceOnly": 1,
+    "TriggerPrice": 0,
+    "OrderExpiry": 0,
+    "ExpiredAt": 1793818421076,
+    "Nonce": 1001,
+    "Sig": "1d006GW9aKD8qV9pCmj4vYZ/JKR95k1BrjjmyOgo8q3vvKMuGrmbEh4GOqM2Ic0v6iwDZWZTqY1jqi1wi8Dnoc79gM2y8Pk7ltHI7uez5nU=",
+    "L2TxAttributes": null
+   },
+   "tx_hash": "2c541d7ca927b6e702e60ee3d146ac9a1fc8462f4b70ffad03738c2b480abe12495e51e10d5fd2df",
+   "message_to_sign": null
+  },
+  {
+   "name": "cancel_order",
+   "tx_type": 15,
+   "tx_info": {
+    "AccountIndex": 12345,
+    "ApiKeyIndex": 3,
+    "MarketIndex": 1,
+    "Index": 7,
+    "ExpiredAt": 1793818421076,
+    "Nonce": 1002,
+    "Sig": "LdJWispiGLMPJ9KyZ148aV/KgTXvtZdW9vYd42fQYPDXbbtTY2yDfY4+7XPLtK5hW0azWk3q5+laaRsy4zfdKX1Mrjx8j+L2l76Jp3dq33w=",
+    "L2TxAttributes": null
+   },
+   "tx_hash": "4afe0d697fb94e1decb2ae8f8c925d0a2a93bea433d3ed1c31676f2cc84f6fd70dbe11193d41970b",
+   "message_to_sign": null
+  },
+  {
+   "name": "update_leverage_1x_isolated",
+   "tx_type": 20,
+   "tx_info": {
+    "AccountIndex": 12345,
+    "ApiKeyIndex": 3,
+    "MarketIndex": 1,
+    "InitialMarginFraction": 10000,
+    "MarginMode": 1,
+    "ExpiredAt": 1793818421078,
+    "Nonce": 1003,
+    "Sig": "3HjMLYzd5igpcpsZIMLGdlClvh32tPGIs4n4PpeP5NYy1gpYoQz8aeh3rVq/mmtFPMFVNI1ldlwS+hGY1PCDdWLSfi/rf3cuCJHNVb6UBEo=",
+    "L2TxAttributes": null
+   },
+   "tx_hash": "b9ea2748cebe809d628cace21f306c80789188c50158146c411a8467b8f17c580b73f77e779f656f",
+   "message_to_sign": null
+  }
+ ],
+ "auth_token": "1793800000:12345:3:0164b961448264685516e5c579c911a8169527c19d018bb144e58627dcfe1c23d71ba1ab9b2dab64f42115c86814906823728a125dba1bfa4110d2543feb0cb96c2a4cc85e48ea0c74b140e2f76c3e60"
+}

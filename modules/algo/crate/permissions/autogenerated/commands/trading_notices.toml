@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-trading-notices"
+description = "Enables the trading_notices command without any pre-configured scope."
+commands.allow = ["trading_notices"]
+
+[[permission]]
+identifier = "deny-trading-notices"
+description = "Denies the trading_notices command without any pre-configured scope."
+commands.deny = ["trading_notices"]

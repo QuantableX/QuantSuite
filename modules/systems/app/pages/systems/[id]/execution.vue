@@ -10,12 +10,16 @@ definePageMeta({ layout: 'systems', path: '/algo/manual/:id/execution' })
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSystemsStore } from '#systems/stores/systems'
+import { useServerLink } from '@quantsuite/core'
+import SystemsSettingsCostPreview from '#systems/components/Settings/CostPreview.vue'
 
 type Mode = 'off' | 'paper' | 'live'
 interface Settings {
   mode: Mode
   exchange_id: string | null
   market: string
+  /** Perp: isolated leverage, 1x default, capped in QuantAlgo Settings (Venues 4/5). */
+  leverage: number
   capital: { kind: 'fixed' | 'percent' | 'whole'; value: number }
   run_time: string
   retry_hours: number
@@ -59,7 +63,38 @@ const ackNotRobust = ref(false)
 const coverage = ref<Coverage | null>(null)
 const coverageBusy = ref(false)
 
-const tradableVenues = computed(() => exchanges.value.filter(e => ['binance', 'bybit'].includes(e.provider.toLowerCase())))
+const tradableVenues = computed(() => exchanges.value.filter(e => ['binance', 'bybit', 'hyperliquid', 'jupiter', 'lighter'].includes(e.provider.toLowerCase())))
+const account = computed(() => exchanges.value.find(e => e.id === form.value?.exchange_id) ?? null)
+/** Perp exists on Hyperliquid and Lighter accounts. */
+const hasPerp = computed(() => ['hyperliquid', 'lighter'].includes(account.value?.provider.toLowerCase() ?? ''))
+/** What "USD" is on the account: USDC on Hyperliquid and Jupiter, USDT on Binance and Bybit. */
+const quote = computed(() => (['hyperliquid', 'jupiter', 'lighter'].includes(account.value?.provider.toLowerCase() ?? '') ? 'USDC' : 'USDT'))
+watch(hasPerp, (perp) => {
+  if (!perp && form.value?.market === 'perp') form.value.market = 'spot'
+})
+watch(() => form.value?.market, (market) => {
+  if (form.value && market !== 'perp') form.value.leverage = 1
+})
+
+/** The account's perp positions with their liquidation distance (Venues 4/5). */
+interface PerpPosition {
+  coin: string; side: string; size: number; entry_price: number; mark_price: number | null
+  liquidation_price: number | null; liquidation_distance: number | null; leverage: number | null; warn: boolean
+}
+const positions = ref<PerpPosition[]>([])
+async function loadPositions() {
+  positions.value = []
+  if (!view.value || view.value.settings.market !== 'perp' || !view.value.settings.exchange_id) return
+  try {
+    positions.value = await invoke<PerpPosition[]>('plugin:algo|venue_perp_positions', { exchange_id: view.value.settings.exchange_id })
+  } catch {
+    // Shown as no positions; the account's own page names the error.
+  }
+}
+watch(() => view.value?.settings.exchange_id + ':' + view.value?.settings.market, loadPositions)
+function price(n: number | null) {
+  return n == null ? '—' : n.toLocaleString('en-US', { maximumFractionDigits: n < 10 ? 4 : 1 })
+}
 const dirty = computed(() => JSON.stringify(form.value) !== JSON.stringify(view.value?.settings))
 const status = computed(() => {
   const v = view.value
@@ -124,6 +159,10 @@ async function save() {
     saving.value = false
   }
 }
+
+// On a PC that uses a server, arming live needs a Full device (card Server 5/7);
+// the server then asks for its PIN.
+const link = useServerLink()
 
 async function arm() {
   arming.value = true
@@ -216,12 +255,20 @@ watch(systemId, () => { void load() })
             <option v-for="e in tradableVenues" :key="e.id" :value="e.id">{{ e.name }} ({{ e.provider }}{{ e.sandbox ? ', sandbox' : '' }})</option>
           </select>
         </label>
-        <label><span class="label">Market</span><select class="select" disabled><option>Spot</option></select></label>
+        <label><span class="label">Market</span>
+          <select v-model="form.market" class="select">
+            <option value="spot">Spot</option>
+            <option value="perp" :disabled="!hasPerp">Perp — isolated, long and short{{ hasPerp ? '' : ' (Hyperliquid and Lighter accounts)' }}</option>
+          </select>
+        </label>
+        <label v-if="form.market === 'perp'"><span class="label">Leverage (x, isolated — capped in QuantAlgo Settings)</span>
+          <input v-model.number="form.leverage" class="input" type="number" min="1" step="1">
+        </label>
         <div class="qs-exec__pair">
           <label><span class="label">Capital</span>
             <select v-model="form.capital.kind" class="select">
-              <option value="fixed">Fixed amount (USDT)</option>
-              <option value="percent">% of the USDT balance</option>
+              <option value="fixed">Fixed amount ({{ quote }})</option>
+              <option value="percent">% of the {{ quote }} balance</option>
               <option value="whole">The whole (sub-)account</option>
             </select>
           </label>
@@ -234,10 +281,10 @@ watch(systemId, () => { void load() })
           <label><span class="label">Retry window (hours after the close)</span><input v-model.number="form.retry_hours" class="input" type="number" min="1" max="23"></label>
         </div>
         <div class="qs-exec__pair">
-          <label><span class="label">Max order value (USDT, optional)</span>
+          <label><span class="label">Max order value ({{ quote }}, optional)</span>
             <input class="input" type="number" min="0" step="any" :value="form.max_order_value ?? ''" @input="form.max_order_value = numberOrNull(($event.target as HTMLInputElement).value)">
           </label>
-          <label><span class="label">Daily turnover cap (USDT, optional)</span>
+          <label><span class="label">Daily turnover cap ({{ quote }}, optional)</span>
             <input class="input" type="number" min="0" step="any" :value="form.daily_turnover_cap ?? ''" @input="form.daily_turnover_cap = numberOrNull(($event.target as HTMLInputElement).value)">
           </label>
         </div>
@@ -278,7 +325,12 @@ watch(systemId, () => { void load() })
         <p class="qs-exec__line">Completed paper runs: <strong>{{ view?.paper_runs_done ?? 0 }}</strong></p>
         <label class="qs-exec__tick"><input v-model="ackNotRobust" type="checkbox"> I know this system is not robust</label>
         <div class="qs-exec__buttons">
-          <button class="btn btn-primary" :disabled="arming || dirty || view?.settings.mode !== 'live' || view?.armed" @click="arm">{{ arming ? 'Checking…' : 'Arm Live' }}</button>
+          <button
+            class="btn btn-primary"
+            :disabled="arming || dirty || view?.settings.mode !== 'live' || view?.armed || !link.canTrade.value"
+            :title="link.canTrade.value ? '' : 'This PC may not trade on the server (its role there).'"
+            @click="arm"
+          >{{ arming ? 'Checking…' : 'Arm Live' }}</button>
           <button class="btn" :disabled="!view?.armed" @click="disarm">Disarm</button>
         </div>
         <p v-if="view?.armed" class="qs-exec__line qs-exec__live">Armed {{ utc(view.armed_at) }}: the next run trades real money.</p>
@@ -286,6 +338,18 @@ watch(systemId, () => { void load() })
           <li v-for="c in checks" :key="c.name" :class="c.ok ? 'qs-exec__ok' : 'qs-exec__warn'">{{ c.ok ? '✓' : '✗' }} {{ c.detail }}</li>
         </ul>
         <p class="qs-exec__hint">Arming needs Live saved, a completed paper run, a working account and a robust verdict (or the tick). Stopping never sells.</p>
+        <SystemsSettingsCostPreview :exchange-id="form.exchange_id" :market="form.market === 'perp' ? 'perp' : 'spot'" :value="form.capital.kind === 'fixed' ? form.capital.value : 1000" />
+        <div v-if="view?.settings.market === 'perp'" class="qs-exec__positions">
+          <h2 class="qs-exec__h2">Perp positions on the account</h2>
+          <p v-if="!positions.length" class="qs-exec__hint">None open.</p>
+          <ul v-else class="qs-exec__checks">
+            <li v-for="p in positions" :key="p.coin + p.side" :class="p.warn ? 'qs-exec__warn' : ''">
+              {{ p.coin }} {{ p.side }} {{ p.size }} at {{ price(p.entry_price) }}{{ p.leverage ? `, ${p.leverage}x` : '' }} —
+              liquidation {{ price(p.liquidation_price) }}<template v-if="p.liquidation_distance != null"> ({{ (p.liquidation_distance * 100).toFixed(1) }} % from the mark)</template>
+            </li>
+          </ul>
+          <p class="qs-exec__hint">Funding is booked every hour into the journal and the system's cash.</p>
+        </div>
       </section>
 
       <section class="card qs-exec__runs" aria-label="Runs">
@@ -308,7 +372,7 @@ watch(systemId, () => { void load() })
                 <tr v-if="openRun === r.run.id" class="qs-exec__detail">
                   <td colspan="7">
                     <p>{{ r.summary }}</p>
-                    <p v-if="r.run.route">Route: {{ r.run.route.chosen === 'direct' ? 'direct pair' : 'through USDT' }} — {{ r.run.route.reason }}</p>
+                    <p v-if="r.run.route">Route: {{ r.run.route.chosen === 'direct' ? 'direct pair' : 'through the quote' }} — {{ r.run.route.reason }}</p>
                     <ul>
                       <li v-for="o in r.orders" :key="o.client_order_id">
                         {{ o.leg }} · {{ o.side }} {{ o.qty }} {{ o.instrument.symbol }} ·
