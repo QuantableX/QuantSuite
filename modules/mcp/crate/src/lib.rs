@@ -1,3 +1,4 @@
+mod agent_place;
 mod clients;
 mod commands;
 mod config_gen;

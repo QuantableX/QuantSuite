@@ -92,6 +92,34 @@ async function call(name, callArgs = {}) {
   return { text, isError: !!res.result?.isError }
 }
 
+/** A second, independent agent session: its own session id, so its own folder. */
+async function agentSession(clientName, capabilities = {}) {
+  let sid = null
+  let id = 0
+  const post = async (body) => {
+    const headers = { 'Content-Type': 'application/json' }
+    if (sid) headers['mcp-session-id'] = sid
+    const res = await fetch(URL_, { method: 'POST', headers, body: JSON.stringify(body) })
+    const got = res.headers.get('mcp-session-id')
+    if (got) sid = got
+    return res.status === 202 ? null : res.json()
+  }
+  await post({ jsonrpc: '2.0', id: ++id, method: 'initialize', params: {
+    protocolVersion: '2025-03-26', capabilities, clientInfo: { name: clientName, version: '1.0.0' },
+  } })
+  return {
+    post,
+    get sid() { return sid },
+    async call(name, callArgs = {}) {
+      const res = await post({ jsonrpc: '2.0', id: ++id, method: 'tools/call', params: { name, arguments: callArgs } })
+      if (res.error) return { text: JSON.stringify(res.error), isError: true }
+      return { text: res.result?.content?.[0]?.text ?? '', isError: !!res.result?.isError }
+    },
+  }
+}
+
+const cardIdIn = (text) => text.match(/\(id: ([0-9a-f-]{36})\)/)?.[1]
+
 // ── test workspace folder (sample code + git repo) ────────────────────────
 function git(cwd, ...a) {
   return execFileSync('git', a, { cwd, encoding: 'utf8' }).trim()
@@ -120,10 +148,10 @@ function setupWorkspaceFolder() {
   }
 }
 
-// ── the 33 inbuilt tools the server must list ─────────────────────────────
+// ── the 34 inbuilt tools the server must list ─────────────────────────────
 const INBUILT = [
-  // codebase index (7)
-  'get_instructions', 'index_codebase', 'search_code', 'lookup_symbol',
+  // codebase index (8)
+  'get_instructions', 'answer_workspace_question', 'index_codebase', 'search_code', 'lookup_symbol',
   'list_codebases', 'reindex_codebase', 'get_codebase_stats',
   // agentos (3) — AGENT.md only since 2026-08-31; the concept tools are gone
   'get_agent_instructions', 'update_agent_instructions', 'init_agent_md',
@@ -230,23 +258,11 @@ async function main() {
   check('unknown workspace errors and names the registered ones',
     bad.isError && bad.text.includes("Unknown workspace 'no-such-workspace-xyz'"), bad.text)
 
-  // Three valid outcomes, all proving the default path works: the active
-  // workspace answered with stats, the active workspace answered with the
-  // not-indexed hint (resolution worked, index just absent), or there is no
-  // active workspace and the error says exactly that.
+  // The agent's folder decides, never the app's selection. This session has
+  // not named one yet, so it is refused rather than sent to a guess.
   const noArg = await call('get_codebase_stats', {})
-  const noArgOk =
-    !noArg.isError ||
-    noArg.text.includes('No active workspace') ||
-    noArg.text.includes('has no code index yet')
-  check('omitted workspace resolves to active or explains itself', noArgOk, noArg.text)
-  console.log(
-    `        (default resolution: ${
-      noArg.text.includes('No active workspace')
-        ? 'no active workspace — error path'
-        : 'active workspace answered'
-    })`,
-  )
+  check('an unknown folder is refused and names the fix',
+    noArg.isError && noArg.text.includes('cwd='), noArg.text)
 
   // ── kanban: auto_apply lifecycle ──
   section('kanban (auto_apply: claim → worktree → diff → complete-merges)')
@@ -426,6 +442,122 @@ async function main() {
   check('lists the test workspace', gi.text.includes(WS_NAME))
   check('merges the AGENT.md brief', gi.text.includes('Agent Instructions (from AGENT.md)') && gi.text.includes(gGlobal.text.trim().slice(0, 40)))
   check('points agents at QuantMemory scopes', gi.text.includes('quantsuite.memory.search'))
+
+  // ── the folder the agent works in decides ──
+  section('working folder')
+  {
+  const agentA = await agentSession('qs-folder-a')
+  const refused = await agentA.call('create_kanban_card', { title: 'never created' })
+  check('before it names a folder, a write is refused with the fix', refused.isError && refused.text.includes('cwd='), refused.text)
+
+  const giA = await agentA.call('get_instructions', { cwd: path.join(WS_DIR, 'some', 'subfolder') })
+  check('a subfolder of a workspace is that workspace', giA.text.includes(`workspace '${WS_NAME}'`), giA.text.slice(0, 300))
+  check('the listing marks this session', giA.text.includes(`${WS_NAME} [this session]`), giA.text.slice(0, 900))
+  check('no question for a registered folder', !giA.text.includes('ASK THE USER'))
+  const statsA = await agentA.call('get_codebase_stats', {})
+  check('a tool without a workspace uses the folder', !statsA.isError, statsA.text.slice(0, 200))
+  const cardA = await agentA.call('create_kanban_card', { title: 'folder test A' })
+  const cardAId = cardIdIn(cardA.text)
+  if (cardAId) cardIds.push(cardAId)
+  check('a card without a workspace lands on the folder\'s board', cardA.text.includes(`'${WS_NAME}'`), cardA.text)
+
+  const worktreeSession = await agentSession('qs-folder-wt')
+  const giWt = await worktreeSession.call('get_instructions', { cwd: path.join(WS_DIR, '.qs-worktrees', 'abc') })
+  check('a card worktree path is its repository', giWt.text.includes(`workspace '${WS_NAME}'`), giWt.text.slice(0, 300))
+  const bashStyle = await agentSession('qs-folder-bash')
+  if (process.platform === 'win32') {
+    const unix = '/' + WS_DIR[0].toLowerCase() + WS_DIR.slice(2).replaceAll('\\', '/')
+    const giBash = await bashStyle.call('get_instructions', { cwd: unix })
+    check('a Git Bash path is understood', giBash.text.includes(`workspace '${WS_NAME}'`), giBash.text.slice(0, 300))
+  }
+
+  const agentB = await agentSession('qs-folder-b')
+  const giB = await agentB.call('get_instructions', { cwd: os.tmpdir() })
+  check('the temp folder is General without a question', giB.text.includes('works in General') && !giB.text.includes('ASK THE USER'), giB.text.slice(0, 300))
+  check('General has no "this session" workspace', !giB.text.includes('[this session]'))
+  const cardB = await agentB.call('create_kanban_card', { title: 'folder test B' })
+  const cardBId = cardIdIn(cardB.text)
+  if (cardBId) cardIds.push(cardBId)
+  check('a card in General lands on the General board', cardB.text.includes("'General'"), cardB.text)
+  const needsFolder = await agentB.call('get_codebase_stats', {})
+  check('a tool that needs a folder explains itself in General', needsFolder.isError && needsFolder.text.includes('General'), needsFolder.text)
+  const explicitB = await agentB.call('get_codebase_stats', { workspace: WS_NAME })
+  check('an explicit workspace wins in General', !explicitB.isError, explicitB.text.slice(0, 200))
+  const explicitA = await agentA.call('list_kanban_cards', { workspace: 'general' })
+  check('an explicit "general" wins in a workspace', explicitA.text.includes('General') && !explicitA.isError, explicitA.text.slice(0, 120))
+  const cardA2 = await agentA.call('create_kanban_card', { title: 'folder test A2' })
+  const cardA2Id = cardIdIn(cardA2.text)
+  if (cardA2Id) cardIds.push(cardA2Id)
+  check('two agents stay apart', cardA2.text.includes(`'${WS_NAME}'`), cardA2.text)
+
+  if (coreDb) {
+    const read = () => coreDb.prepare("SELECT value FROM settings WHERE scope = 'core' AND key = 'workspace.active'").get()?.value
+    const before = read()
+    coreDb.prepare("INSERT INTO settings (scope, key, value) VALUES ('core', 'workspace.active', ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify({ path: 'C:/somewhere/selected-by-accident' }))
+    const cardA3 = await agentA.call('create_kanban_card', { title: 'folder test A3' })
+    const cardA3Id = cardIdIn(cardA3.text)
+    if (cardA3Id) cardIds.push(cardA3Id)
+    check('changing the selection in the app changes nothing', cardA3.text.includes(`'${WS_NAME}'`), cardA3.text)
+    if (before === undefined) coreDb.prepare("DELETE FROM settings WHERE scope = 'core' AND key = 'workspace.active'").run()
+    else coreDb.prepare("UPDATE settings SET value = ? WHERE scope = 'core' AND key = 'workspace.active'").run(before)
+  } else {
+    console.log('  skip  selection test needs --core-db')
+  }
+
+  // A folder that is no workspace yet: the question, and both answers.
+  const newFolder = path.join(os.homedir(), `qs-mcp-testnew-${process.pid}`)
+  fs.mkdirSync(newFolder, { recursive: true })
+  const agentC = await agentSession('qs-folder-c')
+  const giC = await agentC.call('get_instructions', { cwd: newFolder })
+  check('a new folder gets the question', giC.text.includes('ASK THE USER') && giC.text.includes(newFolder), giC.text.slice(0, 400))
+  const no = await agentC.call('answer_workspace_question', { folder: newFolder, create: false })
+  check('a no is accepted', !no.isError && no.text.includes('not be asked again'), no.text)
+  const agentC2 = await agentSession('qs-folder-c2')
+  const giC2 = await agentC2.call('get_instructions', { cwd: newFolder })
+  check('after a no, a new session is not asked again', giC2.text.includes('works in General') && !giC2.text.includes('ASK THE USER'), giC2.text.slice(0, 300))
+  const bad = await agentC2.call('answer_workspace_question', { folder: newFolder })
+  check('an answer without create is refused', bad.isError, bad.text)
+  const yes = await agentC2.call('answer_workspace_question', { folder: newFolder, create: true })
+  check('a yes registers the folder', !yes.isError && yes.text.includes('is a workspace now'), yes.text)
+  const giC3 = await agentC2.call('get_instructions', { cwd: newFolder })
+  check('after a yes, the session works in it', giC3.text.includes('this session works in workspace'), giC3.text.slice(0, 300))
+  const newName = path.basename(newFolder)
+  const statsNew = await agentC2.call('get_codebase_stats', {})
+  check('a yes does not index the folder', statsNew.text.includes('no code index yet') || statsNew.isError === false, statsNew.text.slice(0, 200))
+  if (coreDb) {
+    coreDb.prepare("DELETE FROM entities WHERE kind = 'workspace' AND title = ?").run(newName)
+    coreDb.prepare("DELETE FROM settings WHERE scope = 'mcp' AND key = 'agentFolders.declined'").run()
+  }
+  fs.rmSync(newFolder, { recursive: true, force: true })
+
+  // A client that offers roots tells us by itself over its GET stream.
+  const agentR = await agentSession('qs-folder-roots', { roots: { listChanged: true } })
+  const aborter = new AbortController()
+  const stream = await fetch(URL_, { headers: { 'mcp-session-id': agentR.sid, Accept: 'text/event-stream' }, signal: aborter.signal })
+  const reader = stream.body.getReader()
+  let buffered = ''
+  let rootsRequest = null
+  const deadline = Date.now() + 5000
+  while (!rootsRequest && Date.now() < deadline) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffered += new TextDecoder().decode(value)
+    const line = buffered.split('\n').find((l) => l.startsWith('data:') && l.includes('roots/list'))
+    if (line) rootsRequest = JSON.parse(line.slice(5))
+  }
+  check('the server asks a client that offers roots', rootsRequest?.method === 'roots/list', buffered.slice(0, 200))
+  if (rootsRequest) {
+    const uri = 'file:///' + WS_DIR.replaceAll('\\', '/').replace(/^\//, '')
+    const accepted = await agentR.post({ jsonrpc: '2.0', id: rootsRequest.id, result: { roots: [{ uri, name: 'x' }] } })
+    check('a roots answer is accepted', accepted === null)
+    const giR = await agentR.call('get_instructions', {})
+    check('a client\'s root decides without cwd', giR.text.includes(`workspace '${WS_NAME}'`), giR.text.slice(0, 300))
+    const giR2 = await agentR.call('get_instructions', { cwd: os.tmpdir() })
+    check('the agent\'s own cwd outranks its roots', giR2.text.includes('works in General'), giR2.text.slice(0, 300))
+  }
+  aborter.abort()
+  }
 
   // ── cleanup ──
   section('cleanup')
