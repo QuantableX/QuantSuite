@@ -20,9 +20,11 @@ import { useConfigStore } from '#systems/stores/config'
 import { useBacktestStore } from '#systems/stores/backtest'
 import { useLiveStore } from '#systems/stores/live'
 import { useStrategyGroupsStore } from '#systems/stores/groups'
+import { useFundsStore } from '#systems/stores/funds'
 import { orderSystems } from '#systems/utils/strategyGroups'
 import { useShortcuts, useTauriEvent } from '@quantsuite/core'
 import { useActiveView } from '#systems/composables/useActiveView'
+import LayoutFundSidebar from '#systems/components/Layout/FundSidebar.vue'
 
 const app = useAppStore()
 const systems = useSystemsStore()
@@ -30,10 +32,11 @@ const config = useConfigStore()
 const backtest = useBacktestStore()
 const live = useLiveStore()
 const groups = useStrategyGroupsStore()
+const funds = useFundsStore()
 const router = useRouter()
 const route = router.currentRoute
 
-const { systemId, view } = useActiveView()
+const { systemId, onFund, view } = useActiveView()
 const bootstrapped = ref(false)
 
 onMounted(async () => {
@@ -47,7 +50,8 @@ onMounted(async () => {
 // payload carries no job id, but runExclusive() keeps a single evaluation in
 // flight, so at most one store holds a runningSystemId at any moment.
 useTauriEvent<{ label: string; value: number }>('eval:progress', payload => {
-  if (backtest.runningSystemId) backtest.setProgress(payload.label, payload.value)
+  if (funds.runningKey) funds.setProgress(payload.label, payload.value)
+  else if (backtest.runningSystemId) backtest.setProgress(payload.label, payload.value)
   else if (live.runningSystemId) live.setProgress(payload.label, payload.value)
 })
 
@@ -83,7 +87,7 @@ useShortcuts(Array.from({ length: 9 }, (_, i) => ({
 watch([bootstrapped, () => systems.loaded, () => systems.systems, () => route.value.path], () => {
   if (!bootstrapped.value || !systems.loaded || !route.value.path.startsWith('/algo/manual')) return
   const id = systemId.value
-  if (route.value.path === '/algo/manual/new') return
+  if (route.value.path === '/algo/manual/new' || onFund.value || route.value.path === '/algo/manual/funds/new') return
   if (id && systems.byId(id)) {
     if (id !== app.activeSystemId) app.setActiveSystem(id)
     void config.load(id)
@@ -101,7 +105,7 @@ watch([bootstrapped, () => systems.loaded, () => systems.systems, () => route.va
 watch(
   () => route.value.path,
   (path) => {
-    if (!path.startsWith('/algo/manual/') || !systemId.value) return
+    if (!path.startsWith('/algo/manual/') || !(systemId.value || onFund.value)) return
     if (path.endsWith(`/${view.value}`)) app.rememberView(view.value)
   },
   { immediate: true },
@@ -125,15 +129,16 @@ watch(
               {{ config.errors[systemId] }}
               <button v-if="!config.configBySystem[systemId]" class="btn" @click="config.load(systemId)">Retry</button>
             </div>
-            <slot v-if="!systemId || config.configBySystem[systemId]" />
+            <slot v-if="onFund || !systemId || config.configBySystem[systemId]" />
             <div v-else-if="!config.errors[systemId]">Loading strategy settings…</div>
           </template>
         </main>
       </div>
       <!-- V3: the shared right panel — 220px default, same as every module.
            The old StatusBar footer is gone; no module owns a bottom band. -->
-      <QRightPanel v-if="systems.byId(systemId)" storage-key="systems.right">
-        <SystemsLayoutRightSidebar />
+      <QRightPanel v-if="onFund || systems.byId(systemId)" storage-key="systems.right">
+        <LayoutFundSidebar v-if="onFund" />
+        <SystemsLayoutRightSidebar v-else />
       </QRightPanel>
     </div>
   </div>

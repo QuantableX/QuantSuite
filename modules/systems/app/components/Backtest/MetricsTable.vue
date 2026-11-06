@@ -37,7 +37,7 @@ interface Column {
 /** Indicator runs go by their key, as the sidebar's Trend and Compare chips
  *  name them; EMA and aggregates keep the engine label with their settings. */
 function isKeyed(run: StrategyRun): boolean {
-  return run.key !== 'ema_cross' && run.key !== 'aggregate'
+  return !('fund' in props.result) && run.key !== 'ema_cross' && run.key !== 'aggregate'
 }
 
 const columns = computed<Column[]>(() => {

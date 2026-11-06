@@ -22,6 +22,10 @@ Default permissions for the QuantSystems module: settings, system configs, the e
 - `allow-clear-cache`
 - `allow-ranking-archive`
 - `allow-screenshot-to-clipboard`
+- `allow-list-funds`
+- `allow-save-fund`
+- `allow-delete-fund`
+- `allow-run-fund`
 
 ## Permission Table
 
@@ -139,6 +143,32 @@ Denies the create_system command without any pre-configured scope.
 <tr>
 <td>
 
+`systems:allow-delete-fund`
+
+</td>
+<td>
+
+Enables the delete_fund command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:deny-delete-fund`
+
+</td>
+<td>
+
+Denies the delete_fund command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `systems:allow-delete-system`
 
 </td>
@@ -236,6 +266,32 @@ Enables the get_system_config command without any pre-configured scope.
 <td>
 
 Denies the get_system_config command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:allow-list-funds`
+
+</td>
+<td>
+
+Enables the list_funds command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:deny-list-funds`
+
+</td>
+<td>
+
+Denies the list_funds command without any pre-configured scope.
 
 </td>
 </tr>
@@ -366,6 +422,58 @@ Enables the run_backtest command without any pre-configured scope.
 <td>
 
 Denies the run_backtest command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:allow-run-fund`
+
+</td>
+<td>
+
+Enables the run_fund command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:deny-run-fund`
+
+</td>
+<td>
+
+Denies the run_fund command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:allow-save-fund`
+
+</td>
+<td>
+
+Enables the save_fund command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`systems:deny-save-fund`
+
+</td>
+<td>
+
+Denies the save_fund command without any pre-configured scope.
 
 </td>
 </tr>

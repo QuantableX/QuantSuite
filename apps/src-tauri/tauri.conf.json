@@ -74,6 +74,7 @@
       "../../sidecars/python/rotation_lab/backtest/smithery/__init__.py": "sidecars/python/rotation_lab/backtest/smithery/__init__.py",
       "../../sidecars/python/rotation_lab/backtest/universe.py": "sidecars/python/rotation_lab/backtest/universe.py",
       "../../sidecars/python/rotation_lab/config.py": "sidecars/python/rotation_lab/config.py",
+      "../../sidecars/python/rotation_lab/funds.py": "sidecars/python/rotation_lab/funds.py",
       "../../sidecars/python/rotation_lab/data/__init__.py": "sidecars/python/rotation_lab/data/__init__.py",
       "../../sidecars/python/rotation_lab/data/cache.py": "sidecars/python/rotation_lab/data/cache.py",
       "../../sidecars/python/rotation_lab/data/ohlcv.py": "sidecars/python/rotation_lab/data/ohlcv.py",
