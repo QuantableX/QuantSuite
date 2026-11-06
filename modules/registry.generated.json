@@ -1641,6 +1641,39 @@
       "sideEffects": "compute"
     },
     {
+      "tool": "quantsuite.algo.list_funds",
+      "module": "algo",
+      "name": "list_funds",
+      "command": "plugin:systems|list_funds",
+      "description": "List the Manual funds: amount, member systems, split method, lookback, rebalance and cap. A fund plans and evaluates; it places no orders.",
+      "sideEffects": "read"
+    },
+    {
+      "tool": "quantsuite.algo.run_fund",
+      "module": "algo",
+      "name": "run_fund",
+      "command": "plugin:systems|run_fund",
+      "description": "Backtest a Manual fund over its members' own equity: every split method against Equal, rebalances, correlation and robustness. Places no orders. Set live to run through today from the fund's live start.",
+      "sideEffects": "compute",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fundId": {
+            "type": "string",
+            "description": "The fund's id, from list_funds."
+          },
+          "live": {
+            "type": "boolean",
+            "description": "Run through today and hold money from the fund's live start. Default false."
+          }
+        },
+        "required": [
+          "fundId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "tool": "quantsuite.pilot.set_title",
       "module": "pilot",
       "name": "set_title",

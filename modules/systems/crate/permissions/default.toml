@@ -21,4 +21,8 @@ permissions = [
   "allow-clear-cache",
   "allow-ranking-archive",
   "allow-screenshot-to-clipboard",
+  "allow-list-funds",
+  "allow-save-fund",
+  "allow-delete-fund",
+  "allow-run-fund",
 ]

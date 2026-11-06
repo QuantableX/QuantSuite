@@ -17,6 +17,10 @@ const COMMANDS: &[&str] = &[
     "clear_cache",
     "ranking_archive",
     "screenshot_to_clipboard",
+    "list_funds",
+    "save_fund",
+    "delete_fund",
+    "run_fund",
 ];
 
 fn main() {

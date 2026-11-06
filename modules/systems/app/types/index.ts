@@ -259,6 +259,58 @@ export interface BacktestResult extends MarketContext {
   coins: RankedCoin[]
 }
 
+export type FundMethod = 'equal' | 'fixed' | 'profit' | 'sharpe' | 'sortino' | 'return_drawdown' | 'inverse_volatility' | 'kelly' | 'combined'
+export type FundRebalance = 'never' | 'weekly' | 'monthly' | 'quarterly'
+
+/** One amount split across several Manual systems. Plans and evaluates; it places no orders. */
+export interface Fund {
+  id: string
+  name: string
+  amount: number
+  members: string[]
+  method: FundMethod
+  lookbackDays: number
+  rebalance: FundRebalance
+  capPct: number
+  kellyFraction: number
+  fixedPct: Record<string, number>
+  /** `YYYY-MM-DD`: the Live page holds money from here. */
+  liveStartDate: string
+}
+
+export interface FundCheck {
+  cagr: number | null
+  equalCagr: number | null
+  maxDrawdown: number | null
+  equalMaxDrawdown: number | null
+  beatsEqual: boolean | null
+}
+
+export interface FundDetails {
+  method: FundMethod
+  windowStart: string
+  windowEnd: string
+  limitedBy: string | null
+  live: boolean
+  startDate: string
+  amount: number
+  value: number
+  cash: number
+  cost: number
+  nextRebalance: string | null
+  members: { id: string; name: string; heldDollars: number; targetDollars: number; targetShare: number }[]
+  rebalances: { date: string; cash: number; cost: number; values: Record<string, number> }[]
+  correlation: { ids: string[]; names: string[]; matrix: (number | null)[][] }
+  robustness: {
+    lookbacks: (FundCheck & { lookbackDays: number })[]
+    windows: (FundCheck & { window: string })[]
+    beatsEqualEverywhere: boolean
+    monteCarlo: { cagr_p5: number | null; cagr_p50: number | null; dd_p50: number | null; dd_p95: number | null; loss_1y: number | null; loss_3y: number | null; failed: boolean } | null
+  }
+}
+
+export type FundResult = BacktestResult & { fund: FundDetails }
+
 export interface CacheStats {
   path: string
   sizeBytes: number

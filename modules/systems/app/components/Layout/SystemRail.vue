@@ -10,6 +10,7 @@ import { groupSections, orderSystems, GROUPS_SCOPE, GROUPS_KEY, GROUPS_DEV_KEY, 
 import type { SystemMeta } from '#systems/types'
 import StrategyRailItem from './StrategyRailItem.vue'
 import StrategyGroupEditor from './StrategyGroupEditor.vue'
+import FundRail from './FundRail.vue'
 
 const app = useAppStore()
 const systems = useSystemsStore()
@@ -214,6 +215,7 @@ onDeactivated(() => { editing.value = false; endDrag() })
 <template>
   <QSidebar>
     <nav ref="rail" class="qs-rail" :class="{ 'qs-rail--dragging': draggedId }" aria-label="Strategies" @pointerdown="startDrag">
+      <FundRail />
       <div class="qs-rail__heading">
         <span>Strategies</span><span class="qs-rail__count">{{ systems.systems.length }}</span>
       </div>

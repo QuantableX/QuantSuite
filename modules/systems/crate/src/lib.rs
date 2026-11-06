@@ -13,6 +13,7 @@
 //! metrics) lives in the reused `rotation_lab` Python package. Rust just
 //! manages the process and routes requests/notifications.
 
+mod funds;
 mod screenshot;
 
 use chrono::{Datelike, Duration as ChronoDuration, Utc};
@@ -96,6 +97,8 @@ struct PersistedStore {
     // Missing in legacy stores; an explicitly empty list stays empty.
     #[serde(default = "systems_catalog")]
     systems: Vec<SystemMeta>,
+    #[serde(default)]
+    funds: Vec<Value>,
 }
 
 impl Default for PersistedStore {
@@ -104,6 +107,7 @@ impl Default for PersistedStore {
             settings: Some(AppSettings::default()),
             system_configs: HashMap::new(),
             systems: systems_catalog(),
+            funds: Vec::new(),
         }
     }
 }
@@ -1336,6 +1340,10 @@ pub fn init() -> TauriPlugin<Wry> {
             clear_cache,
             ranking_archive,
             screenshot_to_clipboard,
+            funds::list_funds,
+            funds::save_fund,
+            funds::delete_fund,
+            funds::run_fund,
         ]))
         .setup(|app, _api| {
             let dir = data_dir();
