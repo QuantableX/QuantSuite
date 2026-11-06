@@ -25,23 +25,52 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
         CodebaseIndexToolInfo {
             name: "get_instructions".into(),
             description:
-                "Call this first every session. Returns runtime context, workspaces and AGENT.md instructions. If the complete global brief was already loaded through native startup instructions, set include_global=false to avoid a duplicate; workspace rules are always returned.".into(),
-            parameters: vec![CodebaseIndexToolParam {
-                name: "include_global".into(),
-                param_type: "boolean".into(),
-                description: "Default true. Set false only when the complete global AGENT.md is already in context. Workspace instructions and runtime guidance remain included.".into(),
-                required: false,
-                default_value: Some("true".into()),
-            }],
+                "Call this first every session, with cwd set to your working folder: that folder decides your workspace, and tools without `workspace` go there. Returns where this session works, runtime context, workspaces and AGENT.md instructions. If the reply tells you to ask the user about the folder, do that, then call answer_workspace_question. If the complete global brief was already loaded through native startup instructions, set include_global=false to avoid a duplicate; workspace rules are always returned.".into(),
+            parameters: vec![
+                CodebaseIndexToolParam {
+                    name: "cwd".into(),
+                    param_type: "string".into(),
+                    description: "The absolute path of the folder you work in. The session keeps it.".into(),
+                    required: false,
+                    default_value: None,
+                },
+                CodebaseIndexToolParam {
+                    name: "include_global".into(),
+                    param_type: "boolean".into(),
+                    description: "Default true. Set false only when the complete global AGENT.md is already in context. Workspace instructions and runtime guidance remain included.".into(),
+                    required: false,
+                    default_value: Some("true".into()),
+                },
+            ],
+        },
+        CodebaseIndexToolInfo {
+            name: "answer_workspace_question".into(),
+            description: "Record the user's answer after get_instructions told you to ask whether a folder should become a workspace. create=true registers it (no indexing) and this session works in it; create=false remembers the no, the session stays in General and the user is not asked about this folder again. Only call this with the user's actual answer.".into(),
+            parameters: vec![
+                CodebaseIndexToolParam {
+                    name: "folder".into(),
+                    param_type: "string".into(),
+                    description: "The folder named in the question.".into(),
+                    required: true,
+                    default_value: None,
+                },
+                CodebaseIndexToolParam {
+                    name: "create".into(),
+                    param_type: "boolean".into(),
+                    description: "true: the user said yes. false: the user said no.".into(),
+                    required: true,
+                    default_value: None,
+                },
+            ],
         },
         CodebaseIndexToolInfo {
             name: "index_codebase".into(),
-            description: "Index or re-index a workspace's code. Creates one index DB per workspace. Omit `workspace` to index the active workspace; an unregistered folder path is registered as a new workspace. Use mode 'both' to create structural AND semantic indexes simultaneously. Semantic indexing uses the built-in engine downloaded in Memory settings.".into(),
+            description: "Index or re-index a workspace's code. Creates one index DB per workspace. Omit `workspace` to index the workspace of the folder you work in; an unregistered folder path is registered as a new workspace. Use mode 'both' to create structural AND semantic indexes simultaneously. Semantic indexing uses the built-in engine downloaded in Memory settings.".into(),
             parameters: vec![
                 CodebaseIndexToolParam {
                     name: "workspace".into(),
                     param_type: "string".into(),
-                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the active workspace.".into(),
+                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the folder you work in.".into(),
                     required: false,
                     default_value: None,
                 },
@@ -70,7 +99,7 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
                 CodebaseIndexToolParam {
                     name: "workspace".into(),
                     param_type: "string".into(),
-                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the active workspace.".into(),
+                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the folder you work in.".into(),
                     required: false,
                     default_value: None,
                 },
@@ -105,7 +134,7 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
                 CodebaseIndexToolParam {
                     name: "workspace".into(),
                     param_type: "string".into(),
-                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the active workspace.".into(),
+                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the folder you work in.".into(),
                     required: false,
                     default_value: None,
                 },
@@ -113,7 +142,7 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
         },
         CodebaseIndexToolInfo {
             name: "list_codebases".into(),
-            description: "List every registered workspace with its code-index status (mode, indexed or not, active marker)."
+            description: "List every registered workspace with its code-index status (mode, indexed or not, this session's marker)."
                 .into(),
             parameters: vec![],
         },
@@ -125,7 +154,7 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
                 CodebaseIndexToolParam {
                     name: "workspace".into(),
                     param_type: "string".into(),
-                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the active workspace.".into(),
+                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the folder you work in.".into(),
                     required: false,
                     default_value: None,
                 },
@@ -146,7 +175,7 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
             parameters: vec![CodebaseIndexToolParam {
                 name: "workspace".into(),
                 param_type: "string".into(),
-                description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the active workspace.".into(),
+                description: "Workspace: name, entity id, or folder path (case-insensitive). Default: the folder you work in.".into(),
                 required: false,
                 default_value: None,
             }],
@@ -180,7 +209,7 @@ fn agent_instruction_tools() -> Vec<CodebaseIndexToolInfo> {
                 CodebaseIndexToolParam {
                     name: "workspace".into(),
                     param_type: "string".into(),
-                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default for project scope: the active workspace.".into(),
+                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default for project scope: the folder you work in.".into(),
                     required: false,
                     default_value: None,
                 },
@@ -214,7 +243,7 @@ fn agent_instruction_tools() -> Vec<CodebaseIndexToolInfo> {
                 CodebaseIndexToolParam {
                     name: "workspace".into(),
                     param_type: "string".into(),
-                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default for project scope: the active workspace.".into(),
+                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default for project scope: the folder you work in.".into(),
                     required: false,
                     default_value: None,
                 },
@@ -241,7 +270,7 @@ fn agent_instruction_tools() -> Vec<CodebaseIndexToolInfo> {
                 CodebaseIndexToolParam {
                     name: "workspace".into(),
                     param_type: "string".into(),
-                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default for project scope: the active workspace.".into(),
+                    description: "Workspace: name, entity id, or folder path (case-insensitive). Default for project scope: the folder you work in.".into(),
                     required: false,
                     default_value: None,
                 },
@@ -265,7 +294,7 @@ pub fn kanban_tools() -> Vec<CodebaseIndexToolInfo> {
             name: "list_kanban_cards".into(),
             description: "List all kanban cards on a board. Columns: plan, work, review, done. Optionally filter by column. Every workspace has a board; \"general\" is the suite-wide General board. The operator periodically archives the Done column to keep the board short: archived cards are finished work that is off the board but not gone — pass archived=\"true\" to list them (what was done earlier, so it is not redone).".into(),
             parameters: vec![
-                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Board: workspace name, entity id, or folder path (case-insensitive), or \"general\" for the General board. Default: the active workspace.".into(), required: false, default_value: None },
+                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Board: workspace name, entity id, or folder path (case-insensitive), or \"general\" for the General board. Default: the folder you work in.".into(), required: false, default_value: None },
                 CodebaseIndexToolParam { name: "column".into(), param_type: "string".into(), description: "Filter by column: \"plan\", \"work\", \"review\", or \"done\". Omit to list all.".into(), required: false, default_value: None },
                 CodebaseIndexToolParam { name: "archived".into(), param_type: "string".into(), description: "\"true\" lists the board's ARCHIVE instead — cards the operator cleared off the Done column, newest archive first. Default \"false\": the live board.".into(), required: false, default_value: Some("false".into()) },
             ],
@@ -281,7 +310,7 @@ pub fn kanban_tools() -> Vec<CodebaseIndexToolInfo> {
             name: "create_kanban_card".into(),
             description: "Create a new kanban card on a board. Defaults to 'plan' column with 'medium' priority. In approval mode present the Plan card and STOP until the user clicks 'Approve work' in its dialog. Auto Apply allows immediate claiming. Use workspace \"general\" for the suite-wide General board (its cards cannot be claimed — no folder).".into(),
             parameters: vec![
-                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Board: workspace name, entity id, or folder path (case-insensitive), or \"general\" for the General board. Default: the active workspace.".into(), required: false, default_value: None },
+                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Board: workspace name, entity id, or folder path (case-insensitive), or \"general\" for the General board. Default: the folder you work in.".into(), required: false, default_value: None },
                 CodebaseIndexToolParam { name: "title".into(), param_type: "string".into(), description: "Card title.".into(), required: true, default_value: None },
                 CodebaseIndexToolParam { name: "description".into(), param_type: "string".into(), description: "Card description.".into(), required: false, default_value: Some("".into()) },
                 CodebaseIndexToolParam { name: "column".into(), param_type: "string".into(), description: "Column: \"plan\", \"work\", \"review\", or \"done\". Default: \"plan\".".into(), required: false, default_value: Some("plan".into()) },
@@ -302,7 +331,7 @@ pub fn kanban_tools() -> Vec<CodebaseIndexToolInfo> {
             description: "Re-home a kanban card onto another board — a workspace or \"general\". Keeps its column, appends it there. Only unclaimed cards move (an agent's worktree lives in the source workspace).".into(),
             parameters: vec![
                 CodebaseIndexToolParam { name: "card_id".into(), param_type: "string".into(), description: "The UUID of the card to move.".into(), required: true, default_value: None },
-                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Target board: workspace name, entity id, or folder path (case-insensitive), or \"general\". Default: the active workspace.".into(), required: false, default_value: None },
+                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Target board: workspace name, entity id, or folder path (case-insensitive), or \"general\". Default: the folder you work in.".into(), required: false, default_value: None },
             ],
         },
         CodebaseIndexToolInfo {
@@ -381,14 +410,14 @@ pub fn kanban_tools() -> Vec<CodebaseIndexToolInfo> {
             name: "get_kanban_approval_mode".into(),
             description: "Get the current approval mode for a board. Returns 'auto_apply' (completed cards are auto-merged) or 'approval' (user approval of the Plan card before work, then separate result approval before merge). On the General board the mode only governs the review step — nothing merges there.".into(),
             parameters: vec![
-                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Board: workspace name, entity id, or folder path (case-insensitive), or \"general\". Default: the active workspace.".into(), required: false, default_value: None },
+                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Board: workspace name, entity id, or folder path (case-insensitive), or \"general\". Default: the folder you work in.".into(), required: false, default_value: None },
             ],
         },
         CodebaseIndexToolInfo {
             name: "set_kanban_approval_mode".into(),
             description: "Set the approval mode for a board. 'auto_apply' (default): completed cards are automatically merged into main. 'approval': the user approves the Plan card before work and separately approves the result before merging. Only the user can change this setting through the UI; MCP calls refuse it. On the General board the mode only governs the review step — nothing merges there.".into(),
             parameters: vec![
-                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Board: workspace name, entity id, or folder path (case-insensitive), or \"general\". Default: the active workspace.".into(), required: false, default_value: None },
+                CodebaseIndexToolParam { name: "workspace".into(), param_type: "string".into(), description: "Board: workspace name, entity id, or folder path (case-insensitive), or \"general\". Default: the folder you work in.".into(), required: false, default_value: None },
                 CodebaseIndexToolParam { name: "mode".into(), param_type: "string".into(), description: "Approval mode: 'auto_apply' or 'approval'.".into(), required: true, default_value: None },
             ],
         },
@@ -402,7 +431,7 @@ pub fn worktree_tools() -> Vec<CodebaseIndexToolInfo> {
     let workspace = || CodebaseIndexToolParam {
         name: "workspace".into(),
         param_type: "string".into(),
-        description: "The repository, as a workspace: name, entity id, or folder path (case-insensitive). Default: the active workspace. Ignored when `repo` is given.".into(),
+        description: "The repository, as a workspace: name, entity id, or folder path (case-insensitive). Default: the folder you work in. Ignored when `repo` is given.".into(),
         required: false,
         default_value: None,
     };

@@ -3,7 +3,7 @@
 You are connected to QuantSuite through QuantMCP. This file is the operator's
 standing brief for EVERY AI agent (Claude Code, Codex, Cursor, Gemini CLI,
 OpenCode, ...) in EVERY workspace. QuantMCP points you to `get_instructions`
-at connection time; that tool returns the active workspace's `AGENT.md` and
+at connection time; that tool returns your workspace's `AGENT.md` and
 runtime context. Native instruction imports may already provide this global
 brief at startup; avoid loading a second copy as described below.
 
@@ -13,10 +13,12 @@ Your client may show the suite's tools with underscores
 
 ## 1. Session start — every session, before any other work
 
-1. `get_instructions` — the workspace model, every workspace with its index
-   status, and the active workspace's AGENT.md. If this complete global brief
+1. `get_instructions` with `cwd` set to your working folder — where this
+   session works, every workspace with its index status, and your workspace's
+   AGENT.md. If the reply says to ask the user about the folder, ask, then call
+   `answer_workspace_question`. If this complete global brief
    is already in your startup context and the tool exposes `include_global`,
-   call `get_instructions(include_global=false)` to avoid loading it twice.
+   call `get_instructions(cwd=..., include_global=false)` to avoid loading it twice.
    Otherwise use the default full response. Never omit rules you have not
    loaded; after global source changes, refresh the native import or request
    the full response. Still call the tool for current workspace/runtime data.
@@ -36,9 +38,14 @@ operator share this suite; its state lives in the tools, not in your context.
 
 - A **workspace** is one registered project folder. Its code index, kanban
   board, memory vault and AGENT.md all key off the same registry entry.
+- **The folder you work in decides your workspace**, never what is selected in
+  the app. A registered folder, a subfolder or a card worktree is that workspace.
+  Any other folder is General; `get_instructions` tells you when to ask the user
+  whether it should become a workspace, and Desktop and the like never ask.
 - Every tool takes an optional `workspace` argument: name, entity id or folder
-  path (case-insensitive). Omit it to mean the **active** workspace — the one
-  open in the suite. Pass it explicitly when you work on another repository.
+  path (case-insensitive). Omit it to mean your folder's workspace. Pass it
+  explicitly when you work on another repository. If QuantMCP does not know your
+  folder, a tool that needs one refuses and names the fix.
 - `"general"` names the suite-wide General board and the general memory vault.
   It has no folder. Non-repository tasks stay on General and can move through
   Plan, Work (in progress), Review and Done without a branch or worktree.
@@ -267,8 +274,8 @@ approving — you never need permission for a memory.
   creating a duplicate.
 - **Write**: `quantsuite.memory.create` (title, markdown body, tags; `scope`
   = the workspace for project knowledge, `general` for shared knowledge —
-  without a scope it lands in the active workspace, or general when none is
-  open). `quantsuite.memory.append` is the preferred way to add facts to an
+  without a scope it lands in your folder's workspace, or general outside any
+  workspace). `quantsuite.memory.append` is the preferred way to add facts to an
   existing memory; `quantsuite.memory.update` replaces the body and can drop
   links you did not notice.
 - **Link**: connect related memories with `[[Title]]` wikilinks — they
@@ -387,7 +394,7 @@ rare case the user wants a command run inside the suite.
 
 | Goal | Tools |
 | --- | --- |
-| Start a session | `get_instructions`, `quantsuite.memory.search`, `list_kanban_cards` |
+| Start a session | `get_instructions` (with `cwd`), `quantsuite.memory.search`, `list_kanban_cards` |
 | Find code | `search_code`, `lookup_symbol` |
 | Index a workspace | `index_codebase`, `reindex_codebase`, `list_codebases`, `get_codebase_stats` |
 | Track work | `create_kanban_card`, `claim_kanban_card`, `complete_kanban_card`, `get_kanban_diff` |

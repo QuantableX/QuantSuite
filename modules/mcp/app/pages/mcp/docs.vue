@@ -262,7 +262,10 @@ print(json.dumps({
             </ul>
             <p class="docs-text" style="margin-top:10px">
               MCP tools take an optional <code>workspace</code> argument (name, entity id, or folder
-              path); omitting it means the active workspace.
+              path); omitting it means the workspace of the folder the agent works in, never the one
+              selected in the app. A folder outside every workspace is General: the agent asks once
+              whether it should become a workspace. Desktop, Documents, Downloads and the home
+              folder go to General without a question.
             </p>
             <p class="docs-text" style="margin-top:10px">
               The <strong>General</strong> entry's AgentOS holds the global <code>AGENT.md</code> — the

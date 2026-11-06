@@ -32,7 +32,7 @@
         "properties": {
           "workspace": {
             "type": "string",
-            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+            "description": "The workspace: a registered name, id or folder path. Omitted = the workspace of the folder the agent works in."
           }
         }
       }
@@ -47,7 +47,7 @@
         "properties": {
           "workspace": {
             "type": "string",
-            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+            "description": "The workspace: a registered name, id or folder path. Omitted = the workspace of the folder the agent works in."
           },
           "artboard": {
             "type": "string",
@@ -69,7 +69,7 @@
         "properties": {
           "workspace": {
             "type": "string",
-            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+            "description": "The workspace: a registered name, id or folder path. Omitted = the workspace of the folder the agent works in."
           },
           "name": {
             "type": "string",
@@ -100,7 +100,7 @@
         "properties": {
           "workspace": {
             "type": "string",
-            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+            "description": "The workspace: a registered name, id or folder path. Omitted = the workspace of the folder the agent works in."
           },
           "artboard": {
             "type": "string",
@@ -128,7 +128,7 @@
         "properties": {
           "workspace": {
             "type": "string",
-            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+            "description": "The workspace: a registered name, id or folder path. Omitted = the workspace of the folder the agent works in."
           },
           "artboard": {
             "type": "string",
@@ -159,7 +159,7 @@
         "properties": {
           "workspace": {
             "type": "string",
-            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+            "description": "The workspace: a registered name, id or folder path. Omitted = the workspace of the folder the agent works in."
           }
         }
       }
@@ -174,7 +174,7 @@
         "properties": {
           "workspace": {
             "type": "string",
-            "description": "The workspace: a registered name, id or folder path. Omitted = the active workspace."
+            "description": "The workspace: a registered name, id or folder path. Omitted = the workspace of the folder the agent works in."
           },
           "board": {
             "type": "string",

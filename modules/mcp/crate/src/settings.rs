@@ -32,14 +32,25 @@ pub fn with_core_db<T>(
 
 /// Resolve the workspace a tool call means. Reads `workspace` first, then the
 /// legacy aliases (`project_name` from the kanban tools, `codebase` from the
-/// index tools) so pre-unify clients keep working; nothing given means the
-/// active workspace.
+/// index tools) so pre-unify clients keep working. `mcp_server` has already put
+/// the session's place into `workspace`, so nothing given means the agent's
+/// folder is unknown: refused, never the app's selection.
 pub fn resolve_workspace_arg(
     app: &tauri::AppHandle,
     arguments: &serde_json::Value,
 ) -> Result<qs_core::workspaces::WorkspaceEntry, String> {
-    let ident = board_ident(arguments);
-    with_core_db(app, |conn| qs_core::workspaces::resolve(conn, ident))
+    let ident = named_workspace(arguments)?;
+    if ident.eq_ignore_ascii_case(crate::kanban_db::GENERAL_BOARD_ID) {
+        return Err(crate::agent_place::NEEDS_FOLDER.into());
+    }
+    with_core_db(app, |conn| qs_core::workspaces::resolve(conn, Some(ident)))
+}
+
+fn named_workspace(arguments: &serde_json::Value) -> Result<&str, String> {
+    board_ident(arguments)
+        .map(str::trim)
+        .filter(|ident| !ident.is_empty() && !ident.eq_ignore_ascii_case("active"))
+        .ok_or_else(|| crate::agent_place::FOLDER_UNKNOWN.to_string())
 }
 
 fn board_ident(arguments: &serde_json::Value) -> Option<&str> {
@@ -83,17 +94,17 @@ impl Board {
 }
 
 /// Resolve the board a kanban tool call means: `"general"` is the General
-/// board, everything else (and the active-workspace default) resolves
-/// through the registry like `resolve_workspace_arg`.
+/// board, everything else resolves through the registry like
+/// `resolve_workspace_arg`.
 pub fn resolve_board_arg(
     app: &tauri::AppHandle,
     arguments: &serde_json::Value,
 ) -> Result<Board, String> {
-    let ident = board_ident(arguments);
-    if ident.is_some_and(|s| s.eq_ignore_ascii_case(crate::kanban_db::GENERAL_BOARD_ID)) {
+    let ident = named_workspace(arguments)?;
+    if ident.eq_ignore_ascii_case(crate::kanban_db::GENERAL_BOARD_ID) {
         return Ok(Board::General);
     }
-    with_core_db(app, |conn| qs_core::workspaces::resolve(conn, ident)).map(Board::Workspace)
+    with_core_db(app, |conn| qs_core::workspaces::resolve(conn, Some(ident))).map(Board::Workspace)
 }
 
 /// Register a folder as a workspace if it isn't one yet, and return its entry.
