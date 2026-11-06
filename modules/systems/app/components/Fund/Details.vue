@@ -17,9 +17,10 @@ const memberName = (id: string) => fund.value.members.find(m => m.id === id)?.na
 const robust = computed(() => fund.value.robustness)
 const mc = computed(() => robust.value.monteCarlo)
 const mixed = computed(() => [...robust.value.lookbacks, ...robust.value.windows].some(row => row.beatsEqual === false))
+const baseline = computed(() => fund.value.method === 'equal')
 
 function beats(value: boolean | null) {
-  return value === null ? 'No data' : value ? 'Yes' : 'No'
+  return value === null ? '—' : value ? 'Yes' : 'No'
 }
 function heat(value: number | null) {
   return value == null ? undefined : { background: `color-mix(in srgb, var(--qs-accent) ${Math.round(Math.max(value, 0) * 45)}%, transparent)` }
@@ -84,7 +85,7 @@ function heat(value: number | null) {
 
       <template v-else>
         <p class="qs-fund-details__note" :class="{ 'qs-fund-details__warn': mixed }">
-          {{ mixed ? 'This method does not beat Equal everywhere: treat it as unproven.' : 'This method beat Equal at every lookback and in every window with data.' }}
+          {{ baseline ? 'Equal is the baseline the other methods are compared with.' : mixed ? 'This method does not beat Equal everywhere: treat it as unproven.' : 'This method beat Equal at every lookback and in every window with data.' }}
         </p>
         <table class="qs-fund-details__table">
           <thead><tr><th>Check</th><th class="num">CAGR</th><th class="num">Equal</th><th class="num">Max DD</th><th>Beats Equal</th></tr></thead>
@@ -99,7 +100,7 @@ function heat(value: number | null) {
             </tr>
           </tbody>
         </table>
-        <p v-if="mc" class="qs-fund-details__note">
+        <p v-if="mc && mc.cagr_p50 != null" class="qs-fund-details__note">
           Monte Carlo (300 reshuffled paths): CAGR {{ percent(mc.cagr_p5) }} to {{ percent(mc.cagr_p50) }} (5th percentile to median), typical max drawdown {{ percent(mc.dd_p50) }}, worst 5% {{ percent(mc.dd_p95) }}, chance of a 3-year loss {{ percent(mc.loss_3y) }}.
         </p>
         <p v-for="note in result.notes" :key="note" class="qs-fund-details__note">{{ note }}</p>

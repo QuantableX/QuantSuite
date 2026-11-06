@@ -303,7 +303,7 @@ def robustness(curves: pd.DataFrame, rule: FundRule) -> dict:
         mine, base = run_fund(frame, run_rule, start), run_fund(frame, equal, start)
         a, b = cagr(mine.equity), cagr(base.equity)
         return {"cagr": a, "equalCagr": b, "maxDrawdown": max_drawdown(mine.equity), "equalMaxDrawdown": max_drawdown(base.equity),
-                "beatsEqual": None if a is None or b is None else a > b}
+                "beatsEqual": None if a is None or b is None or rule.method == "equal" else a > b}
 
     lookbacks = []
     for days in LOOKBACKS:

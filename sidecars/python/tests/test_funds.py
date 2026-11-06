@@ -197,6 +197,10 @@ class Robustness(unittest.TestCase):
         self.assertEqual([r["window"] for r in report["windows"]], ["2020-2022", "2023-2025", "2021-2024", "2024-2026"])
         self.assertTrue(all(r["beatsEqual"] is not None for r in report["lookbacks"]))
 
+    def test_equal_is_the_baseline_and_not_compared_with_itself(self):
+        report = f.robustness(curves(days=800), f.FundRule(method="equal"))
+        self.assertTrue(all(r["beatsEqual"] is None for r in report["lookbacks"]))
+
     def test_a_window_outside_the_history_is_marked_not_faked(self):
         frame = curves(days=500, start="2024-01-01")
         report = f.robustness(frame, f.FundRule(method="sharpe"))

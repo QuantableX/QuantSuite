@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useFundsStore } from '#systems/stores/funds'
 import { useSystemsStore } from '#systems/stores/systems'
 import { useActiveView } from '#systems/composables/useActiveView'
-import { methodLabel, money, usesPerformance } from '#systems/utils/funds'
+import { FUND_REBALANCES, methodLabel, money, usesPerformance } from '#systems/utils/funds'
 
 interface Verdict { status: string; grade: string; score: number | null }
 interface Run { kind: string; status: string; system?: { id?: string }; verdict?: Verdict }
@@ -49,7 +49,7 @@ onActivated(refresh)
       <div class="qs-fund-side__row"><span>Method</span><span>{{ methodLabel(fund.method) }}</span></div>
       <div v-if="usesPerformance(fund.method)" class="qs-fund-side__row"><span>Lookback</span><span class="mono">{{ fund.lookbackDays }} days</span></div>
       <div v-if="usesPerformance(fund.method)" class="qs-fund-side__row"><span>Cap per system</span><span class="mono">{{ fund.capPct }}%</span></div>
-      <div class="qs-fund-side__row"><span>Rebalance</span><span>{{ fund.rebalance }}</span></div>
+      <div class="qs-fund-side__row"><span>Rebalance</span><span>{{ FUND_REBALANCES.find(r => r.id === fund?.rebalance)?.label }}</span></div>
     </section>
     <section class="qs-fund-side__section">
       <span class="label">Systems</span>

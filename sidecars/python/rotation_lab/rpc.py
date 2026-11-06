@@ -767,13 +767,15 @@ def _method_fund(params: dict[str, Any], *, progress_callback=None) -> dict[str,
     ]
     if limited_by:
         notes.append(f"{names[limited_by]} starts last and limits the common window.")
-    for missing in params.get("removed") or []:
-        notes.append(f"{missing} was deleted and is no longer part of this fund.")
+    removed = len(params.get("removed") or [])
+    if removed:
+        notes.append(f"{removed} deleted {'system is' if removed == 1 else 'systems are'} no longer part of this fund.")
 
     monte_carlo = None
     try:
         from smithery.system_gauntlet import bootstrap
-        trial = bootstrap(main.equity, 300, 20261106)
+        # Over the whole history: a Live page may hold money for a few days only.
+        trial = bootstrap(funds.run_fund(frame, rule).equity, 300, 20261106)
         monte_carlo = {k: trial.get(k) for k in ("cagr_p5", "cagr_p50", "dd_p50", "dd_p95", "loss_1y", "loss_3y", "failed")}
     except Exception as exc:  # noqa: BLE001 — the result stands without it, and says so
         notes.append(f"Monte Carlo could not run: {exc}")
