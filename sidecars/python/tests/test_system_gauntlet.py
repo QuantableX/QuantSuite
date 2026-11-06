@@ -193,6 +193,38 @@ class Analyses(unittest.TestCase):
         self.assertEqual(uni["without the largest coin"].exclude_top_n, 1)
         self.assertEqual(uni["without the largest coin"].top_n, 6)
 
+    def test_a_market_filter_that_is_an_indicator_is_varied_too(self):
+        from rotation_lab.config import IndicatorConfig, RunConfig
+        rows = {"filter_key": {"params": {"window": 100, "band": 0.5, "flag": True}, "param_space": {"window": [10, 400], "band": [0.1, 2.0]}}}
+        config = RunConfig(top_n=5, market_filter=True, market_indicator=IndicatorConfig(trend="filter_key"))
+        variants = dict(sg.settings_variants(config, rows))
+        low, high = variants["market filter parameters ×0.8"], variants["market filter parameters ×1.2"]
+        self.assertEqual(low.market_indicator.params["filter_key"]["window"], 80)
+        self.assertEqual(high.market_indicator.params["filter_key"]["window"], 120)
+        self.assertAlmostEqual(high.market_indicator.params["filter_key"]["band"], 0.6)
+        self.assertNotIn("flag", low.market_indicator.params["filter_key"])
+        jitter = sg.jittered(config, rows, random.Random(3)).market_indicator.params["filter_key"]
+        self.assertNotEqual(jitter["window"], 100)
+        self.assertTrue(85 <= jitter["window"] <= 115)
+        ema = RunConfig(top_n=5, market_filter=True, market_indicator=IndicatorConfig(trend="ema_cross"))
+        fast = ema.market_indicator.ema_cross.fast_length
+        varied = dict(sg.settings_variants(ema, rows))["market filter parameters ×1.2"]
+        self.assertEqual(varied.market_indicator.ema_cross.fast_length, max(2, round(fast * 1.2)))
+
+    def test_total_breakout_keeps_its_own_check(self):
+        from rotation_lab.config import IndicatorConfig, RunConfig, TotalBreakoutConfig
+        config = RunConfig(top_n=5, market_filter=True, market_indicator=TotalBreakoutConfig(trend_length=100, entry_length=5, exit_length=10))
+        labels = [label for label, _ in sg.settings_variants(config)]
+        self.assertIn("market filter lengths ×0.8", labels)
+        self.assertFalse(any("parameters" in label for label in labels))
+        rows = {"k_a": {"params": {"length": 20}, "param_space": {"length": [5, 50]}}}
+        member = RunConfig(indicator=IndicatorConfig(trend="k_a"), top_n=5, market_filter=True, market_indicator=config.market_indicator)
+        out = sg.jittered(member, rows, random.Random(3))
+        self.assertEqual(out.market_indicator, config.market_indicator)
+        # The draws for the members did not move, so saved verdicts stay reproducible.
+        draw = random.Random(3)
+        self.assertEqual(out.indicator.params["k_a"]["length"], int(round(min(max(20 * (1 + draw.uniform(-sg.JITTER, sg.JITTER)), 5), 50))))
+
 
 if __name__ == "__main__":
     unittest.main()

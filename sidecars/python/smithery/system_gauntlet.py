@@ -103,19 +103,22 @@ def run_native(jobs, workers=None, progress=None, stage=""):
 
 
 # ------------------------------------------------------------------- variants
-def members_of(config) -> tuple[str, ...]:
-    ind = config.indicator
+def _members(ind) -> tuple[str, ...]:
     return tuple(ind.aggregate) if ind.trend == "aggregate" else (ind.trend,)
 
 
-def jittered(config, rows: dict, rng: random.Random):
-    """The config with every member's numeric parameters ×(1 ± JITTER), clipped to their space."""
-    params = {k: dict(v) for k, v in (config.indicator.params or {}).items()}
-    ema = config.indicator.ema_cross
-    for key in members_of(config):
+def members_of(config) -> tuple[str, ...]:
+    return _members(config.indicator)
+
+
+def _varied(ind, rows: dict, factor):
+    """The indicator bundle with every member's numeric parameters × ``factor()``, clipped to their space."""
+    params = {k: dict(v) for k, v in (ind.params or {}).items()}
+    ema = ind.ema_cross
+    for key in _members(ind):
         if key == "ema_cross":
-            fast = max(2, round(ema.fast_length * (1 + rng.uniform(-JITTER, JITTER))))
-            slow = max(fast + 1, round(ema.slow_length * (1 + rng.uniform(-JITTER, JITTER))))
+            fast = max(2, round(ema.fast_length * factor()))
+            slow = max(fast + 1, round(ema.slow_length * factor()))
             ema = replace(ema, fast_length=fast, slow_length=slow)
             continue
         row = rows.get(key)
@@ -128,16 +131,33 @@ def jittered(config, rows: dict, rng: random.Random):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or name not in space:
                 continue
             lo, hi = space[name]
-            v = float(value) * (1 + rng.uniform(-JITTER, JITTER))
+            v = float(value) * factor()
             v = min(max(v, lo), hi)
             changed[name] = int(round(v)) if isinstance(value, int) else round(v, 6)
         if changed:
             params[key] = changed
-    return replace(config, indicator=replace(config.indicator, params=params, ema_cross=ema))
+    return replace(ind, params=params, ema_cross=ema)
 
 
-def settings_variants(config) -> list[tuple[str, object]]:
-    """The system's own settings: top N ±1 and the market filter's lengths ±20%."""
+def _indicator_filter(config):
+    """The market filter when it is an indicator bundle; ``total_breakout`` has lengths of its own."""
+    from rotation_lab.config import TotalBreakoutConfig
+    m = config.market_indicator
+    return m if config.market_filter and m is not None and not isinstance(m, TotalBreakoutConfig) else None
+
+
+def jittered(config, rows: dict, rng: random.Random):
+    """The config with the numeric parameters of every member and of an indicator market filter
+    ×(1 ± JITTER), clipped to their space."""
+    factor = lambda: 1 + rng.uniform(-JITTER, JITTER)
+    config = replace(config, indicator=_varied(config.indicator, rows, factor))
+    market = _indicator_filter(config)
+    return config if market is None else replace(config, market_indicator=_varied(market, rows, factor))
+
+
+def settings_variants(config, rows: dict | None = None) -> list[tuple[str, object]]:
+    """The system's own settings: top N ±1 and the market filter's lengths or parameters ±20%.
+    A filter that is an indicator faces the same check as ``total_breakout``."""
     from rotation_lab.config import TotalBreakoutConfig
     out = []
     if config.mode != "single_asset":
@@ -151,6 +171,10 @@ def settings_variants(config) -> list[tuple[str, object]]:
                 out.append((f"market filter lengths ×{f}", replace(config, market_indicator=replace(
                     m, trend_length=max(2, round(m.trend_length * f)), entry_length=max(2, round(m.entry_length * f)),
                     exit_length=max(2, round(m.exit_length * f))))))
+        market = _indicator_filter(config)
+        if market is not None:
+            for f in (0.8, 1.2):
+                out.append((f"market filter parameters ×{f}", replace(config, market_indicator=_varied(market, rows or {}, lambda: f))))
     return out
 
 
@@ -277,7 +301,7 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
 
     for i in range(counts["jitter"]):
         add("parameter_jitter", f"jitter {i + 1}", jittered(config, rows, rng))
-    for label, cfg in settings_variants(config):
+    for label, cfg in settings_variants(config, rows):
         add("system_settings", label, cfg)
     total_days = (config.end_date - config.start_date).days
     # Later starts spread over the first year; each run keeps at least two years.
