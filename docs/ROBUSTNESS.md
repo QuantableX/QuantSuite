@@ -38,7 +38,7 @@ The user named the first five. The tests of 2026-11-03 added the execution axis,
 | **1 Parameters** | parameter_jitter | Every member's numeric parameters ×(1 ± 15%) at random, all at once. 16 runs (6 in fast mode). | The median keeps < 0.5, or any run keeps < 0.25, or more than 10% of runs lose money. |
 | | member_drop | Each member of an aggregate left out once. | From 6 members: the median keeps < 0.5, or one drop keeps < 0.2, or any drop loses money. Below 6 members it is shown but not scored, because in a vote of three each voice is a third. |
 | | member_add | One more indicator from the library added (12 runs, 6 in fast mode). | From 6 members: the median keeps < 0.5, or more than 10% lose money. |
-| | system_settings | Top N ±1, market-filter lengths ×0.8 and ×1.2. | The median keeps < 0.5, or any run keeps < 0.25, or any run loses money. |
+| | system_settings | Top N ±1, market-filter lengths ×0.8 and ×1.2; a filter that is an indicator has its parameters ×0.8 and ×1.2 instead. | The median keeps < 0.5, or any run keeps < 0.25, or any run loses money. |
 | **2 Time** | start_shift | The backtest starting 1–11 months later; every run keeps two or more years. | The median keeps < 0.5, or any run keeps < 0.3, or any run loses money. |
 | | eras | Calendar years, rolling 1-year returns, the worst rolling 2-year CAGR. | A rolling 2-year window has a CAGR below −25%. Scored by the share of positive rolling years. |
 | | walk-forward (search) | The search itself, shown only an earlier window; its picks run on the blind years after. | A pick does not beat random aggregates of the same size in the blind years (aggregate search, card 3). |
