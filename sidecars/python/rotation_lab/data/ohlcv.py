@@ -60,7 +60,11 @@ _CG_ID_PER_PAGE = 250
 _CG_MAX_FREE_DAYS = 365
 
 # Meta key holding the earliest date any exchange has candles for a coin.
-_HISTORY_FLOOR_KEY = "ohlcv_first:{key}"
+# v2 since 2026-11-08: v1 notes were often the first day of a venue's LATEST
+# page (asked without `since`), not the listing (TON: 2026-01-09 instead of
+# 2022), so every coin checks its history once more and v1 is ignored.
+_HISTORY_FLOOR_KEY = "ohlcv_first_v2:{key}"
+_DAY_MS = 24 * 60 * 60 * 1000
 
 
 # USD-ish quote currencies, best first. Used as a preference ranking, not a
@@ -246,7 +250,8 @@ class OhlcvFetcher:
         self._exchange_name = self._exchange_names[0]
         self._exchanges: dict[str, object] = {}
         self._markets: dict[str, dict] = {}
-        self._market_index_cache: dict[str, dict[str, dict[str, str]]] = {}
+        self._market_index_cache: dict[tuple[str, bool], dict[str, dict[str, str]]] = {}
+        self._renames: dict[str, set[str]] | None = None
         self._session = requests.Session()
         self._id_resolver = CoinGeckoIdResolver(
             self.cache, self._session, self._throttle_cg
@@ -627,16 +632,17 @@ class OhlcvFetcher:
             self._exchanges[name] = ex
         return self._exchanges[name]
 
-    def _market_index(self, name: str) -> dict[str, dict[str, str]]:
+    def _market_index(self, name: str, active: bool = True) -> dict[str, dict[str, str]]:
         """``base -> {"spot": market, "swap": market}`` for one exchange.
 
         Built from CCXT's market metadata rather than by guessing market id
         strings: venues spell things differently (``XMR/USDT:USDT`` for a
         perpetual, odd quote assets, inactive leftovers), and matching on
         ``base``/``quote``/``spot`` is the part that stays true everywhere.
+        ``active=False`` indexes only the markets the venue marks inactive.
         """
 
-        cached = self._market_index_cache.get(name)
+        cached = self._market_index_cache.get((name, active))
         if cached is not None:
             return cached
 
@@ -645,7 +651,7 @@ class OhlcvFetcher:
         index: dict[str, dict[str, str]] = {}
         best_rank: dict[tuple[str, str], int] = {}
         for market in markets.values():
-            if not isinstance(market, dict) or market.get("active") is False:
+            if not isinstance(market, dict) or (market.get("active") is False) == active:
                 continue
             base = (market.get("base") or "").upper()
             quote = (market.get("quote") or "").upper()
@@ -661,15 +667,30 @@ class OhlcvFetcher:
             best_rank[(base, kind)] = rank
             index.setdefault(base, {})[kind] = symbol
 
-        self._market_index_cache[name] = index
+        self._market_index_cache[(name, active)] = index
         return index
 
-    def _pair_on(self, name: str, ref: CoinRef, kind: str) -> str | None:
-        """This coin's best ``kind`` ("spot"/"swap") market on one exchange."""
+    def _pair_on(self, name: str, ref: CoinRef, kind: str, ticker: str | None = None,
+                 active: bool = True) -> str | None:
+        """The best ``kind`` ("spot"/"swap") market of ``ticker`` (the coin's own by default) on one exchange."""
 
-        if kind == "spot" and name == self._exchange_name and ref.binance_symbol:
+        ticker = (ticker or ref.symbol).upper()
+        if kind == "spot" and active and name == self._exchange_name and ref.binance_symbol \
+                and ticker == ref.symbol.upper():
             return ref.binance_symbol
-        return self._market_index(name).get(ref.symbol.upper(), {}).get(kind)
+        return self._market_index(name, active).get(ticker, {}).get(kind)
+
+    def _renamed(self, symbol: str) -> set[str]:
+        """The coin's other tickers (renames found in the saved rankings), read once per fetcher."""
+
+        if self._renames is None:
+            try:
+                renames = self.cache.ticker_renames()
+            except Exception as exc:  # noqa: BLE001 — a stand-in cache or an old file: no renames
+                log.info("No ticker renames: %s", exc)
+                renames = {}
+            self._renames = renames if isinstance(renames, dict) else {}
+        return set(self._renames.get(symbol.upper(), ()))
 
     def _resolve_pairs(self, ref: CoinRef):
         """Yield ``(exchange, pair)`` candidates in priority order.
@@ -679,19 +700,31 @@ class OhlcvFetcher:
         a perp before a spot book, and a perp's daily closes track spot far
         more closely than a synthesised CoinGecko approximation does).
 
+        Within each kind the coin's own ticker comes first, then the tickers
+        it was renamed from or to (exchanges list TON only as GRAM since
+        2026, with its whole history). Markets a venue marks inactive come
+        last of all: they are history only (Binance TON/USDT ended at the
+        rename), and the caller prefers whatever reaches further forward.
+
         A generator on purpose: each exchange's ``load_markets`` only runs
         when the consumer actually asks for the next candidate, so the
         common case (a coin listed on Binance) still costs exactly one
         market load and never touches the rest of the chain.
         """
 
+        def tickers():
+            yield ref.symbol.upper()
+            yield from sorted(self._renamed(ref.symbol))
+
         seen: set[tuple[str, str]] = set()
-        for kind in ("spot", "swap"):
-            for name in self._exchange_names:
-                pair = self._pair_on(name, ref, kind)
-                if pair and (name, pair) not in seen:
-                    seen.add((name, pair))
-                    yield name, pair
+        for active in (True, False):
+            for kind in ("spot", "swap"):
+                for ticker in tickers():
+                    for name in self._exchange_names:
+                        pair = self._pair_on(name, ref, kind, ticker, active)
+                        if pair and (name, pair) not in seen:
+                            seen.add((name, pair))
+                            yield name, pair
 
     def _fetch_ccxt(
         self,
@@ -711,6 +744,7 @@ class OhlcvFetcher:
         target_end = min(end, dt.date.today())
         best: tuple[str, str, list[OhlcvRow]] | None = None
         best_score: tuple | None = None
+        fetched: list[tuple[tuple, bool, list[OhlcvRow]]] = []
 
         for name, pair in self._resolve_pairs(ref):
             rows = self._fetch_ccxt_one(name, pair, ref, start, end)
@@ -718,9 +752,12 @@ class OhlcvFetcher:
                 continue
             days = [r.day for r in rows]
             first_day, last_day = min(days), max(days)
-            # Reaching further forward wins; then starting earlier; then
-            # sheer bar count as a tie-break.
-            score = (last_day, -first_day.toordinal(), len(rows))
+            # Reaching further forward wins; then spot over a perpetual (a
+            # perp listed before the spot book is no price to buy the coin
+            # at); then starting earlier; then sheer bar count as a tie-break.
+            spot = ":" not in pair
+            score = (last_day, spot, -first_day.toordinal(), len(rows))
+            fetched.append((score, spot, rows))
             if best_score is None or score > best_score:
                 best, best_score = (name, pair, rows), score
             spans_window = (
@@ -744,7 +781,20 @@ class OhlcvFetcher:
             self.cache.upsert_coin_map(
                 cg_id=ref.cg_id, symbol=ref.symbol, binance_symbol=pair
             )
-        return rows
+        # Days before the chosen venue's first candle come from the other
+        # venues already fetched, best first: a coin that moved venue keeps
+        # its older history (XMR: KuCoin from 2020-02, Binance before). Spot
+        # only from spot: a perpetual trading before the spot listing (FIL
+        # in 2020) is not a price anyone could buy the coin at.
+        first, spot = min(r.day for r in rows), ":" not in pair
+        older: dict[dt.date, OhlcvRow] = {}
+        for _score, other_spot, other in sorted(fetched, key=lambda item: item[0], reverse=True):
+            if other_spot != spot:
+                continue
+            for r in other:
+                if r.day < first and r.day not in older:
+                    older[r.day] = r
+        return sorted(older.values(), key=lambda r: r.day) + rows
 
     def _fetch_ccxt_one(
         self,
@@ -768,30 +818,11 @@ class OhlcvFetcher:
         coin_key = coin_key_for(ref)
         out: list[OhlcvRow] = []
         confirmed_ms = int(utc_now().timestamp() * 1000)
-        cursor = since_ms
-        first_page = True
+        cursor, batch = self._first_page(ex, name, pair, since_ms)
         # Paginate (exchanges return up to ~1000 candles per call).
         for _ in range(50):
-            try:
-                batch = ex.fetch_ohlcv(pair, timeframe="1d", since=cursor, limit=1000)
-            except Exception as exc:  # noqa: BLE001
-                log.info("CCXT fetch_ohlcv error %s@%s %s: %s", pair, name, cursor, exc)
-                break
             if not batch:
-                # Binance clamps `since` to the listing date, but several
-                # exchanges just return nothing when asked for candles that
-                # predate it. Retry once without `since` to pick up whatever
-                # history the coin does have.
-                if first_page:
-                    first_page = False
-                    try:
-                        batch = ex.fetch_ohlcv(pair, timeframe="1d", limit=1000)
-                    except Exception as exc:  # noqa: BLE001
-                        log.info("CCXT no-since retry failed %s@%s: %s", pair, name, exc)
-                        break
-                if not batch:
-                    break
-            first_page = False
+                break
             for ts_ms, o, h, l, c, v in batch:
                 if ts_ms > end_ms or ts_ms < since_ms:
                     continue
@@ -815,8 +846,52 @@ class OhlcvFetcher:
             last_ts = batch[-1][0]
             if last_ts >= end_ms or last_ts == cursor:
                 break
-            cursor = last_ts + 24 * 60 * 60 * 1000
+            cursor = last_ts + _DAY_MS
+            try:
+                batch = ex.fetch_ohlcv(pair, timeframe="1d", since=cursor, limit=1000)
+            except Exception as exc:  # noqa: BLE001
+                log.info("CCXT fetch_ohlcv error %s@%s %s: %s", pair, name, cursor, exc)
+                break
         return out
+
+    def _first_page(self, ex, name: str, pair: str, since_ms: int) -> tuple[int, list]:
+        """``(since, page)``: the venue's first page of daily candles at or after ``since_ms``; ``(since_ms, [])`` if none.
+
+        Binance clamps ``since`` to the listing, but several venues answer
+        nothing for days before it, and asked without ``since`` they return
+        their LATEST page (Coinbase 300 candles, OKX 100), whose first day is
+        not the listing. Taking that page once made TON look listed on
+        2026-01-09 and hid its history for good. So the earliest ``since``
+        that answers is found by bisection between the request and the latest
+        page: about a dozen calls, once per coin. A failed call gives up on
+        this venue rather than keep a page that may not be the first.
+        """
+
+        def fetch(since=None):
+            try:
+                kwargs = {} if since is None else {"since": since}
+                return ex.fetch_ohlcv(pair, timeframe="1d", limit=1000, **kwargs)
+            except Exception as exc:  # noqa: BLE001
+                log.info("CCXT fetch_ohlcv error %s@%s %s: %s", pair, name, since, exc)
+                return None
+
+        batch = fetch(since_ms)
+        if batch:
+            return since_ms, batch
+        latest = fetch() if batch is not None else None
+        if not latest or latest[0][0] <= since_ms:
+            return since_ms, []
+        lo, hi, found = since_ms, int(latest[0][0]), latest
+        while hi - lo > _DAY_MS:
+            mid = lo + max(_DAY_MS, (hi - lo) // 2 // _DAY_MS * _DAY_MS)
+            page = fetch(mid)
+            if page is None:
+                return since_ms, []
+            if page:
+                hi, found = mid, page
+            else:
+                lo = mid
+        return hi, found
 
     # ----------------------------- CoinGecko ---------------------------- #
 
