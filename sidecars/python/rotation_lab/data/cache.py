@@ -487,6 +487,61 @@ class Cache:
             ).fetchone()
         return int(row[0]) if row else 0
 
+    def ticker_renames(self, *, days: int = 3, tolerance: float = 0.03, match: float = 0.005) -> dict[str, set[str]]:
+        """Tickers of one coin across renames, read from the saved rankings: ``symbol -> {its other tickers}``.
+
+        Exchanges rename a coin's ticker (TON -> GRAM in 2026, EOS -> A in 2025) and then list
+        only the new one, so the old ticker's history must be found under the new one. The
+        rankings have no stable coin id, but a rename shows as one ticker's last snapshot and
+        another's first within ``days``, at the same price AND the same market cap. A different
+        coin that happens to cost the same has another market cap, so both ratios must be
+        within ``tolerance`` of 1 and within ``match`` of each other. Chains are joined.
+        """
+
+        with self._conn() as con:
+            spans = con.execute(
+                "SELECT provider, UPPER(symbol), MIN(snap_date), MAX(snap_date) FROM rankings "
+                "WHERE symbol IS NOT NULL GROUP BY provider, UPPER(symbol)"
+            ).fetchall()
+            latest = dict(con.execute("SELECT provider, MAX(snap_date) FROM rankings GROUP BY provider").fetchall())
+            starts: dict[tuple[str, str], list[str]] = {}
+            for provider, symbol, first, _last in spans:
+                starts.setdefault((provider, str(first)[:10]), []).append(symbol)
+
+            def at(provider: str, symbol: str, day: str):
+                return con.execute(
+                    "SELECT price, market_cap FROM rankings WHERE provider=? AND snap_date=? AND UPPER(symbol)=? "
+                    "ORDER BY rank LIMIT 1", (provider, day, symbol)
+                ).fetchone()
+
+            parent: dict[str, str] = {}
+
+            def root(symbol: str) -> str:
+                while parent.get(symbol, symbol) != symbol:
+                    symbol = parent[symbol]
+                return symbol
+
+            for provider, symbol, _first, last in spans:
+                last = str(last)[:10]
+                if last >= str(latest.get(provider) or "")[:10]:
+                    continue  # still listed: nothing replaced it
+                end = dt.date.fromisoformat(last)
+                for k in range(days + 1):
+                    day = (end + dt.timedelta(days=k)).isoformat()
+                    for new in starts.get((provider, day), ()):
+                        if new == symbol:
+                            continue
+                        old_row, new_row = at(provider, symbol, last), at(provider, new, day)
+                        if not old_row or not new_row or not all(v and v > 0 for v in (*old_row, *new_row)):
+                            continue
+                        price, cap = new_row[0] / old_row[0], new_row[1] / old_row[1]
+                        if abs(price - 1) <= tolerance and abs(cap - 1) <= tolerance and abs(price - cap) <= match:
+                            parent[root(new)] = root(symbol)
+        groups: dict[str, set[str]] = {}
+        for symbol in list(parent):
+            groups.setdefault(root(symbol), {root(symbol)}).add(symbol)
+        return {s: members - {s} for members in groups.values() for s in members}
+
     # ------------------------------ meta -------------------------------- #
 
     def get_meta(self, key: str) -> str | None:
