@@ -151,3 +151,42 @@ def build_universe_timeline(
         if progress:
             progress(idx + 1, len(dates), d)
     return UniverseTimeline(snapshots=snapshots)
+
+
+def market_warmup_snapshots(
+    registry: RankingRegistry,
+    *,
+    warm_start: dt.date,
+    start: dt.date,
+    cadence: Cadence,
+    top_n: int,
+    source: RankingSource = RankingSource.AUTO,
+    exclude_stablecoins: bool = True,
+    exclude_wrapped: bool = True,
+    resolution: RankingResolution = RankingResolution.WEEKLY,
+) -> list[UniverseSnapshot]:
+    """TOTAL's coin list before a run's ``start``: one snapshot per day
+    from ``warm_start``, read from the ranking cache alone (never the
+    network). A day the cache lacks gets no snapshot, so it keeps the
+    one before (``market_index``). Without this, every bar before the
+    start took the start's own weights, and TOTAL there depended on when
+    a run began; now a day gets the same snapshot whatever the start, as
+    far as the cache reaches. The whole top-N, like the market list
+    (no excluded head, no excluded symbols)."""
+
+    lookup = getattr(registry, "cached_top_n", None)
+    if lookup is None or warm_start >= start:
+        return []
+    from ..data.ranking.registry import ResolvedRanking
+    lag = (dt.timedelta(days=1)
+           if cadence.is_intraday and resolution == RankingResolution.WEEKLY
+           else dt.timedelta(0))
+    out: list[UniverseSnapshot] = []
+    day = warm_start
+    while day < start:
+        resolved = lookup(day - lag, top_n, source=source, exclude_stablecoins=exclude_stablecoins,
+                          exclude_wrapped=exclude_wrapped, resolution=resolution)
+        if isinstance(resolved, ResolvedRanking) and resolved.coins:
+            out.append(UniverseSnapshot(on_date=day, provider=resolved.provider, coins=resolved.coins))
+        day += dt.timedelta(days=1)
+    return out

@@ -53,3 +53,18 @@ class RankingProvider(ABC):
         about. Used by the GUI's "Historical Universe" tab. Default: []."""
 
         return []
+
+    def cached_top_n(
+        self,
+        on_date: dt.date,
+        n: int,
+        *,
+        exclude_stablecoins: bool = True,
+        exclude_wrapped: bool = True,
+        resolution: RankingResolution = RankingResolution.WEEKLY,
+    ) -> list[RankedCoin]:
+        """Like :meth:`get_top_n`, from the local cache alone: never the
+        network, and an empty list when the day is not stored. TOTAL's
+        warm-up before a run's start reads this (backtest.universe)."""
+
+        return []

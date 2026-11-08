@@ -23,10 +23,20 @@ import numpy as np
 import pandas as pd
 
 from ..config import IndicatorConfig, TotalBreakoutConfig
-from .signals import trend_signal
+from .signals import bounded, trend_signal
 from .universe import UniverseSnapshot
 
 _OHLC = ("open", "high", "low", "close")
+
+# Bars of TOTAL the fixed breakout reads before each history block: as many
+# as today's live signal has always read (8x its longest length).
+BREAKOUT_WARMUP_FACTOR = 8
+
+
+def breakout_warmup(cfg: TotalBreakoutConfig) -> int:
+    """Bars of history the fixed TOTAL breakout needs before a block."""
+
+    return BREAKOUT_WARMUP_FACTOR * max(cfg.trend_length, cfg.entry_length, cfg.exit_length)
 
 
 def market_index(
@@ -100,26 +110,35 @@ def market_index(
     return out
 
 
+def _breakout(total: pd.DataFrame, cfg: TotalBreakoutConfig) -> pd.Series:
+    close = total['close']
+    slow = close.ewm(span=cfg.trend_length, adjust=False).mean()
+    fast = close.ewm(span=cfg.exit_length, adjust=False).mean()
+    prior_high = close.shift(1).rolling(cfg.entry_length).max()
+    enter = (close > prior_high) & (close > slow) & (slow > slow.shift(1))
+    leave = (close < fast) | (close < slow)
+    state = 0
+    values = []
+    for bullish, bearish in zip(enter, leave):
+        if bearish:
+            state = 0
+        elif bullish:
+            state = 1
+        values.append(state)
+    return pd.Series(values, index=close.index, dtype=int)
+
+
 def market_gate(total: pd.DataFrame, cfg: IndicatorConfig | TotalBreakoutConfig) -> pd.Series:
     """The higher filter: 1 while TOTAL is bullish by ``cfg``'s trend
-    signal, 0 otherwise (and 0 through the signal's warm-up)."""
+    signal, 0 otherwise (and 0 through the signal's warm-up).
+
+    Both kinds read fixed history blocks (``signals.bounded``): the fixed
+    breakout ``breakout_warmup`` bars before each block, an indicator its
+    registered warm-up. A day's verdict then depends only on TOTAL inside
+    its block's window, never on where a run or the live signal began."""
 
     if total.empty:
         return pd.Series(dtype=int)
     if isinstance(cfg, TotalBreakoutConfig):
-        close = total['close']
-        slow = close.ewm(span=cfg.trend_length, adjust=False).mean()
-        fast = close.ewm(span=cfg.exit_length, adjust=False).mean()
-        prior_high = close.shift(1).rolling(cfg.entry_length).max()
-        enter = (close > prior_high) & (close > slow) & (slow > slow.shift(1))
-        leave = (close < fast) | (close < slow)
-        state = 0
-        values = []
-        for bullish, bearish in zip(enter, leave):
-            if bearish:
-                state = 0
-            elif bullish:
-                state = 1
-            values.append(state)
-        return pd.Series(values, index=close.index, dtype=int)
+        return bounded(total, lambda frame: _breakout(frame, cfg), breakout_warmup(cfg)).astype(int)
     return trend_signal(total, cfg)

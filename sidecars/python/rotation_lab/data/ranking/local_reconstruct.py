@@ -100,6 +100,17 @@ class LocalReconstructProvider(RankingProvider):
     def available_dates(self) -> list[dt.date]:
         return self.cache.ranking_dates(self.name)
 
+    def cached_top_n(
+        self,
+        on_date: dt.date,
+        n: int,
+        *,
+        exclude_stablecoins: bool = True,
+        exclude_wrapped: bool = True,
+        resolution: RankingResolution = RankingResolution.WEEKLY,
+    ) -> list[RankedCoin]:
+        return self._filter_top(self.cache.get_ranking(self.name, on_date), n, exclude_stablecoins, exclude_wrapped)
+
     # ------------------------------------------------------------------ #
 
     def _mcap_rev(self) -> str:
