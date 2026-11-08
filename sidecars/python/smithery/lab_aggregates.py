@@ -138,8 +138,14 @@ def run(path, doc):
                 "rule": "Two or more distinct base indicators, no preferred size; each base casts at most one vote.",
                 "restarts": [d for d in (doc.get("restarts") or RESTARTS)],
                 "validation": "Retrospective search on examined history; no claim of out-of-sample performance or a global optimum."}
+        if robust:
+            scoring = worlds.scoring
+        else:
+            from .lab_gpu import scorer
+            twin, scoring = scorer(evaluator, progress)
+        plan["scoring"] = scoring
         save(path / "plan.json", plan)
-        evaluate = (lambda trials: worlds.evaluate(trials, cut)) if robust else evaluator.evaluate
+        evaluate = (lambda trials: worlds.evaluate(trials, cut)) if robust else (twin or evaluator).evaluate
         dates = evaluator.dates
         years = max((dates[(cut if robust else len(dates)) - 1] - dates[0]).days / 365.25, 1 / 365.25)
         search = Search(evaluate, usable, {k: bases[k] for k in [*usable, *reference]}, seed=seed, budget=budget,
@@ -239,7 +245,7 @@ def run(path, doc):
                     "unsupported": dict(sorted(evaluator.failed.items())), "duplicates": duplicates, "aggregates": search.aggregates,
                     "by_size": {s: c for s, c in counts.items() if s >= 2}, "stages": search.stages, "sizes": plan["sizes"],
                     "budget": budget, "verified": len(verified) + 1, "verified_passed": sum(v["passed"] for v in verified) + 1,
-                    "evaluator": "native" if reason else "bulk", "native_reason": reason,
+                    "evaluator": "native" if reason else "bulk", "native_reason": reason, "scoring": scoring,
                     "best_by_size": [{"size": s, "tested": counts.get(s, 0), "members": list(t), "net_return_multiplier": v[0],
                                       "max_drawdown_pct": v[1]} for s, (t, v) in best.items()],
                     "local_search": {"stable": search.stable, "rounds": search.rounds, "top": 25},

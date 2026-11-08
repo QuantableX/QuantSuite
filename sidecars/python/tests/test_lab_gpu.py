@@ -3,11 +3,14 @@
 Runs only where PyTorch with CUDA is importable (the research GPU Python); elsewhere it is skipped,
 and the app keeps the CPU evaluator."""
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from smithery.quantscript import template
 from tests.test_research_fast import FIXTURES, SCRIPT, fixture_source
@@ -58,6 +61,17 @@ if __name__ == '__main__':
                     'full_pause': full_pause, 'throttled_pause': sum(paused), 'throttled_batches': len(paused),
                     'distinct_curves': len({tuple(np.round(c, 12)) for c in cpu})}
                 os.environ.pop('SMITHERY_THROTTLE_FILE', None)
+            # What the searches call: evaluate, with singles and aggregates mixed in one call, a search
+            # window, a delay, small chunks, and a key listed twice (it votes twice, as on the CPU).
+            mixed = [t for pair in itertools.zip_longest(kinds['singles'], kinds['aggregates']) for t in pair if t]
+            mixed.append((usable[0], usable[0], usable[1]))
+            cut = len(fast.dates) * 2 // 3
+            report[f'{name} evaluate'] = {
+                'mixed': fast.evaluate(mixed) == gpu.evaluate(mixed),
+                'window': fast.evaluate(mixed, end=cut) == gpu.evaluate(mixed, end=cut),
+                'late': fast.evaluate(mixed, delay=1) == gpu.evaluate(mixed, delay=1, chunk=7),
+                'duplicate': bool(np.array_equal(fast.simulate([mixed[-1]])[0], gpu.simulate([mixed[-1]]))),
+                'trials': len(mixed)}
             fast.close()
     print(json.dumps(report, default=str))
 '''
@@ -93,7 +107,13 @@ class GpuParityTests(unittest.TestCase):
                                   cwd=Path(__file__).resolve().parents[1])
             self.assertEqual(proc.returncode, 0, proc.stdout[-3000:] + proc.stderr[-3000:])
             report = json.loads(proc.stdout.strip().splitlines()[-1])
-        self.assertEqual(set(report), {f"{n} {k}" for n in ("gate_usd", "no_gate") for k in ("singles", "aggregates")})
+        self.assertEqual(set(report), {f"{n} {k}" for n in ("gate_usd", "no_gate") for k in ("singles", "aggregates", "evaluate")})
+        for name in ("gate_usd evaluate", "no_gate evaluate"):
+            result = report.pop(name)
+            with self.subTest(name):
+                self.assertGreater(result["trials"], 10)
+                for check in ("mixed", "window", "late", "duplicate"):
+                    self.assertTrue(result[check], check)
         for name, result in report.items():
             with self.subTest(name):
                 self.assertTrue(result["full_identical"])
@@ -103,6 +123,75 @@ class GpuParityTests(unittest.TestCase):
                 self.assertGreater(result["throttled_pause"], 0)
                 self.assertGreater(result["throttled_batches"], 2)
                 self.assertGreater(result["distinct_curves"], 3)
+
+
+@unittest.skipUnless(gpu_available(), "PyTorch with CUDA is not installed in this Python")
+class GpuSearchTests(unittest.TestCase):
+    def test_the_searches_find_and_rank_the_same_on_the_gpu_as_on_the_cpu(self):
+        from tests import test_research_profit as profit
+        runner = profit.ProfitRunTests("test_runs_read_only_the_saved_price_data")
+        runs = {}
+        for flag in ("0", "1"):
+            with patch.dict(os.environ, {"SMITHERY_GPU": flag}):
+                runs[flag] = {"profit": runner.run_script(), "aggregates": runner.run_script("aggregates"),
+                              "robust": runner.run_script("robust")}
+        cpu, gpu = runs["0"], runs["1"]
+        off = "CPU: the GPU is switched off (SMITHERY_GPU=0)"
+        self.assertEqual(cpu["profit"]["rotation"]["coverage"]["scoring"], off)
+        self.assertEqual((cpu["aggregates"]["scoring"], cpu["robust"]["scoring"]), (off, off))
+        for scoring in (gpu["profit"]["rotation"]["coverage"]["scoring"], gpu["aggregates"]["scoring"], gpu["robust"]["scoring"]):
+            self.assertRegex(scoring, r"^GPU \(.+\), bit-identical")
+        self.assertEqual(gpu["profit"]["single"]["coverage"]["scoring"], "CPU: the GPU scores rotation systems with USD only")
+        for run in (cpu, gpu):
+            for name in run["profit"].values():
+                name["coverage"].pop("scoring")
+                name.pop("plan_scoring")
+                name.pop("page")  # the page shows the run's seconds
+            for kind in ("aggregates", "robust"):
+                run[kind].pop("scoring")
+        for kind in ("profit", "aggregates", "robust"):
+            with self.subTest(kind):
+                self.assertEqual(gpu[kind], cpu[kind])
+
+
+class ScoringChoiceTests(unittest.TestCase):
+    """Where a run scores and why: the same on every machine, CUDA or not."""
+
+    def rotation(self, usd=True):
+        from smithery.lab_fast import FastSystem
+        system = FastSystem.__new__(FastSystem)
+        system.single, system.config, system.folder = False, SimpleNamespace(include_usd=usd), "nowhere"
+        return system
+
+    def test_every_reason_for_the_cpu_is_named(self):
+        from smithery import lab_gpu
+        with patch.dict(os.environ, {"SMITHERY_GPU": "0"}):
+            self.assertEqual(lab_gpu.cpu_reason(self.rotation()), "the GPU is switched off (SMITHERY_GPU=0)")
+        with patch.dict(os.environ, {"SMITHERY_GPU": "1"}):
+            self.assertIn("no bulk evaluator", lab_gpu.cpu_reason(object()))
+            self.assertEqual(lab_gpu.cpu_reason(self.rotation(usd=False)), "the GPU scores rotation systems with USD only")
+            with patch.dict(sys.modules, {"torch": None}):
+                self.assertIn("PyTorch is not installed", lab_gpu.cpu_reason(self.rotation()))
+            no_cuda = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+            with patch.dict(sys.modules, {"torch": no_cuda}):
+                self.assertEqual(lab_gpu.cpu_reason(self.rotation()), "PyTorch finds no CUDA GPU")
+
+    def test_a_run_says_where_it_scores_and_never_falls_back_silently(self):
+        from smithery import lab_gpu
+        said = []
+        with patch.dict(os.environ, {"SMITHERY_GPU": "0"}):
+            twin, note = lab_gpu.scorer(self.rotation(), said.append)
+        self.assertIsNone(twin)
+        self.assertEqual(note, "CPU: the GPU is switched off (SMITHERY_GPU=0)")
+        self.assertEqual(said, ["Scoring on the CPU: the GPU is switched off (SMITHERY_GPU=0)"])
+        # The GPU is there but cannot take the cube (out of memory): the CPU, and the reason is shown.
+        said.clear()
+        with patch.object(lab_gpu, "cpu_reason", return_value=None), \
+                patch.object(lab_gpu, "GpuSystem", side_effect=RuntimeError("CUDA out of memory")):
+            out, note = lab_gpu.twins({"saved": self.rotation(), "noise 1": self.rotation()}, said.append)
+        self.assertEqual(out, {})
+        self.assertEqual(note, "CPU: the GPU could not take the cube (RuntimeError: CUDA out of memory)")
+        self.assertEqual(said, [f"Scoring on the {note}"])
 
 
 if __name__ == "__main__":

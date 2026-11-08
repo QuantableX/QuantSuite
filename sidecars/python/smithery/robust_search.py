@@ -16,7 +16,6 @@ CUDA present the bit-identical GPU evaluator (smithery.lab_gpu) scores it instea
 from __future__ import annotations
 
 import math
-import os
 import random
 from pathlib import Path
 
@@ -106,13 +105,8 @@ class Worlds:
         share = max(2, default_workers() // (len(self.systems) + 1))
         for system in self.systems.values():
             system.workers = share
-        self.gpu = {}
-        if os.environ.get("SMITHERY_GPU", "1") != "0":
-            from . import lab_gpu
-            if lab_gpu.available() and lab_gpu.supports(base):
-                for name, system in self.systems.items():
-                    self.gpu[name] = lab_gpu.GpuSystem(system.folder)
-                say("Scoring on the GPU (bit-identical to the CPU evaluator)")
+        from . import lab_gpu
+        self.gpu, self.scoring = lab_gpu.twins(self.systems, say)
 
     @property
     def names(self):

@@ -1,0 +1,7 @@
+# Optional: GPU scoring for the research searches (smithery.lab_gpu), bit-identical
+# to the CPU evaluator. Only for machines with an NVIDIA GPU (CUDA 13); about 3 GB.
+# Without it everything runs on the CPU exactly as before, and each run says so.
+#   python -m pip install -r sidecars/python/requirements-gpu.txt
+# Off switch without uninstalling: SMITHERY_GPU=0.
+--index-url https://download.pytorch.org/whl/cu130
+torch>=2.14.1
