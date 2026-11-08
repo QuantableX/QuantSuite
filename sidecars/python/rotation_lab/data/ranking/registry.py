@@ -102,6 +102,33 @@ class RankingRegistry:
             )
         return ResolvedRanking(provider=order[0].name if order else "", coins=[])
 
+    def cached_top_n(
+        self,
+        on_date: dt.date,
+        n: int,
+        *,
+        source: RankingSource = RankingSource.AUTO,
+        exclude_stablecoins: bool = True,
+        exclude_wrapped: bool = True,
+        resolution: RankingResolution = RankingResolution.WEEKLY,
+    ) -> ResolvedRanking | None:
+        """The top-N at ``on_date`` from what the cache already holds, in
+        :meth:`get_top_n`'s provider order; never the network. ``None`` when
+        no provider has the day stored."""
+
+        for prov in self._provider_order(source):
+            # A stand-in provider (tests, saved-data research) may have no cache to read.
+            lookup = getattr(prov, "cached_top_n", None)
+            coins = lookup(
+                on_date, n,
+                exclude_stablecoins=exclude_stablecoins,
+                exclude_wrapped=exclude_wrapped,
+                resolution=resolution,
+            ) if lookup else None
+            if coins:
+                return ResolvedRanking(provider=prov.name, coins=coins)
+        return None
+
     # ------------------------------------------------------------------ #
 
     def _provider_order(self, source: RankingSource) -> list[RankingProvider]:

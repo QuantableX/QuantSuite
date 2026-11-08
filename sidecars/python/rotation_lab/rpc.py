@@ -20,6 +20,7 @@ Methods
 ``live``           → today's (or as-of) top-N universe + NxN score matrix + best asset
 ``backtest``       → equity curve, buy-and-hold, BTC EMA benchmarks, metrics, forced rotations
 ``universe``       → historical top-N for a single date
+``fund``           → a fund over its members' equity: every split method, rebalances, correlation, robustness
 ``cache_stats``    → row counts + db size
 ``clear_cache``    → wipe rankings / ohlcv / all
 ``ranking_archive_status`` / ``_build`` / ``_cancel``
@@ -34,14 +35,14 @@ import json
 import math
 import sys
 import threading
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 import pandas as pd
 
-from . import __version__
+from . import __version__, funds
 from .backtest.engine import USD_SYMBOL, BacktestEngine, HoldingTrade
-from .backtest.metrics import METRIC_LABELS, PerformanceMetrics
+from .backtest.metrics import METRIC_LABELS, PerformanceMetrics, compute_metrics
 from .backtest.signals import pair_signal
 from .config import (
     Cadence,
@@ -443,11 +444,15 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
     # candles are fetched for the index alone.
     market_filter: dict[str, Any] = {"enabled": bool(cfg.market_filter), "bullish": None}
     if cfg.market_filter:
+        from .backtest.engine import _market_start
         from .backtest.market import market_gate, market_index
-        from .backtest.universe import UniverseSnapshot
+        from .backtest.universe import UniverseSnapshot, market_warmup_snapshots
 
         market_indicator = cfg.market_indicator or cfg.indicator
-        market_start = history_start(market_indicator)
+        # The same history and the same TOTAL as a backtest of today: from the
+        # engine's warm-up start, each earlier day with its own cached ranking.
+        market_start = (_market_start(replace(cfg, start_date=as_of)) if cfg.market_indicator is not None
+                        else history_start(market_indicator))
         market_coins = list(coins)
         if cfg.exclude_top_n > 0 or cfg.exclude_symbols:
             market_coins = registry.get_top_n(
@@ -456,8 +461,17 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
                 exclude_wrapped=cfg.exclude_wrapped, exclude_top_n=0,
                 resolution=cfg.ranking_resolution,
             ).coins
+        snapshots = market_warmup_snapshots(
+            registry, warm_start=market_start, start=as_of, cadence=cfg.cadence, top_n=cfg.top_n,
+            source=cfg.ranking_source, exclude_stablecoins=cfg.exclude_stablecoins,
+            exclude_wrapped=cfg.exclude_wrapped, resolution=cfg.ranking_resolution,
+        ) + [UniverseSnapshot(on_date=as_of, provider=resolved.provider, coins=market_coins)]
+        wanted: dict[str, Any] = {}
+        for snap in snapshots:
+            for coin in snap.coins:
+                wanted.setdefault(coin.symbol, coin)
         market_frames: dict[str, pd.DataFrame] = {}
-        for coin in market_coins:
+        for coin in wanted.values():
             if coin.symbol in frames and market_start == start:
                 market_frames[coin.symbol] = frames[coin.symbol]
                 continue
@@ -468,7 +482,7 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
             frame = confirmed(series.frame)
             if not frame.empty:
                 market_frames[coin.symbol] = frame
-        total = market_index([UniverseSnapshot(on_date=as_of, provider=resolved.provider, coins=market_coins)], market_frames)
+        total = market_index(snapshots, market_frames)
         gate = market_gate(total, market_indicator)
         market_filter["bullish"] = bool(int(gate.iloc[-1]) == 1) if not gate.empty else False
 
@@ -643,6 +657,184 @@ def _method_backtest(params: dict[str, Any], *, progress_callback=None) -> dict[
     }
 
 
+# ── method: fund ─────────────────────────────────────────────────────────────
+
+METHOD_LABELS = {
+    "equal": "Equal",
+    "fixed": "Fixed %",
+    "profit": "Profit",
+    "sharpe": "Sharpe",
+    "sortino": "Sortino",
+    "return_drawdown": "Return / drawdown",
+    "inverse_volatility": "Inverse volatility",
+    "kelly": "Kelly",
+    "combined": "Combined",
+}
+#: Member equity by its exact settings: choosing another method, lookback or cap
+#: reruns nothing, and a member whose settings changed runs again.
+_MEMBER_CURVES: dict[str, pd.Series] = {}
+
+
+def _member_curve(raw: dict[str, Any], label: str, progress) -> pd.Series:
+    key = json.dumps({"version": __version__, "config": raw}, sort_keys=True, default=str)
+    cached = _MEMBER_CURVES.get(key)
+    if cached is not None:
+        return cached
+    cfg = _build_config({**raw, "compareTrends": []})
+    engine = BacktestEngine(
+        registry=RankingRegistry(get_default_cache(), progress=lambda text: progress(f"{label}: {text}", None)),
+        ohlcv=OhlcvFetcher(get_default_cache(), min_request_interval=cfg.min_request_interval),
+    )
+    result = engine.run(cfg, progress=lambda text, value: progress(f"{label}: {text}", value))
+    curve = result.equity_strategy
+    if curve is None or curve.empty:
+        raise ValueError(f"{label} has no equity curve in its window: " + "; ".join(result.notes[-2:]))
+    _MEMBER_CURVES[key] = curve
+    return curve
+
+
+def _fund_rule(raw: dict[str, Any], fee_rate: float, method: str | None = None) -> funds.FundRule:
+    return funds.FundRule(
+        method=method or str(raw.get("method", "equal")),
+        lookback_days=int(raw.get("lookbackDays", 180)),
+        rebalance=str(raw.get("rebalance", "monthly")),
+        cap_pct=float(raw.get("capPct", 50)),
+        kelly_fraction=float(raw.get("kellyFraction", 0.25)),
+        fixed_pct={str(k): float(v) for k, v in (raw.get("fixedPct") or {}).items()},
+        fee_rate=fee_rate,
+    )
+
+
+def _fund_run_dict(run: funds.FundRun, method: str) -> dict[str, Any]:
+    empty = pd.Series(dtype=float)
+    return {
+        "key": method,
+        "label": METHOD_LABELS[method],
+        "equityStrategy": _series_to_points(run.equity if len(run.equity) else empty),
+        "heldAsset": [],
+        "trades": [],
+        "metricsStrategy": _metrics_to_dict(compute_metrics(run.equity)),
+        "forcedRotations": [],
+    }
+
+
+def _method_fund(params: dict[str, Any], *, progress_callback=None) -> dict[str, Any]:
+    """A fund over its members' own equity. ``live`` runs them through today and holds money from ``liveStartDate``."""
+    members = params.get("members") or []
+    if not members:
+        raise ValueError("This fund has no systems left. Add a system in its settings.")
+    rule_raw = params.get("rule") or {}
+    amount = float(params.get("amount") or 0)
+    if amount <= 0:
+        raise ValueError("A fund needs an amount above 0.")
+    live = bool(params.get("live"))
+    today = dt.date.today()
+    step = 0.9 / len(members)
+
+    def progress(index: int):
+        def report(label: str, value: float | None) -> None:
+            base = 0.02 + index * step
+            payload = {"label": label, "value": base + step * (0.5 if value is None else float(value))}
+            if progress_callback is not None:
+                progress_callback(payload["label"], payload["value"])
+            else:
+                _notify("progress", payload)
+        return report
+
+    curves: dict[str, pd.Series] = {}
+    names: dict[str, str] = {}
+    fees: list[float] = []
+    for i, member in enumerate(members):
+        member_id, name = str(member["id"]), str(member.get("name") or member["id"])
+        raw = dict(member.get("config") or {})
+        if live:
+            raw["endDate"] = today.isoformat()
+        names[member_id] = name
+        curves[member_id] = _member_curve(raw, name, progress(i))
+        cfg = _build_config(raw)
+        fees.append(float(cfg.fee_rate) + float(cfg.slippage_rate))
+    frame, limited_by = funds.aligned_curves(curves)
+    if frame.empty or len(frame) < 2:
+        raise ValueError("The members have no days in common.")
+    fee_rate = sum(fees) / len(fees)
+    chosen = str(rule_raw.get("method", "equal"))
+    start = None
+    if live:
+        start = pd.Timestamp(str(params.get("liveStartDate") or today.isoformat()))
+        if start > frame.index[-1]:
+            start = frame.index[-1]
+
+    # The chosen method first, Equal always beside it, the rest for comparison.
+    methods = [chosen] + [m for m in funds.METHODS if m != chosen and (m != "fixed" or rule_raw.get("fixedPct"))]
+    runs = {m: funds.run_fund(frame, _fund_rule(rule_raw, fee_rate, m), start) for m in methods}
+    main = runs[chosen]
+    rule = _fund_rule(rule_raw, fee_rate)
+    value = amount * float(main.equity.iloc[-1]) if len(main.equity) else amount
+    held = {k: value * main.final_weights.get(k, 0.0) for k in frame.columns}
+    target = funds.split_dollars(main.target_weights, value)
+    last_day = frame.index[-1].date()
+    upcoming = funds.next_rebalance(last_day, rule.rebalance)
+
+    notes = [
+        "Members use today's parameters, so their own optimization is inside these curves, and weighting cannot remove it.",
+    ]
+    if limited_by:
+        notes.append(f"{names[limited_by]} starts last and limits the common window.")
+    removed = len(params.get("removed") or [])
+    if removed:
+        notes.append(f"{removed} deleted {'system is' if removed == 1 else 'systems are'} no longer part of this fund.")
+
+    monte_carlo = None
+    try:
+        from smithery.system_gauntlet import bootstrap
+        # Over the whole history: a Live page may hold money for a few days only.
+        trial = bootstrap(funds.run_fund(frame, rule).equity, 300, 20261106)
+        monte_carlo = {k: trial.get(k) for k in ("cagr_p5", "cagr_p50", "dd_p50", "dd_p95", "loss_1y", "loss_3y", "failed")}
+    except Exception as exc:  # noqa: BLE001 — the result stands without it, and says so
+        notes.append(f"Monte Carlo could not run: {exc}")
+
+    corr = funds.correlation(frame)
+    strategies = [_fund_run_dict(runs[m], m) for m in methods]
+    return {
+        **strategies[0],
+        "strategies": strategies,
+        "skippedStrategies": [],
+        "buyAndHold": {},
+        "benchmarks": {},
+        "metricsBuyAndHold": {},
+        "metricsBenchmarks": {},
+        "metricLabels": list(METRIC_LABELS),
+        "notes": notes,
+        "coins": [],
+        "fund": {
+            "method": chosen,
+            "windowStart": frame.index[0].date().isoformat(),
+            "windowEnd": last_day.isoformat(),
+            "limitedBy": names.get(limited_by) if limited_by else None,
+            "live": live,
+            "startDate": (start or frame.index[0]).date().isoformat(),
+            "amount": amount,
+            "value": value,
+            "cash": value - sum(held.values()),
+            "cost": amount * main.cost,
+            "nextRebalance": upcoming.isoformat() if upcoming else None,
+            "members": [
+                {"id": k, "name": names[k], "heldDollars": held[k], "targetDollars": target.get(k, 0),
+                 "targetShare": main.target_weights.get(k, 0.0)}
+                for k in frame.columns
+            ],
+            "rebalances": [
+                {"date": r.day.date().isoformat(), "cash": amount * r.cash, "cost": amount * r.cost,
+                 "values": {k: amount * v for k, v in r.values.items()}}
+                for r in reversed(main.rebalances)
+            ],
+            "correlation": {"ids": list(corr.columns), "names": [names[k] for k in corr.columns],
+                            "matrix": [[_finite(float(v)) for v in row] for row in corr.to_numpy()]},
+            "robustness": {**funds.robustness(frame, rule), "monteCarlo": monte_carlo},
+        },
+    }
+
+
 # ── method: cache stats / clear ──────────────────────────────────────────────
 
 
@@ -723,6 +915,7 @@ _METHODS = {
     "ping": _method_ping,
     "live": _method_live,
     "backtest": _method_backtest,
+    "fund": _method_fund,
     "universe": _method_universe,
     "cache_stats": _method_cache_stats,
     "clear_cache": _method_clear_cache,

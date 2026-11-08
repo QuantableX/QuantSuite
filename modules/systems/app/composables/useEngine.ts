@@ -4,6 +4,8 @@ import type {
   BacktestResult,
   CacheStats,
   EngineStatus,
+  Fund,
+  FundResult,
   LiveResult,
   RankingArchiveStatus,
   RunConfig,
@@ -62,6 +64,12 @@ export function useEngine() {
       invoke<LiveResult>('plugin:systems|live_eval', { systemId, config }),
     runBacktest: (systemId: string, config: RunConfig) =>
       invoke<BacktestResult>('plugin:systems|run_backtest', { systemId, config }),
+
+    // Funds
+    listFunds: () => invoke<Fund[]>('plugin:systems|list_funds'),
+    saveFund: (fund: Fund) => invoke<Fund>('plugin:systems|save_fund', { fund }),
+    deleteFund: (fundId: string) => invoke<void>('plugin:systems|delete_fund', { fundId }),
+    runFund: (fundId: string, live: boolean) => invoke<FundResult>('plugin:systems|run_fund', { fundId, live }),
 
     // Cache
     cacheStats: () => invoke<CacheStats>('plugin:systems|cache_stats'),

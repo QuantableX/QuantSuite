@@ -165,6 +165,20 @@ class CmcSnapshotProvider(RankingProvider):
     def available_dates(self) -> list[dt.date]:
         return self.cache.ranking_dates(self.name)
 
+    def cached_top_n(
+        self,
+        on_date: dt.date,
+        n: int,
+        *,
+        exclude_stablecoins: bool = True,
+        exclude_wrapped: bool = True,
+        resolution: RankingResolution = RankingResolution.WEEKLY,
+    ) -> list[RankedCoin]:
+        snap = snapshot_date(on_date, resolution)
+        if resolution == RankingResolution.DAILY:
+            snap = min(snap, latest_complete_day())
+        return self._filter_top(self.cache.get_ranking(self.name, snap), n, exclude_stablecoins, exclude_wrapped)
+
     def fetch_day(self, day: dt.date) -> int:
         """Fetch and store one day's snapshot for the daily archive.
 

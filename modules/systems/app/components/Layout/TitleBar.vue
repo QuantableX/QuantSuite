@@ -7,13 +7,15 @@
  */
 import { useAppStore } from '#systems/stores/app'
 import { useSystemsStore } from '#systems/stores/systems'
+import { useFundsStore } from '#systems/stores/funds'
 import { useActiveView } from '#systems/composables/useActiveView'
 import type { EngineView } from '#systems/types'
 
 const app = useAppStore()
 const systems = useSystemsStore()
+const funds = useFundsStore()
 const router = useRouter()
-const { systemId, view } = useActiveView()
+const { systemId, fundId, onFund, view } = useActiveView()
 
 const switcherOpen = ref(false)
 const viewMenuOpen = ref(false)
@@ -21,6 +23,7 @@ const switcherRef = ref<HTMLElement | null>(null)
 const viewMenuRef = ref<HTMLElement | null>(null)
 
 const activeSystem = computed(() => systems.byId(systemId.value))
+const activeFund = computed(() => funds.byId(fundId.value))
 
 const views: { id: EngineView; label: string }[] = [
   { id: 'settings', label: 'Settings' },
@@ -28,11 +31,13 @@ const views: { id: EngineView; label: string }[] = [
   { id: 'backtest', label: 'Backtest' },
   { id: 'execution', label: 'Execution' },
 ]
+// A fund places no orders, so it has no Execution page.
+const menuViews = computed(() => onFund.value ? views.filter(v => v.id !== 'execution') : views)
 const activeViewLabel = computed(() => views.find(v => v.id === view.value)?.label ?? 'View')
 
 function selectView(id: EngineView) {
   viewMenuOpen.value = false
-  void router.push(`/algo/manual/${systemId.value}/${id}`)
+  void router.push(onFund.value ? `/algo/manual/funds/${fundId.value}/${id}` : `/algo/manual/${systemId.value}/${id}`)
 }
 
 onClickOutside(switcherRef, () => { switcherOpen.value = false })
@@ -53,7 +58,7 @@ function selectSystem(id: string) {
       <div ref="switcherRef" class="qs-switcher">
         <button class="qs-switcher__btn" @click.stop="switcherOpen = !switcherOpen">
           <span v-if="activeSystem?.short" class="qs-switcher__short">{{ activeSystem.short }}</span>
-          <span class="qs-switcher__name">{{ activeSystem?.name ?? 'Strategies' }}</span>
+          <span class="qs-switcher__name">{{ activeFund?.name ?? activeSystem?.name ?? 'Strategies' }}</span>
           <svg class="qs-switcher__caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
         </button>
         <div v-if="switcherOpen" class="qs-switcher__menu" @click.stop>
@@ -73,14 +78,14 @@ function selectSystem(id: string) {
 
       <AlgoModeSwitch mode="manual" />
 
-      <div v-if="activeSystem" ref="viewMenuRef" class="qs-switcher qs-viewsel">
+      <div v-if="activeSystem || activeFund" ref="viewMenuRef" class="qs-switcher qs-viewsel">
         <button class="qs-switcher__btn qs-viewsel__btn" @click.stop="viewMenuOpen = !viewMenuOpen">
           <span class="qs-viewsel__label">{{ activeViewLabel }}</span>
           <svg class="qs-switcher__caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
         </button>
         <div v-if="viewMenuOpen" class="qs-switcher__menu qs-viewsel__menu" @click.stop>
           <button
-            v-for="v in views"
+            v-for="v in menuViews"
             :key="v.id"
             class="qs-switcher__item qs-viewsel__item"
             :class="{ 'qs-viewsel__item--active': view === v.id }"

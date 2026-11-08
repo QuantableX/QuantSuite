@@ -98,6 +98,7 @@ A system that makes no money on its own history has nothing to protect and is no
 | Research kind `robustness` | The System Gauntlet for any saved system: MCP tool `quantsuite.algo.research_robustness`, QuantScript → Forge → Research ("Robustness check"), and the Robustness panel in QuantSystems' right sidebar (verdict, failed gates, quick or full check, report). |
 | MCP research tools | `research_aggregate_comparison` is robust by default (`pool`, `blind_days`, `gauntlet_top`, `venues`). The profit overview tells agents to check any kept system with `research_robustness`. `research_list` carries each run's verdict. |
 | Installing a research indicator | `research_install` installs only an indicator certified on the target track. |
+| A fund (Manual) | A dynamic split method is itself an optimization. The result shows each member's verdict, the method against Equal at every lookback and in the rule's four windows, and a Monte Carlo of the fund's returns. A fund plans and evaluates; it places no orders. |
 | A saved system | QuantSystems shows its latest verdict: robust, not robust (with the failed gates) or not checked. A system that was never checked or failed stays visibly marked. |
 
 ## Aggregate search (combinations)

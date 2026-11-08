@@ -44,7 +44,7 @@ from ..data.cache import get_default_cache
 from ..data.ohlcv import CoinRef, OhlcvFetcher, confirmed_frame, utc_now
 from ..data.ranking.registry import RankingRegistry
 from ..data.ranking.base import RankedCoin
-from .market import market_gate, market_index
+from .market import breakout_warmup, market_gate, market_index
 from .metrics import PerformanceMetrics, compute_metrics
 from .signals import (IndicatorDataUnavailable, aggregate_members, block_start, direction_signal, is_custom, pair_signal, trend_signal,
                       warmup_bars)
@@ -71,6 +71,22 @@ def _fetch_start(config: RunConfig, trend: TrendKind | None = None) -> dt.date:
     # Votes come from history blocks (signals.bounded): the warm-up counts from
     # the start of the block that contains start_date.
     return block_start(config.start_date).date() - dt.timedelta(days=days)
+
+
+def _market_start(config: RunConfig) -> dt.date:
+    """Earliest date TOTAL must cover so the market filter is warmed up by
+    ``start_date``. The fixed breakout reads ``breakout_warmup`` bars before
+    each history block, an indicator its own warm-up (``_fetch_start``); a
+    filter that is the strategy's own indicator reads what that one reads."""
+
+    indicator = config.market_indicator
+    if isinstance(indicator, TotalBreakoutConfig):
+        bars = breakout_warmup(indicator)
+        days = bars // {"1h": 24, "4h": 6, "12h": 2}[config.cadence.value] + 2 if config.cadence.is_intraday else bars
+        return block_start(config.start_date).date() - dt.timedelta(days=days)
+    if indicator is None:
+        return _fetch_start(config)
+    return _fetch_start(replace(config, indicator=indicator))
 
 
 def _trend_kinds(config: RunConfig) -> list[TrendKind]:
@@ -133,6 +149,7 @@ from .universe import (
     UniverseTimeline,
     build_universe_timeline,
     daily_snapshot_days,
+    market_warmup_snapshots,
 )
 
 log = logging.getLogger(__name__)
@@ -319,8 +336,7 @@ class BacktestEngine:
         fetch_start = min(_fetch_start(config, kind) for kind in kinds)
         market_start = None
         if config.market_filter and config.market_indicator is not None:
-            market_start = (config.start_date if isinstance(config.market_indicator, TotalBreakoutConfig)
-                            else _fetch_start(replace(config, indicator=config.market_indicator)))
+            market_start = _market_start(config)
             fetch_start = min(fetch_start, market_start)
 
         _tick("Building the coin list", 0.05)
@@ -370,6 +386,22 @@ class BacktestEngine:
                 exclude_top_n=0,
                 resolution=config.ranking_resolution,
             )
+        if config.market_filter:
+            # TOTAL before the start: each day's own cached ranking, so a day's
+            # TOTAL is the same whenever a run starts (market_warmup_snapshots).
+            early = market_warmup_snapshots(
+                self.registry,
+                warm_start=market_start or fetch_start,
+                start=config.start_date,
+                cadence=config.cadence,
+                top_n=config.top_n,
+                source=config.ranking_source,
+                exclude_stablecoins=config.exclude_stablecoins,
+                exclude_wrapped=config.exclude_wrapped,
+                resolution=config.ranking_resolution,
+            )
+            if early:
+                market_universe = UniverseTimeline(snapshots=early + market_universe.snapshots)
         strategy_symbols = {c.symbol for c in coins}
         fetch_coins = list(coins)
         if config.market_filter:
