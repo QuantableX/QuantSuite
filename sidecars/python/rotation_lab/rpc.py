@@ -35,7 +35,7 @@ import json
 import math
 import sys
 import threading
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 import pandas as pd
@@ -444,11 +444,15 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
     # candles are fetched for the index alone.
     market_filter: dict[str, Any] = {"enabled": bool(cfg.market_filter), "bullish": None}
     if cfg.market_filter:
+        from .backtest.engine import _market_start
         from .backtest.market import market_gate, market_index
-        from .backtest.universe import UniverseSnapshot
+        from .backtest.universe import UniverseSnapshot, market_warmup_snapshots
 
         market_indicator = cfg.market_indicator or cfg.indicator
-        market_start = history_start(market_indicator)
+        # The same history and the same TOTAL as a backtest of today: from the
+        # engine's warm-up start, each earlier day with its own cached ranking.
+        market_start = (_market_start(replace(cfg, start_date=as_of)) if cfg.market_indicator is not None
+                        else history_start(market_indicator))
         market_coins = list(coins)
         if cfg.exclude_top_n > 0 or cfg.exclude_symbols:
             market_coins = registry.get_top_n(
@@ -457,8 +461,17 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
                 exclude_wrapped=cfg.exclude_wrapped, exclude_top_n=0,
                 resolution=cfg.ranking_resolution,
             ).coins
+        snapshots = market_warmup_snapshots(
+            registry, warm_start=market_start, start=as_of, cadence=cfg.cadence, top_n=cfg.top_n,
+            source=cfg.ranking_source, exclude_stablecoins=cfg.exclude_stablecoins,
+            exclude_wrapped=cfg.exclude_wrapped, resolution=cfg.ranking_resolution,
+        ) + [UniverseSnapshot(on_date=as_of, provider=resolved.provider, coins=market_coins)]
+        wanted: dict[str, Any] = {}
+        for snap in snapshots:
+            for coin in snap.coins:
+                wanted.setdefault(coin.symbol, coin)
         market_frames: dict[str, pd.DataFrame] = {}
-        for coin in market_coins:
+        for coin in wanted.values():
             if coin.symbol in frames and market_start == start:
                 market_frames[coin.symbol] = frames[coin.symbol]
                 continue
@@ -469,7 +482,7 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
             frame = confirmed(series.frame)
             if not frame.empty:
                 market_frames[coin.symbol] = frame
-        total = market_index([UniverseSnapshot(on_date=as_of, provider=resolved.provider, coins=market_coins)], market_frames)
+        total = market_index(snapshots, market_frames)
         gate = market_gate(total, market_indicator)
         market_filter["bullish"] = bool(int(gate.iloc[-1]) == 1) if not gate.empty else False
 
