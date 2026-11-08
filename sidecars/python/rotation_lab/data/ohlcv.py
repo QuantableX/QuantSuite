@@ -744,6 +744,7 @@ class OhlcvFetcher:
         target_end = min(end, dt.date.today())
         best: tuple[str, str, list[OhlcvRow]] | None = None
         best_score: tuple | None = None
+        fetched: list[tuple[tuple, bool, list[OhlcvRow]]] = []
 
         for name, pair in self._resolve_pairs(ref):
             rows = self._fetch_ccxt_one(name, pair, ref, start, end)
@@ -751,9 +752,12 @@ class OhlcvFetcher:
                 continue
             days = [r.day for r in rows]
             first_day, last_day = min(days), max(days)
-            # Reaching further forward wins; then starting earlier; then
-            # sheer bar count as a tie-break.
-            score = (last_day, -first_day.toordinal(), len(rows))
+            # Reaching further forward wins; then spot over a perpetual (a
+            # perp listed before the spot book is no price to buy the coin
+            # at); then starting earlier; then sheer bar count as a tie-break.
+            spot = ":" not in pair
+            score = (last_day, spot, -first_day.toordinal(), len(rows))
+            fetched.append((score, spot, rows))
             if best_score is None or score > best_score:
                 best, best_score = (name, pair, rows), score
             spans_window = (
@@ -777,7 +781,20 @@ class OhlcvFetcher:
             self.cache.upsert_coin_map(
                 cg_id=ref.cg_id, symbol=ref.symbol, binance_symbol=pair
             )
-        return rows
+        # Days before the chosen venue's first candle come from the other
+        # venues already fetched, best first: a coin that moved venue keeps
+        # its older history (XMR: KuCoin from 2020-02, Binance before). Spot
+        # only from spot: a perpetual trading before the spot listing (FIL
+        # in 2020) is not a price anyone could buy the coin at.
+        first, spot = min(r.day for r in rows), ":" not in pair
+        older: dict[dt.date, OhlcvRow] = {}
+        for _score, other_spot, other in sorted(fetched, key=lambda item: item[0], reverse=True):
+            if other_spot != spot:
+                continue
+            for r in other:
+                if r.day < first and r.day not in older:
+                    older[r.day] = r
+        return sorted(older.values(), key=lambda r: r.day) + rows
 
     def _fetch_ccxt_one(
         self,

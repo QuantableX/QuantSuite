@@ -133,6 +133,30 @@ class CandleHistoryTests(unittest.TestCase):
         # The delisted market is history only: never asked while an active one spans the window.
         exchanges["binance"].fetch_ohlcv.assert_not_called()
 
+    def test_days_before_the_chosen_venue_come_from_the_others(self):
+        # Like XMR: still traded on KuCoin, but only since 2020-02-03 there; Binance delisted it with years of history.
+        exchanges = {"binance": venue("2017-11-01", "2021-06-30", 3.0, cap=1000), "kucoin": venue("2020-02-03", "2022-01-04", 4.0)}
+        markets = {"binance": {"XMR/USDT": market("XMR/USDT", active=False)}, "kucoin": {"XMR/USDT": market("XMR/USDT")}}
+        fetcher = self.fetcher(exchanges, markets, chain=("binance", "kucoin"))
+        self.get(fetcher, "XMR", dt.date(2019, 1, 1), dt.date(2021, 12, 31), dt.datetime(2022, 1, 5, 12, tzinfo=dt.timezone.utc))
+        saved = self.saved("XMR")
+        self.assertEqual(len(saved), len(pd.date_range("2019-01-01", "2021-12-31")))
+        self.assertEqual(saved[dt.date(2020, 2, 2)], (3.0, "ccxt:binance:XMR/USDT"))
+        # From its first day on, the venue that reaches today keeps every day.
+        self.assertEqual(saved[dt.date(2020, 2, 3)], (4.0, "ccxt:kucoin:XMR/USDT"))
+        self.assertEqual(saved[dt.date(2021, 6, 1)], (4.0, "ccxt:kucoin:XMR/USDT"))
+
+    def test_a_perpetual_listed_before_the_spot_book_gives_no_spot_days(self):
+        # Like FIL in 2020: futures traded from July, spot only from 2020-10-15.
+        exchanges = {"binance": venue("2020-10-15", "2022-01-04", 30.0, cap=1000), "okx": venue("2020-07-22", "2022-01-04", 31.0)}
+        markets = {"binance": {"FIL/USDT": market("FIL/USDT")},
+                   "okx": {"FIL/USDT:USDT": {**market("FIL/USDT"), "symbol": "FIL/USDT:USDT", "spot": False, "swap": True}}}
+        fetcher = self.fetcher(exchanges, markets, chain=("binance", "okx"))
+        self.get(fetcher, "FIL", dt.date(2020, 1, 1), dt.date(2021, 12, 31), dt.datetime(2022, 1, 5, 12, tzinfo=dt.timezone.utc))
+        saved = self.saved("FIL")
+        self.assertEqual(min(saved), dt.date(2020, 10, 15))
+        self.assertEqual({source for _, source in saved.values()}, {"ccxt:binance:FIL/USDT"})
+
     def test_a_coin_only_on_a_delisted_market_still_gets_its_history(self):
         exchanges = {"binance": venue("2019-01-01", "2021-06-30", 4.0, cap=1000)}
         fetcher = self.fetcher(exchanges, {"binance": {"MMM/USDT": market("MMM/USDT", active=False)}})
