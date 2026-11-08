@@ -350,8 +350,12 @@ def run(path, doc):
                            "Local search: add, remove or swap one member of the leaders, 3 rounds"],
                 "rule": "Each base indicator casts at most one vote; singles are ranked separately.",
                 "validation": "Retrospective search on examined history; no claim of out-of-sample performance or a global optimum."}
+        from .lab_gpu import scorer
+        twin, scoring = scorer(evaluator, progress)
+        plan["scoring"] = scoring
         save(path / "plan.json", plan)
-        search = Search(evaluator.evaluate, usable, {k: bases[k] for k in usable}, seed=seed, budget=budget, progress=progress)
+        search = Search((twin or evaluator).evaluate, usable, {k: bases[k] for k in usable}, seed=seed, budget=budget,
+                        progress=progress)
         search.run("Single indicators", [(k,) for k in usable], singles=True)
         if allowed(2):
             search.stage_exhaustive_or_sample("Pairs", 2, 0.35)
@@ -397,7 +401,7 @@ def run(path, doc):
                     "aggregates": search.aggregates, "by_size": search.counts(), "stages": search.stages,
                     "sizes": plan["sizes"], "budget": budget, "dedupe_bases": True, "duplicates": duplicates,
                     "verified": len(verified), "verified_passed": sum(v["passed"] for v in verified),
-                    "evaluator": "native" if reason else "bulk", "native_reason": reason,
+                    "evaluator": "native" if reason else "bulk", "native_reason": reason, "scoring": scoring,
                     "best_by_size": [{"size": s, "members": list(t), "net_return_multiplier": v[0], "max_drawdown_pct": v[1]}
                                      for s, (t, v) in search.best_by_size().items()],
                     "seconds": round(time.monotonic() - started),

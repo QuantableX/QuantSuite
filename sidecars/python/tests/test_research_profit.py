@@ -243,7 +243,8 @@ def aggregates():
     compare(lab.folder(again['id']), lab.read(lab.folder(again['id']) / 'run.json'))
     second = lab.read(lab.folder(again['id']) / 'results.json')
     first_top = [tuple(r['members']) for r in sorted(results['rows'], key=lambda r: -r['metrics']['net_return_multiplier'])[:5]]
-    return {'reference': results['reference'], 'budget': doc['budget'], 'seeds': [x['name'] for x in doc['seeds']],
+    return {'scoring': results['coverage']['scoring'], 'rows': [(r['members'], r['metrics']) for r in results['rows']],
+            'reference': results['reference'], 'budget': doc['budget'], 'seeds': [x['name'] for x in doc['seeds']],
             'earlier': len(again['earlier']), 'kept': all(m in {tuple(r['members']) for r in second['rows']} for m in first_top),
             'second_stages': [st['stage'] for st in second['coverage']['stages']],
             'saved_rows': sorted((r['saved_as'], r['members']) for r in results['rows'] if r.get('saved_as')),
@@ -267,10 +268,10 @@ def robust():
     compare(path, doc)
     results = lab.read(path / 'results.json')
     rob = results['robust']
-    return {'gated': rob['pool_gated'], 'pool': rob['pool'], 'worlds': rob['worlds'],
+    return {'gated': rob['pool_gated'], 'pool': rob['pool'], 'worlds': rob['worlds'], 'scoring': results['coverage']['scoring'],
             'leaders': [l['members'] for l in rob['walk_forward']['leaders']],
             'finalists': [(f['members'], f['verdict']['status']) for f in rob['finalists']],
-            'rows': [r['members'] for r in results['rows']], 'reference': results['reference'],
+            'rows': [(r['members'], r['metrics']) for r in results['rows']], 'reference': results['reference'],
             'verdict': lab.read(path / 'verdict.json')['status']}
 def saved():
     # The requested end lies after the saved data: the comparison ends on the last saved day,
@@ -311,7 +312,9 @@ if __name__ == '__main__':
         page = render({**doc, 'status': 'done'}, results)
         (path / 'report.html').write_text(page, encoding='utf-8')
         out[name] = {'subjects': [(s['code'], s['group'], s['members'], s['verified'].get('passed')) for s in results['subjects']],
-                     'coverage': {k: results['coverage'][k] for k in ('keys', 'usable', 'singles', 'aggregates', 'by_size', 'stages', 'unsupported', 'evaluator', 'verified', 'verified_passed')},
+                     'coverage': {k: results['coverage'][k] for k in ('keys', 'usable', 'singles', 'aggregates', 'by_size', 'stages', 'unsupported', 'evaluator', 'verified', 'verified_passed', 'scoring')},
+                     'plan_scoring': lab.read(path / 'plan.json').get('scoring'),
+                     'rows': [(r['members'], r['metrics']) for r in results['rows']],
                      'bars': len(results['dates']), 'equity_lengths': sorted({len(s['equity']) for s in results['subjects']}),
                      'annual_compounds': [abs(np.prod([1 + v / 100 for v in s['annual'].values()]) / s['metrics']['net_return_multiplier'] - 1) for s in results['subjects']],
                      'end': results['system']['end'], 'plan': (path / 'plan.json').is_file(), 'cube_removed': not (path / 'cube').exists(),
@@ -350,6 +353,9 @@ class ProfitRunTests(unittest.TestCase):
                 self.assertTrue(all(s[3] for s in r["subjects"]))
                 self.assertEqual(r["coverage"]["verified"], r["coverage"]["verified_passed"])
                 self.assertEqual(r["coverage"]["evaluator"], "bulk")
+                # Every run says where it scored and why; never silently.
+                self.assertRegex(r["coverage"]["scoring"], r"^(GPU \(.+\), bit-identical|CPU: .+)")
+                self.assertEqual(r["plan_scoring"], r["coverage"]["scoring"])
                 self.assertEqual(r["coverage"]["singles"], r["coverage"]["usable"])
                 self.assertLessEqual(r["coverage"]["aggregates"], 40)
                 self.assertEqual(r["equity_lengths"], [r["bars"]])
