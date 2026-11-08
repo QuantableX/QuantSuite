@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import pace
 from .lab_fast import NONE, FastSystem
 
 
@@ -79,8 +80,10 @@ class GpuSystem:
         step = max(16, min(1024, int(self.budget_bytes // per)))
         positions = torch.arange(tg, device=self.dev, dtype=torch.int16) * 4
         minus = torch.tensor(-1, dtype=torch.int16, device=self.dev)
-        for lo in range(0, len(trials), step):
-            part = trials[lo:lo + step]
+        pacer, lo = pace.Pacer(torch.cuda.synchronize), 0
+        while lo < len(trials):
+            pacer.start()
+            part = trials[lo:lo + pace.batch(step, 16)]
             M = torch.zeros(len(part), K, dtype=torch.float16, device=self.dev)
             rows = [(i, gr["index"][k]) for i, t in enumerate(part) for k in t]
             M[torch.tensor([r[0] for r in rows], device=self.dev), torch.tensor([r[1] for r in rows], device=self.dev)] = 1
@@ -105,6 +108,8 @@ class GpuSystem:
                                torch.tensor(-1.0, device=self.dev))
             pick = cand.argmax(dim=2)
             out[lo:lo + len(part)] = torch.gather(self.order.unsqueeze(0).expand(len(part), -1, -1), 2, pick.unsqueeze(2)).squeeze(2)
+            lo += len(part)
+            pacer.done()
         return out
 
     def _factors(self, best, gate, delay=0):
@@ -140,11 +145,14 @@ class GpuSystem:
         for i, t in enumerate(trials):
             by_group.setdefault(self._group(t), []).append(i)
         curve = np.empty((len(trials), self.T))
+        pacer = pace.Pacer()  # .cpu() below waits for the GPU, so no extra synchronisation
         for g, ids in by_group.items():
             for lo in range(0, len(ids), 4096):
                 part = ids[lo:lo + 4096]
                 best = self._best(g, [trials[i] for i in part])
+                pacer.start()
                 f, gfac = self._factors(best, self.groups[g]["gate"], delay)
                 x = self.torch.stack([f, gfac], dim=2).reshape(len(part), -1).cpu().numpy()
+                pacer.done()
                 curve[part] = np.multiply.accumulate(x, axis=1)[:, 1::2]
         return curve
