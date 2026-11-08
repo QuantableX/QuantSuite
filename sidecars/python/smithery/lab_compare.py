@@ -203,14 +203,14 @@ def frozen_engine(config, candidates, data_dir, prices=None):
     Every OHLCV request starts at the earliest warm-up any candidate (or the
     system itself, or its market filter) needs, so all runs share one copy.
     ``prices`` is a smithery.prices variant (noise, venue) of the saved candles."""
-    from rotation_lab.backtest.engine import BacktestEngine, _fetch_start
-    from rotation_lab.config import IndicatorConfig
+    from rotation_lab.backtest.engine import BacktestEngine, _fetch_start, _market_start
     from .lab_fast import indicator_for
     timing = replace(config, cadence=config.bar_cadence) if config.mode == "single_asset" else config
     starts = [_fetch_start(timing)]
     starts += [_fetch_start(replace(timing, indicator=indicator_for(config, members))) for members in candidates]
-    if config.market_filter and isinstance(config.market_indicator, IndicatorConfig):
-        starts.append(_fetch_start(replace(timing, indicator=config.market_indicator)))
+    if config.market_filter and config.market_indicator is not None:
+        # The market filter's own warm-up, the fixed breakout's included (engine._market_start).
+        starts.append(_market_start(timing))
     offline()
     cache = saved_cache()
     ohlcv = SavedPrices(cache)
