@@ -6,13 +6,18 @@ on the GPU; the engine's equity product runs on the CPU as one sequential
 multiply.accumulate over the same factors the bar loop multiplies, so curves equal
 FastSystem.simulate bit for bit (tests compare them). Rotation systems with USD in
 the universe only; anything else falls back to the CPU.
+
+Callers ask ``scorer``/``twins``: they say whether a run scores on the GPU or the
+CPU and why, so nothing falls back silently. ``SMITHERY_GPU=0`` switches it off.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
 
+from . import pace
 from .lab_fast import NONE, FastSystem
 
 
@@ -26,6 +31,50 @@ def available() -> bool:
 
 def supports(system: FastSystem) -> bool:
     return not system.single and bool(system.config.include_usd)
+
+
+def cpu_reason(system) -> str | None:
+    """Why ``system`` is scored on the CPU, or None when the GPU can score it."""
+    if os.environ.get("SMITHERY_GPU", "1") == "0":
+        return "the GPU is switched off (SMITHERY_GPU=0)"
+    if not isinstance(system, FastSystem):
+        return "this system has no bulk evaluator; every candidate is a native engine run"
+    if not supports(system):
+        return "the GPU scores rotation systems with USD only"
+    try:
+        import torch
+    except Exception:  # noqa: BLE001 — not installed, or a broken install
+        return "PyTorch is not installed (optional: sidecars/python/requirements-gpu.txt)"
+    try:
+        if not torch.cuda.is_available():
+            return "PyTorch finds no CUDA GPU"
+    except Exception as exc:  # noqa: BLE001 — a broken driver
+        return f"CUDA does not answer ({type(exc).__name__})"
+    return None
+
+
+def twins(systems: dict, say) -> tuple[dict, str]:
+    """GPU twins of built FastSystems, all or none, and the line that says where the scoring runs and why."""
+    reason = next((r for r in map(cpu_reason, systems.values()) if r), None)
+    out = {}
+    if reason is None:
+        try:
+            out = {name: GpuSystem(system.folder) for name, system in systems.items()}
+        except Exception as exc:  # noqa: BLE001 — out of VRAM, a driver error: the CPU, with the reason shown
+            out, reason = {}, f"the GPU could not take the cube ({type(exc).__name__}: {exc})"[:300]
+    if out:
+        import torch
+        note = f"GPU ({torch.cuda.get_device_name(0)}), bit-identical to the CPU evaluator"
+    else:
+        note = f"CPU: {reason}"
+    say(f"Scoring on the {note}")
+    return out, note
+
+
+def scorer(system, say):
+    """(the GPU twin of a built FastSystem or None, the line saying where the scoring runs and why)."""
+    out, note = twins({"system": system}, say)
+    return out.get("system"), note
 
 
 class GpuSystem:
@@ -79,11 +128,15 @@ class GpuSystem:
         step = max(16, min(1024, int(self.budget_bytes // per)))
         positions = torch.arange(tg, device=self.dev, dtype=torch.int16) * 4
         minus = torch.tensor(-1, dtype=torch.int16, device=self.dev)
-        for lo in range(0, len(trials), step):
-            part = trials[lo:lo + step]
+        pacer, lo = pace.Pacer(torch.cuda.synchronize), 0
+        while lo < len(trials):
+            pacer.start()
+            part = trials[lo:lo + pace.batch(step, 16)]
             M = torch.zeros(len(part), K, dtype=torch.float16, device=self.dev)
             rows = [(i, gr["index"][k]) for i, t in enumerate(part) for k in t]
-            M[torch.tensor([r[0] for r in rows], device=self.dev), torch.tensor([r[1] for r in rows], device=self.dev)] = 1
+            # Accumulated, like the CPU's vote sum: a key listed twice votes twice.
+            M.index_put_((torch.tensor([r[0] for r in rows], device=self.dev), torch.tensor([r[1] for r in rows], device=self.dev)),
+                         torch.ones(len(rows), dtype=torch.float16, device=self.dev), accumulate=True)
             total = (M @ gr["votes"]).view(len(part), P, tg)
             singles = [len(t) == 1 for t in part]
             if all(singles):
@@ -105,6 +158,8 @@ class GpuSystem:
                                torch.tensor(-1.0, device=self.dev))
             pick = cand.argmax(dim=2)
             out[lo:lo + len(part)] = torch.gather(self.order.unsqueeze(0).expand(len(part), -1, -1), 2, pick.unsqueeze(2)).squeeze(2)
+            lo += len(part)
+            pacer.done()
         return out
 
     def _factors(self, best, gate, delay=0):
@@ -137,14 +192,30 @@ class GpuSystem:
         """Equity curves (trials × bars), like FastSystem.simulate (bit-identical at delay 0)."""
         trials = [tuple(t) for t in trials]
         by_group = {}
-        for i, t in enumerate(trials):
-            by_group.setdefault(self._group(t), []).append(i)
+        for i, t in enumerate(trials):  # singles and aggregates go to the GPU in separate batches
+            by_group.setdefault((self._group(t), len(t) == 1), []).append(i)
         curve = np.empty((len(trials), self.T))
-        for g, ids in by_group.items():
+        pacer = pace.Pacer()  # .cpu() below waits for the GPU, so no extra synchronisation
+        for (g, _), ids in by_group.items():
             for lo in range(0, len(ids), 4096):
                 part = ids[lo:lo + 4096]
                 best = self._best(g, [trials[i] for i in part])
+                pacer.start()
                 f, gfac = self._factors(best, self.groups[g]["gate"], delay)
                 x = self.torch.stack([f, gfac], dim=2).reshape(len(part), -1).cpu().numpy()
+                pacer.done()
                 curve[part] = np.multiply.accumulate(x, axis=1)[:, 1::2]
         return curve
+
+    def evaluate(self, trials, delay=0, end=None, chunk=4096):
+        """FastSystem.evaluate on the GPU: (final capital, max drawdown %) per trial, None when a member is unusable."""
+        trials = [tuple(t) for t in trials]
+        out = [None] * len(trials)
+        todo = [i for i, t in enumerate(trials) if not any(k in self.failed for k in t)]
+        for lo in range(0, len(todo), chunk):
+            part = todo[lo:lo + chunk]
+            curve = self.simulate([trials[i] for i in part], delay=delay)
+            metrics = FastSystem.metrics(curve if end is None else curve[:, :end])
+            for i, m, d in zip(part, metrics["net_return_multiplier"], metrics["max_drawdown_pct"]):
+                out[i] = (float(m), float(d))
+        return out
