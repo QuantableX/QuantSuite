@@ -183,7 +183,8 @@ onMounted(async () => {
   outline: none;
 }
 .qp-gd-input:focus { border-color: var(--qss-accent, #7aa2f7); }
-.qp-gd-error { color: var(--qss-error, #f87171); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A long helper error scrolls inside its own box, so the footer stays on screen. */
+.qp-gd-error { min-height: 1.4em; max-height: 11.2em; overflow-y: auto; line-height: 1.4; color: var(--qss-error, #f87171); white-space: pre-wrap; overflow-wrap: anywhere; }
 .qp-gd-foot { display: flex; align-items: center; gap: 6px; }
 .qp-gd-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .qp-gd-hint { margin-right: auto; margin-left: 8px; font-size: 11.5px; color: var(--qss-text-muted, #6e6e7a); }
