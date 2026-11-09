@@ -132,7 +132,7 @@ onMounted(async () => {
         <p>
           What every agent is working on: its bars and its shell calls.
           <template v-if="board?.pageUrl">
-            The same board in a browser: <span class="daw-url">{{ board.pageUrl }}</span>
+            Also in a browser: <span class="daw-url">{{ board.pageUrl }}</span>
           </template>
         </p>
       </div>
@@ -245,7 +245,6 @@ onMounted(async () => {
   margin: 0;
   color: var(--qss-text-muted);
   font-size: 11.5px;
-  max-width: 60ch;
 }
 
 .daw-mode {
@@ -267,14 +266,23 @@ onMounted(async () => {
   background: var(--qss-bg-card);
   color: var(--qss-text);
 }
-/* The active approval mode while Status is shown: marked, not selected. */
+/* The active approval mode while Status is shown: a dot, not a second
+   selection. */
 .daw-mode button.is-mode {
   color: var(--qss-text-secondary);
-  box-shadow: inset 0 -2px 0 var(--qss-text-muted);
+}
+.daw-mode button.is-mode::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 5px 1px 0;
+  border-radius: 50%;
+  background: var(--qss-text-secondary);
+  vertical-align: middle;
 }
 
 .daw-url {
-  font-family: var(--qss-font-mono);
   color: var(--qss-text-secondary);
   user-select: all;
 }

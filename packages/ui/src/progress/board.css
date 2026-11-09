@@ -4,15 +4,19 @@
  * defines the same --qss-* tokens itself. Everything is under .qpb-.
  */
 
+/* Cards side by side on a wide drawer or page, one column when narrow: a bar
+   is never stretched across a whole screen. */
 .qpb-board {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  align-items: start;
   gap: 10px;
   font-family: var(--qss-font-sans);
   color: var(--qss-text);
 }
 
 .qpb-empty {
+  grid-column: 1 / -1;
   margin: 18px 4px;
   color: var(--qss-text-muted);
   font-size: 12px;
@@ -69,7 +73,7 @@
 }
 .qpb-pct {
   flex-shrink: 0;
-  font: 500 12px/1.3 var(--qss-font-mono);
+  font: 600 12px/1.3 var(--qss-font-sans);
   font-variant-numeric: tabular-nums;
 }
 .qpb-meta {
@@ -83,8 +87,15 @@
 }
 .qpb-time {
   flex-shrink: 0;
-  font: 11.5px/1.3 var(--qss-font-mono);
   font-variant-numeric: tabular-nums;
+}
+.qpb-note {
+  color: var(--qss-text-secondary);
+  font-size: 11.5px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .qpb-detail {
   color: var(--qss-text-muted);

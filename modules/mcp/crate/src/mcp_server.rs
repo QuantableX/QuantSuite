@@ -340,6 +340,7 @@ async fn report_progress(state: &McpServerState, session_id: Option<&str>, folde
         client: spec.map(|spec| spec.id.to_string()),
         client_name: spec.map(|spec| spec.name.to_string()).or(client_name),
         folder,
+        session: session_id.map(str::to_string),
     };
     let port = state.port;
     let task = tokio::task::spawn_blocking(move || crate::progress::store().report(&report, &caller))

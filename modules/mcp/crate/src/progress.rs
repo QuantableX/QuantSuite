@@ -258,6 +258,10 @@ pub struct Board {
     /// Hook lane → agent lane, once a hook session joined an agent.
     #[serde(default)]
     pub bindings: HashMap<String, String>,
+    /// MCP session → the agent lane it last reported to, so a later report
+    /// without `agent_id` lands on the same lane instead of a second one.
+    #[serde(default)]
+    pub sessions: HashMap<String, String>,
 }
 
 // ── reports ─────────────────────────────────────────────────────────────
@@ -399,6 +403,8 @@ pub struct Caller {
     /// The client's display name — the lane's label when no `agent_id` is given.
     pub client_name: Option<String>,
     pub folder: Option<String>,
+    /// The MCP session the report came in on.
+    pub session: Option<String>,
 }
 
 fn clip(text: &str, max: usize) -> String {
@@ -428,14 +434,57 @@ fn folder_key(folder: &str) -> String {
     qs_core::workspaces::normalize_path(folder.trim())
 }
 
+/// The lane a report without `agent_id` belongs to: the one its MCP session
+/// reported to before, else the one lane of its client whose running bar has
+/// the same id. Agents often name themselves only on their first call.
+fn remembered_lane(board: &Board, caller: &Caller, id: Option<&str>) -> Option<(String, String)> {
+    let session_lane = caller
+        .session
+        .as_deref()
+        .and_then(|session| board.sessions.get(session))
+        .and_then(|key| board.lanes.iter().find(|lane| &lane.key == key));
+    if let Some(lane) = session_lane {
+        return Some((lane.key.clone(), lane.agent.clone()));
+    }
+    let id = id?;
+    let owners: Vec<&Lane> = board
+        .lanes
+        .iter()
+        .filter(|lane| !lane.is_hook())
+        .filter(|lane| caller.client.is_none() || lane.client.is_none() || lane.client == caller.client)
+        .filter(|lane| lane.tasks.iter().any(|t| t.id == id && t.state == TaskState::Running))
+        .collect();
+    match owners.as_slice() {
+        [only] => Some((only.key.clone(), only.agent.clone())),
+        _ => None,
+    }
+}
+
 /// Apply a report; the bar it touched, or why nothing was changed.
 pub fn apply_report(board: &mut Board, report: &Report, caller: &Caller, now: i64) -> Result<Task, String> {
-    let agent = report
-        .agent
-        .clone()
-        .or_else(|| caller.client_name.clone())
-        .unwrap_or_else(|| "script".into());
-    let key = format!("agent:{}", agent.to_lowercase());
+    let named_id = report.id.clone().or_else(|| report.title.as_deref().map(slug).filter(|s| !s.is_empty()));
+    let (key, agent) = match &report.agent {
+        Some(agent) => (format!("agent:{}", agent.to_lowercase()), agent.clone()),
+        None => remembered_lane(board, caller, named_id.as_deref()).unwrap_or_else(|| {
+            let agent = caller.client_name.clone().unwrap_or_else(|| "script".into());
+            (format!("agent:{}", agent.to_lowercase()), agent)
+        }),
+    };
+    // The session named itself differently before: its bar of this id moves
+    // over instead of staying behind as a second, stuck one.
+    let moved = match (&caller.session, &named_id) {
+        (Some(session), Some(id)) => board
+            .sessions
+            .get(session)
+            .filter(|old| **old != key)
+            .cloned()
+            .and_then(|old| board.lanes.iter_mut().find(|lane| lane.key == old))
+            .and_then(|old| old.tasks.iter().position(|t| &t.id == id).map(|at| old.tasks.remove(at))),
+        _ => None,
+    };
+    if let Some(session) = &caller.session {
+        board.sessions.insert(session.clone(), key.clone());
+    }
     let folder = report.folder.clone().or_else(|| caller.folder.clone());
     let lane_index = match board.lanes.iter().position(|lane| lane.key == key) {
         Some(index) => index,
@@ -452,8 +501,13 @@ pub fn apply_report(board: &mut Board, report: &Report, caller: &Caller, now: i6
     if lane.client.is_none() {
         lane.client = caller.client.clone();
     }
+    if let Some(task) = moved {
+        if !lane.tasks.iter().any(|t| t.id == task.id) {
+            lane.tasks.push(task);
+        }
+    }
 
-    let id = match report.id.clone().or_else(|| report.title.as_deref().map(slug).filter(|s| !s.is_empty())) {
+    let id = match named_id {
         Some(id) => id,
         None => {
             let running: Vec<&Task> = lane.tasks.iter().filter(|t| t.state == TaskState::Running).collect();
@@ -536,7 +590,30 @@ pub fn apply_report(board: &mut Board, report: &Report, caller: &Caller, now: i6
     let touched = task.clone();
     lane.updated_at = now;
     trim_tasks(lane);
+    let all_over = touched.state != TaskState::Running && !lane.tasks.iter().any(|t| t.state == TaskState::Running);
+    if all_over {
+        let key = lane.key.clone();
+        end_background_shells(board, &key, now);
+    }
     Ok(touched)
+}
+
+/// The agent says its work is over: the background commands it started
+/// (in its own lane or a hook session joined to it) count as over too. A
+/// background launch has no hook event of its own when it finishes.
+fn end_background_shells(board: &mut Board, agent_key: &str, now: i64) {
+    let joined: Vec<String> =
+        board.bindings.iter().filter(|(_, agent)| agent.as_str() == agent_key).map(|(hook, _)| hook.clone()).collect();
+    for lane in board.lanes.iter_mut().filter(|lane| lane.key == agent_key || joined.contains(&lane.key)) {
+        let mut ended = false;
+        for shell in lane.shells.iter_mut().filter(|s| s.background && s.ended_at.is_none()) {
+            shell.ended_at = Some(now);
+            ended = true;
+        }
+        if ended {
+            lane.updated_at = now;
+        }
+    }
 }
 
 /// At most `MAX_TASKS` per lane: running bars first, then the newest
@@ -718,7 +795,9 @@ pub fn prune(board: &mut Board, now: i64) -> bool {
     let keys: Vec<String> = board.lanes.iter().map(|lane| lane.key.clone()).collect();
     let bound = board.bindings.len();
     board.bindings.retain(|hook, agent| keys.contains(hook) && keys.contains(agent));
-    changed | (board.bindings.len() != bound)
+    let remembered = board.sessions.len();
+    board.sessions.retain(|_, lane| keys.contains(lane));
+    changed | (board.bindings.len() != bound) | (board.sessions.len() != remembered)
 }
 
 /// How a lane's folder relates to a hook session's folder: 2 the same,
@@ -998,6 +1077,17 @@ pub fn view(board: &Board, now: i64, page_url: Option<String>) -> BoardView {
                     updated_at: lane.updated_at,
                 });
             }
+        }
+    }
+    // Two lanes that would read the same (two Claude sessions in one folder,
+    // neither joined to a reporting agent) get a number, in the order they
+    // appeared, so they can be told apart.
+    let mut seen: HashMap<(String, Option<String>), usize> = HashMap::new();
+    for lane in &mut lanes {
+        let count = seen.entry((lane.agent.to_lowercase(), lane.place.clone())).or_insert(0);
+        *count += 1;
+        if *count > 1 {
+            lane.agent = format!("{} ({count})", lane.agent);
         }
     }
     for lane in &mut lanes {
@@ -1298,7 +1388,74 @@ mod tests {
     }
 
     fn claude(folder: &str) -> Caller {
-        Caller { client: Some("claude-code".into()), client_name: Some("Claude Code".into()), folder: Some(folder.into()) }
+        Caller { client: Some("claude-code".into()), client_name: Some("Claude Code".into()), folder: Some(folder.into()), session: None }
+    }
+
+    fn claude_session(folder: &str, session: &str) -> Caller {
+        Caller { session: Some(session.into()), ..claude(folder) }
+    }
+
+    #[test]
+    fn a_report_without_agent_id_stays_on_its_sessions_lane() {
+        // The case from 2026-11-09: named once at the start, then the
+        // closing report came without agent_id and opened a second lane.
+        let mut board = Board::default();
+        let desk = "C:/Users/root/Desktop";
+        let caller = claude_session(desk, "mcp-1");
+        apply_report(&mut board, &report(json!({ "agent_id": "claude-code-1", "title": "Move to D:", "steps": 3, "step": 2 })), &caller, T0).unwrap();
+        let done = apply_report(&mut board, &report(json!({ "title": "Move to D:", "step": 3, "state": "done", "note": "22/22" })), &caller, T0 + 9).unwrap();
+        assert_eq!(done.state, TaskState::Done);
+        assert_eq!(board.lanes.len(), 1, "no second lane");
+        assert_eq!(board.lanes[0].agent, "claude-code-1");
+        assert_eq!(board.lanes[0].tasks.len(), 1, "no stuck copy of the bar");
+
+        // Without a session: the one running bar of that id in the client's lanes.
+        let mut board = Board::default();
+        apply_report(&mut board, &report(json!({ "agent_id": "claude-code-1", "title": "Move to D:" })), &claude(desk), T0).unwrap();
+        apply_report(&mut board, &report(json!({ "title": "Move to D:", "state": "done" })), &claude(desk), T0 + 1).unwrap();
+        assert_eq!((board.lanes.len(), board.lanes[0].tasks[0].state), (1, TaskState::Done));
+
+        // Named only later: the bar moves to the named lane.
+        let mut board = Board::default();
+        let caller = claude_session(desk, "mcp-2");
+        apply_report(&mut board, &report(json!({ "title": "Build" })), &caller, T0).unwrap();
+        apply_report(&mut board, &report(json!({ "agent_id": "codex-7", "title": "Build", "step": 2 })), &caller, T0 + 1).unwrap();
+        prune(&mut board, T0 + 2);
+        assert_eq!(board.lanes.len(), 1);
+        assert_eq!((board.lanes[0].agent.as_str(), board.lanes[0].tasks[0].step), ("codex-7", Some(2)));
+    }
+
+    #[test]
+    fn finishing_the_work_ends_its_background_shells() {
+        let mut board = Board::default();
+        let desk = "C:\\Users\\root\\Desktop";
+        let caller = claude_session(desk, "mcp-1");
+        apply_report(&mut board, &report(json!({ "agent_id": "claude-code-1", "title": "Copy", "folder": desk })), &caller, T0).unwrap();
+        for (now, (event, body)) in [
+            (T0 + 1, hook(HookEvent::PreToolUse, "s1", desk, "robocopy C: D:", "r", true)),
+            (T0 + 2, hook(HookEvent::PostToolUse, "s1", desk, "robocopy C: D:", "r", true)),
+        ] {
+            apply_hook(&mut board, "claude-code", event, &body, now);
+        }
+        assert!(bind_hooks(&mut board));
+        apply_report(&mut board, &report(json!({ "agent_id": "claude-code-1", "title": "Second", "folder": desk })), &caller, T0 + 3).unwrap();
+        apply_report(&mut board, &report(json!({ "title": "Copy", "state": "done" })), &caller, T0 + 4).unwrap();
+        let robocopy = |board: &Board| board.lanes.iter().flat_map(|l| &l.shells).find(|s| s.id == "r").unwrap().ended_at;
+        assert_eq!(robocopy(&board), None, "another bar of the agent still runs");
+        apply_report(&mut board, &report(json!({ "title": "Second", "state": "failed" })), &caller, T0 + 5).unwrap();
+        assert_eq!(robocopy(&board), Some(T0 + 5));
+    }
+
+    #[test]
+    fn lanes_that_would_read_the_same_get_a_number() {
+        let mut board = Board::default();
+        for (session, command) in [("a", "ls"), ("b", "pwd")] {
+            let (event, body) = hook(HookEvent::PreToolUse, session, "C:\\Projects\\QuantSuite", command, session, false);
+            apply_hook(&mut board, "claude-code", event, &body, T0);
+        }
+        let mut names: Vec<String> = view(&board, T0, None).lanes.into_iter().map(|l| l.agent).collect();
+        names.sort();
+        assert_eq!(names, ["Claude Code", "Claude Code (2)"]);
     }
 
     #[test]
@@ -1462,6 +1619,7 @@ mod tests {
             client: Some("codex-cli".into()),
             client_name: Some("Codex CLI".into()),
             folder: Some("C:/Projects/QuantSuite".into()),
+            session: None,
         }, T0)
         .unwrap();
         let (event, mine) = hook(HookEvent::PreToolUse, "mine", "C:\\Projects\\QuantSuite\\.qs-worktrees\\84ac3068", "cargo check", "a", false);

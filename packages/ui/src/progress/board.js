@@ -81,12 +81,16 @@ function renderTask(task, now) {
   const quietSince = Math.max(task.updatedAt ?? 0, task.followChangedAt ?? 0)
   const quiet = task.stale ? ` · no update for ${formatDuration(now - quietSince)}` : ''
   const step = stepLine(task)
-  const detail = task.state === 'running' ? task.detail : task.note ?? task.detail
+  // The agent's own words (its closing note) read as text; the newest line of
+  // a followed log stays in the terminal's font.
+  const note = task.state !== 'running' && task.note ? task.note : null
+  const detail = note ? null : task.detail
   return (
     `<div class="qpb-task is-${state}">` +
     `<div class="qpb-task-head"><span class="qpb-title">${esc(task.title)}</span><span class="qpb-pct">${esc(label)}</span></div>` +
     bar +
     `<div class="qpb-meta"><span class="qpb-step">${esc(step)}</span><span class="qpb-time">${esc(timeLine(task, now) + quiet)}</span></div>` +
+    (note ? `<div class="qpb-note" title="${esc(note)}">${esc(note)}</div>` : '') +
     (detail ? `<div class="qpb-detail" title="${esc(detail)}">${esc(detail)}</div>` : '') +
     '</div>'
   )
@@ -100,7 +104,7 @@ function renderShell(shell, now) {
   const running = shell.endedAt == null
   const kind = running ? (shell.background ? 'is-background' : 'is-running') : shell.failed ? 'is-failed' : 'is-ended'
   const time = running
-    ? `${shell.background ? 'background' : 'running'} ${formatDuration(now - shell.startedAt)}`
+    ? `${shell.background ? 'in background' : 'running'} · ${formatDuration(now - shell.startedAt)}`
     : `${shell.failed ? 'failed' : 'done'} · ${formatDuration(shell.endedAt - shell.startedAt)}`
   return (
     `<li class="qpb-shell ${kind}" title="${esc(shell.cwd ?? '')}">` +
