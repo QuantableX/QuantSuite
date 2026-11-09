@@ -117,6 +117,12 @@ function setup(t) {
     sortWorkspaces: rows => rows,
     getActiveWorkspace: async () => workspaces[0],
     workspaceIdFor: path => workspaces.find(w => w.path === path).id,
+    // The same rule as packages/core/src/workspaces.ts: separators, a trailing slash and case don't matter.
+    samePath: (a, b) => {
+      if (!a || !b) return false
+      const norm = p => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+      return norm(a) === norm(b)
+    },
     onWorkspacesChanged: cb => on('workspace', cb),
   }
   const canvasStore = Vue.reactive({ contentWorkspaceId: A, GENERAL_CONTENT: '__general__', contentWorkspace: workspaces[0] })
