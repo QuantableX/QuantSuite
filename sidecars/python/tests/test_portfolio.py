@@ -187,6 +187,22 @@ class BulkTests(unittest.TestCase):
         fake.config = config
         self.assertTrue(lab_gpu.supports(fake))
 
+    def test_the_gauntlet_varies_positions_and_keeps_top_n_variants_valid(self):
+        from smithery.system_gauntlet import settings_variants, universe_variants
+        config, _, _ = fixture(50, ("ema_cross",))
+        plain = [label for label, _ in settings_variants(config)]
+        self.assertFalse(any("positions" in label for label in plain))
+        five = replace(config, portfolio=PortfolioConfig(positions=5))
+        variants = dict(settings_variants(five))
+        self.assertEqual(variants["top 4"].portfolio.positions, 4)  # shrinks with Top N instead of failing
+        self.assertEqual(variants["4 positions"].portfolio.positions, 4)
+        self.assertNotIn("6 positions", variants)
+        self.assertEqual(dict(universe_variants(five))["top 3"].portfolio.positions, 3)
+        three = dict(settings_variants(replace(config, portfolio=PortfolioConfig(positions=3))))
+        self.assertEqual({k for k in three if "positions" in k}, {"2 positions", "4 positions"})
+        everything = dict(settings_variants(replace(config, portfolio=PortfolioConfig())))
+        self.assertEqual({k for k in everything if "positions" in k}, {"4 positions"})
+
     def test_an_incomplete_gauntlet_is_never_robust(self):
         from smithery import robust_policy as rp
         axes = {name: 100.0 for name in ("parameters", "time", "exchange", "assets", "monte_carlo", "execution")}
