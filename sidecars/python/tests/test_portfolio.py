@@ -166,5 +166,31 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(built, PortfolioConfig(3, "score", "without_usd", "daily"))
 
 
+class BulkTests(unittest.TestCase):
+    def test_bulk_evaluators_refuse_portfolio_mode(self):
+        from smithery import lab_gpu
+        from smithery.lab_fast import unsupported_reason
+        config, _, _ = fixture(50, ("ema_cross",))
+        self.assertIsNone(unsupported_reason(config))
+        reason = unsupported_reason(replace(config, portfolio=PortfolioConfig()))
+        self.assertIn("Portfolio mode", reason)
+
+        class Fake:
+            single = False
+
+        fake = Fake()
+        fake.config = replace(config, portfolio=PortfolioConfig())
+        self.assertFalse(lab_gpu.supports(fake))
+        fake.config = config
+        self.assertTrue(lab_gpu.supports(fake))
+
+    def test_an_incomplete_gauntlet_is_never_robust(self):
+        from smithery import robust_policy as rp
+        axes = {name: 100.0 for name in ("parameters", "time", "exchange", "assets", "monte_carlo", "execution")}
+        verdict = rp.verdict(axes, [], 0.01, False, 0.5)
+        self.assertFalse(verdict["robust"])
+        self.assertEqual(verdict["status"], "incomplete")
+
+
 if __name__ == "__main__":
     unittest.main()

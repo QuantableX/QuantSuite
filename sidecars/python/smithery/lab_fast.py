@@ -57,6 +57,9 @@ def unsupported_reason(config):
         return None
     if config.mode != "rotation":
         return f"System mode {config.mode} has no bulk evaluator"
+    if getattr(config, "portfolio", None) is not None:
+        # The bulk evaluators hold one coin a day; their numbers would be the single pick's, not the portfolio's.
+        return "Portfolio mode has no bulk evaluator: it would score the single pick instead"
     if config.market_filter and not isinstance(config.market_indicator, (IndicatorConfig, TotalBreakoutConfig)):
         # The gate would follow each candidate's own signal.
         return "The market filter uses the candidate's own indicator"
