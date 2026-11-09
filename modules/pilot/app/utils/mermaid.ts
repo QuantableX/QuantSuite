@@ -18,12 +18,12 @@ export const LINES_MAX = 1_000
 const RENDER_MS = 8_000
 const CACHE_MAX = 64
 
-export interface Rendered {
+export interface MermaidRender {
   svg?: string
   error?: string
 }
 
-const cache = new Map<string, Rendered>()
+const cache = new Map<string, MermaidRender>()
 const pending = new Set<string>()
 /** Bumped when a diagram finished rendering: messages repaint. */
 export const mermaidVersion = ref(0)
@@ -146,7 +146,7 @@ async function render(hash: string, src: string, theme: 'dark' | 'light') {
   }
 }
 
-function remember(hash: string, r: Rendered) {
+function remember(hash: string, r: MermaidRender) {
   cache.set(hash, r)
   while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string)
 }
