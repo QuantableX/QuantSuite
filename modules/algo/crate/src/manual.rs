@@ -1689,4 +1689,73 @@ mod tests {
         assert_eq!(summary("P", &rec, &[]), "P: holds BTC 50 % · ETH 30 % · USD 20 %, nothing to trade");
         assert_eq!(shares(&Holdings::new(), &rec.reference_prices, "USDT"), "USD");
     }
+
+    /// Paper end to end (card 791a9140): a real `live` result of a portfolio system → the
+    /// signal → the account's weights → the engine on Binance's real public book through the
+    /// paper venue. No keys, nothing is sent. The signal's prices are today's mids, as for a run
+    /// a few minutes after the close (an old signal's closes would be months away from the book).
+    /// `PORTFOLIO_LIVE_JSON=<live result> cargo test -p tauri-plugin-algo --lib -- --ignored live_paper_portfolio --nocapture`
+    #[test]
+    #[ignore = "reads a live result file and Binance's public order books"]
+    fn live_paper_portfolio_from_a_live_result() {
+        use crate::execution::cex::CexVenue;
+        let path = std::env::var("PORTFOLIO_LIVE_JSON").expect("PORTFOLIO_LIVE_JSON names a live result with portfolioTarget");
+        let live: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let signal = parse_signal(&live).unwrap();
+        let wanted = signal.portfolio.clone().expect("the live result carries portfolioTarget");
+        let market = CexVenue::new("binance", "", "", false).unwrap();
+        let listed: HashSet<String> =
+            market.instruments().unwrap().into_iter().filter(|i| i.quote() == "USDT").map(|i| i.base().to_uppercase()).collect();
+        let (weights, notes) = portfolio_weights(&wanted, "USDT", &|c: &str| listed.contains(&c.to_uppercase()));
+        let mut target = PortfolioTarget { weights, rebalance: true };
+        let (rebalance, why) = portfolio_rebalance(false, None, &target);
+        target.rebalance = rebalance;
+        println!("signal as of {}: {wanted:?}\n  account weights {:?}\n  {why}; {notes:?}", signal.as_of, target.weights);
+        let mut refs: BTreeMap<String, f64> = [("USDT".to_string(), 1.0)].into_iter().collect();
+        for coin in target.weights.keys().filter(|c| *c != "USDT") {
+            let mid = market.order_book(&market.instrument(&format!("{coin}/USDT")).unwrap()).unwrap().mid().unwrap();
+            refs.insert(coin.clone(), mid);
+        }
+        let conn = Mutex::new(Connection::open_in_memory().unwrap());
+        crate::db::init_db(&conn.lock().unwrap()).unwrap();
+        let paper = PaperVenue::new(&market, &conn, "system:qa", "binance-paper", 0.001, 0.0005);
+        paper.fund_if_empty("USDT", 10_000.0).unwrap();
+        let req = RunRequest {
+            run_id: "qa-portfolio".into(),
+            owner: "system:qa".into(),
+            exchange_id: "binance-paper".into(),
+            mode: Mode::Paper,
+            quote: "USDT".into(),
+            target: Target::Portfolio(target.clone()),
+            reference_prices: refs.clone(),
+            data_fresh: true,
+            armed: false,
+            account_belongs: true,
+            close_date: Some(signal.as_of.clone()),
+            signal: json!({"portfolioTarget": wanted}),
+            initial_capital: Some(10_000.0),
+            initial_holdings: None,
+            leverage: 1.0,
+        };
+        let store = SqliteStore { conn: &conn };
+        let rec = Engine::default().run(&store, &paper, &req).unwrap();
+        let orders = store.orders("qa-portfolio").unwrap();
+        for o in &orders {
+            let r = o.report.as_ref().unwrap();
+            println!("  {} {:?} {} {} at {} fee {:.4} {}", o.leg, o.side, r.filled_qty, o.instrument.filters.symbol, r.avg_price, r.fee_amount, r.fee_asset);
+        }
+        println!("  {}", summary("QA", &rec, &orders));
+        println!("  fees {:.4}$ cost {:.4}$ status {:?} {:?}", rec.fees, rec.cost, rec.status, rec.errors);
+        assert_eq!(rec.status, RunStatus::Done, "{:?}", rec.errors);
+        let after = rec.holdings_after.clone().unwrap();
+        let value = |a: &str, q: f64| q * refs.get(a).copied().unwrap_or(0.0);
+        let total: f64 = after.iter().map(|(a, q)| value(a, *q)).sum();
+        println!("  asset   Live Eval  held after");
+        for (asset, w) in &target.weights {
+            let got = value(asset, after.get(asset).copied().unwrap_or(0.0)) / total;
+            println!("  {asset:<6} {:>8.2} % {:>9.2} %", w * 100.0, got * 100.0);
+            // Fee 0.1 %, paper slippage 0.05 %, 0.1 % sizing room and lot steps.
+            assert!((got - w).abs() < 0.005, "{asset}: {got} vs {w}");
+        }
+    }
 }
