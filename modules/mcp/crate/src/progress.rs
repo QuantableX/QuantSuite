@@ -754,7 +754,7 @@ pub fn bind_hooks(board: &mut Board) -> bool {
                 (rank > 0).then(|| (rank, folder_key(folder).len(), lane))
             })
             .collect();
-        best.sort_by(|a, b| (b.0, b.1).cmp(&(a.0, a.1)));
+        best.sort_by_key(|a| std::cmp::Reverse((a.0, a.1)));
         let unique = match best.as_slice() {
             [first, second, ..] => (first.0, first.1) != (second.0, second.1),
             [_] => true,
