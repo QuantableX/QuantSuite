@@ -239,7 +239,7 @@
                 />
                 <circle cx="12" cy="13" r="4" />
               </svg>
-              Capture (F9)
+              Capture
             </button>
             <button
               class="btn btn-icon region-btn"
@@ -1135,16 +1135,6 @@ onMounted(async () => {
         console.warn("Failed to create dual window on startup:", e);
       }
     }
-
-    try {
-      const { register } = await import("@tauri-apps/plugin-global-shortcut");
-      // The handler fires on press AND release — capture once per press.
-      await register("F9", (event) => {
-        if (event.state === "Pressed") void handleCapture();
-      });
-    } catch (e) {
-      console.warn("Failed to register hotkey:", e);
-    }
   }
 });
 
@@ -1241,7 +1231,7 @@ let tuckedForCapture = false;
 // An open panel covers part of the screen it captures. Tuck it for the shot
 // — on this window's own edge, which in Dual is left or right — and resolve
 // to the function that reopens it once the screen is grabbed. Nothing to
-// reopen when it is tucked already (F9) or another capture holds it.
+// reopen when it is tucked already or another capture holds it.
 const tuckForCapture: TuckForCapture = async () => {
   if (!isTauri || !invoke || isTucked.value || tuckedForCapture) return undefined;
   tuckedForCapture = true;

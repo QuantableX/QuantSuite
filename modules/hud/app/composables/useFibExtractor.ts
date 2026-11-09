@@ -48,7 +48,7 @@ function extractFibLevelsFromText(text: string): FibPrices {
 export function useFibExtractor() {
   const fibPrices = ref<FibPrices>({});
   const isProcessing = ref(false);
-  const status = ref("Press F9 to capture");
+  const status = ref("Click Capture to read the chart");
   const scanRegion = ref<[number, number, number, number] | null>(null);
 
   /**

@@ -64,7 +64,6 @@
     "shell:allow-open",
     "clipboard-manager:default",
     "clipboard-manager:allow-write-text",
-    "clipboard-manager:allow-read-text",
-    "global-shortcut:default"
+    "clipboard-manager:allow-read-text"
   ]
 }
