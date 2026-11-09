@@ -45,6 +45,8 @@ const KIND_LABELS: Record<string, string> = {
 
 /** Deleting a property drops its values from every note, so it asks first. */
 const confirmingDelete = ref<string | null>(null)
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { confirmingDelete.value = null })
 
 async function deleteProperty(id: string) {
   confirmingDelete.value = null

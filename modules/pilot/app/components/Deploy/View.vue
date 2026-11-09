@@ -4,7 +4,7 @@
  * commands), a preview first, then production after you confirm, and the history.
  * The backend holds the rules: this page never decides what may go live.
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { Plus, Rocket } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { useInspectorStore } from '#pilot/stores/inspector'
@@ -26,6 +26,8 @@ const editing = ref<Target | null>(null)
 const token = ref('')
 const confirming = ref(false)
 const withoutPreview = ref(false)
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { confirming.value = false; withoutPreview.value = false })
 const openLog = ref('')
 let timer: ReturnType<typeof setInterval> | null = null
 

@@ -258,6 +258,14 @@ const pendingSpec = ref<{ spec: SpecFile; fullPath: string } | null>(null)
 const confirmDeleteVisible = ref(false)
 const pendingDeleteSpec = ref<SpecFile | null>(null)
 
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => {
+  pendingSpec.value = null
+  pendingDeleteSpec.value = null
+  confirmOverwrite.value = false
+  confirmDeleteVisible.value = false
+})
+
 async function createSpec() {
   const title = newTitle.value.trim()
   if (!title) return

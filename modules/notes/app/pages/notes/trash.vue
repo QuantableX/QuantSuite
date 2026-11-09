@@ -14,6 +14,8 @@ const rows = computed(() =>
 )
 
 const confirmingEmpty = ref(false)
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { confirmingEmpty.value = false })
 
 async function emptyTrash() {
   confirmingEmpty.value = false

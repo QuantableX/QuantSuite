@@ -6,7 +6,7 @@
  * run's thread) or the form. "Schedule this…" in a thread's menu opens the
  * form prefilled from the thread.
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { CalendarClock, Pause, Play, Plus } from 'lucide-vue-next'
 import { useTauriEvent } from '@quantsuite/core'
 import { usePilotStore } from '#pilot/stores/pilot'
@@ -80,6 +80,8 @@ function startNew() {
 
 const confirmDelete = ref(false)
 watch(() => schedules.selected, () => (confirmDelete.value = false))
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { confirmDelete.value = false })
 const running = ref(false)
 async function runNow(id: string) {
   running.value = true

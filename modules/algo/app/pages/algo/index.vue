@@ -125,6 +125,9 @@ onDeactivated(() => {
   clock = null
   unlistenBeat?.()
   unlistenBeat = null
+  // An open confirm row would turn the next "Stop all trading" click after a
+  // return into the real stop; leaving always cancels it.
+  killConfirm.value = false
 })
 </script>
 
