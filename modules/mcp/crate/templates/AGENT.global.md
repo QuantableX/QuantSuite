@@ -393,10 +393,12 @@ rare case the user wants a command run inside the suite.
   Agent › Status and on the local `/progress` page instead of asking how far
   you are. Report at the start (`title`, `steps`, `estimate`, your `agent_id`,
   and `folder` = the worktree you run commands in), at every new step, and
-  with `state` "done" or "failed" at the end. While you wait on a long
-  command, `follow` the file it writes (a Smithery run folder, or a log that
-  prints `PROGRESS 12/48`) so the bar moves on its own. When the tool is not
-  in your list (an older QuantSuite), skip this.
+  with `state` "done" or "failed" at the end. Send the same `agent_id` and
+  `title` (or `id`) on every call, the final one included: a call without
+  them lands in another lane, and the first bar stays stuck at its last step.
+  While you wait on a long command, `follow` the file it writes (a Smithery
+  run folder, or a log that prints `PROGRESS 12/48`) so the bar moves on its
+  own. When the tool is not in your list (an older QuantSuite), skip this.
 - When you finish: say what changed (files, branch), what you verified and
   what is open — and write to memory whatever the next session should know.
 
