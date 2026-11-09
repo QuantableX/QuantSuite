@@ -185,6 +185,8 @@ class StrategyRun:
     # The higher filter's 0/1 series when the run used it (1 = TOTAL bullish).
     market_gate: pd.Series | None = None
     trades: list[HoldingTrade] = field(default_factory=list)
+    # Portfolio mode only: {symbol: weight} per day after the open's trades and the day's moves.
+    weights: pd.Series | None = None
 
 
 @dataclass
@@ -209,6 +211,8 @@ class BacktestResult:
     metrics_benchmarks: dict[str, PerformanceMetrics] = field(default_factory=dict)
     forced_rotations: list[dt.date] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # Portfolio mode only: the primary run's {symbol: weight} per day.
+    held_weights: pd.Series | None = None
 
     @property
     def daily_universe(self) -> pd.DataFrame:
@@ -241,6 +245,88 @@ def _switch_legs(prev: str | None, new: str | None) -> int:
     if prev_cash or new_cash:
         return 1
     return 0 if prev == new else 2
+
+
+def portfolio_target(symbols: list[str], scores: dict[str, int], trending: dict[str, bool], cfg) -> dict[str, float]:
+    """Portfolio mode's target weights for one day, in rank order, cash last (``USD``).
+
+    The coins are ranked by ``scores`` (ties keep the order of ``symbols``, today's universe) and the top
+    ``cfg.positions`` take a slot (0 = all). Raw slot weights: 1 each (``equal``), K..1 (``rank``) or the
+    score (``score``). A slot whose coin does not trend gives its weight to USD (``with_usd``) or drops out
+    so the trending slots share everything (``without_usd``); no lower-ranked coin moves up. Nothing
+    trending, or nothing to weigh, means all USD. When a by-score split would divide by zero (possible only
+    without USD in the score), the trending slots share equally."""
+    ranked = sorted(symbols, key=lambda s: (-scores.get(s, 0), symbols.index(s)))
+    k = len(ranked) if not cfg.positions else min(cfg.positions, len(ranked))
+    slots = ranked[:k]
+    if cfg.weighting == "equal":
+        raw = {s: 1.0 for s in slots}
+    elif cfg.weighting == "rank":
+        raw = {s: float(k - r) for r, s in enumerate(slots)}
+    else:
+        raw = {s: float(max(scores.get(s, 0), 0)) for s in slots}
+    live = [s for s in slots if trending.get(s)]
+    if not live:
+        return {USD_SYMBOL: 1.0}
+    if cfg.not_trending == "without_usd":
+        total = sum(raw[s] for s in live)
+        if total <= 0:
+            return {s: 1.0 / len(live) for s in live}
+        return {s: raw[s] / total for s in live if raw[s] > 0}
+    total = sum(raw.values())
+    if total <= 0:
+        return {USD_SYMBOL: 1.0}
+    out = {s: raw[s] / total for s in live if raw[s] > 0}
+    cash = sum(raw[s] for s in slots if s not in out) / total
+    if cash > 0:
+        out[USD_SYMBOL] = cash
+    return out or {USD_SYMBOL: 1.0}
+
+
+def _rebalance(values: dict[str, float], target: dict[str, float], cost: float) -> tuple[dict[str, float], dict[str, float]]:
+    """Trade ``values`` (money per holding, USD = cash) to the ``target`` weights; returns the new money per
+    holding and each coin's fees.
+
+    Sells first, then buys; each fill pays ``cost`` on the money that moves, cash pays nothing. The
+    equity after the trades depends on the trades themselves, so it is found by fixed-point iteration
+    (``cost`` is small, so a few rounds reach float precision). A full switch from coin A to coin B
+    leaves ``E * (1 - cost)**2``, exactly the single pick's two legs."""
+    equity = sum(values.values())
+    coins = [s for s in dict.fromkeys([*values, *target]) if s != USD_SYMBOL]
+    buy_cost = cost / (1.0 - cost) if cost < 1.0 else 0.0
+    after = equity
+    for _ in range(12):
+        moves = {s: target.get(s, 0.0) * after - values.get(s, 0.0) for s in coins}
+        nxt = (equity - cost * sum(-m for m in moves.values() if m < 0) - buy_cost * sum(m for m in moves.values() if m > 0)
+               if cost < 1.0 else 0.0)
+        if nxt == after:
+            break
+        after = nxt
+    moves = {s: target.get(s, 0.0) * after - values.get(s, 0.0) for s in coins}
+    fees = {s: (buy_cost * m if m > 0 else -cost * m) for s, m in moves.items() if m}
+    return {s: w * after for s, w in target.items() if w > 0}, fees
+
+
+def _span_trade(symbol: str, span: dict, end: pd.Timestamp) -> HoldingTrade:
+    """A portfolio position as a holdings-history row. Its PnL carries its own fills and moves, so the rows
+    of a run sum to its net return; cash rows carry none, like the single pick's."""
+    trade = HoldingTrade(symbol, span["start"], end)
+    if symbol != USD_SYMBOL:
+        trade.equity_change = span["pnl"]
+        trade.trade_return = span["pnl"] / span["basis"] if span["basis"] > 0 else None
+    return trade
+
+
+def _buy_and_hold(frames: dict[str, pd.DataFrame], master_idx: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    """Buy-and-hold equity per coin in the union universe."""
+    bah: dict[str, pd.Series] = {}
+    for sym, f in frames.items():
+        f_in = f[f.index.isin(master_idx)]
+        if f_in.empty:
+            continue
+        ret = f_in["close"].pct_change().fillna(0.0)
+        bah[sym] = (1.0 + ret).cumprod().reindex(master_idx).ffill().fillna(1.0)
+    return bah
 
 
 def _holding_trades(equity: pd.Series, held: pd.Series, cost_mult: float, cash: str) -> list[HoldingTrade]:
@@ -488,6 +574,8 @@ class BacktestEngine:
                 continue
             if not runs:
                 bah = run_bah
+            weights = held.attrs.get("weights")
+            cost_mult = (1.0 - variant.fee_rate) * (1.0 - variant.slippage_rate)
             runs.append(StrategyRun(
                 key=kind,
                 label=label,
@@ -496,9 +584,9 @@ class BacktestEngine:
                 metrics_strategy=compute_metrics(equity, bars_per_year),
                 forced_rotations=forced,
                 market_gate=gate,
-                trades=_holding_trades(
-                    equity, held, (1.0 - variant.fee_rate) * (1.0 - variant.slippage_rate), USD_SYMBOL,
-                ),
+                trades=(_holding_trades(equity, held, cost_mult, USD_SYMBOL) if weights is None
+                        else list(held.attrs.get("trades", []))),
+                weights=weights,
             ))
         if not runs:
             _tick("Done — no compatible strategies", 1.0)
@@ -538,6 +626,7 @@ class BacktestEngine:
             notes=notes,
             strategies=runs,
             skipped_strategies=skipped,
+            held_weights=primary.weights,
         )
 
     # ------------------------------------------------------------------ #
@@ -770,6 +859,11 @@ class BacktestEngine:
             return sig
 
         def rank_interval(symbols: list[str], start: int, stop: int) -> np.ndarray:
+            order, scores = score_interval(symbols, start, stop)
+            # argmax's first maximum implements the original rank tiebreak.
+            return np.asarray(order, dtype=object)[scores.argmax(axis=1)]
+
+        def score_interval(symbols: list[str], start: int, stop: int) -> tuple[list[str], np.ndarray]:
             order = symbols + ([USD_SYMBOL] if config.include_usd else [])
             # Time one necessary pair first: cheap indicators should not pay
             # Windows process startup just because their histories are long.
@@ -808,12 +902,16 @@ class BacktestEngine:
                     votes = get_pair_sig(a_sym, symbols[b])[start:stop]
                     scores[:, a] += votes
                     scores[:, b] += 1 - votes
-            # argmax's first maximum implements the original rank tiebreak.
-            return np.asarray(order, dtype=object)[scores.argmax(axis=1)]
+            return order, scores
 
         returns = {sym: _bar_returns(f, master_idx) for sym, f in frames.items()}
         gate_values = (None if gate is None else
                        gate.reindex(master_idx, fill_value=0).to_numpy())
+
+        if config.portfolio is not None:
+            return self._walk_portfolio(config, universe, frames, master_idx, returns, gate_values,
+                                        get_pair_sig, score_interval,
+                                        get_original_signal if custom_scorer else None)
 
         # Walk daily bars
         equity_values: list[float] = []
@@ -906,17 +1004,117 @@ class BacktestEngine:
 
         equity_series = pd.Series(equity_values, index=master_idx, name="equity")
         held_series = pd.Series(held_values, index=master_idx, name="held").astype(object)
+        return equity_series, held_series, forced_rotations, _buy_and_hold(frames, master_idx)
 
-        # Buy-and-hold equity per coin in the union universe
-        bah: dict[str, pd.Series] = {}
-        for sym, f in frames.items():
-            f_in = f[f.index.isin(master_idx)]
-            if f_in.empty:
+    # ------------------------------------------------------------------ #
+
+    def _walk_portfolio(
+        self,
+        config: RunConfig,
+        universe: UniverseTimeline,
+        frames: dict[str, pd.DataFrame],
+        master_idx: pd.DatetimeIndex,
+        returns: dict[str, np.ndarray],
+        gate_values: np.ndarray | None,
+        get_pair_sig: Callable[[str, str | None], np.ndarray],
+        score_interval: Callable[[list[str], int, int], tuple[list[str], np.ndarray]],
+        custom_signal: Callable[[str, str | None], pd.Series] | None,
+    ) -> tuple[pd.Series, pd.Series, list[dt.date], dict[str, pd.Series]]:
+        """Portfolio mode (``config.portfolio``): the day's target weights from the ranking and the coins'
+        own trend, executed at the next open like the single pick. ``held`` keeps one symbol per day for
+        old callers (the largest weight, ``USD`` when all cash); the weights ride on ``held.attrs["weights"]``."""
+        cfg = config.portfolio
+        assert cfg is not None
+        cost = 1.0 - (1.0 - config.fee_rate) * (1.0 - config.slippage_rate)
+        usd_in = bool(config.include_usd)
+        equity_values: list[float] = []
+        held_values: list[str | None] = []
+        weight_values: list[dict[str, float] | None] = []
+        forced_rotations: list[dt.date] = []
+        values: dict[str, float] = {}  # money per holding; empty = cash, before the first fill
+        spans: dict[str, dict] = {}  # open positions (USD included): first day, PnL so far, money committed
+        trades: list[HoldingTrade] = []
+        pending: dict[str, float] | None = None
+        active_snapshot: UniverseSnapshot | None = None
+        snap_iter = iter(universe.snapshots)
+        next_snap = next(snap_iter, None)
+        block: tuple[int, list[str], np.ndarray] | None = None  # (first bar, order, scores) of the snapshot's interval
+
+        for i, ts in enumerate(master_idx):
+            while next_snap and pd.Timestamp(next_snap.on_date) <= ts:
+                active_snapshot = next_snap
+                next_snap = next(snap_iter, None)
+                block = None
+            symbols_today = [c.symbol for c in active_snapshot.coins] if active_snapshot else []
+
+            if pending is not None:
+                # Forced exit per position: a coin that left the universe goes to cash at the open.
+                gone = [s for s in pending if s != USD_SYMBOL and s not in symbols_today]
+                if gone:
+                    forced_rotations.append(ts.date())
+                    pending = dict(pending)
+                    for s in gone:
+                        pending[USD_SYMBOL] = pending.get(USD_SYMBOL, 0.0) + pending.pop(s)
+                held_now = {s for s, v in values.items() if v > 0} or {USD_SYMBOL}
+                if cfg.rebalance == "daily" or held_now != set(pending):
+                    values, fees = _rebalance(values or {USD_SYMBOL: 1.0}, pending, cost)
+                    for s, fee in fees.items():  # a sale or top-up belongs to the open position
+                        if s in spans:
+                            spans[s]["pnl"] -= fee
+                    for s in [s for s in spans if values.get(s, 0.0) <= 0]:
+                        span = spans.pop(s)
+                        trades.append(_span_trade(s, span, master_idx[i - 1] if i else ts))
+                    for s, v in values.items():
+                        if v > 0 and s not in spans:
+                            fee = fees.get(s, 0.0)  # a new position's buy fill
+                            spans[s] = {"start": ts, "pnl": -fee, "basis": v + fee}
+
+            for s in values:
+                if s != USD_SYMBOL and s in returns:
+                    move = values[s] * float(returns[s][i])
+                    values[s] += move
+                    spans[s]["pnl"] += move
+            equity = sum(values.values()) if values else 1.0
+            equity_values.append(equity)
+            if values:
+                weights = {s: v / equity for s, v in values.items() if v > 0}
+                weight_values.append(weights)
+                # The largest position, a coin before cash on a tie, the higher rank first among coins.
+                held_values.append(max(weights, key=lambda s: (weights[s], s != USD_SYMBOL)) if weights else USD_SYMBOL)
+            else:
+                weight_values.append(None)
+                held_values.append(None)
+
+            # Tomorrow's target, from the signal at this close.
+            if not symbols_today:
+                pending = {USD_SYMBOL: 1.0} if usd_in else None
                 continue
-            ret = f_in["close"].pct_change().fillna(0.0)
-            bah[sym] = (1.0 + ret).cumprod().reindex(master_idx).ffill().fillna(1.0)
+            if gate_values is not None and int(gate_values[i]) != 1:
+                pending = {USD_SYMBOL: 1.0}
+                continue
+            if custom_signal is not None:
+                raw = self._score_universe(symbols_today, ts, custom_signal, usd_in)
+                scores = {s: int(raw.get(s, 0)) for s in symbols_today}
+            else:
+                if block is None:
+                    stop = (len(master_idx) if next_snap is None else
+                            int(master_idx.searchsorted(pd.Timestamp(next_snap.on_date))))
+                    order, matrix = score_interval(symbols_today, i, stop)
+                    block = (i, order, matrix)
+                first, order, matrix = block
+                scores = {s: int(matrix[i - first, k]) for k, s in enumerate(order) if s != USD_SYMBOL}
+            trending = {s: bool(get_pair_sig(s, None)[i] == 1) for s in symbols_today}
+            pending = portfolio_target(symbols_today, scores, trending, cfg)
 
-        return equity_series, held_series, forced_rotations, bah
+        if len(master_idx):
+            for s, span in spans.items():  # still open: no exit fill paid yet
+                trades.append(_span_trade(s, span, master_idx[-1]))
+        trades.sort(key=lambda t: (t.start, t.symbol == USD_SYMBOL, str(t.symbol)))
+        equity_series = pd.Series(equity_values, index=master_idx, name="equity")
+        held_series = pd.Series(held_values, index=master_idx, name="held").astype(object)
+        held_series.attrs["weights"] = pd.Series(weight_values, index=master_idx, name="weights", dtype=object)
+        held_series.attrs["trades"] = trades
+        return equity_series, held_series, forced_rotations, _buy_and_hold(frames, master_idx)
 
     # ------------------------------------------------------------------ #
 

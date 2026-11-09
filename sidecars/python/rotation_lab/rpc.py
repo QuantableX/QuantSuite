@@ -200,6 +200,24 @@ def _build_config(raw: dict[str, Any]) -> RunConfig:
         fee_rate=float(raw.get("feeRate", raw.get("fee_rate", 0.001))),
         slippage_rate=float(raw.get("slippageRate", raw.get("slippage_rate", 0.0))),
         min_request_interval=float(raw.get("minRequestInterval", raw.get("min_request_interval", 1.2))),
+        portfolio=_build_portfolio(raw.get("portfolio"), mode),
+    )
+
+
+_PORTFOLIO_CHOICES = {"withUsd": "with_usd", "withoutUsd": "without_usd", "onChange": "on_change"}
+
+
+def _build_portfolio(raw: Any, mode: str):
+    """Portfolio mode from a saved config: missing, ``enabled: false`` or a Single Asset system mean off."""
+    from .config import PortfolioConfig
+    if not isinstance(raw, dict) or not raw.get("enabled") or mode != "rotation":
+        return None
+    choice = lambda value: _PORTFOLIO_CHOICES.get(str(value), str(value))  # noqa: E731
+    return PortfolioConfig(
+        positions=int(raw.get("positions", 0) or 0),
+        weighting=str(raw.get("weighting", "equal")),
+        not_trending=choice(raw.get("notTrending", raw.get("not_trending", "withUsd"))),
+        rebalance=choice(raw.get("rebalance", "onChange")),
     )
 
 
@@ -240,6 +258,15 @@ def _held_to_points(series: pd.Series, intraday: bool = False) -> list[dict[str,
             "symbol": None if value is None or (isinstance(value, float) and pd.isna(value)) else str(value),
         })
     return out
+
+
+def _weights_to_points(series: pd.Series | None, intraday: bool = False) -> list[dict[str, Any]]:
+    """Portfolio mode's holdings per day: ``{"time", "weights": {symbol: share}}``, ``weights`` None before the first fill."""
+    if series is None or series.empty:
+        return []
+    return [{"time": _chart_time(ts, intraday),
+             "weights": None if not value else {str(k): float(v) for k, v in value.items()}}
+            for ts, value in series.items()]
 
 
 def _trades_to_dicts(trades: list[HoldingTrade], intraday: bool = False) -> list[dict[str, Any]]:
@@ -531,6 +558,15 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
     if market_filter["enabled"] and not market_filter["bullish"]:
         best = USD_SYMBOL
 
+    # Portfolio mode: tomorrow's weights by the backtest's own rule. `best` keeps its single-pick meaning.
+    portfolio_target = None
+    if cfg.portfolio is not None:
+        from .backtest.engine import portfolio_target as target_of
+        coins_now = [s for s in order if s != USD_SYMBOL]
+        trend = {s: (cells.get((s, USD_SYMBOL)) if USD_SYMBOL in order else beats(s, None)) == 1 for s in coins_now}
+        portfolio_target = ({USD_SYMBOL: 1.0} if not coins_now or (market_filter["enabled"] and not market_filter["bullish"])
+                            else target_of(coins_now, {s: scores.get(s, 0) for s in coins_now}, trend, cfg.portfolio))
+
     universe = []
     for c in coins:
         d = _coin_to_dict(c)
@@ -547,6 +583,7 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
         "scores": scores,
         "best": best,
         "marketFilter": market_filter,
+        **({"portfolioTarget": portfolio_target} if portfolio_target is not None else {}),
     }
 
 
@@ -635,12 +672,14 @@ def _method_backtest(params: dict[str, Any], *, progress_callback=None) -> dict[
             "trades": _trades_to_dicts(run.trades, intraday),
             "metricsStrategy": _metrics_to_dict(run.metrics_strategy),
             "forcedRotations": [d.isoformat() for d in run.forced_rotations],
+            **({"heldWeights": _weights_to_points(run.weights, intraday)} if run.weights is not None else {}),
         }
         for run in result.strategies
     ]
 
     return {
         "strategies": strategies,
+        **({"heldWeights": _weights_to_points(result.held_weights, intraday)} if result.held_weights is not None else {}),
         **_market_info(cfg),
         "skippedStrategies": result.skipped_strategies,
         "equityStrategy": _series_to_points(result.equity_strategy, intraday),
