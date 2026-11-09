@@ -14,7 +14,7 @@ at once or one after another, for every agent.
   **Status is first and the default view**.
 - **Strict / Relaxed stay the approval-mode switch** exactly as before (they
   set the mode and show the tool table). While Status is shown the active mode
-  stays marked (underline), and clicking Status never changes the mode.
+  stays marked with a small dot, and clicking Status never changes the mode.
 - Status shows, per agent, its **shells** and its **bar with percent and
   elapsed / estimated time** ("1h 10m / ~1h 50m"; user: "ungefähre
   Länge/Zeit z.B. 1h/3h").
@@ -36,7 +36,12 @@ shell hooks ─/quantprogress/───┘
 - **Store** — `modules/mcp/crate/src/progress.rs`, one board per suite process,
   saved to `~/.quantsuite/modules/mcp/progress.json` (batched every 2 s) so
   bars survive a restart. Lanes: `agent:<agent_id>` from reports,
-  `hook:<client>:<session>` from the shell hooks.
+  `hook:<client>:<session>` from the shell hooks. A report without
+  `agent_id` goes to the lane its MCP session reported to before, else to the
+  one lane of its client whose running bar has the same id, and only then to
+  the client's name; a bar the session named differently before moves over.
+  (Agents often name themselves only on the first call: the closing report
+  used to open a second lane and leave the first bar stuck.)
 - **Bar math** — with `steps`: (finished steps + progress of the current step)
   / steps; the current step's progress is the followed file, else
   `step_percent`. Without steps: the followed file, else `percent`. Unknown →
@@ -50,7 +55,8 @@ shell hooks ─/quantprogress/───┘
   ("no update for 20m").
 - **Retention** — done bars stay grey 30 min, failed ones red 2 h; ended shells
   2 min; a foreground shell without an end 30 min; background shells until
-  Claude Code's SessionEnd or 12 h; anything untouched for 24 h goes.
+  their agent has no running bar left (its last bar done or failed), Claude
+  Code's SessionEnd, or 12 h; anything untouched for 24 h goes.
 - **Followed files** — the last 64 KB, read on each poll. A folder means its
   `events.jsonl` (Smithery lab runs write
   `{"event":"progress","fraction":…,"message":…}`). Lines with
@@ -79,7 +85,8 @@ A hook knows its client session and folder; an MCP call knows the agent and its
 folder; there is no shared key. A hook session joins an agent lane only when
 exactly **one** lane of the same client claims its folder — the same folder, or
 the lane's folder holds it (most specific wins). Otherwise the shells stay a
-lane of their own ("Claude Code · QuantSuite"). Agents pass `folder` = their
+lane of their own ("Claude Code · QuantSuite"; a second such lane in the
+same folder reads "Claude Code (2)"). Agents pass `folder` = their
 worktree to make the join exact. A join, once made, sticks.
 
 ### The one template
@@ -130,3 +137,18 @@ file a long command writes.
 Not verified: a real Claude Code / Codex session with the shell hooks
 installed (the hooks were driven with their exact JSON over HTTP), and Codex's
 tool hooks at all.
+
+## Round 2 — 2026-11-10 (card 1b7a5940)
+
+User, on a screenshot of v1.1.2: "es ist bugged und hässlich gleichzeitig".
+- Bugs: one job in two lanes (the closing report came without `agent_id`), a
+  background robocopy shown as running long after the job was done, and two
+  identical "Claude Code · QuantSuite" lanes. Fixed as described above.
+- Look: lanes are cards in a grid (min 420 px, one height per row) instead of
+  bars across the whole drawer; the agent's note in sans, a followed log line
+  in mono; percent and times in sans with tabular figures; the header on one
+  line; the /progress page up to 1400 px (three columns).
+- Verified: 18 Rust tests (3 new), test:progress 7/7, Clippy 1.93 and 1.98,
+  check:ts, and the user's case replayed against the QA app (4/4: one lane,
+  bar done, robocopy over), screenshots of the drawer at 2530 and 1400 px and
+  of the page.

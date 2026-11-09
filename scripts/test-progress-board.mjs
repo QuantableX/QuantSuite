@@ -68,7 +68,7 @@ test('a lane shows agent, place, the bar with step and time, and its shells', ()
       }),
     ],
   })
-  for (const part of ['claude-code-1', 'QuantSuite · worktree 84ac3068', 'Gauntlet LCES Top 6', '64%', 'width:64.0%', 'Step 4/7 · Monte-Carlo', '1h 10m / ~1h 50m', 'python run_gauntlet.py --top 6', 'background 38m', 'failed · 1m']) {
+  for (const part of ['claude-code-1', 'QuantSuite · worktree 84ac3068', 'Gauntlet LCES Top 6', '64%', 'width:64.0%', 'Step 4/7 · Monte-Carlo', '1h 10m / ~1h 50m', 'python run_gauntlet.py --top 6', 'in background · 38m', 'failed · 1m']) {
     assert.ok(html.includes(part), `missing ${part}`)
   }
   assert.ok(html.includes('qpb-shell is-background'))
@@ -82,6 +82,10 @@ test('unknown progress is an indeterminate bar; stale, done and failed are marke
   assert.ok(stale.includes('no update for 20m'))
   const done = renderBoard({ now: NOW, lanes: [lane({ tasks: [task({ state: 'done', overall: 1, finishedAt: NOW, note: '12 of 12 passed' })] })] })
   assert.ok(done.includes('qpb-task is-done') && done.includes('>Done<') && done.includes('12 of 12 passed'))
+  // The agent's note reads as text (sans); a followed log line keeps the terminal font.
+  assert.ok(done.includes('<div class="qpb-note" title="12 of 12 passed">12 of 12 passed</div>'))
+  const following = renderBoard({ now: NOW, lanes: [lane({ tasks: [task({ detail: 'PROGRESS 12/48', note: 'x' })] })] })
+  assert.ok(following.includes('class="qpb-detail"') && !following.includes('qpb-note'))
   const failed = renderBoard({ now: NOW, lanes: [lane({ tasks: [task({ state: 'failed', overall: null, finishedAt: NOW })] })] })
   assert.ok(failed.includes('qpb-task is-failed') && failed.includes('width:100.0%'))
 })
