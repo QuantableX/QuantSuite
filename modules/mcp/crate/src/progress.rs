@@ -1335,7 +1335,7 @@ const PAGE_HTML: &str = r#"<!doctype html>
     color-scheme: dark;
   }
   html, body { margin: 0; background: var(--qss-bg); color: var(--qss-text); font-family: var(--qss-font-sans); }
-  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+  main { max-width: 1400px; margin: 0 auto; padding: 20px 16px 40px; }
   .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
   .page-head h1 { margin: 0; font: 600 16px/1.2 var(--qss-font-sans); }
   .page-head span { color: var(--qss-text-muted); font-size: 12px; }

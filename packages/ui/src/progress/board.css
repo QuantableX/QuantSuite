@@ -9,7 +9,6 @@
 .qpb-board {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
-  align-items: start;
   gap: 10px;
   font-family: var(--qss-font-sans);
   color: var(--qss-text);
