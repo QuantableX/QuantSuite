@@ -167,12 +167,15 @@ class EngineTests(unittest.TestCase):
 
 
 class BulkTests(unittest.TestCase):
-    def test_bulk_evaluators_refuse_portfolio_mode(self):
+    def test_bulk_evaluators_refuse_what_they_cannot_score(self):
+        # lab_fast walks portfolio mode itself (bit for bit: tests/test_research_fast.py), except without USD,
+        # where the cube has no coin-against-USD votes for the trend. The GPU path scores the single pick only.
         from smithery import lab_gpu
         from smithery.lab_fast import unsupported_reason
         config, _, _ = fixture(50, ("ema_cross",))
         self.assertIsNone(unsupported_reason(config))
-        reason = unsupported_reason(replace(config, portfolio=PortfolioConfig()))
+        self.assertIsNone(unsupported_reason(replace(config, portfolio=PortfolioConfig())))
+        reason = unsupported_reason(replace(config, include_usd=False, portfolio=PortfolioConfig()))
         self.assertIn("Portfolio mode", reason)
 
         class Fake:

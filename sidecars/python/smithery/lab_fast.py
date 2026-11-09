@@ -57,9 +57,9 @@ def unsupported_reason(config):
         return None
     if config.mode != "rotation":
         return f"System mode {config.mode} has no bulk evaluator"
-    if getattr(config, "portfolio", None) is not None:
-        # The bulk evaluators hold one coin a day; their numbers would be the single pick's, not the portfolio's.
-        return "Portfolio mode has no bulk evaluator: it would score the single pick instead"
+    if getattr(config, "portfolio", None) is not None and not config.include_usd:
+        # A coin's own trend is its vote against USD; without USD in the universe the cube has no such pair.
+        return "Portfolio mode without USD in the universe has no bulk evaluator"
     if config.market_filter and not isinstance(config.market_indicator, (IndicatorConfig, TotalBreakoutConfig)):
         # The gate would follow each candidate's own signal.
         return "The market filter uses the candidate's own indicator"
@@ -438,7 +438,80 @@ class FastSystem:
             raise ValueError(f"Unusable candidates: {bad}")
         if not isinstance(delay, int) or delay < 0:
             raise ValueError("delay must be a whole number of bars, 0 or more")
-        return self._simulate_single(trials, delay) if self.single else self._simulate_rotation(trials, delay)
+        if self.single:
+            return self._simulate_single(trials, delay)
+        if getattr(self.config, "portfolio", None) is not None:
+            return self._simulate_portfolio(trials, delay)
+        return self._simulate_rotation(trials, delay)
+
+    def _simulate_portfolio(self, trials, delay=0):
+        """Portfolio mode, with the engine's own target and trade functions and the same float operations in
+        the same order, so it equals ``BacktestEngine._walk_portfolio`` bit for bit. ``held`` is the engine's
+        label (the largest weight); the weights themselves are in ``self.last_weights`` per trial.
+
+        Scalar per bar and trial: fine for a Gauntlet's few dozen trials, slow for a search."""
+        from rotation_lab.backtest.engine import USD_SYMBOL, _rebalance, portfolio_target
+        a = self.rotation
+        cfg = self.config.portfolio
+        T, P, N = len(self.dates), len(self.pairs), len(self.assets)
+        cash = N - 1
+        cost = 1.0 - (1.0 - self.config.fee_rate) * (1.0 - self.config.slippage_rate)
+        onehot_a = np.zeros((P, N), dtype=np.float32)
+        onehot_b = np.zeros((P, N), dtype=np.float32)
+        onehot_a[np.arange(P), a["ends"][:, 0]] = 1
+        onehot_b[np.arange(P), a["ends"][:, 1]] = 1
+        usd_pair = {self.assets.index(p[0]): k for k, p in enumerate(self.pairs) if p[1] is None}
+        order, active, returns, has_syms = a["order"], a["active"], a["returns"], a["has_syms"]
+        names = self.assets
+        curve = np.empty((len(trials), T))
+        held = np.empty((len(trials), T), dtype=np.int64)
+        self.last_weights = []
+        for i, members in enumerate(trials):
+            state, g = self.state(members)
+            bull = state[:, self.mpos] > 0
+            scores = (bull & active).T.astype(np.float32) @ onehot_a + ((~bull) & active).T.astype(np.float32) @ onehot_b
+            gate = self.groups[g].gate
+            values, pending, queue, weights_all = {}, None, deque(), []
+            for t in range(T):
+                syms = [names[k] for k in order[t] if k >= 0 and k != cash]
+                if pending is not None:
+                    gone = [s for s in pending if s != USD_SYMBOL and s not in syms]
+                    if gone:
+                        pending = dict(pending)
+                        for s in gone:
+                            pending[USD_SYMBOL] = pending.get(USD_SYMBOL, 0.0) + pending.pop(s)
+                    held_now = {s for s, v in values.items() if v > 0} or {USD_SYMBOL}
+                    if cfg.rebalance == "daily" or held_now != set(pending):
+                        values, _ = _rebalance(values or {USD_SYMBOL: 1.0}, pending, cost)
+                for s in values:
+                    if s != USD_SYMBOL:
+                        move = values[s] * float(returns[names.index(s), t])
+                        values[s] += move
+                equity = sum(values.values()) if values else 1.0
+                curve[i, t] = equity
+                if values:
+                    weights = {s: v / equity for s, v in values.items() if v > 0}
+                    top = max(weights, key=lambda s: (weights[s], s != USD_SYMBOL)) if weights else USD_SYMBOL
+                    held[i, t] = names.index(top)
+                    weights_all.append(weights)
+                else:
+                    held[i, t] = NONE
+                    weights_all.append(None)
+                if not has_syms[t]:
+                    decided = {USD_SYMBOL: 1.0} if self.config.include_usd else None
+                elif gate is not None and int(gate[t]) != 1:
+                    decided = {USD_SYMBOL: 1.0}
+                else:
+                    ids = [k for k in order[t] if k >= 0 and k != cash]
+                    trend = {names[k]: bool(bull[usd_pair[k], t]) if k in usd_pair else False for k in ids}
+                    decided = portfolio_target(syms, {names[k]: int(scores[t, k]) for k in ids}, trend, cfg)
+                if not delay:
+                    pending = decided
+                    continue
+                queue.append(decided)
+                pending = queue.popleft() if len(queue) > delay else None
+            self.last_weights.append(weights_all)
+        return curve, held
 
     def _simulate_rotation(self, trials, delay=0):
         a = self.rotation
