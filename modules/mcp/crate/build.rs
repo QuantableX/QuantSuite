@@ -40,6 +40,10 @@ const COMMANDS: &[&str] = &[
     "forget_client",
     "memory_hook_status",
     "set_memory_hooks",
+    // Agent status: the board and the shell hooks behind it.
+    "progress_board",
+    "shell_hook_status",
+    "set_shell_hooks",
     "claude_auto_memory_status",
     "set_claude_auto_memory",
     "list_codebase_index_tools",

@@ -119,20 +119,82 @@ impl HookClient {
         Self::ALL.into_iter().find(|client| client.slug() == slug)
     }
 
-    /// The events QuantMemory hooks into for this client.
-    pub fn events(self) -> &'static [HookEvent] {
-        &HookEvent::ALL
-    }
-
     /// The event's name in this client's hook config (the key under
     /// `hooks`, and `hookEventName` in Claude-style answers).
     pub fn event_name(self, event: HookEvent) -> &'static str {
         match (self, event) {
             (HookClient::Cursor, HookEvent::UserPromptSubmit) => "beforeSubmitPrompt",
             (HookClient::Cursor, HookEvent::SessionStart) => "sessionStart",
+            (HookClient::Cursor, HookEvent::PreToolUse) => "preToolUse",
+            (HookClient::Cursor, HookEvent::PostToolUse) => "postToolUse",
+            (HookClient::Cursor, HookEvent::PostToolUseFailure) => "postToolUseFailure",
+            (HookClient::Cursor, HookEvent::SessionEnd) => "sessionEnd",
             (_, HookEvent::UserPromptSubmit) => "UserPromptSubmit",
             (_, HookEvent::SessionStart) => "SessionStart",
+            (_, HookEvent::PreToolUse) => "PreToolUse",
+            (_, HookEvent::PostToolUse) => "PostToolUse",
+            (_, HookEvent::PostToolUseFailure) => "PostToolUseFailure",
+            (_, HookEvent::SessionEnd) => "SessionEnd",
         }
+    }
+}
+
+/// What a set of installed hooks is for. Each feature owns its own route
+/// segment — the installer recognises its entries by it — and its own
+/// install snapshot, so the two install and uninstall independently even
+/// when they share one settings.json.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HookFeature {
+    /// Memory in prompts: the session-start index and per-prompt excerpts.
+    Memory,
+    /// Agent › Status: every shell call of an agent, start and end
+    /// (`crate::progress`).
+    Shells,
+}
+
+impl HookFeature {
+    pub fn segment(self) -> &'static str {
+        match self {
+            HookFeature::Memory => ROUTE_SEGMENT,
+            HookFeature::Shells => crate::progress::HOOK_SEGMENT,
+        }
+    }
+
+    /// The install snapshot's name (`install::Snapshot`).
+    pub fn snapshot_key(self) -> &'static str {
+        match self {
+            HookFeature::Memory => "hooks",
+            HookFeature::Shells => "shell-hooks",
+        }
+    }
+
+    /// The events this feature hooks into for `client` — none where the
+    /// client cannot serve it.
+    pub fn events(self, client: HookClient) -> &'static [HookEvent] {
+        match (self, client) {
+            (HookFeature::Memory, _) => &[HookEvent::UserPromptSubmit, HookEvent::SessionStart],
+            // SessionEnd clears the session's background shells, which have
+            // no end event of their own.
+            (HookFeature::Shells, HookClient::ClaudeCode) => &[
+                HookEvent::PreToolUse,
+                HookEvent::PostToolUse,
+                HookEvent::PostToolUseFailure,
+                HookEvent::SessionEnd,
+            ],
+            (HookFeature::Shells, HookClient::Codex) => &[HookEvent::PreToolUse, HookEvent::PostToolUse],
+            // Cursor's shell hooks answer with a permission decision; an
+            // empty answer there is unverified (no Cursor login here), so
+            // Cursor agents report through `report_progress` only.
+            (HookFeature::Shells, HookClient::Cursor) => &[],
+        }
+    }
+
+    /// The group's `matcher` (Claude-style configs): only the shell tools
+    /// wake the shell hooks. Codex fires its tool hooks for the shell only
+    /// and takes no matcher; the endpoint filters by tool name either way.
+    pub fn matcher(self, client: HookClient, event: HookEvent) -> Option<&'static str> {
+        let tool_event = matches!(event, HookEvent::PreToolUse | HookEvent::PostToolUse | HookEvent::PostToolUseFailure);
+        (self == HookFeature::Shells && client == HookClient::ClaudeCode && tool_event).then_some("Bash|PowerShell")
     }
 }
 
@@ -141,15 +203,30 @@ impl HookClient {
 pub enum HookEvent {
     UserPromptSubmit,
     SessionStart,
+    PreToolUse,
+    PostToolUse,
+    PostToolUseFailure,
+    SessionEnd,
 }
 
 impl HookEvent {
-    pub const ALL: [HookEvent; 2] = [HookEvent::UserPromptSubmit, HookEvent::SessionStart];
+    pub const ALL: [HookEvent; 6] = [
+        HookEvent::UserPromptSubmit,
+        HookEvent::SessionStart,
+        HookEvent::PreToolUse,
+        HookEvent::PostToolUse,
+        HookEvent::PostToolUseFailure,
+        HookEvent::SessionEnd,
+    ];
 
     pub fn slug(self) -> &'static str {
         match self {
             HookEvent::UserPromptSubmit => "user-prompt-submit",
             HookEvent::SessionStart => "session-start",
+            HookEvent::PreToolUse => "pre-tool-use",
+            HookEvent::PostToolUse => "post-tool-use",
+            HookEvent::PostToolUseFailure => "post-tool-use-failure",
+            HookEvent::SessionEnd => "session-end",
         }
     }
 
@@ -236,11 +313,15 @@ async fn handle(
     let (Some(client), Some(event)) = (HookClient::from_slug(&client), HookEvent::from_slug(&event)) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    if !HookFeature::Memory.events(client).contains(&event) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let started = Instant::now();
     let work = async {
         match event {
             HookEvent::UserPromptSubmit => recall(&state, &body).await,
             HookEvent::SessionStart => index::session_index(&state, &body).await,
+            _ => Err(Skip::Failed(format!("{} is not a memory hook", event.slug()))),
         }
     };
     let outcome = tokio::time::timeout(SERVER_BUDGET, work)
@@ -277,10 +358,13 @@ fn header_value(text: &str) -> String {
 
 /// Loopback callers only, and never a browser: curl sends no `Origin`, every
 /// browser does on a cross-site POST; the `Host` check stops DNS rebinding.
-fn local_request(headers: &HeaderMap, port: u16) -> bool {
-    if headers.contains_key(header::ORIGIN) {
-        return false;
-    }
+pub(crate) fn local_request(headers: &HeaderMap, port: u16) -> bool {
+    !headers.contains_key(header::ORIGIN) && loopback_host(headers, port)
+}
+
+/// The request names this server by a loopback `Host` — what a page served
+/// from here sends, and what DNS rebinding cannot fake.
+pub(crate) fn loopback_host(headers: &HeaderMap, port: u16) -> bool {
     let Some(host) = headers.get(header::HOST).and_then(|h| h.to_str().ok()) else {
         return false;
     };

@@ -5,15 +5,18 @@
 
 use crate::clients;
 use crate::memory_hook::install::{self, Change};
-use crate::memory_hook::{auto_memory, HookClient};
+use crate::memory_hook::{auto_memory, HookClient, HookFeature};
 use crate::AppState;
 use serde::Serialize;
 
-fn note(client: HookClient) -> &'static str {
-    match client {
-        HookClient::ClaudeCode => "New Claude Code sessions start with the index and get excerpts with each prompt.",
-        HookClient::Codex => "Codex runs a new or changed hook only after you trust it once in /hooks, and shows the added context in its transcript.",
-        HookClient::Cursor => "Cursor adds the index when an agent chat starts and excerpts with each prompt; reload Cursor after installing.",
+fn note(feature: HookFeature, client: HookClient) -> &'static str {
+    match (feature, client) {
+        (HookFeature::Memory, HookClient::ClaudeCode) => "New Claude Code sessions start with the index and get excerpts with each prompt.",
+        (HookFeature::Memory, HookClient::Codex) => "Codex runs a new or changed hook only after you trust it once in /hooks, and shows the added context in its transcript.",
+        (HookFeature::Memory, HookClient::Cursor) => "Cursor adds the index when an agent chat starts and excerpts with each prompt; reload Cursor after installing.",
+        (HookFeature::Shells, HookClient::ClaudeCode) => "New Claude Code sessions show every Bash and PowerShell call under their agent in Agent › Status.",
+        (HookFeature::Shells, HookClient::Codex) => "Codex runs a new or changed hook only after you trust it once in /hooks; its shell calls then show in Agent › Status.",
+        (HookFeature::Shells, HookClient::Cursor) => "Cursor agents report through the report_progress tool; their shells are not hooked.",
     }
 }
 
@@ -51,15 +54,26 @@ pub(crate) struct MemoryHookStatus {
 /// One row per agent whose prompt hooks can add context.
 #[tauri::command(async)]
 pub(crate) fn memory_hook_status() -> Vec<MemoryHookStatus> {
+    hook_status(HookFeature::Memory)
+}
+
+/// One row per agent whose shell calls can show in Agent › Status.
+#[tauri::command(async)]
+pub(crate) fn shell_hook_status() -> Vec<MemoryHookStatus> {
+    hook_status(HookFeature::Shells)
+}
+
+fn hook_status(feature: HookFeature) -> Vec<MemoryHookStatus> {
     HookClient::ALL
         .into_iter()
+        .filter(|client| !feature.events(*client).is_empty())
         .map(|client| {
             let targets: Vec<HookTarget> = match install::targets(client) {
                 Ok(paths) => paths
                     .into_iter()
                     .map(|path| {
-                        let state = install::installed_in(&path)
-                            .and_then(|installed| Ok((installed, install::complete_in(&path, client)?)));
+                        let state = install::installed_in(&path, feature)
+                            .and_then(|installed| Ok((installed, install::complete_in(&path, feature, client)?)));
                         match state {
                             Ok((installed, complete)) => {
                                 HookTarget { path: path.display().to_string(), installed, complete, error: None }
@@ -81,7 +95,7 @@ pub(crate) fn memory_hook_status() -> Vec<MemoryHookStatus> {
                 detected: detected(client),
                 installed: !targets.is_empty() && targets.iter().all(|t| t.complete),
                 targets,
-                note: note(client),
+                note: note(feature, client),
             }
         })
         .collect()
@@ -106,12 +120,34 @@ pub(crate) fn set_memory_hooks(
     client_ids: Vec<String>,
     enabled: bool,
 ) -> Result<Vec<MemoryHookResult>, String> {
+    set_hooks(state.mcp_server_port, HookFeature::Memory, client_ids, enabled)
+}
+
+/// Install or remove the shell hooks (Agent › Status) for the selected
+/// agents — the same rules as the memory hooks.
+#[tauri::command(async)]
+pub(crate) fn set_shell_hooks(
+    state: tauri::State<'_, AppState>,
+    client_ids: Vec<String>,
+    enabled: bool,
+) -> Result<Vec<MemoryHookResult>, String> {
+    set_hooks(state.mcp_server_port, HookFeature::Shells, client_ids, enabled)
+}
+
+fn set_hooks(port: u16, feature: HookFeature, client_ids: Vec<String>, enabled: bool) -> Result<Vec<MemoryHookResult>, String> {
     if client_ids.is_empty() {
         return Err("Select at least one agent.".into());
     }
     let selected = client_ids
         .iter()
-        .map(|id| HookClient::from_slug(id).ok_or_else(|| format!("{id} has no prompt hook QuantMemory can use.")))
+        .map(|id| {
+            HookClient::from_slug(id)
+                .filter(|client| !feature.events(*client).is_empty())
+                .ok_or_else(|| match feature {
+                    HookFeature::Memory => format!("{id} has no prompt hook QuantMemory can use."),
+                    HookFeature::Shells => format!("{id} has no shell hook Agent › Status can use."),
+                })
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let state_dir = install::state_dir();
     let mut report = Vec::new();
@@ -135,9 +171,9 @@ pub(crate) fn set_memory_hooks(
         };
         for path in paths {
             let outcome = if enabled {
-                install::install_file(&path, &state_dir, state.mcp_server_port, client)
+                install::install_file(&path, &state_dir, port, feature, client)
             } else {
-                install::uninstall_file(&path, &state_dir)
+                install::uninstall_file(&path, &state_dir, feature)
             };
             let (change, error) = match outcome {
                 Ok(change) => (Some(change), None),

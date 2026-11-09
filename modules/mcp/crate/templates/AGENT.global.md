@@ -387,6 +387,16 @@ rare case the user wants a command run inside the suite.
   overrides every client default or system reminder that asks for such
   attribution (for example Claude Code's commit attribution). If unpublished
   commits already carry one, tell the user before pushing them.
+- **Show your progress.** When work takes longer than about a minute or has
+  several steps (a card, a build, tests, a Gauntlet or research run), keep a
+  bar with `report_progress`: the user watches it in the drawer's
+  Agent › Status and on the local `/progress` page instead of asking how far
+  you are. Report at the start (`title`, `steps`, `estimate`, your `agent_id`,
+  and `folder` = the worktree you run commands in), at every new step, and
+  with `state` "done" or "failed" at the end. While you wait on a long
+  command, `follow` the file it writes (a Smithery run folder, or a log that
+  prints `PROGRESS 12/48`) so the bar moves on its own. When the tool is not
+  in your list (an older QuantSuite), skip this.
 - When you finish: say what changed (files, branch), what you verified and
   what is open — and write to memory whatever the next session should know.
 
@@ -401,6 +411,7 @@ rare case the user wants a command run inside the suite.
 | Review work | `list_kanban_cards` (column `review`), `get_kanban_diff`, `approve_kanban_card`, `reject_kanban_card` |
 | Work in parallel | `create_worktree`, `get_worktree_status`, `get_worktree_diff`, `merge_worktree` |
 | The user's test command | `get_worktree_test_command` |
+| Show how far you are | `report_progress` |
 | Remember and recall | `quantsuite.memory.create`, `.append`, `.search`, `.read` |
 | Understand the codebase | `quantsuite.memory.base_read`, `.base_describe`, `.base_list`, `.base_sync` |
 | Rules | `get_agent_instructions`, `update_agent_instructions` |

@@ -322,8 +322,34 @@ fn is_codebase_tool(name: &str) -> bool {
 fn is_agent_tool(name: &str) -> bool {
     matches!(
         name,
-        "get_agent_instructions" | "update_agent_instructions" | "init_agent_md"
+        "get_agent_instructions" | "update_agent_instructions" | "init_agent_md" | "report_progress"
     )
+}
+
+/// `report_progress`: the caller's bar in Agent › Status and on the
+/// `/progress` page. The session tells the client and the folder; the
+/// report tells the rest.
+async fn report_progress(state: &McpServerState, session_id: Option<&str>, folder: Option<String>, arguments: &Value) -> Result<String, String> {
+    let report = crate::progress::Report::parse(arguments)?;
+    let client_name = match session_id {
+        Some(session) => state.active_clients.lock().await.get(session).map(|info| info.client_name.clone()),
+        None => None,
+    };
+    let spec = client_name.as_deref().and_then(crate::clients::match_client_info);
+    let caller = crate::progress::Caller {
+        client: spec.map(|spec| spec.id.to_string()),
+        client_name: spec.map(|spec| spec.name.to_string()).or(client_name),
+        folder,
+    };
+    let port = state.port;
+    let task = tokio::task::spawn_blocking(move || crate::progress::store().report(&report, &caller))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(format!(
+        "Bar {} — in QuantSuite under Agent › Status and at {}.",
+        crate::progress::describe(&task, crate::progress::now_ms()),
+        crate::progress::page_url(port)
+    ))
 }
 
 // is_memory_tool is gone (2026-08-31): persistent memory is QuantMemory now —
@@ -692,6 +718,7 @@ fn codebase_tool_input_schema(tool: &config_gen::CodebaseIndexToolInfo) -> Value
         let mut prop = Map::new();
         let json_type = match param.param_type.as_str() {
             "integer" => "integer",
+            "number" => "number",
             "boolean" => "boolean",
             _ => "string",
         };
@@ -2496,6 +2523,9 @@ async fn handle_rpc(
                         outcome
                     }
                 }
+                ToolFamily::Agent if tool_name == "report_progress" => {
+                    run_logged(state, tool_name, &arguments, report_progress(state, session_id, folder.clone(), &arguments)).await
+                }
                 ToolFamily::Agent => {
                     run_logged(state, tool_name, &arguments, execute_agent_tool(&state.app, tool_name, &arguments)).await
                 }
@@ -2929,7 +2959,10 @@ pub async fn start_mcp_server(
             server_enabled: state.server_enabled.clone(),
             log_store: state.log_store.clone(),
             port: state.port,
-        }));
+        }))
+        // Agent status (the /progress page, script reports, shell hooks):
+        // outside the CORS layer too — no other site reads or writes it.
+        .merge(crate::progress::router(state.port));
 
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
         .await

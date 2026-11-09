@@ -51,6 +51,7 @@ onMounted(() => {
   void loadSnippet()
   void detectAgents()
   void loadMemoryHooks()
+  void loadShellHooks()
   void loadAutoMemory()
 })
 onBeforeUnmount(() => { ++scanToken })
@@ -210,6 +211,39 @@ async function setMemoryHook(hook: MemoryHookStatus, enabled: boolean) {
     memoryHookBusy.value = ''
   }
   await loadMemoryHooks()
+}
+
+// Shells in Agent status: the same per-agent install as the memory hooks,
+// for the hooks that report every shell call to the board (PLAN-AGENT-STATUS).
+const shellHooks = ref<MemoryHookStatus[]>([])
+const shellHookBusy = ref('')
+const shellHookError = ref('')
+const shellHookReport = ref<MemoryHookResult[] | null>(null)
+
+async function loadShellHooks() {
+  if (!window.__TAURI_INTERNALS__) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    shellHooks.value = await invoke<MemoryHookStatus[]>('plugin:mcp|shell_hook_status')
+  } catch (e) {
+    shellHookError.value = `Could not read the shell hooks: ${e}`
+  }
+}
+
+async function setShellHook(hook: MemoryHookStatus, enabled: boolean) {
+  if (!window.__TAURI_INTERNALS__ || shellHookBusy.value) return
+  shellHookBusy.value = hook.id
+  shellHookError.value = ''
+  shellHookReport.value = null
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    shellHookReport.value = await invoke<MemoryHookResult[]>('plugin:mcp|set_shell_hooks', { clientIds: [hook.id], enabled })
+  } catch (e) {
+    shellHookError.value = String(e)
+  } finally {
+    shellHookBusy.value = ''
+  }
+  await loadShellHooks()
 }
 
 interface AutoMemoryStatus {
@@ -430,6 +464,63 @@ async function setAutoMemory(enabled: boolean) {
         <div v-if="memoryHookReport" class="report">
           <div
             v-for="r in memoryHookReport"
+            :key="`${r.id}:${r.path}`"
+            class="report-row"
+            :class="r.error ? 'bad' : 'ok'"
+          >
+            <span class="report-mark">{{ r.error ? '✗' : '✓' }}</span>
+            <span class="report-name">{{ r.name }}</span>
+            <span class="report-detail" :title="r.path">{{ r.error ?? (r.change ? CHANGE_LABELS[r.change] : '') }}{{ r.path ? ` · ${r.path}` : '' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Shells in Agent status: install or remove the shell hooks per agent -->
+      <div class="connect-card">
+        <div class="connect-head">
+          <div class="connect-title">
+            <div class="setting-label">Shells in Agent status</div>
+            <div class="setting-description">
+              Every shell command an agent runs shows under that agent in the drawer's Agent › Status, with its running time, without the agent doing anything.
+              The hook only reports start and end; the command always goes through, also while QuantSuite is closed.
+            </div>
+          </div>
+        </div>
+        <div class="report">
+          <template v-for="hook in shellHooks" :key="hook.id">
+            <div class="report-row" :class="hookInstalledAnywhere(hook) ? 'ok' : 'note'">
+              <span class="report-mark">{{ hookInstalledAnywhere(hook) ? '✓' : '–' }}</span>
+              <span class="report-name">{{ hook.name }}</span>
+              <span class="report-detail" :title="hookState(hook)">{{ hookState(hook) }}</span>
+              <button
+                v-if="!hook.installed"
+                class="setting-action"
+                :disabled="!hook.detected || !!shellHookBusy"
+                @click="setShellHook(hook, true)"
+              >
+                {{ shellHookBusy === hook.id ? 'Installing…' : 'Install' }}
+              </button>
+              <button
+                v-if="hookInstalledAnywhere(hook)"
+                class="setting-action"
+                :disabled="!!shellHookBusy"
+                @click="setShellHook(hook, false)"
+              >
+                {{ shellHookBusy === hook.id ? 'Removing…' : 'Remove' }}
+              </button>
+            </div>
+            <div class="report-row note">
+              <span class="report-mark" />
+              <span class="report-detail">{{ hook.note }}</span>
+            </div>
+          </template>
+        </div>
+
+        <div v-if="shellHookError" class="result-box error" role="alert">{{ shellHookError }}</div>
+
+        <div v-if="shellHookReport" class="report">
+          <div
+            v-for="r in shellHookReport"
             :key="`${r.id}:${r.path}`"
             class="report-row"
             :class="r.error ? 'bad' : 'ok'"
