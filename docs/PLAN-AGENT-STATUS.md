@@ -116,6 +116,17 @@ file a long command writes.
 - `npm run check:ts`, check:modules, check:css, check:isolation,
   check:components, check:commands.
 - The page rendered headless from the exact `PAGE_HTML` with a sample board.
+- Live, in the isolated QA app built from the worktree (QA home, port 3101):
+  22/22 checks — `report_progress` in tools/list with number/integer types,
+  start and step reports, a bad number as a tool error, a followed run folder
+  filling step 2 of 3 to 50 % with its line as the detail, hook calls exactly
+  as the installed curl sends them (empty 200; background launch keeps
+  running; the worktree session joined claude-code-2's lane, the main-checkout
+  session stayed its own lane), a memory event refused on the shell route,
+  Origin and foreign Host refused, a script report over HTTP, the page and the
+  template served. The drawer showed Status by default with the active mode
+  marked; Strict switched to the tool table and Status came back.
 
-Not verified by the agent: the running app (drawer view, live tool call, live
-hooks) — the user's test command.
+Not verified: a real Claude Code / Codex session with the shell hooks
+installed (the hooks were driven with their exact JSON over HTTP), and Codex's
+tool hooks at all.

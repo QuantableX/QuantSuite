@@ -580,6 +580,7 @@ fn short_duration(secs: i64) -> String {
     match secs {
         s if s < 60 => format!("{s}s"),
         s if s < 3600 => format!("{}m", s / 60),
+        s if (s % 3600) / 60 == 0 => format!("{}h", s / 3600),
         s => format!("{}h {}m", s / 3600, (s % 3600) / 60),
     }
 }
@@ -1072,6 +1073,16 @@ impl Store {
         let mut board = self.board.lock().map_err(|e| e.to_string())?;
         prune(&mut board, now);
         let task = apply_report(&mut board, report, caller, now)?;
+        // The reply shows what the board will show: a newly followed file
+        // counts already.
+        refresh_follows(&mut board);
+        let task = board
+            .lanes
+            .iter()
+            .flat_map(|lane| lane.tasks.iter())
+            .find(|t| t.id == task.id && t.started_at == task.started_at)
+            .cloned()
+            .unwrap_or(task);
         drop(board);
         self.mark_dirty();
         Ok(task)
@@ -1354,6 +1365,9 @@ mod tests {
         assert_eq!(parse_duration("90s"), Some(90));
         assert_eq!(parse_duration("soon"), None);
         assert_eq!(parse_duration("3x"), None);
+        assert_eq!(short_duration(7200), "2h");
+        assert_eq!(short_duration(5400), "1h 30m");
+        assert_eq!(short_duration(600), "10m");
         assert!(Report::parse(&json!({ "estimate": "later" })).is_err());
         assert_eq!(report(json!({ "estimate": 30 })).estimate_secs, Some(1800));
     }
