@@ -58,6 +58,19 @@ for (const name of readdirSync(resolve(pythonRoot, 'smithery')).filter(name => n
   assert.equal(config.bundle.resources[`../../sidecars/python/smithery/${name}`],
     `sidecars/python/smithery/${name}`, `Missing Smithery runtime resource: ${name}`)
 }
+// The other engine packages at any depth, for the same reason: rotation_lab/backtest/vote_store.py was
+// missing once, and every Smithery member vote imports it. Research-only tools stay out, as above.
+const pythonFiles = dir => readdirSync(dir, { withFileTypes: true }).flatMap(entry => entry.isDirectory()
+  ? (/^(tests|__pycache__)$/.test(entry.name) ? [] : pythonFiles(resolve(dir, entry.name)))
+  : entry.name.endsWith('.py') ? [resolve(dir, entry.name)] : [])
+for (const pkg of ['rotation_lab', 'quantalgo', 'quantvoice']) {
+  for (const file of pythonFiles(resolve(pythonRoot, pkg))) {
+    const name = relative(pythonRoot, file).split('\\').join('/')
+    if (/(^|\/)(research_|verify_|trend_benchmark|benchmark)/.test(name)) continue
+    assert.equal(config.bundle.resources[`../../sidecars/python/${name}`],
+      `sidecars/python/${name}`, `Missing runtime resource: ${name}`)
+  }
+}
 for (const name of ['tauri.conf.json', 'tauri.windows.conf.json', 'tauri.dev.conf.json']) {
   const resources = readConfig(name).bundle?.resources
   if (resources) validateResources(resources)
