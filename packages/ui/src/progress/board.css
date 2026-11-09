@@ -1,0 +1,210 @@
+/*
+ * Agent status — the ONE stylesheet of the progress board (board.js). Shared
+ * by the drawer's Agent › Status view and QuantMCP's /progress page, which
+ * defines the same --qss-* tokens itself. Everything is under .qpb-.
+ */
+
+.qpb-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: var(--qss-font-sans);
+  color: var(--qss-text);
+}
+
+.qpb-empty {
+  margin: 18px 4px;
+  color: var(--qss-text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.qpb-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 11px;
+  border: 1px solid var(--qss-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--qss-bg-card) 55%, transparent);
+}
+
+.qpb-lane-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.qpb-agent {
+  font: 600 12.5px/1.2 var(--qss-font-sans);
+  color: var(--qss-text);
+  white-space: nowrap;
+}
+.qpb-place {
+  color: var(--qss-text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qpb-task {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.qpb-task-head,
+.qpb-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.qpb-title {
+  font: 500 12.5px/1.3 var(--qss-font-sans);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qpb-pct {
+  flex-shrink: 0;
+  font: 500 12px/1.3 var(--qss-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.qpb-meta {
+  color: var(--qss-text-secondary);
+  font-size: 11.5px;
+}
+.qpb-step {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qpb-time {
+  flex-shrink: 0;
+  font: 11.5px/1.3 var(--qss-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.qpb-detail {
+  color: var(--qss-text-muted);
+  font: 11px/1.35 var(--qss-font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qpb-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--qss-border);
+  overflow: hidden;
+}
+.qpb-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--qss-accent);
+  transition: width 0.4s ease;
+}
+.qpb-bar.is-indeterminate > span {
+  width: 28%;
+  opacity: 0.75;
+  animation: qpb-sweep 1.6s ease-in-out infinite;
+}
+@keyframes qpb-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(360%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qpb-bar.is-indeterminate > span {
+    animation: none;
+    width: 100%;
+    opacity: 0.25;
+  }
+}
+
+.qpb-task.is-done .qpb-title,
+.qpb-task.is-done .qpb-pct {
+  color: var(--qss-text-secondary);
+}
+.qpb-task.is-done .qpb-bar > span {
+  background: color-mix(in srgb, var(--qss-success) 55%, var(--qss-border));
+}
+.qpb-task.is-failed .qpb-pct,
+.qpb-task.is-failed .qpb-time {
+  color: var(--qss-error);
+}
+.qpb-task.is-failed .qpb-bar > span {
+  background: var(--qss-error);
+}
+.qpb-task.is-stale .qpb-bar > span {
+  background: var(--qss-warning);
+}
+.qpb-task.is-stale .qpb-time {
+  color: var(--qss-warning);
+}
+
+.qpb-shells {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 7px 0 0;
+  list-style: none;
+  border-top: 1px solid var(--qss-border-subtle);
+}
+.qpb-shell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11.5px;
+}
+.qpb-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--qss-text-muted);
+}
+.qpb-shell.is-running .qpb-dot {
+  background: var(--qss-accent);
+  animation: qpb-pulse 1.4s ease-in-out infinite;
+}
+.qpb-shell.is-background .qpb-dot {
+  background: color-mix(in srgb, var(--qss-accent) 55%, transparent);
+}
+.qpb-shell.is-failed .qpb-dot {
+  background: var(--qss-error);
+}
+@keyframes qpb-pulse {
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qpb-shell.is-running .qpb-dot {
+    animation: none;
+  }
+}
+.qpb-cmd {
+  flex: 1;
+  min-width: 0;
+  color: var(--qss-text-secondary);
+  font: 11px/1.35 var(--qss-font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qpb-shell.is-ended .qpb-cmd {
+  color: var(--qss-text-muted);
+}
+.qpb-shell-time {
+  flex-shrink: 0;
+  color: var(--qss-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.qpb-shell.is-failed .qpb-shell-time {
+  color: var(--qss-error);
+}

@@ -189,7 +189,43 @@ pub fn codebase_index_tools() -> Vec<CodebaseIndexToolInfo> {
 /// flat-file MEMORY.md tools are gone with it; the CONCEPT.md tools followed
 /// on 2026-08-31 (AgentOS is AGENT.md only).
 pub fn agentos_tools() -> Vec<CodebaseIndexToolInfo> {
-    agent_instruction_tools()
+    let mut tools = agent_instruction_tools();
+    tools.push(report_progress_tool());
+    tools
+}
+
+fn param(name: &str, param_type: &str, description: &str) -> CodebaseIndexToolParam {
+    CodebaseIndexToolParam {
+        name: name.into(),
+        param_type: param_type.into(),
+        description: description.into(),
+        required: false,
+        default_value: None,
+    }
+}
+
+/// Agent status (docs/PLAN-AGENT-STATUS.md): the bar the user watches
+/// instead of asking how far the work is.
+fn report_progress_tool() -> CodebaseIndexToolInfo {
+    CodebaseIndexToolInfo {
+        name: "report_progress".into(),
+        description: "Show the user how far your work is: one progress bar in QuantSuite (drawer › Agent › Status) and on the local page http://127.0.0.1:<port>/progress, beside every other agent's. Call it when work will take longer than about a minute or has several steps: once at the start (title, steps, estimate), at every new step, and with state \"done\" or \"failed\" at the end. Every field is optional on later calls — what you leave out stays. The bar is (finished steps + progress inside the current step) / steps; without steps it is `percent`. While you wait on a long command, `follow` a file it writes (a Smithery run folder or its events.jsonl, or a log with lines like `PROGRESS 12/48` or `PROGRESS 45%`): the bar then moves by itself and shows the newest line. Your shell commands appear under your bar on their own when the user installed the shell hooks; pass `folder` (the worktree you run them in) so they line up.".into(),
+        parameters: vec![
+            param("title", "string", "What the bar is about, e.g. \"Gauntlet LCES Top 6\" or \"Card 84ac: build + tests\". Needed for a new bar; later calls find the bar by it (or by `id`)."),
+            param("agent_id", "string", "Your agent id, e.g. \"claude-code-1\" — the label of your lane. Use the same one as for kanban claims. Default: your client's name."),
+            param("id", "string", "A stable id for the bar when the title changes. Default: derived from the title."),
+            param("step", "integer", "The step you are on now, 1-based. A new step starts empty: its step_text, step_percent and follow go unless given again."),
+            param("steps", "integer", "How many steps the work has."),
+            param("step_text", "string", "What the current step does, e.g. \"Monte-Carlo\" or \"cargo test\"."),
+            param("step_percent", "number", "How far the current step is, 0-100."),
+            param("percent", "number", "How far the whole work is, 0-100 — for a bar without steps."),
+            param("estimate", "string", "Your estimate of the whole run from its start: \"3h\", \"1h30m\", \"45m\" (a bare number is minutes). Shown as elapsed / estimate; once you overrun it the bar extrapolates from its progress."),
+            param("follow", "string", "Absolute path of a file whose progress fills the current step: a Smithery run folder or events.jsonl, a log with PROGRESS lines, or any log (its newest line is shown). \"\" stops following."),
+            param("folder", "string", "The folder you run shell commands in (your worktree), so the shell hooks put your commands under this bar. Default: the folder from get_instructions."),
+            param("state", "string", "\"running\" (default), \"done\" or \"failed\". Finished bars stay grey for 30 minutes, failed ones red for 2 hours."),
+            param("note", "string", "A short closing note for done or failed, e.g. \"3 of 12 passed\"."),
+        ],
+    }
 }
 
 /// Agent instruction tools (AGENT.md)

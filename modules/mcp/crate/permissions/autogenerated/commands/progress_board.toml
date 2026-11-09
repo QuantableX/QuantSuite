@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-progress-board"
+description = "Enables the progress_board command without any pre-configured scope."
+commands.allow = ["progress_board"]
+
+[[permission]]
+identifier = "deny-progress-board"
+description = "Denies the progress_board command without any pre-configured scope."
+commands.deny = ["progress_board"]

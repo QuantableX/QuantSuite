@@ -43,6 +43,9 @@ Default permissions for the mcp module.
 - `allow-forget-client`
 - `allow-memory-hook-status`
 - `allow-set-memory-hooks`
+- `allow-progress-board`
+- `allow-shell-hook-status`
+- `allow-set-shell-hooks`
 - `allow-claude-auto-memory-status`
 - `allow-set-claude-auto-memory`
 - `allow-list-codebase-index-tools`
@@ -1492,6 +1495,32 @@ Denies the process_stop_servers command without any pre-configured scope.
 <tr>
 <td>
 
+`mcp:allow-progress-board`
+
+</td>
+<td>
+
+Enables the progress_board command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:deny-progress-board`
+
+</td>
+<td>
+
+Denies the progress_board command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `mcp:allow-read-agent-md`
 
 </td>
@@ -1830,6 +1859,32 @@ Denies the set_quantmcp_enabled command without any pre-configured scope.
 <tr>
 <td>
 
+`mcp:allow-set-shell-hooks`
+
+</td>
+<td>
+
+Enables the set_shell_hooks command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:deny-set-shell-hooks`
+
+</td>
+<td>
+
+Denies the set_shell_hooks command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `mcp:allow-set-tool-preference`
 
 </td>
@@ -1875,6 +1930,32 @@ Enables the set_workspace_index_settings command without any pre-configured scop
 <td>
 
 Denies the set_workspace_index_settings command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:allow-shell-hook-status`
+
+</td>
+<td>
+
+Enables the shell_hook_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mcp:deny-shell-hook-status`
+
+</td>
+<td>
+
+Denies the shell_hook_status command without any pre-configured scope.
 
 </td>
 </tr>

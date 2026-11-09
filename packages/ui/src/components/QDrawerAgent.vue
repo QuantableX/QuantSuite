@@ -13,9 +13,19 @@
  * that lets an external agent actually call these) — the card→agent flow and
  * the live approval queue arrive with it. This tab says so instead of
  * pretending.
+ *
+ * Status (docs/PLAN-AGENT-STATUS.md) is the tab's first and default view:
+ * every agent's progress bars and shell calls, so nobody has to ask how far
+ * the work is. It renders the ONE board template (../progress/board.js) that
+ * QuantMCP's /progress page renders too, polled once a second while shown.
+ * Strict and Relaxed stay the approval-mode switch and show the tool table;
+ * the active mode stays marked while Status is shown, and Status never
+ * changes the mode.
  */
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { qs, type AgentCapability, type AgentDecision, type PendingAgentCall } from '@quantsuite/core'
+import { renderBoard, type ProgressBoard } from '../progress/board.js'
+import '../progress/board.css'
 
 const props = defineProps<{
   /** Prompted calls awaiting the user, oldest first. */
@@ -50,6 +60,58 @@ async function setMode(m: 'strict' | 'relaxed') {
   if (available.value) await loadDecisions()
 }
 
+const view = ref<'status' | 'tools'>('status')
+
+function showStatus() {
+  view.value = 'status'
+}
+
+async function pickMode(m: 'strict' | 'relaxed') {
+  view.value = 'tools'
+  if (m !== mode.value) await setMode(m)
+}
+
+const board = ref<ProgressBoard | null>(null)
+const boardHtml = ref('')
+const boardLive = ref(true)
+let boardTimer: ReturnType<typeof setInterval> | undefined
+
+const BOARD_EMPTY =
+  'No agent is reporting work right now. Agents show a bar here with report_progress; their shell calls appear once the shell hooks are installed under QuantMCP › Settings.'
+
+async function loadBoard() {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+    boardLive.value = false // plain browser — the board lives in QuantMCP
+    return
+  }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const next = await invoke<ProgressBoard>('plugin:mcp|progress_board')
+    board.value = next
+    boardHtml.value = renderBoard(next, { empty: BOARD_EMPTY })
+    boardLive.value = true
+  } catch {
+    boardLive.value = false
+  }
+}
+
+function startBoard() {
+  if (boardTimer) return
+  void loadBoard()
+  boardTimer = setInterval(loadBoard, 1000)
+}
+
+function stopBoard() {
+  if (boardTimer) clearInterval(boardTimer)
+  boardTimer = undefined
+}
+
+watch(view, (v) => (v === 'status' ? startBoard() : stopBoard()))
+onMounted(() => {
+  if (view.value === 'status') startBoard()
+})
+onUnmounted(stopBoard)
+
 onMounted(async () => {
   try {
     tools.value = await qs.core.agentTools()
@@ -65,7 +127,16 @@ onMounted(async () => {
 <template>
   <div class="daw">
     <header class="daw-head">
-      <div>
+      <div v-if="view === 'status'">
+        <h3>Agent status</h3>
+        <p>
+          What every agent is working on: its bars and its shell calls.
+          <template v-if="board?.pageUrl">
+            The same board in a browser: <span class="daw-url">{{ board.pageUrl }}</span>
+          </template>
+        </p>
+      </div>
+      <div v-else>
         <h3>Agent tools</h3>
         <p>
           What an agent may call, and what the gate does about it.
@@ -73,9 +144,24 @@ onMounted(async () => {
         </p>
       </div>
 
-      <div class="daw-mode" role="radiogroup" aria-label="Approval mode">
-        <button :class="{ 'is-on': mode === 'strict' }" @click="setMode('strict')">Strict</button>
-        <button :class="{ 'is-on': mode === 'relaxed' }" @click="setMode('relaxed')">Relaxed</button>
+      <div class="daw-mode" role="group" aria-label="Agent status and approval mode">
+        <button :class="{ 'is-on': view === 'status' }" :aria-pressed="view === 'status'" @click="showStatus">Status</button>
+        <button
+          :class="{ 'is-on': view === 'tools' && mode === 'strict', 'is-mode': view === 'status' && mode === 'strict' }"
+          :aria-pressed="view === 'tools' && mode === 'strict'"
+          :title="mode === 'strict' ? 'Approval mode: Strict (active)' : 'Switch the approval mode to Strict'"
+          @click="pickMode('strict')"
+        >
+          Strict
+        </button>
+        <button
+          :class="{ 'is-on': view === 'tools' && mode === 'relaxed', 'is-mode': view === 'status' && mode === 'relaxed' }"
+          :aria-pressed="view === 'tools' && mode === 'relaxed'"
+          :title="mode === 'relaxed' ? 'Approval mode: Relaxed (active)' : 'Switch the approval mode to Relaxed'"
+          @click="pickMode('relaxed')"
+        >
+          Relaxed
+        </button>
       </div>
     </header>
 
@@ -95,7 +181,15 @@ onMounted(async () => {
       </article>
     </section>
 
-    <p v-if="!available" class="daw-empty">
+    <template v-if="view === 'status'">
+      <p v-if="!boardLive" class="daw-empty">
+        The board lives in QuantMCP's server — open QuantSuite itself to see it.
+      </p>
+      <!-- renderBoard escapes every value it writes. -->
+      <div v-else class="daw-board" v-html="boardHtml" />
+    </template>
+
+    <p v-else-if="!available" class="daw-empty">
       The tool catalogue lives in the Rust gate — open QuantSuite itself to inspect it.
     </p>
 
@@ -119,7 +213,7 @@ onMounted(async () => {
       </tbody>
     </table>
 
-    <footer class="daw-foot">
+    <footer v-if="view === 'tools'" class="daw-foot">
       Agents reach these tools through QuantMCP's server; every call passes the gate above, and
       prompted calls wait in this queue. The card→agent flow is the remaining E4 work.
     </footer>
@@ -172,6 +266,17 @@ onMounted(async () => {
 .daw-mode button.is-on {
   background: var(--qss-bg-card);
   color: var(--qss-text);
+}
+/* The active approval mode while Status is shown: marked, not selected. */
+.daw-mode button.is-mode {
+  color: var(--qss-text-secondary);
+  box-shadow: inset 0 -2px 0 var(--qss-text-muted);
+}
+
+.daw-url {
+  font-family: var(--qss-font-mono);
+  color: var(--qss-text-secondary);
+  user-select: all;
 }
 
 .daw-empty {

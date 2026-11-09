@@ -12,6 +12,7 @@ mod mcp_server;
 mod memory_hook;
 mod native_tools;
 mod process;
+mod progress;
 mod scripts;
 mod settings;
 mod tools;
@@ -257,6 +258,10 @@ pub fn init() -> TauriPlugin<Wry> {
             // Memory in prompts: the QuantMemory prompt hooks
             commands::memory_hooks::memory_hook_status,
             commands::memory_hooks::set_memory_hooks,
+            // Agent status: the board (drawer > Agent > Status) and its shell hooks
+            progress::progress_board,
+            commands::memory_hooks::shell_hook_status,
+            commands::memory_hooks::set_shell_hooks,
             commands::memory_hooks::claude_auto_memory_status,
             commands::memory_hooks::set_claude_auto_memory,
             commands::tools::list_codebase_index_tools,
