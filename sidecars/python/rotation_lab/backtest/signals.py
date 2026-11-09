@@ -64,9 +64,18 @@ def bounded(df: pd.DataFrame, compute, bars: int) -> pd.Series:
 
 
 def member_signal(df: pd.DataFrame, kind: TrendKind, cfg: IndicatorConfig | None = None) -> pd.Series:
-    """A Smithery indicator's +1/-1/0 votes from bounded, fixed history (see ``bounded``)."""
+    """A Smithery indicator's +1/-1/0 votes from bounded, fixed history (see ``bounded``).
+
+    A run that turns on the vote store (``vote_store``, the System Gauntlet's variants) takes
+    blocks it has already computed from there; the result is the same by construction."""
+    from . import vote_store
     from .smithery import WARMUP_BARS
-    return bounded(df, lambda frame: _smithery(frame, kind, cfg), WARMUP_BARS.get(kind, 0))
+    compute = lambda frame: _smithery(frame, kind, cfg)
+    store = vote_store.active()
+    if store is not None:
+        overrides = indicator_overrides(kind, cfg.params.get(kind)) if cfg is not None else {}
+        compute = store.wrap(kind, overrides, compute)
+    return bounded(df, compute, WARMUP_BARS.get(kind, 0))
 
 
 def aggregate_members(cfg: IndicatorConfig) -> list[TrendKind]:

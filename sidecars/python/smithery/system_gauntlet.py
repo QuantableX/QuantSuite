@@ -21,8 +21,10 @@ import datetime as dt
 import math
 import os
 import random
+import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -34,6 +36,9 @@ from .monte_carlo import stationary_bootstrap_order
 
 FULL = dict(jitter=16, starts=11, noise=3, permutation=39, bootstrap=1000, add=12)
 FAST = dict(jitter=6, starts=4, noise=2, permutation=9, bootstrap=300, add=6)
+# Variants that run on the base run's candles with its members' parameters: their indicator votes are the
+# base run's, so they read them from its vote store (identical by construction). SMITHERY_VOTE_REUSE=0: off.
+REUSE_GROUPS = frozenset({"start_shift", "fees", "system_settings", "universe"})
 JITTER = 0.15
 NOISE_SIGMA = 0.0003
 
@@ -62,11 +67,31 @@ def _engine_for(spec):
     return BacktestEngine(registry=saved_rankings(cache), ohlcv=PricesVariant(SavedPrices(cache), spec))
 
 
-def native_job(job):
-    """One engine run: (label, config, price spec, keep equity) -> summary."""
-    label, config, spec, keep = job
+@contextmanager
+def _votes(votes):
+    """Point the engine's vote store (rotation_lab.backtest.vote_store) at ``(folder, mode)`` for one run."""
+    from rotation_lab.backtest import vote_store
+    if not votes:
+        yield
+        return
+    saved = {k: os.environ.get(k) for k in (vote_store.ENV_FOLDER, vote_store.ENV_MODE)}
+    os.environ[vote_store.ENV_FOLDER], os.environ[vote_store.ENV_MODE] = str(votes[0]), votes[1]
     try:
-        result = _engine_for(spec).run(config)
+        yield
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def native_job(job):
+    """One engine run: (label, config, price spec, keep equity[, (vote store, mode)]) -> summary."""
+    label, config, spec, keep = job[:4]
+    try:
+        with _votes(job[4] if len(job) > 4 else None):
+            result = _engine_for(spec).run(config)
         equity = result.equity_strategy
         if equity is None or len(equity) < 2:
             raise ValueError("; ".join(result.notes[-2:]) or "no equity curve")
@@ -282,8 +307,13 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
     from .registry import describe_all
     rows = {r["key"]: r for r in describe_all()["indicators"]}
 
+    # One vote store per Gauntlet: the base run writes it, the variants that keep its candles read it.
+    from rotation_lab.backtest import vote_store
+    store = tempfile.TemporaryDirectory(prefix="gauntlet-votes-", ignore_cleanup_errors=True) \
+        if os.environ.get("SMITHERY_VOTE_REUSE", "1") != "0" else None
     say("Base run")
-    base = run_native([("base", config, None, True)], workers=1)[0]
+    base = run_native([("base", config, None, True, store and (store.name, "write"))], workers=1)[0]
+    vote_store.close_all()
     if "error" in base:
         raise ValueError(f"The system does not run on the saved data: {base['error']}")
     base_cagr = base["cagr"]
@@ -296,7 +326,8 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
     plan: dict[str, list[str]] = {}
 
     def add(group, label, cfg, spec=None):
-        jobs.append((f"{group}|{label}", cfg, spec, False))
+        votes = (store.name, "read") if store is not None and group in REUSE_GROUPS and spec is None else None
+        jobs.append((f"{group}|{label}", cfg, spec, False, votes))
         plan.setdefault(group, []).append(label)
 
     for i in range(counts["jitter"]):
@@ -325,6 +356,9 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
 
     say(f"{len(jobs)} variant runs")
     results = run_native(jobs, workers=workers, progress=say, stage="Variant runs")
+    vote_store.close_all()
+    if store is not None:
+        store.cleanup()
     by_group: dict[str, list[dict]] = {}
     for job, out in zip(jobs, results):
         group = job[0].split("|", 1)[0]
