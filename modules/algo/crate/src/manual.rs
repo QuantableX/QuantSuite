@@ -12,7 +12,7 @@
 //! The settings live here in quantalgo.db, not in the system's config: a
 //! saved system stays exactly as it was.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Duration;
@@ -26,7 +26,7 @@ use tauri::{AppHandle, Emitter, Manager, State, Wry};
 use crate::execution::engine::{Engine, RunRequest};
 use crate::execution::guards::GuardConfig;
 use crate::execution::paper::PaperVenue;
-use crate::execution::store::{Holdings, OrderRecord, RunRecord, RunStatus, RunStore, SqliteStore, Target};
+use crate::execution::store::{self as exec_store, Holdings, OrderRecord, PortfolioTarget, RunRecord, RunStatus, RunStore, SqliteStore, Target};
 use crate::execution::mapping::quote_for;
 use crate::execution::venue::{free_balance, ExecutionVenue, MarketType};
 use crate::runtime::Mode;
@@ -364,11 +364,10 @@ pub struct Signal {
     /// The signal is short (single-asset systems): a short on perp, cash
     /// on spot.
     pub short: bool,
+    /// Portfolio mode: tomorrow's weights from the engine (`portfolioTarget`),
+    /// cash as `USD`. `hold` keeps the single pick's meaning and is not traded.
+    pub portfolio: Option<BTreeMap<String, f64>>,
 }
-
-/// Why a portfolio system is not traded: Manual execution holds one asset per system, and trading the
-/// portfolio's top pick alone would differ from the system silently.
-pub const PORTFOLIO_REFUSED: &str = "this system runs in portfolio mode (several assets at once); Manual execution trades one asset per system until portfolio orders exist, and never trades the top pick alone";
 
 /// A saved run config with portfolio mode switched on (rotation systems only, as the engine reads it).
 pub fn portfolio_on(config: &Value) -> bool {
@@ -376,12 +375,55 @@ pub fn portfolio_on(config: &Value) -> bool {
         && config.pointer("/portfolio/enabled").and_then(|v| v.as_bool()).unwrap_or(false)
 }
 
+/// What makes two portfolio configs the same system for its verdict: the
+/// portfolio block with its defaults (`withUsd` = `with_usd`). `None` = off.
+pub fn portfolio_key(config: &Value) -> Option<(i64, String, String, String)> {
+    if !portfolio_on(config) {
+        return None;
+    }
+    let p = config.get("portfolio")?;
+    let text = |keys: [&str; 2], default: &str| {
+        keys.iter()
+            .find_map(|k| p.get(*k).and_then(|v| v.as_str()))
+            .unwrap_or(default)
+            .to_lowercase()
+            .replace('_', "")
+    };
+    Some((
+        p.get("positions").and_then(|v| v.as_i64()).unwrap_or(0),
+        text(["weighting", "weighting"], "equal"),
+        text(["notTrending", "not_trending"], "withUsd"),
+        text(["rebalance", "rebalance"], "onChange"),
+    ))
+}
+
+/// The backtest's rebalancing rule of a portfolio config: every day, or
+/// only when the set of assets changes (the default).
+pub fn portfolio_rebalances_daily(config: &Value) -> bool {
+    portfolio_key(config).is_some_and(|k| k.3 == "daily")
+}
+
 /// The engine's `live` result → the signal.
 pub fn parse_signal(live: &Value) -> Result<Signal, String> {
     let as_of = live.get("asOf").and_then(|v| v.as_str()).ok_or("the live result has no asOf")?.to_string();
-    if live.get("portfolioTarget").is_some() {
-        return Err(PORTFOLIO_REFUSED.into());
-    }
+    let portfolio = match live.get("portfolioTarget") {
+        None | Some(Value::Null) => None,
+        Some(Value::Object(map)) => {
+            let mut weights = BTreeMap::new();
+            for (asset, w) in map {
+                let w = w.as_f64().filter(|w| w.is_finite() && *w >= 0.0).ok_or_else(|| format!("the portfolio weight of {asset} is not a share"))?;
+                if w > 0.0 {
+                    weights.insert(asset.clone(), w);
+                }
+            }
+            let total: f64 = weights.values().sum();
+            if (total - 1.0).abs() > 1e-6 {
+                return Err(format!("the portfolio weights add up to {total}, not 1"));
+            }
+            Some(weights)
+        }
+        Some(_) => return Err("the portfolio target is not a list of weights".into()),
+    };
     if live.get("mode").and_then(|v| v.as_str()) == Some("single_asset") {
         let sig = live.get("singleAssetSignal").ok_or("the single-asset result has no signal")?;
         let base = live
@@ -400,6 +442,7 @@ pub fn parse_signal(live: &Value) -> Result<Signal, String> {
             closed_at: sig.get("closedAt").and_then(|v| v.as_str()).map(String::from),
             close: sig.get("close").and_then(|v| v.as_f64()),
             short: position == "short",
+            portfolio: None,
         });
     }
     let best = live.get("best").and_then(|v| v.as_str());
@@ -419,6 +462,7 @@ pub fn parse_signal(live: &Value) -> Result<Signal, String> {
         closed_at: None,
         close: None,
         short: false,
+        portfolio,
     })
 }
 
@@ -478,6 +522,66 @@ pub fn target_for(signal: &Signal, tradable: &dyn Fn(&str) -> bool, perp: bool) 
     }
 }
 
+/// A portfolio signal → the weights the account trades to (card 791a9140).
+/// `USD` becomes the account's quote. A coin the venue cannot trade gives
+/// its share to the quote, flagged backtest ≠ live (policy `hold_usd`; under
+/// `restrict` the coin is out of the universe and never in the weights).
+pub fn portfolio_weights(
+    weights: &BTreeMap<String, f64>,
+    quote: &str,
+    tradable: &dyn Fn(&str) -> bool,
+) -> (BTreeMap<String, f64>, Vec<String>) {
+    let mut out = BTreeMap::new();
+    let mut notes = Vec::new();
+    for (asset, w) in weights {
+        let key = if asset.eq_ignore_ascii_case(USD) || asset.eq_ignore_ascii_case(quote) {
+            quote.to_string()
+        } else if tradable(asset) {
+            asset.clone()
+        } else {
+            notes.push(format!(
+                "{asset} ({:.1} %) is not tradable on this venue: that share is held as {quote} (backtest ≠ live)",
+                w * 100.0
+            ));
+            quote.to_string()
+        };
+        *out.entry(key).or_insert(0.0) += w;
+    }
+    (out, notes)
+}
+
+/// The backtest's rebalancing rule, live (card 791a9140): back to the
+/// weights every day (`daily`), or only when the set of assets changes
+/// against the last run's target (`onChange`); otherwise nothing trades and
+/// the weights drift. The last run must have finished: after a partial,
+/// failed or stopped run the account is not what its target said, so the
+/// run trades back to the weights.
+pub fn portfolio_rebalance(daily: bool, previous: Option<&RunRecord>, today: &PortfolioTarget) -> (bool, String) {
+    if daily {
+        return (true, "rebalancing every day, as the backtest does".into());
+    }
+    let Some(prev) = previous else {
+        return (true, "the system's first run: trading to the weights".into());
+    };
+    let day = prev.close_date.as_deref().unwrap_or("?");
+    if prev.status != RunStatus::Done {
+        return (true, format!("the last run ({day}) ended {}: trading back to the weights", prev.status.as_str()));
+    }
+    let before: BTreeSet<String> = match &prev.target {
+        Target::Portfolio(p) => p.assets(),
+        Target::Flat => [prev.quote.clone()].into(),
+        Target::Hold(a) if a.eq_ignore_ascii_case(&prev.quote) => [prev.quote.clone()].into(),
+        Target::Hold(a) | Target::Short(a) => [a.clone()].into(),
+    };
+    let now = today.assets();
+    let list = |s: &BTreeSet<String>| s.iter().cloned().collect::<Vec<_>>().join(", ");
+    if before == now {
+        (false, format!("the same assets as after the last run ({day}: {}): the weights drift, as in the backtest", list(&now)))
+    } else {
+        (true, format!("the assets change from {} to {}: trading to the weights", list(&before), list(&now)))
+    }
+}
+
 /// The account's venue and market, for its reference prices.
 struct VenueMarket<'a> {
     provider: &'a str,
@@ -518,7 +622,11 @@ pub struct Verdict {
 
 /// The newest finished System Gauntlet verdict of a system (docs/ROBUSTNESS.md),
 /// read from QuantScript's research runs. `None` when there is none.
-pub fn robustness_verdict(research_dir: &Path, system_id: &str) -> Option<Verdict> {
+///
+/// `portfolio` is the system's portfolio block today ([`portfolio_key`]):
+/// only a run of the same block counts, so a portfolio system is never armed
+/// on its single-pick verdict, nor a single-pick system on a portfolio one.
+pub fn robustness_verdict(research_dir: &Path, system_id: &str, portfolio: Option<&(i64, String, String, String)>) -> Option<Verdict> {
     let mut best: Option<Verdict> = None;
     for entry in std::fs::read_dir(research_dir).ok()?.flatten() {
         let dir = entry.path();
@@ -527,6 +635,7 @@ pub fn robustness_verdict(research_dir: &Path, system_id: &str) -> Option<Verdic
         if run.get("kind").and_then(|v| v.as_str()) != Some("robustness")
             || run.get("status").and_then(|v| v.as_str()) != Some("done")
             || run.pointer("/system/id").and_then(|v| v.as_str()) != Some(system_id)
+            || run.get("config").and_then(portfolio_key).as_ref() != portfolio
         {
             continue;
         }
@@ -647,6 +756,7 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
 
     // The signal.
     let config = qs_mod_systems::signals::run_config(app, system_id)?;
+    let rebalance_daily = portfolio_rebalances_daily(&config);
     let result = qs_mod_systems::signals::live(app, config)?;
     let signal = parse_signal(&result)?;
 
@@ -674,7 +784,21 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
         }
     }
 
-    let (target, mut notes) = target_for(&signal, &is_listed, market == MarketType::Perp);
+    let (target, mut notes) = match &signal.portfolio {
+        Some(weights) => {
+            let (weights, mut notes) = portfolio_weights(weights, quote, &is_listed);
+            let previous = {
+                let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
+                exec_store::previous_run(&db, &owner(system_id), &close.to_string())?
+            };
+            let mut p = PortfolioTarget { weights, rebalance: true };
+            let (rebalance, why) = portfolio_rebalance(rebalance_daily, previous.as_ref(), &p);
+            p.rebalance = rebalance;
+            notes.push(why);
+            (Target::Portfolio(p), notes)
+        }
+        None => target_for(&signal, &is_listed, market == MarketType::Perp),
+    };
     let mut reference_prices: std::collections::BTreeMap<String, f64> = closes.into_iter().collect();
     reference_prices.insert(quote.into(), 1.0);
     let account = if live { Some(live_venue(&state, &exchange_id, market, settings.leverage)?) } else { None };
@@ -690,7 +814,7 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
         notes.push("test network: its prices are its own, so the price check compares with the venue's mid".into());
     }
     let (initial_capital, initial_holdings) = starting_capital(&settings, account.as_deref(), quote)?;
-    let req = RunRequest {
+    let mut req = RunRequest {
         run_id: run_id(system_id, close),
         owner: owner(system_id),
         exchange_id: exchange_id.clone(),
@@ -715,6 +839,10 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
         initial_holdings,
         leverage: if market == MarketType::Perp { settings.leverage } else { 1.0 },
     };
+    // Portfolio mode: the engine's weights stay with the run (Live Eval's expected holdings).
+    if let (Some(weights), Some(signal)) = (result.get("portfolioTarget"), req.signal.as_object_mut()) {
+        signal.insert("portfolioTarget".into(), weights.clone());
+    }
     let min_liquidation_distance = state
         .settings
         .lock()
@@ -751,9 +879,34 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
     Ok(Some(record))
 }
 
+/// What a portfolio holds as shares at the run's prices, largest first:
+/// "BTC 50 % · ETH 30 % · USD 20 %". Below 0.5 % (dust, rounding) is left out.
+pub fn shares(holdings: &Holdings, prices: &BTreeMap<String, f64>, quote: &str) -> String {
+    let mut values: Vec<(String, f64)> = holdings
+        .iter()
+        .filter(|(_, q)| **q > 0.0)
+        .filter_map(|(a, q)| {
+            let cash = a.eq_ignore_ascii_case(quote);
+            let price = if cash { 1.0 } else { *prices.get(a)? };
+            Some((if cash { USD.to_string() } else { a.clone() }, q * price))
+        })
+        .collect();
+    let total: f64 = values.iter().map(|(_, v)| v).sum();
+    if total <= 0.0 {
+        return USD.into();
+    }
+    values.retain(|(_, v)| v / total >= 0.005);
+    values.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    values.iter().map(|(a, v)| format!("{a} {:.0} %", v / total * 100.0)).collect::<Vec<_>>().join(" · ")
+}
+
 /// One line for a run: "LCES: BTC → ETH, 2 orders, fees 13.98$".
 pub fn summary(name: &str, record: &RunRecord, orders: &[OrderRecord]) -> String {
+    let portfolio = matches!(record.target, Target::Portfolio(_));
     let held = |h: &Option<Holdings>| -> String {
+        if portfolio {
+            return h.as_ref().map(|h| shares(h, &record.reference_prices, &record.quote)).unwrap_or_else(|| USD.into());
+        }
         h.as_ref()
             .and_then(|h| {
                 h.iter()
@@ -958,8 +1111,9 @@ fn paper_runs_done(conn: &Connection, system_id: &str) -> i64 {
     .unwrap_or(0)
 }
 
-fn view(conn: &Connection, system_id: &str) -> Result<ManualView, String> {
+fn view(conn: &Connection, system_id: &str, app: &AppHandle<Wry>) -> Result<ManualView, String> {
     let row = load_row(conn, system_id)?;
+    let portfolio = qs_mod_systems::signals::run_config(app, system_id).ok().as_ref().and_then(portfolio_key);
     let settings = row.as_ref().map(|r| r.settings.clone()).unwrap_or_default();
     let next_run = (settings.mode != ExecMode::Off)
         .then(|| parse_run_time(&settings.run_time).ok())
@@ -972,15 +1126,15 @@ fn view(conn: &Connection, system_id: &str) -> Result<ManualView, String> {
         ack_not_robust: row.as_ref().is_some_and(|r| r.ack_not_robust),
         next_run,
         paper_runs_done: paper_runs_done(conn, system_id),
-        verdict: robustness_verdict(&research_dir(), system_id),
+        verdict: robustness_verdict(&research_dir(), system_id, portfolio.as_ref()),
         settings,
     })
 }
 
 #[tauri::command(async, rename_all = "snake_case")]
-pub(crate) fn manual_execution_get(system_id: String, state: State<'_, AppState>) -> Result<ManualView, String> {
+pub(crate) fn manual_execution_get(system_id: String, state: State<'_, AppState>, app: AppHandle<Wry>) -> Result<ManualView, String> {
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
-    view(&db, &system_id)
+    view(&db, &system_id, &app)
 }
 
 #[tauri::command(async, rename_all = "snake_case")]
@@ -988,6 +1142,7 @@ pub(crate) fn manual_execution_save(
     system_id: String,
     settings: ManualSettings,
     state: State<'_, AppState>,
+    app: AppHandle<Wry>,
 ) -> Result<ManualView, String> {
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
     if let Some(id) = settings.exchange_id.as_deref().filter(|id| !id.is_empty()) {
@@ -999,7 +1154,7 @@ pub(crate) fn manual_execution_save(
     let cap = state.settings.lock().map(|s| s.perp_max_leverage).unwrap_or(crate::settings::DEFAULT_PERP_MAX_LEVERAGE);
     check_leverage(settings.leverage, cap)?;
     save_settings(&db, &system_id, &settings)?;
-    let out = view(&db, &system_id);
+    let out = view(&db, &system_id, &app);
     drop(db);
     wake();
     out
@@ -1030,8 +1185,10 @@ pub fn arming_checks(
     portfolio: bool,
 ) -> Vec<ArmCheck> {
     let check = |name: &str, ok: bool, detail: String| ArmCheck { name: name.into(), ok, detail };
-    // Listed only when it refuses, so other systems' check lists stay as they were.
-    let refused = portfolio.then(|| check("portfolio", false, format!("cannot arm: {PORTFOLIO_REFUSED}")));
+    // Portfolio mode trades on spot (card 791a9140). Listed only when it
+    // refuses, so other systems' check lists stay as they were.
+    let refused = (portfolio && settings.market_type() == MarketType::Perp)
+        .then(|| check("portfolio", false, format!("cannot arm: {}", crate::execution::engine::PORTFOLIO_SPOT_ONLY)));
     refused.into_iter().chain([
         check("mode", settings.mode == ExecMode::Live, if settings.mode == ExecMode::Live { "Live".into() } else { "set the mode to Live first".into() }),
         check(
@@ -1083,9 +1240,12 @@ pub(crate) async fn manual_execution_arm(
             let cap = crate::venues::wallet_cap_check(&creds)?.map(|c| format!(", {c}")).unwrap_or_default();
             Ok(format!("{}: {:.2} {quote} free{cap}", venue.label(), free_balance(&balances, quote)))
         });
-        let verdict = robustness_verdict(&research_dir(), &system_id);
-        // An unreadable config does not block here: every run refuses a portfolio signal as well.
-        let portfolio = qs_mod_systems::signals::run_config(&app, &system_id).map(|c| portfolio_on(&c)).unwrap_or(false);
+        // A portfolio system's verdict is its own portfolio config's (card 791a9140).
+        let config = qs_mod_systems::signals::run_config(&app, &system_id).ok();
+        let key = config.as_ref().and_then(portfolio_key);
+        let verdict = robustness_verdict(&research_dir(), &system_id, key.as_ref());
+        // An unreadable config does not block here: a portfolio run on perp refuses as well.
+        let portfolio = key.is_some();
         let checks = arming_checks(&row.settings, paper_runs, account, verdict.as_ref(), ack, portfolio);
         let armed = checks.iter().all(|c| c.ok);
         if armed {
@@ -1100,10 +1260,10 @@ pub(crate) async fn manual_execution_arm(
 }
 
 #[tauri::command(async, rename_all = "snake_case")]
-pub(crate) fn manual_execution_disarm(system_id: String, state: State<'_, AppState>) -> Result<ManualView, String> {
+pub(crate) fn manual_execution_disarm(system_id: String, state: State<'_, AppState>, app: AppHandle<Wry>) -> Result<ManualView, String> {
     let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
     set_armed(&db, &system_id, false, false)?;
-    view(&db, &system_id)
+    view(&db, &system_id, &app)
 }
 
 #[derive(Debug, Serialize)]
@@ -1376,47 +1536,125 @@ mod tests {
         assert!(ok(&arming_checks(&live, 1, Ok("ok".into()), Some(&fragile), true, false)), "the user's own tick");
         assert!(!ok(&arming_checks(&live, 1, Ok("ok".into()), None, false, false)));
         assert!(!ok(&arming_checks(&ManualSettings::default(), 1, Ok("ok".into()), Some(&robust), false, false)), "mode is not Live");
-        // Portfolio mode cannot be armed, not even with the "not robust" tick (card 77ef7dfd, until card 791a9140).
-        let refused = arming_checks(&live, 1, Ok("ok".into()), Some(&robust), true, true);
+        // Portfolio mode arms on spot (card 791a9140) with no extra line; on perp it never arms,
+        // not even with the "not robust" tick.
+        let portfolio_spot = arming_checks(&live, 1, Ok("ok".into()), Some(&robust), false, true);
+        assert!(ok(&portfolio_spot));
+        assert!(!portfolio_spot.iter().any(|c| c.name == "portfolio"));
+        let perp = ManualSettings { market: "perp".into(), ..live.clone() };
+        let refused = arming_checks(&perp, 1, Ok("ok".into()), Some(&robust), true, true);
         assert!(!ok(&refused));
-        assert!(refused.iter().any(|c| c.name == "portfolio" && !c.ok && c.detail.contains("portfolio mode")));
+        assert!(refused.iter().any(|c| c.name == "portfolio" && !c.ok && c.detail.contains("spot only")), "{:?}", refused.iter().map(|c| &c.detail).collect::<Vec<_>>());
+        assert!(ok(&arming_checks(&perp, 1, Ok("ok".into()), Some(&robust), false, false)), "single pick on perp as before");
         let plain = arming_checks(&live, 1, Ok("ok".into()), Some(&robust), false, false);
         assert_eq!(plain.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["mode", "paper_run", "account", "robustness"]);
     }
 
     #[test]
-    fn portfolio_systems_are_never_traded_as_their_top_pick() {
+    fn portfolio_signals_carry_their_weights() {
         assert!(portfolio_on(&json!({"mode": "rotation", "portfolio": {"enabled": true}})));
         assert!(portfolio_on(&json!({"portfolio": {"enabled": true, "positions": 3}})), "rotation is the default mode");
         assert!(!portfolio_on(&json!({"portfolio": {"enabled": false}})));
         assert!(!portfolio_on(&json!({"mode": "single_asset", "portfolio": {"enabled": true}})), "the engine ignores it there");
         assert!(!portfolio_on(&json!({"mode": "rotation"})));
         let live = json!({"asOf": "2026-11-10", "best": "ETH", "symbols": ["ETH", "BTC", "USD"],
-                          "portfolioTarget": {"ETH": 0.5, "USD": 0.5}});
-        let err = parse_signal(&live).unwrap_err();
-        assert!(err.contains("portfolio mode") && err.contains("never trades the top pick alone"), "{err}");
+                          "portfolioTarget": {"ETH": 0.5, "BTC": 0.25, "USD": 0.25}});
+        let s = parse_signal(&live).unwrap();
+        assert_eq!(s.portfolio.unwrap(), [("BTC".to_string(), 0.25), ("ETH".into(), 0.5), ("USD".into(), 0.25)].into_iter().collect());
+        assert_eq!(s.hold.as_deref(), Some("ETH"), "best keeps its single-pick meaning");
+        assert!(parse_signal(&json!({"asOf": "2026-11-10", "symbols": ["ETH"], "portfolioTarget": {"ETH": 0.5}})).unwrap_err().contains("add up"));
+        assert!(parse_signal(&json!({"asOf": "2026-11-10", "symbols": ["ETH"], "portfolioTarget": {"ETH": -1.0, "USD": 2.0}})).is_err());
+        assert!(parse_signal(&json!({"asOf": "2026-11-10", "symbols": ["ETH"], "portfolioTarget": ["ETH"]})).is_err());
+        assert!(parse_signal(&json!({"asOf": "2026-11-10", "symbols": ["ETH"], "best": "ETH"})).unwrap().portfolio.is_none());
+    }
+
+    #[test]
+    fn portfolio_weights_trade_in_the_accounts_quote_and_untradable_shares_hold_it() {
+        let w: BTreeMap<String, f64> = [("BTC", 0.4), ("HYPE", 0.2), ("USD", 0.4)].into_iter().map(|(a, w)| (a.to_string(), w)).collect();
+        let (out, notes) = portfolio_weights(&w, "USDT", &|c: &str| c != "HYPE");
+        assert_eq!(out.len(), 2);
+        assert!((out["BTC"] - 0.4).abs() < 1e-12 && (out["USDT"] - 0.6).abs() < 1e-12, "{out:?}");
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].contains("HYPE") && notes[0].contains("backtest ≠ live"), "{notes:?}");
+        let (out, notes) = portfolio_weights(&w, "USDC", &|_| true);
+        assert_eq!(out.keys().cloned().collect::<Vec<_>>(), ["BTC", "HYPE", "USDC"]);
+        assert!(notes.is_empty());
+    }
+
+    #[test]
+    fn a_portfolio_trades_when_its_assets_change_or_every_day_and_repairs_an_unfinished_run() {
+        let target = |assets: &[(&str, f64)]| PortfolioTarget { weights: assets.iter().map(|(a, w)| (a.to_string(), *w)).collect(), rebalance: true };
+        let run = |status: &str, t: Value| -> RunRecord {
+            serde_json::from_value(json!({"id": "manual-p-2026-11-09", "owner": "system:p", "exchange_id": "x", "mode": "paper",
+                "close_date": "2026-11-09", "status": status, "target": t, "quote": "USDT", "started_at": "t"})).unwrap()
+        };
+        let today = target(&[("BTC", 0.5), ("ETH", 0.3), ("USDT", 0.2)]);
+        // The same assets with other weights: the weights drift, nothing trades.
+        let same = run("done", json!({"kind": "portfolio", "asset": {"weights": {"BTC": 0.4, "ETH": 0.4, "USDT": 0.2}, "rebalance": true}}));
+        let (go, why) = portfolio_rebalance(false, Some(&same), &today);
+        assert!(!go, "{why}");
+        assert!(why.contains("drift"), "{why}");
+        // Every day under the daily rule.
+        assert!(portfolio_rebalance(true, Some(&same), &today).0);
+        // A coin joins or leaves, or the cash share goes: trade.
+        let other = run("done", json!({"kind": "portfolio", "asset": {"weights": {"BTC": 0.5, "SOL": 0.3, "USDT": 0.2}, "rebalance": false}}));
+        let (go, why) = portfolio_rebalance(false, Some(&other), &today);
+        assert!(go && why.contains("SOL"), "{why}");
+        assert!(portfolio_rebalance(false, Some(&same), &target(&[("BTC", 0.6), ("ETH", 0.4)])).0);
+        // The first run, and the run after the single pick or USD.
+        assert!(portfolio_rebalance(false, None, &today).0);
+        assert!(portfolio_rebalance(false, Some(&run("done", json!({"kind": "hold", "asset": "BTC"}))), &today).0);
+        assert!(!portfolio_rebalance(false, Some(&run("done", json!({"kind": "flat"}))), &target(&[("USDT", 1.0)])).0, "all cash stays all cash");
+        // A run that did not finish leaves the account off its target: trade back.
+        for status in ["partial", "failed", "guard_stopped", "interrupted"] {
+            let (go, why) = portfolio_rebalance(false, Some(&run(status, json!({"kind": "portfolio", "asset": {"weights": {"BTC": 0.5, "ETH": 0.3, "USDT": 0.2}, "rebalance": true}}))), &today);
+            assert!(go && why.contains(status), "{status}: {why}");
+        }
+    }
+
+    #[test]
+    fn the_portfolio_block_decides_which_verdict_counts() {
+        let on = json!({"mode": "rotation", "portfolio": {"enabled": true, "positions": 2, "weighting": "equal", "notTrending": "withUsd", "rebalance": "onChange"}});
+        let snake = json!({"portfolio": {"enabled": true, "positions": 2, "not_trending": "with_usd", "rebalance": "on_change"}});
+        assert_eq!(portfolio_key(&on), portfolio_key(&snake), "defaults and spellings match");
+        assert!(portfolio_key(&json!({"portfolio": {"enabled": true, "positions": 3}})) != portfolio_key(&on));
+        assert!(portfolio_key(&json!({"portfolio": {"enabled": false, "positions": 2}})).is_none());
+        assert!(!portfolio_rebalances_daily(&on));
+        assert!(portfolio_rebalances_daily(&json!({"portfolio": {"enabled": true, "rebalance": "daily"}})));
     }
 
     #[test]
     fn the_newest_verdict_of_the_system_counts() {
         let dir = std::env::temp_dir().join(format!("qs-manual-verdict-{}", uuid::Uuid::new_v4()));
-        let write = |id: &str, system: &str, finished: &str, verdict: Value, file: &str| {
+        let write_with = |id: &str, system: &str, finished: &str, verdict: Value, file: &str, config: Value| {
             let run = dir.join(id);
             std::fs::create_dir_all(&run).unwrap();
             std::fs::write(
                 run.join("run.json"),
-                json!({"id": id, "kind": "robustness", "status": "done", "system": {"id": system}, "finished_at": finished}).to_string(),
+                json!({"id": id, "kind": "robustness", "status": "done", "system": {"id": system}, "finished_at": finished, "config": config}).to_string(),
             )
             .unwrap();
             let body = if file == "verdict.json" { verdict } else { json!({ "verdict": verdict }) };
             std::fs::write(run.join(file), body.to_string()).unwrap();
         };
+        let single = json!({"mode": "rotation", "topN": 5});
+        let write = |id: &str, system: &str, finished: &str, verdict: Value, file: &str| write_with(id, system, finished, verdict, file, single.clone());
         write("a", "lces", "2026-11-01T00:00:00Z", json!({"status": "robust", "robust": true}), "verdict.json");
         write("b", "lces", "2026-11-03T00:00:00Z", json!({"status": "not_robust", "robust": false}), "results.json");
         write("c", "other", "2026-11-04T00:00:00Z", json!({"status": "robust", "robust": true}), "verdict.json");
-        let v = robustness_verdict(&dir, "lces").unwrap();
+        let v = robustness_verdict(&dir, "lces", None).unwrap();
         assert_eq!((v.run_id.as_str(), v.robust), ("b", false));
-        assert!(robustness_verdict(&dir, "none").is_none());
+        assert!(robustness_verdict(&dir, "none", None).is_none());
+
+        // Portfolio mode (card 791a9140): only a Gauntlet of the same portfolio block counts, both ways.
+        let portfolio = json!({"mode": "rotation", "portfolio": {"enabled": true, "positions": 2}});
+        let key = portfolio_key(&portfolio);
+        assert!(robustness_verdict(&dir, "lces", key.as_ref()).is_none(), "the single pick's verdict is not the portfolio's");
+        write_with("d", "lces", "2026-11-05T00:00:00Z", json!({"status": "robust", "robust": true}), "verdict.json", portfolio.clone());
+        assert_eq!(robustness_verdict(&dir, "lces", key.as_ref()).unwrap().run_id, "d");
+        assert_eq!(robustness_verdict(&dir, "lces", None).unwrap().run_id, "b", "and the portfolio's is not the single pick's");
+        let three = portfolio_key(&json!({"portfolio": {"enabled": true, "positions": 3}}));
+        assert!(robustness_verdict(&dir, "lces", three.as_ref()).is_none(), "another number of positions is another system");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1434,5 +1672,21 @@ mod tests {
         rec.errors = vec!["data_fresh: the signal is not from the candle that just closed".into()];
         rec.signal = json!({"freshness": "no 2026-11-09 candle yet for SOL"});
         assert_eq!(summary("LCES", &rec, &[]), "LCES: skipped — no 2026-11-09 candle yet for SOL. Still holding BTC.");
+    }
+
+    #[test]
+    fn a_portfolio_run_reads_as_its_shares() {
+        let rec: RunRecord = serde_json::from_value(json!({
+            "id": "manual-p-2026-11-10", "owner": "system:p", "exchange_id": "x", "mode": "paper", "status": "done",
+            "target": {"kind": "portfolio", "asset": {"weights": {"BTC": 0.5, "ETH": 0.3, "USDT": 0.2}, "rebalance": false}},
+            "quote": "USDT", "reference_prices": {"BTC": 100000.0, "ETH": 4000.0, "USDT": 1.0},
+            "holdings_before": {"BTC": 0.05, "ETH": 0.75, "USDT": 2000.0, "SOL": 0.001},
+            "holdings_after": {"BTC": 0.05, "ETH": 0.75, "USDT": 2000.0, "SOL": 0.001},
+            "started_at": "t"
+        }))
+        .unwrap();
+        // SOL has no price in the run (dust from earlier) and stays out.
+        assert_eq!(summary("P", &rec, &[]), "P: holds BTC 50 % · ETH 30 % · USD 20 %, nothing to trade");
+        assert_eq!(shares(&Holdings::new(), &rec.reference_prices, "USDT"), "USD");
     }
 }

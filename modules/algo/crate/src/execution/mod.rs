@@ -25,6 +25,9 @@ pub mod venue;
 mod perp_tests;
 
 #[cfg(test)]
+mod portfolio_tests;
+
+#[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, HashMap};
     use std::sync::Mutex;

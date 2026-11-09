@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use super::guards::{self, GuardConfig, OrderCheck, RunContext};
 use super::route::{self, DirectMarket, RouteKind, SwitchInputs};
-use super::store::{FillBooking, Holdings, OrderRecord, OrderState, RunRecord, RunStatus, RunStore, Target};
+use super::store::{FillBooking, Holdings, OrderRecord, OrderState, PortfolioTarget, RunRecord, RunStatus, RunStore, Target};
 use super::venue::{MARKET_DEPTHS, free_balance, ExecutionVenue, Instrument, OrderReport, OrderRequest, OrderStatus, Side};
 use crate::runtime::Mode;
 
@@ -71,6 +71,11 @@ pub struct RunRequest {
 /// A maintenance margin to assume when the venue does not tell one: the
 /// highest Hyperliquid tier (assets with 3x max leverage).
 pub const DEFAULT_MAINTENANCE_MARGIN: f64 = 1.0 / 6.0;
+
+/// Why a portfolio target never runs on perp (card 791a9140): several
+/// leveraged positions at once need their own margin and liquidation rules.
+pub const PORTFOLIO_SPOT_ONLY: &str =
+    "portfolio mode trades spot only; several perp positions at once are not built, so a portfolio system cannot run on perp";
 
 /// One run per account at a time, across every caller in the process.
 pub struct AccountLock(String);
@@ -175,6 +180,10 @@ struct Exec<'a> {
     /// Orders from before this attempt at the run: only this attempt's count
     /// towards its retries.
     resumed_from: usize,
+    /// Portfolio legs left out in this attempt: below the venue's minimum.
+    skipped: HashSet<String>,
+    /// Portfolio legs the venue refused in this attempt; the other legs go on.
+    refused: Vec<String>,
 }
 
 impl Engine {
@@ -209,6 +218,7 @@ impl Engine {
                 holdings_before: None,
                 holdings_after: None,
                 dust: Vec::new(),
+                planned: None,
                 notes: Vec::new(),
                 errors: Vec::new(),
                 cost: 0.0,
@@ -245,6 +255,11 @@ impl Engine {
             let why = format!("{} is spot: a short needs a perp market", venue.label());
             return Self::finish(store, rec, RunStatus::Failed, Some(why), t0);
         }
+        if perp && matches!(req.target, Target::Portfolio(_)) {
+            // A setting, not a venue hiccup: final, so it is not tried again all day.
+            let why = format!("portfolio: {} — {PORTFOLIO_SPOT_ONLY}", venue.label());
+            return Self::finish(store, rec, RunStatus::GuardStopped, Some(why), t0);
+        }
         if !caps.client_order_ids {
             rec.notes.push(format!("{} has no client order ids: a lost answer cannot be looked up", venue.label()));
         }
@@ -265,6 +280,8 @@ impl Engine {
             perp,
             depth: 0,
             resumed_from,
+            skipped: HashSet::new(),
+            refused: Vec::new(),
         };
         let outcome = x.settle_open_orders().and_then(|()| x.init_holdings()).and_then(|()| x.drive());
         let Exec { mut rec, holdings, .. } = x;
@@ -488,6 +505,10 @@ impl Exec<'_> {
             Target::Hold(asset) if asset.eq_ignore_ascii_case(&quote) => None,
             Target::Hold(asset) => Some(asset.clone()),
             Target::Short(_) => return Err(Stop(RunStatus::Failed, "a short needs a perp market".into())),
+            Target::Portfolio(p) => {
+                let p = p.clone();
+                return self.drive_portfolio(&p);
+            }
         };
         for _ in 0..MAX_STEPS {
             // What to sell: every asset the owner holds that is not the target.
@@ -578,6 +599,200 @@ impl Exec<'_> {
         Err(Stop(RunStatus::Failed, format!("the run did not settle after {MAX_STEPS} steps")))
     }
 
+    /// The price an asset is valued at: the signal's, else the venue's mid
+    /// (a coin that left the universe has no close in the signal).
+    fn value_price(&mut self, asset: &str) -> Result<f64, Stop> {
+        if let Some(p) = self.reference(asset) {
+            return Ok(p);
+        }
+        let inst = self.instrument(asset, &self.req.quote.clone())?;
+        let mid = self
+            .venue
+            .order_book(&inst)
+            .ok()
+            .and_then(|b| b.mid())
+            .filter(|p| *p > 0.0)
+            .ok_or_else(|| Stop(RunStatus::Failed, format!("no price for {asset}: not in the signal and no book on the venue")))?;
+        let quote_usd = self.quote_usd(&inst)?;
+        let line = format!("{asset}: not in the signal, valued at the venue's mid {mid}");
+        if !self.rec.notes.contains(&line) {
+            self.rec.notes.push(line);
+        }
+        Ok(mid * quote_usd)
+    }
+
+    fn is_cash(&self, asset: &str) -> bool {
+        asset.eq_ignore_ascii_case(&self.req.quote) || asset.eq_ignore_ascii_case("USD")
+    }
+
+    /// The weights as quantities, from what the owner holds now at the
+    /// signal's prices. Made once per run and kept in the record.
+    fn plan_portfolio(&mut self, p: &PortfolioTarget) -> Result<BTreeMap<String, f64>, Stop> {
+        let quote = self.req.quote.clone();
+        let held: Vec<(String, f64)> = self.holdings.iter().map(|(a, q)| (a.clone(), *q)).collect();
+        let mut equity = 0.0;
+        for (asset, qty) in held {
+            if self.is_cash(&asset) {
+                equity += qty;
+            } else if qty > 0.0 {
+                equity += qty * self.value_price(&asset)?;
+            }
+        }
+        let mut plan = BTreeMap::new();
+        let mut parts = Vec::new();
+        for (asset, w) in p.weights.iter().filter(|(_, w)| **w > 0.0) {
+            if self.is_cash(asset) {
+                *plan.entry(quote.clone()).or_insert(0.0) += w * equity;
+                parts.push(format!("{quote} {:.1} %", w * 100.0));
+                continue;
+            }
+            let price = self
+                .reference(asset)
+                .ok_or_else(|| Stop(RunStatus::Failed, format!("no reference price for {asset}, which the target holds")))?;
+            plan.insert(asset.clone(), w * equity / price);
+            parts.push(format!("{asset} {:.1} % = {:.8}", w * 100.0, w * equity / price));
+        }
+        self.rec.notes.push(format!("plan on {equity:.2} {quote} of equity: {}", parts.join(", ")));
+        Ok(plan)
+    }
+
+    fn refuse(&mut self, leg: &str, why: &str) {
+        self.rec.notes.push(format!("{leg}: the venue refused the order ({why}); the other legs go on"));
+        self.refused.push(leg.to_string());
+    }
+
+    /// Portfolio mode (card 791a9140), spot only. The plan's quantities are
+    /// made true: first every coin held above its plan is sold down (all of
+    /// it when the plan has none), so the cash is there; then the coins
+    /// below their plan are bought with the cash above the plan's own cash,
+    /// shared by what each still needs when it is short. Only what has to
+    /// move trades. An amount under the venue's minimum is skipped and
+    /// noted, never rounded up. A leg the venue refuses is noted and the
+    /// other legs go on; the run then ends `Failed` and is tried again while
+    /// its window is open. Partial fills are retried like every leg.
+    fn drive_portfolio(&mut self, p: &PortfolioTarget) -> Result<(), Stop> {
+        if !p.rebalance {
+            let line = "the same assets as after the last run: nothing trades, the weights drift with the prices (the backtest's rule)".to_string();
+            if !self.rec.notes.contains(&line) {
+                self.rec.notes.push(line);
+            }
+            return Ok(());
+        }
+        let quote = self.req.quote.clone();
+        let plan = match self.rec.planned.clone() {
+            Some(plan) => plan,
+            None => {
+                let plan = self.plan_portfolio(p)?;
+                self.rec.planned = Some(plan.clone());
+                self.save()?;
+                plan
+            }
+        };
+        let want = |asset: &str| plan.get(asset).copied().unwrap_or(0.0);
+        // Every leg: the first attempt and its retries, sells and buys.
+        let steps = (plan.len() + self.holdings.len() + 1) * 2 * (self.engine.max_retries + 2);
+        let mut settled = false;
+        for _ in 0..steps {
+            // 1. Sells: every coin above its plan.
+            let held: Vec<(String, f64)> =
+                self.holdings.iter().filter(|(a, q)| !self.is_cash(a) && **q > 0.0).map(|(a, q)| (a.clone(), *q)).collect();
+            let mut sell = None;
+            for (asset, qty) in held {
+                let leg = format!("sell:{asset}");
+                let planned = want(&asset);
+                if qty - planned <= 0.0
+                    || self.dusted.contains(&asset)
+                    || self.skipped.contains(&leg)
+                    || self.refused.contains(&leg)
+                    || self.leg_filled(&leg)
+                {
+                    continue;
+                }
+                let inst = self.instrument(&asset, &quote)?;
+                let q = inst.filters.round_qty_down(if planned <= 0.0 { qty } else { qty - planned });
+                let price = self.value_price(&asset)?;
+                if inst.tradable(q, price) {
+                    sell = Some((leg, asset, q, inst));
+                    break;
+                }
+                if planned <= 0.0 {
+                    self.rec.dust.push(format!("{asset}: {qty} is below the venue's minimum and stays as dust"));
+                    self.dusted.insert(asset);
+                } else {
+                    self.rec.notes.push(format!("{asset}: selling {:.8} down to the plan is below the venue's minimum; left as it is", qty - planned));
+                    self.skipped.insert(leg);
+                }
+            }
+            if let Some((leg, asset, q, inst)) = sell {
+                self.leg_guard(&leg, &inst)?;
+                let reference = self.reference_for(&inst);
+                match self.execute(&leg, &inst, Side::Sell, q, None, reference, false)? {
+                    OrderOutcome::Refused(e) => self.refuse(&leg, &e),
+                    OrderOutcome::TooSmall => {
+                        self.rec.notes.push(format!("{asset}: {q} is below the venue's minimum at the current price; left as it is"));
+                        self.skipped.insert(leg);
+                    }
+                    OrderOutcome::Report(_) => {}
+                }
+                continue;
+            }
+
+            // 2. Buys: what each coin still needs, in the quote.
+            let mut needs: Vec<(String, f64)> = Vec::new();
+            let planned_coins: Vec<(String, f64)> =
+                plan.iter().filter(|(a, _)| !self.is_cash(a)).map(|(a, q)| (a.clone(), *q)).collect();
+            for (asset, planned) in planned_coins {
+                let leg = format!("buy:{asset}");
+                if self.skipped.contains(&leg) || self.refused.contains(&leg) || self.leg_filled(&leg) {
+                    continue;
+                }
+                let need = (planned - self.holdings.get(&asset).copied().unwrap_or(0.0)) * self.value_price(&asset)?;
+                if need > 0.0 {
+                    needs.push((asset, need));
+                }
+            }
+            let Some((asset, need)) = needs.first().cloned() else {
+                settled = true;
+                break;
+            };
+            let total: f64 = needs.iter().map(|(_, n)| n).sum();
+            let spendable = self.holdings.get(&quote).copied().unwrap_or(0.0) - want(&quote);
+            if spendable <= 0.0 {
+                let left: Vec<String> = needs.iter().map(|(a, n)| format!("{a} {n:.2}")).collect();
+                self.rec.notes.push(format!("no cash above the plan's own {quote} for {}: left as it is", left.join(", ")));
+                settled = true;
+                break;
+            }
+            // Short of cash (fees, a sell that did not go through): every
+            // coin gets the same share of what it needs.
+            let spend = need * (spendable / total).min(1.0);
+            let leg = format!("buy:{asset}");
+            let inst = self.instrument(&asset, &quote)?;
+            self.leg_guard(&leg, &inst)?;
+            let reference = self.reference_for(&inst);
+            match self.execute(&leg, &inst, Side::Buy, 0.0, Some(spend), reference, false)? {
+                OrderOutcome::Refused(e) => self.refuse(&leg, &e),
+                OrderOutcome::TooSmall => {
+                    self.rec.notes.push(format!(
+                        "{asset}: buying {spend:.2} {quote} up to the plan is below the venue's minimum; skipped, never rounded up"
+                    ));
+                    self.skipped.insert(leg);
+                }
+                OrderOutcome::Report(_) => {}
+            }
+        }
+        if !settled {
+            return Err(Stop(RunStatus::Failed, format!("the portfolio run did not settle after {steps} steps")));
+        }
+        if !self.refused.is_empty() {
+            return Err(Stop(
+                RunStatus::Failed,
+                format!("the venue refused {}; the other legs went through", self.refused.join(", ")),
+            ));
+        }
+        Ok(())
+    }
+
     /// Perp (Venues 4/5): close every position that is not the target with
     /// reduce-only orders, then open the target — long or short — at the
     /// run's leverage on the owner's equity, after the liquidation guard.
@@ -588,6 +803,7 @@ impl Exec<'_> {
             Target::Hold(a) if a.eq_ignore_ascii_case(&quote) => (None, 0.0),
             Target::Hold(a) => (Some(a.clone()), 1.0),
             Target::Short(a) => (Some(a.clone()), -1.0),
+            Target::Portfolio(_) => return Err(Stop(RunStatus::Failed, PORTFOLIO_SPOT_ONLY.into())),
         };
         let leverage = self.req.leverage.max(1.0);
         for _ in 0..MAX_STEPS {
@@ -797,6 +1013,13 @@ impl Exec<'_> {
         reference: Option<f64>,
         reduce_only: bool,
     ) -> Result<OrderOutcome, Stop> {
+        // "Stop all trading" during a run: the legs left are not sent (it never sells).
+        if self.store.kill_switch().map_err(|e| Stop(RunStatus::Failed, e))? {
+            return Err(Stop(
+                RunStatus::GuardStopped,
+                format!("kill_switch: Stop all trading was turned on during the run; {leg} and the legs after it were not sent"),
+            ));
+        }
         let t = Instant::now();
         let book = self
             .venue
