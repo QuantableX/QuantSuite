@@ -158,6 +158,22 @@ export interface RunConfig {
   marketFilter: boolean
   /** Independent TOTAL signal. Null/missing preserves each run's own signal. */
   marketIndicator?: MarketIndicatorConfig | null
+  /** Rotation only: several top-ranked coins at once. Missing or `enabled: false` = one holding. */
+  portfolio?: PortfolioSettings | null
+}
+
+export type PortfolioWeighting = 'equal' | 'rank' | 'score'
+
+/** Portfolio mode: the top `positions` coins by score take a slot (0 = all of Top N); only coins whose own
+ *  vote against USD is positive hold theirs. A bearish market filter, or no trending coin, means all USD. */
+export interface PortfolioSettings {
+  enabled: boolean
+  positions: number
+  weighting: PortfolioWeighting
+  /** A slot whose coin does not trend: its share stays in USD, or the trending coins share it. */
+  notTrending: 'withUsd' | 'withoutUsd'
+  /** Trade back to the target only when the set of holdings changes, or every day. */
+  rebalance: 'onChange' | 'daily'
 }
 
 export interface EngineStatus {
@@ -190,6 +206,8 @@ export interface LiveResult extends MarketContext {
   best: string | null
   /** The higher filter as of `asOf`; `bullish` is null while it is off. */
   marketFilter?: { enabled: boolean; bullish: boolean | null }
+  /** Portfolio mode: tomorrow's shares per symbol (USD = cash), in rank order. `best` stays the single pick. */
+  portfolioTarget?: Record<string, number>
 }
 
 export interface EquityPoint {
@@ -237,6 +255,14 @@ export interface StrategyRun {
   trades?: HoldingTrade[]
   metricsStrategy: PerformanceMetrics
   forcedRotations: string[]
+  /** Portfolio mode only: the shares held per bar (null before the first fill). */
+  heldWeights?: HeldWeights[]
+}
+
+/** Portfolio mode: the shares held on a bar, symbol → fraction of equity (USD = cash). */
+export interface HeldWeights {
+  time: string | number
+  weights: Record<string, number> | null
 }
 
 export interface BacktestResult extends MarketContext {
@@ -248,6 +274,8 @@ export interface BacktestResult extends MarketContext {
   skippedStrategies?: { key: TrendKind; label: string; reason: string }[]
   equityStrategy: EquityPoint[]
   heldAsset: { time: string | number; symbol: string | null }[]
+  /** Portfolio mode only: the primary run's shares per bar. */
+  heldWeights?: HeldWeights[]
   buyAndHold: Record<string, EquityPoint[]>
   benchmarks: Record<string, EquityPoint[]>
   metricsStrategy: PerformanceMetrics

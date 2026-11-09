@@ -219,6 +219,34 @@ class SingleAssetConfig:
 
 
 @dataclass(frozen=True)
+class PortfolioConfig:
+    """Portfolio mode of a rotation system: several of the top-ranked coins at once, only those that trend.
+
+    Each day the coins are ranked by the same pairwise score as the single pick (ties keep universe order)
+    and the top ``positions`` take a slot (0 = all of Top N). A slot counts only if its coin's own vote
+    against USD is positive; the other slots' share goes to USD (``with_usd``) or is spread over the
+    trending slots (``without_usd``). No lower-ranked coin moves up. No trending slot, or a bearish
+    market filter, means all USD. ``weighting`` splits the slots equally, by rank (K..1) or by score;
+    ``rebalance`` trades back to the target only when the set of holdings changes (``on_change``) or
+    every day (``daily``)."""
+
+    positions: int = 0
+    weighting: str = "equal"
+    not_trending: str = "with_usd"
+    rebalance: str = "on_change"
+
+    def __post_init__(self):
+        if not isinstance(self.positions, int) or isinstance(self.positions, bool) or self.positions < 0:
+            raise ValueError("Portfolio positions must be 0 (all of Top N) or a positive whole number")
+        if self.weighting not in ("equal", "rank", "score"):
+            raise ValueError("Portfolio weighting must be equal, rank or score")
+        if self.not_trending not in ("with_usd", "without_usd"):
+            raise ValueError("Portfolio choice for coins that do not trend must be with USD or without USD")
+        if self.rebalance not in ("on_change", "daily"):
+            raise ValueError("Portfolio rebalancing must be on change or daily")
+
+
+@dataclass(frozen=True)
 class RunConfig:
     """Top-level configuration for a single backtest or live evaluation."""
 
@@ -266,10 +294,17 @@ class RunConfig:
     min_request_interval: float = 1.2
     mode: str = "rotation"
     single_asset: SingleAssetConfig = field(default_factory=SingleAssetConfig)
+    # None = portfolio mode off: one holding, exactly the original engine.
+    portfolio: PortfolioConfig | None = None
 
     def __post_init__(self):
         if self.mode not in ("rotation", "single_asset"):
             raise ValueError(f"Unknown manual system mode: {self.mode}")
+        if self.portfolio is not None:
+            if self.mode != "rotation":
+                raise ValueError("Portfolio mode is for rotation systems only")
+            if self.portfolio.positions > self.top_n:
+                raise ValueError(f"Portfolio positions ({self.portfolio.positions}) cannot exceed Top N ({self.top_n})")
 
     @property
     def bar_cadence(self) -> Cadence:

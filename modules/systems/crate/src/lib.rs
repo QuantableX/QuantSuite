@@ -267,7 +267,36 @@ impl PersistedStore {
     }
 }
 
+/// Portfolio mode (card 77ef7dfd): the same rules as the engine's `PortfolioConfig`. Missing or
+/// `enabled: false` means off and is not checked further.
+fn validate_portfolio(config: &Value) -> Result<(), String> {
+    let Some(portfolio) = config.get("portfolio").filter(|p| !p.is_null()) else { return Ok(()) };
+    let portfolio = portfolio.as_object().ok_or("Portfolio settings must be an object")?;
+    if !portfolio.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
+        return Ok(());
+    }
+    if config.get("mode").and_then(Value::as_str).unwrap_or("rotation") != "rotation" {
+        return Err("Portfolio mode is for rotation systems only".into());
+    }
+    let positions = match portfolio.get("positions") {
+        None | Some(Value::Null) => 0,
+        Some(v) => v.as_u64().ok_or("Portfolio positions must be 0 (all of Top N) or a positive whole number")?,
+    };
+    let top_n = config.get("topN").and_then(Value::as_u64).unwrap_or(5);
+    if positions > top_n {
+        return Err(format!("Portfolio positions ({positions}) cannot exceed Top N ({top_n})"));
+    }
+    let choice = |key: &str, default: &str, allowed: &[&str], message: &str| -> Result<(), String> {
+        let value = portfolio.get(key).and_then(Value::as_str).unwrap_or(default);
+        if allowed.contains(&value) { Ok(()) } else { Err(message.into()) }
+    };
+    choice("weighting", "equal", &["equal", "rank", "score"], "Portfolio weighting must be equal, rank or score")?;
+    choice("notTrending", "withUsd", &["withUsd", "withoutUsd"], "Choose what happens to coins that do not trend: with USD or without USD")?;
+    choice("rebalance", "onChange", &["onChange", "daily"], "Portfolio rebalancing must be on change or daily")
+}
+
 fn validate_run_config(config: &Value) -> Result<(), String> {
+    validate_portfolio(config)?;
     if let Some(raw) = config.get("liveStartDate") {
         let value = raw.as_str().ok_or("Choose a valid live start day")?;
         let day = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
@@ -1540,6 +1569,28 @@ mod tests {
     }
     impl Drop for TestDir {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+
+    #[test]
+    fn portfolio_settings_are_checked_like_the_engine_does() {
+        let ok = |portfolio: Value| validate_run_config(&json!({"mode": "rotation", "topN": 5, "portfolio": portfolio}));
+        assert!(validate_run_config(&json!({"mode": "rotation", "topN": 5})).is_ok(), "no portfolio block: off");
+        assert!(ok(json!({"enabled": false, "weighting": "nonsense"})).is_ok(), "off is not checked further");
+        assert!(ok(json!({"enabled": true})).is_ok(), "defaults: all of Top N, equal, with USD, on change");
+        assert!(ok(json!({"enabled": true, "positions": 3, "weighting": "score", "notTrending": "withoutUsd", "rebalance": "daily"})).is_ok());
+        assert!(ok(json!({"enabled": true, "positions": 6})).unwrap_err().contains("cannot exceed Top N"));
+        assert!(ok(json!({"enabled": true, "positions": -1})).is_err());
+        assert!(ok(json!({"enabled": true, "weighting": "random"})).is_err());
+        assert!(ok(json!({"enabled": true, "notTrending": "spread"})).is_err());
+        assert!(ok(json!({"enabled": true, "rebalance": "weekly"})).is_err());
+        let single = json!({"mode": "single_asset", "portfolio": {"enabled": true},
+                            "singleAsset": {"exchange": "coinbase", "pair": "BTC/USD", "timeframe": "1d", "direction": "long_cash"}});
+        assert!(validate_run_config(&single).unwrap_err().contains("rotation systems only"));
+        // A saved block travels through the store unchanged.
+        let mut store = PersistedStore::default();
+        let config = json!({"mode": "rotation", "topN": 5, "portfolio": {"enabled": true, "positions": 3, "weighting": "rank"}});
+        store.save_config("lces", config.clone(), None).unwrap();
+        assert_eq!(store.system_configs["lces"]["portfolio"], config["portfolio"]);
     }
 
     #[test]

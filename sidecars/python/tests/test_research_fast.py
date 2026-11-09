@@ -92,6 +92,11 @@ configs = {
      single_asset=SingleAssetConfig(exchange='x', pair='FFF/USD', timeframe='1d', direction='long_short'),
      indicator=IndicatorConfig(trend='k_mid', params=params), fee_rate=.001),
 }
+# Portfolio mode (card 77ef7dfd): the bulk evaluator walks with the engine's own functions, bit for bit.
+from rotation_lab.config import PortfolioConfig
+configs['portfolio_equal'] = replace(configs['gate_usd'], portfolio=PortfolioConfig())
+configs['portfolio_rank_daily'] = replace(configs['gate_usd'], portfolio=PortfolioConfig(
+    positions=2, weighting='rank', not_trending='without_usd', rebalance='daily'))
 report = {}
 out = Path(sys.argv[1])
 if __name__ == '__main__':

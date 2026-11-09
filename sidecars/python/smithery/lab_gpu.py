@@ -30,7 +30,8 @@ def available() -> bool:
 
 
 def supports(system: FastSystem) -> bool:
-    return not system.single and bool(system.config.include_usd)
+    # Portfolio mode holds several coins; the GPU path scores the single pick only.
+    return not system.single and bool(system.config.include_usd) and getattr(system.config, "portfolio", None) is None
 
 
 def cpu_reason(system) -> str | None:

@@ -180,16 +180,30 @@ def jittered(config, rows: dict, rng: random.Random):
     return config if market is None else replace(config, market_indicator=_varied(market, rows, factor))
 
 
+def _with_top(config, n: int):
+    """``config`` at Top ``n``; a portfolio's fixed number of positions shrinks with it (0 = all stays all)."""
+    portfolio = getattr(config, "portfolio", None)
+    if portfolio is not None and portfolio.positions > n:
+        return replace(config, top_n=n, portfolio=replace(portfolio, positions=n))
+    return replace(config, top_n=n)
+
+
 def settings_variants(config, rows: dict | None = None) -> list[tuple[str, object]]:
-    """The system's own settings: top N ±1 and the market filter's lengths or parameters ±20%.
-    A filter that is an indicator faces the same check as ``total_breakout``."""
+    """The system's own settings: top N ±1, a portfolio's positions ±1, and the market filter's lengths or
+    parameters ±20%. A filter that is an indicator faces the same check as ``total_breakout``."""
     from rotation_lab.config import TotalBreakoutConfig
     out = []
     if config.mode != "single_asset":
         for d in (-1, 1):
             n = config.top_n + d
             if n >= 2:
-                out.append((f"top {n}", replace(config, top_n=n)))
+                out.append((f"top {n}", _with_top(config, n)))
+        portfolio = getattr(config, "portfolio", None)
+        if portfolio is not None:
+            k = portfolio.positions or config.top_n
+            for p in (k - 1, k + 1):
+                if 1 <= p <= config.top_n:
+                    out.append((f"{p} positions", replace(config, portfolio=replace(portfolio, positions=p))))
         m = config.market_indicator
         if config.market_filter and isinstance(m, TotalBreakoutConfig):
             for f in (0.8, 1.2):
@@ -209,7 +223,7 @@ def universe_variants(config) -> list[tuple[str, object]]:
     out = []
     for n in (config.top_n - 2, config.top_n + 2):
         if n >= 2 and n != config.top_n:
-            out.append((f"top {n}", replace(config, top_n=n)))
+            out.append((f"top {n}", _with_top(config, n)))
     # top_n counts the excluded coins too: one more excluded and one more counted keeps the size.
     out.append((f"without the {config.exclude_top_n + 1} largest" if config.exclude_top_n else "without the largest coin",
                 replace(config, exclude_top_n=config.exclude_top_n + 1, top_n=config.top_n + 1)))

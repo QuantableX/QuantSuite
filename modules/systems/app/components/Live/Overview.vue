@@ -6,10 +6,21 @@ import SystemsLiveSingleAsset from '#systems/components/Live/SingleAsset.vue'
 
 const props = defineProps<{ result: LiveResult }>()
 const single = computed(() => props.result.mode === 'single_asset')
+
+/** Portfolio mode's shares as one line, in the engine's order (rank, cash last): "SOL 40% · ETH 30% · USD 30%". */
+function shares(weights: Record<string, number> | null | undefined): string | null {
+  if (!weights) return null
+  const parts = Object.entries(weights).filter(([, w]) => w > 0).map(([s, w]) => `${s} ${Math.round(w * 100)}%`)
+  return parts.length ? parts.join(' · ') : null
+}
+
 const holding = computed(() => {
+  const weighted = props.result.tracking?.heldWeights?.at(-1)
+  if (weighted) return shares(weighted.weights) ?? 'USD'
   const point = props.result.tracking?.heldAsset.at(-1)
   return point ? point.symbol ?? 'USD' : '—'
 })
+const next = computed(() => shares(props.result.portfolioTarget) ?? props.result.best ?? '—')
 </script>
 
 <template>
@@ -22,7 +33,7 @@ const holding = computed(() => {
         <SystemsLiveRanking v-else :result="result" compact />
         <div class="qs-live-overview__positions" aria-label="Positions">
           <span>Last holding <strong>{{ holding }}</strong></span>
-          <span>Next position <strong>{{ result.best ?? '—' }}</strong></span>
+          <span>Next position <strong>{{ next }}</strong></span>
           <span v-if="result.marketFilter?.enabled" class="pill">TOTAL {{ result.marketFilter.bullish ? 'bullish' : 'cash' }}</span>
         </div>
       </div>

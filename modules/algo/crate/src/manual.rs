@@ -366,9 +366,22 @@ pub struct Signal {
     pub short: bool,
 }
 
+/// Why a portfolio system is not traded: Manual execution holds one asset per system, and trading the
+/// portfolio's top pick alone would differ from the system silently.
+pub const PORTFOLIO_REFUSED: &str = "this system runs in portfolio mode (several assets at once); Manual execution trades one asset per system until portfolio orders exist, and never trades the top pick alone";
+
+/// A saved run config with portfolio mode switched on (rotation systems only, as the engine reads it).
+pub fn portfolio_on(config: &Value) -> bool {
+    config.get("mode").and_then(|v| v.as_str()).unwrap_or("rotation") == "rotation"
+        && config.pointer("/portfolio/enabled").and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
 /// The engine's `live` result → the signal.
 pub fn parse_signal(live: &Value) -> Result<Signal, String> {
     let as_of = live.get("asOf").and_then(|v| v.as_str()).ok_or("the live result has no asOf")?.to_string();
+    if live.get("portfolioTarget").is_some() {
+        return Err(PORTFOLIO_REFUSED.into());
+    }
     if live.get("mode").and_then(|v| v.as_str()) == Some("single_asset") {
         let sig = live.get("singleAssetSignal").ok_or("the single-asset result has no signal")?;
         let base = live
@@ -1014,9 +1027,12 @@ pub fn arming_checks(
     account: Result<String, String>,
     verdict: Option<&Verdict>,
     ack_not_robust: bool,
+    portfolio: bool,
 ) -> Vec<ArmCheck> {
     let check = |name: &str, ok: bool, detail: String| ArmCheck { name: name.into(), ok, detail };
-    vec![
+    // Listed only when it refuses, so other systems' check lists stay as they were.
+    let refused = portfolio.then(|| check("portfolio", false, format!("cannot arm: {PORTFOLIO_REFUSED}")));
+    refused.into_iter().chain([
         check("mode", settings.mode == ExecMode::Live, if settings.mode == ExecMode::Live { "Live".into() } else { "set the mode to Live first".into() }),
         check(
             "paper_run",
@@ -1034,7 +1050,8 @@ pub fn arming_checks(
             None if ack_not_robust => check("robustness", true, "no verdict — armed with \"I know this system is not robust\"".into()),
             None => check("robustness", false, "no System Gauntlet verdict yet; run it, or tick \"I know this system is not robust\"".into()),
         },
-    ]
+    ])
+    .collect()
 }
 
 /// Arm Live. `external`: it lets the system trade real money from the next run.
@@ -1067,7 +1084,9 @@ pub(crate) async fn manual_execution_arm(
             Ok(format!("{}: {:.2} {quote} free{cap}", venue.label(), free_balance(&balances, quote)))
         });
         let verdict = robustness_verdict(&research_dir(), &system_id);
-        let checks = arming_checks(&row.settings, paper_runs, account, verdict.as_ref(), ack);
+        // An unreadable config does not block here: every run refuses a portfolio signal as well.
+        let portfolio = qs_mod_systems::signals::run_config(&app, &system_id).map(|c| portfolio_on(&c)).unwrap_or(false);
+        let checks = arming_checks(&row.settings, paper_runs, account, verdict.as_ref(), ack, portfolio);
         let armed = checks.iter().all(|c| c.ok);
         if armed {
             let db = state.db.lock().map_err(|e| format!("Lock: {e}"))?;
@@ -1350,13 +1369,32 @@ mod tests {
         let robust = Verdict { run_id: "r".into(), status: "robust".into(), robust: true, finished_at: "2026-11-04".into() };
         let fragile = Verdict { status: "not_robust".into(), robust: false, ..robust.clone() };
         let ok = |checks: &[ArmCheck]| checks.iter().all(|c| c.ok);
-        assert!(ok(&arming_checks(&live, 1, Ok("ok".into()), Some(&robust), false)));
-        assert!(!ok(&arming_checks(&live, 0, Ok("ok".into()), Some(&robust), false)), "no paper run");
-        assert!(!ok(&arming_checks(&live, 1, Err("Bybit: Your api key has expired.".into()), Some(&robust), false)));
-        assert!(!ok(&arming_checks(&live, 1, Ok("ok".into()), Some(&fragile), false)));
-        assert!(ok(&arming_checks(&live, 1, Ok("ok".into()), Some(&fragile), true)), "the user's own tick");
-        assert!(!ok(&arming_checks(&live, 1, Ok("ok".into()), None, false)));
-        assert!(!ok(&arming_checks(&ManualSettings::default(), 1, Ok("ok".into()), Some(&robust), false)), "mode is not Live");
+        assert!(ok(&arming_checks(&live, 1, Ok("ok".into()), Some(&robust), false, false)));
+        assert!(!ok(&arming_checks(&live, 0, Ok("ok".into()), Some(&robust), false, false)), "no paper run");
+        assert!(!ok(&arming_checks(&live, 1, Err("Bybit: Your api key has expired.".into()), Some(&robust), false, false)));
+        assert!(!ok(&arming_checks(&live, 1, Ok("ok".into()), Some(&fragile), false, false)));
+        assert!(ok(&arming_checks(&live, 1, Ok("ok".into()), Some(&fragile), true, false)), "the user's own tick");
+        assert!(!ok(&arming_checks(&live, 1, Ok("ok".into()), None, false, false)));
+        assert!(!ok(&arming_checks(&ManualSettings::default(), 1, Ok("ok".into()), Some(&robust), false, false)), "mode is not Live");
+        // Portfolio mode cannot be armed, not even with the "not robust" tick (card 77ef7dfd, until card 791a9140).
+        let refused = arming_checks(&live, 1, Ok("ok".into()), Some(&robust), true, true);
+        assert!(!ok(&refused));
+        assert!(refused.iter().any(|c| c.name == "portfolio" && !c.ok && c.detail.contains("portfolio mode")));
+        let plain = arming_checks(&live, 1, Ok("ok".into()), Some(&robust), false, false);
+        assert_eq!(plain.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["mode", "paper_run", "account", "robustness"]);
+    }
+
+    #[test]
+    fn portfolio_systems_are_never_traded_as_their_top_pick() {
+        assert!(portfolio_on(&json!({"mode": "rotation", "portfolio": {"enabled": true}})));
+        assert!(portfolio_on(&json!({"portfolio": {"enabled": true, "positions": 3}})), "rotation is the default mode");
+        assert!(!portfolio_on(&json!({"portfolio": {"enabled": false}})));
+        assert!(!portfolio_on(&json!({"mode": "single_asset", "portfolio": {"enabled": true}})), "the engine ignores it there");
+        assert!(!portfolio_on(&json!({"mode": "rotation"})));
+        let live = json!({"asOf": "2026-11-10", "best": "ETH", "symbols": ["ETH", "BTC", "USD"],
+                          "portfolioTarget": {"ETH": 0.5, "USD": 0.5}});
+        let err = parse_signal(&live).unwrap_err();
+        assert!(err.contains("portfolio mode") && err.contains("never trades the top pick alone"), "{err}");
     }
 
     #[test]
