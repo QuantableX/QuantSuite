@@ -167,14 +167,14 @@ export function subagentGraph(thread: { id: string; title: string; provider: str
 
 // ── Layout ──
 
-export interface Box {
+export interface GraphPoint {
   x: number
   y: number
 }
 
 export interface Layout {
-  center: Box
-  nodes: Box[]
+  center: GraphPoint
+  nodes: GraphPoint[]
   /** The world the nodes need; the stage scales it down to fit when larger. */
   width: number
   height: number
@@ -212,7 +212,7 @@ export function radialLayout(count: number, width: number, height: number, nodeW
   const H = Math.max(height, 2 * last.ry * sy + nodeH + 2 * pad)
   const cx = W / 2
   const cy = H / 2
-  const nodes: Box[] = []
+  const nodes: GraphPoint[] = []
   for (let i = 0; i < count; i++) {
     const ring = Math.floor(i / PER_RING)
     const { rx, ry, m } = radii[ring]!

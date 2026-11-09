@@ -268,8 +268,6 @@ export interface StreamCache {
  * parses the whole message, so lists or references split by a blank line
  * while streaming come out exactly right in the end.
  */
-export { streamBoundary }
-
 export function renderStreaming(src: string, cache: StreamCache): string {
   const at = streamBoundary(src)
   const prefix = src.slice(0, at)
