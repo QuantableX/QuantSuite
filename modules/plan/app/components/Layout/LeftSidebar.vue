@@ -33,6 +33,9 @@ watch(confirming, (open) => {
 })
 
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+// Warm cache: a return to this module always shows the first step (and the
+// watch above drops the Escape handler while the module is hidden).
+onDeactivated(() => { confirming.value = null })
 
 function toggleEdit(id: string) {
   editing.value = editing.value === id ? null : id

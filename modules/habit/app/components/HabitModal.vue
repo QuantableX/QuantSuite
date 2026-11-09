@@ -83,6 +83,8 @@ async function togglePause() {
 
 const armedDelete = ref(false)
 watch(mode, () => (armedDelete.value = false))
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { armedDelete.value = false })
 
 async function del() {
   if (!editing.value) return

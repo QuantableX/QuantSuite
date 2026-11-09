@@ -341,6 +341,11 @@ function deleteFromModal(card: KanbanCard) {
 // ── Delete card confirm modal ──
 const showDeleteConfirm = ref(false);
 const deletingCard = ref<KanbanCard | null>(null);
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => {
+  showDeleteConfirm.value = false;
+  deletingCard.value = null;
+});
 
 function confirmDeleteCard(card: KanbanCard) {
   deletingCard.value = card;

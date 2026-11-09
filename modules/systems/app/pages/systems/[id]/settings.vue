@@ -44,6 +44,8 @@ watch(system, s => {
   icon.value = strategyIcon(s).id
   confirmDelete.value = false
 }, { immediate: true })
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { confirmDelete.value = false })
 
 let savedTimer: ReturnType<typeof setTimeout> | null = null
 

@@ -191,6 +191,8 @@ async function copyInstructions() {
 // ships (the crate's template), so the operator can always return to a clean
 // version. Confirmed first — it discards every edit, unsaved ones included.
 const showResetConfirm = ref(false)
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { showResetConfirm.value = false })
 
 async function resetToDefault() {
   if (!import.meta.client || !window.__TAURI_INTERNALS__) return

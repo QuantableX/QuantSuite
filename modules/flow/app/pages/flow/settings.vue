@@ -18,6 +18,8 @@ const settings = computed(() => app.settings)
 const backupPath = ref('')
 const error = ref('')
 const confirmingDelete = ref<string | null>(null)
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { confirmingDelete.value = null })
 
 async function save() {
   await app.saveSettings()

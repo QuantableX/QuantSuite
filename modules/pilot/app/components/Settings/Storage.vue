@@ -5,7 +5,7 @@
  * would remove and what stays (and why); Clean up removes only what the
  * preview showed. Turning on the daily run is a separate, explicit switch.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onDeactivated, onMounted, ref, watch } from 'vue'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { pilot } from '#pilot/utils/invoke'
 import { draftPaths } from '#pilot/utils/storage'
@@ -17,6 +17,8 @@ const plan = ref<StoragePlan | null>(null)
 const result = ref<StorageCleanResult | null>(null)
 const busy = ref(false)
 const confirming = ref(false)
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { confirming.value = false })
 const notice = ref('')
 
 const saved = computed<StoragePolicy>(() => ({ patchDays: null, unsentDays: null, documentDays: null, orphans: true, auto: false, lastRun: null, ...(store.settings?.storage ?? {}) }))

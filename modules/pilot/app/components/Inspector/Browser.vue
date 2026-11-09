@@ -255,6 +255,8 @@ onMounted(() => {
 })
 onActivated(arm)
 onDeactivated(disarm)
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { confirming.value = null })
 onBeforeUnmount(() => {
   resize?.disconnect()
   disarm()

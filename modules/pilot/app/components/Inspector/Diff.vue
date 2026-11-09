@@ -10,7 +10,7 @@
  * DiffAll.vue). The guide button shows a review guide of the scope in place
  * of the file list; its entries open their file and line (round 3, card 04).
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onDeactivated, ref, watch } from 'vue'
 import { BookOpen, Columns2, Copy, File, Files, MessageSquarePlus, RefreshCw, Rows2, WrapText } from 'lucide-vue-next'
 import { usePilotStore } from '#pilot/stores/pilot'
 import { pilot } from '#pilot/utils/invoke'
@@ -30,6 +30,8 @@ const loading = ref(false)
 const error = ref('')
 const note = ref('')
 const confirmDiscard = ref(false)
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => { confirmDiscard.value = false })
 const commenting = ref<{ start: number; end: number; code: string } | null>(null)
 const commentText = ref('')
 const editor = ref<{ selection: () => { startLine: number; endLine: number; text: string } | null; reveal: (line: number) => void } | null>(null)

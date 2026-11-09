@@ -111,7 +111,12 @@ onActivated(() => {
   window.addEventListener('focus', onFocus)
   onFocus()
 })
-onDeactivated(() => window.removeEventListener('focus', onFocus))
+onDeactivated(() => {
+  window.removeEventListener('focus', onFocus)
+  // Warm cache: a return to this module always shows the first step. The
+  // Commit and PR dialogs are forms and keep what was typed.
+  if (dialog.value === 'merge' || dialog.value === 'discard') dialog.value = null
+})
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocDown)
   window.removeEventListener('focus', onFocus)

@@ -259,6 +259,8 @@ async function setRole(d: Device, role: DeviceRole) {
 }
 
 const confirmRevoke = ref<string | null>(null)
+// Warm cache: a return to Settings always shows the first step.
+onDeactivated(() => { confirmRevoke.value = null })
 async function revoke(d: Device) {
   if (confirmRevoke.value !== d.id) {
     confirmRevoke.value = d.id

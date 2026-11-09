@@ -21,7 +21,7 @@
  * same under a module root and inside the drawer — no `data-module` scope
  * needed on the overlay.
  */
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import {
   CARD_PRIORITIES,
   KANBAN_COLUMNS,
@@ -141,6 +141,9 @@ const columnOptions = computed(() =>
 
 const view = ref<'write' | 'preview'>('write')
 const confirmDiscard = ref(false)
+// Warm cache: a return to this module always shows the first step; the
+// unsaved edits stay.
+onDeactivated(() => { confirmDiscard.value = false })
 const copied = ref(false)
 const titleEl = ref<HTMLInputElement | null>(null)
 const descEl = ref<HTMLTextAreaElement | null>(null)

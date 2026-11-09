@@ -309,6 +309,11 @@ const contextMenuRef = ref<HTMLElement | null>(null)
 // Delete confirmation modal
 const confirmDeleteVisible = ref(false)
 const pendingDeleteNode = ref<FileNode | null>(null)
+// Warm cache: a return to this module always shows the first step.
+onDeactivated(() => {
+  confirmDeleteVisible.value = false
+  pendingDeleteNode.value = null
+})
 
 // Drag and drop state
 const dragSourcePath = ref<string | null>(null)
