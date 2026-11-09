@@ -34,12 +34,16 @@ interface Verdict { run_id: string; status: string; robust: boolean; finished_at
 interface View { system_id: string; settings: Settings; armed: boolean; armed_at: string | null; ack_not_robust: boolean; next_run: string | null; paper_runs_done: number; verdict: Verdict | null }
 interface Exchange { id: string; name: string; provider: string; sandbox: boolean; key_storage?: string }
 interface Check { name: string; ok: boolean; detail: string }
-interface OrderReport { status: string; filled_qty: number; avg_price: number; quote_amount: number; fee_asset: string; fee_amount: number }
-interface Order { client_order_id: string; leg: string; side: string; qty: number; state: string; report: OrderReport | null; error: string | null; instrument: { symbol: string } }
+interface OrderReport { status: string; filled_qty: number; avg_price: number; quote_amount: number; fee_asset: string; fee_amount: number; fee_quote: number }
+interface Order { client_order_id: string; leg: string; side: string; qty: number; state: string; report: OrderReport | null; error: string | null; instrument: { symbol: string }; quote_usd: number }
+/** Portfolio mode (card 791a9140): the weights from Live Eval, and whether the run traded to them. */
+interface PortfolioTarget { weights: Record<string, number>; rebalance: boolean }
 interface Run {
-  id: string; status: string; mode: string; close_date: string | null; target: { kind: string; asset?: string }
+  id: string; status: string; mode: string; close_date: string | null
+  target: { kind: string; asset?: string | PortfolioTarget }
   fees: number; cost: number; errors: string[]; notes: string[]; dust: string[]; started_at: string
   route: { chosen: string; reason: string } | null
+  quote: string; reference_prices: Record<string, number>; holdings_after: Record<string, number> | null
 }
 interface RunView { run: Run; orders: Order[]; summary: string }
 interface Coverage { venue: string; as_of: string; coins: string[]; tradable: string[]; missing: string[] }
@@ -112,8 +116,47 @@ function utc(iso: string | null) {
   const d = new Date(iso)
   return `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 16)} UTC`
 }
+function portfolio(r: Run): PortfolioTarget | null {
+  return r.target.kind === 'portfolio' && typeof r.target.asset === 'object' ? r.target.asset : null
+}
+/** The account's quote (USDT, USDC) reads as USD, like everywhere in Manual. */
+function assetName(r: Run, asset: string) {
+  return asset.toUpperCase() === r.quote.toUpperCase() ? 'USD' : asset
+}
+function pct(w: number) {
+  return `${(w * 100).toFixed(1)} %`
+}
+/** A difference of shares in percentage points: "+0.4", "-1.2", "0.0". */
+function points(d: number) {
+  const p = Math.round(d * 1000) / 10
+  return p === 0 ? '0.0' : `${p > 0 ? '+' : ''}${p.toFixed(1)}`
+}
 function decision(r: Run) {
-  return r.target.kind === 'hold' ? r.target.asset : 'USD'
+  const p = portfolio(r)
+  if (p) {
+    const shares = Object.entries(p.weights).sort((a, b) => b[1] - a[1]).map(([a, w]) => `${assetName(r, a)} ${(w * 100).toFixed(0)} %`).join(' · ')
+    return p.rebalance ? shares : `${shares} (no trade, weights drift)`
+  }
+  return r.target.kind === 'hold' ? (r.target.asset as string) : 'USD'
+}
+/** Per asset: Live Eval's weight, what the account holds after the run at the run's prices, its orders and fees. */
+function portfolioRows(view: RunView) {
+  const r = view.run
+  const p = portfolio(r)
+  if (!p) return []
+  const held = r.holdings_after ?? {}
+  const value = (a: string, q: number) => (a.toUpperCase() === r.quote.toUpperCase() ? q : q * (r.reference_prices[a] ?? 0))
+  const total = Object.entries(held).reduce((s, [a, q]) => s + (q > 0 ? value(a, q) : 0), 0)
+  const assets = [...new Set([...Object.keys(p.weights), ...Object.keys(held).filter(a => held[a]! > 0 && value(a, held[a]!) / (total || 1) >= 0.005)])]
+  return assets
+    .map((a) => {
+      const target = p.weights[a] ?? 0
+      const got = total > 0 && held[a] ? value(a, held[a]!) / total : 0
+      const legs = view.orders.filter(o => o.leg.endsWith(`:${a}`) && o.report && o.report.filled_qty > 0)
+      const fees = legs.reduce((s, o) => s + (o.report?.fee_quote ?? 0) * (o.quote_usd ?? 1), 0)
+      return { asset: assetName(r, a), target, got, diff: got - target, orders: legs.length, fees }
+    })
+    .sort((x, y) => y.target - x.target || y.got - x.got)
 }
 
 async function load() {
@@ -372,6 +415,19 @@ watch(systemId, () => { void load() })
                 <tr v-if="openRun === r.run.id" class="qs-exec__detail">
                   <td colspan="7">
                     <p>{{ r.summary }}</p>
+                    <table v-if="portfolio(r.run)" class="qs-exec__assets">
+                      <thead><tr><th>Asset</th><th class="num">Live Eval</th><th class="num">Held after</th><th class="num">Off by (pts)</th><th class="num">Orders</th><th class="num">Fees</th></tr></thead>
+                      <tbody>
+                        <tr v-for="a in portfolioRows(r)" :key="a.asset">
+                          <td>{{ a.asset }}</td>
+                          <td class="num">{{ pct(a.target) }}</td>
+                          <td class="num">{{ r.run.holdings_after ? pct(a.got) : '—' }}</td>
+                          <td class="num" :class="Math.abs(a.diff) > 0.01 ? 'qs-exec__warn' : ''">{{ r.run.holdings_after ? points(a.diff) : '—' }}</td>
+                          <td class="num">{{ a.orders }}</td>
+                          <td class="num">{{ money(a.fees) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                     <p v-if="r.run.route">Route: {{ r.run.route.chosen === 'direct' ? 'direct pair' : 'through the quote' }} — {{ r.run.route.reason }}</p>
                     <ul>
                       <li v-for="o in r.orders" :key="o.client_order_id">
@@ -423,6 +479,9 @@ watch(systemId, () => { void load() })
 .qs-exec__row:hover { background: var(--qs-bg-hover); }
 .qs-exec__detail td { color: var(--qs-text-secondary); }
 .qs-exec__detail ul { margin: 4px 0; padding-left: 16px; }
+.qs-exec__table .qs-exec__assets { width: auto; min-width: 420px; margin: 4px 0; }
+.qs-exec__table .qs-exec__assets th { position: static; background: none; }
+.qs-exec__table .qs-exec__assets td { height: auto; padding: 2px 10px 2px 0; }
 .qs-exec__h2 { margin: 0; font-size: var(--qss-text-section); font-weight: 600; color: var(--qs-text); }
 .qs-exec__line { margin: 0; font-size: var(--qss-text-label); color: var(--qs-text-secondary); }
 .qs-exec__tick { display: flex; align-items: center; gap: 6px; font-size: var(--qss-text-label); color: var(--qs-text-secondary); }

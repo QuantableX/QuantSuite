@@ -20,7 +20,7 @@ use super::venue::{Instrument, OrderReport, Side};
 pub type Holdings = BTreeMap<String, f64>;
 
 /// What a run should make true.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "asset", rename_all = "snake_case")]
 pub enum Target {
     /// Everything in the account's quote (USD).
@@ -30,6 +30,28 @@ pub enum Target {
     Hold(String),
     /// A short of this asset at the run's leverage — perp only (Venues 4/5).
     Short(String),
+    /// Several assets at once (portfolio mode, card 791a9140) — spot only.
+    Portfolio(PortfolioTarget),
+}
+
+/// A portfolio system's day: the weights from the engine's live result, and
+/// whether the backtest's rebalancing rule trades back to them today.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PortfolioTarget {
+    /// Asset → share of the owner's equity, summing to 1. Cash is under the
+    /// account's quote (USDT, USDC), not "USD".
+    pub weights: BTreeMap<String, f64>,
+    /// `true`: trade to the weights. `false`: the same assets as after the
+    /// last run, so nothing trades and the weights drift with the prices
+    /// (the backtest's "on change" rule).
+    pub rebalance: bool,
+}
+
+impl PortfolioTarget {
+    /// The assets with a share, cash included.
+    pub fn assets(&self) -> std::collections::BTreeSet<String> {
+        self.weights.iter().filter(|(_, w)| **w > 0.0).map(|(a, _)| a.clone()).collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +117,11 @@ pub struct RunRecord {
     /// Amounts too small for the venue, left as they are.
     #[serde(default)]
     pub dust: Vec<String>,
+    /// A portfolio run's plan, made once from the holdings it found and
+    /// kept, so a resumed run trades towards the same quantities: asset →
+    /// quantity to hold (cash under the account's quote).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planned: Option<BTreeMap<String, f64>>,
     #[serde(default)]
     pub notes: Vec<String>,
     #[serde(default)]
@@ -273,6 +300,21 @@ pub fn set_kill_switch(conn: &Connection, on: bool) -> Result<(), String> {
     )
     .map(|_| ())
     .map_err(db_err)
+}
+
+/// The owner's newest run for a close before `before` (Manual's runs carry
+/// their close date): what a portfolio run compares today's assets with.
+pub fn previous_run(conn: &Connection, owner: &str, before: &str) -> Result<Option<RunRecord>, String> {
+    let json: Option<String> = conn
+        .query_row(
+            "SELECT record_json FROM execution_runs WHERE owner = ?1 AND close_date IS NOT NULL AND close_date < ?2
+             ORDER BY close_date DESC LIMIT 1",
+            params![owner, before],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
+    json.map(|j| serde_json::from_str(&j).map_err(|e| format!("run record: {e}"))).transpose()
 }
 
 pub fn kill_switch_on(conn: &Connection) -> Result<bool, String> {
