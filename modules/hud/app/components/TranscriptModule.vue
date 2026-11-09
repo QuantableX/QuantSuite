@@ -122,9 +122,9 @@
       </p>
     </div>
 
-    <!-- Only when the hotkey could not be registered -->
+    <!-- Only while the hotkey is not held: why, and what happens next -->
     <div v-if="installed && status && status.hotkeyError" class="tr-hotkey">
-      Hotkey {{ status.hotkey }} could not be registered — pick another one in Settings.
+      Hotkey not active: {{ status.hotkeyError }}.
     </div>
 
     <!-- Empty state -->
