@@ -73,6 +73,7 @@
       "../../sidecars/python/rotation_lab/backtest/signals.py": "sidecars/python/rotation_lab/backtest/signals.py",
       "../../sidecars/python/rotation_lab/backtest/smithery/__init__.py": "sidecars/python/rotation_lab/backtest/smithery/__init__.py",
       "../../sidecars/python/rotation_lab/backtest/universe.py": "sidecars/python/rotation_lab/backtest/universe.py",
+      "../../sidecars/python/rotation_lab/backtest/vote_store.py": "sidecars/python/rotation_lab/backtest/vote_store.py",
       "../../sidecars/python/rotation_lab/config.py": "sidecars/python/rotation_lab/config.py",
       "../../sidecars/python/rotation_lab/funds.py": "sidecars/python/rotation_lab/funds.py",
       "../../sidecars/python/rotation_lab/data/__init__.py": "sidecars/python/rotation_lab/data/__init__.py",
@@ -127,6 +128,7 @@
       "../../sidecars/python/smithery/system_gauntlet.py": "sidecars/python/smithery/system_gauntlet.py",
       "../../sidecars/python/smithery/universal.py": "sidecars/python/smithery/universal.py",
       "../../sidecars/python/smithery/lab_gpu.py": "sidecars/python/smithery/lab_gpu.py",
+      "../../sidecars/python/smithery/pace.py": "sidecars/python/smithery/pace.py",
       "../../sidecars/python/smithery/robust_search.py": "sidecars/python/smithery/robust_search.py"
     },
     "icon": [
