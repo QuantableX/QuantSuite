@@ -6,7 +6,7 @@ import { liveToday } from '#systems/utils/liveTracking'
 import { useIndicatorOptions } from '#systems/composables/useIndicatorOptions'
 import SystemsSettingsMarketFilterSelect from '#systems/components/Settings/MarketFilterSelect.vue'
 import SystemsSettingsSingleAssetForm from '#systems/components/Settings/SingleAssetForm.vue'
-import type { Cadence, PriceSource, RankingResolution, RankingSource, RunConfig, TrendKind } from '#systems/types'
+import type { Cadence, PortfolioSettings, PortfolioWeighting, PriceSource, RankingResolution, RankingSource, RunConfig, TrendKind } from '#systems/types'
 
 const props = defineProps<{ systemId: string }>()
 const config = useConfigStore()
@@ -27,6 +27,20 @@ function setAggregate(aggregate: TrendKind[]) {
 
 function set<K extends keyof RunConfig>(key: K, value: RunConfig[K]) {
   config.update(props.systemId, { [key]: value } as Partial<RunConfig>)
+}
+
+/** Portfolio mode's settings, with the proposed defaults shown before it is first switched on. */
+const PORTFOLIO_DEFAULTS: PortfolioSettings = { enabled: false, positions: 0, weighting: 'equal', notTrending: 'withUsd', rebalance: 'onChange' }
+const portfolio = computed<PortfolioSettings>(() => ({ ...PORTFOLIO_DEFAULTS, ...(cfg.value.portfolio ?? {}) }))
+
+function setPortfolio(change: Partial<PortfolioSettings>) {
+  set('portfolio', { ...portfolio.value, ...change })
+}
+
+/** A fixed number of positions never exceeds Top N (the store refuses that). */
+function setTopN(n: number) {
+  set('topN', n)
+  if (cfg.value.portfolio && portfolio.value.positions > n) setPortfolio({ positions: n })
 }
 
 function setEma<K extends keyof RunConfig['indicator']['emaCross']>(
@@ -107,7 +121,7 @@ const slipPct = computed({
         <div>
           <label class="label">Top N</label>
           <input class="input mono" type="number" min="2" max="1000"
-            :value="cfg.topN" @input="set('topN', Math.max(2, Number(($event.target as HTMLInputElement).value) || 0))" />
+            :value="cfg.topN" @input="setTopN(Math.max(2, Number(($event.target as HTMLInputElement).value) || 0))" />
         </div>
         <div>
           <label class="label">Exclude Top N</label>
@@ -147,6 +161,53 @@ const slipPct = computed({
           <span>Include USD / cash leg</span>
         </label>
       </div>
+    </div>
+
+    <div v-if="cfg.mode !== 'single_asset'" class="qs-form__section qs-form__section--portfolio">
+      <span class="qs-form__legend">Portfolio</span>
+      <div class="qs-form__checks">
+        <label class="qs-check">
+          <input type="checkbox" :checked="portfolio.enabled" @change="setPortfolio({ enabled: ($event.target as HTMLInputElement).checked })" />
+          <span>Hold several top-ranked coins at once</span>
+        </label>
+      </div>
+      <div v-if="portfolio.enabled" class="qs-form__grid">
+        <div>
+          <label class="label" :for="`portfolio-positions-${systemId}`">Positions</label>
+          <input :id="`portfolio-positions-${systemId}`" class="input mono" type="number" min="0" :max="cfg.topN"
+            :value="portfolio.positions"
+            @input="setPortfolio({ positions: Math.min(cfg.topN, Math.max(0, Math.round(Number(($event.target as HTMLInputElement).value) || 0))) })" />
+        </div>
+        <div>
+          <label class="label" :for="`portfolio-weighting-${systemId}`">Split</label>
+          <select :id="`portfolio-weighting-${systemId}`" class="select" :value="portfolio.weighting"
+            @change="setPortfolio({ weighting: ($event.target as HTMLSelectElement).value as PortfolioWeighting })">
+            <option value="equal">Equal</option>
+            <option value="rank">By rank</option>
+            <option value="score">By score</option>
+          </select>
+        </div>
+        <div>
+          <label class="label" :for="`portfolio-trend-${systemId}`">Coins that do not trend</label>
+          <select :id="`portfolio-trend-${systemId}`" class="select" :value="portfolio.notTrending"
+            @change="setPortfolio({ notTrending: ($event.target as HTMLSelectElement).value as PortfolioSettings['notTrending'] })">
+            <option value="withUsd">Their share stays in USD</option>
+            <option value="withoutUsd">The trending coins share it</option>
+          </select>
+        </div>
+        <div>
+          <label class="label" :for="`portfolio-rebalance-${systemId}`">Rebalance</label>
+          <select :id="`portfolio-rebalance-${systemId}`" class="select" :value="portfolio.rebalance"
+            @change="setPortfolio({ rebalance: ($event.target as HTMLSelectElement).value as PortfolioSettings['rebalance'] })">
+            <option value="onChange">When the holdings change</option>
+            <option value="daily">Every day</option>
+          </select>
+        </div>
+      </div>
+      <p v-if="portfolio.enabled" class="qs-form__hint">
+        The top {{ portfolio.positions || cfg.topN }} coins by score each take a slot; only a coin that beats USD holds its own.
+        A bearish market filter, or no trending coin, means all USD. Manual execution cannot arm a portfolio system yet.
+      </p>
     </div>
 
     <div class="qs-form__section qs-form__section--window">
@@ -289,8 +350,8 @@ const slipPct = computed({
   padding: var(--qss-panel-pad);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-areas: 'heading heading' 'universe signals' 'window signals' 'costs signals';
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-areas: 'heading heading' 'universe signals' 'portfolio signals' 'window signals' 'costs signals';
+  grid-template-rows: auto auto auto auto 1fr;
   column-gap: 24px;
   align-content: start;
 }
@@ -303,6 +364,7 @@ const slipPct = computed({
 }
 
 .qs-form__section--universe { grid-area: universe; }
+.qs-form__section--portfolio { grid-area: portfolio; }
 .qs-form__section--window { grid-area: window; }
 .qs-form__section--signals { grid-area: signals; }
 .qs-form__section--costs { grid-area: costs; }
@@ -369,7 +431,7 @@ const slipPct = computed({
 @media (max-width: 720px) {
   .qs-form {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: 'heading' 'universe' 'window' 'signals' 'costs';
+    grid-template-areas: 'heading' 'universe' 'portfolio' 'window' 'signals' 'costs';
   }
 
   .qs-form__grid {
