@@ -251,6 +251,10 @@ async function _listen() {
     _interim.value = "";
     _clearLevels();
   });
+  // The hotkey was lost to another program or taken back (Rust retries it).
+  await listen("speech-hotkey", () => {
+    void refreshStatus();
+  });
   await listen<{ phase: string; line?: string }>("speech-setup", (ev) => {
     _setupPhase.value = ev.payload.phase;
     if (ev.payload.line) {

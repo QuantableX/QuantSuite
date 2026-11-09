@@ -10,7 +10,9 @@
 //! the HUD's own list (the HUD has focus then, so there is nowhere else to
 //! put the words); the hotkey records from anywhere and pastes the result
 //! into whatever app is in front, because the HUD never took focus. Held,
-//! the hotkey is push-to-talk; tapped, it toggles.
+//! the hotkey is push-to-talk; tapped, it toggles. The installed app owns
+//! the hotkey: development builds leave it alone, and a hotkey another
+//! program holds is retried until it is free ([`HOTKEY_RETRY`]).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -826,13 +828,59 @@ pub fn setup_in_background(app: &AppHandle, cuda: bool) -> Result<(), String> {
 
 // ── The hotkey ──
 
-/// Register the configured hotkey, replacing the previous one. A hotkey
-/// another app owns fails here and shows up as `hotkeyError` in the status.
-pub fn register_hotkey(app: &AppHandle, speech: &Speech, hotkey: &str) {
+/// A Windows global hotkey belongs to ONE process, and the installed suite,
+/// every dev build and every QA app default to the same one. So:
+///
+/// - a development build (debug) leaves it to the installed app, unless
+///   `QUANTSUITE_DEV_HOTKEY=1` asks for it to test the hotkey there;
+/// - a hotkey another program holds is retried every [`HOTKEY_RETRY`] and
+///   taken the moment it is free — before, one failed attempt at startup
+///   (the installed app restarting while a dev build ran) lost it for good,
+///   which looked like the hotkey uninstalling itself.
+pub const HOTKEY_RETRY: Duration = Duration::from_secs(10);
+
+/// The variable that lets a development build take the global hotkey.
+pub const DEV_HOTKEY_VAR: &str = "QUANTSUITE_DEV_HOTKEY";
+
+/// Whether this build registers the global hotkey: always in release, in a
+/// debug build only with `QUANTSUITE_DEV_HOTKEY=1`.
+fn hotkey_enabled(debug_build: bool, dev_var: Option<&std::ffi::OsStr>) -> bool {
+    !debug_build || dev_var.is_some_and(|v| v == "1")
+}
+
+/// Whether the watcher should try again: the configured hotkey is not held
+/// by this process.
+fn needs_registration(held: Option<&str>, error: Option<&str>, configured: &str) -> bool {
+    error.is_some() || held != Some(configured.trim())
+}
+
+/// The reason in the status, for people: who has the key, what happens next.
+fn hotkey_problem(hotkey: &str, error: &str) -> String {
+    if error.to_lowercase().contains("already registered") {
+        format!("{hotkey} is held by another program — QuantSuite takes it as soon as it is free (or pick another one in Settings)")
+    } else {
+        format!("{hotkey}: {error}")
+    }
+}
+
+/// Register the configured hotkey, replacing the previous one; whether it is
+/// held now. A hotkey another program owns shows up as `hotkeyError` in the
+/// status, and the watcher started in [`init`] keeps trying.
+pub fn register_hotkey(app: &AppHandle, speech: &Speech, hotkey: &str) -> bool {
+    // The watcher and a settings change must not interleave the
+    // unregister / register pair.
+    static REGISTERING: Mutex<()> = Mutex::new(());
+    let _serial = lock(&REGISTERING);
     let hotkey = hotkey.trim().to_string();
     let previous = lock(&speech.hotkey).take();
     if let Some(prev) = previous {
         let _ = app.global_shortcut().unregister(prev.as_str());
+    }
+    if !hotkey_enabled(cfg!(debug_assertions), std::env::var_os(DEV_HOTKEY_VAR).as_deref()) {
+        *lock(&speech.hotkey_error) = Some(format!(
+            "{hotkey} is off in development builds — the installed QuantSuite keeps it ({DEV_HOTKEY_VAR}=1 turns it on here)"
+        ));
+        return false;
     }
     let result = app.global_shortcut().on_shortcut(hotkey.as_str(), |app, _shortcut, event| {
         let app = app.clone();
@@ -847,13 +895,44 @@ pub fn register_hotkey(app: &AppHandle, speech: &Speech, hotkey: &str) {
     });
     match result {
         Ok(()) => {
-            *lock(&speech.hotkey) = Some(hotkey);
-            *lock(&speech.hotkey_error) = None;
+            let recovered = lock(&speech.hotkey_error).take().is_some();
+            *lock(&speech.hotkey) = Some(hotkey.clone());
+            if recovered {
+                log::info!("quantvoice: hotkey {hotkey} registered");
+                let _ = app.emit("speech-hotkey", json!({ "hotkey": hotkey, "error": null }));
+            }
+            true
         }
         Err(e) => {
-            *lock(&speech.hotkey_error) = Some(format!("{hotkey}: {e}"));
+            let problem = hotkey_problem(&hotkey, &e.to_string());
+            let mut error = lock(&speech.hotkey_error);
+            // Logged and announced once per new problem — the watcher retries
+            // the same one every few seconds.
+            if error.as_deref() != Some(problem.as_str()) {
+                log::warn!("quantvoice: hotkey not registered: {problem}");
+                let _ = app.emit("speech-hotkey", json!({ "hotkey": hotkey, "error": problem }));
+            }
+            *error = Some(problem);
+            false
         }
     }
+}
+
+/// Keep the configured hotkey held: retry while another program has it.
+fn watch_hotkey(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(HOTKEY_RETRY);
+        if !hotkey_enabled(cfg!(debug_assertions), std::env::var_os(DEV_HOTKEY_VAR).as_deref()) {
+            continue;
+        }
+        let Some(speech) = app.try_state::<Speech>() else { continue };
+        let config = read_config();
+        let held = lock(&speech.hotkey).clone();
+        let error = lock(&speech.hotkey_error).clone();
+        if needs_registration(held.as_deref(), error.as_deref(), &config.speech_hotkey) {
+            register_hotkey(&app, &speech, &config.speech_hotkey);
+        }
+    });
 }
 
 fn on_press(app: &AppHandle) {
@@ -1003,6 +1082,7 @@ pub fn init(app: &AppHandle) {
     if let Some(speech) = app.try_state::<Speech>() {
         register_hotkey(app, &speech, &config.speech_hotkey);
     }
+    watch_hotkey(app.clone());
     let handle = app.clone();
     qs_core::shutdown::on_shutdown(
         app,
@@ -1058,8 +1138,9 @@ pub fn speech_devices(app: AppHandle, state: tauri::State<'_, Speech>) -> Result
 #[tauri::command(async)]
 pub fn speech_apply_settings(app: AppHandle, state: tauri::State<'_, Speech>) -> Result<SpeechStatus, String> {
     let config = read_config();
-    let current = lock(&state.hotkey).clone();
-    if current.as_deref() != Some(config.speech_hotkey.as_str()) || lock(&state.hotkey_error).is_some() {
+    let held = lock(&state.hotkey).clone();
+    let error = lock(&state.hotkey_error).clone();
+    if needs_registration(held.as_deref(), error.as_deref(), &config.speech_hotkey) {
         register_hotkey(&app, &state, &config.speech_hotkey);
     }
     let running = proc_alive(&mut lock(&state.inner));
@@ -1135,5 +1216,33 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(a.len(), 16);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_release_builds_take_the_hotkey_unless_a_dev_build_asks() {
+        use std::ffi::OsStr;
+        assert!(hotkey_enabled(false, None), "the installed app always registers it");
+        assert!(!hotkey_enabled(true, None), "a dev or QA build leaves it to the installed app");
+        assert!(!hotkey_enabled(true, Some(OsStr::new("0"))));
+        assert!(hotkey_enabled(true, Some(OsStr::new("1"))));
+    }
+
+    #[test]
+    fn the_watcher_retries_until_the_configured_hotkey_is_held() {
+        assert!(!needs_registration(Some("Ctrl+Shift+Space"), None, "Ctrl+Shift+Space"));
+        assert!(!needs_registration(Some("Ctrl+Shift+Space"), None, " Ctrl+Shift+Space "), "the config is trimmed like the registration");
+        // Lost at startup to another instance: nothing held, an error noted.
+        assert!(needs_registration(None, Some("held by another program"), "Ctrl+Shift+Space"));
+        // Changed in Settings.
+        assert!(needs_registration(Some("Ctrl+Shift+Space"), None, "Alt+Space"));
+        assert!(needs_registration(None, None, "Ctrl+Shift+Space"));
+    }
+
+    #[test]
+    fn a_held_hotkey_reads_as_temporary() {
+        let held = hotkey_problem("Ctrl+Shift+Space", "HotKey { mods: CONTROL | SHIFT, key: Space, id: 1 } already registered");
+        assert!(held.starts_with("Ctrl+Shift+Space is held by another program"), "{held}");
+        assert!(held.contains("as soon as it is free"));
+        assert_eq!(hotkey_problem("Ctrl+Nope", "Couldn't recognize \"Nope\" as a valid key"), "Ctrl+Nope: Couldn't recognize \"Nope\" as a valid key");
     }
 }
