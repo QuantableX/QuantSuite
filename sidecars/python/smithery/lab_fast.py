@@ -141,9 +141,10 @@ _STATE = ("config", "keys", "failed", "key_start", "groups", "pairs", "full", "d
           "cadence", "assets", "rotation", "returns", "walk")
 # The walk and candles a saved rotation cube was built for. 2: a decision compares the coins of the ranking
 # the next bar runs on, and only those with a candle that day (rotation_lab universe.walk_lists). 3: the
-# votes of coin-vs-coin pairs are on the ratio's hourly path (smithery.ratio). A cube built for another
-# number would answer with the old picks or the old candles, so load() refuses it.
-WALK = 3
+# votes of coin-vs-coin pairs are on the ratio's hourly path (smithery.ratio). 4: intraday bars have their
+# path too. A cube built for another number would answer with the old picks or the old candles, so load()
+# refuses it.
+WALK = 4
 
 
 class FastSystem:

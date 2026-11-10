@@ -74,6 +74,18 @@ SHELF_CRYPTO = [
     ("kucoin",   "BTC/USDT", "1h", "2018-01-01"),
 ]
 
+# Finer series the Gauntlet builds its ratio pairs' candles from (ratio.PATH_OF): the four coins of the
+# three pairs at 5m, for the 4h and 1h tracks (the 1d track uses the shelf's own 1h series). They are not
+# certification series: they live in a folder of their own, where `available()` and everything that walks
+# the shelf never sees them (path_dir()).
+SHELF_PATHS = [
+    ("binance", "BTC/USDT", "5m", "2017-08-01"),
+    ("binance", "ETH/USDT", "5m", "2017-08-01"),
+    ("binance", "BNB/USDT", "5m", "2017-11-01"),
+    ("binance", "SOL/USDT", "5m", "2020-08-01"),
+]
+_PATH_PAGES = 1500  # nine years of 5m candles are about a thousand pages
+
 # geo-block / outage fallbacks for the primary crypto venue
 BINANCE_FALLBACKS = ["okx", "bybit", "kucoin"]
 
@@ -214,6 +226,28 @@ def available() -> list[str]:
     return sorted(p.stem for p in PRICE_DIR.glob("*.csv"))
 
 
+def path_dir() -> Path:
+    """The path series' folder, beside the shelf's own files (read when called: the shelf can be moved)."""
+    return PRICE_DIR / "Paths"
+
+
+def path_csv(key: str) -> Path:
+    return path_dir() / f"{key}.csv"
+
+
+def path_series(symbol: str, tf: str) -> pd.DataFrame | None:
+    """A path series of the shelf (``SHELF_PATHS``) as a UTC-indexed frame, from the first venue that has
+    it; None when it has not been fetched."""
+    for exchange in ("binance", *BINANCE_FALLBACKS):
+        path = path_csv(f"{exchange.upper()}_{symbol}_{tf}")
+        if path.is_file():
+            df = pd.read_csv(path, parse_dates=["timestamp"])
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+            df = df.set_index("timestamp").sort_index()
+            return df[~df.index.duplicated(keep="last")]
+    return None
+
+
 def _save(key: str, df: pd.DataFrame) -> None:
     PRICE_DIR.mkdir(parents=True, exist_ok=True)
     out = df.copy()
@@ -314,7 +348,46 @@ def refresh(verbose: bool = True, log=None, timeframe: str = "all") -> dict[str,
         if not done:
             results[_key(ex_id, sym, tf)] = "failed on all venues"
 
+    # The path series of the 4h and 1h tracks' ratio pairs (SHELF_PATHS), in their own folder.
+    if timeframe in ("all", "4h", "1h", "5m"):
+        results.update(refresh_paths(log))
     mirror_shelf(log)
+    return results
+
+
+def refresh_paths(log=print) -> dict[str, str]:
+    """Fetch or extend the path series (``SHELF_PATHS``). Returns {key: status}; a failure never aborts."""
+    results: dict[str, str] = {}
+    path_dir().mkdir(parents=True, exist_ok=True)
+    for ex_id, sym, tf, since in SHELF_PATHS:
+        done = False
+        for cand in [ex_id] + (BINANCE_FALLBACKS if ex_id == "binance" else []):
+            key = _key(cand, sym, tf)
+            target = path_csv(key)
+            try:
+                old = None
+                if target.exists():
+                    old = pd.read_csv(target, parse_dates=["timestamp"])
+                    old["timestamp"] = pd.to_datetime(old["timestamp"], utc=True)
+                    old = old.set_index("timestamp").sort_index()
+                eff_since = since if old is None or old.empty else old.index[-1].isoformat()
+                log(f"  {key}: fetching from {eff_since}")
+                df = fetch_ccxt(cand, sym, tf, eff_since, max_pages=_PATH_PAGES,
+                                progress=lambda page, bars, stamp: log(f"  {key}: page {page}, {bars:,} bars through {stamp}"))
+                if old is not None:
+                    df = pd.concat([old, df])
+                    df = df[~df.index.duplicated(keep="last")].sort_index()
+                out = df.copy()
+                out.index.name = "timestamp"
+                out.reset_index().to_csv(target, index=False)
+                results[key] = f"ok ({len(df)} bars, {df.index[0].date()} -> {df.index[-1].date()})"
+                log(f"  {key}: {results[key]}")
+                done = True
+                break
+            except Exception as e:  # noqa: BLE001 - a venue failure must not abort the shelf
+                log(f"  {key}: FAILED ({type(e).__name__}: {str(e)[:120]}) - trying fallback")
+        if not done:
+            results[_key(ex_id, sym, tf)] = "failed on all venues"
     return results
 
 

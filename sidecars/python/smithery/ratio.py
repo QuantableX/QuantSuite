@@ -3,9 +3,9 @@ certification.
 
 A coin-vs-coin series has no candles of its own; they are built from the two coins' candles. Open and
 close are the ratios of the opens and of the closes. High and low are the highest and lowest value the
-ratio had along the bar, read from the two coins' closes at every hour inside it (its *path*) together
+ratio had along the bar, read from the two coins' closes of the finer candles inside it (its *path*) together
 with its open and close. A coin's candles carry that path as columns ``path_01`` .. ``path_NN`` (the
-close of each hour of the bar, in order).
+close of each finer candle of the bar, in order).
 
 Where a bar has no complete path for both coins, a stand-in is used: high(A)/high(B) and low(A)/low(B),
 widened to hold open and close. Coins mostly peak and bottom together, so this is close: measured against
@@ -14,7 +14,9 @@ with 0.82 of the real range. The widest the ratio could have been, high(A)/low(B
 the engine used until 2026-11-10, was off by 2.9% with 3.3 times the range and the close always
 mid-candle; the candle's body alone, which certification used, by 0.4% with 0.55 of the range and no wicks.
 
-The path is sampled at the hour, so a move inside one hour is not in it.
+Which finer candles make a bar's path is one table, ``PATH_OF``: a daily bar its 24 hours, a 12h bar its 12
+hours, a 4h bar its 48 five-minute candles, a 1h bar its 12 five-minute candles. Every bar has at least 12
+samples; a move between two samples is not in the candle.
 """
 from __future__ import annotations
 
@@ -23,6 +25,11 @@ import pandas as pd
 
 PATH_PREFIX = "path_"
 HOUR = pd.Timedelta(hours=1)
+
+# Bar timeframe -> (the finer timeframe whose closes are its path, how many of them one bar holds).
+PATH_OF: dict[str, tuple[str, int]] = {"1d": ("1h", 24), "12h": ("1h", 12), "4h": ("5m", 48), "1h": ("5m", 12)}
+# How long one candle of a finer timeframe is.
+STEP_OF: dict[str, pd.Timedelta] = {"1h": HOUR, "5m": pd.Timedelta(minutes=5)}
 
 
 def path_names(steps: int) -> list[str]:
@@ -83,7 +90,7 @@ def ratio_candles(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
         if whole.any():
             with np.errstate(divide="ignore", invalid="ignore"):
                 path = pa / pb
-            # The ratio at every hour's close, with the bar's own open and close.
+            # The ratio at the close of every finer candle, with the bar's own open and close.
             top = np.where(whole[:, None], path, -np.inf).max(axis=1)
             bottom = np.where(whole[:, None], path, np.inf).min(axis=1)
             high = np.where(whole, np.maximum(np.maximum(top, o), c), high)

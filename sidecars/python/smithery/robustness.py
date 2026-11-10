@@ -108,23 +108,36 @@ def basket_frames(primary: str, timeframe: str) -> tuple[dict, dict]:
     return {k: load(k) for k in keys}, {k: cost_for(k) for k in keys}
 
 
-# The finer shelf series whose closes give a pair's candle its path, and how many of its bars one bar holds.
-# Only the daily track has one, like the engine: there a coin-vs-coin candle follows the ratio hour by hour.
-RATIO_PATH = {"1d": ("1h", 24)}
+# The finer series whose closes give a pair's candle its path, and how many of its bars one bar holds: the
+# engine's own table, so a track's pair candles are the candles a system of that cadence runs on.
+from .ratio import PATH_OF, STEP_OF  # noqa: E402
+
+RATIO_PATH = {tf: PATH_OF[tf] for tf in TIMEFRAMES}
+
+
+def fine_series(symbol: str, fine: str) -> pd.DataFrame | None:
+    """A coin's finer series for a pair candle's path: a track series of the shelf, or one of the path
+    series the shelf keeps beside it (``data.path_series``). None when it is not there."""
+    if fine in TIMEFRAMES:
+        key = series_key(symbol, fine)
+        return load(key) if key else None
+    from .data import path_series
+    return path_series(symbol, fine)
 
 
 def ratio_frame(a: pd.DataFrame, b: pd.DataFrame, a_fine: pd.DataFrame | None = None,
-                b_fine: pd.DataFrame | None = None, steps: int = 0) -> pd.DataFrame:
+                b_fine: pd.DataFrame | None = None, steps: int = 0, step: pd.Timedelta = pd.Timedelta(hours=1)) -> pd.DataFrame:
     """An A/B ratio series as the systems build it (``ratio.ratio_candles``, the engine's own rule).
 
-    With the two coins' finer series (``steps`` of their bars per bar) the candle's high and low follow
-    the ratio along the bar; without them, or on a bar where one is incomplete, they are the stand-in."""
+    With the two coins' finer series (``steps`` of their bars, each ``step`` long, per bar) the candle's
+    high and low follow the ratio along the bar; without them, or on a bar where one is incomplete, they
+    are the stand-in."""
     from .ratio import paths_from_fine, ratio_candles
     idx = a.index.intersection(b.index)
     a, b = a.loc[idx], b.loc[idx]
     if a_fine is not None and b_fine is not None and steps:
-        a = a.join(paths_from_fine(idx, a_fine["close"], steps))
-        b = b.join(paths_from_fine(idx, b_fine["close"], steps))
+        a = a.join(paths_from_fine(idx, a_fine["close"], steps, step))
+        b = b.join(paths_from_fine(idx, b_fine["close"], steps, step))
     out = ratio_candles(a, b)
     out["volume"] = a["volume"] if "volume" in a.columns else 0.0
     return out[["open", "high", "low", "close", "volume"]].dropna()
@@ -227,10 +240,10 @@ class Gauntlet:
             ka, kb = series_key(a_sym, self.timeframe), series_key(b_sym, self.timeframe)
             if not ka or not kb:
                 continue
-            fine, steps = RATIO_PATH.get(self.timeframe, (None, 0))
-            fa, fb = (series_key(a_sym, fine), series_key(b_sym, fine)) if fine else (None, None)
-            rf = (ratio_frame(load(ka), load(kb), load(fa), load(fb), steps) if fa and fb
-                  else ratio_frame(load(ka), load(kb)))
+            fine, steps = RATIO_PATH[self.timeframe]
+            fa, fb = fine_series(a_sym, fine), fine_series(b_sym, fine)
+            rf = ratio_frame(load(ka), load(kb), fa, fb, steps, STEP_OF[fine]) if fa is not None and fb is not None \
+                else ratio_frame(load(ka), load(kb))
             if len(rf) < 250:
                 continue
             rb = self._bt(rf, max(cost_for(ka), cost_for(kb)))
