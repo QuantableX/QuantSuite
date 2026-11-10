@@ -38,12 +38,14 @@ import threading
 from dataclasses import asdict, replace
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from . import __version__, funds
-from .backtest.engine import USD_SYMBOL, BacktestEngine, HoldingTrade
+from .backtest.engine import USD_SYMBOL, BacktestEngine, HoldingTrade, pair_scores, top_scored
 from .backtest.metrics import METRIC_LABELS, PerformanceMetrics, compute_metrics
 from .backtest.signals import pair_signal
+from .backtest.universe import candle_mask, comparable, ranking_known_before_open
 from .config import (
     Cadence,
     EmaCrossConfig,
@@ -410,8 +412,14 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
         get_default_cache(),
         progress=lambda label: progress(label, 0.05),
     )
+    # The coins come from the ranking the next bar runs on: the one the replay's decision at the last closed
+    # bar reads (universe.walk_lists). As of today that bar is yesterday's and the ranking today's; for a past
+    # asOf, whose own bar has closed, it is the next day's.
+    ranking_day = as_of
+    if ranking_known_before_open(cfg.cadence, cfg.ranking_resolution):
+        ranking_day = min(as_of + dt.timedelta(days=1), now.date())
     resolved = registry.get_top_n(
-        as_of,
+        ranking_day,
         cfg.top_n,
         source=cfg.ranking_source,
         exclude_stablecoins=cfg.exclude_stablecoins,
@@ -480,8 +488,9 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
         # engine's warm-up start, each earlier day with its own cached ranking.
         market_start = (_market_start(replace(cfg, start_date=as_of)) if cfg.market_indicator is not None
                         else history_start(market_indicator))
+        # TOTAL's newest snapshot belongs to asOf's own bar, like every bar of the backtest's TOTAL.
         market_coins = list(coins)
-        if cfg.exclude_top_n > 0 or cfg.exclude_symbols:
+        if cfg.exclude_top_n > 0 or cfg.exclude_symbols or ranking_day != as_of:
             market_coins = registry.get_top_n(
                 as_of, cfg.top_n, source=cfg.ranking_source,
                 exclude_stablecoins=cfg.exclude_stablecoins,
@@ -513,64 +522,58 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
         gate = market_gate(total, market_indicator)
         market_filter["bullish"] = bool(int(gate.iloc[-1]) == 1) if not gate.empty else False
 
-    def beats(a_sym: str, b_sym: str | None) -> int | None:
-        a_df = frames.get(a_sym)
-        if a_df is None:
-            return None
-        b_df = frames.get(b_sym) if b_sym else None
-        sig = pair_signal(a_df, b_df, cfg.indicator)
-        if sig.empty:
-            return None
-        return int(sig.iloc[-1])
+    # The backtest's own rule and scoring (universe.comparable, engine.pair_scores) on the bar that just
+    # closed, so today's pick is the pick the replay makes on that bar: only coins with a candle on it are
+    # compared, each pair is judged once with the higher rank as A, and a tie goes to the higher rank.
+    master = pd.DatetimeIndex(sorted(set().union(*[set(f.index) for f in frames.values()]))) if frames else pd.DatetimeIndex([])
+    last = len(master) - 1
+    compared = comparable(symbols, candle_mask(frames, master), last) if len(master) else []
+    judged: dict[tuple[str, str | None], np.ndarray] = {}
 
-    # Evaluate each unordered pair exactly once, in universe order, and
-    # derive the mirrored cell as its complement -- the same rule as
-    # BacktestEngine._score_universe. EMA is not reciprocal-invariant
-    # (EMA(1/x) != 1/EMA(x)), so evaluating a-vs-b and b-vs-a separately
-    # could award the pair's point to both coins or to neither, and make
-    # live pick a different best asset than the backtest did on the same
-    # data. Evaluating once also halves the pair_signal calls, which
-    # matters for the self-tuning Smithery indicators.
-    # USD sorts last in `order`, so `a` below is always a real symbol.
-    cells: dict[tuple[str, str], int | None] = {}
-    for i, a in enumerate(order):
-        for b in order[i + 1:]:
-            v = beats(a, None if b == USD_SYMBOL else b)
-            cells[(a, b)] = v
-            cells[(b, a)] = None if v is None else (0 if v == 1 else 1)
+    def votes(a_sym: str, b_sym: str | None) -> np.ndarray:
+        if (a_sym, b_sym) not in judged:
+            sig = pair_signal(frames[a_sym], frames[b_sym] if b_sym else None, cfg.indicator)
+            judged[a_sym, b_sym] = sig.reindex(master, fill_value=0).to_numpy(dtype=np.int8)
+        return judged[a_sym, b_sym]
 
-    # NxN matrix over `order`; diagonal is null.
-    matrix: list[list[int | None]] = []
     scores: dict[str, int] = {s: 0 for s in order}
-    for a in order:
-        row: list[int | None] = []
-        for b in order:
-            if a == b:
-                row.append(None)
-                continue
-            cell = cells[(a, b)]
-            row.append(cell)
-            if cell == 1:
-                scores[a] += 1
-        matrix.append(row)
-
-    best = max(order, key=lambda s: (scores.get(s, -1), -order.index(s))) if order else None
+    best = USD_SYMBOL if include_usd else None  # nobody to compare: cash, like the walk
+    if compared:
+        scored, points = pair_scores(compared, votes, last, last + 1, include_usd)
+        scores.update({s: int(p) for s, p in zip(scored, points[0])})
+        best = str(top_scored(scored, points)[0])
     if market_filter["enabled"] and not market_filter["bullish"]:
         best = USD_SYMBOL
+
+    # NxN matrix over `order`: 1 when the row beats the column, null on the diagonal and for a coin that was
+    # not compared (no candle on the closed bar).
+    rank = {s: i for i, s in enumerate(compared)}
+
+    def cell(a: str, b: str) -> int | None:
+        if a == b:
+            return None
+        if a == USD_SYMBOL:
+            return int(1 - votes(b, None)[last]) if b in rank else None
+        if b == USD_SYMBOL:
+            return int(votes(a, None)[last]) if a in rank else None
+        if a not in rank or b not in rank:
+            return None
+        return int(votes(a, b)[last]) if rank[a] < rank[b] else int(1 - votes(b, a)[last])
+
+    matrix: list[list[int | None]] = [[cell(a, b) for b in order] for a in order]
 
     # Portfolio mode: tomorrow's weights by the backtest's own rule. `best` keeps its single-pick meaning.
     portfolio_target = None
     if cfg.portfolio is not None:
         from .backtest.engine import portfolio_target as target_of
-        coins_now = [s for s in order if s != USD_SYMBOL]
-        trend = {s: (cells.get((s, USD_SYMBOL)) if USD_SYMBOL in order else beats(s, None)) == 1 for s in coins_now}
-        portfolio_target = ({USD_SYMBOL: 1.0} if not coins_now or (market_filter["enabled"] and not market_filter["bullish"])
-                            else target_of(coins_now, {s: scores.get(s, 0) for s in coins_now}, trend, cfg.portfolio))
+        trend = {s: bool(votes(s, None)[last] == 1) for s in compared}
+        portfolio_target = ({USD_SYMBOL: 1.0} if not compared or (market_filter["enabled"] and not market_filter["bullish"])
+                            else target_of(compared, {s: scores.get(s, 0) for s in compared}, trend, cfg.portfolio))
 
     universe = []
     for c in coins:
         d = _coin_to_dict(c)
-        d["score"] = scores.get(c.symbol)
+        d["score"] = scores.get(c.symbol) if c.symbol in rank else None
         d["hasData"] = c.symbol in frames
         universe.append(d)
 
