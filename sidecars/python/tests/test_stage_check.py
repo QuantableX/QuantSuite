@@ -7,7 +7,9 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from smithery import quantscript
+from unittest.mock import patch
+
+from smithery import quantscript, variants
 from smithery.contract import CONTRACT_VERSION
 from smithery.variants import script_signature
 
@@ -71,6 +73,23 @@ class StageCheckTests(unittest.TestCase):
     def write_version(self, source: str):
         path = self.library / "versions" / "stage_alpha" / "stage_alpha_opt.json"
         path.write_text(json.dumps(version_doc(source, 30)), encoding="utf-8")
+
+    def test_one_pass_over_the_library_reads_its_file_state_once(self):
+        real, reads = variants._read_library_state, []
+        with patch.object(variants, "_read_library_state", side_effect=lambda folder: reads.append(folder) or real(folder)):
+            with variants.held_library_state(self.library):
+                first = script_signature("stage_alpha", folder=self.library)
+                script_signature("stage_helper", folder=self.library)
+                variants.declared_requirements(self.library)
+                with variants.held_library_state(self.library):   # a pass inside a pass shares the reading
+                    self.assertEqual(script_signature("stage_alpha", folder=self.library), first)
+            self.assertEqual(len(reads), 1)
+            # Outside a pass every call reads the state again, so an edited script is noticed at once.
+            script_signature("stage_alpha", folder=self.library)
+            self.assertEqual(len(reads), 2)
+        (self.library / "stage_helper.py").write_bytes(HELPER.replace("adjust=False", "adjust=True").encode())
+        self.assertNotEqual(script_signature("stage_alpha", folder=self.library), first)
+        self.assertEqual(variants._HELD_STATE, {})
 
     def test_a_package_with_its_requirement_and_a_matching_version_passes(self):
         self.write_version(script_signature("stage_alpha", folder=self.library))
