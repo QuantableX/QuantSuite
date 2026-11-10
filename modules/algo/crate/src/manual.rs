@@ -466,6 +466,16 @@ pub fn parse_signal(live: &Value) -> Result<Signal, String> {
     })
 }
 
+/// The compared coins whose closed day has no hourly path yet although the
+/// day before has one (the engine's `pathMissing`): a venue that is late with
+/// the last hours. Empty for an engine that does not report it.
+pub fn path_missing(live: &Value) -> Vec<String> {
+    live.get("pathMissing")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str()).map(String::from).collect())
+        .unwrap_or_default()
+}
+
 /// Whether the data the signal used is the closed candle of `close - 1 day`:
 /// `Ok(())` or the reason. `closes` holds the reference exchange's close of
 /// that candle per coin (missing = not there yet).
@@ -783,6 +793,15 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
             return Ok(None);
         }
     }
+    // The coin-vs-coin candles follow the ratio hour by hour. A venue can be
+    // late with the closed day's last hours: wait for them like for the day's
+    // candle, so the backtest later judges the candle this run judged. They
+    // never stop a run: past the window it trades on the stand-in candle.
+    let late_paths = path_missing(&result);
+    if fresh.is_ok() && !late_paths.is_empty() && Utc::now() + RETRY_EVERY < window {
+        log::info!(target: "algo", "manual {system_id} {close}: waiting for the hourly candles of {}", late_paths.join(", "));
+        return Ok(None);
+    }
 
     let (target, mut notes) = match &signal.portfolio {
         Some(weights) => {
@@ -799,6 +818,12 @@ pub fn attempt(app: &AppHandle<Wry>, system_id: &str, close: NaiveDate) -> Resul
         }
         None => target_for(&signal, &is_listed, market == MarketType::Perp),
     };
+    if !late_paths.is_empty() {
+        notes.push(format!(
+            "no hourly candles of {closed_day} yet for {}: their coin-vs-coin candles use the stand-in (backtest ≠ live if the hours arrive later)",
+            late_paths.join(", ")
+        ));
+    }
     let mut reference_prices: std::collections::BTreeMap<String, f64> = closes.into_iter().collect();
     reference_prices.insert(quote.into(), 1.0);
     let account = if live { Some(live_venue(&state, &exchange_id, market, settings.leverage)?) } else { None };
@@ -1412,6 +1437,18 @@ mod tests {
         let none = |_: &str| false;
         assert_eq!(target_for(&s, &none, true).0, Target::Flat, "no perp for the coin: cash");
         assert!(parse_signal(&json!({"asOf": "2026-11-10", "best": null, "symbols": []})).is_err(), "no ranking");
+    }
+
+    #[test]
+    fn late_hourly_candles_are_read_from_the_signal() {
+        let mut live = rotation("ETH");
+        assert!(path_missing(&live).is_empty(), "an engine that does not report them");
+        live["pathMissing"] = json!(["SOL", "ETH"]);
+        assert_eq!(path_missing(&live), vec!["SOL", "ETH"]);
+        live["pathMissing"] = json!([]);
+        assert!(path_missing(&live).is_empty());
+        // The signal itself is unchanged by the field.
+        assert_eq!(parse_signal(&live).unwrap().hold.as_deref(), Some("ETH"));
     }
 
     #[test]
