@@ -413,6 +413,48 @@ def top_scored(order: list[str], scores: np.ndarray) -> np.ndarray:
     return np.asarray(order, dtype=object)[scores.argmax(axis=1)]
 
 
+def with_path(frame: pd.DataFrame, paths, ref: CoinRef, start: dt.date, end: dt.date) -> pd.DataFrame:
+    """``frame`` with the hourly path of every day that has one (``smithery.ratio``), from ``paths``, the
+    candle source's ``get_path``. Unchanged when it gives none."""
+
+    try:
+        path = paths(ref, start, end)
+    except Exception as exc:  # noqa: BLE001 - the stand-in candle, and the run's notes say so
+        log.warning("Hourly candles failed for %s: %s", ref.symbol, exc)
+        return frame
+    if not isinstance(path, pd.DataFrame) or path.empty:
+        return frame
+    return frame.join(path, how="left")
+
+
+def path_note(frames: dict[str, pd.DataFrame], start: dt.date) -> str:
+    """What share of the coins' days from ``start`` carry an hourly path, and which coins lack one how often."""
+
+    from smithery.ratio import path_columns
+
+    days = with_one = 0
+    lacking: dict[str, int] = {}
+    for sym, frame in frames.items():
+        inside = frame.loc[frame.index >= pd.Timestamp(start)]
+        columns = path_columns(inside)
+        whole = int(inside[columns].notna().all(axis=1).sum()) if columns else 0
+        days += len(inside)
+        with_one += whole
+        if whole < len(inside):
+            lacking[sym] = len(inside) - whole
+    if not days:
+        return "Coin-vs-coin candles: no candles in the window."
+    if not with_one:
+        return ("Coin-vs-coin candles: no hourly candles are saved, so high and low are the stand-in "
+                "(high(A)/high(B), low(A)/low(B)) on every day.")
+    worst = sorted(lacking.items(), key=lambda item: -item[1])[:6]
+    text = f"Coin-vs-coin candles: high and low from the hourly path on {with_one / days:.1%} of coin-days."
+    if worst:
+        text += " Stand-in candle where a coin has no complete hours: " + ", ".join(f"{sym} {n} days" for sym, n in worst)
+        text += f" and {len(lacking) - len(worst)} more coins." if len(lacking) > len(worst) else "."
+    return text
+
+
 def _bar_returns(frame: pd.DataFrame, index: pd.DatetimeIndex) -> np.ndarray:
     """Open-to-close returns aligned once, preserving the missing-bar cash rule."""
     prices = frame.reindex(index)
@@ -547,6 +589,9 @@ class BacktestEngine:
 
         _tick("Fetching OHLCV", 0.30)
         timeframe = config.cadence.ccxt_timeframe
+        # Daily bars: the traded coins' candles carry their hourly path, so a coin-vs-coin candle has the
+        # ratio's real high and low (smithery.ratio). Intraday bars keep the stand-in candle for now.
+        paths = None if config.cadence.is_intraday else getattr(self.ohlcv, "get_path", None)
         all_frames: dict[str, pd.DataFrame] = {}
         for i, coin in enumerate(fetch_coins):
             ref = CoinRef(cg_id=coin.cg_id, symbol=coin.symbol)
@@ -559,12 +604,17 @@ class BacktestEngine:
             if frame.empty:
                 notes.append(f"No OHLCV available for {coin.symbol}")
                 continue
+            if callable(paths) and coin.symbol in strategy_symbols:
+                _tick(f"Hourly candles {coin.symbol}", 0.30 + 0.40 * (i + 0.5) / max(len(fetch_coins), 1))
+                frame = with_path(frame, paths, ref, fetch_start, config.end_date)
             all_frames[coin.symbol] = frame
             _tick(
                 f"OHLCV {coin.symbol}",
                 0.30 + 0.40 * (i + 1) / max(len(fetch_coins), 1),
             )
         frames = {sym: f for sym, f in all_frames.items() if sym in strategy_symbols}
+        if callable(paths) and len(frames) > 1:
+            notes.append(path_note(frames, config.start_date))
 
         total: pd.DataFrame | None = None
         if config.market_filter and all_frames:

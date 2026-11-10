@@ -462,6 +462,17 @@ class Cache:
             )
         return out
 
+    def get_intraday_closes(
+        self, coin_key: str, tf: str, start: dt.datetime, end: dt.datetime
+    ) -> list[tuple[str, float | None]]:
+        """``(bar open as ISO text, close)`` of the cached bars in a window, oldest first."""
+
+        with self._conn() as con:
+            return con.execute(
+                "SELECT ts, close FROM ohlcv_intraday WHERE coin_key=? AND tf=? AND ts BETWEEN ? AND ? ORDER BY ts",
+                (coin_key, tf, start.isoformat(), end.isoformat()),
+            ).fetchall()
+
     def intraday_coverage(
         self, coin_key: str, tf: str
     ) -> tuple[dt.datetime | None, dt.datetime | None]:

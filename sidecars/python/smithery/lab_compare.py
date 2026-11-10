@@ -54,9 +54,9 @@ class FrozenService:
         def call(*args, **kwargs):
             args = list(args)
             if self.earliest is not None:
-                # Both OHLCV methods take start as positional argument, after
-                # ref (get_series) or exchange/pair (get_pair_series).
-                index = 1 if name == "get_series" else 2
+                # Every candle method takes start as positional argument, after
+                # ref (get_series, get_path) or exchange/pair (get_pair_series).
+                index = 2 if name == "get_pair_series" else 1
                 if len(args) > index:
                     args[index] = self.earliest
                 else:
@@ -73,6 +73,9 @@ class FrozenService:
                 if hasattr(value, "frame"):
                     self.path.mkdir(parents=True, exist_ok=True)
                     value.frame.to_csv(self.path / f"candles-{number}.csv", float_format="%.17g")
+                elif hasattr(value, "to_csv"):  # a coin's hourly path
+                    self.path.mkdir(parents=True, exist_ok=True)
+                    value.to_csv(self.path / f"paths-{number}.csv", float_format="%.17g")
                 else:
                     save(self.path / f"ranking-{number}.json", {"request": key, "response": asdict(value)})
             return copy.deepcopy(self.values[key])
@@ -117,6 +120,11 @@ class SavedPrices:
         ref = CoinRef(None, pair, cache_key=f"market:{exchange}:{pair}")
         bars = self.cache.get_ohlcv_intraday_range(ref.cache_key, timeframe, *bar_window(start, end, timeframe))
         return OhlcvSeries(ref, _bars_to_frame(bars))
+
+    def get_path(self, ref, start, end):
+        """The saved hourly path of a coin's days (for the coin-vs-coin candle); days without one are absent."""
+        from rotation_lab.data.ohlcv import coin_key_for, paths_from_rows
+        return paths_from_rows(self.cache, self.cache.get_ohlcv_range(coin_key_for(ref), start, end))
 
 
 class NotSaved:
@@ -219,5 +227,5 @@ def frozen_engine(config, candidates, data_dir, prices=None):
         ohlcv = PricesVariant(ohlcv, prices)
     engine = BacktestEngine(registry=saved_rankings(cache), ohlcv=ohlcv)
     engine.registry = FrozenService(engine.registry, {"get_top_n"}, data_dir)
-    engine.ohlcv = FrozenService(engine.ohlcv, {"get_series", "get_pair_series"}, data_dir, min(starts))
+    engine.ohlcv = FrozenService(engine.ohlcv, {"get_series", "get_pair_series", "get_path"}, data_dir, min(starts))
     return engine

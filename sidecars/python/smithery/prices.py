@@ -75,6 +75,13 @@ class PricesVariant:
             frame = self._venue_frame(key, start, end, timeframe)
         return OhlcvSeries(CoinRef(None, pair, cache_key=key), self._change(key, frame, start, end, timeframe))
 
+    def get_path(self, ref, start, end):
+        """The saved hourly path of a coin's days. A shuffled world has none: its days are no longer the
+        days the hours belong to, so its coin-vs-coin candles are the stand-in from the shuffled candles."""
+        if self.kind == "shuffle":
+            return None
+        return self.base.get_path(ref, start, end)
+
     def __getattr__(self, name):
         return getattr(self.base, name)
 

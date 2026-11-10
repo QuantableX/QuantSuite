@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 
 from . import __version__, funds
-from .backtest.engine import USD_SYMBOL, BacktestEngine, HoldingTrade, pair_scores, top_scored
+from .backtest.engine import USD_SYMBOL, BacktestEngine, HoldingTrade, pair_scores, top_scored, with_path
 from .backtest.metrics import METRIC_LABELS, PerformanceMetrics, compute_metrics
 from .backtest.signals import pair_signal
 from .backtest.universe import candle_mask, comparable, ranking_known_before_open
@@ -460,15 +460,18 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
 
     frames: dict[str, pd.DataFrame] = {}
     total = len(coins)
+    # Daily bars carry their hourly path, as in the backtest (engine.run), for the coin-vs-coin candles.
+    paths = None if cfg.cadence.is_intraday else getattr(fetcher, "get_path", None)
     for i, coin in enumerate(coins):
         progress(f"OHLCV {coin.symbol}", 0.05 + 0.7 * (i + 1) / max(total, 1))
+        ref = CoinRef(cg_id=coin.cg_id, symbol=coin.symbol)
         try:
-            series = fetcher.get_series(CoinRef(cg_id=coin.cg_id, symbol=coin.symbol), start, as_of, timeframe)
+            series = fetcher.get_series(ref, start, as_of, timeframe)
         except Exception:  # noqa: BLE001
             continue
         frame = confirmed(series.frame)
         if not frame.empty:
-            frames[coin.symbol] = frame
+            frames[coin.symbol] = with_path(frame, paths, ref, start, as_of) if callable(paths) else frame
 
     symbols = [c.symbol for c in coins if c.symbol in frames]
     include_usd = bool(cfg.include_usd)
@@ -536,6 +539,20 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
             judged[a_sym, b_sym] = sig.reindex(master, fill_value=0).to_numpy(dtype=np.int8)
         return judged[a_sym, b_sym]
 
+    # Compared coins whose closed bar has no hourly path yet although the bar before has one: the venue is
+    # late with the last hours. The bot waits for them inside its retry window, so that the replay later
+    # judges the same candle.
+    path_missing: list[str] = []
+    if callable(paths) and len(compared) > 1 and last >= 1:
+        from smithery.ratio import path_columns
+        for sym in compared:
+            columns = path_columns(frames[sym])
+            if not columns:
+                continue
+            whole = frames[sym][columns].notna().all(axis=1).reindex(master[last - 1:last + 1], fill_value=False)
+            if bool(whole.iloc[0]) and not bool(whole.iloc[1]):
+                path_missing.append(sym)
+
     scores: dict[str, int] = {s: 0 for s in order}
     best = USD_SYMBOL if include_usd else None  # nobody to compare: cash, like the walk
     if compared:
@@ -586,6 +603,7 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
         "scores": scores,
         "best": best,
         "marketFilter": market_filter,
+        "pathMissing": path_missing,
         **({"portfolioTarget": portfolio_target} if portfolio_target is not None else {}),
     }
 

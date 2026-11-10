@@ -69,6 +69,10 @@ Groups run against their own base. Member drops, additions and delays use the bu
 
 Certification needs a score of 70 or more, no failed gate, full Monte Carlo counts and complete coverage.
 
+**The ratio pairs' candles (2026-11-10).** A pair's candle comes from `smithery/ratio.py`, the one function the engine, the bulk evaluators and today's live signal build it with: open and close are the ratios of the two coins' opens and closes, high and low the highest and lowest ratio along the bar's hourly closes. On the 1d track the hours come from the shelf's 1h series of both coins. The 4h and 1h tracks use the stand-in (high(A)/high(B) and low(A)/low(B), widened to hold open and close), as the engine does on intraday bars. Before, this test drew the pair candle as its body alone (no wicks, about half the real range) while the systems ran on a candle three times too wide.
+
+The pair part is 20 of the asset axis' 100 points (3.3 of the total), in steps of one pair. An indicator that reads only the close scores exactly as before. `EVALUATION_VERSION` is therefore unchanged and the verdicts stored with the indicator versions keep counting; the change to the evaluator's files only makes earlier Gauntlet runs "not current". An indicator that reads high or low can score differently: run those again.
+
 - **Universal optimization:** the forge's walk-forward chooses parameters on the basket's median (`smithery/universal.py`), not on BTC alone. An explicitly chosen single series stays possible for research.
 - **Certification is a gate:** the forge writes an `optimized_<tf>` version only when it certifies. A failing result is recorded as evidence. An existing version stays loadable so saved systems keep working, but its evidence says it is not robust.
 - **Strict lookup:** `registry.robust_on_track(key, tf)` counts only verdicts from the current evaluation. The aggregate search uses it for its pool.
