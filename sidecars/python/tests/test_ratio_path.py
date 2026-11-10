@@ -209,7 +209,22 @@ class FetchTests(unittest.TestCase):
             self.cache.upsert_ohlcv([OhlcvRow("sym:BBB", dt.date(2024, 1, k), 1, 1, 1, 1, 1.0, "ccxt:okx:BBB/USDT", False) for k in range(1, 6)])
             for _ in range(2):
                 self.assertTrue(other.get_path(CoinRef(None, "BBB"), dt.date(2024, 1, 1), dt.date(2024, 1, 5)).empty)
-        self.assertEqual(len(calls), 8)  # four tries (the first day and the three after it), both times
+        # Four tries (the first day and the three after it) and one look at the window's end, both times.
+        self.assertEqual(len(calls), 10)
+
+    def test_an_exchange_that_keeps_hours_for_a_shorter_time_is_read_from_its_first_day(self):
+        # Daily candles from 2024-01-01, hours only from 2024-01-07 on (KuCoin's perpetual markets keep finer
+        # candles for a shorter time than daily ones). The first day it answers from is searched for by halving.
+        self.listed = dt.date(2024, 1, 7)
+        d = lambda k: dt.date(2024, 1, k)
+        self.assertEqual(self.days(1, 9), [7, 8, 9])
+        self.assertEqual(self.asked, [(d(1), d(9)), (d(2), d(9)), (d(3), d(9)), (d(4), d(9)),   # the start and three days on
+                                      (d(8), d(9)),                                              # it does answer near the end
+                                      (d(6), d(7)), (d(7), d(8)),                                # halving: 6 no, 7 yes
+                                      (d(7), d(9))])                                             # the candles from there
+        # The days before stay noted as asked: nothing is asked again.
+        self.assertEqual(self.days(1, 9), [7, 8, 9])
+        self.assertEqual(len(self.asked), 8)
 
     def test_each_finer_timeframe_keeps_its_own_account(self):
         day = dt.datetime(2024, 1, 2)
