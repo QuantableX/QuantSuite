@@ -3,9 +3,9 @@ certification.
 
 A coin-vs-coin series has no candles of its own; they are built from the two coins' candles. Open and
 close are the ratios of the opens and of the closes. High and low are the highest and lowest value the
-ratio had along the bar, read from the two coins' closes at every hour inside it (its *path*) together
+ratio had along the bar, read from the two coins' closes of the finer candles inside it (its *path*) together
 with its open and close. A coin's candles carry that path as columns ``path_01`` .. ``path_NN`` (the
-close of each hour of the bar, in order).
+close of each finer candle of the bar, in order).
 
 Where a bar has no complete path for both coins, a stand-in is used: high(A)/high(B) and low(A)/low(B),
 widened to hold open and close. Coins mostly peak and bottom together, so this is close: measured against
@@ -90,7 +90,7 @@ def ratio_candles(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
         if whole.any():
             with np.errstate(divide="ignore", invalid="ignore"):
                 path = pa / pb
-            # The ratio at every hour's close, with the bar's own open and close.
+            # The ratio at the close of every finer candle, with the bar's own open and close.
             top = np.where(whole[:, None], path, -np.inf).max(axis=1)
             bottom = np.where(whole[:, None], path, np.inf).min(axis=1)
             high = np.where(whole, np.maximum(np.maximum(top, o), c), high)

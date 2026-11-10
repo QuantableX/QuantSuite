@@ -73,7 +73,7 @@ class FrozenService:
                 if hasattr(value, "frame"):
                     self.path.mkdir(parents=True, exist_ok=True)
                     value.frame.to_csv(self.path / f"candles-{number}.csv", float_format="%.17g")
-                elif hasattr(value, "to_csv"):  # a coin's hourly path
+                elif hasattr(value, "to_csv"):  # a coin's path
                     self.path.mkdir(parents=True, exist_ok=True)
                     value.to_csv(self.path / f"paths-{number}.csv", float_format="%.17g")
                 else:

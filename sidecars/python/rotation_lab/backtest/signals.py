@@ -211,7 +211,7 @@ def ratio_frame(a: pd.DataFrame, b: pd.DataFrame | None) -> pd.DataFrame:
     coins the candle is built by ``smithery.ratio.ratio_candles``, the one rule
     of the engine, the bulk evaluators, today's live signal and certification:
     open and close are the ratios of the opens and closes, high and low the
-    highest and lowest ratio along the bar's hourly path where both coins
+    highest and lowest ratio along the bar's path where both coins
     carry one (``path_*`` columns), a close stand-in where not.
     """
 

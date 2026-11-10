@@ -539,8 +539,8 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
             judged[a_sym, b_sym] = sig.reindex(master, fill_value=0).to_numpy(dtype=np.int8)
         return judged[a_sym, b_sym]
 
-    # Compared coins whose closed bar has no hourly path yet although the bar before has one: the venue is
-    # late with the last hours. The bot waits for them inside its retry window, so that the replay later
+    # Compared coins whose closed bar has no path yet although the bar before has one: the venue is
+    # late with the bar's last finer candles. The bot waits for them inside its retry window, so that the replay later
     # judges the same candle.
     path_missing: list[str] = []
     if callable(paths) and len(compared) > 1 and last >= 1:
