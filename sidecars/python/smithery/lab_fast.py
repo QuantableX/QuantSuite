@@ -32,6 +32,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import threads
+
 USD = "USD"
 NONE = -1
 
@@ -102,6 +104,8 @@ def _votes_task(task):
 def _worker_init():
     # stdout may be the forge's JSON-lines pipe; indicator prints go to stderr.
     sys.stdout = sys.stderr
+    # Too late for this worker's own OpenBLAS (numpy is loaded before an initializer runs; the pool's parent
+    # sets that, threads.one_for_children); these reach what the worker starts or imports later.
     for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
         os.environ.setdefault(name, "1")
 
@@ -352,6 +356,7 @@ class FastSystem:
                               0.05 + 0.85 * done / max(total, 1))
 
         if self.workers > 1 and total > 4:
+            threads.one_for_children()
             with ProcessPoolExecutor(max_workers=min(self.workers, total), mp_context=mp.get_context("spawn"),
                                      initializer=_worker_init) as pool:
                 for future in as_completed([pool.submit(_votes_task, task) for task in tasks]):
@@ -403,6 +408,7 @@ class FastSystem:
                     out[i] = value
             return out
         if self._pool is None:
+            threads.one_for_children()
             self._pool = ProcessPoolExecutor(max_workers=self.workers, mp_context=mp.get_context("spawn"),
                                              initializer=_eval_init, initargs=(str(self.folder),))
         futures = {self._pool.submit(_eval_task, [trials[i] for i in part], delay, end): part for part in chunks}

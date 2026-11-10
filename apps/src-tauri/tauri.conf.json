@@ -129,6 +129,7 @@
       "../../sidecars/python/smithery/universal.py": "sidecars/python/smithery/universal.py",
       "../../sidecars/python/smithery/lab_gpu.py": "sidecars/python/smithery/lab_gpu.py",
       "../../sidecars/python/smithery/pace.py": "sidecars/python/smithery/pace.py",
+      "../../sidecars/python/smithery/threads.py": "sidecars/python/smithery/threads.py",
       "../../sidecars/python/smithery/robust_search.py": "sidecars/python/smithery/robust_search.py"
     },
     "icon": [

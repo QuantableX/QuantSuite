@@ -118,6 +118,8 @@ def run_native(jobs, workers=None, progress=None, stage=""):
                 progress(f"{stage}: {k} of {len(jobs)}")
         return results
     import multiprocessing as mp
+    from . import threads
+    threads.one_for_children()
     with ProcessPoolExecutor(max_workers=min(workers, len(jobs)), mp_context=mp.get_context("spawn"),
                              initializer=_init_worker) as pool:
         for k, out in enumerate(pool.map(native_job, jobs), 1):

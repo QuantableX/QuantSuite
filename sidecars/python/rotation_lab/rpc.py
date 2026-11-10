@@ -988,6 +988,9 @@ def _handle(request: dict[str, Any]) -> None:
 
 
 def main() -> None:
+    # The pair workers this engine starts (smithery.parallel) take one OpenBLAS thread each.
+    from smithery import threads
+    threads.one_for_children()
     # Signal readiness so the parent can verify the sidecar booted.
     _notify("ready", {"version": __version__})
     for line in sys.stdin:
