@@ -147,9 +147,13 @@ def _frames_from(frames: dict[str, pd.DataFrame], start: dt.date) -> dict[str, p
 from .universe import (
     UniverseSnapshot,
     UniverseTimeline,
+    bar_step,
     build_universe_timeline,
     daily_snapshot_days,
     market_warmup_snapshots,
+    ranking_known_before_open,
+    run_ends,
+    walk_lists,
 )
 
 log = logging.getLogger(__name__)
@@ -363,6 +367,44 @@ def _holding_trades(equity: pd.Series, held: pd.Series, cost_mult: float, cash: 
             trade.trade_return = after / before - 1.0 if before > 0 else None
         trades.append(trade)
     return trades
+
+
+def pair_scores(
+    symbols: list[str],
+    votes: Callable[[str, str | None], np.ndarray],
+    start: int,
+    stop: int,
+    include_usd: bool,
+) -> tuple[list[str], np.ndarray]:
+    """Every coin's points on bars ``[start, stop)``: the one scoring of the
+    backtest walk and of today's live signal.
+
+    ``symbols`` are the day's coins in rank order; ``votes(a, b)`` is the
+    0/1 "A beats B" verdict of a pair on every bar (``b`` None = against
+    USD). Each pair is judged once, the higher rank as A: a 1 is A's point,
+    anything else B's (Pine's rule, so a pair without a verdict goes to B).
+    Returns the order the points are in (the coins, then USD when it is in
+    the universe) and the points, bars by order."""
+
+    order = symbols + ([USD_SYMBOL] if include_usd else [])
+    scores = np.zeros((stop - start, len(order)), dtype=np.int32)
+    for a, a_sym in enumerate(symbols):
+        if include_usd:
+            won = votes(a_sym, None)[start:stop]
+            scores[:, a] += won
+            scores[:, -1] += 1 - won
+        for b in range(a + 1, len(symbols)):
+            won = votes(a_sym, symbols[b])[start:stop]
+            scores[:, a] += won
+            scores[:, b] += 1 - won
+    return order, scores
+
+
+def top_scored(order: list[str], scores: np.ndarray) -> np.ndarray:
+    """The pick of every scored bar: the most points, the higher rank on a tie
+    (argmax keeps the first maximum, and USD is last)."""
+
+    return np.asarray(order, dtype=object)[scores.argmax(axis=1)]
 
 
 def _bar_returns(frame: pd.DataFrame, index: pd.DatetimeIndex) -> np.ndarray:
@@ -859,12 +901,9 @@ class BacktestEngine:
             return sig
 
         def rank_interval(symbols: list[str], start: int, stop: int) -> np.ndarray:
-            order, scores = score_interval(symbols, start, stop)
-            # argmax's first maximum implements the original rank tiebreak.
-            return np.asarray(order, dtype=object)[scores.argmax(axis=1)]
+            return top_scored(*score_interval(symbols, start, stop))
 
         def score_interval(symbols: list[str], start: int, stop: int) -> tuple[list[str], np.ndarray]:
-            order = symbols + ([USD_SYMBOL] if config.include_usd else [])
             # Time one necessary pair first: cheap indicators should not pay
             # Windows process startup just because their histories are long.
             pairs = [(a, b) for i, a in enumerate(symbols)
@@ -892,26 +931,26 @@ class BacktestEngine:
                         for (a, b), sig in zip(remaining, signals):
                             signal_cache[a, b or USD_SYMBOL] = sig.reindex(
                                 master_idx, fill_value=0).to_numpy(dtype=np.int8)
-            scores = np.zeros((stop - start, len(order)), dtype=np.int32)
-            for a, a_sym in enumerate(symbols):
-                if config.include_usd:
-                    votes = get_pair_sig(a_sym, None)[start:stop]
-                    scores[:, a] += votes
-                    scores[:, -1] += 1 - votes
-                for b in range(a + 1, len(symbols)):
-                    votes = get_pair_sig(a_sym, symbols[b])[start:stop]
-                    scores[:, a] += votes
-                    scores[:, b] += 1 - votes
-            return order, scores
+            return pair_scores(symbols, get_pair_sig, start, stop, bool(config.include_usd))
 
         returns = {sym: _bar_returns(f, master_idx) for sym, f in frames.items()}
         gate_values = (None if gate is None else
                        gate.reindex(master_idx, fill_value=0).to_numpy())
 
+        # Who may be held on a bar, and whom a decision at its close compares:
+        # the ranking the next bar runs on, as today's live signal reads it.
+        today_lists, compare_lists = walk_lists(
+            universe.snapshots, master_idx, frames,
+            ahead=ranking_known_before_open(config.cadence, config.ranking_resolution),
+            step=bar_step(config.cadence))
+        # Bars that compare the same coins in the same order are scored together.
+        compare_end = run_ends(compare_lists)
+
         if config.portfolio is not None:
-            return self._walk_portfolio(config, universe, frames, master_idx, returns, gate_values,
+            return self._walk_portfolio(config, frames, master_idx, returns, gate_values,
                                         get_pair_sig, score_interval,
-                                        get_original_signal if custom_scorer else None)
+                                        get_original_signal if custom_scorer else None,
+                                        today_lists, compare_lists, compare_end)
 
         # Walk daily bars
         equity_values: list[float] = []
@@ -920,17 +959,10 @@ class BacktestEngine:
 
         equity = 1.0
         current_holding: str | None = None
-        active_snapshot: UniverseSnapshot | None = None
-
-        # Iterate through master_idx; on each "rotation boundary" pick a
-        # new active snapshot. With coupled cadence the rotation
-        # boundaries are exactly the snapshot dates.
-        snap_iter = iter(universe.snapshots)
-        next_snap = next(snap_iter, None)
 
         pending_holding: str | None = None  # decided at t-1, executes at t
         decisions: np.ndarray | None = None
-        decisions_start = 0
+        decisions_start = decisions_stop = 0
 
         # Per-side cost multiplier applied at each fill (at the open).
         cost_mult = (1.0 - config.fee_rate) * (1.0 - config.slippage_rate)
@@ -938,18 +970,9 @@ class BacktestEngine:
         for i, ts in enumerate(master_idx):
             day = ts.date()
 
-            # Advance the active universe snapshot to the most recent
-            # snapshot date <= day.
-            while next_snap and pd.Timestamp(next_snap.on_date) <= ts:
-                active_snapshot = next_snap
-                next_snap = next(snap_iter, None)
-                decisions = None
-
-            symbols_today = (
-                [c.symbol for c in active_snapshot.coins]
-                if active_snapshot
-                else []
-            )
+            # The bar's own ranking: the most recent snapshot dated on or
+            # before it.
+            symbols_today = today_lists[i]
             usd_in = bool(config.include_usd)
 
             # Forced rotation check: if our previously-pending holding no
@@ -978,7 +1001,9 @@ class BacktestEngine:
             held_values.append(current_holding)
 
             # Decide tomorrow's holding (signal observed at close of `day`)
-            if not symbols_today:
+            # among the coins of the ranking tomorrow runs on.
+            symbols = compare_lists[i]
+            if not symbols:
                 pending_holding = USD_SYMBOL if usd_in else current_holding
                 continue
             # The higher filter: a bearish TOTAL at this close means cash
@@ -988,18 +1013,16 @@ class BacktestEngine:
                 pending_holding = USD_SYMBOL
                 continue
             if custom_scorer:
-                scores = self._score_universe(symbols_today, ts, get_original_signal, usd_in)
-                order = symbols_today + ([USD_SYMBOL] if usd_in else [])
+                scores = self._score_universe(symbols, ts, get_original_signal, usd_in)
+                order = symbols + ([USD_SYMBOL] if usd_in else [])
                 pending_holding = (max(order, key=lambda s: (scores.get(s, -1), -order.index(s)))
                                    if scores else USD_SYMBOL if usd_in else current_holding)
                 continue
-            if decisions is None:
+            if decisions is None or i >= decisions_stop:
                 # Lazy even with a market gate: an entirely bearish interval
                 # must not evaluate otherwise-unused (e.g. volume-only) pairs.
-                stop = (len(master_idx) if next_snap is None else
-                        int(master_idx.searchsorted(pd.Timestamp(next_snap.on_date))))
-                decisions_start = i
-                decisions = rank_interval(symbols_today, i, stop)
+                decisions_start, decisions_stop = i, compare_end[i]
+                decisions = rank_interval(symbols, i, decisions_stop)
             pending_holding = decisions[i - decisions_start]
 
         equity_series = pd.Series(equity_values, index=master_idx, name="equity")
@@ -1011,7 +1034,6 @@ class BacktestEngine:
     def _walk_portfolio(
         self,
         config: RunConfig,
-        universe: UniverseTimeline,
         frames: dict[str, pd.DataFrame],
         master_idx: pd.DatetimeIndex,
         returns: dict[str, np.ndarray],
@@ -1019,6 +1041,9 @@ class BacktestEngine:
         get_pair_sig: Callable[[str, str | None], np.ndarray],
         score_interval: Callable[[list[str], int, int], tuple[list[str], np.ndarray]],
         custom_signal: Callable[[str, str | None], pd.Series] | None,
+        today_lists: list[list[str]],
+        compare_lists: list[list[str]],
+        compare_end: list[int],
     ) -> tuple[pd.Series, pd.Series, list[dt.date], dict[str, pd.Series]]:
         """Portfolio mode (``config.portfolio``): the day's target weights from the ranking and the coins'
         own trend, executed at the next open like the single pick. ``held`` keeps one symbol per day for
@@ -1035,17 +1060,10 @@ class BacktestEngine:
         spans: dict[str, dict] = {}  # open positions (USD included): first day, PnL so far, money committed
         trades: list[HoldingTrade] = []
         pending: dict[str, float] | None = None
-        active_snapshot: UniverseSnapshot | None = None
-        snap_iter = iter(universe.snapshots)
-        next_snap = next(snap_iter, None)
-        block: tuple[int, list[str], np.ndarray] | None = None  # (first bar, order, scores) of the snapshot's interval
+        block: tuple[int, int, list[str], np.ndarray] | None = None  # (first bar, end, order, scores) of a scored interval
 
         for i, ts in enumerate(master_idx):
-            while next_snap and pd.Timestamp(next_snap.on_date) <= ts:
-                active_snapshot = next_snap
-                next_snap = next(snap_iter, None)
-                block = None
-            symbols_today = [c.symbol for c in active_snapshot.coins] if active_snapshot else []
+            symbols_today = today_lists[i]
 
             if pending is not None:
                 # Forced exit per position: a coin that left the universe goes to cash at the open.
@@ -1085,26 +1103,26 @@ class BacktestEngine:
                 weight_values.append(None)
                 held_values.append(None)
 
-            # Tomorrow's target, from the signal at this close.
-            if not symbols_today:
+            # Tomorrow's target, from the signal at this close, among the
+            # coins of the ranking tomorrow runs on.
+            symbols = compare_lists[i]
+            if not symbols:
                 pending = {USD_SYMBOL: 1.0} if usd_in else None
                 continue
             if gate_values is not None and int(gate_values[i]) != 1:
                 pending = {USD_SYMBOL: 1.0}
                 continue
             if custom_signal is not None:
-                raw = self._score_universe(symbols_today, ts, custom_signal, usd_in)
-                scores = {s: int(raw.get(s, 0)) for s in symbols_today}
+                raw = self._score_universe(symbols, ts, custom_signal, usd_in)
+                scores = {s: int(raw.get(s, 0)) for s in symbols}
             else:
-                if block is None:
-                    stop = (len(master_idx) if next_snap is None else
-                            int(master_idx.searchsorted(pd.Timestamp(next_snap.on_date))))
-                    order, matrix = score_interval(symbols_today, i, stop)
-                    block = (i, order, matrix)
-                first, order, matrix = block
+                if block is None or i >= block[1]:
+                    order, matrix = score_interval(symbols, i, compare_end[i])
+                    block = (i, compare_end[i], order, matrix)
+                first, _, order, matrix = block
                 scores = {s: int(matrix[i - first, k]) for k, s in enumerate(order) if s != USD_SYMBOL}
-            trending = {s: bool(get_pair_sig(s, None)[i] == 1) for s in symbols_today}
-            pending = portfolio_target(symbols_today, scores, trending, cfg)
+            trending = {s: bool(get_pair_sig(s, None)[i] == 1) for s in symbols}
+            pending = portfolio_target(symbols, scores, trending, cfg)
 
         if len(master_idx):
             for s, span in spans.items():  # still open: no exit fill paid yet

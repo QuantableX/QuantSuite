@@ -134,7 +134,11 @@ class Group:
 
 # What a worker process needs to simulate from the stored votes.
 _STATE = ("config", "keys", "failed", "key_start", "groups", "pairs", "full", "dates", "mpos", "single",
-          "cadence", "assets", "rotation", "returns")
+          "cadence", "assets", "rotation", "returns", "walk")
+# The walk a saved rotation cube was laid out for. 2: a decision compares the coins of the ranking the next
+# bar runs on, and only those with a candle that day (rotation_lab universe.walk_lists). A cube laid out for
+# another walk would answer with the old picks, so load() refuses it.
+WALK = 2
 
 
 class FastSystem:
@@ -159,6 +163,7 @@ class FastSystem:
         self._votes = {}
         self._pool = None
         self.rotation = self.returns = None
+        self.walk = WALK
 
     # ----------------------------------------------------------------- inputs
 
@@ -244,6 +249,7 @@ class FastSystem:
 
     def _prepare_rotation(self, captured, group_starts):
         from rotation_lab.backtest.engine import _bar_returns
+        from rotation_lab.backtest.universe import bar_step, ranking_known_before_open, walk_lists
         first = captured[group_starts[0]]
         universe, frames = first["universe"], first["frames"]
         shape = [(s.on_date, [c.symbol for c in s.coins]) for s in universe.snapshots]
@@ -281,19 +287,24 @@ class FastSystem:
         order = np.full((T, max(width, 1)), NONE, dtype=np.int16)
         in_today = np.zeros((T, N), dtype=bool)
         first_sym = np.full(T, NONE, dtype=np.int16)
-        snaps = iter(universe.snapshots)
-        upcoming, current = next(snaps, None), None
-        for t, ts in enumerate(self.dates):
-            # The engine's walk: the latest snapshot dated on or before the bar.
-            while upcoming and pd.Timestamp(upcoming.on_date) <= ts:
-                current, upcoming = upcoming, next(snaps, None)
-            syms = [c.symbol for c in current.coins] if current else []
+        has_syms = np.zeros(T, dtype=bool)
+        # The engine's walk (universe.walk_lists): who may be held on a bar, and whom a decision at its
+        # close compares. order, active and has_syms describe the decision; in_today and first_sym the bar.
+        today, compare = walk_lists(
+            universe.snapshots, self.dates, frames,
+            ahead=ranking_known_before_open(self.config.cadence, self.config.ranking_resolution),
+            step=bar_step(self.config.cadence))
+        for t in range(T):
+            syms = today[t]
+            if syms:
+                in_today[t, [ids[s] for s in syms]] = True
+                first_sym[t] = ids[syms[0]]
+            syms = compare[t]
             if not syms:
                 continue
+            has_syms[t] = True
             row = [ids[s] for s in syms] + ([cash] if include_usd else [])
             order[t, :len(row)] = row
-            in_today[t, [ids[s] for s in syms]] = True
-            first_sym[t] = ids[syms[0]]
             for i, a in enumerate(syms):
                 if include_usd:
                     active[pairs[(a, None)], t] = True
@@ -306,7 +317,7 @@ class FastSystem:
         ends = np.array([[ids[a], ids[b] if b else cash] for a, b in self.pairs], dtype=np.int64).reshape(-1, 2)
         self.frames = {start: captured[start]["frames"] for start in group_starts}
         self.rotation = dict(active=active, order=order, in_today=in_today, first_sym=first_sym,
-                             has_syms=first_sym >= 0, returns=returns, ends=ends)
+                             has_syms=has_syms, returns=returns, ends=ends)
 
     def _compute_votes(self, captured, group_starts):
         params = self.config.indicator.params
@@ -370,6 +381,9 @@ class FastSystem:
         self = cls.__new__(cls)
         with (Path(folder) / "state.pkl").open("rb") as stream:
             self.__dict__.update(pickle.load(stream))
+        if not self.single and self.__dict__.get("walk") != WALK:
+            raise ValueError(f"The evaluator in {folder} was built for an earlier walk (the ranking a decision "
+                             "reads has changed since); build it again")
         self.folder, self.engine, self.workers, self._votes, self._pool = Path(folder), None, 1, {}, None
         self.progress = lambda message, fraction=None: None
         return self
@@ -461,8 +475,9 @@ class FastSystem:
         onehot_a[np.arange(P), a["ends"][:, 0]] = 1
         onehot_b[np.arange(P), a["ends"][:, 1]] = 1
         usd_pair = {self.assets.index(p[0]): k for k, p in enumerate(self.pairs) if p[1] is None}
-        order, active, returns, has_syms = a["order"], a["active"], a["returns"], a["has_syms"]
+        order, active, returns, has_syms, in_today = a["order"], a["active"], a["returns"], a["has_syms"], a["in_today"]
         names = self.assets
+        position = {s: k for k, s in enumerate(names)}
         curve = np.empty((len(trials), T))
         held = np.empty((len(trials), T), dtype=np.int64)
         self.last_weights = []
@@ -475,7 +490,7 @@ class FastSystem:
             for t in range(T):
                 syms = [names[k] for k in order[t] if k >= 0 and k != cash]
                 if pending is not None:
-                    gone = [s for s in pending if s != USD_SYMBOL and s not in syms]
+                    gone = [s for s in pending if s != USD_SYMBOL and not in_today[t, position[s]]]
                     if gone:
                         pending = dict(pending)
                         for s in gone:
@@ -559,7 +574,7 @@ class FastSystem:
             # A pending coin that left the universe is exited.
             forced = (pending >= 0) & (pending != cash) & ~in_today[t, np.maximum(pending, 0)]
             if forced.any():
-                pending[forced] = cash if usd_in else (first_sym[t] if has_syms[t] else NONE)
+                pending[forced] = cash if usd_in else first_sym[t]
             take = pending != NONE
             prev_cash = (current == NONE) | (current == cash)
             new_cash = (pending == NONE) | (pending == cash)

@@ -11,6 +11,7 @@ import datetime as dt
 import logging
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from ..config import Cadence, RankingResolution, RankingSource
@@ -151,6 +152,91 @@ def build_universe_timeline(
         if progress:
             progress(idx + 1, len(dates), d)
     return UniverseTimeline(snapshots=snapshots)
+
+
+def ranking_known_before_open(cadence: Cadence, resolution: RankingResolution) -> bool:
+    """Whether a day's snapshot is complete before that day's first bar opens.
+
+    A daily snapshot is the previous day's (``snapshot_date``), and the intraday
+    bars of a weekly-ranked run read the day before (the lag in
+    ``build_universe_timeline``). Only daily bars on weekly snapshots read a
+    Sunday's own snapshot on that Sunday; there a decision cannot look one
+    bar ahead without reading the future."""
+
+    return resolution == RankingResolution.DAILY or cadence.is_intraday
+
+
+def bar_step(cadence: Cadence) -> pd.Timedelta:
+    """The time from one bar's open to the next: the cadence itself intraday, a day otherwise."""
+
+    return pd.Timedelta(cadence.value) if cadence.is_intraday else pd.Timedelta(days=1)
+
+
+def candle_mask(frames: dict[str, pd.DataFrame], index: pd.DatetimeIndex) -> dict[str, np.ndarray]:
+    """Per coin, which bars of ``index`` it has a candle on."""
+
+    return {sym: np.asarray(index.isin(frame.index)) for sym, frame in frames.items()}
+
+
+def comparable(symbols: list[str], present: dict[str, np.ndarray], bar: int) -> list[str]:
+    """``symbols`` (rank order) that have a candle on bar ``bar``.
+
+    A coin without one cannot be judged at that close: it is left out of the
+    comparison, it gives nobody a vote and cannot be picked. The backtest
+    walk, the bulk evaluators and today's live signal all take their coins
+    through here."""
+
+    return [s for s in symbols if s in present and present[s][bar]]
+
+
+def walk_lists(
+    snapshots: list[UniverseSnapshot],
+    index: pd.DatetimeIndex,
+    frames: dict[str, pd.DataFrame],
+    *,
+    ahead: bool,
+    step: pd.Timedelta,
+) -> tuple[list[list[str]], list[list[str]]]:
+    """The two coin lists of every bar of a walk, each in rank order.
+
+    ``today[i]``: the coins of the latest snapshot dated on or before bar
+    ``i`` — what may be held on it (a holding outside it is exited).
+
+    ``compare[i]``: the coins a decision at the close of bar ``i`` chooses
+    among. With ``ahead`` they come from the snapshot that steers the next
+    bar (``step`` later): that ranking is complete before the next bar opens
+    (``ranking_known_before_open``) and it is the one today's live signal
+    reads after the close, so the walk picks what the bot picks. Without
+    ``ahead`` they come from the bar's own snapshot. Either way only coins
+    with a candle on bar ``i`` (``comparable``).
+
+    Past the last snapshot the newest one stays in force, so the decision
+    at the last bar of a run that ends in the past reads its own day's
+    ranking; that decision is never traded."""
+
+    stamps = pd.DatetimeIndex([pd.Timestamp(s.on_date) for s in snapshots])
+    if index.tz is not None:
+        stamps = stamps.tz_localize(index.tz)
+    coins = [[c.symbol for c in s.coins] for s in snapshots]
+    active = stamps.searchsorted(index, side="right") - 1
+    decide = stamps.searchsorted(index + step, side="right") - 1 if ahead else active
+    present = candle_mask(frames, index)
+    today = [coins[k] if k >= 0 else [] for k in active]
+    compare = [comparable(coins[k], present, i) if k >= 0 else [] for i, k in enumerate(decide)]
+    return today, compare
+
+
+def run_ends(lists: list[list[str]]) -> list[int]:
+    """For every bar, the first later bar whose list differs (the end of its run of equal lists)."""
+
+    n = len(lists)
+    ends = [n] * n
+    for i in range(n - 2, -1, -1):
+        if lists[i] == lists[i + 1]:
+            ends[i] = ends[i + 1]
+        else:
+            ends[i] = i + 1
+    return ends
 
 
 def market_warmup_snapshots(

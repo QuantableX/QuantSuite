@@ -9,7 +9,7 @@ from rotation_lab.backtest import engine
 from rotation_lab.backtest.engine import USD_SYMBOL, BacktestEngine, _rebalance, portfolio_target
 from rotation_lab.backtest.signals import pair_signal
 from rotation_lab.benchmark import fixture
-from rotation_lab.config import PortfolioConfig, RunConfig
+from rotation_lab.config import PortfolioConfig, RankingResolution, RunConfig
 from rotation_lab.rpc import _build_config
 
 # The user's example on the card: 1,000.00$, Top 5, BTC does not trend.
@@ -77,9 +77,18 @@ class FeeTests(unittest.TestCase):
         self.assertAlmostEqual(sum(values.values()), 1.0 - sum(fees.values()), places=15)
 
 
+def _ranked(timeline, at):
+    """The coins of the latest snapshot dated on or before ``at``, in rank order."""
+    active = [s for s in timeline.snapshots if pd.Timestamp(s.on_date) <= at]
+    return [c.symbol for c in active[-1].coins] if active else []
+
+
 def _reference_portfolio(config, timeline, frames, gate):
-    """Portfolio mode by the scalar scorer, independent of the array ranking path."""
+    """Portfolio mode by the scalar scorer, independent of the array ranking path: positions must be in the
+    bar's own ranking; the target is set among the coins of the ranking the next bar runs on that have a candle."""
     cfg = config.portfolio
+    step = pd.Timedelta(config.cadence.value) if config.cadence.is_intraday else pd.Timedelta(days=1)
+    ahead = config.cadence.is_intraday or config.ranking_resolution == RankingResolution.DAILY
     dates = sorted(set().union(*(set(f.index) for f in frames.values())))
     index = pd.DatetimeIndex([t for t in dates if config.start_date <= t.date() <= config.end_date])
     cache = {}
@@ -93,8 +102,7 @@ def _reference_portfolio(config, timeline, frames, gate):
     cost = 1 - (1 - config.fee_rate) * (1 - config.slippage_rate)
     values, pending, equities = {}, None, []
     for ts in index:
-        active = [s for s in timeline.snapshots if pd.Timestamp(s.on_date) <= ts]
-        symbols = [c.symbol for c in active[-1].coins] if active else []
+        symbols = _ranked(timeline, ts)
         if pending is not None:
             gone = [s for s in pending if s != USD_SYMBOL and s not in symbols]
             for s in gone:
@@ -110,14 +118,15 @@ def _reference_portfolio(config, timeline, frames, gate):
                 if o and c and o > 0 and not pd.isna(o) and not pd.isna(c):
                     values[s] *= 1 + (c - o) / o
         equities.append(sum(values.values()) if values else 1.0)
-        if not symbols:
+        compared = [s for s in _ranked(timeline, ts + step if ahead else ts) if s in frames and ts in frames[s].index]
+        if not compared:
             pending = {USD_SYMBOL: 1.0} if config.include_usd else None
         elif gate is not None and int(gate.get(ts, 0)) != 1:
             pending = {USD_SYMBOL: 1.0}
         else:
-            raw = BacktestEngine._score_universe(symbols, ts, signal, config.include_usd)
-            trend = {s: int(signal(s, None).get(ts, 0)) == 1 if not signal(s, None).empty else False for s in symbols}
-            pending = portfolio_target(symbols, {s: raw.get(s, 0) for s in symbols}, trend, cfg)
+            raw = BacktestEngine._score_universe(compared, ts, signal, config.include_usd)
+            trend = {s: int(signal(s, None).get(ts, 0)) == 1 if not signal(s, None).empty else False for s in compared}
+            pending = portfolio_target(compared, {s: raw.get(s, 0) for s in compared}, trend, cfg)
     return pd.Series(equities, index=index, name="equity")
 
 
