@@ -451,6 +451,12 @@ class OhlcvFetcher:
             while not bars and later < min(hi, lo + 3 * day):
                 later += day
                 bars = self._fetch_ccxt_intraday_one(name, pair, ref, later, hi, fine, strict=True)
+            if not bars:
+                # Some markets keep finer candles for a shorter time than daily ones and answer nothing
+                # from before that time: fetch from the first day they answer from.
+                first_day = self._first_answering_day(name, pair, ref, later, hi, fine)
+                if first_day is not None:
+                    bars = self._fetch_ccxt_intraday_one(name, pair, ref, first_day, hi, fine, strict=True)
             if bars:
                 self.cache.upsert_ohlcv_intraday(bars)
         lo = first if have is None else min(first, have[0])
@@ -468,6 +474,31 @@ class OhlcvFetcher:
             hi -= day
         if hi >= lo:
             self.cache.set_meta(meta_key, f"{lo.isoformat()}|{hi.isoformat()}")
+
+    def _first_answering_day(self, name: str, pair: str, ref: CoinRef, lo: dt.date, hi: dt.date, fine: str) -> dt.date | None:
+        """The earliest day after ``lo`` from which the exchange answers with ``fine`` candles, or None when it
+        has none up to ``hi``.
+
+        ``lo`` is a day it answered nothing from. A market that keeps finer candles for a shorter time than
+        daily ones answers nothing from before that time and everything from after it, so the first day is
+        found by halving the window: about a dozen one-day requests for several years."""
+
+        day = dt.timedelta(days=1)
+
+        def answers(start: dt.date) -> bool:
+            return bool(self._fetch_ccxt_intraday_one(name, pair, ref, start, min(start + day, hi), fine, strict=True))
+
+        last = hi - day if hi - day > lo else hi
+        if last <= lo or not answers(last):
+            return None
+        nothing, some = lo, last
+        while (some - nothing).days > 1:
+            middle = nothing + dt.timedelta(days=(some - nothing).days // 2)
+            if answers(middle):
+                some = middle
+            else:
+                nothing = middle
+        return some
 
     def _skip_fetch(
         self,
