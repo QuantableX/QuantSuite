@@ -108,15 +108,25 @@ def basket_frames(primary: str, timeframe: str) -> tuple[dict, dict]:
     return {k: load(k) for k in keys}, {k: cost_for(k) for k in keys}
 
 
-def ratio_frame(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
-    """An A/B ratio series as the systems build it: open and close ratios, high/low around them."""
+# The finer shelf series whose closes give a pair's candle its path, and how many of its bars one bar holds.
+# Only the daily track has one, like the engine: there a coin-vs-coin candle follows the ratio hour by hour.
+RATIO_PATH = {"1d": ("1h", 24)}
+
+
+def ratio_frame(a: pd.DataFrame, b: pd.DataFrame, a_fine: pd.DataFrame | None = None,
+                b_fine: pd.DataFrame | None = None, steps: int = 0) -> pd.DataFrame:
+    """An A/B ratio series as the systems build it (``ratio.ratio_candles``, the engine's own rule).
+
+    With the two coins' finer series (``steps`` of their bars per bar) the candle's high and low follow
+    the ratio along the bar; without them, or on a bar where one is incomplete, they are the stand-in."""
+    from .ratio import paths_from_fine, ratio_candles
     idx = a.index.intersection(b.index)
-    o = a.loc[idx, "open"] / b.loc[idx, "open"]
-    c = a.loc[idx, "close"] / b.loc[idx, "close"]
-    out = pd.DataFrame({"open": o, "close": c}, index=idx)
-    out["high"] = np.maximum(o, c)
-    out["low"] = np.minimum(o, c)
-    out["volume"] = a.loc[idx, "volume"] if "volume" in a.columns else 0.0
+    a, b = a.loc[idx], b.loc[idx]
+    if a_fine is not None and b_fine is not None and steps:
+        a = a.join(paths_from_fine(idx, a_fine["close"], steps))
+        b = b.join(paths_from_fine(idx, b_fine["close"], steps))
+    out = ratio_candles(a, b)
+    out["volume"] = a["volume"] if "volume" in a.columns else 0.0
     return out[["open", "high", "low", "close", "volume"]].dropna()
 
 
@@ -217,7 +227,10 @@ class Gauntlet:
             ka, kb = series_key(a_sym, self.timeframe), series_key(b_sym, self.timeframe)
             if not ka or not kb:
                 continue
-            rf = ratio_frame(load(ka), load(kb))
+            fine, steps = RATIO_PATH.get(self.timeframe, (None, 0))
+            fa, fb = (series_key(a_sym, fine), series_key(b_sym, fine)) if fine else (None, None)
+            rf = (ratio_frame(load(ka), load(kb), load(fa), load(fb), steps) if fa and fb
+                  else ratio_frame(load(ka), load(kb)))
             if len(rf) < 250:
                 continue
             rb = self._bt(rf, max(cost_for(ka), cost_for(kb)))
