@@ -131,16 +131,20 @@ def ratio_frame(a: pd.DataFrame, b: pd.DataFrame, a_fine: pd.DataFrame | None = 
 
     With the two coins' finer series (``steps`` of their bars, each ``step`` long, per bar) the candle's
     high and low follow the ratio along the bar; without them, or on a bar where one is incomplete, they
-    are the stand-in."""
-    from .ratio import paths_from_fine, ratio_candles
+    are the stand-in. ``attrs["path_share"]`` is the share of the frame's bars built from the path."""
+    from .ratio import paths_from_fine, ratio_candles, real_bars
     idx = a.index.intersection(b.index)
     a, b = a.loc[idx], b.loc[idx]
+    real = None
     if a_fine is not None and b_fine is not None and steps:
         a = a.join(paths_from_fine(idx, a_fine["close"], steps, step))
         b = b.join(paths_from_fine(idx, b_fine["close"], steps, step))
+        real = real_bars(a, b)
     out = ratio_candles(a, b)
     out["volume"] = a["volume"] if "volume" in a.columns else 0.0
-    return out[["open", "high", "low", "close", "volume"]].dropna()
+    out = out[["open", "high", "low", "close", "volume"]].dropna()
+    out.attrs["path_share"] = float(real.reindex(out.index, fill_value=False).mean()) if real is not None and len(out) else 0.0
+    return out
 
 
 def grade(score: float, perm_p: float | None) -> str:
@@ -235,7 +239,7 @@ class Gauntlet:
         breadth = float(np.mean([s > 0 for s in sharpes]))
         med = float(np.median(sharpes))
         # Ratio pairs: the systems trade these indicators on A/B ratio series.
-        ratios, ratio_rows = [], []
+        ratios, ratio_rows, no_path, fine = [], [], [], RATIO_PATH[self.timeframe][0]
         for a_sym, b_sym in RATIO_PAIRS:
             ka, kb = series_key(a_sym, self.timeframe), series_key(b_sym, self.timeframe)
             if not ka or not kb:
@@ -248,7 +252,11 @@ class Gauntlet:
                 continue
             rb = self._bt(rf, max(cost_for(ka), cost_for(kb)))
             ratios.append(rb["sharpe"])
-            ratio_rows.append([f"{a_sym[:-4]}/{b_sym[:-4]}", len(rf), rb["sharpe"], rb["max_dd"]])
+            # Which candle the pair ran on: the share of its bars whose high and low follow the path.
+            ratio_rows.append([f"{a_sym[:-4]}/{b_sym[:-4]}", len(rf), rb["sharpe"], rb["max_dd"],
+                               f"{rf.attrs.get('path_share', 0.0):.0%}"])
+            if fa is None or fb is None:
+                no_path.append(f"{a_sym[:-4]}/{b_sym[:-4]}")
         ratio_breadth = float(np.mean([s > 0 for s in ratios])) if ratios else float("nan")
         score = float(np.clip(50 * breadth + 0.5 * s_map(med) - cat_pen, 0, 100))
         if ratio_breadth == ratio_breadth:
@@ -259,8 +267,10 @@ class Gauntlet:
         miss_note = (f"\n\n⚠️ missing from shelf (run `fetch_data.py`): "
                      + ", ".join(missing)) if missing else ""
         ratio_md = ("\n\n**Ratio pairs** (how the systems use it)\n\n"
-                    + self._md_table(["pair", "bars", "sharpe", "maxDD"], ratio_rows)
-                    + f"\n\nratio breadth (Sharpe>0): **{ratio_breadth:.0%}**") if ratio_rows else ""
+                    + self._md_table(["pair", "bars", "sharpe", "maxDD", f"bars on the {fine} path"], ratio_rows)
+                    + f"\n\nratio breadth (Sharpe>0): **{ratio_breadth:.0%}**"
+                    + (f"\n\n⚠️ no {fine} series on the shelf for {', '.join(no_path)}: these pair candles are the "
+                       "stand-in (refresh the price shelf)" if no_path else "")) if ratio_rows else ""
         self.sections.append(
             "## Axis 1 — Asset robustness\n\n"
             + self._md_table(["series", "bars", "sharpe", "b&h sharpe", "maxDD",
