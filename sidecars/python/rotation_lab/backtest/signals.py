@@ -205,29 +205,21 @@ def aggregate_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:
 
 
 def ratio_frame(a: pd.DataFrame, b: pd.DataFrame | None) -> pd.DataFrame:
-    """Compute the OHLC frame of ``a / b`` aligned on common days.
+    """The OHLC frame of ``a / b`` on their common bars, as an indicator gets it.
 
-    ``b is None`` means compare against USD/cash -> returns ``a``.
+    ``b is None`` means compare against USD/cash: ``a``'s own candles. For two
+    coins the candle is built by ``smithery.ratio.ratio_candles``, the one rule
+    of the engine, the bulk evaluators, today's live signal and certification:
+    open and close are the ratios of the opens and closes, high and low the
+    highest and lowest ratio along the bar's hourly path where both coins
+    carry one (``path_*`` columns), a close stand-in where not.
     """
 
+    from smithery.ratio import ratio_candles, without_path
+
     if b is None:
-        return a.copy()
-    joined = a.join(b, how="inner", rsuffix="_b")
-    if joined.empty:
-        return joined.iloc[:0][["open", "high", "low", "close"]]
-    out = pd.DataFrame(index=joined.index)
-    out["open"] = joined["open"] / joined["open_b"]
-    out["close"] = joined["close"] / joined["close_b"]
-    # High and low of the ratio: A's high over B's high and A's low over B's
-    # low (coins mostly peak and bottom together), widened so the candle
-    # always holds its own open and close. Against the ratio's real daily
-    # range from 1h candles this is 0.64-0.97 of it. The widest the ratio
-    # could have been, high(a)/low(b) and low(a)/high(b), was 2.8-4.1 times
-    # the real range with the close always mid-candle (card 4e80395e).
-    o, c = out["open"].to_numpy(dtype=float), out["close"].to_numpy(dtype=float)
-    out["high"] = np.maximum(np.maximum((joined["high"] / joined["high_b"]).to_numpy(dtype=float), o), c)
-    out["low"] = np.minimum(np.minimum((joined["low"] / joined["low_b"]).to_numpy(dtype=float), o), c)
-    return out
+        return without_path(a).copy()
+    return ratio_candles(a, b)
 
 
 def trend_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:

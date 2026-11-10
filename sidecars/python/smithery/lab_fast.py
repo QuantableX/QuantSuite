@@ -139,10 +139,11 @@ class Group:
 # What a worker process needs to simulate from the stored votes.
 _STATE = ("config", "keys", "failed", "key_start", "groups", "pairs", "full", "dates", "mpos", "single",
           "cadence", "assets", "rotation", "returns", "walk")
-# The walk a saved rotation cube was laid out for. 2: a decision compares the coins of the ranking the next
-# bar runs on, and only those with a candle that day (rotation_lab universe.walk_lists). A cube laid out for
-# another walk would answer with the old picks, so load() refuses it.
-WALK = 2
+# The walk and candles a saved rotation cube was built for. 2: a decision compares the coins of the ranking
+# the next bar runs on, and only those with a candle that day (rotation_lab universe.walk_lists). 3: the
+# votes of coin-vs-coin pairs are on the ratio's hourly path (smithery.ratio). A cube built for another
+# number would answer with the old picks or the old candles, so load() refuses it.
+WALK = 3
 
 
 class FastSystem:
