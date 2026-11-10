@@ -448,6 +448,35 @@ class ResearchSourceTests(unittest.TestCase):
             self.assertEqual(base.get_path.call_args.args[1], dt.date(2023, 1, 1))  # every request starts at the earliest warm-up
             self.assertEqual(len(list(Path(folder).glob("paths-*.csv"))), 1)
 
+    def test_the_other_exchange_world_follows_that_exchanges_own_hours(self):
+        from smithery.lab_compare import SavedPrices
+        from smithery.prices import PricesVariant
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        saved, venue = Cache(Path(folder.name) / "cache.sqlite"), Cache(Path(folder.name) / "venue.sqlite")
+        d = [dt.date(2024, 1, k) for k in range(1, 4)]
+        saved.upsert_ohlcv([day_row(day, "ccxt:binance:AAA/USDT") for day in d])
+        saved.upsert_ohlcv_intraday([bar for day in d for bar in hour_bars(market_key("binance", "AAA/USDT"), day, {h: 100.0 for h in range(24)})])
+        # The other exchange has the first two days' candles, and the hours of the first only.
+        venue.upsert_ohlcv([day_row(day, "ccxt:okx:AAA/USDT", close=101.0) for day in d[:2]])
+        venue.upsert_ohlcv_intraday(hour_bars(market_key("okx", "AAA/USDT"), d[0], {h: 200.0 + h for h in range(24)}))
+        for cache in (saved, venue):
+            self.addCleanup(cache._con.close)
+        world = PricesVariant(SavedPrices(saved), {"kind": "venue", "path": str(Path(folder.name) / "venue.sqlite")})
+        self.addCleanup(world._venue._con.close)
+        ref = CoinRef(None, "AAA")
+        self.assertEqual(float(world.get_series(ref, d[0], d[2]).frame["close"].iloc[0]), 101.0)
+        paths = world.get_path(ref, d[0], d[2])
+        self.assertEqual(list(paths.columns), HOURS)
+        self.assertEqual([t.date() for t in paths.index], d)
+        np.testing.assert_allclose(paths.iloc[0], [200.0 + h for h in range(24)])  # its own hours
+        np.testing.assert_allclose(paths.iloc[1], 100.0)  # its candle, but no hours there: the saved path stays
+        np.testing.assert_allclose(paths.iloc[2], 100.0)  # no candle there: the saved candle and its path
+        # Without any hours of the other exchange the saved paths are handed on unchanged.
+        venue._con.execute("delete from ohlcv_intraday")
+        venue._con.commit()
+        pd.testing.assert_frame_equal(world.get_path(ref, d[0], d[2]), SavedPrices(saved).get_path(ref, d[0], d[2]))
+
 
 if __name__ == "__main__":
     unittest.main()

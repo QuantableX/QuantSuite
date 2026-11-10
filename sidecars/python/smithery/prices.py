@@ -77,10 +77,21 @@ class PricesVariant:
 
     def get_path(self, ref, start, end, timeframe="1d"):
         """The saved path of a coin's bars. A shuffled world has none: its days are no longer the days the
-        finer candles belong to, so its coin-vs-coin candles are the stand-in from the shuffled candles."""
+        finer candles belong to, so its coin-vs-coin candles are the stand-in from the shuffled candles.
+        In the venue world a bar whose candle the other exchange replaced takes its path from that
+        exchange's own finer candles (``prepare_venue`` saves them); a bar without them keeps the saved path."""
         if self.kind == "shuffle":
             return None
-        return self.base.get_path(ref, start, end, timeframe)
+        path = self.base.get_path(ref, start, end, timeframe)
+        if self.kind != "venue":
+            return path
+        from rotation_lab.data.ohlcv import coin_key_for, paths_from_bars, saved_bars
+        own = paths_from_bars(self._venue, saved_bars(self._venue, coin_key_for(ref), start, end, timeframe), timeframe)
+        if own.empty:
+            return path
+        if path is None or path.empty:
+            return own
+        return own.combine_first(path)[list(own.columns)]
 
     def __getattr__(self, name):
         return getattr(self.base, name)
