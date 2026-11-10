@@ -77,7 +77,8 @@ SHELF_CRYPTO = [
 # Finer series the Gauntlet builds its ratio pairs' candles from (ratio.PATH_OF): the four coins of the
 # three pairs at 5m, for the 4h and 1h tracks (the 1d track uses the shelf's own 1h series). They are not
 # certification series: they live in a folder of their own, where `available()` and everything that walks
-# the shelf never sees them (path_dir()).
+# the shelf never sees them (path_dir(): beside the shelf, or in the suite's data folder when the shelf is
+# the user's vault).
 SHELF_PATHS = [
     ("binance", "BTC/USDT", "5m", "2017-08-01"),
     ("binance", "ETH/USDT", "5m", "2017-08-01"),
@@ -227,7 +228,17 @@ def available() -> list[str]:
 
 
 def path_dir() -> Path:
-    """The path series' folder, beside the shelf's own files (read when called: the shelf can be moved)."""
+    """The path series' folder (read when called: the shelf can be moved).
+
+    ``SMITHERY_PATHS`` names it when set. Without it the series sit beside the shelf's own files, except
+    when the shelf is the default vault: a vault is read and synced by its owner, and these series are
+    large (about 60 MB each) and read by nobody, so there they live in the suite's data folder."""
+    explicit = os.environ.get("SMITHERY_PATHS")
+    if explicit:
+        return Path(explicit)
+    if PRICE_DIR == DEFAULT_VAULT / "Price History":
+        home = os.environ.get("QUANTSUITE_HOME")
+        return (Path(home) if home else Path.home() / ".quantsuite") / "modules" / "script" / "cache" / "price-paths"
     return PRICE_DIR / "Paths"
 
 
