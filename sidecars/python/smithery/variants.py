@@ -21,6 +21,7 @@ nothing. Existing consumer keys remain aliases for historical children.
 from __future__ import annotations
 
 import ast
+from contextlib import contextmanager
 import datetime as dt
 import hashlib
 import inspect
@@ -121,7 +122,35 @@ _REQUIREMENTS: dict[str, tuple[tuple, dict]] = {}
 _SIGNATURES: dict[tuple, str | None] = {}
 
 
+_HELD_STATE: dict[str, tuple] = {}
+
+
+@contextmanager
+def held_library_state(folder: Path | None = None):
+    """Inside the block the library's file state is read once.
+
+    Every signature asks for that state to notice an edited script, and the state is a stat of every
+    script. A pass over all scripts (``load_variants``) therefore read the whole library twice per script:
+    1.5 million stat calls and eleven minutes for a library of 1,161 files, in every process that loads the
+    registry. Nothing inside the block may change a script; outside it every call reads the state again."""
+    folder = Path(folder or indicators_dir())
+    key = str(folder)
+    if key in _HELD_STATE:
+        yield
+        return
+    _HELD_STATE[key] = _read_library_state(folder)
+    try:
+        yield
+    finally:
+        _HELD_STATE.pop(key, None)
+
+
 def _library_state(folder: Path) -> tuple:
+    held = _HELD_STATE.get(str(folder))
+    return held if held is not None else _read_library_state(folder)
+
+
+def _read_library_state(folder: Path) -> tuple:
     state = []
     for path in sorted(folder.glob("*.py")):
         try:
@@ -359,6 +388,11 @@ def _child(registry: dict, key: str, cls, params: dict, label: str):
 
 
 def load_variants(registry: dict, warmup: dict, errors: dict) -> dict:
+    with held_library_state():
+        return _load_variants(registry, warmup, errors)
+
+
+def _load_variants(registry: dict, warmup: dict, errors: dict) -> dict:
     UNAVAILABLE.clear()
     VERSIONS.clear()
     VERSION_DOCS.clear()
