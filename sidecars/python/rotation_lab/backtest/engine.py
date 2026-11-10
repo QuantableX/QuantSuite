@@ -7,17 +7,23 @@ fix). The high-level algorithm:
 1. Build a :class:`UniverseTimeline` (top-N at each rotation date).
 2. Resolve daily OHLCV for every coin that ever appears in the union of
    the snapshots (cached).
-3. Walk daily bars; at each rotation bar, fix the active universe.
-4. For every (a, b) in the active universe (including USD when enabled)
+3. Walk daily bars. Every bar has two coin lists (``universe.walk_lists``):
+   its own ranking, which says what may be held on it, and the coins a
+   decision at its close compares. Those come from the ranking the next
+   bar runs on, the one today's live signal reads after the close, and
+   only coins with a candle on the bar are among them.
+4. For every (a, b) of the compared coins (including USD when enabled)
    compute the pairwise A/B trend signal. Each asset's score is the
-   number of other assets it is outperforming.
+   number of other assets it is outperforming (``pair_scores``, also the
+   scoring of today's live signal).
 5. The asset with the highest score becomes ``best_asset``. Ties are
    broken by the universe order (rank, descending market cap),
    matching the Pine "first-encountered wins" tiebreak.
 6. Equity compounds open-to-close on the held asset. If the held asset
-   leaves the universe at a rotation boundary, the engine forces an
-   exit at the open of that bar and re-evaluates immediately (logged
-   as a forced rotation).
+   is not in a bar's own ranking, the engine forces an exit at the open
+   of that bar (logged as a forced rotation). A pick taken from the next
+   bar's ranking cannot trigger it; a ranking that is not complete
+   before its day opens (daily bars on weekly snapshots) still can.
 7. Buy-and-hold equity curves are computed for every coin that ever
    appears.
 
