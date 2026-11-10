@@ -406,6 +406,10 @@ class CertificationTests(unittest.TestCase):
         self.assertEqual(list(real.columns), ["open", "high", "low", "close", "volume"])
         np.testing.assert_allclose(real.iloc[0][["high", "low"]], [110, 100 / 1.1])
         np.testing.assert_allclose(certified_frame(a, b).iloc[0][["high", "low"]], [100, 100])  # no finer series: the stand-in
+        # The frame says which candle it is: the share of its bars built from the path.
+        self.assertEqual((real.attrs["path_share"], certified_frame(a, b).attrs["path_share"]), (1.0, 0.0))
+        short = certified_frame(a, b, a_hours.iloc[:48], b_hours, 24)  # A's hours end after two of the three days
+        self.assertAlmostEqual(short.attrs["path_share"], 2 / 3)
         self.assertEqual(RATIO_PATH, {"1d": ("1h", 24), "4h": ("5m", 48), "1h": ("5m", 12)})
 
     def test_the_intraday_tracks_read_five_minute_series_kept_beside_the_shelf(self):
