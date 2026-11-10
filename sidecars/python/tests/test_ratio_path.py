@@ -20,10 +20,10 @@ from rotation_lab.backtest.signals import ratio_frame
 from rotation_lab.backtest.universe import UniverseSnapshot, UniverseTimeline
 from rotation_lab.data import ohlcv
 from rotation_lab.data.cache import Cache, OhlcvBar, OhlcvRow
-from rotation_lab.data.ohlcv import CoinRef, OhlcvFetcher, hourly_key, market_of, paths_from_rows
+from rotation_lab.data.ohlcv import CoinRef, OhlcvFetcher, market_key, market_of, paths_from_bars, saved_bars
 from rotation_lab.data.ranking.base import RankedCoin
 from smithery import ratio
-from smithery.ratio import path_columns, path_names, paths_from_fine, ratio_candles, real_bars, without_path
+from smithery.ratio import PATH_OF, path_columns, path_names, paths_from_fine, ratio_candles, real_bars, without_path
 
 HOURS = path_names(24)
 
@@ -89,6 +89,13 @@ def hour_bars(market, day, closes):
                      volume=1.0, source="test", approx=False) for h, c in closes.items()]
 
 
+def fine_bars(market, tf, start, closes):
+    """Candles of timeframe ``tf`` from ``start`` on, one per value (None = the venue has no candle there)."""
+    step = dt.timedelta(minutes=5) if tf == "5m" else dt.timedelta(hours=1)
+    return [OhlcvBar(coin_key=market, tf=tf, ts=start + k * step, open=c, high=c, low=c, close=c, volume=1.0, source="test", approx=False)
+            for k, c in enumerate(closes) if c is not None]
+
+
 def day_row(day, source, close=100.0):
     return OhlcvRow(coin_key="sym:AAA", day=day, open=close, high=close, low=close, close=close, volume=1.0, source=source, approx=False)
 
@@ -102,7 +109,7 @@ class SavedPathTests(unittest.TestCase):
         self.d = [dt.date(2024, 1, k) for k in range(1, 5)]
 
     def test_a_days_hours_come_from_the_venue_of_its_own_candle(self):
-        binance, kucoin = hourly_key("binance", "AAA/USDT"), hourly_key("kucoin", "AAA/USDT")
+        binance, kucoin = market_key("binance", "AAA/USDT"), market_key("kucoin", "AAA/USDT")
         self.cache.upsert_ohlcv([day_row(self.d[0], "ccxt:binance:AAA/USDT"), day_row(self.d[1], "ccxt:binance:AAA/USDT"),
                                  day_row(self.d[2], "ccxt:kucoin:AAA/USDT"), day_row(self.d[3], "coingecko")])
         self.cache.upsert_ohlcv_intraday(
@@ -111,13 +118,32 @@ class SavedPathTests(unittest.TestCase):
             + hour_bars(binance, self.d[2], {h: 999.0 for h in range(24)})       # not this day's venue
             + hour_bars(kucoin, self.d[2], {h: 300.0 + h for h in range(24)})
             + hour_bars(binance, self.d[3], {h: 400.0 for h in range(24)}))      # the day's candle is not an exchange's
-        paths = paths_from_rows(self.cache, self.cache.get_ohlcv_range("sym:AAA", self.d[0], self.d[3]))
+        paths = paths_from_bars(self.cache, saved_bars(self.cache, "sym:AAA", self.d[0], self.d[3]))
         self.assertEqual([t.date() for t in paths.index], [self.d[0], self.d[2]])
         np.testing.assert_allclose(paths.iloc[0], [100.0 + h for h in range(24)])
         np.testing.assert_allclose(paths.iloc[1], [300.0 + h for h in range(24)])
         self.assertEqual(market_of("ccxt:bybit:HYPE/USDT:USDT"), ("bybit", "HYPE/USDT:USDT"))
         self.assertIsNone(market_of("coingecko"))
-        self.assertTrue(paths_from_rows(self.cache, []).empty)
+        self.assertTrue(paths_from_bars(self.cache, []).empty)
+
+    def test_intraday_bars_take_their_path_from_five_minute_candles(self):
+        # Three 4h bars of one venue; each holds 48 five-minute candles. The second lacks one.
+        market, day = market_key("okx", "AAA/USDT"), dt.datetime(2024, 1, 1)
+        bars = [OhlcvBar("sym:AAA", "4h", day + dt.timedelta(hours=4 * k), 1, 1, 1, 1, 1.0, "ccxt:okx:AAA/USDT", False) for k in range(3)]
+        closes = [float(k) for k in range(1, 145)]
+        closes[60] = None
+        self.cache.upsert_ohlcv_intraday(bars + fine_bars(market, "5m", day, closes))
+        self.assertEqual(PATH_OF, {"1d": ("1h", 24), "12h": ("1h", 12), "4h": ("5m", 48), "1h": ("5m", 12)})
+        paths = paths_from_bars(self.cache, saved_bars(self.cache, "sym:AAA", day.date(), day.date(), "4h"), "4h")
+        self.assertEqual(list(paths.columns), path_names(48))
+        self.assertEqual(list(paths.index), [pd.Timestamp(day), pd.Timestamp(day + dt.timedelta(hours=8))])
+        np.testing.assert_allclose(paths.iloc[0], np.arange(1.0, 49.0))
+        np.testing.assert_allclose(paths.iloc[1], np.arange(97.0, 145.0))
+        # The same candles as 1h bars: twelve five-minute closes each.
+        self.cache.upsert_ohlcv_intraday([OhlcvBar("sym:AAA", "1h", day + dt.timedelta(hours=k), 1, 1, 1, 1, 1.0, "ccxt:okx:AAA/USDT", False) for k in range(12)])
+        hourly = paths_from_bars(self.cache, saved_bars(self.cache, "sym:AAA", day.date(), day.date(), "1h"), "1h")
+        self.assertEqual(len(hourly), 11)  # the hour with the missing five minutes has no path
+        np.testing.assert_allclose(hourly.iloc[0], np.arange(1.0, 13.0))
 
 
 class FetchTests(unittest.TestCase):
@@ -147,8 +173,11 @@ class FetchTests(unittest.TestCase):
             return []
         bars, day = [], start
         while day <= end:
-            bars += hour_bars(ref.cache_key, day, {h: 100.0 + h for h in range(24)
-                                                    if (day, h) not in self.missing and (day, h) not in self.late})
+            if tf == "5m":
+                bars += fine_bars(ref.cache_key, "5m", dt.datetime.combine(day, dt.time.min), [100.0 + k for k in range(288)])
+            else:
+                bars += hour_bars(ref.cache_key, day, {h: 100.0 + h for h in range(24)
+                                                        if (day, h) not in self.missing and (day, h) not in self.late})
             day += dt.timedelta(days=1)
         return bars
 
@@ -181,6 +210,21 @@ class FetchTests(unittest.TestCase):
             for _ in range(2):
                 self.assertTrue(other.get_path(CoinRef(None, "BBB"), dt.date(2024, 1, 1), dt.date(2024, 1, 5)).empty)
         self.assertEqual(len(calls), 8)  # four tries (the first day and the three after it), both times
+
+    def test_each_finer_timeframe_keeps_its_own_account(self):
+        day = dt.datetime(2024, 1, 2)
+        self.cache.upsert_ohlcv_intraday([OhlcvBar("sym:AAA", "1h", day + dt.timedelta(hours=k), 1, 1, 1, 1, 1.0, "ccxt:binance:AAA/USDT", False)
+                                         for k in range(48)])
+        first = self.fetcher.get_path(self.ref, dt.date(2024, 1, 2), dt.date(2024, 1, 3), "1h")
+        self.assertEqual((len(first), list(first.columns)), (48, path_names(12)))
+        np.testing.assert_allclose(first.iloc[1], [112.0 + k for k in range(12)])
+        self.assertEqual(self.asked, [(dt.date(2024, 1, 2), dt.date(2024, 1, 3))])
+        # The hourly candles for the daily bars are another account: asked for on their own, once each.
+        self.assertEqual(self.days(2, 3), [2, 3])
+        self.fetcher.get_path(self.ref, dt.date(2024, 1, 2), dt.date(2024, 1, 3), "1h")
+        self.assertEqual(len(self.asked), 2)
+        with self.assertRaisesRegex(ValueError, "no path is defined"):
+            self.fetcher.get_path(self.ref, dt.date(2024, 1, 2), dt.date(2024, 1, 3), "weekly")
 
     def test_a_venue_that_cannot_be_reached_is_asked_again(self):
         self.fail = True
@@ -251,7 +295,7 @@ class EngineAndLiveTests(unittest.TestCase):
             return frame.loc[(frame.index >= pd.Timestamp(start)) & (frame.index < pd.Timestamp(end) + pd.Timedelta(days=1))]
 
         fetcher = SimpleNamespace(get_series=lambda ref, start, end, timeframe: SimpleNamespace(frame=cut(frames[ref.symbol], start, end)),
-                                  get_path=lambda ref, start, end: cut(paths[ref.symbol], start, end))
+                                  get_path=lambda ref, start, end, timeframe="1d": cut(paths[ref.symbol], start, end))
         registry = Mock(get_top_n=Mock(side_effect=lambda day, n, **_: SimpleNamespace(coins=ranking(day), provider="test")))
         with patch("rotation_lab.data.ohlcv.utc_now", return_value=clock), patch.object(rpc, "get_default_cache", return_value=object()), \
              patch.object(rpc, "_notify"), patch.object(rpc, "RankingRegistry", return_value=registry), \
@@ -293,7 +337,7 @@ class EngineRunTests(unittest.TestCase):
             return frame.loc[(frame.index >= pd.Timestamp(start)) & (frame.index < pd.Timestamp(end) + pd.Timedelta(days=1))]
 
         source = SimpleNamespace(get_series=lambda ref, start, end, timeframe: SimpleNamespace(frame=cut(frames[ref.symbol], start, end)),
-                                 get_path=lambda ref, start, end: cut(paths[ref.symbol], start, end))
+                                 get_path=lambda ref, start, end, timeframe="1d": cut(paths[ref.symbol], start, end))
         registry = Mock(get_top_n=Mock(side_effect=lambda day, n, **_: SimpleNamespace(coins=ranking(day), provider="test")))
         with patch("rotation_lab.backtest.engine._require_daily_archive"), \
              patch("rotation_lab.backtest.engine.utc_now", return_value=dt.datetime(2030, 1, 1, tzinfo=dt.timezone.utc)):
@@ -301,12 +345,51 @@ class EngineRunTests(unittest.TestCase):
         self.assertEqual(path_columns(seen["BTC"]), HOURS)
         note = next(n for n in result.notes if n.startswith("Coin-vs-coin candles"))
         self.assertIn("CCC 60 days", note)
-        self.assertRegex(note, r"hourly path on 8\d\.\d% of coin-days")
+        self.assertRegex(note, r"1h path on 8\d\.\d% of coin-days")
         # A source without hours (older stand-ins, a shuffled world) leaves the candles as they are.
         frame = frames["BTC"]
         self.assertIs(with_path(frame, lambda *a: None, CoinRef(None, "BTC"), index[0].date(), index[-1].date()), frame)
         self.assertIs(with_path(frame, Mock(side_effect=RuntimeError("down")), CoinRef(None, "BTC"), index[0].date(), index[-1].date()), frame)
-        self.assertIn("no hourly candles are saved", path_note({"BTC": frame, "AAA": frames["AAA"]}, index[0].date()))
+        self.assertIn("no 1h candles are saved", path_note({"BTC": frame, "AAA": frames["AAA"]}, index[0].date()))
+
+    def test_an_intraday_run_attaches_its_bars_paths_too(self):
+        # A 4h cadence: 48 five-minute closes per bar, asked for with the bars' own timeframe.
+        index = pd.date_range("2024-01-01", periods=240, freq="4h")
+        rng = np.random.default_rng(3)
+        frames, paths, asked = {}, {}, []
+        for k, symbol in enumerate(["BTC", "AAA", "BBB"]):
+            fine = np.exp(np.cumsum(rng.normal(0, 0.002, (len(index), 48)), axis=1) + rng.normal(0, 0.02, (len(index), 1)).cumsum(axis=0)) * 50
+            opens = np.concatenate([[50.0], fine[:-1, -1]])
+            frames[symbol] = pd.DataFrame({"open": opens, "high": np.maximum(fine.max(axis=1), opens), "low": np.minimum(fine.min(axis=1), opens),
+                                           "close": fine[:, -1], "volume": 1.0}, index=index)
+            paths[symbol] = pd.DataFrame(fine, index=index, columns=path_names(48))
+        coins = [RankedCoin(rank=i + 1, cg_id=None, symbol=s, name=s, market_cap=1e9 / (i + 1), price=1.0) for i, s in enumerate(frames)]
+        raw = {**RAW, "cadence": "4h", "indicator": {"trend": "ema_cross"}, "startDate": "2024-01-05", "endDate": "2024-02-09"}
+        seen = {}
+
+        class Probe(BacktestEngine):
+            def _simulate(self, config, universe, frames, notes, gate=None, *, parallel_pairs=False):
+                seen.update(frames)
+                return super()._simulate(config, universe, frames, notes, gate=gate, parallel_pairs=False)
+
+        def cut(frame, start, end):
+            return frame.loc[(frame.index >= pd.Timestamp(start)) & (frame.index < pd.Timestamp(end) + pd.Timedelta(days=1))]
+
+        def get_path(ref, start, end, timeframe="1d"):
+            asked.append(timeframe)
+            return cut(paths[ref.symbol], start, end)
+
+        source = SimpleNamespace(get_series=lambda ref, start, end, timeframe: SimpleNamespace(frame=cut(frames[ref.symbol], start, end)), get_path=get_path)
+        registry = Mock(get_top_n=Mock(side_effect=lambda day, n, **_: SimpleNamespace(coins=coins, provider="test")))
+        with patch("rotation_lab.backtest.engine._require_daily_archive"), \
+             patch("rotation_lab.backtest.engine.utc_now", return_value=dt.datetime(2030, 1, 1, tzinfo=dt.timezone.utc)):
+            result = Probe(registry=registry, ohlcv=source).run(rpc._build_config(raw))
+        self.assertEqual(set(asked), {"4h"})
+        self.assertEqual(path_columns(seen["AAA"]), path_names(48))
+        self.assertIn("5m path on 100.0% of coin-bars", next(n for n in result.notes if n.startswith("Coin-vs-coin candles")))
+        r = ratio_frame(seen["AAA"], seen["BBB"])
+        along = (paths["AAA"].to_numpy() / paths["BBB"].to_numpy())[index >= seen["AAA"].index[0]]
+        np.testing.assert_allclose(r["high"], np.maximum(along.max(axis=1), r["open"]))
 
 
 class CertificationTests(unittest.TestCase):
@@ -323,7 +406,30 @@ class CertificationTests(unittest.TestCase):
         self.assertEqual(list(real.columns), ["open", "high", "low", "close", "volume"])
         np.testing.assert_allclose(real.iloc[0][["high", "low"]], [110, 100 / 1.1])
         np.testing.assert_allclose(certified_frame(a, b).iloc[0][["high", "low"]], [100, 100])  # no finer series: the stand-in
-        self.assertEqual(RATIO_PATH, {"1d": ("1h", 24)})
+        self.assertEqual(RATIO_PATH, {"1d": ("1h", 24), "4h": ("5m", 48), "1h": ("5m", 12)})
+
+    def test_the_intraday_tracks_read_five_minute_series_kept_beside_the_shelf(self):
+        from smithery import data, robustness
+        hours = pd.date_range("2024-01-01", periods=6, freq="h", tz="UTC")
+        minutes = pd.date_range("2024-01-01", periods=72, freq="5min", tz="UTC")
+        a5 = pd.DataFrame({"close": 100.0}, index=minutes)
+        b5 = pd.DataFrame({"close": 1.0}, index=minutes)
+        a5.loc[minutes[3], "close"], b5.loc[minutes[9], "close"] = 110.0, 1.1
+        a = pd.DataFrame({"open": 100.0, "high": [110, 100, 100, 100, 100, 100], "low": 100.0, "close": 100.0, "volume": 5.0}, index=hours)
+        b = pd.DataFrame({"open": 1.0, "high": [1.1, 1, 1, 1, 1, 1], "low": 1.0, "close": 1.0, "volume": 7.0}, index=hours)
+        real = robustness.ratio_frame(a, b, a5, b5, 12, pd.Timedelta(minutes=5))
+        np.testing.assert_allclose(real.iloc[0][["high", "low"]], [110, 100 / 1.1])
+        with tempfile.TemporaryDirectory() as folder, patch.object(data, "PRICE_DIR", Path(folder)):
+            self.assertIsNone(data.path_series("ETHUSDT", "5m"))
+            out = a5.copy()
+            out.index.name = "timestamp"
+            data.path_dir().mkdir()
+            self.assertEqual(data.path_dir(), Path(folder) / "Paths")  # it follows the shelf, wherever that is
+            out.reset_index().to_csv(data.path_csv("BINANCE_ETHUSDT_5m"), index=False)
+            loaded = robustness.fine_series("ETHUSDT", "5m")
+            self.assertEqual((len(loaded), float(loaded["close"].iloc[3])), (72, 110.0))
+            self.assertEqual(data.available(), data.available())  # the shelf's own list does not see the path folder
+            self.assertNotIn("BINANCE_ETHUSDT_5m", data.available())
 
 
 class ResearchSourceTests(unittest.TestCase):

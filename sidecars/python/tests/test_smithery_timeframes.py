@@ -121,8 +121,12 @@ class HourlyDataTests(unittest.TestCase):
             data._save('BINANCE_BTCUSDT_4h', old)
             with patch.object(data, 'fetch_ccxt', return_value=new) as fetch:
                 result = data.refresh(verbose=False, timeframe='1h')
-            self.assertTrue(all(key.endswith('_1h') for key in result))
-            self.assertEqual(fetch.call_count, 8)
+            # The track's own eight series, and the four 5m series its ratio pairs' candles are built from.
+            self.assertEqual(sorted({key.rsplit('_', 1)[1] for key in result}), ['1h', '5m'])
+            self.assertEqual(fetch.call_count, 12)
+            # Those sit in a folder of their own inside the shelf, never among the certification series.
+            self.assertEqual(len(list((Path(folder) / 'Paths').glob('*_5m.csv'))), 4)
+            self.assertFalse(any(key.endswith('_5m') for key in data.available()))
             self.assertEqual(fetch.call_args_list[0].args[3], '2026-01-01T13:00:00+00:00')
             self.assertEqual(len(data.load('BINANCE_BTCUSDT_1h')), 3)
             self.assertEqual(len(data.load('BINANCE_BTCUSDT_4h')), 2)

@@ -121,10 +121,10 @@ class SavedPrices:
         bars = self.cache.get_ohlcv_intraday_range(ref.cache_key, timeframe, *bar_window(start, end, timeframe))
         return OhlcvSeries(ref, _bars_to_frame(bars))
 
-    def get_path(self, ref, start, end):
-        """The saved hourly path of a coin's days (for the coin-vs-coin candle); days without one are absent."""
-        from rotation_lab.data.ohlcv import coin_key_for, paths_from_rows
-        return paths_from_rows(self.cache, self.cache.get_ohlcv_range(coin_key_for(ref), start, end))
+    def get_path(self, ref, start, end, timeframe="1d"):
+        """The saved path of a coin's bars (for the coin-vs-coin candle); bars without one are absent."""
+        from rotation_lab.data.ohlcv import coin_key_for, paths_from_bars, saved_bars
+        return paths_from_bars(self.cache, saved_bars(self.cache, coin_key_for(ref), start, end, timeframe), timeframe)
 
 
 class NotSaved:

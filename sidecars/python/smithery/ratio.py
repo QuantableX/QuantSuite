@@ -14,7 +14,9 @@ with 0.82 of the real range. The widest the ratio could have been, high(A)/low(B
 the engine used until 2026-11-10, was off by 2.9% with 3.3 times the range and the close always
 mid-candle; the candle's body alone, which certification used, by 0.4% with 0.55 of the range and no wicks.
 
-The path is sampled at the hour, so a move inside one hour is not in it.
+Which finer candles make a bar's path is one table, ``PATH_OF``: a daily bar its 24 hours, a 12h bar its 12
+hours, a 4h bar its 48 five-minute candles, a 1h bar its 12 five-minute candles. Every bar has at least 12
+samples; a move between two samples is not in the candle.
 """
 from __future__ import annotations
 
@@ -23,6 +25,11 @@ import pandas as pd
 
 PATH_PREFIX = "path_"
 HOUR = pd.Timedelta(hours=1)
+
+# Bar timeframe -> (the finer timeframe whose closes are its path, how many of them one bar holds).
+PATH_OF: dict[str, tuple[str, int]] = {"1d": ("1h", 24), "12h": ("1h", 12), "4h": ("5m", 48), "1h": ("5m", 12)}
+# How long one candle of a finer timeframe is.
+STEP_OF: dict[str, pd.Timedelta] = {"1h": HOUR, "5m": pd.Timedelta(minutes=5)}
 
 
 def path_names(steps: int) -> list[str]:

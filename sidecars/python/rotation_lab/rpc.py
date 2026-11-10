@@ -460,8 +460,8 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
 
     frames: dict[str, pd.DataFrame] = {}
     total = len(coins)
-    # Daily bars carry their hourly path, as in the backtest (engine.run), for the coin-vs-coin candles.
-    paths = None if cfg.cadence.is_intraday else getattr(fetcher, "get_path", None)
+    # The bars carry their path, as in the backtest (engine.run), for the coin-vs-coin candles.
+    paths = getattr(fetcher, "get_path", None)
     for i, coin in enumerate(coins):
         progress(f"OHLCV {coin.symbol}", 0.05 + 0.7 * (i + 1) / max(total, 1))
         ref = CoinRef(cg_id=coin.cg_id, symbol=coin.symbol)
@@ -471,7 +471,7 @@ def _method_live_snapshot(params: dict[str, Any], *, progress=None) -> dict[str,
             continue
         frame = confirmed(series.frame)
         if not frame.empty:
-            frames[coin.symbol] = with_path(frame, paths, ref, start, as_of) if callable(paths) else frame
+            frames[coin.symbol] = with_path(frame, paths, ref, start, as_of, timeframe) if callable(paths) else frame
 
     symbols = [c.symbol for c in coins if c.symbol in frames]
     include_usd = bool(cfg.include_usd)

@@ -38,6 +38,8 @@ _TF_MS: dict[str, int] = {
     "1h": 60 * 60 * 1000,
     "4h": 4 * 60 * 60 * 1000,
     "12h": 12 * 60 * 60 * 1000,
+    # Fetched only as the path of 4h and 1h bars (smithery.ratio.PATH_OF); nothing trades or votes on it.
+    "5m": 5 * 60 * 1000,
 }
 
 _CG_CHART_URL = "https://api.coingecko.com/api/v3/coins/{id}/market_chart"
@@ -66,11 +68,11 @@ _CG_MAX_FREE_DAYS = 365
 _HISTORY_FLOOR_KEY = "ohlcv_first_v2:{key}"
 _DAY_MS = 24 * 60 * 60 * 1000
 
-# Hourly candles for the coin-vs-coin candle (smithery.ratio): the days one venue pair has already been
-# asked for, "YYYY-MM-DD|YYYY-MM-DD". Inside them nothing is asked again: an hour a venue does not have
-# stays missing. Only the newest days stay open until all their hours are there or they are this old.
-_HOURLY_SPAN_KEY = "hourly_span:{market}"
-_HOURLY_SETTLE_DAYS = 3
+# The finer candles behind the coin-vs-coin candle (smithery.ratio): the days one venue pair has already
+# been asked for at one finer timeframe, "YYYY-MM-DD|YYYY-MM-DD". Inside them nothing is asked again: a
+# candle a venue does not have stays missing. Only the newest days stay open until they are whole or this old.
+_PATH_SPAN_KEY = "path_span:{tf}:{market}"
+_PATH_SETTLE_DAYS = 3
 
 
 # USD-ish quote currencies, best first. Used as a preference ranking, not a
@@ -128,38 +130,50 @@ def market_of(source: str | None) -> tuple[str, str] | None:
     return (name, pair) if kind == "ccxt" and name and pair else None
 
 
-def hourly_key(name: str, pair: str) -> str:
+def market_key(name: str, pair: str) -> str:
     """The cache key of one venue pair's own candles (the key Single Asset systems use)."""
 
     return f"market:{name}:{pair}"
 
 
-def paths_from_rows(cache: Cache, rows: list[OhlcvRow]) -> pd.DataFrame:
-    """Per saved day of a coin, the closes of its 24 hours (``path_01`` .. ``path_24``), from the cache alone.
+def saved_bars(cache: Cache, coin_key: str, start: dt.date, end: dt.date, timeframe: str = "1d") -> list[tuple[dt.datetime, str | None]]:
+    """``(bar open, source)`` of a coin's saved bars of one timeframe in ``[start, end]``."""
 
-    A day's hours come from the venue and pair its own candle came from, so
-    the path ends at that candle's close. Days without all 24 hours, and days
-    whose candle did not come from an exchange, are left out."""
+    if timeframe == "1d":
+        return [(dt.datetime.combine(row.day, dt.time.min), row.source) for row in cache.get_ohlcv_range(coin_key, start, end)]
+    bars = cache.get_ohlcv_intraday_range(coin_key, timeframe, dt.datetime.combine(start, dt.time.min),
+                                          dt.datetime.combine(end, dt.time.max))
+    return [(bar.ts, bar.source) for bar in bars]
 
-    from smithery.ratio import path_names, paths_from_fine
 
-    days_by_market: dict[tuple[str, str], list[dt.date]] = {}
-    for row in rows:
-        market = market_of(row.source)
+def paths_from_bars(cache: Cache, bars: list[tuple[dt.datetime, str | None]], timeframe: str = "1d") -> pd.DataFrame:
+    """Per saved bar of a coin, the closes of the finer candles inside it (``path_01`` ..), from the cache alone.
+
+    Which finer candles is ``smithery.ratio.PATH_OF``. They come from the venue
+    and pair the bar's own candle came from, so the path ends at that candle's
+    close. Bars without all of them, and bars whose candle did not come from
+    an exchange, are left out."""
+
+    from smithery.ratio import PATH_OF, path_names, paths_from_fine
+
+    fine, steps = PATH_OF[timeframe]
+    step = pd.Timedelta(milliseconds=_TF_MS[fine])
+    reach = pd.Timedelta(milliseconds=_TF_MS[timeframe]) - step
+    opens_by_market: dict[tuple[str, str], list[dt.datetime]] = {}
+    for opened, source in bars:
+        market = market_of(source)
         if market:
-            days_by_market.setdefault(market, []).append(row.day)
+            opens_by_market.setdefault(market, []).append(opened)
     parts = []
-    for (name, pair), days in days_by_market.items():
-        first = dt.datetime.combine(min(days), dt.time.min)
-        last = dt.datetime.combine(max(days), dt.time(23))
-        closes = cache.get_intraday_closes(hourly_key(name, pair), "1h", first, last)
+    for (name, pair), opens in opens_by_market.items():
+        closes = cache.get_intraday_closes(market_key(name, pair), fine, min(opens), (pd.Timestamp(max(opens)) + reach).to_pydatetime())
         if not closes:
             continue
         series = pd.Series([c for _, c in closes], index=pd.to_datetime([t for t, _ in closes]), dtype=float)
-        block = paths_from_fine(pd.DatetimeIndex(pd.to_datetime(sorted(days))), series, 24)
+        block = paths_from_fine(pd.DatetimeIndex(pd.to_datetime(sorted(opens))), series, steps, step)
         parts.append(block.dropna(how="any"))
     if not parts:
-        return pd.DataFrame(columns=path_names(24), index=pd.DatetimeIndex([]), dtype=float)
+        return pd.DataFrame(columns=path_names(steps), index=pd.DatetimeIndex([]), dtype=float)
     out = pd.concat(parts).sort_index()
     return out[~out.index.duplicated(keep="first")]
 
@@ -376,35 +390,44 @@ class OhlcvFetcher:
         df = _rows_to_frame(cached_rows)
         return OhlcvSeries(coin_ref=ref, frame=df)
 
-    def get_path(self, ref: CoinRef, start: dt.date, end: dt.date) -> pd.DataFrame:
-        """The hourly path of a coin's saved days in ``[start, end]`` (``paths_from_rows``), fetching the
-        hours it has not asked for yet.
+    def get_path(self, ref: CoinRef, start: dt.date, end: dt.date, timeframe: str = "1d") -> pd.DataFrame:
+        """The path of a coin's saved bars in ``[start, end]`` (``paths_from_bars``), fetching the finer
+        candles it has not asked for yet.
 
-        Call it after ``get_series`` for the same window: the hours follow the
-        saved daily candles, venue by venue. A venue that cannot be reached
-        leaves its days without a path for this run; they are asked again."""
+        Call it after ``get_series`` for the same window and timeframe: the
+        finer candles follow the saved bars, venue by venue. A venue that
+        cannot be reached leaves its bars without a path for this run; they
+        are asked again."""
 
-        end = min(end, utc_now().date() - dt.timedelta(days=1))
+        from smithery.ratio import PATH_OF
+
+        if timeframe not in PATH_OF:
+            raise ValueError(f"no path is defined for {timeframe} bars")
+        if timeframe == "1d":
+            end = min(end, utc_now().date() - dt.timedelta(days=1))
         if end < start:
-            return paths_from_rows(self.cache, [])
-        rows = self.cache.get_ohlcv_range(coin_key_for(ref), start, end)
+            return paths_from_bars(self.cache, [], timeframe)
+        bars = saved_bars(self.cache, coin_key_for(ref), start, end, timeframe)
         spans: dict[tuple[str, str], tuple[dt.date, dt.date]] = {}
-        for row in rows:
-            market = market_of(row.source)
+        for opened, source in bars:
+            market = market_of(source)
             if market:
-                lo, hi = spans.get(market, (row.day, row.day))
-                spans[market] = (min(lo, row.day), max(hi, row.day))
+                day = opened.date()
+                lo, hi = spans.get(market, (day, day))
+                spans[market] = (min(lo, day), max(hi, day))
+        fine = PATH_OF[timeframe][0]
         for (name, pair), (first, last) in spans.items():
             try:
-                self._ensure_hourly(name, pair, first, last)
+                self._ensure_fine(name, pair, fine, first, last)
             except Exception as exc:  # noqa: BLE001 - the run goes on with the stand-in candle and says so
-                log.info("Hourly candles of %s on %s not fetched: %s", pair, name, exc)
-        return paths_from_rows(self.cache, rows)
+                log.info("%s candles of %s on %s not fetched: %s", fine, pair, name, exc)
+        return paths_from_bars(self.cache, bars, timeframe)
 
-    def _ensure_hourly(self, name: str, pair: str, first: dt.date, last: dt.date) -> None:
-        """Hourly candles of one venue pair for ``[first, last]``, fetching only days not asked for yet."""
+    def _ensure_fine(self, name: str, pair: str, fine: str, first: dt.date, last: dt.date) -> None:
+        """Candles of one venue pair at the finer timeframe ``fine`` for the days ``[first, last]``, fetching
+        only days not asked for yet."""
 
-        meta_key = _HOURLY_SPAN_KEY.format(market=f"{name}:{pair}")
+        meta_key = _PATH_SPAN_KEY.format(tf=fine, market=f"{name}:{pair}")
         have: tuple[dt.date, dt.date] | None = None
         raw = self.cache.get_meta(meta_key)
         if raw:
@@ -418,27 +441,30 @@ class OhlcvFetcher:
             window for window in ((first, have[0] - day), (have[1] + day, last)) if window[0] <= window[1]]
         if not todo:
             return
-        key = hourly_key(name, pair)
+        key = market_key(name, pair)
         ref = CoinRef(None, pair, cache_key=key)
         for lo, hi in todo:
-            bars = self._fetch_ccxt_intraday_one(name, pair, ref, lo, hi, "1h", strict=True)
+            bars = self._fetch_ccxt_intraday_one(name, pair, ref, lo, hi, fine, strict=True)
             # Several venues answer nothing when asked from before their first candle, and a coin's first
             # day rarely begins at midnight: ask again from the following days before giving up.
             later = lo
             while not bars and later < min(hi, lo + 3 * day):
                 later += day
-                bars = self._fetch_ccxt_intraday_one(name, pair, ref, later, hi, "1h", strict=True)
+                bars = self._fetch_ccxt_intraday_one(name, pair, ref, later, hi, fine, strict=True)
             if bars:
                 self.cache.upsert_ohlcv_intraday(bars)
         lo = first if have is None else min(first, have[0])
         hi = last if have is None else max(last, have[1])
-        if have is None and not self.cache.intraday_bar_count(
-                key, "1h", dt.datetime.combine(lo, dt.time.min), dt.datetime.combine(hi, dt.time(23))):
-            return  # the venue gave no hours at all: nothing is noted, so it is asked again
-        # A new day's last hours can lag behind its daily candle: it stays open until it is whole or old.
-        fresh = utc_now().date() - dt.timedelta(days=_HOURLY_SETTLE_DAYS)
-        while hi >= max(lo, fresh) and self.cache.intraday_bar_count(
-                key, "1h", dt.datetime.combine(hi, dt.time.min), dt.datetime.combine(hi, dt.time(23))) < 24:
+        whole = _DAY_MS // _TF_MS[fine]
+
+        def count(a: dt.date, b: dt.date) -> int:
+            return self.cache.intraday_bar_count(key, fine, dt.datetime.combine(a, dt.time.min), dt.datetime.combine(b, dt.time.max))
+
+        if have is None and not count(lo, hi):
+            return  # the venue gave nothing at all: nothing is noted, so it is asked again
+        # A new day's last candles can lag behind its bar: it stays open until it is whole or old.
+        fresh = utc_now().date() - dt.timedelta(days=_PATH_SETTLE_DAYS)
+        while hi >= max(lo, fresh) and count(hi, hi) < whole:
             hi -= day
         if hi >= lo:
             self.cache.set_meta(meta_key, f"{lo.isoformat()}|{hi.isoformat()}")
