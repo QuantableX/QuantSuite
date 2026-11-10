@@ -218,10 +218,15 @@ def ratio_frame(a: pd.DataFrame, b: pd.DataFrame | None) -> pd.DataFrame:
     out = pd.DataFrame(index=joined.index)
     out["open"] = joined["open"] / joined["open_b"]
     out["close"] = joined["close"] / joined["close_b"]
-    # For high/low of the ratio: the conservative bounds (max possible
-    # ratio reached intraday is high(a)/low(b)).
-    out["high"] = joined["high"] / joined["low_b"]
-    out["low"] = joined["low"] / joined["high_b"]
+    # High and low of the ratio: A's high over B's high and A's low over B's
+    # low (coins mostly peak and bottom together), widened so the candle
+    # always holds its own open and close. Against the ratio's real daily
+    # range from 1h candles this is 0.64-0.97 of it. The widest the ratio
+    # could have been, high(a)/low(b) and low(a)/high(b), was 2.8-4.1 times
+    # the real range with the close always mid-candle (card 4e80395e).
+    o, c = out["open"].to_numpy(dtype=float), out["close"].to_numpy(dtype=float)
+    out["high"] = np.maximum(np.maximum((joined["high"] / joined["high_b"]).to_numpy(dtype=float), o), c)
+    out["low"] = np.minimum(np.minimum((joined["low"] / joined["low_b"]).to_numpy(dtype=float), o), c)
     return out
 
 

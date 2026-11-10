@@ -16,6 +16,7 @@ import pandas as pd
 from rotation_lab.backtest.engine import BacktestEngine, USD_SYMBOL, _switch_legs
 from rotation_lab.backtest.signals import pair_signal
 from rotation_lab.benchmark import assert_equal, fixture, run
+from rotation_lab.config import RankingResolution
 from rotation_lab.backtest import engine
 from smithery import parallel
 
@@ -30,8 +31,17 @@ def _worker_identity(task):
     return task[0], os.getpid(), nested
 
 
+def _ranked(timeline, at):
+    """The coins of the latest snapshot dated on or before ``at``, in rank order."""
+    active = [s for s in timeline.snapshots if pd.Timestamp(s.on_date) <= at]
+    return [c.symbol for c in active[-1].coins] if active else []
+
+
 def _reference_rotation(config, timeline, frames, gate):
-    """Original scalar execution rules, independent of the array ranking path."""
+    """The walk's rules, scalar and independent of the array ranking path: a holding must be in the bar's own
+    ranking; a decision compares the coins of the ranking the next bar runs on that have a candle on this bar."""
+    step = pd.Timedelta(config.cadence.value) if config.cadence.is_intraday else pd.Timedelta(days=1)
+    ahead = config.cadence.is_intraday or config.ranking_resolution == RankingResolution.DAILY
     dates = sorted(set().union(*(set(f.index) for f in frames.values())))
     index = pd.DatetimeIndex([t for t in dates if config.start_date <= t.date() <= config.end_date])
     cache = {}
@@ -46,8 +56,7 @@ def _reference_rotation(config, timeline, frames, gate):
     equities, holdings, forced = [], [], []
     cost = (1 - config.fee_rate) * (1 - config.slippage_rate)
     for ts in index:
-        active = [s for s in timeline.snapshots if pd.Timestamp(s.on_date) <= ts]
-        symbols = [c.symbol for c in active[-1].coins] if active else []
+        symbols = _ranked(timeline, ts)
         if pending and pending != USD_SYMBOL and pending not in symbols:
             forced.append(ts.date())
             pending = USD_SYMBOL if config.include_usd else (symbols[0] if symbols else None)
@@ -65,13 +74,14 @@ def _reference_rotation(config, timeline, frames, gate):
         equity *= 1 + ret
         equities.append(equity)
         holdings.append(current)
-        if not symbols:
+        compared = [s for s in _ranked(timeline, ts + step if ahead else ts) if s in frames and ts in frames[s].index]
+        if not compared:
             pending = USD_SYMBOL if config.include_usd else current
         elif gate is not None and int(gate.get(ts, 0)) != 1:
             pending = USD_SYMBOL
         else:
-            scores = BacktestEngine._score_universe(symbols, ts, signal, config.include_usd)
-            order = symbols + ([USD_SYMBOL] if config.include_usd else [])
+            scores = BacktestEngine._score_universe(compared, ts, signal, config.include_usd)
+            order = compared + ([USD_SYMBOL] if config.include_usd else [])
             pending = max(order, key=lambda s: (scores.get(s, -1), -order.index(s)))
     return (pd.Series(equities, index=index, name='equity'),
             pd.Series(holdings, index=index, name='held').astype(object), forced)
@@ -80,7 +90,7 @@ def _reference_rotation(config, timeline, frames, gate):
 class ArrayParityTests(unittest.TestCase):
     def test_rotation_matches_scalar_with_changing_rank_missing_bars_gates_and_costs(self):
         config, timeline, frames = fixture(800, ('ema_cross',))
-        # Missing candles/assets still cast the original default 0 vote.
+        # A coin without a candle on a bar is out of that bar's comparison; one without candles never is in it.
         frames['AAA'] = frames['AAA'].iloc[::2]
         del frames['EEE']
         frames['BBB'].iloc[650, frames['BBB'].columns.get_loc('close')] = np.nan

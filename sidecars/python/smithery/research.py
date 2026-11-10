@@ -201,7 +201,7 @@ def compare(keys: list[str], *, timeframes: list[str] | None = None,
     for cell in holdout:
         lines.append(f"| {cell['series']} | {cell['cost_bps']:.0f} | {cell['sharpe']:.2f} | {cell['return']:.1%} | {cell['max_dd']:.1%} | {cell['buy_hold_return']:.1%} |")
     lines.extend(["", "## LCES ratio transfer screen", "",
-                  "Synthetic OHLC ratios are bounds, not tradable prices. These results assess transfer only; run the actual historical-universe portfolio backtest before deployment.",
+                  "Ratio candles are built from the two coins' candles, not from traded prices. These results assess transfer only; run the actual historical-universe portfolio backtest before deployment.",
                   "", "| Ratio | Sharpe | Return | Max DD |", "|---|---:|---:|---:|"])
     for cell in ratios:
         lines.append(f"| {cell['series']} | {cell['sharpe']:.2f} | {cell['return']:.1%} | {cell['max_dd']:.1%} |")

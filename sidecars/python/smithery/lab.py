@@ -198,8 +198,10 @@ def create(request):
 
 
 def env_for(path, frozen=False):
-    env = {**os.environ, "QUANTSCRIPT_INDICATORS_DIR": str(path / "library"),
-           "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"}
+    from .threads import with_one
+    # A run's worker and every process under it: one OpenBLAS thread each (threads.py).
+    env = with_one({**os.environ, "QUANTSCRIPT_INDICATORS_DIR": str(path / "library"),
+                    "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"})
     if frozen:
         env.update(PYTHONPATH=str(path / "engine"), SMITHERY_VAULT=str(path / "vault"),
                    ROTATION_LAB_CACHE=str(path / "cache.sqlite"), QUANTSUITE_HOME=str(path / "suite"))

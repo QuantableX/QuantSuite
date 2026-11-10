@@ -115,6 +115,8 @@ A new **Execution** section in every Manual system's settings:
 
 **Data freshness.** The run uses the snapshot as of the candle that just closed. It checks that this candle exists for every coin of the day's universe and that the day's ranking exists. If not, it retries every 5 minutes until the retry window ends, then skips and reports. It never trades on yesterday's data.
 
+**The ranking of the decision (2026-11-10).** The signal compares the coins of the ranking the new day runs on: the Top N as CoinMarketCap had it at the end of the day that just closed. The backtest and the Live Eval replay decide every close among that same list (`universe.walk_lists`), and both leave out a coin that has no candle for the closed day. Before this the backtest chose from the ranking one day older and moved a pick that had left the Top N to USD for a day; the bot did neither. Daily bars on weekly snapshots are the exception: a Sunday's snapshot is not complete before that Sunday opens, so there the backtest keeps the bar's own ranking.
+
 **The decision.** Rotation: `best` (a coin or USD). Rotation in portfolio mode: the weights in `portfolioTarget` (several coins and USD, spot only; see "Portfolio mode" below). Single asset: long or cash on spot; short only on a perp market ([PLAN-EXECUTION-VENUES.md](PLAN-EXECUTION-VENUES.md) §6).
 
 **A coin the venue does not list.** Before Live can be armed, the coverage check shows which coins of the universe the venue can trade. If one is missing, the user picks:
