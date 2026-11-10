@@ -444,6 +444,13 @@ class CertificationTests(unittest.TestCase):
             out.index.name = "timestamp"
             data.path_dir().mkdir()
             self.assertEqual(data.path_dir(), Path(folder) / "Paths")  # it follows the shelf, wherever that is
+            # The default vault is the exception: its path series live in the suite's data folder, not in the vault.
+            with patch.object(data, "DEFAULT_VAULT", Path(folder).parent), patch.object(data, "PRICE_DIR", Path(folder).parent / "Price History"), \
+                    patch.dict("os.environ", {"QUANTSUITE_HOME": str(Path(folder) / "home")}):
+                self.assertEqual(data.path_dir(), Path(folder) / "home" / "modules" / "script" / "cache" / "price-paths")
+            with patch.dict("os.environ", {"SMITHERY_PATHS": str(Path(folder) / "elsewhere")}):
+                self.assertEqual(data.path_dir(), Path(folder) / "elsewhere")  # a named folder wins
+            self.assertEqual(data.path_dir(), Path(folder) / "Paths")
             out.reset_index().to_csv(data.path_csv("BINANCE_ETHUSDT_5m"), index=False)
             loaded = robustness.fine_series("ETHUSDT", "5m")
             self.assertEqual((len(loaded), float(loaded["close"].iloc[3])), (72, 110.0))
