@@ -350,15 +350,26 @@ class _TorchOps:
             ddof = int(kwargs.get("ddof", args[0] if args else 1))
             valid = ~t.isnan(x)
             cnt = self._counts(valid, n)
-            cnt_all = valid.sum(dim=1, keepdim=True).clamp(min=1).to(self.f64)
-            off = t.where(valid, x, t.zeros_like(x)).sum(dim=1, keepdim=True) / cnt_all
-            z = t.where(valid, x - off, t.zeros_like(x))
-            c1, c2 = t.cumsum(z, dim=1), t.cumsum(z * z, dim=1)
-            s1, s2 = c1.clone(), c2.clone()
-            if n < x.shape[1]:
-                s1[:, n:] = c1[:, n:] - c1[:, :-n]
-                s2[:, n:] = c2[:, n:] - c2[:, :-n]
-            ssq = s2 - s1 * s1 / cnt.clamp(min=1)
+            if n <= 256:
+                # Two passes per window (mean, then squared deviations): no cancellation.
+                S_ = x.shape[0]
+                padded = t.cat([t.full((S_, n - 1), float("nan"), dtype=self.f64, device=self.device), x], dim=1)
+                win = padded.unfold(1, n, 1)                              # [S, T, n]
+                ok_w = ~t.isnan(win)
+                zero = t.zeros((), dtype=self.f64, device=self.device)
+                cw = ok_w.sum(dim=2, keepdim=True).clamp(min=1).to(self.f64)
+                mean_w = t.where(ok_w, win, zero).sum(dim=2, keepdim=True) / cw
+                ssq = t.where(ok_w, (win - mean_w).square(), zero).sum(dim=2)
+            else:
+                cnt_all = valid.sum(dim=1, keepdim=True).clamp(min=1).to(self.f64)
+                off = t.where(valid, x, t.zeros_like(x)).sum(dim=1, keepdim=True) / cnt_all
+                z = t.where(valid, x - off, t.zeros_like(x))
+                c1, c2 = t.cumsum(z, dim=1), t.cumsum(z * z, dim=1)
+                s1, s2 = c1.clone(), c2.clone()
+                if n < x.shape[1]:
+                    s1[:, n:] = c1[:, n:] - c1[:, :-n]
+                    s2[:, n:] = c2[:, n:] - c2[:, :-n]
+                ssq = s2 - s1 * s1 / cnt.clamp(min=1)
             var = ssq / (cnt - ddof)
             var = t.where(var < 0, t.zeros_like(var), var)
             # pandas: a window of one repeated value has a variance of exactly 0
@@ -414,13 +425,38 @@ class _TorchOps:
         return self.asarray(NUMPY.ewm(self.to_numpy(a), how, spec, *args, **kwargs))
 
     def _ewm_mean(self, x, spec):
-        """pandas' ewma recursion (window/aggregations.pyx), bar by bar over all series at once."""
+        """pandas' ewma: as linear scans when the data allow (no bar loop), else pandas'
+        recursion bar by bar over all series at once."""
         t = self.torch
         alpha = _ewm_alpha(spec)
         adjust = bool(spec.get("adjust", True))
         ignore_na = bool(spec.get("ignore_na", False))
         minp = max(int(spec.get("min_periods", 0) or 0), 1)
         S, T = x.shape
+        if T:
+            obs = ~t.isnan(x)
+            idx = t.arange(T, device=x.device)
+            has = obs.any(dim=1)
+            first = t.where(has, obs.to(t.int8).argmax(dim=1), t.full((S,), T, device=x.device, dtype=t.long))
+            started = idx[None, :] >= first[:, None]
+            holes = (started & ~obs).any()
+            nobs = t.cumsum(obs.to(self.f64), dim=1)
+            beta = 1.0 - alpha
+            xz = t.where(obs, x, t.zeros_like(x))
+            if not adjust and not bool(holes):
+                at = idx[None, :] == first[:, None]
+                u = t.where(at, xz, alpha * xz)
+                y = linear_scan(self, beta, t.where(started, u, t.zeros_like(u)))
+            elif adjust and (not ignore_na or not bool(holes)):
+                num = linear_scan(self, beta, xz)
+                den = linear_scan(self, beta, obs.to(self.f64))
+                y = num / den
+            else:
+                y = None
+            if y is not None:
+                nan = t.full_like(y, float("nan"))
+                y = t.where(started, y, nan)
+                return t.where(nobs >= minp, y, nan)
         out = t.empty_like(x)
         if T == 0:
             return out
@@ -731,6 +767,19 @@ class Col:
     def cummax(self): return self._w(self.ops.cum(self.a, "cummax"))
     def cummin(self): return self._w(self.ops.cum(self.a, "cummin"))
 
+    def first(self):
+        """Each series' first bar (``series.iloc[0]``) as a [S, 1] column that broadcasts over bars."""
+        return self._w(_float(self.ops, self.a)[:, :1])
+
+    def replace(self, values, value):
+        """``series.replace(values, value)`` for numbers (e.g. infinities to NaN)."""
+        a = _float(self.ops, self.a)
+        hit = None
+        for v in (values if isinstance(values, (list, tuple)) else [values]):
+            m = (a == v) if not (isinstance(v, float) and math.isnan(v)) else self.ops.isnan(a)
+            hit = m if hit is None else (hit | m)
+        return self._w(self.ops.where(hit, value, a)) if hit is not None else self
+
     def round(self, decimals: int = 0):
         if self.ops is NUMPY:
             return self._w(np.round(self.a, decimals))
@@ -985,6 +1034,11 @@ class Kit:
         """Array functions for per-bar loops on [S] vectors (numpy or the GPU's)."""
         return NUMPY_XP if self.ops is NUMPY else _TorchXP(self.ops)
 
+    @property
+    def np(self):
+        """numpy (CPU) or the GPU's numpy-like namespace, for raw [S, ...] arrays."""
+        return NP if self.ops is NUMPY else _TorchNP(self.ops)
+
     def array(self, col) -> object:
         """The raw [S, T] float array of a column (numpy or GPU), for per-bar loops."""
         return _float(self.ops, col.a if isinstance(col, Col) else self.col(col).a)
@@ -995,6 +1049,27 @@ class Kit:
 
     def wrap(self, a) -> Col:
         return Col(a, self.ops)
+
+    def wilder(self, x: Col, seed: Col, n) -> Col:
+        """Wilder's recurrence: from the first bar where ``seed`` is finite (the value there),
+        y = y + (x - y) / n; NaN before it and for good after a missing x. On the CPU the scripts'
+        loop over all series at once (bit for bit); on the GPU a parallel scan."""
+        ops = self.ops
+        a, v = _float(ops, x.a), _float(ops, seed.a)
+        if ops is not NUMPY:
+            return Col(rma_gpu(ops, a, v, n), ops)
+        S, T = a.shape
+        out = np.full((S, T), np.nan)
+        started = np.zeros(S, dtype=bool)
+        prev = np.full(S, np.nan)
+        with np.errstate(all="ignore"):
+            for i in range(T):
+                seeded = ~started & np.isfinite(v[:, i])
+                step = prev + (a[:, i] - prev) / n
+                prev = np.where(started, step, np.where(seeded, v[:, i], np.nan))
+                started |= seeded
+                out[:, i] = prev
+        return Col(out, ops)
 
     def convolve_valid(self, col: Col, weights) -> object:
         """``np.convolve(series, weights, 'valid')`` for every series: a [S, T-n+1] array.
@@ -1192,7 +1267,12 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
         for i in ok:
             one(i)
         return out
+    # A script whose logic steps bar by bar sets ``gpu = False``: batched on the CPU it is faster
+    # than thousands of tiny GPU launches. "auto" honours that; an explicit device does not.
+    if device == "auto" and getattr(indicator, "gpu", True) is False:
+        device = "cpu"
     ops = ops_for(device)
+    stats["device"] = "gpu" if ops is not NUMPY else "cpu"
     sub = [frames[i] for i in ok]
     for group in group_frames(sub):
         positions = [ok[g] for g in group]
@@ -1218,3 +1298,340 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
                     out[i] = exc
             stats["gpu_series" if ops is not NUMPY else "cpu_series"] += len(chunk)
     return out
+
+
+# --------------------------------------------------------------------------- numpy-like namespaces for window functions
+
+class _NP:
+    """numpy itself for window functions on [rows, length] blocks (CPU, bit for bit as before),
+    plus the few helpers numpy lacks (rankdata from scipy)."""
+
+    def __getattr__(self, name):
+        return getattr(np, name)
+
+    @staticmethod
+    def rankdata(a, axis=1, method="average"):
+        from scipy.stats import rankdata
+        return rankdata(a, axis=axis, method=method)
+
+    @staticmethod
+    def is_gpu(_a=None) -> bool:
+        return False
+
+    @staticmethod
+    def asnumpy(a):
+        return np.asarray(a)
+
+    @staticmethod
+    def rfft(a, axis=-1):
+        return np.fft.rfft(a, axis=axis)
+
+    @staticmethod
+    def irfft(a, n=None, axis=-1):
+        return np.fft.irfft(a, n=n, axis=axis)
+
+
+NP = _NP()
+
+
+class _TorchNP:
+    """The numpy calls window functions use, on torch tensors (float64, CUDA)."""
+
+    def __init__(self, ops):
+        self.ops = ops
+        self.t = ops.torch
+        self.pi, self.e, self.inf, self.nan = math.pi, math.e, math.inf, math.nan
+        self.newaxis = None
+        self.float64 = self.t.float64
+
+    # construction
+    def asarray(self, a, dtype=None):
+        if isinstance(a, (list, tuple)):
+            return self.t.as_tensor(np.asarray(a, dtype=float), dtype=self.t.float64, device=self.ops.device)
+        return self.ops._t(a)
+
+    def asnumpy(self, a):
+        return self.ops.to_numpy(a)
+
+    def is_gpu(self, _a=None) -> bool:
+        return True
+
+    def arange(self, *args, dtype=None):
+        if dtype in (float, "float", np.float64) or any(isinstance(x, float) for x in args):
+            return self.t.arange(*args, dtype=self.t.float64, device=self.ops.device)
+        return self.t.arange(*args, device=self.ops.device)
+
+    def full(self, shape, value, dtype=None):
+        shape = shape if isinstance(shape, tuple) else (shape,)
+        if dtype is bool:
+            return self.t.full(shape, bool(value), device=self.ops.device)
+        return self.t.full(shape, float(value), dtype=self.t.float64, device=self.ops.device)
+
+    def zeros(self, shape, dtype=None):
+        return self.full(shape, 0.0, dtype)
+
+    def ones(self, shape, dtype=None):
+        return self.full(shape, 1.0, dtype)
+
+    def zeros_like(self, a):
+        return self.t.zeros_like(a)
+
+    def ones_like(self, a):
+        return self.t.ones_like(a)
+
+    def full_like(self, a, v):
+        return self.t.full_like(a, float(v))
+
+    def triu_indices(self, n, k=0):
+        i = self.t.triu_indices(n, n, offset=k, device=self.ops.device)
+        return i[0], i[1]
+
+    def tril_indices(self, n, k=0):
+        i = self.t.tril_indices(n, n, offset=k, device=self.ops.device)
+        return i[0], i[1]
+
+    # elementwise
+    def _f(self, a):
+        x = self.ops._t(a)
+        return x if x.is_complex() else x.to(self.t.float64)
+
+    def rfft(self, a, axis=-1):
+        return self.t.fft.rfft(self._f(a), dim=axis)
+
+    def irfft(self, a, n=None, axis=-1):
+        return self.t.fft.irfft(a, n=n, dim=axis)
+
+    def where(self, c, a, b): return self.ops.where(c, a, b)
+    def abs(self, a): return self.t.abs(self.ops._t(a))
+    def sign(self, a): return self.t.sign(self.ops._t(a))
+    def sqrt(self, a): return self.t.sqrt(self._f(a))
+    def exp(self, a): return self.t.exp(self._f(a))
+    def log(self, a): return self.t.log(self._f(a))
+    def log1p(self, a): return self.t.log1p(self._f(a))
+    def log2(self, a): return self.t.log2(self._f(a))
+    def tanh(self, a): return self.t.tanh(self._f(a))
+    def arctan(self, a): return self.t.atan(self._f(a))
+    def arctan2(self, a, b): return self.t.atan2(self._f(a), self._f(b))
+    def cos(self, a): return self.t.cos(self._f(a))
+    def sin(self, a): return self.t.sin(self._f(a))
+    def round(self, a, decimals=0): return self.t.round(self._f(a), decimals=int(decimals))
+    def floor(self, a): return self.t.floor(self.ops._t(a))
+    def ceil(self, a): return self.t.ceil(self.ops._t(a))
+    def isfinite(self, a): return self.t.isfinite(self.ops._t(a))
+    def isnan(self, a): return self.t.isnan(self.ops._t(a))
+    def real(self, a): return self.t.real(a)
+    def imag(self, a): return self.t.imag(a)
+    def conj(self, a): return self.t.conj(a)
+    def maximum(self, a, b): return self.t.maximum(self._f(a), self._f(b))
+    def minimum(self, a, b): return self.t.minimum(self._f(a), self._f(b))
+
+    def clip(self, a, lo, hi):
+        x = self._f(a)
+        if lo is not None:
+            x = self.t.maximum(x, self._f(lo))
+        if hi is not None:
+            x = self.t.minimum(x, self._f(hi))
+        return x
+
+    def divide(self, a, b, out=None, where=None):
+        a, b = self._f(a), self._f(b)
+        if where is None:
+            return a / b
+        w = self.ops._t(where)
+        shape = self.t.broadcast_shapes(a.shape, b.shape)
+        base = self._f(out) if out is not None else self.t.zeros(shape, dtype=self.t.float64, device=self.ops.device)
+        return self.t.where(w, a / self.t.where(w, b, self.t.ones_like(b)), base)
+
+    # reductions
+    def sum(self, a, axis=None, keepdims=False):
+        return a.sum() if axis is None else a.sum(dim=axis, keepdim=keepdims)
+
+    def mean(self, a, axis=None, keepdims=False):
+        return a.mean() if axis is None else a.mean(dim=axis, keepdim=keepdims)
+
+    def std(self, a, axis=None, ddof=0, keepdims=False):
+        return a.std(correction=ddof) if axis is None else a.std(dim=axis, correction=ddof, keepdim=keepdims)
+
+    def var(self, a, axis=None, ddof=0, keepdims=False):
+        return a.var(correction=ddof) if axis is None else a.var(dim=axis, correction=ddof, keepdim=keepdims)
+
+    def median(self, a, axis=None, keepdims=False):
+        """numpy's median: the mean of the two middle values for an even count."""
+        if axis is None:
+            a, axis = a.reshape(-1), 0
+        n = a.shape[axis]
+        s = self.t.sort(a, dim=axis).values
+        lo = s.narrow(axis, (n - 1) // 2, 1)
+        hi = s.narrow(axis, n // 2, 1)
+        m = (lo + hi) / 2 if n % 2 == 0 else lo
+        return m if keepdims else m.squeeze(axis)
+
+    def quantile(self, a, q, axis=None, keepdims=False):
+        return self.t.quantile(a, float(q), dim=axis, keepdim=keepdims, interpolation="linear")
+
+    def max(self, a, axis=None, keepdims=False):
+        return a.max() if axis is None else a.amax(dim=axis, keepdim=keepdims)
+
+    def min(self, a, axis=None, keepdims=False):
+        return a.min() if axis is None else a.amin(dim=axis, keepdim=keepdims)
+
+    def ptp(self, a, axis=None):
+        return self.max(a, axis) - self.min(a, axis)
+
+    def argmax(self, a, axis=None):
+        return a.argmax() if axis is None else a.argmax(dim=axis)
+
+    def argmin(self, a, axis=None):
+        return a.argmin() if axis is None else a.argmin(dim=axis)
+
+    def all(self, a, axis=None):
+        return a.all() if axis is None else a.all(dim=axis)
+
+    def any(self, a, axis=None):
+        return a.any() if axis is None else a.any(dim=axis)
+
+    def cumsum(self, a, axis=-1):
+        return self.t.cumsum(a, dim=axis)
+
+    def cumprod(self, a, axis=-1):
+        return self.t.cumprod(a, dim=axis)
+
+    def diff(self, a, axis=-1):
+        return self.t.diff(a, dim=axis)
+
+    def sort(self, a, axis=-1):
+        return self.t.sort(a, dim=axis).values
+
+    def argsort(self, a, axis=-1, kind=None):
+        return self.t.argsort(a, dim=axis, stable=True)
+
+    def take_along_axis(self, a, idx, axis):
+        return self.t.take_along_dim(a, idx, dim=axis)
+
+    def stack(self, arrays, axis=0):
+        return self.t.stack([self.ops._t(x) for x in arrays], dim=axis)
+
+    def concatenate(self, arrays, axis=0):
+        return self.t.cat([self.ops._t(x) for x in arrays], dim=axis)
+
+    def outer(self, a, b):
+        return self.t.outer(self.ops._t(a), self.ops._t(b))
+
+    def dot(self, a, b):
+        return self.ops._t(a) @ self.ops._t(b)
+
+    def einsum(self, spec, *args):
+        return self.t.einsum(spec, *[self.ops._t(x) for x in args])
+
+    def rankdata(self, a, axis=1, method="average"):
+        """scipy's average ranks along axis 1 (1-based; ties share the mean of their ranks)."""
+        if method != "average" or axis not in (1, -1) or a.dim() != 2:
+            raise TypeError("rankdata on the GPU: method='average' on axis 1 of a 2-D block only")
+        t = self.t
+        n = a.shape[1]
+        order = t.argsort(a, dim=1, stable=True)
+        s = t.take_along_dim(a, order, dim=1)
+        new = t.ones_like(s, dtype=t.bool)
+        new[:, 1:] = s[:, 1:] != s[:, :-1]
+        group = t.cumsum(new.to(t.long), dim=1) - 1
+        pos = t.arange(1, n + 1, device=a.device, dtype=t.float64).expand_as(s).contiguous()
+        total = t.zeros_like(s).scatter_add_(1, group, pos)
+        count = t.zeros_like(s).scatter_add_(1, group, t.ones_like(s))
+        avg = t.take_along_dim(total / count.clamp(min=1), group, dim=1)
+        ranks = t.empty_like(s)
+        ranks.scatter_(1, order, avg)
+        return ranks
+
+    @property
+    def fft(self):
+        return self.t.fft
+
+    @property
+    def linalg(self):
+        return self.t.linalg
+
+
+def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> Col:
+    """``function(block, xp)`` on every complete, all-finite window of ``length`` bars of every
+    series: ``block`` is [rows, length], ``xp`` numpy (CPU) or the GPU's numpy-like namespace,
+    and it returns one value per row. Windows with a NaN give NaN. On the CPU this is the old
+    per-series window arithmetic, row for row."""
+    ops = col.ops
+    S, T = col.shape
+    length = int(length)
+    out = ops.full((S, T), float("nan"))
+    if T < length:
+        return Col(out, ops)
+    win = ops.windows(_float(ops, col.a), length)            # [S, W, L]
+    W = win.shape[1]
+    block = win.reshape(S * W, length)
+    xp = NP if ops is NUMPY else _TorchNP(ops)
+    values = ops.full((S * W,), float("nan"))
+    if chunk is None:
+        cells = int(os.environ.get("SMITHERY_GPU_CELLS", DEFAULT_GPU_CELLS))
+        chunk = 256 if ops is NUMPY else max(256, cells // max(length * length, 1))
+    finite = np.isfinite(block).all(axis=1) if ops is NUMPY else ops.torch.isfinite(block).all(dim=1)
+    for start in range(0, S * W, chunk):
+        part = block[start:start + chunk]
+        valid = finite[start:start + chunk]
+        if bool(valid.any()):
+            seg = values[start:start + chunk]
+            seg[valid] = function(part[valid], xp)
+    out[:, length - 1:] = values.reshape(S, W)
+    return Col(out, ops)
+
+
+# --------------------------------------------------------------------------- linear recurrences on the GPU
+
+SCAN_BLOCK = 64
+
+
+def linear_scan(ops, coef: float, u):
+    """y[t] = coef * y[t-1] + u[t] with y[-1] = 0, for every series, without a bar loop on the GPU:
+    blocks of SCAN_BLOCK bars as one matrix product, then one carry step per block.
+    ``u`` must be finite (callers mask NaN themselves). Float-close to the sequential loop."""
+    t = ops.torch
+    S, T = u.shape
+    if T == 0:
+        return u.clone()
+    L = SCAN_BLOCK
+    C = -(-T // L)
+    pad = C * L - T
+    U = t.cat([u, t.zeros((S, pad), dtype=u.dtype, device=u.device)], dim=1) if pad else u
+    U = U.reshape(S, C, L)
+    k = t.arange(L, device=u.device, dtype=u.dtype)
+    expo = k[:, None] - k[None, :]
+    M = t.where(expo >= 0, t.pow(t.tensor(float(coef), dtype=u.dtype, device=u.device), expo.clamp(min=0)),
+                t.zeros((), dtype=u.dtype, device=u.device))
+    local = U @ M.T                                                   # [S, C, L]
+    grow = t.pow(t.tensor(float(coef), dtype=u.dtype, device=u.device), k + 1)   # coef^(k+1)
+    carry = t.zeros((S, C), dtype=u.dtype, device=u.device)          # y at the end of the previous block
+    end = local[:, :, -1]
+    last = float(coef) ** L
+    prev = t.zeros(S, dtype=u.dtype, device=u.device)
+    for c in range(C):
+        carry[:, c] = prev
+        prev = last * prev + end[:, c]
+    y = local + carry[:, :, None] * grow[None, None, :]
+    return y.reshape(S, C * L)[:, :T]
+
+
+def rma_gpu(ops, a, valid, n):
+    """Wilder's recurrence (research_common.rma) without a bar loop: seeded with the first finite
+    window mean, then y = y + (a - y) / n, NaN for good after a missing value."""
+    t = ops.torch
+    S, T = a.shape
+    idx = t.arange(T, device=a.device)
+    fin = t.isfinite(valid)
+    has = fin.any(dim=1)
+    seed = t.where(has, fin.to(t.int8).argmax(dim=1), t.full((S,), T, device=a.device, dtype=t.long))
+    after = idx[None, :] > seed[:, None]
+    at = idx[None, :] == seed[:, None]
+    seed_val = t.take_along_dim(valid, seed.clamp(max=T - 1)[:, None], dim=1)
+    u = t.where(after, a / n, t.zeros_like(a))
+    u = t.where(at, seed_val.expand(S, T), u)
+    broken = t.cummax((after & t.isnan(a)).to(t.int8), dim=1).values.bool()
+    u = t.where(t.isnan(u), t.zeros_like(u), u)
+    y = linear_scan(ops, 1.0 - 1.0 / n, u)
+    y = t.where(after | at, y, t.full_like(y, float("nan")))
+    return t.where(broken, t.full_like(y, float("nan")), y)
