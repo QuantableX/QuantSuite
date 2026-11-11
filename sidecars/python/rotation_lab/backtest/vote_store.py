@@ -46,11 +46,44 @@ def close_all() -> None:
     _OPEN.clear()
 
 
+# Inside a batch run (batch_votes.active): (id(window), kind, overrides) -> (window, key), so a
+# window met again (the walk after the prefill) is not hashed twice. Entries keep the window alive.
+_KEYS: dict | None = None
+
+
 def window_key(kind: str, overrides: dict, window: pd.DataFrame) -> str:
     """The indicator, its overrides and the window's exact index and values, hashed."""
+    memo = _KEYS
+    if memo is None:
+        return _window_key(kind, overrides, window)
+    tag = (id(window), kind, repr(sorted(overrides.items())))
+    hit = memo.get(tag)
+    if hit is not None and hit[0] is window:
+        return hit[1]
+    key = _window_key(kind, overrides, window)
+    memo[tag] = (window, key)
+    return key
+
+
+def _float_columns(window: pd.DataFrame) -> bool:
+    try:   # the block manager's dtypes: DataFrame.dtypes builds a Series each time (slow per window)
+        dtypes = window._mgr.get_dtypes()
+    except AttributeError:
+        dtypes = window.dtypes
+    return len(dtypes) > 0 and all(dtype == np.float64 for dtype in dtypes)
+
+
+def _window_key(kind: str, overrides: dict, window: pd.DataFrame) -> str:
     digest = hashlib.sha256()
     digest.update(repr((kind, sorted(overrides.items()), list(map(str, window.columns)), str(window.index.dtype))).encode())
     digest.update(np.ascontiguousarray(window.index.asi8 if hasattr(window.index, "asi8") else window.index.to_numpy()).tobytes())
+    if _float_columns(window):
+        # All float: the same bytes column by column, from one array (no pandas lookup per column).
+        block = window.to_numpy()
+        for j in range(block.shape[1]):
+            digest.update(b"float64")
+            digest.update(np.ascontiguousarray(block[:, j]).tobytes())
+        return digest.hexdigest()
     for column in window.columns:
         values = window[column].to_numpy()
         digest.update(str(values.dtype).encode())

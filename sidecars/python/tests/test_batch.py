@@ -197,3 +197,39 @@ class DeviceLineTests(unittest.TestCase):
             def has_batch(cls):
                 return False
         self.assertEqual(B.device_label(Old()), "CPU: no batch form (one series at a time)")
+
+
+class EwmRowsTests(unittest.TestCase):
+    """The compiled ewm (the GPU's fallback for gappy series) is pandas' recursion bit for bit."""
+
+    def test_kernel_is_pandas(self):
+        a = _data()
+        a[1, 200:204] = np.nan
+        for spec in (dict(span=12, adjust=False), dict(alpha=0.2, adjust=False, min_periods=5),
+                     dict(alpha=0.3, ignore_na=True), dict(halflife=7, adjust=False), dict(com=2.5)):
+            with self.subTest(spec=spec):
+                want = _pandas_rows(a, lambda s: s.ewm(**spec).mean())
+                out = np.empty_like(a)
+                B._ewm_rows(np.ascontiguousarray(a), B._ewm_alpha(spec), bool(spec.get("adjust", True)),
+                            bool(spec.get("ignore_na", False)), max(int(spec.get("min_periods", 0) or 0), 1), out)
+                np.testing.assert_array_equal(out, want)
+
+
+@unittest.skipUnless(B.gpu_available(), "needs PyTorch with CUDA")
+class GpuExactTests(unittest.TestCase):
+    def test_gappy_ewm_is_exact(self):
+        a = _data()          # a hole at bar 400: the scans cannot take it, the kernel does
+        gpu = B.ops_for("gpu")
+        want = _pandas_rows(a, lambda s: s.ewm(span=12, adjust=False).mean())
+        got = B.Col(gpu.asarray(a), gpu).ewm(span=12, adjust=False).mean().to_numpy()
+        np.testing.assert_array_equal(got, want)
+
+    def test_mean_of_booleans_divides_like_numpy(self):
+        rng = np.random.default_rng(9)
+        w = rng.normal(0, 1, (50, 40))
+        gpu = B.ops_for("gpu")
+        xp = B._TorchNP(gpu)
+        want = np.mean(w[:, :20, None] <= np.sort(w, axis=1)[:, None, :], axis=1)
+        t = gpu.asarray(w)
+        got = xp.mean(t[:, :20, None] <= xp.sort(t, axis=1)[:, None, :], axis=1)
+        np.testing.assert_array_equal(xp.asnumpy(got), want)

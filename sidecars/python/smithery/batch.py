@@ -549,35 +549,14 @@ class _TorchOps:
                 nan = t.full_like(y, float("nan"))
                 y = t.where(started, y, nan)
                 return t.where(nobs >= minp, y, nan)
-        out = t.empty_like(x)
         if T == 0:
-            return out
-        beta = 1.0 - alpha
-        new_wt = 1.0 if adjust else alpha
-        weighted = x[:, 0].clone()
-        obs0 = ~t.isnan(weighted)
-        nobs = obs0.to(self.f64)
-        old_wt = t.ones(S, dtype=self.f64, device=self.device)
-        nan = t.full((S,), float("nan"), dtype=self.f64, device=self.device)
-        out[:, 0] = t.where(nobs >= minp, weighted, nan)
-        for i in range(1, T):
-            cur = x[:, i]
-            obs = ~t.isnan(cur)
-            nobs = nobs + obs.to(self.f64)
-            have = ~t.isnan(weighted)
-            step = have & (obs | (not ignore_na))
-            old_wt = t.where(step, old_wt * beta, old_wt)
-            upd = have & obs
-            changed = upd & (weighted != cur)
-            blended = (old_wt * weighted + new_wt * cur) / (old_wt + new_wt)
-            weighted = t.where(changed, blended, weighted)
-            if adjust:
-                old_wt = t.where(upd, old_wt + new_wt, old_wt)
-            else:
-                old_wt = t.where(upd, t.ones_like(old_wt), old_wt)
-            weighted = t.where(~have & obs, cur, weighted)
-            out[:, i] = t.where(nobs >= minp, weighted, nan)
-        return out
+            return t.empty_like(x)
+        # Holes the scans cannot take: pandas' recursion, compiled per series on the CPU (one
+        # pass; a bar loop of GPU launches was ~0.1 s per call). Bit for bit with pandas.
+        values = np.ascontiguousarray(self.to_numpy(x), dtype=float)
+        out = np.empty_like(values)
+        _ewm_rows(values, alpha, adjust, ignore_na, minp, out)
+        return self.asarray(out)
 
     def shift(self, a, k):
         t = self.torch
@@ -691,10 +670,11 @@ def _ewm_alpha(spec: dict) -> float:
     if span is not None:
         return 1.0 / (1.0 + (float(span) - 1) / 2.0)
     if halflife is not None:
-        com_ = 1.0 / (1.0 - math.exp(math.log(0.5) / float(halflife))) - 1.0
+        com_ = 1.0 / (1.0 - float(np.exp(np.log(0.5) / float(halflife)))) - 1.0
         return 1.0 / (1.0 + com_)
     if alpha is not None:
-        return float(alpha)
+        # pandas goes through the centre of mass even for alpha: 1 / (1 + (1/alpha - 1)).
+        return 1.0 / (1.0 + (1.0 / float(alpha) - 1.0))
     raise ValueError("ewm needs one of com, span, halflife, alpha")
 
 
@@ -1051,6 +1031,38 @@ from .jit import njit, prange  # noqa: E402
 
 
 @njit
+def _ewm_rows(vals, alpha, adjust, ignore_na, minp, out):
+    """pandas' ``ewm`` mean (window/aggregations.pyx, one window per series), one row per series."""
+    old_wt_factor = 1.0 - alpha
+    new_wt = 1.0 if adjust else alpha
+    for s in prange(vals.shape[0]):
+        weighted = vals[s, 0]
+        nobs = 1 if weighted == weighted else 0
+        out[s, 0] = weighted if nobs >= minp else np.nan
+        old_wt = 1.0
+        for i in range(1, vals.shape[1]):
+            cur = vals[s, i]
+            is_observation = cur == cur
+            if is_observation:
+                nobs += 1
+            if weighted == weighted:
+                if is_observation or not ignore_na:
+                    old_wt *= old_wt_factor
+                    if is_observation:
+                        # avoid numerical errors on constant series
+                        if weighted != cur:
+                            weighted = old_wt * weighted + new_wt * cur
+                            weighted /= (old_wt + new_wt)
+                        if adjust:
+                            old_wt += new_wt
+                        else:
+                            old_wt = 1.0
+            elif is_observation:
+                weighted = cur
+            out[s, i] = weighted if nobs >= minp else np.nan
+
+
+@njit
 def _wilder_rows(a, v, n, out):
     """research_common.rma's loop, compiled, one row per series."""
     for s in prange(a.shape[0]):
@@ -1354,9 +1366,10 @@ def _check_frame(name: str, df: pd.DataFrame) -> None:
         raise ValueError(f"{name}: missing columns {missing}")
     if not df.index.is_monotonic_increasing or not df.index.is_unique:
         raise ValueError(f"{name}: timestamps must be ordered and unique")
-    prices = df[list(OHLCV[:4])].to_numpy(dtype=float)
-    if not np.isfinite(prices).all() or (prices <= 0).any():
-        raise ValueError(f"{name}: OHLC prices must be finite and positive")
+    for column in OHLCV[:4]:
+        prices = df[column].to_numpy(dtype=float)
+        if not np.isfinite(prices).all() or (prices <= 0).any():
+            raise ValueError(f"{name}: OHLC prices must be finite and positive")
 
 
 def _check_output(name: str, raw: np.ndarray, bars: int) -> np.ndarray:
@@ -1671,8 +1684,20 @@ class _TorchNP:
         return a.sum() if axis is None else a.sum(dim=axis, keepdim=keepdims)
 
     def mean(self, a, axis=None, keepdims=False):
+        """numpy's mean: the sum divided by the count. torch's mean (and a division by a Python
+        number on CUDA) multiplies by 1/count instead, one ulp off numpy for counts of booleans,
+        and that flips argmax ties (KS distance on equal gaps). A 0-d tensor divides exactly."""
         a = self._num(a)
-        return a.mean() if axis is None else a.mean(dim=axis, keepdim=keepdims)
+        if axis is None:
+            return a.sum() / self._count(a.numel())
+        dims = (axis,) if isinstance(axis, int) else tuple(axis)
+        count = 1
+        for d in dims:
+            count *= a.shape[d]
+        return a.sum(dim=dims, keepdim=keepdims) / self._count(count)
+
+    def _count(self, n):
+        return self.t.tensor(float(n), dtype=self.t.float64, device=self.ops.device)
 
     def std(self, a, axis=None, ddof=0, keepdims=False):
         return a.std(correction=ddof) if axis is None else a.std(dim=axis, correction=ddof, keepdim=keepdims)

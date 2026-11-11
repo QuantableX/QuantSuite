@@ -33,10 +33,12 @@ def active():
         yield signals._BATCH_MEMO
         return
     signals._BATCH_MEMO = {}
+    signals._FRAME_MEMO, signals._WINDOW_MEMO, vote_store._KEYS = {}, {}, {}
     try:
         yield signals._BATCH_MEMO
     finally:
         signals._BATCH_MEMO = None
+        signals._FRAME_MEMO = signals._WINDOW_MEMO = vote_store._KEYS = None
 
 
 def stats() -> dict:
