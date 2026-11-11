@@ -290,8 +290,7 @@ class Gauntlet:
         sigs, rows, sharpes = {}, [], {}
         frames = {k: load(k) for k in keys}
         start = max(f.index[0] for f in frames.values())
-        raw = par.pmap(par.eval_signal,
-                       [(self.ind, frames[k]) for k in keys], min_parallel=2)
+        raw = par.signals_batch(self.ind, [frames[k] for k in keys], min_parallel=2)
         for k, arr in zip(keys, raw):
             df = frames[k]
             sigs[k] = par.rehydrate(arr, df.index)
@@ -465,7 +464,7 @@ class Gauntlet:
         amps = (0.05, 0.10, 0.20, 0.35, 0.50)
         noisy = [mc.noise_inject(df, amp, np.random.default_rng(self.seed + int(amp * 100)))
                  for amp in amps]
-        noise_sigs = par.pmap(par.eval_signal, [(self.ind, nd) for nd in noisy])
+        noise_sigs = par.signals_batch(self.ind, noisy)
         curve = [(amp, agreement(base_sig, par.rehydrate(arr, df.index)))
                  for amp, arr in zip(amps, noise_sigs)]
         agr20 = dict((round(a, 2), v) for a, v in curve)[0.20]
