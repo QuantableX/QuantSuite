@@ -229,13 +229,15 @@ class _TorchOps:
         self.torch = torch
         self.device = device
         self.f64 = torch.float64
+        # numpy promotes int arrays with a float to float64; torch would pick float32.
+        torch.set_default_dtype(torch.float64)
 
     # conversions
     def asarray(self, a):
         t = self.torch
         if isinstance(a, t.Tensor):
             return a.to(device=self.device, dtype=self.f64)
-        return t.as_tensor(np.asarray(a, dtype=float), dtype=self.f64, device=self.device)
+        return t.as_tensor(np.array(a, dtype=float, copy=True), dtype=self.f64, device=self.device)
 
     def to_numpy(self, a):
         if isinstance(a, self.torch.Tensor):
@@ -382,8 +384,40 @@ class _TorchOps:
         if how in ("max", "min"):
             res = self._extreme(x, n, how == "max", mp)
             return res
+        if how in ("median", "quantile") and n <= 512 and kwargs.get("interpolation", "linear") == "linear":
+            return self._order_stat(x, n, mp, how, float(args[0]) if args else None)
         # rarer statistics: exact through pandas on the CPU, then back (see device_note in reports)
         return self.asarray(NUMPY.rolling(self.to_numpy(x), window, min_periods, how, *args, **kwargs))
+
+    def _order_stat(self, x, n, mp, how, q):
+        """pandas' rolling median / linear quantile on sorted windows (NaN sorts last):
+        the same picks and the same interpolation arithmetic as pandas' skiplist."""
+        t = self.torch
+        S, T = x.shape
+        padded = t.cat([t.full((S, n - 1), float("nan"), dtype=self.f64, device=self.device), x], dim=1)
+        out = t.full((S, T), float("nan"), dtype=self.f64, device=self.device)
+        step = max(1, int(os.environ.get("SMITHERY_GPU_CELLS", DEFAULT_GPU_CELLS)) // max(n * S, 1))
+        for start in range(0, T, step):
+            stop = min(T, start + step)
+            win = padded[:, start:stop + n - 1].unfold(1, n, 1)              # [S, w, n]
+            srt = t.sort(win, dim=2).values
+            m = (~t.isnan(win)).sum(dim=2)                                    # valid values per window
+            mm = m.clamp(min=1)
+            if how == "median":
+                mid = mm // 2
+                upper = t.take_along_dim(srt, mid[..., None], dim=2)[..., 0]
+                lower = t.take_along_dim(srt, (mid - 1).clamp(min=0)[..., None], dim=2)[..., 0]
+                res = t.where(mm % 2 == 1, upper, (upper + lower) / 2)
+            else:
+                pos = q * (mm - 1).to(self.f64)
+                lo = t.floor(pos).to(t.long)
+                vlow = t.take_along_dim(srt, lo[..., None], dim=2)[..., 0]
+                vhigh = t.take_along_dim(srt, (lo + 1).clamp(max=n - 1)[..., None], dim=2)[..., 0]
+                frac = pos - lo.to(self.f64)
+                res = t.where(frac == 0, vlow, vlow + (vhigh - vlow) * frac)
+            ok = (m >= max(mp, 1))
+            out[:, start:stop] = t.where(ok, res, t.full_like(res, float("nan")))
+        return out
 
     def _extreme(self, x, n, is_max, mp):
         """Rolling max/min (van Herk / Gil-Werman: block prefix and suffix extremes), NaN-aware like pandas."""
@@ -734,8 +768,18 @@ class Col:
 
     notnull = notna
 
-    def shift(self, periods: int = 1):
-        return self._w(self.ops.shift(self.a, int(periods)))
+    def shift(self, periods: int = 1, fill_value=None):
+        """pandas' shift; with ``fill_value`` the opened bars take it and a boolean column stays
+        boolean (``positive.shift(1, fill_value=False)``)."""
+        k = int(periods)
+        if fill_value is None:
+            return self._w(self.ops.shift(self.a, k))
+        shifted = self.ops.shift(self.a, k)
+        T = self.shape[1]
+        opened = self.ops.arange(T) < k if k >= 0 else self.ops.arange(T) >= T + k
+        out = self.ops.where(opened, fill_value, shifted)
+        is_bool = (self.a.dtype == bool) if self.ops is NUMPY else (self.a.dtype == self.ops.torch.bool)
+        return self._w(out != 0 if is_bool else out)
 
     def diff(self, periods: int = 1):
         return self._w(_float(self.ops, self.a) - self.ops.shift(self.a, int(periods)))
@@ -919,6 +963,24 @@ _FUNCTIONS = {"where": _np_where, "clip": _np_clip, "nan_to_num": _np_nan_to_num
 
 # --------------------------------------------------------------------------- per-bar loops
 
+from .jit import njit, prange  # noqa: E402
+
+
+@njit
+def _wilder_rows(a, v, n, out):
+    """research_common.rma's loop, compiled, one row per series."""
+    for s in prange(a.shape[0]):
+        started = False
+        prev = np.nan
+        for i in range(a.shape[1]):
+            if started:
+                prev = prev + (a[s, i] - prev) / n
+            elif np.isfinite(v[s, i]):
+                prev = v[s, i]
+                started = True
+            out[s, i] = prev
+
+
 class _NumpyXP:
     """numpy for [S] vectors in per-bar loops: the same IEEE operations as the scalar loops
     the scripts had, so a CPU batch stays bit for bit."""
@@ -1058,17 +1120,9 @@ class Kit:
         a, v = _float(ops, x.a), _float(ops, seed.a)
         if ops is not NUMPY:
             return Col(rma_gpu(ops, a, v, n), ops)
-        S, T = a.shape
-        out = np.full((S, T), np.nan)
-        started = np.zeros(S, dtype=bool)
-        prev = np.full(S, np.nan)
-        with np.errstate(all="ignore"):
-            for i in range(T):
-                seeded = ~started & np.isfinite(v[:, i])
-                step = prev + (a[:, i] - prev) / n
-                prev = np.where(started, step, np.where(seeded, v[:, i], np.nan))
-                started |= seeded
-                out[:, i] = prev
+        out = np.full(a.shape, np.nan)
+        if a.shape[1]:
+            _wilder_rows(np.ascontiguousarray(a), np.ascontiguousarray(v), float(n), out)
         return Col(out, ops)
 
     def convolve_valid(self, col: Col, weights) -> object:
@@ -1323,6 +1377,33 @@ class _NP:
         return np.asarray(a)
 
     @staticmethod
+    def ndtr(a):
+        from scipy.special import ndtr
+        return ndtr(a)
+
+    @staticmethod
+    def ndtri(a):
+        from scipy.special import ndtri
+        return ndtri(a)
+
+    @staticmethod
+    def asfloat(a):
+        return np.asarray(a).astype(float)
+
+    @staticmethod
+    def pinv(a, rcond=1e-15):
+        return np.linalg.pinv(a, rcond=rcond)
+
+    @staticmethod
+    def quantiles(a, qs, axis=1):
+        return np.quantile(a, list(qs), axis=axis, method='linear')
+
+    @staticmethod
+    def rankdata_last(a):
+        from scipy.stats import rankdata
+        return rankdata(a, axis=a.ndim - 1, method='average')
+
+    @staticmethod
     def rfft(a, axis=-1):
         return np.fft.rfft(a, axis=axis)
 
@@ -1410,6 +1491,14 @@ class _TorchNP:
     def log1p(self, a): return self.t.log1p(self._f(a))
     def log2(self, a): return self.t.log2(self._f(a))
     def tanh(self, a): return self.t.tanh(self._f(a))
+    def arcsinh(self, a): return self.t.asinh(self._f(a))
+    def arccosh(self, a): return self.t.acosh(self._f(a))
+    def arctanh(self, a): return self.t.atanh(self._f(a))
+    def sinh(self, a): return self.t.sinh(self._f(a))
+    def cosh(self, a): return self.t.cosh(self._f(a))
+    def expm1(self, a): return self.t.expm1(self._f(a))
+    def square(self, a): return self.t.square(self._f(a))
+    def log10(self, a): return self.t.log10(self._f(a))
     def arctan(self, a): return self.t.atan(self._f(a))
     def arctan2(self, a, b): return self.t.atan2(self._f(a), self._f(b))
     def cos(self, a): return self.t.cos(self._f(a))
@@ -1442,11 +1531,45 @@ class _TorchNP:
         base = self._f(out) if out is not None else self.t.zeros(shape, dtype=self.t.float64, device=self.ops.device)
         return self.t.where(w, a / self.t.where(w, b, self.t.ones_like(b)), base)
 
-    # reductions
+    def eye(self, n):
+        return self.t.eye(n, dtype=self.t.float64, device=self.ops.device)
+
+    def ndtr(self, a):
+        return self.t.special.ndtr(self._f(a))
+
+    def ndtri(self, a):
+        return self.t.special.ndtri(self._f(a))
+
+    def asfloat(self, a):
+        return self._num(self.ops._t(a)).to(self.t.float64)
+
+    def pinv(self, a, rcond=1e-15):
+        return self.t.linalg.pinv(a, rtol=rcond)
+
+    def quantiles(self, a, qs, axis=1):
+        return self.t.quantile(a, self.t.as_tensor(list(qs), dtype=self.t.float64, device=self.ops.device), dim=axis)
+
+    def rankdata_last(self, a):
+        """rankdata along the last axis of any shape (average ties)."""
+        shape = a.shape
+        return self.rankdata(a.reshape(-1, shape[-1]), axis=1).reshape(shape)
+
+    def flip(self, a, axis):
+        return self.t.flip(a, [axis] if isinstance(axis, int) else list(axis))
+
+    def trace(self, a, axis1=0, axis2=1):
+        return self.t.diagonal(a, dim1=axis1, dim2=axis2).sum(-1)
+
+    # reductions (bools count as 0/1, like numpy)
+    def _num(self, a):
+        return a.to(self.t.float64) if a.dtype == self.t.bool else a
+
     def sum(self, a, axis=None, keepdims=False):
+        a = self._num(a)
         return a.sum() if axis is None else a.sum(dim=axis, keepdim=keepdims)
 
     def mean(self, a, axis=None, keepdims=False):
+        a = self._num(a)
         return a.mean() if axis is None else a.mean(dim=axis, keepdim=keepdims)
 
     def std(self, a, axis=None, ddof=0, keepdims=False):
