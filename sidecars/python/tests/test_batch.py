@@ -1,0 +1,148 @@
+"""The batch columns against pandas: bit for bit on the CPU, within float rounding on the GPU."""
+import unittest
+
+import numpy as np
+import pandas as pd
+
+from smithery import batch as B
+from smithery.contract import hysteresis_flip
+
+
+def _series(seed: int, T: int = 700) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    x = 100 * np.exp(np.cumsum(rng.normal(0, 0.03, T)))
+    x[:5] = np.nan                       # warm-up NaNs from a diff/shift upstream
+    x[300:310] = x[299]                  # a flat stretch: pandas' same-value rules
+    x[400] = np.nan                      # a hole
+    x[500:520] = -x[500:520] / 50        # a negative stretch
+    return x
+
+
+def _data(S: int = 6, T: int = 700) -> np.ndarray:
+    return np.stack([_series(s, T) for s in range(S)])
+
+
+def _pandas_rows(a: np.ndarray, fn) -> np.ndarray:
+    return np.stack([fn(pd.Series(row)).to_numpy(dtype=float) for row in a])
+
+
+CASES = {
+    "rolling_mean_20": lambda s: s.rolling(20).mean(),
+    "rolling_sum_7": lambda s: s.rolling(7).sum(),
+    "rolling_std_30": lambda s: s.rolling(30).std(),
+    "rolling_var_5_mp3": lambda s: s.rolling(5, min_periods=3).var(),
+    "rolling_max_14": lambda s: s.rolling(14).max(),
+    "rolling_min_9_mp1": lambda s: s.rolling(9, min_periods=1).min(),
+    "rolling_mean_1": lambda s: s.rolling(1).mean(),
+    "rolling_median_11": lambda s: s.rolling(11).median(),
+    "rolling_quantile_25": lambda s: s.rolling(25).quantile(0.8),
+    "ewm_span_adjust_false": lambda s: s.ewm(span=12, adjust=False, min_periods=12).mean(),
+    "ewm_halflife": lambda s: s.ewm(halflife=10).mean(),
+    "ewm_alpha_ignore_na": lambda s: s.ewm(alpha=0.2, ignore_na=True).mean(),
+    "ewm_std": lambda s: s.ewm(halflife=8).std(),
+    "shift_3": lambda s: s.shift(3),
+    "diff_1": lambda s: s.diff(),
+    "pct_change_2": lambda s: s.pct_change(2),
+    "cumsum": lambda s: s.cumsum(),
+    "cummax": lambda s: s.cummax(),
+    "ffill": lambda s: s.ffill(),
+    "clip": lambda s: s.clip(lower=50, upper=150),
+    "where": lambda s: s.where(s > 100, -1.0),
+    "fillna": lambda s: s.fillna(0.0),
+}
+
+
+def _batch_case(name: str, col: B.Col) -> B.Col:
+    fn = {
+        "rolling_mean_20": lambda c: c.rolling(20).mean(),
+        "rolling_sum_7": lambda c: c.rolling(7).sum(),
+        "rolling_std_30": lambda c: c.rolling(30).std(),
+        "rolling_var_5_mp3": lambda c: c.rolling(5, min_periods=3).var(),
+        "rolling_max_14": lambda c: c.rolling(14).max(),
+        "rolling_min_9_mp1": lambda c: c.rolling(9, min_periods=1).min(),
+        "rolling_mean_1": lambda c: c.rolling(1).mean(),
+        "rolling_median_11": lambda c: c.rolling(11).median(),
+        "rolling_quantile_25": lambda c: c.rolling(25).quantile(0.8),
+        "ewm_span_adjust_false": lambda c: c.ewm(span=12, adjust=False, min_periods=12).mean(),
+        "ewm_halflife": lambda c: c.ewm(halflife=10).mean(),
+        "ewm_alpha_ignore_na": lambda c: c.ewm(alpha=0.2, ignore_na=True).mean(),
+        "ewm_std": lambda c: c.ewm(halflife=8).std(),
+        "shift_3": lambda c: c.shift(3),
+        "diff_1": lambda c: c.diff(),
+        "pct_change_2": lambda c: c.pct_change(2),
+        "cumsum": lambda c: c.cumsum(),
+        "cummax": lambda c: c.cummax(),
+        "ffill": lambda c: c.ffill(),
+        "clip": lambda c: c.clip(lower=50, upper=150),
+        "where": lambda c: c.where(c > 100, -1.0),
+        "fillna": lambda c: c.fillna(0.0),
+    }[name]
+    return fn(col)
+
+
+class CpuIsPandas(unittest.TestCase):
+    def test_every_case_bit_for_bit(self):
+        a = _data()
+        for name, fn in CASES.items():
+            with self.subTest(name):
+                expected = _pandas_rows(a, fn)
+                got = _batch_case(name, B.Col(a.copy(), B.NUMPY)).to_numpy()
+                np.testing.assert_array_equal(got, expected)
+
+    def test_ufuncs_and_np_where(self):
+        a = _data()
+        c = B.Col(a, B.NUMPY)
+        got = np.where(np.log(c) > 4.6, 1.0, np.where(np.log(c) < 4.5, -1.0, np.nan)).to_numpy()
+        with np.errstate(all="ignore"):
+            want = np.where(np.log(a) > 4.6, 1.0, np.where(np.log(a) < 4.5, -1.0, np.nan))
+        np.testing.assert_array_equal(got, want)
+
+    def test_hysteresis_is_the_contract_machine(self):
+        rng = np.random.default_rng(3)
+        s = rng.normal(0, 1, (8, 500))
+        s[:, :40] = np.nan
+        s[2, 100:120] = np.inf
+        kit = B.Kit(B.NUMPY, s.shape)
+        for band in (0.0, 0.3, 1.5):
+            got = kit.hysteresis(B.Col(s, B.NUMPY), band).to_numpy()
+            want = np.stack([hysteresis_flip(r, band) for r in s])
+            np.testing.assert_array_equal(got, want)
+
+    def test_max_of_skips_nan_like_concat_max(self):
+        rng = np.random.default_rng(5)
+        a, b, c = (rng.normal(0, 1, (3, 50)) for _ in range(3))
+        b[:, 0] = np.nan
+        a[1, 3] = b[1, 3] = c[1, 3] = np.nan
+        kit = B.Kit(B.NUMPY, a.shape)
+        got = kit.max_of(B.Col(a, B.NUMPY), B.Col(b, B.NUMPY), B.Col(c, B.NUMPY)).to_numpy()
+        want = np.stack([pd.concat([pd.Series(a[i]), pd.Series(b[i]), pd.Series(c[i])], axis=1).max(axis=1)
+                         for i in range(3)])
+        np.testing.assert_array_equal(got, want)
+
+
+@unittest.skipUnless(B.gpu_available(), "needs PyTorch with CUDA")
+class GpuIsCpu(unittest.TestCase):
+    def test_every_case_close(self):
+        a = _data()
+        gpu = B.ops_for("gpu")
+        for name in CASES:
+            with self.subTest(name):
+                want = _batch_case(name, B.Col(a.copy(), B.NUMPY)).to_numpy()
+                got = _batch_case(name, B.Col(gpu.asarray(a), gpu)).to_numpy()
+                np.testing.assert_array_equal(np.isnan(got), np.isnan(want))
+                # pandas' online variance keeps a residue (~1e-11) on a flat window; the GPU gives 0
+                atol = 1e-10 if "var" in name else 1e-12
+                np.testing.assert_allclose(got, want, rtol=1e-9, atol=atol, equal_nan=True)
+
+    def test_hysteresis_exact(self):
+        rng = np.random.default_rng(4)
+        s = rng.normal(0, 1, (8, 500))
+        s[:, :40] = np.nan
+        gpu = B.ops_for("gpu")
+        got = B.Kit(gpu, s.shape).hysteresis(B.Col(gpu.asarray(s), gpu), 0.4).to_numpy()
+        want = np.stack([hysteresis_flip(r, 0.4) for r in s])
+        np.testing.assert_array_equal(got, want)
+
+
+if __name__ == "__main__":
+    unittest.main()
