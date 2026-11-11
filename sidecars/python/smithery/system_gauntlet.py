@@ -98,13 +98,21 @@ def native_job(job):
         multiple = float(equity.iloc[-1])
         years = rp.years_between(equity.index)
         out = {"label": label, "multiple": multiple, "years": years, "cagr": rp.cagr(multiple, years),
-               "max_drawdown_pct": float(result.metrics_strategy.max_drawdown_pct)}
+               "max_drawdown_pct": float(result.metrics_strategy.max_drawdown_pct),
+               # The engine's own line: "Indicator series: GPU (<card>, n series)" or "... CPU: <reason> n."
+               "devices": next((n for n in result.notes if n.startswith("Indicator series:")), None)}
         if keep:
             out["equity"] = equity
             out["held"] = result.held_asset
         return out
     except Exception as exc:  # noqa: BLE001 — one broken variant is recorded, the rest still run
         return {"label": label, "error": f"{type(exc).__name__}: {exc}"[:400]}
+
+
+def _tick(progress, stage, k, n, out) -> None:
+    if progress:
+        devices = (out.get("devices") or "").removeprefix("Indicator series: ").rstrip(".")
+        progress(f"{stage}: {k} of {n}" + (f" · {devices}" if devices else ""))
 
 
 def run_native(jobs, workers=None, progress=None, stage=""):
@@ -114,8 +122,7 @@ def run_native(jobs, workers=None, progress=None, stage=""):
         _init_worker()
         for k, job in enumerate(jobs, 1):
             results.append(native_job(job))
-            if progress:
-                progress(f"{stage}: {k} of {len(jobs)}")
+            _tick(progress, stage, k, len(jobs), results[-1])
         return results
     import multiprocessing as mp
     from . import threads
@@ -124,8 +131,7 @@ def run_native(jobs, workers=None, progress=None, stage=""):
                              initializer=_init_worker) as pool:
         for k, out in enumerate(pool.map(native_job, jobs), 1):
             results.append(out)
-            if progress:
-                progress(f"{stage}: {k} of {len(jobs)}")
+            _tick(progress, stage, k, len(jobs), out)
     return results
 
 

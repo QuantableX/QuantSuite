@@ -23,6 +23,13 @@ CONTRACT_VERSION = 2
 
 PARAM_TYPES = ("int", "float", "bool", "choice", "list")
 
+# signal() calls in this process (one series each, on the CPU), for the jobs' device lines (batch.tally).
+_SINGLE = [0]
+
+
+def single_series_calls() -> int:
+    return _SINGLE[0]
+
 
 def _derived_entry(name: str, default, tested: tuple | None) -> dict:
     """What an editor can know about a parameter without a declaration."""
@@ -144,6 +151,7 @@ class TrendIndicator(ABC):
             raise ValueError(f"{self.name}: OHLC prices must be finite and positive")
         if df.empty:
             return pd.Series(index=df.index, dtype=float, name=self.name)
+        _SINGLE[0] += 1
         raw = np.asarray(self._compute(df), dtype=float)
         if raw.shape != (len(df),):
             raise ValueError(f"{self.name}: signal length mismatch")

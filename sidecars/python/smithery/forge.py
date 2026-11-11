@@ -258,6 +258,7 @@ def run_comparison(args) -> int:
 
 
 def run_gauntlet(args) -> int:
+    from .batch import device_label, device_line, tally
     from .data import ROOT
     from .indicators import REGISTRY
     from .registry import CERTIFY_PERM_P, CERTIFY_SCORE, TIMEFRAMES
@@ -276,8 +277,11 @@ def run_gauntlet(args) -> int:
     for key in keys:
         for timeframe in tracks:
             ind = REGISTRY[key]()
-            emit("begin", indicator=key, name=ind.name, params=ind.params, timeframe=timeframe)
+            # Where the indicator's series run: "GPU (<card>)" or "CPU: <reason>", never silently.
+            emit("begin", indicator=key, name=ind.name, params=ind.params, timeframe=timeframe,
+                 device=device_label(ind))
             t0 = time.time()
+            counted = tally()
 
             def progress(payload: dict, _key=key, _tf=timeframe) -> None:
                 emit(payload.pop("stage", "progress"), indicator=_key, timeframe=_tf, **payload)
@@ -295,7 +299,8 @@ def run_gauntlet(args) -> int:
                      scores={k: (None if v != v else round(float(v), 1)) for k, v in res["scores"].items()},
                      certified=bool(certified), fast=bool(args.fast), report=str(report),
                      reasons=res["reasons"],
-                     report_name=report.stem, elapsed_s=round(time.time() - t0, 1))
+                     report_name=report.stem, elapsed_s=round(time.time() - t0, 1),
+                     device=device_line(counted))
             except Exception as e:  # noqa: BLE001 — the next run still happens
                 failures += 1
                 emit("error", indicator=key, timeframe=timeframe, message=f"{type(e).__name__}: {e}",

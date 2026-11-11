@@ -62,6 +62,64 @@ def device_note() -> str:
     return f"GPU ({torch.cuda.get_device_name(device)})"
 
 
+def device_for(indicator, device: str = "auto") -> tuple[str, str]:
+    """Where ``signals`` computes this indicator: ``("gpu", "")`` or ``("cpu", reason)``."""
+    if not type(indicator).has_batch():
+        return "cpu", "no batch form (one series at a time)"
+    if device == "cpu":
+        return "cpu", "CPU requested"
+    if device == "auto" and getattr(indicator, "gpu", True) is False:
+        return "cpu", "compiled per-row kernels (gpu = False)"
+    torch, reason = _torch()
+    if torch is None:
+        return "cpu", reason.removeprefix("CPU: ")
+    return "gpu", ""
+
+
+def device_label(indicator, device: str = "auto") -> str:
+    """``GPU (<name>)`` or ``CPU: <reason>`` for one indicator, for a job's progress line."""
+    where, reason = device_for(indicator, device)
+    return device_note() if where == "gpu" else f"CPU: {reason}"
+
+
+# Series computed in this process, for the jobs' progress lines: on the GPU, and on the CPU by reason.
+_TALLY: dict = {"gpu": 0, "cpu": {}}
+
+
+def _count(where: str, n: int, reason: str = "") -> None:
+    if n <= 0:
+        return
+    if where == "gpu":
+        _TALLY["gpu"] += n
+    else:
+        _TALLY["cpu"][reason] = _TALLY["cpu"].get(reason, 0) + n
+
+
+def tally() -> dict:
+    """A copy of this process's counts (``signal()`` calls included), to pass to ``device_line`` later."""
+    from .contract import single_series_calls
+    cpu = dict(_TALLY["cpu"])
+    single = single_series_calls()
+    if single:
+        cpu["one series per call"] = cpu.get("one series per call", 0) + single
+    return {"gpu": _TALLY["gpu"], "cpu": cpu}
+
+
+def device_line(since: dict | None = None) -> str:
+    """Where the indicator series since ``since`` (a ``tally()``) ran, e.g.
+    ``GPU (NVIDIA GeForce RTX 5090, 16,610 series); CPU: compiled per-row kernels (gpu = False) 3,020``."""
+    now, before = tally(), since or {"gpu": 0, "cpu": {}}
+    gpu = now["gpu"] - before["gpu"]
+    cpu = {r: n - before["cpu"].get(r, 0) for r, n in now["cpu"].items()}
+    cpu = sorted(((r, n) for r, n in cpu.items() if n > 0), key=lambda item: -item[1])
+    parts = []
+    if gpu > 0:
+        parts.append(f"{device_note()[:-1]}, {gpu:,} series)")
+    if cpu:
+        parts.append("CPU: " + ", ".join(f"{r} {n:,}" for r, n in cpu))
+    return "; ".join(parts) or "no indicator series computed"
+
+
 def ops_for(device: str = "auto"):
     """The operations of one device: ``"cpu"``, ``"gpu"`` or ``"auto"`` (GPU when available)."""
     if device == "cpu":
@@ -1351,16 +1409,18 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
     for key in ("gpu_series", "cpu_series", "retried"):
         stats.setdefault(key, 0)
 
-    def one(i):
+    def one(i, reason):
         try:
             out[i] = _check_output(name, indicator._compute(frames[i]), len(frames[i]))
         except Exception as exc:  # noqa: BLE001
             out[i] = exc
         stats["cpu_series"] += 1
+        _count("cpu", 1, reason)
 
+    where, reason = device_for(indicator, device)
     if not type(indicator).has_batch():
         for i in ok:
-            one(i)
+            one(i, reason)
         return out
     # A script whose logic steps bar by bar sets ``gpu = False``: batched on the CPU it is faster
     # than thousands of tiny GPU launches. "auto" honours that; an explicit device does not.
@@ -1383,7 +1443,7 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
                 pacer.done()
                 stats["retried"] += len(chunk)
                 for i in chunk:
-                    one(i)
+                    one(i, "batch failed, retried per series")
                 continue
             pacer.done()
             for row, i in zip(values, chunk):
@@ -1392,6 +1452,7 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
                 except Exception as exc:  # noqa: BLE001
                     out[i] = exc
             stats["gpu_series" if ops is not NUMPY else "cpu_series"] += len(chunk)
+            _count("gpu" if ops is not NUMPY else "cpu", len(chunk), reason)
     return out
 
 

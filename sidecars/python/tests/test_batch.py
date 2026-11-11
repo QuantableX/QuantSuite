@@ -176,3 +176,24 @@ class GpuFirstLintTests(unittest.TestCase):
                "    batched = True\n\n    def score(self, b):\n        return rc.sma(b.close, 5) - b.close\n\n\n"
                "REGISTER = {'probe': Probe}\n")
         self.assertFalse(any("GPU-first" in m for m in self._messages(src)))
+
+
+class DeviceLineTests(unittest.TestCase):
+    """Jobs say where indicator series ran (GPU-first rule): never a silent CPU fallback."""
+
+    def test_cpu_series_name_their_reason(self):
+        before = B.tally()
+        B._count("cpu", 3, "compiled per-row kernels (gpu = False)")
+        self.assertEqual(B.device_line(before), "CPU: compiled per-row kernels (gpu = False) 3")
+
+    def test_nothing_computed(self):
+        self.assertEqual(B.device_line(B.tally()), "no indicator series computed")
+
+    def test_unbatched_script_is_labelled(self):
+        class Old:
+            gpu = True
+
+            @classmethod
+            def has_batch(cls):
+                return False
+        self.assertEqual(B.device_label(Old()), "CPU: no batch form (one series at a time)")

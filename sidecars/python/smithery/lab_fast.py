@@ -359,6 +359,9 @@ class FastSystem:
             if fast and pairs:
                 batched.append((g, pairs, fast))
         done, total, started = 0, len(tasks) + sum(len(pairs) for _, pairs, _ in batched), time.monotonic()
+        from . import contract
+        from .batch import _count, device_line, tally
+        counted = tally()
 
         def store(result, rows=None):
             g, p, bars, values, errors = result
@@ -391,6 +394,7 @@ class FastSystem:
                 self.progress(f"Signals: {done:,} of {total:,} pair computations · {time.monotonic() - started:,.0f} s",
                               0.05 + 0.85 * done / max(total, 1))
 
+        single = contract._SINGLE[0]
         if self.workers > 1 and len(tasks) > 4:
             threads.one_for_children()
             with ProcessPoolExecutor(max_workers=min(self.workers, total), mp_context=mp.get_context("spawn"),
@@ -405,6 +409,12 @@ class FastSystem:
                 store(_votes_task(task[:7]), task[7])
                 done += 1
                 tick()
+        # Where the series ran, never silently: the unbatched ones are counted once, here.
+        contract._SINGLE[0] = single
+        _count("cpu", sum(len(task[7]) for task in tasks),
+               "no batch form (one series at a time)" if use_batch else "batch off (SMITHERY_BATCH=0)")
+        self.devices = device_line(counted)
+        self.progress(f"Indicator series: {self.devices}", 0.9)
         for array in arrays.values():
             array.flush()
 
@@ -412,7 +422,8 @@ class FastSystem:
         meta = {"mode": self.config.mode, "keys": self.keys, "failed": self.failed, "key_start": self.key_start,
                 "groups": [{**asdict(g), "gate": None if g.gate is None else len(g.gate)} for g in self.groups],
                 "pairs": [list(p) for p in self.pairs], "bars": len(self.dates), "full_bars": len(self.full),
-                "first_bar": str(self.dates[0]), "last_bar": str(self.dates[-1]), "assets": self.assets}
+                "first_bar": str(self.dates[0]), "last_bar": str(self.dates[-1]), "assets": self.assets,
+                "devices": getattr(self, "devices", None)}
         (self.folder / "cube.json").write_text(json.dumps(meta, default=str), encoding="utf-8")
         with (self.folder / "state.pkl").open("wb") as stream:
             pickle.dump({name: getattr(self, name) for name in _STATE}, stream)

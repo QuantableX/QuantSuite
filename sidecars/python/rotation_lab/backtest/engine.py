@@ -648,6 +648,8 @@ class BacktestEngine:
         runs: list[StrategyRun] = []
         skipped: list[dict[str, str]] = []
         bah: dict[str, pd.Series] = {}
+        from smithery.batch import device_line, tally
+        counted = tally()
         for i, kind in enumerate(kinds):
             variant = _variant_config(config, kind)
             label = _trend_label(variant.indicator)
@@ -692,6 +694,13 @@ class BacktestEngine:
                         else list(held.attrs.get("trades", []))),
                 weights=weights,
             ))
+        # Where the indicator series ran, never silently: "GPU (<card>, n series)" or "CPU: <reason> n".
+        devices = device_line(counted)
+        if devices != "no indicator series computed":
+            if not _batch_votes.enabled():
+                devices += " (batch off: SMITHERY_BATCH=0)"
+            notes.append(f"Indicator series: {devices}.")
+            _tick(f"Indicator series: {devices}", 0.9)
         if not runs:
             _tick("Done — no compatible strategies", 1.0)
             return BacktestResult(
@@ -1003,9 +1012,15 @@ class BacktestEngine:
                     estimated = (time.perf_counter() - started) * len(remaining)
                     threshold = _PARALLEL_MIN_SECONDS * (0.15 if parallel.pool_ready() else 1.0)
                     if estimated >= threshold:
+                        from smithery import contract as _contract
+                        from smithery.batch import _count
+                        single = _contract._SINGLE[0]
                         signals = parallel.pmap(_pair_worker,
                             [(frames[a], frames.get(b), config.indicator) for a, b in remaining],
                             max_workers=workers)
+                        # Counted once, here: the workers' own counts stay in the workers.
+                        _contract._SINGLE[0] = single
+                        _count("cpu", len(remaining), "process pool, one series per call")
                         for (a, b), sig in zip(remaining, signals):
                             signal_cache[a, b or USD_SYMBOL] = sig.reindex(
                                 master_idx, fill_value=0).to_numpy(dtype=np.int8)

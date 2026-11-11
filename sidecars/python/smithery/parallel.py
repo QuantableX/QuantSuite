@@ -161,7 +161,13 @@ def signals_batch(ind, frames, min_parallel: int = 4) -> list:
     time grid, GPU when the script allows and CUDA is there) for scripts with the batch form,
     else the process pool as before. Raises the first frame's error, as signal() would."""
     if not type(ind).has_batch():
-        return pmap(eval_signal, [(ind, df) for df in frames], min_parallel=min_parallel)
+        from . import contract
+        from .batch import _count, device_for
+        before = contract._SINGLE[0]
+        out = pmap(eval_signal, [(ind, df) for df in frames], min_parallel=min_parallel)
+        contract._SINGLE[0] = before  # in-process calls are counted once, here
+        _count("cpu", len(frames), device_for(ind)[1])
+        return out
     from .batch import signals
     out = []
     for res in signals(ind, list(frames)):
