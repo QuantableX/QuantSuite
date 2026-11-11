@@ -1317,17 +1317,19 @@ class Batch:
         return np.stack([indicator.signal(df).to_numpy() for df in self.frames()])
 
     @classmethod
-    def from_frames(cls, frames: list, ops=None) -> "Batch":
-        """Frames on one index (checked) as one batch."""
+    def from_frames(cls, frames: list, ops=None, columns: list | None = None) -> "Batch":
+        """Frames on one index (checked) as one batch. ``columns``: each frame's ``_columns``,
+        when the caller has read them already."""
         ops = ops or NUMPY
         index = frames[0].index
         for f in frames[1:]:
             if not f.index.equals(index):
                 raise ValueError("A batch needs frames on one time grid; group them with group_frames")
+        columns = columns or [_columns(f) for f in frames]
         cols = {}
         for name in OHLCV:
-            if all(name in f.columns for f in frames):
-                cols[name] = ops.asarray(np.stack([f[name].to_numpy(dtype=float) for f in frames]))
+            if all(name in c for c in columns):
+                cols[name] = ops.asarray(np.stack([c[name] for c in columns]))
         return cls(cols, index, ops)
 
     @classmethod
@@ -1357,8 +1359,22 @@ def group_frames(frames: list) -> list[list[int]]:
 DEFAULT_GPU_CELLS = 6_000_000
 
 
-def _check_frame(name: str, df: pd.DataFrame) -> None:
-    """The input checks of TrendIndicator.signal, for one frame."""
+def _columns(df: pd.DataFrame) -> dict:
+    """A frame's OHLCV columns as float arrays, read once: one ``to_numpy`` for an all-float frame
+    (the same values as column by column, without a pandas lookup per column)."""
+    names = [c for c in OHLCV if c in df.columns]
+    try:
+        dtypes = df._mgr.get_dtypes()
+    except AttributeError:
+        dtypes = df.dtypes
+    if names and df.columns.is_unique and all(dtype == np.float64 for dtype in dtypes):
+        block = df.to_numpy()
+        return {n: block[:, p] for n, p in zip(names, df.columns.get_indexer(names))}
+    return {n: df[n].to_numpy(dtype=float) for n in names}
+
+
+def _check_frame(name: str, df: pd.DataFrame) -> dict:
+    """The input checks of TrendIndicator.signal, for one frame. Returns its ``_columns``."""
     if not isinstance(df.index, pd.DatetimeIndex):
         raise TypeError(f"{name}: df must have a DatetimeIndex")
     missing = [c for c in OHLCV[:4] if c not in df.columns]
@@ -1366,10 +1382,12 @@ def _check_frame(name: str, df: pd.DataFrame) -> None:
         raise ValueError(f"{name}: missing columns {missing}")
     if not df.index.is_monotonic_increasing or not df.index.is_unique:
         raise ValueError(f"{name}: timestamps must be ordered and unique")
+    columns = _columns(df)
     for column in OHLCV[:4]:
-        prices = df[column].to_numpy(dtype=float)
+        prices = columns[column]
         if not np.isfinite(prices).all() or (prices <= 0).any():
             raise ValueError(f"{name}: OHLC prices must be finite and positive")
+    return columns
 
 
 def _check_output(name: str, raw: np.ndarray, bars: int) -> np.ndarray:
@@ -1407,9 +1425,10 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
     name = getattr(indicator, "name", type(indicator).__name__)
     out: list = [None] * len(frames)
     ok: list[int] = []
+    columns: dict = {}
     for i, df in enumerate(frames):
         try:
-            _check_frame(name, df)
+            columns[i] = _check_frame(name, df)
         except Exception as exc:  # noqa: BLE001 — the frame's own signal() raises the same
             out[i] = exc
             continue
@@ -1449,7 +1468,7 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
             pacer = pace.Pacer(sync=(ops.torch.cuda.synchronize if ops is not NUMPY else None))
             pacer.start()
             try:
-                b = Batch.from_frames([frames[i] for i in chunk], ops)
+                b = Batch.from_frames([frames[i] for i in chunk], ops, [columns[i] for i in chunk])
                 res = indicator._compute_batch(b)
                 values = res.to_numpy() if hasattr(res, "to_numpy") else np.asarray(res)
             except Exception:  # noqa: BLE001 — isolate the failing series on the CPU
