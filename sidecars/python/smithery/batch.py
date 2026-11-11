@@ -1205,6 +1205,21 @@ class Batch:
     def device(self) -> str:
         return self.ops.name
 
+    def frames(self) -> list:
+        """The batch as one pandas frame per series (CPU), for members without the batch form."""
+        cols = {name: self.ops.to_numpy(a) for name, a in self._cols.items()}
+        return [pd.DataFrame({name: arr[i] for name, arr in cols.items()}, index=self.index)
+                for i in range(self.size)]
+
+    def signals_of(self, indicator):
+        """Another indicator's -1/0/+1 votes for every series of this batch as a numpy [S, T] array:
+        its batch form when it has one, else its signal() per series (consensus members)."""
+        if type(indicator).has_batch():
+            out = indicator._compute_batch(self)
+            values = out.to_numpy() if hasattr(out, "to_numpy") else np.asarray(out)
+            return np.stack([_check_output(indicator.name, row, self.bars) for row in values])
+        return np.stack([indicator.signal(df).to_numpy() for df in self.frames()])
+
     @classmethod
     def from_frames(cls, frames: list, ops=None) -> "Batch":
         """Frames on one index (checked) as one batch."""
@@ -1758,3 +1773,19 @@ def rma_gpu(ops, a, valid, n):
     y = linear_scan(ops, 1.0 - 1.0 / n, u)
     y = t.where(after | at, y, t.full_like(y, float("nan")))
     return t.where(broken, t.full_like(y, float("nan")), y)
+
+
+def per_row(fn, *args, **kwargs):
+    """A one-series numpy function on every series of batch columns (CPU, the same code per row):
+    each Col argument is replaced by one row; the results are stacked into a column. For library
+    helpers that are not vectorised across series yet."""
+    cols = [a for a in args if isinstance(a, Col)]
+    if not cols:
+        return fn(*args, **kwargs)
+    first = cols[0]
+    arrays = [a.to_numpy() if isinstance(a, Col) else a for a in args]
+    rows = []
+    for i in range(first.shape[0]):
+        row_args = [arr[i] if isinstance(a, Col) else arr for arr, a in zip(arrays, args)]
+        rows.append(np.asarray(fn(*row_args, **kwargs), dtype=float))
+    return first.k.col(np.stack(rows))
