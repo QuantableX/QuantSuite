@@ -17,6 +17,7 @@ import inspect
 import json
 import re
 import sys
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -90,7 +91,38 @@ def is_certified(verdict: dict | None) -> bool:
     return float(verdict.get("score", 0)) >= CERTIFY_SCORE and p is not None and float(p) <= CERTIFY_PERM_P
 
 
+# Inside ``held_tables`` each track's table is built once. Every verdict merges the whole ledger and
+# every version's evidence, so a pass over all keys rebuilt it three times per key (quadratic: about a
+# second per key on a loaded machine, an hour for describe_all of 3,314 keys).
+_TABLES: dict | None = None
+
+
+@contextmanager
+def held_tables():
+    """A read-only pass over many keys: the certification tables are built once and the library's
+    file state is read once. Nothing inside may change a run, a version or a script."""
+    global _TABLES
+    if _TABLES is not None:
+        yield
+        return
+    from .variants import held_library_state
+    _TABLES = {}
+    try:
+        with held_library_state():
+            yield
+    finally:
+        _TABLES = None
+
+
 def certification_table(timeframe: str = "1d") -> dict[str, dict]:
+    if _TABLES is not None:
+        if timeframe not in _TABLES:
+            _TABLES[timeframe] = _certification_table(timeframe)
+        return _TABLES[timeframe]
+    return _certification_table(timeframe)
+
+
+def _certification_table(timeframe: str) -> dict[str, dict]:
     if timeframe not in TIMEFRAMES:
         raise KeyError(f"unknown certification track '{timeframe}' — one of {TIMEFRAMES}")
     from .variants import version_evidence
@@ -170,7 +202,8 @@ def certified_keys(timeframe: str = "all") -> list[str]:
     """Registry keys certified on a track — or, by default, on EVERY track
     (the overall verdict) — best score first."""
     if timeframe == "all":
-        verdicts = {k: overall_verdict(k) for k in REGISTRY}
+        with held_tables():
+            verdicts = {k: overall_verdict(k) for k in REGISTRY}
         keys = [k for k, v in verdicts.items() if v and v["certified"]]
         return sorted(keys, key=lambda k: -verdicts[k]["score"])
     table = certification_table(timeframe)
@@ -225,6 +258,11 @@ def describe(key: str) -> dict:
     }
 
 
+def _describe_every_key() -> list[dict]:
+    with held_tables():
+        return [describe(k) for k in REGISTRY]
+
+
 def describe_all() -> dict:
     from . import __version__
     from .contract import CONTRACT_VERSION
@@ -236,7 +274,7 @@ def describe_all() -> dict:
         "version": __version__,
         "contract_version": CONTRACT_VERSION,
         "timeframes": list(TIMEFRAMES),
-        "indicators": [describe(k) for k in REGISTRY],
+        "indicators": _describe_every_key(),
         "unavailable_variants": list(UNAVAILABLE),
     }
 

@@ -110,6 +110,15 @@ def _registry():
 
 
 def listing() -> dict:
+    try:
+        from .registry import held_tables
+    except Exception:  # noqa: BLE001 — the registry's own import error is reported by _registry
+        return _listing()
+    with held_tables():
+        return _listing()
+
+
+def _listing() -> dict:
     from . import __version__
 
     registry, describe, discovery_errors, discovered, certified, registry_error = _registry()
