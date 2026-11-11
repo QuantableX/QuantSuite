@@ -1812,3 +1812,10 @@ def per_row(fn, *args, **kwargs):
         row_args = [pd.Series(arr[i]) if isinstance(a, Col) else arr for arr, a in zip(arrays, args)]
         rows.append(np.asarray(fn(*row_args, **kwargs), dtype=float))
     return first.k.col(np.stack(rows))
+
+
+def per_frame(fn, b, *args, **kwargs):
+    """A one-frame helper (it takes a pandas OHLCV frame) on every series of a batch (CPU, the
+    same code per series, with the series' own dates); results stacked into a column."""
+    rows = [np.asarray(fn(df, *args, **kwargs), dtype=float) for df in b.frames()]
+    return b.k.col(np.stack(rows))
