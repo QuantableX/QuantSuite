@@ -916,6 +916,10 @@ class Rolling:
     def quantile(self, q: float, interpolation: str = "linear"):
         return self._go("quantile", q, interpolation=interpolation)
 
+    def rank(self, method: str = "average", ascending: bool = True, pct: bool = False):
+        """pandas' rolling rank of the newest bar in each window (through pandas)."""
+        return self._go("rank", method=method, ascending=ascending, pct=pct)
+
     def corr(self, other):
         c = self.col
         return Col(c.ops.rolling_pair(c.a, other.a, self.n, self.mp, "corr"), c.ops)
