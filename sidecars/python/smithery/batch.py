@@ -1721,7 +1721,11 @@ def _positional_count(function) -> int:
         params = inspect.signature(function).parameters.values()
     except (TypeError, ValueError):
         return 2
-    return sum(1 for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD) and p.default is p.empty)
+    params = list(params)
+    if any(p.kind == p.VAR_POSITIONAL for p in params):
+        return 2
+    # (w, xp=np) counts as two: such functions take the namespace and run on the GPU too
+    return sum(1 for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD))
 
 
 def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> Col:
