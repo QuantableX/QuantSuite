@@ -1715,6 +1715,15 @@ class _TorchNP:
         return self.t.linalg
 
 
+def _positional_count(function) -> int:
+    import inspect
+    try:
+        params = inspect.signature(function).parameters.values()
+    except (TypeError, ValueError):
+        return 2
+    return sum(1 for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD) and p.default is p.empty)
+
+
 def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> Col:
     """``function(block, xp)`` on every complete, all-finite window of ``length`` bars of every
     series: ``block`` is [rows, length], ``xp`` numpy (CPU) or the GPU's numpy-like namespace,
@@ -1726,6 +1735,10 @@ def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> 
     out = ops.full((S, T), float("nan"))
     if T < length:
         return Col(out, ops)
+    if _positional_count(function) == 1:
+        # An old one-argument window function (numpy blocks): the same call as before.
+        one = function
+        function = (lambda block, xp: one(block)) if ops is NUMPY else (lambda block, xp: xp.asarray(one(xp.asnumpy(block))))
     win = ops.windows(_float(ops, col.a), length)            # [S, W, L]
     W = win.shape[1]
     block = win.reshape(S * W, length)
