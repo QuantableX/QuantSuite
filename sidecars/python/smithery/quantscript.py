@@ -504,6 +504,44 @@ def _marker(severity: str, line, column, message: str, end_line=None, end_column
     }
 
 
+BATCH_METHODS = ("_compute_batch", "score")
+
+
+def _batch_hints(tree: ast.Module) -> list[dict]:
+    """The GPU-first rule inside batched methods: no per-bar Python loop (compile it with
+    smithery.jit or vectorise it), no pandas .apply. A research script (a class with
+    ``score``) without ``batched = True`` still computes one series at a time."""
+    hints: list[dict] = []
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        attrs = {t.id: n.value for n in node.body if isinstance(n, ast.Assign)
+                 for t in n.targets if isinstance(t, ast.Name)}
+        methods = {n.name: n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        if "score" in methods and "_compute_batch" not in methods:
+            batched = attrs.get("batched")
+            if not (isinstance(batched, ast.Constant) and batched.value is True):
+                hints.append(_marker("warning", node.lineno, node.col_offset + 1,
+                                     f"{node.name} scores one series at a time: set `batched = True` and write "
+                                     "score(self, b) for every series at once (GPU-first rule)"))
+        for name in BATCH_METHODS:
+            fn = methods.get(name)
+            if fn is None:
+                continue
+            for sub in ast.walk(fn):
+                if isinstance(sub, (ast.For, ast.While)):
+                    loop = ast.unparse(sub.iter) if isinstance(sub, ast.For) else ""
+                    if isinstance(sub, ast.While) or "range(" in loop and ("len(" in loop or "shape" in loop):
+                        hints.append(_marker("warning", sub.lineno, sub.col_offset + 1,
+                                             "a per-bar Python loop: compile it (smithery.jit njit/prange, "
+                                             "one row per series) or vectorise it (GPU-first rule)"))
+                elif isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr in ("apply", "iterrows"):
+                    hints.append(_marker("warning", sub.lineno, sub.col_offset + 1,
+                                         f".{sub.func.attr} runs Python per window or row: use rolling_apply with "
+                                         "a (w, xp) function or a compiled kernel (GPU-first rule)"))
+    return hints
+
+
 def _contract_hints(tree: ast.Module) -> list[dict]:
     """What the parser cannot see but the contract will: an indicator class
     without ``_compute`` or ``name``, a REGISTER that is not a dict of
@@ -521,9 +559,13 @@ def _contract_hints(tree: ast.Module) -> list[dict]:
                 continue
             methods = {n.name for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
             attrs = {t.id for n in node.body if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
-            if "_compute" not in methods:
+            if "_compute" not in methods and "_compute_batch" not in methods:
                 hints.append(_marker("warning", node.lineno, node.col_offset + 1,
-                                     f"{node.name} has no _compute(self, df) — the contract's one abstract method"))
+                                     f"{node.name} has no _compute_batch(self, b) — the contract's batched method"))
+            elif "_compute_batch" not in methods:
+                hints.append(_marker("warning", node.lineno, node.col_offset + 1,
+                                     f"{node.name} computes one series at a time (_compute): write _compute_batch(self, b) "
+                                     "so a call covers every series (GPU-first rule)"))
             if "name" not in attrs:
                 hints.append(_marker("warning", node.lineno, node.col_offset + 1,
                                      f'{node.name} sets no `name = "..."` — reports and the roster would call it "abstract"'))
@@ -641,6 +683,7 @@ def lint(candidate: Path) -> dict:
             markers.append(_marker("warning", getattr(w, "lineno", 1), 1, str(w.message)))
     if isinstance(tree, ast.Module) and not any(m["severity"] == "error" for m in markers):
         markers.extend(_contract_hints(tree))
+        markers.extend(_batch_hints(tree))
         markers.extend(_requires_hints(tree))
         markers.extend(_schema_hints(tree))
     markers.sort(key=lambda m: (m["line"], m["column"]))
@@ -667,9 +710,8 @@ QuantAlgo → Smithery, never from this file.
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 
-from ..contract import TrendIndicator, hysteresis_flip
+from ..contract import TrendIndicator
 
 
 class {class_name}(TrendIndicator):
@@ -692,19 +734,20 @@ class {class_name}(TrendIndicator):
     def default_params(cls):
         return {{"fast": 20, "slow": 100, "band": 0.25, "vol_halflife": 20}}
 
-    def _compute(self, df: pd.DataFrame) -> np.ndarray:
-        close = df["close"].astype(float)
+    def _compute_batch(self, b):
+        # GPU first: `b` holds every series of a call ([series x bars] columns with the
+        # pandas operations; b.k has hysteresis, warmup, ...). The same code runs on the
+        # GPU when CUDA is there and on the CPU (pandas, bit for bit) when it is not.
+        close = b.close
         fast = close.ewm(span=int(self.params["fast"])).mean()
         slow = close.ewm(span=int(self.params["slow"])).mean()
         r = np.log(close).diff()
         vol = r.ewm(halflife=int(self.params["vol_halflife"])).std().shift(1)
         # Distance of the fast average from the slow one, relative to price
         # and in units of volatility: dimensionless, so a rescaled price
-        # series gives the same verdict (scale invariance). `np.array` copies —
-        # pandas hands out read-only views under copy-on-write.
-        score = np.array((fast - slow) / slow / vol.clip(lower=1e-9), dtype=float)
-        score[: int(self.params["slow"])] = np.nan
-        return hysteresis_flip(score, float(self.params["band"]))
+        # series gives the same verdict (scale invariance).
+        score = b.k.warmup((fast - slow) / slow / vol.clip(lower=1e-9), int(self.params["slow"]))
+        return b.k.hysteresis(score, float(self.params["band"]))
 
 
 # QuantScript registers this script through these names — nobody edits

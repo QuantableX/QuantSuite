@@ -146,3 +146,33 @@ class GpuIsCpu(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GpuFirstLintTests(unittest.TestCase):
+    """quantscript lint warns about scripts that are not written for the batch (GPU-first rule)."""
+
+    def _messages(self, source):
+        import tempfile
+        from pathlib import Path
+        from smithery.quantscript import lint
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "probe.py"
+            path.write_text(source, encoding="utf-8")
+            return [m["message"] for m in lint(path)["markers"]]
+
+    def test_one_series_compute_is_flagged(self):
+        src = ("from ..contract import TrendIndicator\n\n\nclass Probe(TrendIndicator):\n    name = 'Probe'\n\n"
+               "    def _compute(self, df):\n        return df.close * 0\n\n\nREGISTER = {'probe': Probe}\n")
+        self.assertTrue(any("_compute_batch" in m for m in self._messages(src)))
+
+    def test_bar_loop_in_batch_method_is_flagged(self):
+        src = ("from ..contract import TrendIndicator\n\n\nclass Probe(TrendIndicator):\n    name = 'Probe'\n\n"
+               "    def _compute_batch(self, b):\n        x = b.close.to_numpy()\n"
+               "        for i in range(x.shape[1]):\n            x[:, i] = 0\n        return x\n\n\nREGISTER = {'probe': Probe}\n")
+        self.assertTrue(any("per-bar Python loop" in m for m in self._messages(src)))
+
+    def test_batched_research_script_is_clean(self):
+        src = ("from . import research_common as rc\n\n\nclass Probe(rc.ResearchTrend):\n    name = 'Probe'\n"
+               "    batched = True\n\n    def score(self, b):\n        return rc.sma(b.close, 5) - b.close\n\n\n"
+               "REGISTER = {'probe': Probe}\n")
+        self.assertFalse(any("GPU-first" in m for m in self._messages(src)))
