@@ -784,9 +784,31 @@ class Col:
     def diff(self, periods: int = 1):
         return self._w(_float(self.ops, self.a) - self.ops.shift(self.a, int(periods)))
 
-    def pct_change(self, periods: int = 1):
+    def pct_change(self, periods: int = 1, fill_method=None):
+        if fill_method not in (None,):
+            raise TypeError("pct_change(fill_method=...) is not supported in a batch")
         prev = self.ops.shift(self.a, int(periods))
         return self._w(_div(self.ops, _float(self.ops, self.a), prev) - 1)
+
+    # pandas' method spellings of the operators
+    def add(self, o): return self + o
+    def sub(self, o): return self - o
+    def mul(self, o): return self * o
+    def div(self, o): return self / o
+    truediv = div
+    def pow(self, o): return self ** o
+    def radd(self, o): return o + self
+    def rsub(self, o): return o - self
+    def rmul(self, o): return o * self
+    def rdiv(self, o): return o / self
+    def lt(self, o): return self < o
+    def le(self, o): return self <= o
+    def gt(self, o): return self > o
+    def ge(self, o): return self >= o
+    def eq(self, o): return self == o
+    def ne(self, o): return self != o
+    def sqrt(self): return np.sqrt(self)
+    def neg(self): return -self
 
     def where(self, cond, other=np.nan):
         return self._w(self.ops.where(_raw(cond), _float(self.ops, self.a), self._v(other)))
@@ -1786,6 +1808,7 @@ def per_row(fn, *args, **kwargs):
     arrays = [a.to_numpy() if isinstance(a, Col) else a for a in args]
     rows = []
     for i in range(first.shape[0]):
-        row_args = [arr[i] if isinstance(a, Col) else arr for arr, a in zip(arrays, args)]
+        # A Series row suits both kinds of helper (numpy-style np.asarray, pandas-style .rolling).
+        row_args = [pd.Series(arr[i]) if isinstance(a, Col) else arr for arr, a in zip(arrays, args)]
         rows.append(np.asarray(fn(*row_args, **kwargs), dtype=float))
     return first.k.col(np.stack(rows))
