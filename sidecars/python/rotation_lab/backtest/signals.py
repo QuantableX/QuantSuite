@@ -46,21 +46,39 @@ def _bar(index: pd.Index) -> pd.Timedelta:
     return steps.median() if len(steps) else pd.Timedelta(days=1)
 
 
-def bounded(df: pd.DataFrame, compute, bars: int) -> pd.Series:
-    """``compute(df)``, evaluated block by block with ``bars`` bars of history before each block."""
+def block_windows(df: pd.DataFrame, bars: int) -> list[tuple[pd.Timestamp | None, pd.DataFrame]]:
+    """The windows ``bounded`` evaluates: (block start, block with ``bars`` bars of history before
+    it), or one window (None, df) when there are no blocks. Shared with the batch prefill, so a
+    prefilled vote is computed on exactly the window ``bounded`` asks for."""
     if df.empty or bars <= 0:
-        return compute(df)
+        return [(None, df)]
     index = df.index
     history = _bar(index) * bars
-    start, last, parts = block_start(index[0]), index[-1], []
+    start, last, out = block_start(index[0]), index[-1], []
     while start <= last:
         end = start + HISTORY_BLOCK
         window = df[(index >= start - history) & (index < end)]
         if (window.index >= start).any():
-            part = compute(window)
-            parts.append(part[part.index >= start])
+            out.append((start, window))
         start = end
-    return pd.concat(parts) if parts else compute(df)
+    return out or [(None, df)]
+
+
+def bounded(df: pd.DataFrame, compute, bars: int) -> pd.Series:
+    """``compute(df)``, evaluated block by block with ``bars`` bars of history before each block."""
+    windows = block_windows(df, bars)
+    if windows[0][0] is None:
+        return compute(windows[0][1])
+    parts = []
+    for start, window in windows:
+        part = compute(window)
+        parts.append(part[part.index >= start])
+    return pd.concat(parts)
+
+
+# Votes computed ahead in batches (rotation_lab.backtest.batch_votes): window key -> votes.
+# None when no batch prefill is active; member_signal then computes every window itself.
+_BATCH_MEMO: dict | None = None
 
 
 def member_signal(df: pd.DataFrame, kind: TrendKind, cfg: IndicatorConfig | None = None) -> pd.Series:
@@ -71,6 +89,14 @@ def member_signal(df: pd.DataFrame, kind: TrendKind, cfg: IndicatorConfig | None
     from . import vote_store
     from .smithery import WARMUP_BARS
     compute = lambda frame: _smithery(frame, kind, cfg)
+    memo = _BATCH_MEMO
+    if memo:
+        overrides = indicator_overrides(kind, cfg.params.get(kind)) if cfg is not None else {}
+        direct = compute
+
+        def compute(frame, direct=direct):
+            hit = memo.get(vote_store.window_key(kind, overrides, frame))
+            return hit if hit is not None else direct(frame)
     store = vote_store.active()
     if store is not None:
         overrides = indicator_overrides(kind, cfg.params.get(kind)) if cfg is not None else {}

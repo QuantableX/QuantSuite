@@ -52,6 +52,8 @@ from ..data.ranking.registry import RankingRegistry
 from ..data.ranking.base import RankedCoin
 from .market import breakout_warmup, market_gate, market_index
 from .metrics import PerformanceMetrics, compute_metrics
+from . import batch_votes as _batch_votes
+from . import signals as _signals_mod
 from .signals import (IndicatorDataUnavailable, aggregate_members, block_start, direction_signal, is_custom, pair_signal, trend_signal,
                       warmup_bars)
 
@@ -918,6 +920,21 @@ class BacktestEngine:
         *,
         parallel_pairs: bool = False,
     ) -> tuple[pd.Series, pd.Series, list[dt.date], dict[str, pd.Series]]:
+        # Member votes for every pair the walk will compare are computed ahead in batches
+        # (GPU when available); the walk then reads them (batch_votes, same votes by construction).
+        with _batch_votes.active():
+            return self._simulate_walk(config, universe, frames, notes, gate, parallel_pairs=parallel_pairs)
+
+    def _simulate_walk(
+        self,
+        config: RunConfig,
+        universe: UniverseTimeline,
+        frames: dict[str, pd.DataFrame],
+        notes: list[str],
+        gate: pd.Series | None = None,
+        *,
+        parallel_pairs: bool = False,
+    ) -> tuple[pd.Series, pd.Series, list[dt.date], dict[str, pd.Series]]:
         # Master daily index: union of all coin frames, restricted to range
         if not frames:
             return pd.Series(dtype=float), pd.Series(dtype=object), [], {}
@@ -935,6 +952,7 @@ class BacktestEngine:
         # Align a pair once instead of looking up timestamps for every bar.
         # Keep direction in the key: B/A is not necessarily the inverse of A/B.
         signal_cache: dict[tuple[str, str], np.ndarray] = {}
+        prefilled = [False]
         custom_scorer = self._score_universe is not _DEFAULT_SCORER
         original_signals: dict[tuple[str, str | None], pd.Series] = {}
 
@@ -972,7 +990,7 @@ class BacktestEngine:
                      and a in frames and (b is None or b in frames)]
             rows = max((len(frames[a]) for a, _ in pairs), default=0)
             if (parallel_pairs and config.indicator.trend != "ema_cross" and len(pairs) >= 5
-                    and rows >= 512):
+                    and rows >= 512 and not prefilled[0]):
                 try:
                     workers = max(1, min(8, int(os.environ.get("ROTATION_LAB_WORKERS", "8"))))
                 except ValueError:
@@ -1005,6 +1023,17 @@ class BacktestEngine:
             step=bar_step(config.cadence))
         # Bars that compare the same coins in the same order are scored together.
         compare_end = run_ends(compare_lists)
+
+        if _signals_mod._BATCH_MEMO is not None and config.indicator.trend != "ema_cross":
+            wanted: set = set()
+            for syms in {tuple(s) for s in compare_lists if s}:
+                for i, a in enumerate(syms):
+                    for b in ([None] if config.include_usd else []) + list(syms[i + 1:]):
+                        if a in frames and (b is None or b in frames):
+                            wanted.add((a, b))
+            ordered = sorted(wanted, key=lambda pair: (pair[0], pair[1] or ""))
+            _batch_votes.prefill([(frames[a], frames.get(b) if b else None) for a, b in ordered], config.indicator)
+            prefilled[0] = True
 
         if config.portfolio is not None:
             return self._walk_portfolio(config, frames, master_idx, returns, gate_values,
