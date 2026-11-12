@@ -1931,17 +1931,50 @@ def per_row(fn, *args, **kwargs):
     if not cols:
         return fn(*args, **kwargs)
     first = cols[0]
-    arrays = [a.to_numpy() if isinstance(a, Col) else a for a in args]
-    rows = []
-    for i in range(first.shape[0]):
-        # A Series row suits both kinds of helper (numpy-style np.asarray, pandas-style .rolling).
-        row_args = [pd.Series(arr[i]) if isinstance(a, Col) else arr for arr, a in zip(arrays, args)]
-        rows.append(np.asarray(fn(*row_args, **kwargs), dtype=float))
-    return first.k.col(np.stack(rows))
+    kinds = [isinstance(a, Col) for a in args]
+    arrays = [a.to_numpy() if kind else a for a, kind in zip(args, kinds)]
+    tasks = [(fn, [arr[i] if kind else arr for arr, kind in zip(arrays, kinds)], kinds, kwargs)
+             for i in range(first.shape[0])]
+    return first.k.col(np.stack(_fan_out(_row_call, tasks)))
 
 
 def per_frame(fn, b, *args, **kwargs):
     """A one-frame helper (it takes a pandas OHLCV frame) on every series of a batch (CPU, the
     same code per series, with the series' own dates); results stacked into a column."""
-    rows = [np.asarray(fn(df, *args, **kwargs), dtype=float) for df in b.frames()]
-    return b.k.col(np.stack(rows))
+    tasks = [(fn, df, args, kwargs) for df in b.frames()]
+    return b.k.col(np.stack(_fan_out(_frame_call, tasks)))
+
+
+# A helper that is not vectorised runs row by row. When the rows would take longer than this one
+# after another (timed on the first row), the rest go to the process pool, as the scripts' series
+# did before the batch form (the same function on the same data: the same results). Starting the
+# pool costs up to a minute (every worker loads the library), so a cold pool needs more work.
+PER_ROW_PARALLEL_SECONDS = 2.0
+PER_ROW_COLD_POOL_SECONDS = 60.0
+
+
+def _row_call(task):
+    fn, row_args, kinds, kwargs = task
+    # A Series row suits both kinds of helper (numpy-style np.asarray, pandas-style .rolling).
+    args = [pd.Series(a) if kind else a for a, kind in zip(row_args, kinds)]
+    return np.asarray(fn(*args, **kwargs), dtype=float)
+
+
+def _frame_call(task):
+    fn, df, args, kwargs = task
+    return np.asarray(fn(df, *args, **kwargs), dtype=float)
+
+
+def _fan_out(call, tasks: list) -> list:
+    import time
+    started = time.perf_counter()
+    out = [call(tasks[0])]
+    rest = tasks[1:]
+    from . import parallel
+    threshold = PER_ROW_PARALLEL_SECONDS if parallel.pool_ready() else PER_ROW_COLD_POOL_SECONDS
+    if rest and (time.perf_counter() - started) * len(rest) >= threshold:
+        try:
+            return out + parallel.pmap(call, rest, min_parallel=2)
+        except Exception:  # noqa: BLE001 — a helper that cannot travel (a lambda) runs here; a real error repeats below
+            pass
+    return out + [call(task) for task in rest]
