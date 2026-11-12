@@ -108,12 +108,11 @@ def simulated_results(ind, frames, cost: float, bars: int) -> list[tuple[float, 
         if not batch:
             return results
         if type(ind).has_batch():
-            # One batched call for the chunk's signals (same values as signal() per frame),
-            # then each chart's backtest.
+            # One batched call for the chunk's signals (same values as signal() per frame), then
+            # the charts' backtests across the pool as before (in the parent they ran one by one:
+            # for a cheap indicator the backtests are most of the work).
             sigs = signals_batch(ind, batch)
-            for frame, sig in zip(batch, sigs):
-                bt = backtest.run(frame, rehydrate(sig, frame.index), cost_bps=cost)
-                results.append((bt["total_log_ret"], bt["sharpe"]))
+            results.extend(pmap(eval_signal_total_sharpe, [(frame, sig, cost) for frame, sig in zip(batch, sigs)]))
         else:
             results.extend(pmap(eval_total_sharpe, [(ind, frame, cost) for frame in batch]))
         del batch
@@ -139,6 +138,14 @@ def eval_total_sharpe(task) -> tuple[float, float]:
     """(ind, df, cost_bps) -> (total_log_ret, sharpe). Lean MC worker."""
     ind, df, cost = task
     bt = backtest.run(df, ind.signal(df), cost_bps=cost)
+    return bt["total_log_ret"], bt["sharpe"]
+
+
+def eval_signal_total_sharpe(task) -> tuple[float, float]:
+    """(df, signal ndarray, cost_bps) -> (total_log_ret, sharpe): eval_total_sharpe for a signal
+    computed ahead (batched)."""
+    df, sig, cost = task
+    bt = backtest.run(df, rehydrate(sig, df.index), cost_bps=cost)
     return bt["total_log_ret"], bt["sharpe"]
 
 
