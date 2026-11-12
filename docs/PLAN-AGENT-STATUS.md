@@ -25,6 +25,11 @@ at once or one after another, for every agent.
 
 ## How it works
 
+Updated direction (2026-11-12, card 9c7402e4): the user prioritises readable
+progress over shell commands. Technical content is now collapsed by default;
+step counts, log counters and agent estimates are distinguished. The original
+elapsed/estimated-time request above does not justify an extrapolated ETA.
+
 ```
 agent ──report_progress (MCP)──┐
 script ──POST /progress/report─┤                    ┌─ drawer › Agent › Status (progress_board, 1 s poll)
@@ -42,17 +47,24 @@ shell hooks ─/quantprogress/───┘
   the client's name; a bar the session named differently before moves over.
   (Agents often name themselves only on the first call: the closing report
   used to open a second lane and leave the first bar stuck.)
-- **Bar math** — with `steps`: (finished steps + progress of the current step)
-  / steps; the current step's progress is the followed file, else
-  `step_percent`. Without steps: the followed file, else `percent`. Unknown →
-  an indeterminate bar. A new `step` starts empty (its text, percent and
-  followed file go unless given again).
-- **Time** — running: elapsed / ~total, where total is the agent's `estimate`
-  while it holds, else elapsed ÷ progress once there is ≥ 3 % and ≥ 30 s.
-  Finished: what it took.
-- **Stale** — a running bar with no report, no running shell of its agent and
-  no change of its followed file for 15 minutes turns amber
-  ("no update for 20m").
+- **Progress** — with `steps`, show the current step's fraction from the
+  followed file, else `step_percent`, labelled with its source. Without an
+  inner fraction show completed step counts and a segmented bar, never an
+  invented overall percentage. Without steps, show the followed fraction or
+  agent's `percent`; unknown progress is indeterminate. The API retains its
+  equal-weight `overall` field for compatibility, but the UI does not use it.
+  A running task whose counter reaches 100% still says `awaiting completion`;
+  only `state=done` marks completion. A new step clears its old inner progress.
+- **Time** — elapsed duration and the explicitly labelled agent estimate.
+  An exceeded estimate stays exceeded; no elapsed/fraction extrapolation.
+  Finished tasks show actual duration.
+- **Stale** — a running task with no report or change in its own followed
+  file for 15 minutes turns amber. Another shell running in the same agent
+  lane cannot make an old task report current.
+- **Presentation** — task cards and progress first. Commands and raw logs sit
+  inside closed technical disclosures; sessions without task reports go under
+  Other activity. Both hosts use `updateBoard`, preserving open details,
+  internal scroll and keyboard focus across polls. Poll requests do not overlap.
 - **Retention** — done bars stay grey 30 min, failed ones red 2 h; ended shells
   2 min; a foreground shell without an end 30 min; background shells until
   their agent has no running bar left (its last bar done or failed), Claude
@@ -60,8 +72,9 @@ shell hooks ─/quantprogress/───┘
 - **Followed files** — the last 64 KB, read on each poll. A folder means its
   `events.jsonl` (Smithery lab runs write
   `{"event":"progress","fraction":…,"message":…}`). Lines with
-  `PROGRESS 12/48 text` or `PROGRESS 45% text` give a fraction too; the newest
-  readable line is shown under the bar.
+  `PROGRESS 12/48 text`, `PROGRESS 45% text`, and SystemGauntlet's native
+  `[time] Variant runs: 17 of 30` give a fraction too. The newest readable
+  line appears in technical details.
 
 ### Shell hooks
 

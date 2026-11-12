@@ -22,9 +22,9 @@
  * the active mode stays marked while Status is shown, and Status never
  * changes the mode.
  */
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { qs, type AgentCapability, type AgentDecision, type PendingAgentCall } from '@quantsuite/core'
-import { renderBoard, type ProgressBoard } from '../progress/board.js'
+import { updateBoard, type ProgressBoard } from '../progress/board.js'
 import '../progress/board.css'
 
 const props = defineProps<{
@@ -72,26 +72,35 @@ async function pickMode(m: 'strict' | 'relaxed') {
 }
 
 const board = ref<ProgressBoard | null>(null)
-const boardHtml = ref('')
+const boardRoot = ref<HTMLElement | null>(null)
 const boardLive = ref(true)
 let boardTimer: ReturnType<typeof setInterval> | undefined
+let boardPending = false
+let boardEpoch = 0
 
 const BOARD_EMPTY =
-  'No agent is reporting work right now. Agents show a bar here with report_progress; their shell calls appear once the shell hooks are installed under QuantMCP › Settings.'
+  'No agent is reporting work right now.'
 
 async function loadBoard() {
+  if (boardPending) return
   if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
     boardLive.value = false // plain browser — the board lives in QuantMCP
     return
   }
+  boardPending = true
+  const epoch = boardEpoch
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     const next = await invoke<ProgressBoard>('plugin:mcp|progress_board')
+    if (epoch !== boardEpoch) return
     board.value = next
-    boardHtml.value = renderBoard(next, { empty: BOARD_EMPTY })
     boardLive.value = true
+    await nextTick()
+    if (epoch === boardEpoch && boardRoot.value) updateBoard(boardRoot.value, next, { empty: BOARD_EMPTY })
   } catch {
-    boardLive.value = false
+    if (epoch === boardEpoch) boardLive.value = false
+  } finally {
+    boardPending = false
   }
 }
 
@@ -102,6 +111,7 @@ function startBoard() {
 }
 
 function stopBoard() {
+  boardEpoch++
   if (boardTimer) clearInterval(boardTimer)
   boardTimer = undefined
 }
@@ -130,7 +140,7 @@ onMounted(async () => {
       <div v-if="view === 'status'">
         <h3>Agent status</h3>
         <p>
-          What every agent is working on: its bars and its shell calls.
+          Current work, progress and latest updates.
           <template v-if="board?.pageUrl">
             Also in a browser: <span class="daw-url">{{ board.pageUrl }}</span>
           </template>
@@ -183,10 +193,10 @@ onMounted(async () => {
 
     <template v-if="view === 'status'">
       <p v-if="!boardLive" class="daw-empty">
-        The board lives in QuantMCP's server — open QuantSuite itself to see it.
+        Progress is temporarily unavailable. Reconnecting…
       </p>
-      <!-- renderBoard escapes every value it writes. -->
-      <div v-else class="daw-board" v-html="boardHtml" />
+      <!-- updateBoard escapes values and preserves expanded details across polls. -->
+      <div v-show="boardLive" ref="boardRoot" class="daw-board" />
     </template>
 
     <p v-else-if="!available" class="daw-empty">

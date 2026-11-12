@@ -1,220 +1,321 @@
-/*
- * Agent status — the ONE stylesheet of the progress board (board.js). Shared
- * by the drawer's Agent › Status view and QuantMCP's /progress page, which
- * defines the same --qss-* tokens itself. Everything is under .qpb-.
- */
+/* Shared by the drawer and /progress. All colours follow suite theme tokens. */
 
-/* Cards side by side on a wide drawer or page, one column when narrow: a bar
-   is never stretched across a whole screen. */
 .qpb-board {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
-  gap: 10px;
-  font-family: var(--qss-font-sans);
-  color: var(--qss-text);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+  gap: 12px;
+  align-items: start;
 }
 
-.qpb-empty {
-  grid-column: 1 / -1;
-  margin: 18px 4px;
-  color: var(--qss-text-muted);
+.qpb-summary {
+  margin: 0 0 12px;
+  color: var(--qss-text-secondary);
   font-size: 12px;
-  text-align: center;
 }
 
 .qpb-lane {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px 12px 11px;
+  min-width: 0;
   border: 1px solid var(--qss-border);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--qss-bg-card) 55%, transparent);
+  border-radius: 10px;
+  background: var(--qss-bg-card);
+  overflow: hidden;
 }
 
 .qpb-lane-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--qss-border);
 }
+
 .qpb-agent {
-  font: 600 12.5px/1.2 var(--qss-font-sans);
+  font-size: 12px;
+  font-weight: 600;
   color: var(--qss-text);
-  white-space: nowrap;
 }
+
 .qpb-place {
-  color: var(--qss-text-muted);
+  min-width: 0;
   font-size: 11.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--qss-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .qpb-task {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+  padding: 16px;
+  color: var(--qss-text);
 }
-.qpb-task-head,
-.qpb-meta {
+
+.qpb-task + .qpb-task {
+  border-top: 1px solid var(--qss-border);
+}
+
+.qpb-task-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.qpb-title {
+  margin: 0;
+  font: 600 13px/1.5 var(--qss-font-sans, sans-serif);
+  overflow-wrap: anywhere;
+  max-width: 80ch;
+}
+
+.qpb-status {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 20px;
+  color: var(--qss-text-secondary);
+}
+
+.qpb-status::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 2px;
+}
+
+.qpb-step {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--qss-text-secondary);
+  overflow-wrap: anywhere;
+  max-width: 100ch;
+}
+
+.qpb-progress-label {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  min-width: 0;
+  margin: 14px 0 7px;
+  font-size: 11.5px;
+  color: var(--qss-text-secondary);
 }
-.qpb-title {
-  font: 500 12.5px/1.3 var(--qss-font-sans);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+
 .qpb-pct {
-  flex-shrink: 0;
-  font: 600 12px/1.3 var(--qss-font-sans);
+  flex: 0 0 auto;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-.qpb-meta {
-  color: var(--qss-text-secondary);
-  font-size: 11.5px;
-}
-.qpb-step {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.qpb-time {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-.qpb-note {
-  color: var(--qss-text-secondary);
-  font-size: 11.5px;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.qpb-detail {
-  color: var(--qss-text-muted);
-  font: 11px/1.35 var(--qss-font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--qss-text);
 }
 
 .qpb-bar {
   position: relative;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--qss-border);
+  height: 8px;
   overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--qss-text) 10%, transparent);
 }
+
 .qpb-bar > span {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--qss-accent);
-  transition: width 0.4s ease;
-}
-.qpb-bar.is-indeterminate > span {
-  width: 28%;
-  opacity: 0.75;
-  animation: qpb-sweep 1.6s ease-in-out infinite;
-}
-@keyframes qpb-sweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(360%); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .qpb-bar.is-indeterminate > span {
-    animation: none;
-    width: 100%;
-    opacity: 0.25;
-  }
 }
 
-.qpb-task.is-done .qpb-title,
-.qpb-task.is-done .qpb-pct {
+.qpb-bar.is-steps::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(to right, transparent 0, transparent calc(100% / var(--qpb-steps) - 3px), var(--qss-bg-card) calc(100% / var(--qpb-steps) - 3px), var(--qss-bg-card) calc(100% / var(--qpb-steps)));
+}
+
+.qpb-bar.is-indeterminate > span {
+  width: 25% !important;
+  animation: qpb-sweep 2.4s ease-in-out infinite alternate;
+  opacity: .45;
+}
+
+.qpb-meta {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 9px;
+  font-size: 11.5px;
+  color: var(--qss-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.qpb-estimate {
+  margin: 5px 0 0;
+  font-size: 11px;
   color: var(--qss-text-secondary);
 }
-.qpb-task.is-done .qpb-bar > span {
-  background: color-mix(in srgb, var(--qss-success) 55%, var(--qss-border));
+
+.qpb-note {
+  margin: 9px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
-.qpb-task.is-failed .qpb-pct,
-.qpb-task.is-failed .qpb-time {
-  color: var(--qss-error);
-}
-.qpb-task.is-failed .qpb-bar > span {
-  background: var(--qss-error);
-}
-.qpb-task.is-stale .qpb-bar > span {
-  background: var(--qss-warning);
-}
-.qpb-task.is-stale .qpb-time {
+
+.qpb-task.is-stale .qpb-status, .qpb-task.is-stale .qpb-freshness {
   color: var(--qss-warning);
 }
 
+.qpb-task.is-stale .qpb-bar > span {
+  background: var(--qss-warning);
+  opacity: .65;
+  animation: none;
+}
+
+.qpb-task.is-failed .qpb-status {
+  color: var(--qss-error);
+}
+
+.qpb-task.is-failed .qpb-bar > span {
+  background: var(--qss-error);
+}
+
+.qpb-task.is-done .qpb-bar > span {
+  opacity: .4;
+}
+
+.qpb-technical {
+  border-top: 1px solid var(--qss-border);
+}
+
+.qpb-technical > summary, .qpb-background > summary {
+  padding: 10px 16px;
+  cursor: pointer;
+  color: var(--qss-text-secondary);
+  font-size: 11.5px;
+}
+
+.qpb-technical > summary > span, .qpb-background > summary > span {
+  margin-left: 10px;
+  opacity: .8;
+}
+
+.qpb-technical > summary:hover, .qpb-background > summary:hover {
+  color: var(--qss-text);
+}
+
+.qpb-technical > summary:focus-visible, .qpb-background > summary:focus-visible {
+  outline: 2px solid var(--qss-accent);
+  outline-offset: -3px;
+  border-radius: 4px;
+}
+
+.qpb-technical-body {
+  padding: 0 16px 12px;
+  max-height: 280px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 .qpb-shells {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.qpb-shell {
+  padding: 8px 0;
+  border-top: 1px solid var(--qss-border);
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 0;
-  padding: 7px 0 0;
-  list-style: none;
-  border-top: 1px solid var(--qss-border-subtle);
 }
-.qpb-shell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 11.5px;
-}
-.qpb-dot {
-  flex-shrink: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--qss-text-muted);
-}
-.qpb-shell.is-running .qpb-dot {
-  background: var(--qss-accent);
-  animation: qpb-pulse 1.4s ease-in-out infinite;
-}
-.qpb-shell.is-background .qpb-dot {
-  background: color-mix(in srgb, var(--qss-accent) 55%, transparent);
-}
-.qpb-shell.is-failed .qpb-dot {
-  background: var(--qss-error);
-}
-@keyframes qpb-pulse {
-  50% { opacity: 0.35; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .qpb-shell.is-running .qpb-dot {
-    animation: none;
-  }
-}
-.qpb-cmd {
-  flex: 1;
-  min-width: 0;
+
+.qpb-cmd, .qpb-log code {
+  font: 11px/1.6 var(--qss-font-mono, monospace);
   color: var(--qss-text-secondary);
-  font: 11px/1.35 var(--qss-font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
-.qpb-shell.is-ended .qpb-cmd {
-  color: var(--qss-text-muted);
-}
+
 .qpb-shell-time {
-  flex-shrink: 0;
-  color: var(--qss-text-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  color: var(--qss-text-secondary);
+  font-size: 11px;
 }
+
 .qpb-shell.is-failed .qpb-shell-time {
   color: var(--qss-error);
+}
+
+.qpb-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+
+.qpb-log > span {
+  font-size: 11px;
+  color: var(--qss-text-secondary);
+}
+
+.qpb-background {
+  margin-top: 12px;
+}
+
+.qpb-background > summary {
+  padding-left: 0;
+}
+
+.qpb-background > .qpb-board {
+  margin-top: 6px;
+}
+
+.qpb-empty {
+  margin: 0;
+  padding: 20px 0;
+  color: var(--qss-text-secondary);
+  font-size: 12px;
+}
+
+@keyframes qpb-sweep {
+
+  from {
+    transform: translateX(-40%);
+  }
+
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (max-width: 520px) {
+
+  .qpb-task, .qpb-lane-head {
+    padding: 12px;
+  }
+
+  .qpb-task-head {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .qpb-technical > summary {
+    padding-inline: 12px;
+  }
+
+  .qpb-technical-body {
+    padding-inline: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .qpb-bar.is-indeterminate > span {
+    animation: none;
+    width: 100% !important;
+    opacity: .2;
+  }
 }

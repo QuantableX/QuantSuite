@@ -52,6 +52,7 @@ export interface ProgressBoard {
 }
 
 export function renderBoard(view: ProgressBoard | null | undefined, options?: { empty?: string }): string
+export function updateBoard(root: HTMLElement, view: ProgressBoard | null | undefined, options?: { empty?: string }): void
 export function formatDuration(ms: number): string
 export function percentText(fraction: number): string
 export function timeLine(task: ProgressTask, now: number): string

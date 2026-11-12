@@ -51,7 +51,7 @@ const MINUTE: i64 = 60 * SECOND;
 const HOUR: i64 = 60 * MINUTE;
 
 /// A running bar with no sign of life for this long is marked stale: no
-/// report, no running shell of its agent, no change in its followed file.
+/// report and no change in its followed file. Unrelated shells are not updates.
 pub const STALE_AFTER: i64 = 15 * MINUTE;
 /// Finished bars stay (grey) this long, failed ones (red) longer.
 const KEEP_DONE: i64 = 30 * MINUTE;
@@ -72,9 +72,6 @@ const MAX_TEXT: usize = 160;
 const MAX_COMMAND: usize = 300;
 /// A followed file is read from its end, at most this much.
 const TAIL_BYTES: u64 = 64 * 1024;
-/// The fraction a rate-based estimate needs before it is shown.
-const MIN_RATE_FRACTION: f64 = 0.03;
-const MIN_RATE_ELAPSED: i64 = 30 * SECOND;
 
 // ── model ───────────────────────────────────────────────────────────────
 
@@ -182,22 +179,13 @@ impl Task {
         value.map(|v| v.clamp(0.0, 1.0))
     }
 
-    /// The whole run's length in seconds: done → what it took; running → the
-    /// agent's estimate while it holds, else elapsed ÷ progress once there is
-    /// enough of both to be worth showing.
-    pub fn total_secs(&self, now: i64) -> Option<i64> {
+    /// Actual duration when finished, otherwise the agent's original estimate.
+    /// Steps and work units have unequal costs: never extrapolate an ETA from them.
+    pub fn total_secs(&self, _now: i64) -> Option<i64> {
         if let Some(end) = self.finished_at {
             return Some(((end - self.started_at).max(0)) / SECOND);
         }
-        let elapsed = (now - self.started_at).max(0);
-        let by_rate = self
-            .overall()
-            .filter(|f| *f >= MIN_RATE_FRACTION && elapsed >= MIN_RATE_ELAPSED)
-            .map(|f| ((elapsed as f64 / f) / SECOND as f64).round() as i64);
-        match self.estimate_secs {
-            Some(estimate) if elapsed <= estimate * SECOND => Some(estimate),
-            _ => by_rate,
-        }
+        self.estimate_secs
     }
 
     fn last_sign_of_life(&self) -> i64 {
@@ -638,12 +626,27 @@ pub fn describe(task: &Task, now: i64) -> String {
     if let Some(text) = &task.step_text {
         parts.push(text.clone());
     }
-    match task.overall() {
-        Some(fraction) => parts.push(format!("{}%", (fraction * 100.0).floor())),
-        None => parts.push("no percent yet".into()),
+    let fraction = if task.steps.is_some() {
+        task.follow_fraction.or(task.step_fraction)
+    } else {
+        task.follow_fraction.or(task.percent.map(|p| p / 100.0)).or(task.step_fraction)
+    };
+    if task.state == TaskState::Done {
+        parts.push("completed".into());
+    } else if let Some(fraction) = fraction {
+        let scope = if task.steps.is_some() { "current step" } else { "progress" };
+        let source = if task.follow_fraction.is_some() { "from log" } else { "agent estimate" };
+        parts.push(format!("{scope}: {}% ({source})", (fraction * 100.0).floor()));
+    } else {
+        parts.push("progress not measured".into());
     }
     if let Some(total) = task.total_secs(now) {
-        parts.push(format!("~{} total", short_duration(total)));
+        if task.finished_at.is_some() {
+            parts.push(format!("duration {}", short_duration(total)));
+        } else {
+            let overdue = if now - task.started_at > total.saturating_mul(SECOND) { "; exceeded" } else { "" };
+            parts.push(format!("agent estimate: ~{} total{overdue}", short_duration(total)));
+        }
     }
     let state = match task.state {
         TaskState::Running => "running",
@@ -941,6 +944,20 @@ fn progress_in_line(line: &str) -> (Option<f64>, Option<String>) {
             _ => (None, None),
         };
     }
+    // SystemGauntlet's native counter, optionally preceded by its timestamp.
+    // Do not interpret arbitrary ratios in commands or diagnostic text as progress.
+    let plain = line.strip_prefix('[').and_then(|s| s.split_once(']').map(|(_, rest)| rest.trim())).unwrap_or(line);
+    if let Some(rest) = plain.strip_prefix("Variant runs: ") {
+        let mut parts = rest.split_whitespace();
+        if let (Some(done), Some("of"), Some(total)) = (parts.next(), parts.next(), parts.next()) {
+            if let (Ok(done), Ok(total)) = (done.parse::<u64>(), total.parse::<u64>()) {
+                if total > 0 && done <= total {
+                    return (Some(done as f64 / total as f64), Some(line.to_string()));
+                }
+            }
+        }
+        return (None, None);
+    }
     let Some(at) = line.find("PROGRESS ") else { return (None, None) };
     let rest = line[at + "PROGRESS ".len()..].trim();
     let (token, message) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
@@ -1028,10 +1045,6 @@ fn place(folder: &str) -> String {
     parts.last().map_or_else(|| folder.to_string(), |p| p.to_string())
 }
 
-fn running_shells(lane: &Lane) -> bool {
-    lane.shells.iter().any(|s| s.ended_at.is_none())
-}
-
 /// The board as both hosts render it.
 pub fn view(board: &Board, now: i64, page_url: Option<String>) -> BoardView {
     let mut lanes: Vec<LaneView> = Vec::new();
@@ -1039,18 +1052,11 @@ pub fn view(board: &Board, now: i64, page_url: Option<String>) -> BoardView {
     let ordered = board.lanes.iter().filter(|l| !l.is_hook()).chain(board.lanes.iter().filter(|l| l.is_hook()));
     for lane in ordered {
         let target = board.bindings.get(&lane.key).and_then(|key| index.get(key.as_str()).copied());
-        let shells_alive = running_shells(lane);
         match target {
             Some(at) => {
                 let view = &mut lanes[at];
                 view.shells.extend(lane.shells.iter().cloned());
                 view.updated_at = view.updated_at.max(lane.updated_at);
-                if shells_alive {
-                    // A running shell is a sign of life for its agent's bars.
-                    for task in &mut view.tasks {
-                        task.stale = false;
-                    }
-                }
             }
             None => {
                 let tasks = lane
@@ -1060,7 +1066,6 @@ pub fn view(board: &Board, now: i64, page_url: Option<String>) -> BoardView {
                         overall: task.overall(),
                         total_secs: task.total_secs(now),
                         stale: task.state == TaskState::Running
-                            && !shells_alive
                             && now - task.last_sign_of_life() > STALE_AFTER,
                         task: task.clone(),
                     })
@@ -1348,19 +1353,24 @@ const PAGE_HTML: &str = r#"<!doctype html>
   <div id="board"></div>
 </main>
 <script type="module">
-  import { renderBoard } from '/progress/board.js'
+  import { updateBoard } from '/progress/board.js'
   const board = document.getElementById('board')
   const conn = document.getElementById('conn')
+  let pending = false
   async function tick() {
+    if (pending) return
+    pending = true
     try {
       const response = await fetch('/progress/state', { cache: 'no-store' })
       if (!response.ok) throw new Error(String(response.status))
-      board.innerHTML = renderBoard(await response.json())
+      updateBoard(board, await response.json())
       conn.textContent = 'Live'
       conn.className = ''
     } catch {
       conn.textContent = 'QuantSuite is not answering'
       conn.className = 'is-off'
+    } finally {
+      pending = false
     }
   }
   tick()
@@ -1496,17 +1506,20 @@ mod tests {
     }
 
     #[test]
-    fn estimate_holds_while_it_can_then_the_rate_takes_over() {
+    fn estimates_do_not_drift_or_extrapolate_from_unequal_work() {
         let mut task = Task::new("a".into(), "A".into(), T0);
         task.estimate_secs = Some(3 * 3600);
         assert_eq!(task.total_secs(T0 + HOUR), Some(3 * 3600), "1h of ~3h");
         task.percent = Some(25.0);
-        assert_eq!(task.total_secs(T0 + 4 * HOUR), Some(16 * 3600), "overdue: 4h for 25 % → ~16h");
+        assert_eq!(task.total_secs(T0 + 4 * HOUR), Some(3 * 3600), "overdue: preserve the original estimate");
         let mut fresh = Task::new("b".into(), "B".into(), T0);
         fresh.percent = Some(1.0);
-        assert_eq!(fresh.total_secs(T0 + MINUTE), None, "1 % is too little to extrapolate");
+        assert_eq!(fresh.total_secs(T0 + MINUTE), None);
         fresh.percent = Some(10.0);
-        assert_eq!(fresh.total_secs(T0 + 10 * MINUTE), Some(6000), "10 % in 10 min → ~100 min");
+        assert_eq!(fresh.total_secs(T0 + 10 * MINUTE), None, "a fraction alone does not justify an ETA");
+        fresh.steps = Some(3);
+        fresh.step = Some(3);
+        assert_eq!(fresh.total_secs(T0 + 10 * HOUR), None, "equal step counts are not elapsed-work estimates");
         fresh.state = TaskState::Done;
         fresh.finished_at = Some(T0 + 23 * MINUTE);
         assert_eq!(fresh.total_secs(T0 + HOUR), Some(23 * 60), "done: what it took");
@@ -1527,6 +1540,25 @@ mod tests {
         assert_eq!(short_duration(600), "10m");
         assert!(Report::parse(&json!({ "estimate": "later" })).is_err());
         assert_eq!(report(json!({ "estimate": 30 })).estimate_secs, Some(1800));
+    }
+
+    #[test]
+    fn report_acknowledgements_do_not_reintroduce_equal_step_percentages() {
+        let mut task = Task::new("a".into(), "A".into(), T0);
+        task.steps = Some(3);
+        task.step = Some(3);
+        task.estimate_secs = Some(3600);
+        let text = describe(&task, T0 + 2 * HOUR);
+        assert!(text.contains("step 3/3") && text.contains("progress not measured"));
+        assert!(!text.contains("66%"));
+        assert!(text.contains("agent estimate: ~1h total; exceeded"));
+        task.follow_fraction = Some(0.5);
+        assert!(describe(&task, T0).contains("current step: 50% (from log)"));
+        task.state = TaskState::Done;
+        task.finished_at = Some(T0 + HOUR);
+        let text = describe(&task, T0 + 2 * HOUR);
+        assert!(text.contains("completed") && text.contains("duration 1h"));
+        assert!(!text.contains("agent estimate"));
     }
 
     #[test]
@@ -1653,7 +1685,7 @@ mod tests {
     }
 
     #[test]
-    fn silence_makes_a_bar_stale_unless_its_shell_runs() {
+    fn silence_is_task_specific_even_when_the_agents_shell_runs() {
         let mut board = Board::default();
         let tree = "C:/w";
         apply_report(&mut board, &report(json!({ "agent_id": "a", "title": "Long", "folder": tree })), &claude(tree), T0).unwrap();
@@ -1662,7 +1694,12 @@ mod tests {
         let (event, body) = hook(HookEvent::PreToolUse, "s", tree, "sleep 999", "a", false);
         apply_hook(&mut board, "claude-code", event, &body, later - SECOND);
         bind_hooks(&mut board);
-        assert!(!view(&board, later, None).lanes[0].tasks[0].stale);
+        assert!(view(&board, later, None).lanes[0].tasks[0].stale);
+        board.lanes[0].tasks[0].follow_changed_at = Some(later - SECOND);
+        assert!(!view(&board, later, None).lanes[0].tasks[0].stale, "its own followed log is a sign of life");
+        board.lanes[0].tasks[0].follow_changed_at = None;
+        apply_report(&mut board, &report(json!({ "agent_id": "a", "title": "Long", "folder": tree })), &claude(tree), later).unwrap();
+        assert!(!view(&board, later, None).lanes[0].tasks[0].stale, "a new task report refreshes it");
     }
 
     #[test]
@@ -1696,6 +1733,17 @@ mod tests {
         assert_eq!(read.fraction, Some(0.375));
         assert!(read.modified > 0);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn native_gauntlet_counters_are_progress_but_arbitrary_numbers_are_not() {
+        let line = "[10:35:04] Variant runs: 17 of 30 • GPU (NVIDIA), 7,238 series";
+        assert_eq!(scan_progress(line), (Some(17.0 / 30.0), Some(line.into())));
+        assert_eq!(progress_in_line("Variant runs: 30 of 30").0, Some(1.0));
+        assert_eq!(progress_in_line("Variant runs: 0 of 30").0, Some(0.0));
+        for line in ["Variant runs: 1 of 0", "Variant runs: 31 of 30", "Variant runs: -1 of 30", "echo Variant runs: 17 of 30", "17 of 30 files", "CPU: 17/30"] {
+            assert_eq!(progress_in_line(line).0, None, "{line}");
+        }
     }
 
     #[test]
