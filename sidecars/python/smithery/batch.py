@@ -411,15 +411,21 @@ class _TorchOps:
             valid = ~t.isnan(x)
             cnt = self._counts(valid, n)
             if n <= 256:
-                # Two passes per window (mean, then squared deviations): no cancellation.
-                S_ = x.shape[0]
-                padded = t.cat([t.full((S_, n - 1), float("nan"), dtype=self.f64, device=self.device), x], dim=1)
-                win = padded.unfold(1, n, 1)                              # [S, T, n]
-                ok_w = ~t.isnan(win)
+                # Two passes per window (mean, then squared deviations): no cancellation. The
+                # windows are [series, bars, n]: series in blocks, so a block stays in budget.
+                S_, T_ = x.shape
                 zero = t.zeros((), dtype=self.f64, device=self.device)
-                cw = ok_w.sum(dim=2, keepdim=True).clamp(min=1).to(self.f64)
-                mean_w = t.where(ok_w, win, zero).sum(dim=2, keepdim=True) / cw
-                ssq = t.where(ok_w, (win - mean_w).square(), zero).sum(dim=2)
+                parts = []
+                for s0 in range(0, S_, _block_rows(T_ * n)):
+                    xs = x[s0:s0 + _block_rows(T_ * n)]
+                    padded = t.cat([t.full((xs.shape[0], n - 1), float("nan"), dtype=self.f64, device=self.device), xs], dim=1)
+                    win = padded.unfold(1, n, 1)                              # [s, T, n]
+                    ok_w = ~t.isnan(win)
+                    cw = ok_w.sum(dim=2, keepdim=True).clamp(min=1).to(self.f64)
+                    mean_w = t.where(ok_w, win, zero).sum(dim=2, keepdim=True) / cw
+                    parts.append(t.where(ok_w, (win - mean_w).square(), zero).sum(dim=2))
+                    del padded, win, ok_w, cw, mean_w
+                ssq = t.cat(parts, dim=0)
             else:
                 cnt_all = valid.sum(dim=1, keepdim=True).clamp(min=1).to(self.f64)
                 off = t.where(valid, x, t.zeros_like(x)).sum(dim=1, keepdim=True) / cnt_all
@@ -1485,7 +1491,20 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
                     out[i] = exc
             stats["gpu_series" if ops is not NUMPY else "cpu_series"] += len(chunk)
             _count("gpu" if ops is not NUMPY else "cpu", len(chunk), reason)
+    if ops is not NUMPY:
+        _release_gpu_cache(ops)
     return out
+
+
+# GPU memory torch keeps cached after a call. On Windows (WDDM) it counts against the system's
+# commit, so a pool of workers each holding a few GB starves every other process on the PC.
+GPU_CACHE_KEEP_BYTES = 1 << 30
+
+
+def _release_gpu_cache(ops) -> None:
+    cuda = ops.torch.cuda
+    if cuda.memory_reserved() > GPU_CACHE_KEEP_BYTES:
+        cuda.empty_cache()
 
 
 # --------------------------------------------------------------------------- numpy-like namespaces for window functions
@@ -1848,23 +1867,39 @@ def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> 
         # An old one-argument window function (numpy blocks): the same call as before.
         one = function
         function = (lambda block, xp: one(block)) if ops is NUMPY else (lambda block, xp: xp.asarray(one(xp.asnumpy(block))))
-    win = ops.windows(_float(ops, col.a), length)            # [S, W, L]
-    W = win.shape[1]
-    block = win.reshape(S * W, length)
+    data = _float(ops, col.a)
+    W = T - length + 1
     xp = NP if ops is NUMPY else _TorchNP(ops)
-    values = ops.full((S * W,), float("nan"))
     if chunk is None:
         cells = int(os.environ.get("SMITHERY_GPU_CELLS", DEFAULT_GPU_CELLS))
         chunk = 256 if ops is NUMPY else max(256, cells // max(length * length, 1))
-    finite = np.isfinite(block).all(axis=1) if ops is NUMPY else ops.torch.isfinite(block).all(dim=1)
-    for start in range(0, S * W, chunk):
-        part = block[start:start + chunk]
-        valid = finite[start:start + chunk]
-        if bool(valid.any()):
-            seg = values[start:start + chunk]
-            seg[valid] = function(part[valid], xp)
-    out[:, length - 1:] = values.reshape(S, W)
+    # The windows of all series at once are [S, W, length] (a copy once flattened): series in
+    # blocks, so a block stays in budget. Every window is computed exactly as before.
+    rows = _block_rows(W * length)
+    for s0 in range(0, S, rows):
+        win = ops.windows(data[s0:s0 + rows], length)             # [s, W, L]
+        s = win.shape[0]
+        block = win.reshape(s * W, length)
+        values = ops.full((s * W,), float("nan"))
+        finite = np.isfinite(block).all(axis=1) if ops is NUMPY else ops.torch.isfinite(block).all(dim=1)
+        for start in range(0, s * W, chunk):
+            part = block[start:start + chunk]
+            valid = finite[start:start + chunk]
+            if bool(valid.any()):
+                seg = values[start:start + chunk]
+                seg[valid] = function(part[valid], xp)
+        out[s0:s0 + s, length - 1:] = values.reshape(s, W)
+        del win, block, values, finite
     return Col(out, ops)
+
+
+# Window blocks: at most this many cells ([rows, bars, window] float64, 8 bytes a cell) at once.
+WINDOW_BLOCK_CELLS = 32_000_000
+
+
+def _block_rows(cells_per_row: int) -> int:
+    budget = int(os.environ.get("SMITHERY_WINDOW_CELLS", WINDOW_BLOCK_CELLS))
+    return max(1, budget // max(int(cells_per_row), 1))
 
 
 # --------------------------------------------------------------------------- linear recurrences on the GPU
