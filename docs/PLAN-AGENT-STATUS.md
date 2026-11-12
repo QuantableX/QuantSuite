@@ -30,6 +30,10 @@ progress over shell commands. Technical content is now collapsed by default;
 step counts, log counters and agent estimates are distinguished. The original
 elapsed/estimated-time request above does not justify an extrapolated ETA.
 
+Layout follow-up (card aecadb52): agents always stack vertically in one column,
+each taking the available width, including on wide screens. Adding more agents
+adds rows rather than narrowing their cards. This applies to both hosts.
+
 ```
 agent ──report_progress (MCP)──┐
 script ──POST /progress/report─┤                    ┌─ drawer › Agent › Status (progress_board, 1 s poll)
