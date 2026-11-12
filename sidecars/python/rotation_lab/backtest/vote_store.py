@@ -103,6 +103,14 @@ class VoteStore:
         self._con.execute("PRAGMA journal_mode=WAL")
         self._con.execute("CREATE TABLE IF NOT EXISTS votes (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
 
+    def get(self, key: str):
+        """The stored votes of one window key, or None (counted like a lookup through ``wrap``)."""
+        row = self._con.execute("SELECT value FROM votes WHERE key=?", (key,)).fetchone()
+        if row is None:
+            return None
+        self.hits += 1
+        return pickle.loads(row[0])
+
     def wrap(self, kind: str, overrides: dict, compute):
         """``compute(window)``, answered from the store when the same window was computed before."""
 

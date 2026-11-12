@@ -67,6 +67,9 @@ def prefill(pairs, cfg, device: str = "auto") -> int:
         except Exception:  # noqa: BLE001 — the engine reports it when it computes the pair
             continue
     added = 0
+    # A run with a vote store (the System Gauntlet's variants on the base run's candles) takes the
+    # windows the store already holds instead of computing them again.
+    store = vote_store.active()
     for kind in kinds:
         overrides = signals.indicator_overrides(kind, cfg.params.get(kind))
         try:
@@ -78,9 +81,14 @@ def prefill(pairs, cfg, device: str = "auto") -> int:
         for frame in frames:
             for _, window in signals.block_windows(frame, bars):
                 key = vote_store.window_key(kind, overrides, window)
-                if key not in memo:
-                    keys.append(key)
-                    windows.append(window)
+                if key in memo:
+                    continue
+                stored = store.get(key) if store is not None else None
+                if stored is not None:
+                    memo[key] = stored
+                    continue
+                keys.append(key)
+                windows.append(window)
         if not windows:
             continue
         # One window per key (pairs can repeat a window, e.g. coin vs USD in several runs).
