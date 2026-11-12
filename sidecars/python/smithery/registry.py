@@ -46,7 +46,7 @@ def _current_runs(historical: bool = False) -> dict[str, dict[str, dict]]:
     Registry queries run in a fresh sidecar process, so the cache is per query.
     """
     from .data import OUTPUT_DIR
-    from .evidence import EVALUATION_VERSION, indicator_fingerprint
+    from .evidence import EVALUATION_VERSION, evaluator_fingerprint, indicator_fingerprint
     found = {}
     if not OUTPUT_DIR.is_dir():
         return found
@@ -55,10 +55,11 @@ def _current_runs(historical: bool = False) -> dict[str, dict[str, dict]]:
     # its REQUIRES) are unchanged — edits elsewhere in the library do not
     # demote it (2026-09-23; before, one global code hash did).
     fingerprints: dict[str, str | None] = {}
+    evaluator = evaluator_fingerprint()   # once per pass, not once per indicator
 
     def fingerprint(key: str) -> str | None:
         if key not in fingerprints:
-            fingerprints[key] = indicator_fingerprint(REGISTRY[key])
+            fingerprints[key] = indicator_fingerprint(REGISTRY[key], evaluator)
         return fingerprints[key]
 
     for path in sorted(OUTPUT_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime_ns):

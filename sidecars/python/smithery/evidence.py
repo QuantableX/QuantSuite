@@ -41,6 +41,7 @@ def code_fingerprint() -> str:
 
 
 _EVALUATOR: dict[tuple, str] = {}
+_CLOSURE: dict[tuple, list] = {}
 GAUNTLET_MODULE = "robustness"
 
 
@@ -81,7 +82,15 @@ def evaluator_fingerprint() -> str:
     """The Gauntlet's own code (evaluator_files, without the library):
     a change to the evaluator invalidates every indicator's current runs."""
     root = Path(__file__).resolve().parent
-    files = evaluator_files()
+    # The import closure is parsed again only when a module of the package changed: parsing it
+    # took ~0.4 s, and a pass over the reports asks once per indicator (minutes per describe_all).
+    package = tuple((str(p), s.st_mtime_ns, s.st_size) for p in sorted(root.rglob("*.py"))
+                    if "__pycache__" not in p.parts for s in (p.stat(),))
+    files = _CLOSURE.get(package)
+    if files is None:
+        files = evaluator_files()
+        _CLOSURE.clear()
+        _CLOSURE[package] = files
     state = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in files)
     if state not in _EVALUATOR:
         digest = hashlib.sha256()
@@ -93,7 +102,7 @@ def evaluator_fingerprint() -> str:
     return _EVALUATOR[state]
 
 
-def indicator_fingerprint(cls) -> str | None:
+def indicator_fingerprint(cls, evaluator: str | None = None) -> str | None:
     """What a gauntlet run of one indicator depends on: the evaluator and the
     signature of the indicator's own script (with its REQUIRES closure) —
     editing or installing another script leaves it untouched. None when the
@@ -103,7 +112,7 @@ def indicator_fingerprint(cls) -> str | None:
     signature = script_signature(stem) if stem else None
     if signature is None:
         return None
-    return hashlib.sha256(f"{evaluator_fingerprint()}:{signature}".encode()).hexdigest()
+    return hashlib.sha256(f"{evaluator or evaluator_fingerprint()}:{signature}".encode()).hexdigest()
 
 
 def frame_fingerprint(df) -> str:
