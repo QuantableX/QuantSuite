@@ -80,6 +80,11 @@ def _batch_case(name: str, col: B.Col) -> B.Col:
     return fn(col)
 
 
+# Rolling var/std are computed from each window (exact) since 2026-11-12; pandas' running sums
+# drift on series that cross orders of magnitude. SMITHERY_PANDAS_MOMENTS=1 restores pandas.
+MOMENTS = ("rolling_std_30", "rolling_var_5_mp3")
+
+
 class CpuIsPandas(unittest.TestCase):
     def test_every_case_bit_for_bit(self):
         a = _data()
@@ -87,7 +92,36 @@ class CpuIsPandas(unittest.TestCase):
             with self.subTest(name):
                 expected = _pandas_rows(a, fn)
                 got = _batch_case(name, B.Col(a.copy(), B.NUMPY)).to_numpy()
-                np.testing.assert_array_equal(got, expected)
+                if name in MOMENTS:
+                    np.testing.assert_array_equal(np.isnan(got), np.isnan(expected))
+                    np.testing.assert_allclose(got, expected, rtol=1e-9, atol=1e-10, equal_nan=True)
+                else:
+                    np.testing.assert_array_equal(got, expected)
+
+    def test_pandas_moments_mode_is_pandas(self):
+        import os
+        a = _data()
+        os.environ["SMITHERY_PANDAS_MOMENTS"] = "1"
+        try:
+            for name in MOMENTS:
+                with self.subTest(name):
+                    got = _batch_case(name, B.Col(a.copy(), B.NUMPY)).to_numpy()
+                    np.testing.assert_array_equal(got, _pandas_rows(a, CASES[name]))
+        finally:
+            del os.environ["SMITHERY_PANDAS_MOMENTS"]
+
+    def test_moments_are_exact_across_a_crash(self):
+        import math
+        a = _data()
+        a[3, 450:] *= 1e-5                      # a coin that loses five orders of magnitude
+        n = 10
+        got = B.Col(a.copy(), B.NUMPY).rolling(n).std(ddof=0).to_numpy()
+        for i in range(460, 700, 7):
+            w = a[3, i - n + 1:i + 1]
+            if np.isfinite(w).all() and w.max() != w.min():
+                m = math.fsum(w) / n
+                want = math.sqrt(math.fsum((w - m) ** 2) / n)
+                self.assertAlmostEqual(got[3, i] / want, 1.0, places=12)
 
     def test_ufuncs_and_np_where(self):
         a = _data()

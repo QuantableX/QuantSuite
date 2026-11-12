@@ -178,8 +178,43 @@ class _NumpyOps:
         return pd.DataFrame(np.asarray(a, dtype=float).T)
 
     def rolling(self, a, window, min_periods, how, *args, **kwargs):
+        if how in ("var", "std") and exact_moments():
+            return self._exact_var(a, int(window), min_periods, how,
+                                   int(kwargs.get("ddof", args[0] if args else 1)))
         roll = self._frame(a).rolling(window, min_periods=min_periods)
         return np.ascontiguousarray(getattr(roll, how)(*args, **kwargs).to_numpy().T)
+
+    def _exact_var(self, a, n, min_periods, how, ddof):
+        """Rolling variance / std from each window itself: its mean, then its squared deviations.
+        pandas keeps running sums, which hold on to large values that left the window: on a price
+        series across a crash (LUNC/BTC) its 10-bar std was off by up to 207%. Same rules as pandas
+        otherwise (NaN skipped, min_periods, ddof, a window of one repeated value is exactly 0)."""
+        from numpy.lib.stride_tricks import sliding_window_view
+        x = np.asarray(a, dtype=float)
+        S, T = x.shape
+        mp = n if min_periods is None else int(min_periods)
+        valid = ~np.isnan(x)
+        c = np.cumsum(valid, axis=1, dtype=float)
+        cnt = c.copy()
+        if n < T:
+            cnt[:, n:] = c[:, n:] - c[:, :-n]
+        padded = np.concatenate([np.full((S, n - 1), np.nan), x], axis=1)
+        ssq = np.empty((S, T))
+        rows = _block_rows(T * n)
+        with np.errstate(all="ignore"):
+            for s0 in range(0, S, rows):
+                win = sliding_window_view(padded[s0:s0 + rows], n, axis=1)      # [s, T, n]
+                ok = ~np.isnan(win)
+                cw = np.maximum(ok.sum(axis=2, keepdims=True), 1).astype(float)
+                mean = np.where(ok, win, 0.0).sum(axis=2, keepdims=True) / cw
+                ssq[s0:s0 + rows] = np.where(ok, np.square(win - mean), 0.0).sum(axis=2)
+            var = ssq / (cnt - ddof)
+        var[var < 0] = 0.0
+        hi, lo = self.rolling(x, n, 1, "max"), self.rolling(x, n, 1, "min")
+        var[hi == lo] = 0.0
+        var[cnt == 1] = 0.0
+        var[~((cnt >= max(mp, 1)) & (cnt > ddof))] = np.nan
+        return np.sqrt(var) if how == "std" else var
 
     def rolling_pair(self, a, b, window, min_periods, how):
         out = getattr(self._frame(a).rolling(window, min_periods=min_periods), how)(self._frame(b))
@@ -410,7 +445,7 @@ class _TorchOps:
             ddof = int(kwargs.get("ddof", args[0] if args else 1))
             valid = ~t.isnan(x)
             cnt = self._counts(valid, n)
-            if n <= 256:
+            if exact_moments() or n <= 256:
                 # Two passes per window (mean, then squared deviations): no cancellation. The
                 # windows are [series, bars, n]: series in blocks, so a block stays in budget.
                 S_, T_ = x.shape
@@ -1898,6 +1933,13 @@ def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> 
 
 # Window blocks: at most this many cells ([rows, bars, window] float64, 8 bytes a cell) at once.
 WINDOW_BLOCK_CELLS = 32_000_000
+
+
+def exact_moments() -> bool:
+    """Rolling var/std from each window (exact; the default since 2026-11-12, user's decision).
+    SMITHERY_PANDAS_MOMENTS=1 gives pandas' running sums on the CPU (the old values, for parity
+    checks against references made with the old code)."""
+    return os.environ.get("SMITHERY_PANDAS_MOMENTS", "0").strip() != "1"
 
 
 def _block_rows(cells_per_row: int) -> int:
