@@ -225,9 +225,8 @@ class Gauntlet:
         if missing:
             self.coverage_complete = False
         rows, sharpes, cat_pen = [], [], 0
-        bts = par.pmap(par.eval_backtest,
-                       [(self.ind, load(k), cost_for(k)) for k in keys],
-                       min_parallel=2)
+        bts = par.backtests_batch(self.ind, [load(k) for k in keys], [cost_for(k) for k in keys],
+                                  min_parallel=2)
         for k, b in zip(keys, bts):
             sharpes.append(b["sharpe"])
             catastrophic = b["max_dd"] < 1.3 * b["bh_max_dd"]   # dd is negative

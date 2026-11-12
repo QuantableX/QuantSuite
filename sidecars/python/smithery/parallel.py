@@ -141,6 +141,22 @@ def eval_total_sharpe(task) -> tuple[float, float]:
     return bt["total_log_ret"], bt["sharpe"]
 
 
+def backtests_batch(ind, frames, costs, min_parallel: int = 4) -> list[dict]:
+    """``pmap(eval_backtest, ...)`` with the signals computed batched first (GPU when the script
+    allows) for scripts with the batch form; the backtests run across the pool either way."""
+    if not type(ind).has_batch():
+        return pmap(eval_backtest, [(ind, df, cost) for df, cost in zip(frames, costs)], min_parallel=min_parallel)
+    sigs = signals_batch(ind, frames)
+    return pmap(eval_signal_backtest, [(df, sig, cost) for df, sig, cost in zip(frames, sigs, costs)],
+                min_parallel=min_parallel)
+
+
+def eval_signal_backtest(task) -> dict:
+    """(df, signal ndarray, cost_bps) -> full backtest dict (eval_backtest for a signal computed ahead)."""
+    df, sig, cost = task
+    return backtest.run(df, rehydrate(sig, df.index), cost_bps=cost)
+
+
 def eval_signal_total_sharpe(task) -> tuple[float, float]:
     """(df, signal ndarray, cost_bps) -> (total_log_ret, sharpe): eval_total_sharpe for a signal
     computed ahead (batched)."""
