@@ -1475,7 +1475,10 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
             pacer.start()
             try:
                 b = Batch.from_frames([frames[i] for i in chunk], ops, [columns[i] for i in chunk])
-                res = indicator._compute_batch(b)
+                # numpy's invalid/divide warnings stay quiet, as pandas' own arithmetic keeps them
+                # (a CPU batch flooded the log with them); the values are the same either way.
+                with np.errstate(all="ignore"):
+                    res = indicator._compute_batch(b)
                 values = res.to_numpy() if hasattr(res, "to_numpy") else np.asarray(res)
             except Exception:  # noqa: BLE001 — isolate the failing series on the CPU
                 pacer.done()
@@ -1498,7 +1501,7 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
 
 # GPU memory torch keeps cached after a call. On Windows (WDDM) it counts against the system's
 # commit, so a pool of workers each holding a few GB starves every other process on the PC.
-GPU_CACHE_KEEP_BYTES = 1 << 30
+GPU_CACHE_KEEP_BYTES = 256 << 20
 
 
 def _release_gpu_cache(ops) -> None:

@@ -57,6 +57,16 @@ def _init_worker():
     offline()
 
 
+def _init_pool_worker():
+    # A GPU process commits ~1.5 GB before it computes (torch, the CUDA context) and Windows counts
+    # its GPU memory against the system's commit too: a pool of GPU workers took ~4 GB each. The
+    # variants run on the vectorised CPU batch (said in their device line); the parent keeps the
+    # GPU. SMITHERY_WORKER_GPU=1 gives the workers the GPU as well.
+    if os.environ.get("SMITHERY_WORKER_GPU", "0").strip() != "1":
+        os.environ["SMITHERY_GPU"] = "0"
+    _init_worker()
+
+
 def _engine_for(spec):
     from rotation_lab.backtest.engine import BacktestEngine
     from .lab_compare import SavedPrices, saved_cache, saved_rankings
@@ -128,7 +138,7 @@ def run_native(jobs, workers=None, progress=None, stage=""):
     from . import threads
     threads.one_for_children()
     with ProcessPoolExecutor(max_workers=min(workers, len(jobs)), mp_context=mp.get_context("spawn"),
-                             initializer=_init_worker) as pool:
+                             initializer=_init_pool_worker) as pool:
         for k, out in enumerate(pool.map(native_job, jobs), 1):
             results.append(out)
             _tick(progress, stage, k, len(jobs), out)

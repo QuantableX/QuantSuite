@@ -170,7 +170,8 @@ class TrendIndicator(ABC):
         if not type(self).has_batch():
             raise NotImplementedError(f"{self.name}: implements neither _compute nor _compute_batch")
         from .batch import Batch
-        out = self._compute_batch(Batch.of(df))
+        with np.errstate(all="ignore"):   # as pandas' arithmetic: no invalid/divide warning flood
+            out = self._compute_batch(Batch.of(df))
         values = out.to_numpy() if hasattr(out, "to_numpy") else np.asarray(out)
         return np.asarray(values, dtype=float)[0]
 
