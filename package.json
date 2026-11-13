@@ -22,7 +22,7 @@
     "check:ts": "npm run typecheck --workspace=@quantsuite/shell",
     "check:rust": "cargo clippy --workspace --all-targets",
     "test:mcp": "node scripts/test-mcp-server.mjs",
-    "test:progress": "node --test scripts/test-progress-board.mjs",
+    "test:progress": "node --test scripts/test-progress-board.mjs scripts/test-progress-browser.mjs",
     "test:script": "node --test scripts/test-script-workbench.mjs",
     "test:seam": "node --test scripts/test-seam-routing.mjs",
     "check:distribution": "node scripts/check-distribution.mjs",
