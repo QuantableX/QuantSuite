@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<link rel="stylesheet" href="/board.css">
+<style>
+:root { --qss-bg-card:#2e2e2e; --qss-border:#444; --qss-text:#eee; --qss-text-secondary:#bbb; --qss-accent:#ccc; --qss-warning:orange; --qss-error:red; font-family:Arial; }
+body { margin:0; color:#eee; background:#212121; }
+#drawer { height:400px; overflow:auto; padding:16px; }
+</style>
+<div id="drawer"><div id="board"></div></div>
+<script type="module">
+import {updateBoard} from '/board.js'
+const failures=[], passed=[], evidence=[]
+const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
+function assert(value,message){if(!value)throw new Error(message)}
+async function check(name,run){try{await run();passed.push(name)}catch(e){failures.push(`${name}: ${e.message}`)}}
+const NOW=1800000000000
+const task=(id)=>({id,title:`Long-running job ${id}`,state:'running',step:1,steps:1,stepFraction:.3,startedAt:NOW-60000,updatedAt:NOW,detail:`Log for ${id}`})
+const lane=(id)=>({key:id,agent:`agent-${id}`,tasks:[task(`${id}-1`),task(`${id}-2`)],shells:Array.from({length:30},(_,i)=>({id:`shell-${i}`,command:`python worker_${i}.py --keep-this-command-selectable`,startedAt:NOW-60000,background:true}))})
+let view, root=document.querySelector('#board'), drawer=document.querySelector('#drawer')
+async function reset(page=false){
+  document.getSelection().removeAllRanges()
+  drawer.style.height=page?'auto':'400px';drawer.style.overflow=page?'visible':'auto'
+  root.replaceChildren(); view={now:NOW,lanes:[lane('a')]};updateBoard(root,view)
+  root.querySelector('details').open=true;await frame()
+  return page?document.scrollingElement:drawer
+}
+for(const page of [false,true])await check(`${page?'page':'drawer'} scroll stays at the bottom during live polls`,async()=>{
+  const scroller=await reset(page)
+  view.lanes.push(lane('b'));updateBoard(root,view)
+  for(const el of root.querySelectorAll('details'))el.open=true
+  await frame()
+  const details=root.querySelector('details'),body=root.querySelector('.qpb-technical-body')
+  const summary=details.querySelector('summary');summary.focus({preventScroll:true})
+  body.scrollTop=160;scroller.scrollTop=scroller.scrollHeight;await frame()
+  const before=scroller.scrollTop,inner=body.scrollTop
+  assert(before>20,'fixture must overflow outside the board')
+  for(let i=0;i<12;i++){view.now+=1000;view.lanes[0].tasks[0].stepFraction+=.01;updateBoard(root,view);await frame()}
+  evidence.push({host:page?'page':'drawer',before,after:scroller.scrollTop,innerBefore:inner,innerAfter:root.querySelector('.qpb-technical-body').scrollTop})
+  assert(Math.abs(scroller.scrollTop-before)<1,`outer scroll jumped ${before} → ${scroller.scrollTop}`)
+  assert(root.querySelector('.qpb-technical-body').scrollTop===inner,'inner scroll changed')
+  assert(root.querySelector('details').open,'details closed')
+  assert(document.activeElement===summary,'focused summary was replaced')
+  assert(root.querySelector('.qpb-pct').textContent==='42%','progress stopped updating')
+})
+await check('unchanged polls do not replace nodes or mutate DOM',async()=>{
+  await reset();const task=root.querySelector('.qpb-task'),details=root.querySelector('details')
+  const observer=new MutationObserver(()=>{});observer.observe(root,{subtree:true,childList:true,attributes:true,characterData:true})
+  updateBoard(root,view)
+  const changes=observer.takeRecords();observer.disconnect()
+  assert(changes.length===0,`${changes.length} needless DOM mutations`)
+  assert(task===root.querySelector('.qpb-task')&&details===root.querySelector('details'),'nodes replaced')
+})
+await check('static command text selection survives changed polls',async()=>{
+  await reset();const text=root.querySelector('.qpb-cmd').firstChild,range=document.createRange()
+  range.setStart(text,7);range.setEnd(text,19);document.getSelection().addRange(range)
+  const selected=document.getSelection().toString();view.now+=1000;updateBoard(root,view)
+  assert(document.getSelection().toString()===selected,'selection lost')
+  assert(document.getSelection().anchorNode===text,'selected text node replaced')
+})
+await check('agent and task order stays stable when activity reorders snapshots',async()=>{
+  await reset();view.lanes.push(lane('b'));updateBoard(root,view)
+  const agents=[...root.querySelectorAll('.qpb-lane')],tasks=[...agents[0].querySelectorAll('.qpb-task')]
+  view.lanes.reverse();view.lanes[1].tasks.reverse();updateBoard(root,view)
+  assert(agents.every((el,i)=>el===root.querySelectorAll('.qpb-lane')[i]),'agents reshuffled')
+  assert(tasks.every((el,i)=>el===agents[0].querySelectorAll('.qpb-task')[i]),'tasks reshuffled')
+})
+await check('membership changes preserve surviving task identity and escaping',async()=>{
+  await reset();const survivor=root.querySelectorAll('.qpb-task')[1]
+  view.lanes[0].tasks.shift();view.lanes[0].tasks.push({...task('new'),title:'<img src=x onerror=alert(1)>'});updateBoard(root,view)
+  assert(root.querySelector('.qpb-task')===survivor,'surviving task replaced')
+  assert(root.querySelectorAll('.qpb-task').length===2,'task count incorrect')
+  assert(!root.querySelector('img'),'unsafe HTML inserted')
+  assert(root.textContent.includes('<img src=x onerror=alert(1)>'),'new title missing')
+})
+await check('scroll remains user-controlled while progress changes',async()=>{
+  await reset();const body=root.querySelector('.qpb-technical-body')
+  for(let i=1;i<=15;i++){
+    body.scrollTop=i*12;const position=body.scrollTop
+    view.now+=1000;view.lanes[0].tasks[0].detail=`Log line ${i}`;updateBoard(root,view);await frame()
+    assert(root.querySelector('.qpb-technical-body')===body,'scroll container replaced mid-gesture')
+    assert(body.scrollTop===position,'user scroll position overwritten')
+  }
+})
+await check('nested background disclosures stay open',async()=>{
+  await reset();view.lanes.push({...lane('background'),tasks:[]});updateBoard(root,view)
+  const outer=root.querySelector('.qpb-background'),inner=outer.querySelector('details')
+  outer.open=true;inner.open=true;view.now+=1000;updateBoard(root,view)
+  assert(outer.isConnected&&inner.isConnected&&outer.open&&inner.open,'nested disclosure replaced or closed')
+})
+await check('state changes update attributes and optional content in place',async()=>{
+  await reset();const element=root.querySelector('.qpb-task'),bar=element.querySelector('.qpb-bar')
+  Object.assign(view.lanes[0].tasks[0],{state:'done',finishedAt:NOW,note:'All checks passed'})
+  updateBoard(root,view)
+  assert(root.querySelector('.qpb-task')===element,'state change replaced the task')
+  assert(element.classList.contains('is-done')&&bar.getAttribute('aria-valuenow')==='100.0','completion not updated')
+  assert(element.querySelector('.qpb-note').textContent==='All checks passed','closing note missing')
+  Object.assign(view.lanes[0].tasks[0],{state:'running',steps:null,step:null,stepFraction:null,note:null})
+  updateBoard(root,view)
+  assert(!element.querySelector('.qpb-note')&&!element.querySelector('.qpb-step'),'obsolete content retained')
+  assert(!bar.hasAttribute('aria-valuenow')&&bar.classList.contains('is-indeterminate'),'unknown-progress attributes not updated')
+})
+await check('empty and populated snapshots transition without stale entries',async()=>{
+  await reset();view.lanes=[];updateBoard(root,view)
+  assert(root.querySelector('.qpb-empty')&&!root.querySelector('.qpb-lane'),'old entries retained')
+  view.lanes=[lane('new')];updateBoard(root,view)
+  assert(root.querySelector('.qpb-lane')&&!root.querySelector('.qpb-empty'),'new entry not rendered')
+})
+await check('removing an agent above the viewport preserves the visible content',async()=>{
+  const scroller=await reset();view.lanes.push(lane('b'),lane('c'));updateBoard(root,view)
+  for(const el of root.querySelectorAll('details'))el.open=true
+  await frame();const target=root.querySelectorAll('.qpb-lane')[2].querySelector('.qpb-task')
+  scroller.scrollTop=target.getBoundingClientRect().top-scroller.getBoundingClientRect().top-40
+  await frame();const before=target.getBoundingClientRect().top
+  view.lanes.shift();updateBoard(root,view);await frame()
+  assert(target.isConnected,'visible task detached')
+  assert(Math.abs(target.getBoundingClientRect().top-before)<1,'visible content jumped when an older agent left')
+})
+await fetch('/result',{method:'POST',body:JSON.stringify({passed,failures,evidence})})
+</script>
+</html>

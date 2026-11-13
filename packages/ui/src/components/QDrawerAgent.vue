@@ -193,10 +193,10 @@ onMounted(async () => {
 
     <template v-if="view === 'status'">
       <p v-if="!boardLive" class="daw-empty">
-        Progress is temporarily unavailable. Reconnecting…
+        {{ board ? 'Connection interrupted. Showing the last update; reconnecting…' : 'Progress is temporarily unavailable. Reconnecting…' }}
       </p>
       <!-- updateBoard escapes values and preserves expanded details across polls. -->
-      <div v-show="boardLive" ref="boardRoot" class="daw-board" />
+      <div ref="boardRoot" class="daw-board" />
     </template>
 
     <p v-else-if="!available" class="daw-empty">

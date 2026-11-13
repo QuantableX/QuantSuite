@@ -82,7 +82,7 @@ function renderTask(task, now) {
   const aria = known ? ` aria-valuenow="${width.toFixed(1)}" aria-valuemin="0" aria-valuemax="100"` : ''
   const segments = p.steps && p.steps <= 20 ? ' is-steps' : ''
   const style = segments ? ` style="--qpb-steps:${p.steps}"` : ''
-  return `<article class="qpb-task is-${esc(state)}">` +
+  return `<article class="qpb-task is-${esc(state)}" data-qpb-node="task:${esc(task.id)}">` +
     `<div class="qpb-task-head"><h3 class="qpb-title">${esc(task.title)}</h3><span class="qpb-status">${status}</span></div>` +
     (description ? `<p class="qpb-step">${esc(description)}</p>` : '') +
     `<div class="qpb-progress-label"><span>${esc(p.caption)}</span><strong class="qpb-pct">${esc(p.label)}</strong></div>` +
@@ -98,7 +98,7 @@ function renderShell(shell, now) {
   const time = running
     ? `${shell.background ? 'Background' : 'Running'} · ${formatDuration(now - shell.startedAt)}`
     : `${shell.failed ? 'Failed' : 'Done'} · ${formatDuration(shell.endedAt - shell.startedAt)}`
-  return `<li class="qpb-shell is-${kind}" title="${esc(shell.cwd ?? '')}"><code class="qpb-cmd">${esc(shell.command)}</code><span class="qpb-shell-time">${esc(time)}</span></li>`
+  return `<li class="qpb-shell is-${kind}" data-qpb-node="shell:${esc(shell.id)}" title="${esc(shell.cwd ?? '')}"><code class="qpb-cmd">${esc(shell.command)}</code><span class="qpb-shell-time">${esc(time)}</span></li>`
 }
 
 /** @param {any} lane @param {number} now */
@@ -107,11 +107,11 @@ function renderLane(lane, now) {
   const tasks = [...(lane.tasks ?? [])].sort((a, b) => priority(a) - priority(b))
   const shells = lane.shells ?? []
   const logs = tasks.filter((/** @type {any} */ t) => t.detail).map((/** @type {any} */ t) =>
-    `<div class="qpb-log"><span>${esc(t.title)}</span><code>${esc(t.detail)}</code></div>`).join('')
+    `<div class="qpb-log" data-qpb-node="log:${esc(t.id)}"><span>${esc(t.title)}</span><code>${esc(t.detail)}</code></div>`).join('')
   const details = shells.length || logs
-    ? `<details class="qpb-technical" data-qpb-key="${esc(`lane:${lane.key}`)}"><summary>Technical details<span>${shells.length ? `${shells.length} command${shells.length === 1 ? '' : 's'}` : 'Logs'}</span></summary><div class="qpb-technical-body">${logs}${shells.length ? `<ul class="qpb-shells">${shells.map((/** @type {any} */ s) => renderShell(s, now)).join('')}</ul>` : ''}</div></details>` : ''
-  return `<section class="qpb-lane"><header class="qpb-lane-head"><span class="qpb-agent">${esc(lane.agent)}</span><span class="qpb-place" title="${esc(lane.folder)}">${esc(lane.place)}</span></header>` +
-    tasks.map((/** @type {any} */ t) => renderTask(t, now)).join('') + details + '</section>'
+    ? `<details class="qpb-technical" data-qpb-key="${esc(`lane:${lane.key}`)}"><summary>Technical details<span>${shells.length ? `${shells.length} command${shells.length === 1 ? '' : 's'}` : 'Logs'}</span></summary><div class="qpb-technical-body"><div class="qpb-logs">${logs}</div>${shells.length ? `<ul class="qpb-shells">${shells.map((/** @type {any} */ s) => renderShell(s, now)).join('')}</ul>` : ''}</div></details>` : ''
+  return `<section class="qpb-lane" data-qpb-node="lane:${esc(lane.key)}"><header class="qpb-lane-head"><span class="qpb-agent">${esc(lane.agent)}</span><span class="qpb-place" title="${esc(lane.folder)}">${esc(lane.place)}</span></header>` +
+    `<div class="qpb-tasks">${tasks.map((/** @type {any} */ t) => renderTask(t, now)).join('')}</div>` + details + '</section>'
 }
 
 /** @param {any} view @param {{ empty?: string }} [options] */
@@ -132,21 +132,91 @@ export function renderBoard(view, options = {}) {
     (background.length ? `<details class="qpb-background" data-qpb-key="background"><summary>Other activity<span>${background.length} session${background.length === 1 ? '' : 's'} without a progress report</span></summary><div class="qpb-board">${background.map((/** @type {any} */ l) => renderLane(l, now)).join('')}</div></details>` : '')
 }
 
-/** Refresh without closing details, moving their scroll position or losing keyboard focus.
+/** Stable list IDs; structural elements use their tag and first (non-state) class.
+ * @param {Node} node
+ */
+function nodeKey(node) {
+  if (node.nodeType !== 1) return node.nodeName
+  const el = /** @type {Element} */ (node)
+  return el.getAttribute('data-qpb-node') ?? el.getAttribute('data-qpb-key') ?? `${el.tagName}:${el.classList[0] ?? ''}`
+}
+
+/** Patch only changed text/attributes. Never reset browser-owned disclosure state.
+ * @param {Node} live @param {Node} next
+ */
+function patchNode(live, next) {
+  if (live.nodeType !== 1) {
+    if (live.nodeValue !== next.nodeValue) live.nodeValue = next.nodeValue
+    return
+  }
+  const el = /** @type {Element} */ (live)
+  const fresh = /** @type {Element} */ (next)
+  for (const attr of Array.from(el.attributes)) {
+    if (el.tagName === 'DETAILS' && attr.name === 'open') continue
+    if (!fresh.hasAttribute(attr.name)) el.removeAttribute(attr.name)
+  }
+  for (const attr of Array.from(fresh.attributes)) {
+    if (el.tagName === 'DETAILS' && attr.name === 'open') continue
+    if (el.getAttribute(attr.name) !== attr.value) el.setAttribute(attr.name, attr.value)
+  }
+  patchChildren(el, fresh)
+}
+
+/** Keep existing entries in reading order; newly reported entries append.
+ * Server activity sorting must not shuffle the content under the pointer.
+ * @param {Element} parent @param {Element | DocumentFragment} next
+ */
+function patchChildren(parent, next) {
+  const remaining = Array.from(parent.childNodes)
+  const wanted = Array.from(next.childNodes)
+  if (parent.matches('.qpb-board, .qpb-tasks, .qpb-shells, .qpb-logs')) {
+    const order = new Map(remaining.map((node, i) => [nodeKey(node), i]))
+    wanted.sort((a, b) => (order.get(nodeKey(a)) ?? Infinity) - (order.get(nodeKey(b)) ?? Infinity))
+  }
+  let cursor = parent.firstChild
+  for (const fresh of wanted) {
+    const index = remaining.findIndex(node => node.nodeName === fresh.nodeName && nodeKey(node) === nodeKey(fresh))
+    const live = index < 0 ? fresh.cloneNode(true) : remaining.splice(index, 1)[0]
+    if (live !== cursor) parent.insertBefore(live, cursor)
+    if (index >= 0) patchNode(live, fresh)
+    cursor = live.nextSibling
+  }
+  for (const node of remaining) parent.removeChild(node)
+}
+
+/** Remember visible content, so removing an older entry above it does not jump.
+ * @param {HTMLElement} root
+ */
+function readingPositions(root) {
+  const scrollers = Array.from(root.querySelectorAll('.qpb-technical-body'))
+  for (let parent = /** @type {Element | null} */ (root); parent; parent = parent.parentElement) scrollers.push(parent)
+  return scrollers.filter(el => el.scrollTop > 0).map(scroller => {
+    const top = scroller === root.ownerDocument.scrollingElement ? 0 : scroller.getBoundingClientRect().top + scroller.clientTop
+    const inside = scroller.matches('.qpb-technical-body')
+    const candidates = inside ? scroller.querySelectorAll('.qpb-shell, .qpb-log') : root.querySelectorAll('.qpb-lane, .qpb-task, .qpb-technical, .qpb-background')
+    const anchors = Array.from(candidates).map(node => ({ node, rect: node.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.height > 0 && rect.bottom > top && rect.top < top + scroller.clientHeight)
+      // Prefer the first visible block start; fall back to the block spanning the top.
+      .sort((a, b) => (a.rect.top >= top ? a.rect.top - top : 1e6 - a.rect.top) - (b.rect.top >= top ? b.rect.top - top : 1e6 - b.rect.top))
+      .map(({ node, rect }) => ({ node, top: rect.top }))
+    return { scroller, anchors }
+  })
+}
+
+/** Update in place, retaining scroll containers, reading position,
+ * disclosure state, focus, selection and in-flight scroll gestures.
  * @param {HTMLElement} root @param {any} view @param {{ empty?: string }} [options]
  */
 export function updateBoard(root, view, options = {}) {
-  const details = Array.from(root.querySelectorAll('details[data-qpb-key]'))
-  const active = root.ownerDocument.activeElement
-  const focused = details.find((el) => el.querySelector('summary') === active)?.getAttribute('data-qpb-key')
-  const opened = new Set(details.filter((el) => el.hasAttribute('open')).map((el) => el.getAttribute('data-qpb-key')))
-  const scroll = new Map(details.map((el) => [el.getAttribute('data-qpb-key'), el.querySelector('.qpb-technical-body')?.scrollTop ?? 0]))
-  root.innerHTML = renderBoard(view, options)
-  for (const el of root.querySelectorAll('details[data-qpb-key]')) {
-    const key = el.getAttribute('data-qpb-key')
-    if (opened.has(key)) el.setAttribute('open', '')
-    const body = el.querySelector('.qpb-technical-body')
-    if (body) body.scrollTop = scroll.get(key) ?? 0
-    if (key === focused) el.querySelector('summary')?.focus({ preventScroll: true })
+  const next = root.ownerDocument.createElement('template')
+  next.innerHTML = renderBoard(view, options)
+  const positions = readingPositions(root)
+  patchChildren(root, next.content)
+  for (const { scroller, anchors } of positions) {
+    const anchor = anchors.find(({ node }) => node.isConnected && scroller.contains(node))
+    if (!anchor) continue
+    const delta = anchor.node.getBoundingClientRect().top - anchor.top
+    // No writes on ordinary polls: leave native wheel/trackpad/drag gestures alone.
+    if (Math.abs(delta) > 0.5) scroller.scrollTop += delta
   }
 }

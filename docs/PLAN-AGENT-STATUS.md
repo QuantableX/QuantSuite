@@ -67,8 +67,14 @@ shell hooks ─/quantprogress/───┘
   lane cannot make an old task report current.
 - **Presentation** — task cards and progress first. Commands and raw logs sit
   inside closed technical disclosures; sessions without task reports go under
-  Other activity. Both hosts use `updateBoard`, preserving open details,
-  internal scroll and keyboard focus across polls. Poll requests do not overlap.
+  Other activity. Both hosts use `updateBoard` to patch existing keyed DOM nodes,
+  changing only updated text/attributes. Existing agents, tasks and commands keep
+  their reading order; new entries append. Scroll containers, open disclosures,
+  focus and unchanged text selection survive polls without a collapse/rebuild
+  cycle. Scroll is corrected only if a surviving visible entry moves (for example,
+  after an older agent above it expires), not on ordinary polls. Poll requests do
+  not overlap. A failed drawer refresh retains the last board and shows a
+  reconnecting message.
 - **Retention** — done bars stay grey 30 min, failed ones red 2 h; ended shells
   2 min; a foreground shell without an end 30 min; background shells until
   their agent has no running bar left (its last bar done or failed), Claude
@@ -112,6 +118,13 @@ worktree to make the join exact. A join, once made, sticks.
 no imports. The drawer imports it; `progress.rs` embeds both files with
 `include_str!` and serves them at `/progress/board.js` / `.css` beside the page.
 Every value is escaped in the template.
+
+`npm run test:progress` includes real Chromium scroll/interaction regression
+tests when Chrome or Edge is installed (`PROGRESS_BROWSER` can select another
+executable). The fixtures exercise outer page/drawer scrolling with multiple
+expanded disclosures and changing snapshots, alongside node identity, reading
+order, selection, focus and nested disclosures. Profiles and results are stored
+in the private artifact directory (`PROGRESS_TEST_ARTIFACTS` overrides it).
 
 ### HTTP
 
