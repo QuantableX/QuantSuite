@@ -100,6 +100,9 @@ log = { version = "0.4", features = ["std"] }
 # Drop this patch (and vendor/tao) when tauri-runtime-wry moves to tao >= 0.36.
 [patch.crates-io]
 tao = { path = "vendor/tao" }
+# Rust 1.100 no longer infers the unused D-Bus reply type in screenshots 0.8.10's Linux backend
+# (rust-lang/rust#148922); the vendored copy binds it as `()`. Drop it when upstream is fixed.
+screenshots = { path = "vendor/screenshots" }
 
 # Debug builds keep line tables for the workspace crates and no debuginfo for
 # dependencies. Full debuginfo made a single `cargo build` write ~15 GB and each
