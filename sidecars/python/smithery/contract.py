@@ -8,7 +8,7 @@ Laws (Docs/00):
 """
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 
 import numpy as np
 import pandas as pd
@@ -22,6 +22,13 @@ OHLCV = ("open", "high", "low", "close", "volume")
 CONTRACT_VERSION = 2
 
 PARAM_TYPES = ("int", "float", "bool", "choice", "list")
+
+# signal() calls in this process (one series each, on the CPU), for the jobs' device lines (batch.tally).
+_SINGLE = [0]
+
+
+def single_series_calls() -> int:
+    return _SINGLE[0]
 
 
 def _derived_entry(name: str, default, tested: tuple | None) -> dict:
@@ -144,6 +151,7 @@ class TrendIndicator(ABC):
             raise ValueError(f"{self.name}: OHLC prices must be finite and positive")
         if df.empty:
             return pd.Series(index=df.index, dtype=float, name=self.name)
+        _SINGLE[0] += 1
         raw = np.asarray(self._compute(df), dtype=float)
         if raw.shape != (len(df),):
             raise ValueError(f"{self.name}: signal length mismatch")
@@ -156,8 +164,26 @@ class TrendIndicator(ABC):
             raise ValueError(f"{self.name}: signal returns to 0 after warm-up (Law: no neutral cop-out)")
         return pd.Series(raw, index=df.index, name=self.name)
 
-    @abstractmethod
-    def _compute(self, df: pd.DataFrame) -> np.ndarray: ...
+    def _compute(self, df: pd.DataFrame) -> np.ndarray:
+        """One series. A script written for the batch (``_compute_batch``) gets it as a
+        CPU batch of one, so the single series and the batch run the same code."""
+        if not type(self).has_batch():
+            raise NotImplementedError(f"{self.name}: implements neither _compute nor _compute_batch")
+        from .batch import Batch
+        with np.errstate(all="ignore"):   # as pandas' arithmetic: no invalid/divide warning flood
+            out = self._compute_batch(Batch.of(df))
+        values = out.to_numpy() if hasattr(out, "to_numpy") else np.asarray(out)
+        return np.asarray(values, dtype=float)[0]
+
+    def _compute_batch(self, b):
+        """S series on one grid (``smithery.batch.Batch``) → a [S, T] column of -1/0/+1.
+        The GPU form; scripts written for it run on CUDA when it is there (GPU-first rule)."""
+        raise NotImplementedError
+
+    @classmethod
+    def has_batch(cls) -> bool:
+        """Whether the script has the batched GPU form."""
+        return getattr(cls, "_compute_batch") is not TrendIndicator._compute_batch
 
 
 # ---------------------------------------------------------------- validators

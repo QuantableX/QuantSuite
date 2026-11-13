@@ -42,25 +42,78 @@ def block_start(when) -> pd.Timestamp:
 
 
 def _bar(index: pd.Index) -> pd.Timedelta:
-    steps = pd.Series(index[:200]).diff().dropna()
+    head = index[:200]
+    if isinstance(head, pd.DatetimeIndex) and len(head) > 1:
+        steps = np.diff(head.asi8)
+        if (steps == steps[0]).all():   # evenly spaced (the usual case): the median is that step
+            return pd.Timedelta(int(steps[0]), unit=head.unit)
+    steps = pd.Series(head).diff().dropna()
     return steps.median() if len(steps) else pd.Timedelta(days=1)
+
+
+# Inside a batch run (batch_votes.active) a pair's ratio frame and a frame's block windows are
+# made once and handed out again: the walk then meets the very windows the prefill computed
+# (and vote_store remembers their keys), instead of cutting and hashing them a second time.
+# Entries keep their inputs alive, so an id cannot be reused while the run lasts.
+_FRAME_MEMO: dict | None = None
+_WINDOW_MEMO: dict | None = None
+
+
+def block_windows(df: pd.DataFrame, bars: int) -> list[tuple[pd.Timestamp | None, pd.DataFrame]]:
+    """The windows ``bounded`` evaluates: (block start, block with ``bars`` bars of history before
+    it), or one window (None, df) when there are no blocks. Shared with the batch prefill, so a
+    prefilled vote is computed on exactly the window ``bounded`` asks for."""
+    memo = _WINDOW_MEMO
+    if memo is not None:
+        hit = memo.get((id(df), bars))
+        if hit is not None and hit[0] is df:
+            return hit[1]
+    windows = _block_windows(df, bars)
+    if memo is not None:
+        memo[id(df), bars] = (df, windows)
+    return windows
+
+
+def _block_windows(df: pd.DataFrame, bars: int) -> list[tuple[pd.Timestamp | None, pd.DataFrame]]:
+    if df.empty or bars <= 0:
+        return [(None, df)]
+    index = df.index
+    history = _bar(index) * bars
+    start, last, out = block_start(index[0]), index[-1], []
+    # On ordered bars the mask below is one contiguous run: found by binary search and taken as
+    # a slice (the same rows; pandas' copy-on-write keeps the frame safe), not by a mask per block.
+    ordered = index.is_monotonic_increasing
+    while start <= last:
+        end = start + HISTORY_BLOCK
+        if ordered:
+            first, stop = index.searchsorted(start - history), index.searchsorted(end)
+            if index.searchsorted(start) < stop:
+                out.append((start, df.iloc[first:stop]))
+        else:
+            window = df[(index >= start - history) & (index < end)]
+            if (window.index >= start).any():
+                out.append((start, window))
+        start = end
+    return out or [(None, df)]
 
 
 def bounded(df: pd.DataFrame, compute, bars: int) -> pd.Series:
     """``compute(df)``, evaluated block by block with ``bars`` bars of history before each block."""
-    if df.empty or bars <= 0:
-        return compute(df)
-    index = df.index
-    history = _bar(index) * bars
-    start, last, parts = block_start(index[0]), index[-1], []
-    while start <= last:
-        end = start + HISTORY_BLOCK
-        window = df[(index >= start - history) & (index < end)]
-        if (window.index >= start).any():
-            part = compute(window)
-            parts.append(part[part.index >= start])
-        start = end
-    return pd.concat(parts) if parts else compute(df)
+    windows = block_windows(df, bars)
+    if windows[0][0] is None:
+        return compute(windows[0][1])
+    parts = []
+    for start, window in windows:
+        part = compute(window)
+        index = part.index
+        parts.append(part.iloc[index.searchsorted(start):] if index.is_monotonic_increasing
+                     else part[index >= start])
+    return pd.concat(parts)
+
+
+# Votes computed ahead in batches (rotation_lab.backtest.batch_votes): window key -> votes.
+# None when no batch prefill is active; member_signal then computes every window itself.
+_BATCH_MEMO: dict | None = None
 
 
 def member_signal(df: pd.DataFrame, kind: TrendKind, cfg: IndicatorConfig | None = None) -> pd.Series:
@@ -71,6 +124,14 @@ def member_signal(df: pd.DataFrame, kind: TrendKind, cfg: IndicatorConfig | None
     from . import vote_store
     from .smithery import WARMUP_BARS
     compute = lambda frame: _smithery(frame, kind, cfg)
+    memo = _BATCH_MEMO
+    if memo:
+        overrides = indicator_overrides(kind, cfg.params.get(kind)) if cfg is not None else {}
+        direct = compute
+
+        def compute(frame, direct=direct):
+            hit = memo.get(vote_store.window_key(kind, overrides, frame))
+            return hit if hit is not None else direct(frame)
     store = vote_store.active()
     if store is not None:
         overrides = indicator_overrides(kind, cfg.params.get(kind)) if cfg is not None else {}
@@ -217,9 +278,15 @@ def ratio_frame(a: pd.DataFrame, b: pd.DataFrame | None) -> pd.DataFrame:
 
     from smithery.ratio import ratio_candles, without_path
 
-    if b is None:
-        return without_path(a).copy()
-    return ratio_candles(a, b)
+    memo = _FRAME_MEMO
+    if memo is not None:
+        hit = memo.get((id(a), id(b)))
+        if hit is not None and hit[0] is a and hit[1] is b:
+            return hit[2]
+    frame = without_path(a).copy() if b is None else ratio_candles(a, b)
+    if memo is not None:
+        memo[id(a), id(b)] = (a, b, frame)
+    return frame
 
 
 def trend_signal(df: pd.DataFrame, cfg: IndicatorConfig) -> pd.Series:

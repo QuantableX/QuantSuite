@@ -57,6 +57,16 @@ def _init_worker():
     offline()
 
 
+def _init_pool_worker():
+    # A GPU process commits ~1.5 GB before it computes (torch, the CUDA context) and Windows counts
+    # its GPU memory against the system's commit too: a pool of GPU workers took ~4 GB each. The
+    # variants run on the vectorised CPU batch (said in their device line); the parent keeps the
+    # GPU. SMITHERY_WORKER_GPU=1 gives the workers the GPU as well.
+    if os.environ.get("SMITHERY_WORKER_GPU", "0").strip() != "1":
+        os.environ["SMITHERY_GPU"] = "0"
+    _init_worker()
+
+
 def _engine_for(spec):
     from rotation_lab.backtest.engine import BacktestEngine
     from .lab_compare import SavedPrices, saved_cache, saved_rankings
@@ -98,13 +108,21 @@ def native_job(job):
         multiple = float(equity.iloc[-1])
         years = rp.years_between(equity.index)
         out = {"label": label, "multiple": multiple, "years": years, "cagr": rp.cagr(multiple, years),
-               "max_drawdown_pct": float(result.metrics_strategy.max_drawdown_pct)}
+               "max_drawdown_pct": float(result.metrics_strategy.max_drawdown_pct),
+               # The engine's own line: "Indicator series: GPU (<card>, n series)" or "... CPU: <reason> n."
+               "devices": next((n for n in result.notes if n.startswith("Indicator series:")), None)}
         if keep:
             out["equity"] = equity
             out["held"] = result.held_asset
         return out
     except Exception as exc:  # noqa: BLE001 — one broken variant is recorded, the rest still run
         return {"label": label, "error": f"{type(exc).__name__}: {exc}"[:400]}
+
+
+def _tick(progress, stage, k, n, out) -> None:
+    if progress:
+        devices = (out.get("devices") or "").removeprefix("Indicator series: ").rstrip(".")
+        progress(f"{stage}: {k} of {n}" + (f" · {devices}" if devices else ""))
 
 
 def run_native(jobs, workers=None, progress=None, stage=""):
@@ -114,18 +132,16 @@ def run_native(jobs, workers=None, progress=None, stage=""):
         _init_worker()
         for k, job in enumerate(jobs, 1):
             results.append(native_job(job))
-            if progress:
-                progress(f"{stage}: {k} of {len(jobs)}")
+            _tick(progress, stage, k, len(jobs), results[-1])
         return results
     import multiprocessing as mp
     from . import threads
     threads.one_for_children()
     with ProcessPoolExecutor(max_workers=min(workers, len(jobs)), mp_context=mp.get_context("spawn"),
-                             initializer=_init_worker) as pool:
+                             initializer=_init_pool_worker) as pool:
         for k, out in enumerate(pool.map(native_job, jobs), 1):
             results.append(out)
-            if progress:
-                progress(f"{stage}: {k} of {len(jobs)}")
+            _tick(progress, stage, k, len(jobs), out)
     return results
 
 

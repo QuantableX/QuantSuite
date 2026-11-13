@@ -16,6 +16,7 @@ import threading
 from itertools import islice
 from concurrent.futures import ProcessPoolExecutor
 
+import numpy as np
 import pandas as pd
 
 from . import backtest
@@ -106,7 +107,14 @@ def simulated_results(ind, frames, cost: float, bars: int) -> list[tuple[float, 
         batch = list(islice(iterator, capacity))
         if not batch:
             return results
-        results.extend(pmap(eval_total_sharpe, [(ind, frame, cost) for frame in batch]))
+        if type(ind).has_batch():
+            # One batched call for the chunk's signals (same values as signal() per frame), then
+            # the charts' backtests across the pool as before (in the parent they ran one by one:
+            # for a cheap indicator the backtests are most of the work).
+            sigs = signals_batch(ind, batch)
+            results.extend(pmap(eval_signal_total_sharpe, [(frame, sig, cost) for frame, sig in zip(batch, sigs)]))
+        else:
+            results.extend(pmap(eval_total_sharpe, [(ind, frame, cost) for frame in batch]))
         del batch
 
 
@@ -133,6 +141,30 @@ def eval_total_sharpe(task) -> tuple[float, float]:
     return bt["total_log_ret"], bt["sharpe"]
 
 
+def backtests_batch(ind, frames, costs, min_parallel: int = 4) -> list[dict]:
+    """``pmap(eval_backtest, ...)`` with the signals computed batched first (GPU when the script
+    allows) for scripts with the batch form; the backtests run across the pool either way."""
+    if not type(ind).has_batch():
+        return pmap(eval_backtest, [(ind, df, cost) for df, cost in zip(frames, costs)], min_parallel=min_parallel)
+    sigs = signals_batch(ind, frames)
+    return pmap(eval_signal_backtest, [(df, sig, cost) for df, sig, cost in zip(frames, sigs, costs)],
+                min_parallel=min_parallel)
+
+
+def eval_signal_backtest(task) -> dict:
+    """(df, signal ndarray, cost_bps) -> full backtest dict (eval_backtest for a signal computed ahead)."""
+    df, sig, cost = task
+    return backtest.run(df, rehydrate(sig, df.index), cost_bps=cost)
+
+
+def eval_signal_total_sharpe(task) -> tuple[float, float]:
+    """(df, signal ndarray, cost_bps) -> (total_log_ret, sharpe): eval_total_sharpe for a signal
+    computed ahead (batched)."""
+    df, sig, cost = task
+    bt = backtest.run(df, rehydrate(sig, df.index), cost_bps=cost)
+    return bt["total_log_ret"], bt["sharpe"]
+
+
 def eval_sharpe_signal(task):
     """(ind, df, cost_bps) -> (sharpe, signal ndarray, index). For axes that
     need both performance and signal agreement against a base stream."""
@@ -145,6 +177,27 @@ def eval_signal(task):
     """(ind, df) -> signal ndarray."""
     ind, df = task
     return ind.signal(df).to_numpy()
+
+
+def signals_batch(ind, frames, min_parallel: int = 4) -> list:
+    """Every frame's signal as a numpy array, like pmap(eval_signal, ...): batched (one call per
+    time grid, GPU when the script allows and CUDA is there) for scripts with the batch form,
+    else the process pool as before. Raises the first frame's error, as signal() would."""
+    if not type(ind).has_batch():
+        from . import contract
+        from .batch import _count, device_for
+        before = contract._SINGLE[0]
+        out = pmap(eval_signal, [(ind, df) for df in frames], min_parallel=min_parallel)
+        contract._SINGLE[0] = before  # in-process calls are counted once, here
+        _count("cpu", len(frames), device_for(ind)[1])
+        return out
+    from .batch import signals
+    out = []
+    for res in signals(ind, list(frames)):
+        if isinstance(res, Exception):
+            raise res
+        out.append(np.asarray(res, dtype=float))
+    return out
 
 
 def rehydrate(values, index) -> pd.Series:

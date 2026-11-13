@@ -326,50 +326,95 @@ class FastSystem:
                              has_syms=has_syms, returns=returns, ends=ends)
 
     def _compute_votes(self, captured, group_starts):
+        from rotation_lab.backtest import batch_votes
+        from rotation_lab.backtest.smithery import REGISTRY
+        from rotation_lab.config import IndicatorConfig
         params = self.config.indicator.params
-        tasks, arrays = [], {}
+        tasks, arrays, batched = [], {}, []
+        use_batch = batch_votes.enabled()
         for g, start in enumerate(group_starts):
             group = self.groups[g]
             arrays[g] = np.lib.format.open_memmap(self.folder / group.file, mode="w+", dtype=np.int8,
                                                   shape=(len(group.keys), len(self.pairs), len(self.full)))
+            # Keys with the batched form are computed for every pair at once in this process
+            # (GPU when available); the rest go to the worker processes as before.
+            fast = [i for i, key in enumerate(group.keys)
+                    if use_batch and key in REGISTRY and REGISTRY[key].has_batch()]
+            slow = [i for i in range(len(group.keys)) if i not in fast]
+            slow_keys = [group.keys[i] for i in slow]
             if self.single:
                 history = self.frame.loc[self.frame.index >= self._stamp(start)]
-                tasks.append((g, 0, group.keys, params, history, None, True))
+                if slow:
+                    tasks.append((g, 0, slow_keys, params, history, None, True, slow))
+                if fast:
+                    batched.append((g, [(0, history, None, True)], fast))
                 continue
             frames = self.frames[start]
+            pairs = []
             for p, (a, b) in enumerate(self.pairs):
                 if a in frames and (b is None or b in frames):  # otherwise the engine's zeros: B wins
-                    tasks.append((g, p, group.keys, params, frames[a], frames[b] if b else None, False))
-        done, total, started = 0, len(tasks), time.monotonic()
+                    if slow:
+                        tasks.append((g, p, slow_keys, params, frames[a], frames[b] if b else None, False, slow))
+                    pairs.append((p, frames[a], frames[b] if b else None, False))
+            if fast and pairs:
+                batched.append((g, pairs, fast))
+        done, total, started = 0, len(tasks) + sum(len(pairs) for _, pairs, _ in batched), time.monotonic()
+        from . import contract
+        from .batch import _count, device_line, tally
+        counted = tally()
 
-        def store(result):
+        def store(result, rows=None):
             g, p, bars, values, errors = result
             # Timestamps, not integers: pandas may hold bars at any resolution.
             positions = self.full.get_indexer(bars)
             if (positions < 0).any():
                 raise ValueError("A pair's bars are outside the engine's candles")
-            arrays[g][:, p, positions] = values
+            if rows is None:
+                arrays[g][:, p, positions] = values
+            else:
+                arrays[g][np.asarray(rows)[:, None], p, positions[None, :]] = values
             for key, error in errors.items():
                 self.failed.setdefault(key, error)
+
+        if batched:
+            with batch_votes.active():
+                for g, pairs, fast in batched:
+                    keys = [self.groups[g].keys[i] for i in fast]
+                    cfg = IndicatorConfig(trend="aggregate", aggregate=tuple(keys), params=params)
+                    batch_votes.prefill([(a, b) for _, a, b, _ in pairs], cfg)
+                    for p, a, b, single in pairs:
+                        store(_votes_task((g, p, keys, params, a, b, single)), fast)
+                        done += 1
+                        if done % 25 == 0 or done == total:
+                            self.progress(f"Signals: {done:,} of {total:,} pair computations · "
+                                          f"{time.monotonic() - started:,.0f} s", 0.05 + 0.85 * done / max(total, 1))
 
         def tick():
             if done % 25 == 0 or done == total:
                 self.progress(f"Signals: {done:,} of {total:,} pair computations · {time.monotonic() - started:,.0f} s",
                               0.05 + 0.85 * done / max(total, 1))
 
-        if self.workers > 1 and total > 4:
+        single = contract._SINGLE[0]
+        if self.workers > 1 and len(tasks) > 4:
             threads.one_for_children()
             with ProcessPoolExecutor(max_workers=min(self.workers, total), mp_context=mp.get_context("spawn"),
                                      initializer=_worker_init) as pool:
-                for future in as_completed([pool.submit(_votes_task, task) for task in tasks]):
-                    store(future.result())
+                futures = {pool.submit(_votes_task, task[:7]): task[7] for task in tasks}
+                for future in as_completed(list(futures)):
+                    store(future.result(), futures[future])
                     done += 1
                     tick()
         else:
             for task in tasks:
-                store(_votes_task(task))
+                store(_votes_task(task[:7]), task[7])
                 done += 1
                 tick()
+        # Where the series ran, never silently: the unbatched ones are counted once, here.
+        contract._SINGLE[0] = single
+        _count("cpu", sum(len(task[7]) for task in tasks),
+               "no batch form (one series at a time)" if use_batch else "batch off (SMITHERY_BATCH=0)")
+        self.devices = device_line(counted)
+        self.progress(f"Indicator series: {self.devices}", 0.9)
         for array in arrays.values():
             array.flush()
 
@@ -377,7 +422,8 @@ class FastSystem:
         meta = {"mode": self.config.mode, "keys": self.keys, "failed": self.failed, "key_start": self.key_start,
                 "groups": [{**asdict(g), "gate": None if g.gate is None else len(g.gate)} for g in self.groups],
                 "pairs": [list(p) for p in self.pairs], "bars": len(self.dates), "full_bars": len(self.full),
-                "first_bar": str(self.dates[0]), "last_bar": str(self.dates[-1]), "assets": self.assets}
+                "first_bar": str(self.dates[0]), "last_bar": str(self.dates[-1]), "assets": self.assets,
+                "devices": getattr(self, "devices", None)}
         (self.folder / "cube.json").write_text(json.dumps(meta, default=str), encoding="utf-8")
         with (self.folder / "state.pkl").open("wb") as stream:
             pickle.dump({name: getattr(self, name) for name in _STATE}, stream)

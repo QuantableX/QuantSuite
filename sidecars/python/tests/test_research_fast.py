@@ -11,12 +11,12 @@ from smithery.quantscript import template
 DEFAULTS = '{"fast": 20, "slow": 100, "band": 0.25, "vol_halflife": 20}'
 FIXTURES = {  # key: (fast, slow, band, warm-up bars)
     "k_fast": (5, 20, 0.1, 30), "k_mid": (10, 50, 0.2, 60), "k_mid2": (8, 40, 0.3, 60), "k_slow": (20, 100, 0.25, 120)}
-HYSTERESIS = 'return hysteresis_flip(score, float(self.params["band"]))'
+HYSTERESIS = 'return b.k.hysteresis(score, float(self.params["band"]))'
 # Diverse votes: a contrarian member and a fast-flipping slope member, so even
 # member counts meet even splits (the contract allows 0 only before commitment,
-# which the different warm-ups cover).
-VARIANTS = {"k_fast": 'return -hysteresis_flip(score, float(self.params["band"]))',
-            "k_mid2": 'return hysteresis_flip(np.r_[np.nan, np.diff(score)] * 10, float(self.params["band"]) / 10)'}
+# which the different warm-ups cover). The template is the batch form (b: every series at once).
+VARIANTS = {"k_fast": 'return -b.k.hysteresis(score, float(self.params["band"]))',
+            "k_mid2": 'return b.k.hysteresis(score.diff() * 10, float(self.params["band"]) / 10)'}
 
 
 def fixture_source(key, fast, slow, band, warmup):
@@ -132,8 +132,9 @@ class FastEvaluatorParityTests(unittest.TestCase):
             library.mkdir()
             for key, spec in FIXTURES.items():
                 (library / f"{key}.py").write_text(fixture_source(key, *spec), encoding="utf-8")
-            volume = template("k_vol", "FixtureVolume", "k_vol").replace(
-                'close = df["close"].astype(float)', 'close = df["close"].astype(float) * (1 + 0 * df["volume"].astype(float))')
+            volume = template("k_vol", "FixtureVolume", "k_vol")
+            assert volume.count("close = b.close\n") == 1
+            volume = volume.replace("close = b.close\n", "close = b.close * (1 + 0 * b.volume)\n")
             (library / "k_vol.py").write_text(volume, encoding="utf-8")
             (tmp / "check.py").write_text(SCRIPT, encoding="utf-8")
             env = {**__import__("os").environ, "QUANTSCRIPT_INDICATORS_DIR": str(library), "PYTHONIOENCODING": "utf-8",
