@@ -18,8 +18,19 @@ for (const path of ['', 'apps/shell', 'packages/core', 'packages/ui']) {
   assert.equal(json('package-lock.json').packages[path].version, version, `npm lock entry ${path}`)
 }
 assert.equal(read('Cargo.toml').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)[1], version)
+// Third-party crates patched in from vendor/<crate> ([patch.crates-io]) keep their own version.
+const vendored = new Map()
+for (const dir of readdirSync(resolve(root, 'vendor'), { withFileTypes: true })) {
+  if (!dir.isDirectory()) continue
+  let manifest
+  try { manifest = read(`vendor/${dir.name}/Cargo.toml`) } catch { continue }
+  const pkg = manifest.split(/^\[/m).find(section => section.startsWith('package]'))
+  vendored.set(pkg.match(/^name = "([^"]+)"/m)[1], pkg.match(/^version = "([^"]+)"/m)[1])
+}
 for (const entry of read('Cargo.lock').split('[[package]]').slice(1)) {
-  if (!entry.includes('\nsource = ')) assert.equal(entry.match(/version = "([^"]+)"/)[1], entry.includes('name = "tao"') ? '0.35.3' : version, 'Cargo lock workspace version')
+  if (entry.includes('\nsource = ')) continue
+  const name = entry.match(/name = "([^"]+)"/)[1]
+  assert.equal(entry.match(/version = "([^"]+)"/)[1], vendored.get(name) ?? version, `Cargo lock workspace version: ${name}`)
 }
 // The build workflow names the tag a main push publishes; a run on the tag itself names it too.
 const releaseTag = process.env.RELEASE_TAG || (process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : '')
