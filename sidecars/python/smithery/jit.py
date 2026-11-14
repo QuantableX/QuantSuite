@@ -131,6 +131,126 @@ def gpu_kernels_reason() -> str:
     return _CUDA.get("reason", "")
 
 
+# --------------------------------------------------------------------------- compiled kernels kept on disk
+#
+# numba-cuda keeps a compiled kernel on disk only for a function that lives in a file. The generated
+# kernels (twins, wrappers) are therefore written to files named by a hash of their source and of every
+# global they read (device functions by their own hash, arrays by their bytes, numbers by value), so a
+# changed loop, helper or constant gets a new file and can never load an old kernel. A later process
+# loads the kernel instead of compiling it (seconds per kernel). SMITHERY_KERNEL_CACHE names the folder
+# (default: the temp folder), "0" turns the cache off.
+
+_CACHE_TAG = "smithery-cuda-1|fma0"
+_COMPILED: dict = {}
+
+
+def _cache_folder():
+    import tempfile
+    from pathlib import Path
+    setting = os.environ.get("SMITHERY_KERNEL_CACHE", "").strip()
+    if setting == "0":
+        return None
+    folder = Path(setting) if setting else Path(tempfile.gettempdir()) / "smithery-cuda-kernels"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return folder
+
+
+def _fingerprint(value) -> str:
+    """What a kernel reads from a global, as text that changes whenever the value does."""
+    import hashlib
+    import inspect
+    import types
+    tag = getattr(value, "_smithery_hash", None)
+    if tag:
+        return f"kernel:{tag}"
+    if isinstance(value, types.ModuleType):
+        return f"module:{value.__name__}"
+    if isinstance(value, np.ndarray):
+        return f"array:{value.dtype}:{value.shape}:{hashlib.sha256(np.ascontiguousarray(value).tobytes()).hexdigest()}"
+    if isinstance(value, (bool, int, float, complex, str, bytes, type(None))):
+        return f"value:{value!r}"
+    if isinstance(value, tuple):
+        return "tuple:(" + ",".join(_fingerprint(v) for v in value) + ")"
+    if isinstance(value, types.FunctionType):
+        try:
+            return f"function:{inspect.getsource(value)}"
+        except (OSError, TypeError):
+            return f"unknown:{id(value)}"         # no source: never cached across processes
+    module = type(value).__module__ or ""
+    if module.startswith("numba"):
+        return f"numba:{value!r}"                 # types such as float64
+    return f"unknown:{id(value)}"
+
+
+def _read_names(source: str) -> set:
+    import ast
+    return {node.id for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Name)}
+
+
+def compile_cuda(source: str, scope: dict, plan) -> dict:
+    """``exec(source, scope)`` and ``cuda.jit`` for each ``(name, device)`` of ``plan`` in order (a later
+    function may call an earlier one), through numba-cuda's disk cache (see above). Returns name -> kernel."""
+    import hashlib
+    import importlib.util
+    cuda = cuda_module()
+    plan = list(plan)
+    used = sorted(_read_names(source) & set(scope))
+    folder = _cache_folder()
+    try:
+        import numba_cuda
+        version = getattr(numba_cuda, "__version__", "")
+    except ImportError:
+        version = ""
+    digest = hashlib.sha256("\n".join([_CACHE_TAG, version, source, repr(plan)]
+                                       + [f"{k}={_fingerprint(scope[k])}" for k in used]).encode("utf-8")).hexdigest()[:24]
+    key = (digest, tuple(plan))
+    if key in _COMPILED:
+        return _COMPILED[key]
+    cacheable = folder is not None and not any(_fingerprint(scope[k]).startswith("unknown:") for k in used)
+    if cacheable:
+        path = folder / f"k_{digest}.py"
+        if not path.exists():
+            tmp = path.with_suffix(f".{os.getpid()}.tmp")
+            tmp.write_text(source, encoding="utf-8")
+            os.replace(tmp, path)
+        name = f"smithery_cuda_k_{digest}"
+        module = sys.modules.get(name)
+        if module is None:
+            spec = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+        namespace = module.__dict__
+    else:
+        namespace = {}
+        exec(compile(source, "<smithery cuda kernel>", "exec"), namespace)
+    namespace.update({k: scope[k] for k in used})
+    out = {}
+    for fname, device in plan:
+        fn = namespace[fname]
+        options = {"cache": True} if cacheable else {}
+        jitted = cuda.jit(device=True, **options)(fn) if device else cuda.jit(**options)(fn)
+        try:
+            jitted._smithery_hash = f"{digest}:{fname}"
+        except AttributeError:
+            pass
+        namespace[fname] = jitted
+        out[fname] = jitted
+    _COMPILED[key] = out
+    return out
+
+
+def _device_of(fn):
+    """A plain Python function (a per-series row or cell) as a cached CUDA device function."""
+    import inspect
+    import textwrap
+    source = textwrap.dedent(inspect.getsource(fn))
+    return compile_cuda(source, fn.__globals__, [(fn.__name__, True)])[fn.__name__]
+
+
 class _PerSeries:
     def __init__(self, row):
         self.row = row
@@ -144,9 +264,7 @@ class _PerSeries:
                                 "    s = cuda.grid(1)",
                                 "    if s < a0.shape[0]:",
                                 f"        row(s, {names})", ""])
-            scope = {"cuda": cuda, "row": cuda.jit(device=True)(self.row)}
-            exec(source, scope)
-            self.kernels[count] = cuda.jit(scope["kernel"])
+            self.kernels[count] = compile_cuda(source, {"cuda": cuda, "row": _device_of(self.row)}, [("kernel", False)])["kernel"]
         return self.kernels[count]
 
     def __call__(self, *args):
@@ -179,9 +297,7 @@ class _PerCell(_PerSeries):
                                 "    t, s = cuda.grid(2)",
                                 "    if s < a0.shape[0] and t < a0.shape[1]:",
                                 f"        cell(s, t, {names})", ""])
-            scope = {"cuda": cuda, "cell": cuda.jit(device=True)(self.row)}
-            exec(source, scope)
-            self.kernels[count] = cuda.jit(scope["kernel"])
+            self.kernels[count] = compile_cuda(source, {"cuda": cuda, "cell": _device_of(self.row)}, [("kernel", False)])["kernel"]
         return self.kernels[count]
 
     def __call__(self, *args):
@@ -296,8 +412,7 @@ def _device_twin(fn):
         func = _ToCuda(py.__name__).run(func)
         ast.fix_missing_locations(func)
         scope = _scope(py, func)
-        exec(compile(ast.unparse(func), f"<cuda twin of {py.__name__}>", "exec"), scope)
-        _DEVICE[fn] = cuda_module().jit(device=True)(scope[py.__name__])
+        _DEVICE[fn] = compile_cuda(ast.unparse(func), scope, [(py.__name__, True)])[py.__name__]
     return _DEVICE[fn]
 
 
@@ -340,8 +455,7 @@ def _twin(fn):
               + f"    for {loop.target.id} in range(_first, min(_first + 1, {stop})):\n"
               + textwrap.indent(inner, "        ") + "\n")
     scope = _scope(py, func)
-    exec(compile(source, f"<cuda twin of {py.__name__}>", "exec"), scope)
-    _TWINS[fn] = cuda_module().jit(scope["kernel"])
+    _TWINS[fn] = compile_cuda(source, scope, [("kernel", False)])["kernel"]
     return _TWINS[fn]
 
 
@@ -433,10 +547,9 @@ def _cuda_pairwise_sum():
     if "pairwise" not in _DEVICE:
         cuda = cuda_module()
         from numba import float64, int64
-        scope = {"cuda": cuda, "float64": float64, "int64": int64}
-        exec(_PAIRWISE_SOURCE, scope)
-        scope["leaf"] = cuda.jit(device=True)(scope["leaf"])
-        _DEVICE["pairwise"] = cuda.jit(device=True)(scope["pairwise"])
+        compiled = compile_cuda(_PAIRWISE_SOURCE, {"cuda": cuda, "float64": float64, "int64": int64},
+                                [("leaf", True), ("pairwise", True)])
+        _DEVICE["pairwise"] = compiled["pairwise"]
     return _DEVICE["pairwise"]
 
 
