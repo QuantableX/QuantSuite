@@ -1905,29 +1905,53 @@ def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> 
         # An old one-argument window function (numpy blocks): the same call as before.
         one = function
         function = (lambda block, xp: one(block)) if ops is NUMPY else (lambda block, xp: xp.asarray(one(xp.asnumpy(block))))
-    data = _float(ops, col.a)
+    return _rolling_blocks([col], length, lambda blocks, xp: function(blocks[0], xp), chunk, out)
+
+
+def rolling_apply_many(cols: list, length: int, function, chunk: int | None = None) -> Col:
+    """``rolling_apply`` for a window function of several columns of one batch: ``function(blocks,
+    xp)`` gets one [rows, length] block per column (the same windows of each) and returns one value
+    per row. Only windows where every column is finite are passed; the others give NaN."""
+    ops = cols[0].ops
+    S, T = cols[0].shape
+    length = int(length)
+    out = ops.full((S, T), float("nan"))
+    if T < length:
+        return Col(out, ops)
+    return _rolling_blocks(cols, length, function, chunk, out)
+
+
+def _rolling_blocks(cols: list, length: int, function, chunk, out) -> Col:
+    ops = cols[0].ops
+    S, T = cols[0].shape
+    data = [_float(ops, c.a) for c in cols]
     W = T - length + 1
     xp = NP if ops is NUMPY else _TorchNP(ops)
     if chunk is None:
         cells = int(os.environ.get("SMITHERY_GPU_CELLS", DEFAULT_GPU_CELLS))
-        chunk = 256 if ops is NUMPY else max(256, cells // max(length * length, 1))
-    # The windows of all series at once are [S, W, length] (a copy once flattened): series in
-    # blocks, so a block stays in budget. Every window is computed exactly as before.
-    rows = _block_rows(W * length)
+        chunk = 256 if ops is NUMPY else max(256, cells // max(length * length * len(cols), 1))
+    # The windows of all series at once are [S, W, length] per column (a copy once flattened):
+    # series in blocks, so a block stays in budget. Every window is computed exactly as before.
+    rows = _block_rows(W * length * len(cols))
     for s0 in range(0, S, rows):
-        win = ops.windows(data[s0:s0 + rows], length)             # [s, W, L]
-        s = win.shape[0]
-        block = win.reshape(s * W, length)
+        blocks = []
+        for a in data:
+            win = ops.windows(a[s0:s0 + rows], length)            # [s, W, L]
+            s = win.shape[0]
+            blocks.append(win.reshape(s * W, length))
+            del win
         values = ops.full((s * W,), float("nan"))
-        finite = np.isfinite(block).all(axis=1) if ops is NUMPY else ops.torch.isfinite(block).all(dim=1)
+        finite = None
+        for block in blocks:
+            ok = np.isfinite(block).all(axis=1) if ops is NUMPY else ops.torch.isfinite(block).all(dim=1)
+            finite = ok if finite is None else finite & ok
         for start in range(0, s * W, chunk):
-            part = block[start:start + chunk]
             valid = finite[start:start + chunk]
             if bool(valid.any()):
                 seg = values[start:start + chunk]
-                seg[valid] = function(part[valid], xp)
+                seg[valid] = function([block[start:start + chunk][valid] for block in blocks], xp)
         out[s0:s0 + s, length - 1:] = values.reshape(s, W)
-        del win, block, values, finite
+        del blocks, values, finite
     return Col(out, ops)
 
 
