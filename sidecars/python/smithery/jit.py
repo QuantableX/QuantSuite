@@ -170,6 +170,42 @@ def per_series(row):
     return _PerSeries(row)
 
 
+class _PerCell(_PerSeries):
+    def _kernel(self, count):
+        if count not in self.kernels:
+            cuda = cuda_module()
+            names = ", ".join(f"a{i}" for i in range(count))
+            source = "\n".join([f"def kernel({names}):",
+                                "    t, s = cuda.grid(2)",
+                                "    if s < a0.shape[0] and t < a0.shape[1]:",
+                                f"        cell(s, t, {names})", ""])
+            scope = {"cuda": cuda, "cell": cuda.jit(device=True)(self.row)}
+            exec(source, scope)
+            self.kernels[count] = cuda.jit(scope["kernel"])
+        return self.kernels[count]
+
+    def __call__(self, *args):
+        """Run ``cell(s, t, *args)`` for every series s and bar t of the first argument (a torch
+        tensor on the GPU): one thread per cell, for bars that do not depend on each other."""
+        cuda = cuda_module()
+        if cuda is None:
+            raise RuntimeError(f"GPU kernels unavailable: {gpu_kernels_reason()}")
+        import torch
+        rows, bars = int(args[0].shape[0]), int(args[0].shape[1])
+        if rows == 0 or bars == 0:
+            return
+        values = [cuda.as_cuda_array(a.detach()) if torch.is_tensor(a) else a for a in args]
+        stream = cuda.external_stream(torch.cuda.current_stream().cuda_stream)
+        threads = (64, 4)
+        blocks = ((bars + threads[0] - 1) // threads[0], (rows + threads[1] - 1) // threads[1])
+        self._kernel(len(args))[blocks, threads, stream](*values)
+
+
+def per_cell(cell):
+    """A GPU kernel from ``cell(s, t, *arrays_and_scalars)``: one thread per series and bar."""
+    return _PerCell(cell)
+
+
 # --------------------------------------------------------------------------- CUDA twins of compiled loops
 #
 # A compiled per-series loop (``@njit`` with ``for s in prange(rows): ...``) runs on the GPU as the
