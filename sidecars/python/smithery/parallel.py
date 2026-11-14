@@ -93,21 +93,80 @@ def pmap(fn, tasks: list, min_parallel: int = 4, *, max_workers: int | None = No
             for result in executor.map(fn, tasks[start:start + workers], chunksize=1)]
 
 
+# Charts per batched signal call on the GPU (the Monte Carlo ordeals): one call for many charts
+# instead of one per CPU worker. The batch splits a call into GPU-sized chunks by itself.
+GPU_FRAMES = 128
+
+
+def _batched(ind) -> bool:
+    has_batch = getattr(type(ind), "has_batch", None)
+    return bool(has_batch is not None and has_batch())
+
+
+def on_gpu(ind) -> bool:
+    """Whether ``ind``'s batched signals run on the GPU (batch form, CUDA there, not switched off)."""
+    if not _batched(ind):
+        return False
+    from .batch import device_for
+    return device_for(ind)[0] == "gpu"
+
+
+def signal_series(ind, df: pd.DataFrame) -> pd.Series:
+    """``ind.signal(df)``, through the batch when the script runs on the GPU (the same checks and
+    errors; on the CPU it is signal() itself, so CPU results stay bit for bit)."""
+    if not on_gpu(ind):
+        return ind.signal(df)
+    return pd.Series(signals_batch(ind, [df])[0], index=df.index, name=ind.name)
+
+
+def sharpe_signals(variants: list, df: pd.DataFrame, cost: float) -> list:
+    """``pmap(eval_sharpe_signal, ...)`` for indicator variants on one frame: (sharpe, signal
+    ndarray, index) each. On the GPU the signals are computed in the parent (one GPU call per
+    variant, no CUDA in the workers) and only the backtests fan out across the pool."""
+    if not variants or not on_gpu(variants[0]):
+        return pmap(eval_sharpe_signal, [(v, df, cost) for v in variants])
+    sigs = [signals_batch(v, [df])[0] for v in variants]
+    sharpes = pmap(eval_signal_sharpe, [(df, s, cost) for s in sigs])
+    return [(sh, s, df.index) for sh, s in zip(sharpes, sigs)]
+
+
+def executions(variants: list, df: pd.DataFrame, cost: float, mode: str) -> list[dict]:
+    """``pmap(eval_execution, ...)`` for indicator variants on one frame; on the GPU the signals are
+    computed in the parent (one GPU call per variant) and only the evaluations fan out."""
+    if not variants or not on_gpu(variants[0]):
+        return pmap(eval_execution, [(v, df, cost, mode) for v in variants])
+    sigs = [signals_batch(v, [df])[0] for v in variants]
+    return pmap(eval_signal_execution, [(df, s, cost, mode) for s in sigs])
+
+
+def signals_table(variants: list, frames: list) -> list:
+    """``pmap(eval_signal, ...)`` for every variant on every frame, variant-major: on the GPU one
+    batched call per variant (frames on one time grid together), else across the pool as before."""
+    if not variants or not on_gpu(variants[0]):
+        return pmap(eval_signal, [(v, df) for v in variants for df in frames])
+    return [arr for v in variants for arr in signals_batch(v, frames)]
+
+
 def simulated_results(ind, frames, cost: float, bars: int) -> list[tuple[float, float]]:
     """Generate and evaluate bounded batches; keep only scalar MC results.
 
     Generators consume the parent's RNG in the original order. Long
     histories keep the same calendar horizon without retaining hundreds
-    of large charts simultaneously.
+    of large charts simultaneously. On the GPU a batch holds up to
+    ``GPU_FRAMES`` charts (one signal call), within the GPU's working set.
     """
     iterator = iter(frames)
     capacity = max(1, min(WORKERS, 500_000 // max(bars, 1)))
+    if on_gpu(ind):
+        from .batch import DEFAULT_GPU_CELLS
+        cells = int(os.environ.get("SMITHERY_GPU_CELLS", DEFAULT_GPU_CELLS))
+        capacity = max(capacity, min(GPU_FRAMES, cells // max(bars, 1)))
     results = []
     while True:
         batch = list(islice(iterator, capacity))
         if not batch:
             return results
-        if type(ind).has_batch():
+        if _batched(ind):
             # One batched call for the chunk's signals (same values as signal() per frame), then
             # the charts' backtests across the pool as before (in the parent they ran one by one:
             # for a cheap indicator the backtests are most of the work).
@@ -132,6 +191,13 @@ def eval_execution(task) -> dict:
     from .execution import evaluate
     ind, df, cost, mode = task
     return evaluate(df, ind.signal(df), cost_bps=cost, mode=mode)
+
+
+def eval_signal_execution(task) -> dict:
+    """(df, signal ndarray, cost_bps, mode) -> eval_execution's result for a signal computed ahead."""
+    from .execution import evaluate
+    df, sig, cost, mode = task
+    return evaluate(df, rehydrate(sig, df.index), cost_bps=cost, mode=mode)
 
 
 def eval_total_sharpe(task) -> tuple[float, float]:
@@ -163,6 +229,12 @@ def eval_signal_total_sharpe(task) -> tuple[float, float]:
     df, sig, cost = task
     bt = backtest.run(df, rehydrate(sig, df.index), cost_bps=cost)
     return bt["total_log_ret"], bt["sharpe"]
+
+
+def eval_signal_sharpe(task) -> float:
+    """(df, signal ndarray, cost_bps) -> sharpe: eval_sharpe_signal's backtest for a signal computed ahead."""
+    df, sig, cost = task
+    return backtest.sharpe_only(df, rehydrate(sig, df.index), cost)
 
 
 def eval_sharpe_signal(task):

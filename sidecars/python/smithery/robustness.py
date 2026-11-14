@@ -190,7 +190,7 @@ class Gauntlet:
 
     # ------------------------------------------------------------ helpers
     def _bt(self, df: pd.DataFrame, cost: float) -> dict:
-        return backtest.run(df, self.ind.signal(df), cost_bps=cost)
+        return backtest.run(df, par.signal_series(self.ind, df), cost_bps=cost)
 
     def _md_table(self, header: list[str], rows: list[list]) -> str:
         out = ["| " + " | ".join(header) + " |",
@@ -318,7 +318,7 @@ class Gauntlet:
     def axis_parameter(self, primary: str) -> float:
         df = load(primary)
         cost = cost_for(primary)
-        base_sig = self.ind.signal(df)
+        base_sig = par.signal_series(self.ind, df)
         base_sharpe = backtest.sharpe_only(df, base_sig, cost)
         rows, plateaus, stabs = [], [], []
         perts = []
@@ -329,9 +329,7 @@ class Gauntlet:
                 if isinstance(base_v, int):
                     v = int(round(v))
                 perts.append((pname, base_v, v, mult))
-        results = par.pmap(
-            par.eval_sharpe_signal,
-            [(self.ind.with_params(**{pn: v}), df, cost) for pn, _, v, _m in perts])
+        results = par.sharpe_signals([self.ind.with_params(**{pn: v}) for pn, _, v, _m in perts], df, cost)
         by_param: dict[str, tuple[list, list]] = {}
         flips = []
         for (pname, base_v, v, mult), (sh, arr, idx) in zip(perts, results):
@@ -459,7 +457,7 @@ class Gauntlet:
         sc_garch = float(0.5 * s_map(g_med) + 50 * g_frac)
 
         # 4 — microstructure noise injection (degradation curve)
-        base_sig = self.ind.signal(df)
+        base_sig = par.signal_series(self.ind, df)
         amps = (0.05, 0.10, 0.20, 0.35, 0.50)
         noisy = [mc.noise_inject(df, amp, np.random.default_rng(self.seed + int(amp * 100)))
                  for amp in amps]
