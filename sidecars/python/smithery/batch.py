@@ -69,7 +69,7 @@ def device_for(indicator, device: str = "auto") -> tuple[str, str]:
     if device == "cpu":
         return "cpu", "CPU requested"
     if device == "auto" and getattr(indicator, "gpu", True) is False:
-        return "cpu", "compiled per-row kernels (gpu = False)"
+        return "cpu", "the script sets gpu = False"
     torch, reason = _torch()
     if torch is None:
         return "cpu", reason.removeprefix("CPU: ")
@@ -107,7 +107,7 @@ def tally() -> dict:
 
 def device_line(since: dict | None = None) -> str:
     """Where the indicator series since ``since`` (a ``tally()``) ran, e.g.
-    ``GPU (NVIDIA GeForce RTX 5090, 16,610 series); CPU: compiled per-row kernels (gpu = False) 3,020``."""
+    ``GPU (NVIDIA GeForce RTX 5090, 16,610 series); CPU: the script sets gpu = False 3,020``."""
     now, before = tally(), since or {"gpu": 0, "cpu": {}}
     gpu = now["gpu"] - before["gpu"]
     cpu = {r: n - before["cpu"].get(r, 0) for r, n in now["cpu"].items()}
@@ -1763,8 +1763,9 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
         for i in ok:
             one(i, reason)
         return out
-    # A script whose logic steps bar by bar sets ``gpu = False``: batched on the CPU it is faster
-    # than thousands of tiny GPU launches. "auto" honours that; an explicit device does not.
+    # A script that sets ``gpu = False`` stays on the CPU (LCES dc and dcl, which stay exactly as they
+    # are). Bar-by-bar loops run on the GPU through smithery.jit.launch (their CUDA twins), so no
+    # other script needs it. "auto" honours the flag (said in the device line); an explicit device does not.
     if device == "auto" and getattr(indicator, "gpu", True) is False:
         device = "cpu"
     ops = ops_for(device)
