@@ -223,6 +223,7 @@ _NP_BUILTIN = {"abs": "abs", "absolute": "abs", "fabs": "abs", "maximum": "max",
                "float64": "float", "int64": "int"}
 _NP_LIBDEVICE = {"rint": "rint", "trunc": "trunc"}
 _TWINS: dict = {}
+_BOUNDS: dict = {}
 _DEVICE: dict = {}
 _TWIN_WARNED: list = []
 
@@ -316,6 +317,15 @@ def _twin(fn):
     bounds = loop.iter.args
     if len(bounds) not in (1, 2) or not isinstance(loop.target, ast.Name):
         raise NotImplementedError(f"{py.__name__}: prange(start, stop) only")
+    # The launch's thread count: the prange bound evaluated on the host (a loop may run over
+    # series x checkpoints x grid values, not only the first dimension of an array).
+    host_pre = "\n".join(ast.unparse(stmt) for stmt in body[:k])
+    host = (f"def bound({ast.unparse(func.args)}):\n"
+            + (textwrap.indent(host_pre, "    ") + "\n" if host_pre else "")
+            + f"    return int({ast.unparse(bounds[-1])}) - int({ast.unparse(bounds[0]) if len(bounds) == 2 else '0'})\n")
+    host_scope = dict(py.__globals__)
+    exec(compile(host, f"<prange bound of {py.__name__}>", "exec"), host_scope)
+    _BOUNDS[fn] = host_scope["bound"]
     func.body = body
     func = _ToCuda(py.__name__).run(func)
     ast.fix_missing_locations(func)
@@ -463,7 +473,10 @@ def launch(fn, *args):
             back.append((device, a))
         else:
             values.append(a)
-    rows = max((int(a.shape[0]) for a in args if getattr(a, "ndim", 0) >= 1), default=0)
+    try:
+        rows = max(int(_BOUNDS[fn](*args)), 0)
+    except Exception:  # noqa: BLE001 - a bound the host cannot evaluate: one thread per row
+        rows = max((int(a.shape[0]) for a in args if getattr(a, "ndim", 0) >= 1), default=0)
     if rows:
         threads = 32
         kernel[(rows + threads - 1) // threads, threads, stream](*values)

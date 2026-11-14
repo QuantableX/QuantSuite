@@ -96,6 +96,42 @@ def _votes(votes):
                 os.environ[key] = value
 
 
+@contextmanager
+def _votes_only():
+    """Engine runs that only compute their members' votes into the active vote store (no walk)."""
+    from rotation_lab.backtest import batch_votes
+    saved = os.environ.get(batch_votes.VOTES_ONLY)
+    os.environ[batch_votes.VOTES_ONLY] = "1"
+    try:
+        yield
+    finally:
+        if saved is None:
+            os.environ.pop(batch_votes.VOTES_ONLY, None)
+        else:
+            os.environ[batch_votes.VOTES_ONLY] = saved
+
+
+def parent_votes(jobs, store, progress=None) -> tuple[list, str]:
+    """The variants that bring their own candles or parameters compute their votes here, in the
+    parent on the GPU (votes-only engine runs into the Gauntlet's vote store); the pool workers then
+    read them and only walk. Returns the jobs pointed at the store, and the device line."""
+    from smithery import batch as B
+    from rotation_lab.backtest import vote_store
+    if store is None or os.environ.get("SMITHERY_WORKER_GPU", "0").strip() == "1":
+        return jobs, "workers compute their own votes"
+    if os.environ.get("SMITHERY_PARENT_VOTES", "1").strip() == "0":
+        return jobs, "workers compute their own votes (SMITHERY_PARENT_VOTES=0)"
+    if not B.gpu_available():
+        return jobs, f"workers compute their own votes ({B.device_note()})"
+    own = [job for job in jobs if len(job) < 5 or job[4] is None]
+    with _votes((store, "write")), _votes_only():
+        for k, job in enumerate(own, 1):
+            native_job(job[:4])
+            _tick(progress, "Variant votes (GPU)", k, len(own), {"label": job[0]})
+    vote_store.close_all()
+    return [(*job[:4], (store, "read")) for job in jobs], f"variant votes on the GPU in the parent ({len(own)} runs)"
+
+
 def native_job(job):
     """One engine run: (label, config, price spec, keep equity[, (vote store, mode)]) -> summary."""
     label, config, spec, keep = job[:4]
@@ -387,6 +423,9 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
         add("permutation", f"shuffle {s}", config, {"kind": "shuffle", "seed": s, **window})
 
     say(f"{len(jobs)} variant runs")
+    if (workers or default_workers()) > 1 and len(jobs) > 1:
+        jobs, votes_device = parent_votes(jobs, store.name if store is not None else None, progress=say)
+        say(votes_device)
     results = run_native(jobs, workers=workers, progress=say, stage="Variant runs")
     vote_store.close_all()
     if store is not None:

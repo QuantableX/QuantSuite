@@ -123,6 +123,7 @@ class GauntletJobsTests(unittest.TestCase):
             raise Stop()
 
         with patch.object(sg, "run_native", side_effect=fake_run_native), \
+                patch.object(sg, "parent_votes", side_effect=lambda jobs, store, progress=None: (jobs, "off")), \
                 patch("smithery.registry.describe_all", return_value={"indicators": []}):
             with self.assertRaises(Stop):
                 sg.run(config, data_dir=Path(tempfile.gettempdir()), fast=True)
@@ -138,11 +139,69 @@ class GauntletJobsTests(unittest.TestCase):
         # The off switch: no store at all.
         captured.clear()
         with patch.dict(os.environ, {"SMITHERY_VOTE_REUSE": "0"}), patch.object(sg, "run_native", side_effect=fake_run_native), \
+                patch.object(sg, "parent_votes", side_effect=lambda jobs, store, progress=None: (jobs, "off")), \
                 patch("smithery.registry.describe_all", return_value={"indicators": []}):
             with self.assertRaises(Stop):
                 sg.run(config, data_dir=Path(tempfile.gettempdir()), fast=True)
         self.assertIsNone(captured["base"][0][4])
         self.assertFalse(any(job[4] for job in captured["variants"]))
+
+
+class ParentVotesTests(unittest.TestCase):
+    """The parent computes the variants' own votes (votes-only runs, write mode); the workers read."""
+
+    def jobs(self):
+        return [("parameter_jitter|jitter 1", "cfg-a", None, False, None),
+                ("price_noise|noise seed 1", "cfg-b", {"kind": "noise", "seed": 1}, False, None),
+                ("fees|2x fee", "cfg-c", None, False, ("base-store", "read"))]
+
+    def test_own_votes_are_computed_once_in_the_parent_and_every_job_then_reads(self):
+        from smithery import system_gauntlet as sg
+        from rotation_lab.backtest import batch_votes
+        seen = []
+
+        def fake_native(job):
+            seen.append((job, os.environ.get(vote_store.ENV_FOLDER), os.environ.get(vote_store.ENV_MODE),
+                         os.environ.get(batch_votes.VOTES_ONLY)))
+            return {"label": job[0], "error": "votes only"}
+
+        with patch.object(sg, "native_job", side_effect=fake_native), \
+                patch("smithery.batch.gpu_available", return_value=True), \
+                patch.dict(os.environ, {"SMITHERY_PARENT_VOTES": "1", "SMITHERY_WORKER_GPU": "0"}):
+            os.environ.pop(batch_votes.VOTES_ONLY, None)
+            jobs, note = sg.parent_votes(self.jobs(), "the-store")
+        self.assertEqual([s[0][0] for s in seen], ["parameter_jitter|jitter 1", "price_noise|noise seed 1"])
+        for job, folder, mode, only in seen:
+            self.assertEqual((len(job), folder, mode, only), (4, "the-store", "write", "1"))
+        self.assertTrue(all(job[4] == ("the-store", "read") for job in jobs))
+        self.assertEqual([job[:4] for job in jobs], [job[:4] for job in self.jobs()])
+        self.assertNotIn(batch_votes.VOTES_ONLY, os.environ)
+        self.assertIn("GPU", note)
+
+    def test_off_without_a_gpu_or_when_switched_off(self):
+        from smithery import system_gauntlet as sg
+        with patch.object(sg, "native_job") as native, patch("smithery.batch.gpu_available", return_value=False):
+            jobs, _ = sg.parent_votes(self.jobs(), "the-store")
+        native.assert_not_called()
+        self.assertEqual(jobs, self.jobs())
+        with patch.object(sg, "native_job") as native, patch("smithery.batch.gpu_available", return_value=True), \
+                patch.dict(os.environ, {"SMITHERY_PARENT_VOTES": "0"}):
+            jobs, _ = sg.parent_votes(self.jobs(), "the-store")
+        native.assert_not_called()
+        self.assertEqual(jobs, self.jobs())
+
+    def test_kept_votes_come_back_unchanged(self):
+        folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(folder.cleanup)
+        self.addCleanup(vote_store.close_all)
+        votes = pd.Series([1, -1, 0], index=pd.date_range("2024-01-01", periods=3), name="k")
+        with patch.dict(os.environ, {vote_store.ENV_FOLDER: folder.name, vote_store.ENV_MODE: "write"}):
+            self.assertEqual(vote_store.active().put_many([("key-1", votes)]), 1)
+        vote_store.close_all()
+        with patch.dict(os.environ, {vote_store.ENV_FOLDER: folder.name, vote_store.ENV_MODE: "read"}):
+            pd.testing.assert_series_equal(vote_store.active().get("key-1"), votes, check_exact=True)
+            self.assertEqual(vote_store.active().put_many([("key-2", votes)]), 0)   # read mode keeps nothing
+        vote_store.close_all()
 
 
 if __name__ == "__main__":

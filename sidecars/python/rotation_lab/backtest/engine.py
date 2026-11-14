@@ -1049,6 +1049,10 @@ class BacktestEngine:
             ordered = sorted(wanted, key=lambda pair: (pair[0], pair[1] or ""))
             _batch_votes.prefill([(frames[a], frames.get(b) if b else None) for a, b in ordered], config.indicator)
             prefilled[0] = True
+            if _batch_votes.votes_only():
+                # The votes are what this run is for (System Gauntlet, parent): keep them, skip the walk.
+                _batch_votes.keep()
+                return pd.Series(dtype=float), pd.Series(dtype=object), [], {}
 
         if config.portfolio is not None:
             return self._walk_portfolio(config, frames, master_idx, returns, gate_values,
