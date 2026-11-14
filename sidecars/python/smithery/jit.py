@@ -80,10 +80,45 @@ def cuda_module():
                 from numba import cuda as mod
                 if not mod.is_available():
                     mod, reason = None, "numba-cuda finds no CUDA GPU"
+                else:
+                    _exact_multiply_add()
             except Exception as exc:  # noqa: BLE001 — optional: the CPU loops still run
                 mod, reason = None, f"numba-cuda not installed ({type(exc).__name__})"
         _CUDA["mod"], _CUDA["reason"] = mod, reason
     return _CUDA["mod"]
+
+
+def _exact_multiply_add():
+    """NVVM contracts a*b + c into one fused multiply-add by default (one rounding instead of two);
+    the CPU loops round twice. Off for smithery's kernels, so a twin does its loop's arithmetic."""
+    from numba.cuda.cudadrv import nvvm
+    if getattr(nvvm.compile_ir, "_smithery_exact", False):
+        return
+    original = nvvm.compile_ir
+
+    def compile_ir(llvmir, **options):
+        options.setdefault("fma", False)
+        return original(llvmir, **options)
+
+    compile_ir._smithery_exact = True
+    nvvm.compile_ir = compile_ir
+    # Kernels are linked with link-time optimization, where nvJitLink contracts again.
+    try:
+        import dataclasses
+
+        from numba.cuda.cudadrv import driver
+        linker = driver._Linker
+        linker_options = linker._get_linker_options
+
+        def _get_linker_options(self, ptx):
+            options = linker_options(self, ptx)
+            if options.link_time_optimization:
+                options = dataclasses.replace(options, fma=False)
+            return options
+
+        linker._get_linker_options = _get_linker_options
+    except Exception as exc:  # noqa: BLE001 — another numba-cuda: kernels run, with fused multiply-adds
+        print(f"smithery.jit: fused multiply-adds stay on in linked kernels ({type(exc).__name__}: {exc})", file=sys.stderr)
 
 
 def gpu_kernels() -> bool:

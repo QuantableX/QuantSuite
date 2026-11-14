@@ -260,8 +260,54 @@ class _NumpyOps:
         return np.sqrt(var) if how == "std" else var
 
     def rolling_pair(self, a, b, window, min_periods, how):
+        if how in ("cov", "corr") and exact_moments():
+            return self._exact_pair(a, b, int(window), min_periods, how)
         out = getattr(self._frame(a).rolling(window, min_periods=min_periods), how)(self._frame(b))
         return np.ascontiguousarray(out.to_numpy().T)
+
+    def _exact_pair(self, a, b, n, min_periods, how):
+        """Rolling cov / corr from each window's own pairs (their means, then the products of the
+        deviations). pandas takes mean(xy) - mean(x) mean(y) from running sums: the cancellation
+        var/std had, and a constant window gave corr +-inf from rounding noise. pandas' rules
+        otherwise: only bars where both are present, min_periods, one pair gives NaN; a constant
+        window gives cov 0 and corr NaN. The GPU computes the same formulas."""
+        from numpy.lib.stride_tricks import sliding_window_view
+        x0, y0 = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+        both = ~np.isnan(x0) & ~np.isnan(y0)
+        x, y = np.where(both, x0, np.nan), np.where(both, y0, np.nan)
+        S, T = x.shape
+        mp = n if min_periods is None else int(min_periods)
+        c = np.cumsum(both, axis=1, dtype=float)
+        cnt = c.copy()
+        if n < T:
+            cnt[:, n:] = c[:, n:] - c[:, :-n]
+        pad = np.full((S, n - 1), np.nan)
+        px, py = np.concatenate([pad, x], axis=1), np.concatenate([pad, y], axis=1)
+        sxy, sxx, syy = np.empty((S, T)), np.empty((S, T)), np.empty((S, T))
+        rows = _block_rows(T * n)
+        with np.errstate(all="ignore"):
+            for s0 in range(0, S, rows):
+                wx = sliding_window_view(px[s0:s0 + rows], n, axis=1)
+                wy = sliding_window_view(py[s0:s0 + rows], n, axis=1)
+                ok = ~np.isnan(wx)
+                cw = np.maximum(ok.sum(axis=2, keepdims=True), 1).astype(float)
+                dx = np.where(ok, wx - np.where(ok, wx, 0.0).sum(axis=2, keepdims=True) / cw, 0.0)
+                dy = np.where(ok, wy - np.where(ok, wy, 0.0).sum(axis=2, keepdims=True) / cw, 0.0)
+                sxy[s0:s0 + rows] = (dx * dy).sum(axis=2)
+                if how == "corr":
+                    sxx[s0:s0 + rows] = (dx * dx).sum(axis=2)
+                    syy[s0:s0 + rows] = (dy * dy).sum(axis=2)
+            flat_x = self.rolling(x, n, 1, "max") == self.rolling(x, n, 1, "min")
+            flat_y = self.rolling(y, n, 1, "max") == self.rolling(y, n, 1, "min")
+            flat = flat_x | flat_y
+            cov = np.where(flat, 0.0, sxy / (cnt - 1))
+            if how == "corr":
+                vx = np.where(flat_x, 0.0, sxx / (cnt - 1))
+                vy = np.where(flat_y, 0.0, syy / (cnt - 1))
+                res = cov / (vx * vy) ** 0.5
+            else:
+                res = cov
+        return np.where((cnt >= max(mp, 1)) & (cnt > 1), res, np.nan)
 
     def ewm(self, a, how, spec, *args, **kwargs):
         return np.ascontiguousarray(getattr(self._frame(a).ewm(**spec), how)(*args, **kwargs).to_numpy().T)
@@ -664,8 +710,49 @@ class _TorchOps:
         return res
 
     def rolling_pair(self, a, b, window, min_periods, how):
+        if how in ("cov", "corr"):
+            return self._pair(self._t(a).to(self.f64), self._t(b).to(self.f64), int(window), min_periods, how)
         out = NUMPY.rolling_pair(self.to_numpy(a), self.to_numpy(b), window, min_periods, how)
         return self.asarray(out)
+
+    def _pair(self, x0, y0, n, min_periods, how):
+        """``_NumpyOps._exact_pair`` on the GPU (each window's own pairs, pandas' rules)."""
+        t = self.torch
+        x0, y0 = t.broadcast_tensors(x0, y0)
+        both = ~t.isnan(x0) & ~t.isnan(y0)
+        nan = t.full_like(x0, float("nan"))
+        x, y = t.where(both, x0, nan), t.where(both, y0, nan)
+        S, T = x.shape
+        mp = self._min_periods(n, min_periods)
+        cnt = self._counts(both, n)
+        zero = t.zeros((), dtype=self.f64, device=self.device)
+        sxy = t.empty((S, T), dtype=self.f64, device=self.device)
+        sxx, syy = t.empty_like(sxy), t.empty_like(sxy)
+        rows = _block_rows(T * n)
+        for s0 in range(0, S, rows):
+            pad = t.full((min(rows, S - s0), n - 1), float("nan"), dtype=self.f64, device=self.device)
+            wx = t.cat([pad, x[s0:s0 + rows]], dim=1).unfold(1, n, 1)
+            wy = t.cat([pad, y[s0:s0 + rows]], dim=1).unfold(1, n, 1)
+            ok = ~t.isnan(wx)
+            cw = ok.sum(dim=2, keepdim=True).clamp(min=1).to(self.f64)
+            dx = t.where(ok, wx - t.where(ok, wx, zero).sum(dim=2, keepdim=True) / cw, zero)
+            dy = t.where(ok, wy - t.where(ok, wy, zero).sum(dim=2, keepdim=True) / cw, zero)
+            sxy[s0:s0 + rows] = (dx * dy).sum(dim=2)
+            if how == "corr":
+                sxx[s0:s0 + rows] = (dx * dx).sum(dim=2)
+                syy[s0:s0 + rows] = (dy * dy).sum(dim=2)
+            del wx, wy, ok, cw, dx, dy
+        flat_x = self._extreme(x, n, True, 1) == self._extreme(x, n, False, 1)
+        flat_y = self._extreme(y, n, True, 1) == self._extreme(y, n, False, 1)
+        flat = flat_x | flat_y
+        cov = t.where(flat, zero, sxy / (cnt - 1))
+        if how == "corr":
+            vx = t.where(flat_x, zero, sxx / (cnt - 1))
+            vy = t.where(flat_y, zero, syy / (cnt - 1))
+            res = cov / (vx * vy) ** 0.5
+        else:
+            res = cov
+        return t.where((cnt >= max(mp, 1)) & (cnt > 1), res, t.full_like(res, float("nan")))
 
     def ewm(self, a, how, spec, *args, **kwargs):
         if how == "mean" and not spec.get("times"):
@@ -719,12 +806,13 @@ class _TorchOps:
                 return t.where(nobs >= minp, y, nan)
         if T == 0:
             return t.empty_like(x)
-        # Holes the scans cannot take: pandas' recursion, compiled per series on the CPU (one
-        # pass; a bar loop of GPU launches was ~0.1 s per call). Bit for bit with pandas.
-        values = np.ascontiguousarray(self.to_numpy(x), dtype=float)
-        out = np.empty_like(values)
-        _ewm_rows(values, alpha, adjust, ignore_na, minp, out)
-        return self.asarray(out)
+        # Holes the scans cannot take: pandas' recursion per series, the compiled loop's CUDA twin
+        # (one thread per series; jit.launch says so and runs it on the CPU without GPU kernels).
+        from .jit import launch
+        values = x.contiguous()
+        out = t.empty_like(values)
+        launch(_ewm_rows, values, float(alpha), bool(adjust), bool(ignore_na), int(minp), out)
+        return out
 
     def shift(self, a, k):
         t = self.torch
@@ -2159,7 +2247,7 @@ WINDOW_BLOCK_CELLS = 32_000_000
 
 
 def exact_moments() -> bool:
-    """Rolling var/std (and skew/kurt) from each window (exact; the default since 2026-11-12, user's decision).
+    """Rolling var/std (and skew/kurt, cov/corr) from each window (exact; the default since 2026-11-12, user's decision).
     SMITHERY_PANDAS_MOMENTS=1 gives pandas' running sums on the CPU (the old values, for parity
     checks against references made with the old code)."""
     return os.environ.get("SMITHERY_PANDAS_MOMENTS", "0").strip() != "1"
