@@ -239,6 +239,7 @@ class Gauntlet:
         med = float(np.median(sharpes))
         # Ratio pairs: the systems trade these indicators on A/B ratio series.
         ratios, ratio_rows, no_path, fine = [], [], [], RATIO_PATH[self.timeframe][0]
+        pending = []
         for a_sym, b_sym in RATIO_PAIRS:
             ka, kb = series_key(a_sym, self.timeframe), series_key(b_sym, self.timeframe)
             if not ka or not kb:
@@ -249,12 +250,18 @@ class Gauntlet:
                 else ratio_frame(load(ka), load(kb))
             if len(rf) < 250:
                 continue
-            rb = self._bt(rf, max(cost_for(ka), cost_for(kb)))
+            pending.append((a_sym, b_sym, rf, max(cost_for(ka), cost_for(kb)), fa is None or fb is None))
+        if par.on_gpu(self.ind):
+            # On the GPU the pairs' time grids run side by side (one call), not one after another.
+            rbs = par.backtests_batch(self.ind, [p[2] for p in pending], [p[3] for p in pending], min_parallel=2)
+        else:
+            rbs = [self._bt(rf, cost) for _, _, rf, cost, _ in pending]
+        for (a_sym, b_sym, rf, _cost, pathless), rb in zip(pending, rbs):
             ratios.append(rb["sharpe"])
             # Which candle the pair ran on: the share of its bars whose high and low follow the path.
             ratio_rows.append([f"{a_sym[:-4]}/{b_sym[:-4]}", len(rf), rb["sharpe"], rb["max_dd"],
                                f"{rf.attrs.get('path_share', 0.0):.0%}"])
-            if fa is None or fb is None:
+            if pathless:
                 no_path.append(f"{a_sym[:-4]}/{b_sym[:-4]}")
         ratio_breadth = float(np.mean([s > 0 for s in ratios])) if ratios else float("nan")
         score = float(np.clip(50 * breadth + 0.5 * s_map(med) - cat_pen, 0, 100))

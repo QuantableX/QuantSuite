@@ -134,6 +134,7 @@
       "../../sidecars/python/smithery/threads.py": "sidecars/python/smithery/threads.py",
       "../../sidecars/python/smithery/batch.py": "sidecars/python/smithery/batch.py",
       "../../sidecars/python/smithery/jit.py": "sidecars/python/smithery/jit.py",
+      "../../sidecars/python/smithery/streams.py": "sidecars/python/smithery/streams.py",
       "../../sidecars/python/smithery/robust_search.py": "sidecars/python/smithery/robust_search.py"
     },
     "icon": [

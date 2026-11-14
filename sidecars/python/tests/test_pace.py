@@ -20,6 +20,7 @@ class Clock:
 class PaceTests(unittest.TestCase):
     def setUp(self):
         pace._cache.update(path=None, read=float("-inf"), level=100)
+        pace._stretch.update(active=0, since=0.0, pausing=False)
         self.tmp = tempfile.TemporaryDirectory()
         self.file = Path(self.tmp.name) / "level.json"
 
@@ -83,6 +84,43 @@ class PaceTests(unittest.TestCase):
             pacer.done()
             self.assertEqual(slept, [])
             self.assertEqual(pace.batch(1024, 16), 1024)
+
+    def test_side_by_side_batches_pause_once_for_the_whole_busy_stretch(self):
+        clock, slept = Clock(), []
+        with patch.dict(os.environ, {"SMITHERY_THROTTLE_FILE": str(self.file)}):
+            self.set_level(50)
+            a = pace.Pacer(sleep=slept.append, clock=clock)
+            b = pace.Pacer(sleep=slept.append, clock=clock)
+            a.start()
+            clock.now += 0.1
+            b.start()               # on another CUDA stream, while a still runs
+            clock.now += 0.2
+            a.done()                # b still runs: no pause yet
+            self.assertEqual(slept, [])
+            clock.now += 0.1
+            b.done()                # the GPU was busy 0.4 s: at 50% it rests 0.4 s
+            self.assertEqual(len(slept), 1)
+            self.assertAlmostEqual(slept[0], 0.4)
+
+    def test_a_stretch_that_never_ends_is_closed_for_the_pause(self):
+        import threading
+        clock, slept = Clock(), []
+        with patch.dict(os.environ, {"SMITHERY_THROTTLE_FILE": str(self.file)}):
+            self.set_level(50)
+            a = pace.Pacer(sleep=slept.append, clock=clock)
+            b = pace.Pacer(sleep=slept.append, clock=clock)
+            a.start()
+            clock.now += pace.MAX_STRETCH + 1.0
+            started = threading.Event()
+            later = threading.Thread(target=lambda: (b.start(), started.set()))
+            later.start()
+            self.assertFalse(started.wait(0.3))      # waits: the stretch is past its limit
+            a.done()                                 # last of the stretch: pauses for all
+            self.assertTrue(started.wait(5))
+            b.done()
+            later.join()
+            self.assertEqual(len(slept), 1)
+            self.assertAlmostEqual(slept[0], pace.MAX_STRETCH + 1.0)
 
     def test_the_level_is_read_at_most_once_a_second(self):
         with patch.dict(os.environ, {"SMITHERY_THROTTLE_FILE": str(self.file)}):

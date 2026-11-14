@@ -125,7 +125,7 @@ def sharpe_signals(variants: list, df: pd.DataFrame, cost: float) -> list:
     variant, no CUDA in the workers) and only the backtests fan out across the pool."""
     if not variants or not on_gpu(variants[0]):
         return pmap(eval_sharpe_signal, [(v, df, cost) for v in variants])
-    sigs = [signals_batch(v, [df])[0] for v in variants]
+    sigs = variant_signals(variants, [df])
     sharpes = pmap(eval_signal_sharpe, [(df, s, cost) for s in sigs])
     return [(sh, s, df.index) for sh, s in zip(sharpes, sigs)]
 
@@ -135,7 +135,7 @@ def executions(variants: list, df: pd.DataFrame, cost: float, mode: str) -> list
     computed in the parent (one GPU call per variant) and only the evaluations fan out."""
     if not variants or not on_gpu(variants[0]):
         return pmap(eval_execution, [(v, df, cost, mode) for v in variants])
-    sigs = [signals_batch(v, [df])[0] for v in variants]
+    sigs = variant_signals(variants, [df])
     return pmap(eval_signal_execution, [(df, s, cost, mode) for s in sigs])
 
 
@@ -144,7 +144,18 @@ def signals_table(variants: list, frames: list) -> list:
     batched call per variant (frames on one time grid together), else across the pool as before."""
     if not variants or not on_gpu(variants[0]):
         return pmap(eval_signal, [(v, df) for v in variants for df in frames])
-    return [arr for v in variants for arr in signals_batch(v, frames)]
+    return variant_signals(variants, frames)
+
+
+def variant_signals(variants: list, frames: list) -> list:
+    """Every variant's signals on ``frames`` (variant-major, numpy arrays), the variants side by side
+    on CUDA streams (smithery.streams): one variant's call holds a single chart or a few, which alone
+    keep the GPU nearly idle. The same values as one call after another; the first variant's error
+    is raised."""
+    from . import streams
+    bars = sum(len(df) for df in frames)
+    rows = streams.gpu_map(lambda v: signals_batch(v, frames), variants, cells=lambda v: bars)
+    return [arr for row in rows for arr in row]
 
 
 def simulated_results(ind, frames, cost: float, bars: int) -> list[tuple[float, float]]:
