@@ -1890,6 +1890,12 @@ def _positional_count(function) -> int:
     return sum(1 for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD))
 
 
+def namespace(col: Col):
+    """The numpy-like namespace of a column's device: numpy itself on the CPU (the same arithmetic
+    as before), the GPU's otherwise. For library helpers that build their own windows."""
+    return NP if col.ops is NUMPY else _TorchNP(col.ops)
+
+
 def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> Col:
     """``function(block, xp)`` on every complete, all-finite window of ``length`` bars of every
     series: ``block`` is [rows, length], ``xp`` numpy (CPU) or the GPU's numpy-like namespace,
