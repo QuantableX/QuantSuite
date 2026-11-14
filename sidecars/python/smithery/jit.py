@@ -16,9 +16,11 @@ function runs as plain Python. ``NUMBA_NUM_THREADS`` limits the threads (researc
 """
 from __future__ import annotations
 
+import functools
 import math
 import os
 import sys
+import threading
 
 import numpy as np
 
@@ -66,7 +68,20 @@ else:  # pragma: no cover - exercised only without Numba
 
 _CUDA: dict = {}
 
+# GPU jobs run side by side in threads (smithery.streams): generating and compiling a kernel, and
+# launching one, happen one thread at a time (a launch only queues the kernel on the thread's stream).
+_LOCK = threading.RLock()
 
+
+def _locked(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _LOCK:
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+@_locked
 def cuda_module():
     """numba-cuda's ``cuda`` when GPU kernels can run (installed, a CUDA GPU, SMITHERY_GPU not 0)."""
     if "mod" not in _CUDA:
@@ -194,6 +209,7 @@ def _read_names(source: str) -> set:
     return {node.id for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Name)}
 
 
+@_locked
 def compile_cuda(source: str, scope: dict, plan) -> dict:
     """``exec(source, scope)`` and ``cuda.jit`` for each ``(name, device)`` of ``plan`` in order (a later
     function may call an earlier one), through numba-cuda's disk cache (see above). Returns name -> kernel."""
@@ -284,7 +300,8 @@ class _PerSeries:
         values = [cuda.as_cuda_array(a.detach()) if torch.is_tensor(a) else a for a in args]
         stream = cuda.external_stream(torch.cuda.current_stream().cuda_stream)
         threads = 32
-        self._kernel(len(args))[(rows + threads - 1) // threads, threads, stream](*values)
+        with _LOCK:
+            self._kernel(len(args))[(rows + threads - 1) // threads, threads, stream](*values)
 
 
 def per_series(row):
@@ -318,7 +335,8 @@ class _PerCell(_PerSeries):
         stream = cuda.external_stream(torch.cuda.current_stream().cuda_stream)
         threads = (64, 4)
         blocks = ((bars + threads[0] - 1) // threads[0], (rows + threads[1] - 1) // threads[1])
-        self._kernel(len(args))[blocks, threads, stream](*values)
+        with _LOCK:
+            self._kernel(len(args))[blocks, threads, stream](*values)
 
 
 def per_cell(cell):
@@ -407,6 +425,7 @@ def _scope(py, func):
     return scope
 
 
+@_locked
 def _device_twin(fn):
     """A compiled helper (called from a loop) as a CUDA device function."""
     import ast
@@ -420,6 +439,7 @@ def _device_twin(fn):
     return _DEVICE[fn]
 
 
+@_locked
 def _twin(fn):
     """The CUDA kernel of a compiled ``for s in prange(...)`` loop: one thread per series."""
     import ast
@@ -546,6 +566,7 @@ def pairwise(a, start, n):
 """
 
 
+@_locked
 def _cuda_pairwise_sum():
     """``pairwise_sum`` as a CUDA device function (numpy's pairwise order, the same additions)."""
     if "pairwise" not in _DEVICE:
@@ -596,7 +617,8 @@ def launch(fn, *args):
         rows = max((int(a.shape[0]) for a in args if getattr(a, "ndim", 0) >= 1), default=0)
     if rows:
         threads = 32
-        kernel[(rows + threads - 1) // threads, threads, stream](*values)
+        with _LOCK:
+            kernel[(rows + threads - 1) // threads, threads, stream](*values)
     for device, a in back:
         if a.flags.writeable and a.flags.c_contiguous:
             device.copy_to_host(a, stream=stream)

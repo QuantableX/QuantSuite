@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import math
 import os
+import threading
 
 import numpy as np
 import pandas as pd
@@ -84,15 +85,17 @@ def device_label(indicator, device: str = "auto") -> str:
 
 # Series computed in this process, for the jobs' progress lines: on the GPU, and on the CPU by reason.
 _TALLY: dict = {"gpu": 0, "cpu": {}}
+_TALLY_LOCK = threading.Lock()
 
 
 def _count(where: str, n: int, reason: str = "") -> None:
     if n <= 0:
         return
-    if where == "gpu":
-        _TALLY["gpu"] += n
-    else:
-        _TALLY["cpu"][reason] = _TALLY["cpu"].get(reason, 0) + n
+    with _TALLY_LOCK:  # GPU jobs run side by side in threads (smithery.streams)
+        if where == "gpu":
+            _TALLY["gpu"] += n
+        else:
+            _TALLY["cpu"][reason] = _TALLY["cpu"].get(reason, 0) + n
 
 
 def tally() -> dict:
@@ -1757,13 +1760,15 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
         stats = {}
     for key in ("gpu_series", "cpu_series", "retried"):
         stats.setdefault(key, 0)
+    lock = threading.Lock()  # this call's counters, shared by its stream workers
 
     def one(i, reason):
         try:
             out[i] = _check_output(name, indicator._compute(frames[i]), len(frames[i]))
         except Exception as exc:  # noqa: BLE001
             out[i] = exc
-        stats["cpu_series"] += 1
+        with lock:
+            stats["cpu_series"] += 1
         _count("cpu", 1, reason)
 
     where, reason = device_for(indicator, device)
@@ -1771,42 +1776,57 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
         for i in ok:
             one(i, reason)
         return out
-    # A script that sets ``gpu = False`` stays on the CPU (LCES dc and dcl, which stay exactly as they
-    # are). Bar-by-bar loops run on the GPU through smithery.jit.launch (their CUDA twins), so no
-    # other script needs it. "auto" honours the flag (said in the device line); an explicit device does not.
+    # A script that sets ``gpu = False`` stays on the CPU. No script of the collections does any more
+    # (bar-by-bar loops run on the GPU through smithery.jit.launch, their CUDA twins); a user's own
+    # script still may. "auto" honours the flag (said in the device line); an explicit device does not.
     if device == "auto" and getattr(indicator, "gpu", True) is False:
         device = "cpu"
     ops = ops_for(device)
     stats["device"] = "gpu" if ops is not NUMPY else "cpu"
     sub = [frames[i] for i in ok]
+    jobs = []
     for group in group_frames(sub):
         positions = [ok[g] for g in group]
-        for chunk in _chunks(positions, len(frames[positions[0]]), ops):
-            from . import pace
-            pacer = pace.Pacer(sync=(ops.torch.cuda.synchronize if ops is not NUMPY else None))
-            pacer.start()
-            try:
-                b = Batch.from_frames([frames[i] for i in chunk], ops, [columns[i] for i in chunk])
-                # numpy's invalid/divide warnings stay quiet, as pandas' own arithmetic keeps them
-                # (a CPU batch flooded the log with them); the values are the same either way.
-                with np.errstate(all="ignore"):
-                    res = indicator._compute_batch(b)
-                values = res.to_numpy() if hasattr(res, "to_numpy") else np.asarray(res)
-            except Exception:  # noqa: BLE001 — isolate the failing series on the CPU
-                pacer.done()
-                stats["retried"] += len(chunk)
-                for i in chunk:
-                    one(i, "batch failed, retried per series")
-                continue
+        jobs.extend(_chunks(positions, len(frames[positions[0]]), ops))
+
+    def run(chunk):
+        from . import pace
+        sync = ops.torch.cuda.current_stream().synchronize if ops is not NUMPY else None
+        pacer = pace.Pacer(sync=sync)
+        pacer.start()
+        try:
+            b = Batch.from_frames([frames[i] for i in chunk], ops, [columns[i] for i in chunk])
+            # numpy's invalid/divide warnings stay quiet, as pandas' own arithmetic keeps them
+            # (a CPU batch flooded the log with them); the values are the same either way.
+            with np.errstate(all="ignore"):
+                res = indicator._compute_batch(b)
+            values = res.to_numpy() if hasattr(res, "to_numpy") else np.asarray(res)
+        except Exception:  # noqa: BLE001 — isolate the failing series on the CPU
             pacer.done()
-            for row, i in zip(values, chunk):
-                try:
-                    out[i] = _check_output(name, row, len(frames[i]))
-                except Exception as exc:  # noqa: BLE001
-                    out[i] = exc
+            with lock:
+                stats["retried"] += len(chunk)
+            for i in chunk:
+                one(i, "batch failed, retried per series")
+            return
+        pacer.done()
+        for row, i in zip(values, chunk):
+            try:
+                out[i] = _check_output(name, row, len(frames[i]))
+            except Exception as exc:  # noqa: BLE001
+                out[i] = exc
+        with lock:
             stats["gpu_series" if ops is not NUMPY else "cpu_series"] += len(chunk)
-            _count("gpu" if ops is not NUMPY else "cpu", len(chunk), reason)
-    if ops is not NUMPY:
+        _count("gpu" if ops is not NUMPY else "cpu", len(chunk), reason)
+
+    if ops is NUMPY:
+        for chunk in jobs:
+            run(chunk)
+        return out
+    # On the GPU the time grids (and chunks) run side by side on CUDA streams: a Gauntlet's coins
+    # with different listing dates are separate small jobs (smithery.streams).
+    from . import streams
+    streams.gpu_map(run, jobs, cells=lambda chunk: len(chunk) * len(frames[chunk[0]]))
+    if not streams.inside():
         _release_gpu_cache(ops)
     return out
 
@@ -1820,6 +1840,12 @@ def _release_gpu_cache(ops) -> None:
     cuda = ops.torch.cuda
     if cuda.memory_reserved() > GPU_CACHE_KEEP_BYTES:
         cuda.empty_cache()
+
+
+def release_gpu_cache() -> None:
+    """``_release_gpu_cache`` for the GPU's ops, when CUDA is there (after jobs that ran side by side)."""
+    if gpu_available():
+        _release_gpu_cache(ops_for("gpu"))
 
 
 # --------------------------------------------------------------------------- numpy-like namespaces for window functions
