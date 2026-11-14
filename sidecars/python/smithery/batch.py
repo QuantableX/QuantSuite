@@ -69,7 +69,7 @@ def device_for(indicator, device: str = "auto") -> tuple[str, str]:
     if device == "cpu":
         return "cpu", "CPU requested"
     if device == "auto" and getattr(indicator, "gpu", True) is False:
-        return "cpu", "compiled per-row kernels (gpu = False)"
+        return "cpu", "the script sets gpu = False"
     torch, reason = _torch()
     if torch is None:
         return "cpu", reason.removeprefix("CPU: ")
@@ -107,7 +107,7 @@ def tally() -> dict:
 
 def device_line(since: dict | None = None) -> str:
     """Where the indicator series since ``since`` (a ``tally()``) ran, e.g.
-    ``GPU (NVIDIA GeForce RTX 5090, 16,610 series); CPU: compiled per-row kernels (gpu = False) 3,020``."""
+    ``GPU (NVIDIA GeForce RTX 5090, 16,610 series); CPU: the script sets gpu = False 3,020``."""
     now, before = tally(), since or {"gpu": 0, "cpu": {}}
     gpu = now["gpu"] - before["gpu"]
     cpu = {r: n - before["cpu"].get(r, 0) for r, n in now["cpu"].items()}
@@ -181,8 +181,51 @@ class _NumpyOps:
         if how in ("var", "std") and exact_moments():
             return self._exact_var(a, int(window), min_periods, how,
                                    int(kwargs.get("ddof", args[0] if args else 1)))
+        if how in ("skew", "kurt") and exact_moments():
+            return self._exact_shape(a, int(window), min_periods, how)
         roll = self._frame(a).rolling(window, min_periods=min_periods)
         return np.ascontiguousarray(getattr(roll, how)(*args, **kwargs).to_numpy().T)
+
+    def _exact_shape(self, a, n, min_periods, how):
+        """Rolling skew / kurt from each window's own central moments (the same reason as
+        ``_exact_var``: pandas' running sums drift on a price series, 3e-6 on a 20-bar kurt).
+        pandas' rules: fewer than 3 / 4 values give NaN, one repeated value gives 0 / -3,
+        a variance <= 1e-14 gives NaN. The GPU computes the same formulas."""
+        from numpy.lib.stride_tricks import sliding_window_view
+        x = np.asarray(a, dtype=float)
+        S, T = x.shape
+        mp = n if min_periods is None else int(min_periods)
+        valid = ~np.isnan(x)
+        c = np.cumsum(valid, axis=1, dtype=float)
+        cnt = c.copy()
+        if n < T:
+            cnt[:, n:] = c[:, n:] - c[:, :-n]
+        padded = np.concatenate([np.full((S, n - 1), np.nan), x], axis=1)
+        m2 = np.empty((S, T))
+        m3 = np.empty((S, T))
+        rows = _block_rows(T * n)
+        with np.errstate(all="ignore"):
+            for s0 in range(0, S, rows):
+                win = sliding_window_view(padded[s0:s0 + rows], n, axis=1)      # [s, T, n]
+                ok = ~np.isnan(win)
+                cw = np.maximum(ok.sum(axis=2, keepdims=True), 1).astype(float)
+                d = np.where(ok, win - np.where(ok, win, 0.0).sum(axis=2, keepdims=True) / cw, 0.0)
+                d2 = d * d
+                m2[s0:s0 + rows] = d2.sum(axis=2)
+                m3[s0:s0 + rows] = (d2 * d if how == "skew" else d2 * d2).sum(axis=2)
+            B = m2 / cnt
+            if how == "skew":
+                R = np.sqrt(B)
+                res = np.sqrt(cnt * (cnt - 1.)) * (m3 / cnt) / ((cnt - 2) * R * R * R)
+                least, flat = 3, 0.0
+            else:
+                K = (cnt * cnt - 1.) * (m3 / cnt) / (B * B) - 3 * ((cnt - 1.) ** 2)
+                res = K / ((cnt - 2.) * (cnt - 3.))
+                least, flat = 4, -3.0
+        res = np.where(B <= 1e-14, np.nan, res)
+        hi, lo = self.rolling(x, n, 1, "max"), self.rolling(x, n, 1, "min")
+        res = np.where((hi == lo) & (cnt > 0), flat, res)
+        return np.where(cnt >= max(mp, least), res, np.nan)
 
     def _exact_var(self, a, n, min_periods, how, ddof):
         """Rolling variance / std from each window itself: its mean, then its squared deviations.
@@ -217,8 +260,54 @@ class _NumpyOps:
         return np.sqrt(var) if how == "std" else var
 
     def rolling_pair(self, a, b, window, min_periods, how):
+        if how in ("cov", "corr") and exact_moments():
+            return self._exact_pair(a, b, int(window), min_periods, how)
         out = getattr(self._frame(a).rolling(window, min_periods=min_periods), how)(self._frame(b))
         return np.ascontiguousarray(out.to_numpy().T)
+
+    def _exact_pair(self, a, b, n, min_periods, how):
+        """Rolling cov / corr from each window's own pairs (their means, then the products of the
+        deviations). pandas takes mean(xy) - mean(x) mean(y) from running sums: the cancellation
+        var/std had, and a constant window gave corr +-inf from rounding noise. pandas' rules
+        otherwise: only bars where both are present, min_periods, one pair gives NaN; a constant
+        window gives cov 0 and corr NaN. The GPU computes the same formulas."""
+        from numpy.lib.stride_tricks import sliding_window_view
+        x0, y0 = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+        both = ~np.isnan(x0) & ~np.isnan(y0)
+        x, y = np.where(both, x0, np.nan), np.where(both, y0, np.nan)
+        S, T = x.shape
+        mp = n if min_periods is None else int(min_periods)
+        c = np.cumsum(both, axis=1, dtype=float)
+        cnt = c.copy()
+        if n < T:
+            cnt[:, n:] = c[:, n:] - c[:, :-n]
+        pad = np.full((S, n - 1), np.nan)
+        px, py = np.concatenate([pad, x], axis=1), np.concatenate([pad, y], axis=1)
+        sxy, sxx, syy = np.empty((S, T)), np.empty((S, T)), np.empty((S, T))
+        rows = _block_rows(T * n)
+        with np.errstate(all="ignore"):
+            for s0 in range(0, S, rows):
+                wx = sliding_window_view(px[s0:s0 + rows], n, axis=1)
+                wy = sliding_window_view(py[s0:s0 + rows], n, axis=1)
+                ok = ~np.isnan(wx)
+                cw = np.maximum(ok.sum(axis=2, keepdims=True), 1).astype(float)
+                dx = np.where(ok, wx - np.where(ok, wx, 0.0).sum(axis=2, keepdims=True) / cw, 0.0)
+                dy = np.where(ok, wy - np.where(ok, wy, 0.0).sum(axis=2, keepdims=True) / cw, 0.0)
+                sxy[s0:s0 + rows] = (dx * dy).sum(axis=2)
+                if how == "corr":
+                    sxx[s0:s0 + rows] = (dx * dx).sum(axis=2)
+                    syy[s0:s0 + rows] = (dy * dy).sum(axis=2)
+            flat_x = self.rolling(x, n, 1, "max") == self.rolling(x, n, 1, "min")
+            flat_y = self.rolling(y, n, 1, "max") == self.rolling(y, n, 1, "min")
+            flat = flat_x | flat_y
+            cov = np.where(flat, 0.0, sxy / (cnt - 1))
+            if how == "corr":
+                vx = np.where(flat_x, 0.0, sxx / (cnt - 1))
+                vy = np.where(flat_y, 0.0, syy / (cnt - 1))
+                res = cov / (vx * vy) ** 0.5
+            else:
+                res = cov
+        return np.where((cnt >= max(mp, 1)) & (cnt > 1), res, np.nan)
 
     def ewm(self, a, how, spec, *args, **kwargs):
         return np.ascontiguousarray(getattr(self._frame(a).ewm(**spec), how)(*args, **kwargs).to_numpy().T)
@@ -485,8 +574,80 @@ class _TorchOps:
             return res
         if how in ("median", "quantile") and n <= 512 and kwargs.get("interpolation", "linear") == "linear":
             return self._order_stat(x, n, mp, how, float(args[0]) if args else None)
+        if how in ("skew", "kurt"):
+            return self._shape_moment(x, n, mp, how)
+        if how == "rank" and kwargs.get("method", "average") in ("average", "min", "max"):
+            return self._newest_rank(x, n, mp, kwargs.get("method", "average"),
+                                     bool(kwargs.get("ascending", True)), bool(kwargs.get("pct", False)))
         # rarer statistics: exact through pandas on the CPU, then back (see device_note in reports)
         return self.asarray(NUMPY.rolling(self.to_numpy(x), window, min_periods, how, *args, **kwargs))
+
+    def _windows(self, x, n):
+        """The trailing windows [s, T, n] of x in blocks of series (NaN before the first bar)."""
+        t = self.torch
+        S, T = x.shape
+        rows = _block_rows(T * n)
+        for s0 in range(0, S, rows):
+            xs = x[s0:s0 + rows]
+            padded = t.cat([t.full((xs.shape[0], n - 1), float("nan"), dtype=self.f64, device=self.device), xs], dim=1)
+            yield s0, xs, padded.unfold(1, n, 1)
+
+    def _shape_moment(self, x, n, mp, how):
+        """pandas' rolling skew / kurt with each window's own central moments (its mean first, then
+        the deviations: no running sums). pandas' rules: fewer than 3 (skew) / 4 (kurt) values give
+        NaN, a window of one repeated value gives 0 / -3, a variance <= 1e-14 gives NaN."""
+        t = self.torch
+        S, T = x.shape
+        zero = t.zeros((), dtype=self.f64, device=self.device)
+        m2 = t.empty((S, T), dtype=self.f64, device=self.device)
+        m3 = t.empty_like(m2)
+        for s0, xs, win in self._windows(x, n):
+            ok = ~t.isnan(win)
+            cw = ok.sum(dim=2, keepdim=True).clamp(min=1).to(self.f64)
+            d = t.where(ok, win - t.where(ok, win, zero).sum(dim=2, keepdim=True) / cw, zero)
+            d2 = d * d
+            m2[s0:s0 + xs.shape[0]] = d2.sum(dim=2)
+            m3[s0:s0 + xs.shape[0]] = (d2 * d if how == "skew" else d2 * d2).sum(dim=2)
+            del ok, cw, d, d2, win
+        cnt = self._counts(~t.isnan(x), n)
+        B = m2 / cnt
+        if how == "skew":
+            R = t.sqrt(B)
+            res = t.sqrt(cnt * (cnt - 1.)) * (m3 / cnt) / ((cnt - 2) * R * R * R)
+            least, flat = 3, 0.0
+        else:
+            K = (cnt * cnt - 1.) * (m3 / cnt) / (B * B) - 3 * ((cnt - 1.) ** 2)
+            res = K / ((cnt - 2.) * (cnt - 3.))
+            least, flat = 4, -3.0
+        nan = t.full_like(res, float("nan"))
+        res = t.where(B <= 1e-14, nan, res)
+        hi, lo = self._extreme(x, n, True, 1), self._extreme(x, n, False, 1)
+        res = t.where((hi == lo) & (cnt > 0), t.full_like(res, flat), res)
+        return t.where((cnt >= max(mp, least)), res, nan)
+
+    def _newest_rank(self, x, n, mp, method, ascending, pct):
+        """pandas' rolling rank: the rank of each window's newest value among the window's values
+        (ties: average / min / max), NaN when the newest value is NaN; pct divides by the count.
+        Integer counts, so the same numbers as pandas to the bit."""
+        t = self.torch
+        S, T = x.shape
+        below = t.empty((S, T), dtype=self.f64, device=self.device)
+        upto = t.empty_like(below)
+        for s0, xs, win in self._windows(x, n):
+            last = xs[..., None]
+            ok = ~t.isnan(win)
+            lt, le = (win < last, win <= last) if ascending else (win > last, win >= last)
+            below[s0:s0 + xs.shape[0]] = (ok & lt).sum(dim=2).to(self.f64)
+            upto[s0:s0 + xs.shape[0]] = (ok & le).sum(dim=2).to(self.f64)
+            del ok, lt, le, win
+        lowest = below + 1
+        rank = (lowest + upto) / 2 if method == "average" else lowest if method == "min" else upto
+        cnt = self._counts(~t.isnan(x), n)
+        if pct:
+            rank = rank / cnt
+        nan = t.full_like(rank, float("nan"))
+        rank = t.where(t.isnan(x), nan, rank)
+        return t.where(cnt >= mp, rank, nan)
 
     def _order_stat(self, x, n, mp, how, q):
         """pandas' rolling median / linear quantile on sorted windows (NaN sorts last):
@@ -549,23 +710,84 @@ class _TorchOps:
         return res
 
     def rolling_pair(self, a, b, window, min_periods, how):
+        if how in ("cov", "corr"):
+            return self._pair(self._t(a).to(self.f64), self._t(b).to(self.f64), int(window), min_periods, how)
         out = NUMPY.rolling_pair(self.to_numpy(a), self.to_numpy(b), window, min_periods, how)
         return self.asarray(out)
+
+    def _pair(self, x0, y0, n, min_periods, how):
+        """``_NumpyOps._exact_pair`` on the GPU (each window's own pairs, pandas' rules)."""
+        t = self.torch
+        x0, y0 = t.broadcast_tensors(x0, y0)
+        both = ~t.isnan(x0) & ~t.isnan(y0)
+        nan = t.full_like(x0, float("nan"))
+        x, y = t.where(both, x0, nan), t.where(both, y0, nan)
+        S, T = x.shape
+        mp = self._min_periods(n, min_periods)
+        cnt = self._counts(both, n)
+        zero = t.zeros((), dtype=self.f64, device=self.device)
+        sxy = t.empty((S, T), dtype=self.f64, device=self.device)
+        sxx, syy = t.empty_like(sxy), t.empty_like(sxy)
+        rows = _block_rows(T * n)
+        for s0 in range(0, S, rows):
+            pad = t.full((min(rows, S - s0), n - 1), float("nan"), dtype=self.f64, device=self.device)
+            wx = t.cat([pad, x[s0:s0 + rows]], dim=1).unfold(1, n, 1)
+            wy = t.cat([pad, y[s0:s0 + rows]], dim=1).unfold(1, n, 1)
+            ok = ~t.isnan(wx)
+            cw = ok.sum(dim=2, keepdim=True).clamp(min=1).to(self.f64)
+            dx = t.where(ok, wx - t.where(ok, wx, zero).sum(dim=2, keepdim=True) / cw, zero)
+            dy = t.where(ok, wy - t.where(ok, wy, zero).sum(dim=2, keepdim=True) / cw, zero)
+            sxy[s0:s0 + rows] = (dx * dy).sum(dim=2)
+            if how == "corr":
+                sxx[s0:s0 + rows] = (dx * dx).sum(dim=2)
+                syy[s0:s0 + rows] = (dy * dy).sum(dim=2)
+            del wx, wy, ok, cw, dx, dy
+        flat_x = self._extreme(x, n, True, 1) == self._extreme(x, n, False, 1)
+        flat_y = self._extreme(y, n, True, 1) == self._extreme(y, n, False, 1)
+        flat = flat_x | flat_y
+        cov = t.where(flat, zero, sxy / (cnt - 1))
+        if how == "corr":
+            vx = t.where(flat_x, zero, sxx / (cnt - 1))
+            vy = t.where(flat_y, zero, syy / (cnt - 1))
+            res = cov / (vx * vy) ** 0.5
+        else:
+            res = cov
+        return t.where((cnt >= max(mp, 1)) & (cnt > 1), res, t.full_like(res, float("nan")))
 
     def ewm(self, a, how, spec, *args, **kwargs):
         if how == "mean" and not spec.get("times"):
             return self._ewm_mean(self._t(a).to(self.f64), spec)
+        if how in ("var", "std") and not spec.get("times") and not args and set(kwargs) <= {"bias"}:
+            from .jit import gpu_kernels
+            if gpu_kernels():
+                # pandas' ewmcov recursion (x = y) as a kernel, one thread per series.
+                t = self.torch
+                x = self._t(a).to(self.f64).contiguous()
+                out = t.empty_like(x)
+                if x.shape[1]:
+                    _EWM_VAR(x, out, _ewm_alpha(spec), bool(spec.get("adjust", True)),
+                             bool(spec.get("ignore_na", False)), max(int(spec.get("min_periods", 0) or 0), 1),
+                             bool(kwargs.get("bias", False)))
+                return t.sqrt(t.clamp(out, min=0.)) if how == "std" else out
         return self.asarray(NUMPY.ewm(self.to_numpy(a), how, spec, *args, **kwargs))
 
     def _ewm_mean(self, x, spec):
-        """pandas' ewma: as linear scans when the data allow (no bar loop), else pandas'
-        recursion bar by bar over all series at once."""
+        """pandas' ewma. With GPU kernels: pandas' recursion itself as a CUDA twin (one launch, one
+        thread per series, the CPU's arithmetic; the blocked scans cost a Python loop of launches per
+        call: ensemble 1d spent 15 s in them). Without: linear scans when the data allow."""
         t = self.torch
         alpha = _ewm_alpha(spec)
         adjust = bool(spec.get("adjust", True))
         ignore_na = bool(spec.get("ignore_na", False))
         minp = max(int(spec.get("min_periods", 0) or 0), 1)
         S, T = x.shape
+        from .jit import gpu_kernels
+        if T and gpu_kernels():
+            from .jit import launch
+            values = x.contiguous()
+            out = t.empty_like(values)
+            launch(_ewm_rows, values, float(alpha), adjust, ignore_na, int(minp), out)
+            return out
         if T:
             obs = ~t.isnan(x)
             idx = t.arange(T, device=x.device)
@@ -592,12 +814,13 @@ class _TorchOps:
                 return t.where(nobs >= minp, y, nan)
         if T == 0:
             return t.empty_like(x)
-        # Holes the scans cannot take: pandas' recursion, compiled per series on the CPU (one
-        # pass; a bar loop of GPU launches was ~0.1 s per call). Bit for bit with pandas.
-        values = np.ascontiguousarray(self.to_numpy(x), dtype=float)
-        out = np.empty_like(values)
-        _ewm_rows(values, alpha, adjust, ignore_na, minp, out)
-        return self.asarray(out)
+        # Holes the scans cannot take: pandas' recursion per series, the compiled loop's CUDA twin
+        # (one thread per series; jit.launch says so and runs it on the CPU without GPU kernels).
+        from .jit import launch
+        values = x.contiguous()
+        out = t.empty_like(values)
+        launch(_ewm_rows, values, float(alpha), bool(adjust), bool(ignore_na), int(minp), out)
+        return out
 
     def shift(self, a, k):
         t = self.torch
@@ -1068,7 +1291,60 @@ _FUNCTIONS = {"where": _np_where, "clip": _np_clip, "nan_to_num": _np_nan_to_num
 
 # --------------------------------------------------------------------------- per-bar loops
 
-from .jit import njit, prange  # noqa: E402
+from .jit import njit, per_series, prange  # noqa: E402
+
+
+def _ewm_var_row(s, x, out, alpha, adjust, ignore_na, minp, bias):
+    """pandas' ``ewm`` var (window/aggregations.pyx ewmcov with x = y), one series."""
+    old_wt_factor = 1.0 - alpha
+    new_wt = 1.0 if adjust else alpha
+    mean = x[s, 0]
+    nobs = 1 if mean == mean else 0
+    if nobs == 0:
+        mean = math.nan
+    old_wt = 1.0
+    sum_wt = 1.0
+    sum_wt2 = 1.0
+    cov = 0.0
+    for i in range(x.shape[1]):
+        if i > 0:
+            cur = x[s, i]
+            is_observation = cur == cur
+            if is_observation:
+                nobs += 1
+            if mean == mean:
+                if is_observation or not ignore_na:
+                    sum_wt *= old_wt_factor
+                    sum_wt2 *= old_wt_factor*old_wt_factor
+                    old_wt *= old_wt_factor
+                    if is_observation:
+                        old_mean = mean
+                        # avoid numerical errors on constant series
+                        if mean != cur:
+                            mean = ((old_wt*old_mean)+(new_wt*cur))/(old_wt+new_wt)
+                        cov = ((old_wt*(cov+((old_mean-mean)*(old_mean-mean))))
+                               + (new_wt*((cur-mean)*(cur-mean))))/(old_wt+new_wt)
+                        sum_wt += new_wt
+                        sum_wt2 += new_wt*new_wt
+                        old_wt += new_wt
+                        if not adjust:
+                            sum_wt /= old_wt
+                            sum_wt2 /= old_wt*old_wt
+                            old_wt = 1.0
+            elif is_observation:
+                mean = cur
+        if nobs >= minp:
+            if not bias:
+                numerator = sum_wt*sum_wt
+                denominator = numerator-sum_wt2
+                out[s, i] = (numerator/denominator)*cov if denominator > 0 else math.nan
+            else:
+                out[s, i] = cov
+        else:
+            out[s, i] = math.nan
+
+
+_EWM_VAR = per_series(_ewm_var_row)
 
 
 @njit
@@ -1495,8 +1771,9 @@ def signals(indicator, frames: list, device: str = "auto", stats: dict | None = 
         for i in ok:
             one(i, reason)
         return out
-    # A script whose logic steps bar by bar sets ``gpu = False``: batched on the CPU it is faster
-    # than thousands of tiny GPU launches. "auto" honours that; an explicit device does not.
+    # A script that sets ``gpu = False`` stays on the CPU (LCES dc and dcl, which stay exactly as they
+    # are). Bar-by-bar loops run on the GPU through smithery.jit.launch (their CUDA twins), so no
+    # other script needs it. "auto" honours the flag (said in the device line); an explicit device does not.
     if device == "auto" and getattr(indicator, "gpu", True) is False:
         device = "cpu"
     ops = ops_for(device)
@@ -1640,13 +1917,34 @@ class _TorchNP:
         return self.t.full(shape, float(value), dtype=self.t.float64, device=self.ops.device)
 
     def zeros(self, shape, dtype=None):
+        if dtype in (int, np.int64, "int64"):
+            shape = shape if isinstance(shape, tuple) else (shape,)
+            return self.t.zeros(shape, dtype=self.t.int64, device=self.ops.device)
         return self.full(shape, 0.0, dtype)
+
+    def empty(self, shape, dtype=None):
+        return self.zeros(shape, dtype)
+
+    def ascontiguousarray(self, a, dtype=None):
+        """A contiguous float64 tensor on the device (what numpy's ascontiguousarray gives a kernel)."""
+        return self.ops._t(a).to(self.t.float64).contiguous()
 
     def ones(self, shape, dtype=None):
         return self.full(shape, 1.0, dtype)
 
     def zeros_like(self, a):
         return self.t.zeros_like(a)
+
+    def copy(self, a):
+        return self.ops._t(a).clone()
+
+    def nan_to_num(self, a):
+        """numpy's defaults: NaN -> 0, +-inf -> the largest finite values."""
+        return self.t.nan_to_num(self._f(a))
+
+    def nansum(self, a, axis=None, keepdims=False):
+        a = self._f(a)
+        return self.t.nansum(a) if axis is None else self.t.nansum(a, dim=axis, keepdim=keepdims)
 
     def ones_like(self, a):
         return self.t.ones_like(a)
@@ -1890,6 +2188,12 @@ def _positional_count(function) -> int:
     return sum(1 for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD))
 
 
+def namespace(col: Col):
+    """The numpy-like namespace of a column's device: numpy itself on the CPU (the same arithmetic
+    as before), the GPU's otherwise. For library helpers that build their own windows."""
+    return NP if col.ops is NUMPY else _TorchNP(col.ops)
+
+
 def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> Col:
     """``function(block, xp)`` on every complete, all-finite window of ``length`` bars of every
     series: ``block`` is [rows, length], ``xp`` numpy (CPU) or the GPU's numpy-like namespace,
@@ -1905,29 +2209,53 @@ def rolling_apply(col: Col, length: int, function, chunk: int | None = None) -> 
         # An old one-argument window function (numpy blocks): the same call as before.
         one = function
         function = (lambda block, xp: one(block)) if ops is NUMPY else (lambda block, xp: xp.asarray(one(xp.asnumpy(block))))
-    data = _float(ops, col.a)
+    return _rolling_blocks([col], length, lambda blocks, xp: function(blocks[0], xp), chunk, out)
+
+
+def rolling_apply_many(cols: list, length: int, function, chunk: int | None = None) -> Col:
+    """``rolling_apply`` for a window function of several columns of one batch: ``function(blocks,
+    xp)`` gets one [rows, length] block per column (the same windows of each) and returns one value
+    per row. Only windows where every column is finite are passed; the others give NaN."""
+    ops = cols[0].ops
+    S, T = cols[0].shape
+    length = int(length)
+    out = ops.full((S, T), float("nan"))
+    if T < length:
+        return Col(out, ops)
+    return _rolling_blocks(cols, length, function, chunk, out)
+
+
+def _rolling_blocks(cols: list, length: int, function, chunk, out) -> Col:
+    ops = cols[0].ops
+    S, T = cols[0].shape
+    data = [_float(ops, c.a) for c in cols]
     W = T - length + 1
     xp = NP if ops is NUMPY else _TorchNP(ops)
     if chunk is None:
         cells = int(os.environ.get("SMITHERY_GPU_CELLS", DEFAULT_GPU_CELLS))
-        chunk = 256 if ops is NUMPY else max(256, cells // max(length * length, 1))
-    # The windows of all series at once are [S, W, length] (a copy once flattened): series in
-    # blocks, so a block stays in budget. Every window is computed exactly as before.
-    rows = _block_rows(W * length)
+        chunk = 256 if ops is NUMPY else max(256, cells // max(length * length * len(cols), 1))
+    # The windows of all series at once are [S, W, length] per column (a copy once flattened):
+    # series in blocks, so a block stays in budget. Every window is computed exactly as before.
+    rows = _block_rows(W * length * len(cols))
     for s0 in range(0, S, rows):
-        win = ops.windows(data[s0:s0 + rows], length)             # [s, W, L]
-        s = win.shape[0]
-        block = win.reshape(s * W, length)
+        blocks = []
+        for a in data:
+            win = ops.windows(a[s0:s0 + rows], length)            # [s, W, L]
+            s = win.shape[0]
+            blocks.append(win.reshape(s * W, length))
+            del win
         values = ops.full((s * W,), float("nan"))
-        finite = np.isfinite(block).all(axis=1) if ops is NUMPY else ops.torch.isfinite(block).all(dim=1)
+        finite = None
+        for block in blocks:
+            ok = np.isfinite(block).all(axis=1) if ops is NUMPY else ops.torch.isfinite(block).all(dim=1)
+            finite = ok if finite is None else finite & ok
         for start in range(0, s * W, chunk):
-            part = block[start:start + chunk]
             valid = finite[start:start + chunk]
             if bool(valid.any()):
                 seg = values[start:start + chunk]
-                seg[valid] = function(part[valid], xp)
+                seg[valid] = function([block[start:start + chunk][valid] for block in blocks], xp)
         out[s0:s0 + s, length - 1:] = values.reshape(s, W)
-        del win, block, values, finite
+        del blocks, values, finite
     return Col(out, ops)
 
 
@@ -1936,7 +2264,7 @@ WINDOW_BLOCK_CELLS = 32_000_000
 
 
 def exact_moments() -> bool:
-    """Rolling var/std from each window (exact; the default since 2026-11-12, user's decision).
+    """Rolling var/std (and skew/kurt, cov/corr) from each window (exact; the default since 2026-11-12, user's decision).
     SMITHERY_PANDAS_MOMENTS=1 gives pandas' running sums on the CPU (the old values, for parity
     checks against references made with the old code)."""
     return os.environ.get("SMITHERY_PANDAS_MOMENTS", "0").strip() != "1"
@@ -1983,10 +2311,17 @@ def linear_scan(ops, coef: float, u):
 
 
 def rma_gpu(ops, a, valid, n):
-    """Wilder's recurrence (research_common.rma) without a bar loop: seeded with the first finite
-    window mean, then y = y + (a - y) / n, NaN for good after a missing value."""
+    """Wilder's recurrence (research_common.rma) on the GPU: seeded with the first finite window
+    mean, then y = y + (a - y) / n, NaN for good after a missing value. With GPU kernels the CPU's
+    loop itself as a CUDA twin (one launch, the same arithmetic); without, a linear scan."""
     t = ops.torch
     S, T = a.shape
+    from .jit import gpu_kernels
+    if T and gpu_kernels():
+        from .jit import launch
+        out = t.full((S, T), float("nan"), dtype=ops.f64, device=a.device)
+        launch(_wilder_rows, a.to(ops.f64).contiguous(), valid.to(ops.f64).contiguous(), float(n), out)
+        return out
     idx = t.arange(T, device=a.device)
     fin = t.isfinite(valid)
     has = fin.any(dim=1)

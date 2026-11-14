@@ -81,8 +81,7 @@ def walk_forward(ind: TrendIndicator, df: pd.DataFrame, cost_bps: float,
         train = df.iloc[:t0 - purge]
         test = df.iloc[t0:t1]
 
-        bts = par.pmap(par.eval_execution,
-                       [(ind.with_params(**c), train, cost_bps, mode) for c in combos])
+        bts = par.executions([ind.with_params(**c) for c in combos], train, cost_bps, mode)
         scored = [(c, objective(bt), bt["sharpe"]) for c, bt in zip(combos, bts)]
         scored.sort(key=lambda x: -x[1])
         ranked = quality.pareto_order(bts)
@@ -98,7 +97,7 @@ def walk_forward(ind: TrendIndicator, df: pd.DataFrame, cost_bps: float,
         # is computed on data up to test-end but scored only inside the fold
         chosen = ind.with_params(**choice)
         full = df.iloc[: t1]
-        bt_sig = chosen.signal(full)
+        bt_sig = par.signal_series(chosen, full)
         segment = execution.evaluate(full, bt_sig, start=int(t0), stop=int(t1),
                                      cost_bps=cost_bps, mode=mode, return_series=True,
                                      initial_position=held, liquidate=f == n_folds - 1)

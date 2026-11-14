@@ -67,8 +67,7 @@ class SignalTable:
     def __init__(self, ind: TrendIndicator, frames: dict[str, pd.DataFrame], combos: list[dict]):
         self.ind, self.frames, self.combos = ind, frames, combos
         names = list(frames)
-        tasks = [(ind.with_params(**c), frames[n]) for c in combos for n in names]
-        raw = par.pmap(par.eval_signal, tasks)
+        raw = par.signals_table([ind.with_params(**c) for c in combos], [frames[n] for n in names])
         self.signals = {}
         for k, arr in enumerate(raw):
             c, n = divmod(k, len(names))

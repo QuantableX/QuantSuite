@@ -41,6 +41,24 @@ def active():
         signals._FRAME_MEMO = signals._WINDOW_MEMO = vote_store._KEYS = None
 
 
+VOTES_ONLY = "ROTATION_LAB_VOTES_ONLY"
+
+
+def votes_only() -> bool:
+    """A run that only computes its members' votes into the vote store (no walk): the System
+    Gauntlet's parent computes every variant's votes on the GPU, its pool workers then walk."""
+    return os.environ.get(VOTES_ONLY, "0").strip() == "1"
+
+
+def keep() -> int:
+    """Put this run's batch memo into the active vote store (write mode)."""
+    store = vote_store.active()
+    memo = signals._BATCH_MEMO
+    if store is None or not memo:
+        return 0
+    return store.put_many(memo.items())
+
+
 def stats() -> dict:
     """Counts since the process started: windows computed per device, windows retried."""
     return dict(_STATS)

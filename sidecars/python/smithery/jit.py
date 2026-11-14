@@ -16,7 +16,9 @@ function runs as plain Python. ``NUMBA_NUM_THREADS`` limits the threads (researc
 """
 from __future__ import annotations
 
+import math
 import os
+import sys
 
 import numpy as np
 
@@ -42,6 +44,564 @@ if _numba is not None:
     prange = _numba.prange
 else:  # pragma: no cover - exercised only without Numba
     prange = range
+
+
+# --------------------------------------------------------------------------- per-series loops on the GPU
+#
+# A loop that steps bar by bar runs on the GPU as one thread per series (all series in one launch):
+#
+#     from ..jit import per_series
+#
+#     def _row(s, price, widths, out):      # plain Python: series s of [series x bars] arrays
+#         for t in range(price.shape[1]):
+#             ...                          # the scalar loop over bars, as written for the CPU
+#
+#     _gpu_rows = per_series(_row)          # call it with torch tensors on the GPU (zero copy)
+#
+# numba-cuda compiles the function on first use (it needs ``pip install numba-cuda[cu13]`` with
+# CUDA wheels of torch's CUDA version, see requirements-gpu-kernels.txt). Plain IEEE arithmetic;
+# libdevice's exp/log/tanh and fused multiply-adds can move the last bit, so parity reports every
+# bar that differs, as for every GPU path. Without numba-cuda ``available()`` is False and callers
+# keep their CPU loop (and say so).
+
+_CUDA: dict = {}
+
+
+def cuda_module():
+    """numba-cuda's ``cuda`` when GPU kernels can run (installed, a CUDA GPU, SMITHERY_GPU not 0)."""
+    if "mod" not in _CUDA:
+        mod, reason = None, ""
+        if os.environ.get("SMITHERY_GPU", "1").strip() == "0":
+            reason = "SMITHERY_GPU=0"
+        else:
+            try:
+                # torch first: its CUDA libraries (nvJitLink) are the ones the process keeps.
+                import torch  # noqa: F401
+                from numba import cuda as mod
+                if not mod.is_available():
+                    mod, reason = None, "numba-cuda finds no CUDA GPU"
+                else:
+                    _exact_multiply_add()
+                    import warnings
+                    from numba.core.errors import NumbaPerformanceWarning
+                    # small grids are the point for a few series; the warning would flood every log
+                    warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
+            except Exception as exc:  # noqa: BLE001 — optional: the CPU loops still run
+                mod, reason = None, f"numba-cuda not installed ({type(exc).__name__})"
+        _CUDA["mod"], _CUDA["reason"] = mod, reason
+    return _CUDA["mod"]
+
+
+def _exact_multiply_add():
+    """NVVM contracts a*b + c into one fused multiply-add by default (one rounding instead of two);
+    the CPU loops round twice. Off for smithery's kernels, so a twin does its loop's arithmetic."""
+    from numba.cuda.cudadrv import nvvm
+    if getattr(nvvm.compile_ir, "_smithery_exact", False):
+        return
+    original = nvvm.compile_ir
+
+    def compile_ir(llvmir, **options):
+        options.setdefault("fma", False)
+        return original(llvmir, **options)
+
+    compile_ir._smithery_exact = True
+    nvvm.compile_ir = compile_ir
+    # Kernels are linked with link-time optimization, where nvJitLink contracts again.
+    try:
+        import dataclasses
+
+        from numba.cuda.cudadrv import driver
+        linker = driver._Linker
+        linker_options = linker._get_linker_options
+
+        def _get_linker_options(self, ptx):
+            options = linker_options(self, ptx)
+            if options.link_time_optimization:
+                options = dataclasses.replace(options, fma=False)
+            return options
+
+        linker._get_linker_options = _get_linker_options
+    except Exception as exc:  # noqa: BLE001 — another numba-cuda: kernels run, with fused multiply-adds
+        print(f"smithery.jit: fused multiply-adds stay on in linked kernels ({type(exc).__name__}: {exc})", file=sys.stderr)
+
+
+def gpu_kernels() -> bool:
+    """Whether per-series GPU kernels can run in this process."""
+    return cuda_module() is not None
+
+
+def gpu_kernels_reason() -> str:
+    cuda_module()
+    return _CUDA.get("reason", "")
+
+
+# --------------------------------------------------------------------------- compiled kernels kept on disk
+#
+# numba-cuda keeps a compiled kernel on disk only for a function that lives in a file. The generated
+# kernels (twins, wrappers) are therefore written to files named by a hash of their source and of every
+# global they read (device functions by their own hash, arrays by their bytes, numbers by value), so a
+# changed loop, helper or constant gets a new file and can never load an old kernel. A later process
+# loads the kernel instead of compiling it (seconds per kernel). SMITHERY_KERNEL_CACHE names the folder
+# (default: the temp folder), "0" turns the cache off.
+
+_CACHE_TAG = "smithery-cuda-1|fma0"
+_COMPILED: dict = {}
+
+
+def _cache_folder():
+    import tempfile
+    from pathlib import Path
+    setting = os.environ.get("SMITHERY_KERNEL_CACHE", "").strip()
+    if setting == "0":
+        return None
+    folder = Path(setting) if setting else Path(tempfile.gettempdir()) / "smithery-cuda-kernels"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return folder
+
+
+def _fingerprint(value) -> str:
+    """What a kernel reads from a global, as text that changes whenever the value does."""
+    import hashlib
+    import inspect
+    import types
+    tag = getattr(value, "_smithery_hash", None)
+    if tag:
+        return f"kernel:{tag}"
+    if isinstance(value, types.ModuleType):
+        return f"module:{value.__name__}"
+    if isinstance(value, np.ndarray):
+        return f"array:{value.dtype}:{value.shape}:{hashlib.sha256(np.ascontiguousarray(value).tobytes()).hexdigest()}"
+    if isinstance(value, (bool, int, float, complex, str, bytes, type(None))):
+        return f"value:{value!r}"
+    if isinstance(value, tuple):
+        return "tuple:(" + ",".join(_fingerprint(v) for v in value) + ")"
+    if isinstance(value, types.FunctionType):
+        try:
+            return f"function:{inspect.getsource(value)}"
+        except (OSError, TypeError):
+            return f"unknown:{id(value)}"         # no source: never cached across processes
+    module = type(value).__module__ or ""
+    if module.startswith("numba"):
+        return f"numba:{value!r}"                 # types such as float64
+    return f"unknown:{id(value)}"
+
+
+def _read_names(source: str) -> set:
+    import ast
+    return {node.id for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Name)}
+
+
+def compile_cuda(source: str, scope: dict, plan) -> dict:
+    """``exec(source, scope)`` and ``cuda.jit`` for each ``(name, device)`` of ``plan`` in order (a later
+    function may call an earlier one), through numba-cuda's disk cache (see above). Returns name -> kernel."""
+    import hashlib
+    import importlib.util
+    cuda = cuda_module()
+    plan = list(plan)
+    used = sorted(_read_names(source) & set(scope))
+    folder = _cache_folder()
+    try:
+        import numba_cuda
+        version = getattr(numba_cuda, "__version__", "")
+    except ImportError:
+        version = ""
+    digest = hashlib.sha256("\n".join([_CACHE_TAG, version, source, repr(plan)]
+                                       + [f"{k}={_fingerprint(scope[k])}" for k in used]).encode("utf-8")).hexdigest()[:24]
+    key = (digest, tuple(plan))
+    if key in _COMPILED:
+        return _COMPILED[key]
+    cacheable = folder is not None and not any(_fingerprint(scope[k]).startswith("unknown:") for k in used)
+    if cacheable:
+        path = folder / f"k_{digest}.py"
+        if not path.exists():
+            tmp = path.with_suffix(f".{os.getpid()}.tmp")
+            tmp.write_text(source, encoding="utf-8")
+            os.replace(tmp, path)
+        name = f"smithery_cuda_k_{digest}"
+        module = sys.modules.get(name)
+        if module is None:
+            spec = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+        namespace = module.__dict__
+    else:
+        namespace = {}
+        exec(compile(source, "<smithery cuda kernel>", "exec"), namespace)
+    namespace.update({k: scope[k] for k in used})
+    out = {}
+    for fname, device in plan:
+        fn = namespace[fname]
+        options = {"cache": True} if cacheable else {}
+        jitted = cuda.jit(device=True, **options)(fn) if device else cuda.jit(**options)(fn)
+        try:
+            jitted._smithery_hash = f"{digest}:{fname}"
+        except AttributeError:
+            pass
+        namespace[fname] = jitted
+        out[fname] = jitted
+    _COMPILED[key] = out
+    return out
+
+
+def _device_of(fn):
+    """A plain Python function (a per-series row or cell) as a cached CUDA device function."""
+    import inspect
+    import textwrap
+    source = textwrap.dedent(inspect.getsource(fn))
+    return compile_cuda(source, fn.__globals__, [(fn.__name__, True)])[fn.__name__]
+
+
+class _PerSeries:
+    def __init__(self, row):
+        self.row = row
+        self.kernels: dict = {}
+
+    def _kernel(self, count):
+        if count not in self.kernels:
+            cuda = cuda_module()
+            names = ", ".join(f"a{i}" for i in range(count))
+            source = "\n".join([f"def kernel({names}):",
+                                "    s = cuda.grid(1)",
+                                "    if s < a0.shape[0]:",
+                                f"        row(s, {names})", ""])
+            self.kernels[count] = compile_cuda(source, {"cuda": cuda, "row": _device_of(self.row)}, [("kernel", False)])["kernel"]
+        return self.kernels[count]
+
+    def __call__(self, *args):
+        """Run ``row(s, *args)`` for every series s (rows of the first argument, a torch tensor on
+        the GPU); tensors pass without a copy, other arguments as scalars; torch's current stream."""
+        cuda = cuda_module()
+        if cuda is None:
+            raise RuntimeError(f"GPU kernels unavailable: {gpu_kernels_reason()}")
+        import torch
+        rows = int(args[0].shape[0])
+        if rows == 0:
+            return
+        values = [cuda.as_cuda_array(a.detach()) if torch.is_tensor(a) else a for a in args]
+        stream = cuda.external_stream(torch.cuda.current_stream().cuda_stream)
+        threads = 32
+        self._kernel(len(args))[(rows + threads - 1) // threads, threads, stream](*values)
+
+
+def per_series(row):
+    """A GPU kernel from a per-series loop ``row(s, *arrays_and_scalars)``: one thread per series."""
+    return _PerSeries(row)
+
+
+class _PerCell(_PerSeries):
+    def _kernel(self, count):
+        if count not in self.kernels:
+            cuda = cuda_module()
+            names = ", ".join(f"a{i}" for i in range(count))
+            source = "\n".join([f"def kernel({names}):",
+                                "    t, s = cuda.grid(2)",
+                                "    if s < a0.shape[0] and t < a0.shape[1]:",
+                                f"        cell(s, t, {names})", ""])
+            self.kernels[count] = compile_cuda(source, {"cuda": cuda, "cell": _device_of(self.row)}, [("kernel", False)])["kernel"]
+        return self.kernels[count]
+
+    def __call__(self, *args):
+        """Run ``cell(s, t, *args)`` for every series s and bar t of the first argument (a torch
+        tensor on the GPU): one thread per cell, for bars that do not depend on each other."""
+        cuda = cuda_module()
+        if cuda is None:
+            raise RuntimeError(f"GPU kernels unavailable: {gpu_kernels_reason()}")
+        import torch
+        rows, bars = int(args[0].shape[0]), int(args[0].shape[1])
+        if rows == 0 or bars == 0:
+            return
+        values = [cuda.as_cuda_array(a.detach()) if torch.is_tensor(a) else a for a in args]
+        stream = cuda.external_stream(torch.cuda.current_stream().cuda_stream)
+        threads = (64, 4)
+        blocks = ((bars + threads[0] - 1) // threads[0], (rows + threads[1] - 1) // threads[1])
+        self._kernel(len(args))[blocks, threads, stream](*values)
+
+
+def per_cell(cell):
+    """A GPU kernel from ``cell(s, t, *arrays_and_scalars)``: one thread per series and bar."""
+    return _PerCell(cell)
+
+
+# --------------------------------------------------------------------------- CUDA twins of compiled loops
+#
+# A compiled per-series loop (``@njit`` with ``for s in prange(rows): ...``) runs on the GPU as the
+# same code: its source becomes a CUDA kernel with one thread per series (the prange body unchanged,
+# numpy's scalar functions mapped to math / libdevice). ``launch(fn, *args)`` calls ``fn`` itself on
+# numpy arrays (the CPU path, bit for bit as before) and its twin when the arrays are CUDA tensors.
+
+_NP_MATH = {"isfinite": "isfinite", "isnan": "isnan", "isinf": "isinf", "sqrt": "sqrt", "log": "log",
+            "exp": "exp", "log1p": "log1p", "expm1": "expm1", "log10": "log10", "log2": "log2",
+            "arctan2": "atan2", "arctan": "atan", "arcsin": "asin", "arccos": "acos", "tanh": "tanh",
+            "sinh": "sinh", "cosh": "cosh", "sin": "sin", "cos": "cos", "tan": "tan", "floor": "floor",
+            "ceil": "ceil", "hypot": "hypot", "erf": "erf", "erfc": "erfc", "nan": "nan", "inf": "inf",
+            "pi": "pi", "e": "e"}
+_NP_BUILTIN = {"abs": "abs", "absolute": "abs", "fabs": "abs", "maximum": "max", "minimum": "min",
+               "float64": "float", "int64": "int"}
+_NP_LIBDEVICE = {"rint": "rint", "trunc": "trunc"}
+_TWINS: dict = {}
+_BOUNDS: dict = {}
+_DEVICE: dict = {}
+_TWIN_WARNED: list = []
+
+
+class _ToCuda:
+    """Rewrites a compiled loop's AST for numba-cuda (scalar numpy calls only; no allocation)."""
+
+    def __init__(self, name):
+        import ast
+        self.ast, self.name = ast, name
+
+    def run(self, tree):
+        ast = self.ast
+        name = self.name
+
+        class T(ast.NodeTransformer):
+            def visit_Attribute(self, node):
+                self.generic_visit(node)
+                if isinstance(node.value, ast.Name) and node.value.id == "np":
+                    attr = node.attr
+                    if attr in _NP_MATH:
+                        return ast.copy_location(ast.Attribute(ast.Name("math", ast.Load()), _NP_MATH[attr], ast.Load()), node)
+                    if attr in _NP_BUILTIN:
+                        return ast.copy_location(ast.Name(_NP_BUILTIN[attr], ast.Load()), node)
+                    if attr in _NP_LIBDEVICE:
+                        return ast.copy_location(ast.Attribute(ast.Name("libdevice", ast.Load()), attr, ast.Load()), node)
+                    raise NotImplementedError(f"{name}: np.{attr} has no CUDA form (write the twin by hand)")
+                return node
+
+        return T().visit(tree)
+
+
+def _parsed(fn):
+    import ast
+    import inspect
+    import textwrap
+    py = getattr(fn, "py_func", fn)
+    tree = ast.parse(textwrap.dedent(inspect.getsource(py)))
+    func = tree.body[0]
+    func.decorator_list = []
+    body = list(func.body)
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+        body = body[1:]
+    return py, func, body
+
+
+def _scope(py, func):
+    """The globals a twin compiles against: the module's, with its compiled helpers as device functions."""
+    import ast
+    cuda = cuda_module()
+    from numba import float64, int64
+    scope = dict(py.__globals__)
+    scope.update(cuda=cuda, math=math, libdevice=cuda.libdevice, float64=float64, int64=int64)
+    for node in ast.walk(func):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            target = py.__globals__.get(node.func.id)
+            if target is pairwise_sum:
+                scope[node.func.id] = _cuda_pairwise_sum()
+            elif target is not None and hasattr(target, "py_func"):
+                scope[node.func.id] = _device_twin(target)
+    return scope
+
+
+def _device_twin(fn):
+    """A compiled helper (called from a loop) as a CUDA device function."""
+    import ast
+    if fn not in _DEVICE:
+        py, func, body = _parsed(fn)
+        func.body = body or [ast.Pass()]
+        func = _ToCuda(py.__name__).run(func)
+        ast.fix_missing_locations(func)
+        scope = _scope(py, func)
+        _DEVICE[fn] = compile_cuda(ast.unparse(func), scope, [(py.__name__, True)])[py.__name__]
+    return _DEVICE[fn]
+
+
+def _twin(fn):
+    """The CUDA kernel of a compiled ``for s in prange(...)`` loop: one thread per series."""
+    import ast
+    import textwrap
+    if fn in _TWINS:
+        return _TWINS[fn]
+    py, func, body = _parsed(fn)
+    found = [k for k, stmt in enumerate(body) if isinstance(stmt, ast.For) and isinstance(stmt.iter, ast.Call)
+             and getattr(stmt.iter.func, "id", "") == "prange"]
+    if len(found) != 1 or body[found[0] + 1:]:
+        raise NotImplementedError(f"{py.__name__}: not one prange loop at the end (write the twin by hand)")
+    k = found[0]
+    loop = body[k]
+    bounds = loop.iter.args
+    if len(bounds) not in (1, 2) or not isinstance(loop.target, ast.Name):
+        raise NotImplementedError(f"{py.__name__}: prange(start, stop) only")
+    # The launch's thread count: the prange bound evaluated on the host (a loop may run over
+    # series x checkpoints x grid values, not only the first dimension of an array).
+    host_pre = "\n".join(ast.unparse(stmt) for stmt in body[:k])
+    host = (f"def bound({ast.unparse(func.args)}):\n"
+            + (textwrap.indent(host_pre, "    ") + "\n" if host_pre else "")
+            + f"    return int({ast.unparse(bounds[-1])}) - int({ast.unparse(bounds[0]) if len(bounds) == 2 else '0'})\n")
+    host_scope = dict(py.__globals__)
+    exec(compile(host, f"<prange bound of {py.__name__}>", "exec"), host_scope)
+    _BOUNDS[fn] = host_scope["bound"]
+    func.body = body
+    func = _ToCuda(py.__name__).run(func)
+    ast.fix_missing_locations(func)
+    pre = "\n".join(ast.unparse(stmt) for stmt in func.body[:k])
+    loop = func.body[k]
+    start = ast.unparse(loop.iter.args[0]) if len(loop.iter.args) == 2 else "0"
+    stop = ast.unparse(loop.iter.args[-1])
+    inner = "\n".join(ast.unparse(stmt) for stmt in loop.body)
+    source = (f"def kernel({ast.unparse(func.args)}):\n"
+              + (textwrap.indent(pre, "    ") + "\n" if pre else "")
+              + f"    _first = cuda.grid(1) + ({start})\n"
+              + f"    for {loop.target.id} in range(_first, min(_first + 1, {stop})):\n"
+              + textwrap.indent(inner, "        ") + "\n")
+    scope = _scope(py, func)
+    _TWINS[fn] = compile_cuda(source, scope, [("kernel", False)])["kernel"]
+    return _TWINS[fn]
+
+
+_PAIRWISE_SOURCE = """
+def leaf(a, start, n):
+    if n < 8:
+        res = 0.
+        for i in range(n):
+            res += a[start + i]
+        return res
+    r0 = a[start]
+    r1 = a[start + 1]
+    r2 = a[start + 2]
+    r3 = a[start + 3]
+    r4 = a[start + 4]
+    r5 = a[start + 5]
+    r6 = a[start + 6]
+    r7 = a[start + 7]
+    i = 8
+    stop = n - (n % 8)
+    while i < stop:
+        r0 += a[start + i]
+        r1 += a[start + i + 1]
+        r2 += a[start + i + 2]
+        r3 += a[start + i + 3]
+        r4 += a[start + i + 4]
+        r5 += a[start + i + 5]
+        r6 += a[start + i + 6]
+        r7 += a[start + i + 7]
+        i += 8
+    res = ((r0 + r1) + (r2 + r3)) + ((r4 + r5) + (r6 + r7))
+    while i < n:
+        res += a[start + i]
+        i += 1
+    return res
+
+
+def pairwise(a, start, n):
+    if n <= 128:
+        return leaf(a, start, n)
+    st_start = cuda.local.array(64, int64)
+    st_n = cuda.local.array(64, int64)
+    st_state = cuda.local.array(64, int64)
+    st_left = cuda.local.array(64, float64)
+    for j in range(64):
+        st_state[j] = 0
+        st_left[j] = 0.
+    sp = 0
+    st_start[0] = start
+    st_n[0] = n
+    ret = 0.
+    while True:
+        s0 = st_start[sp]
+        n0 = st_n[sp]
+        if n0 <= 128:
+            ret = leaf(a, s0, n0)
+            sp -= 1
+            if sp < 0:
+                return ret
+            continue
+        n2 = n0 // 2
+        n2 -= n2 % 8
+        state = st_state[sp]
+        if state == 0:
+            st_state[sp] = 1
+            sp += 1
+            st_start[sp] = s0
+            st_n[sp] = n2
+            st_state[sp] = 0
+        elif state == 1:
+            st_left[sp] = ret
+            st_state[sp] = 2
+            sp += 1
+            st_start[sp] = s0 + n2
+            st_n[sp] = n0 - n2
+            st_state[sp] = 0
+        else:
+            ret = st_left[sp] + ret
+            st_state[sp] = 0
+            sp -= 1
+            if sp < 0:
+                return ret
+    return ret
+"""
+
+
+def _cuda_pairwise_sum():
+    """``pairwise_sum`` as a CUDA device function (numpy's pairwise order, the same additions)."""
+    if "pairwise" not in _DEVICE:
+        cuda = cuda_module()
+        from numba import float64, int64
+        compiled = compile_cuda(_PAIRWISE_SOURCE, {"cuda": cuda, "float64": float64, "int64": int64},
+                                [("leaf", True), ("pairwise", True)])
+        _DEVICE["pairwise"] = compiled["pairwise"]
+    return _DEVICE["pairwise"]
+
+
+cuda_pairwise_sum = _cuda_pairwise_sum   # for hand-written kernels: pairwise(a, start, n) on the device
+
+
+def launch(fn, *args):
+    """Run a compiled per-series loop: ``fn(*args)`` on numpy arrays (unchanged), its CUDA twin when
+    the arrays are CUDA tensors (one thread per series, torch's stream, written in place). Without
+    GPU kernels the tensors make a round trip through ``fn`` on the CPU (said once on stderr)."""
+    torch = sys.modules.get("torch")
+    if torch is None or not any(torch.is_tensor(a) and a.is_cuda for a in args):
+        return fn(*args)
+    if not gpu_kernels():
+        if not _TWIN_WARNED:
+            _TWIN_WARNED.append(1)
+            print(f"smithery.jit: compiled loops on the CPU ({gpu_kernels_reason()})", file=sys.stderr)
+        host = [a.detach().cpu().numpy().copy() if torch.is_tensor(a) else a for a in args]
+        result = fn(*host)
+        for a, h in zip(args, host):
+            if torch.is_tensor(a):
+                a.copy_(torch.as_tensor(h, device=a.device))
+        return result
+    cuda = cuda_module()
+    kernel = _twin(fn)
+    stream = cuda.external_stream(torch.cuda.current_stream().cuda_stream)
+    values, back = [], []
+    for a in args:
+        if torch.is_tensor(a):
+            values.append(cuda.as_cuda_array(a.detach()))
+        elif isinstance(a, np.ndarray):
+            device = cuda.to_device(np.ascontiguousarray(a), stream=stream)
+            values.append(device)
+            back.append((device, a))
+        else:
+            values.append(a)
+    try:
+        rows = max(int(_BOUNDS[fn](*args)), 0)
+    except Exception:  # noqa: BLE001 - a bound the host cannot evaluate: one thread per row
+        rows = max((int(a.shape[0]) for a in args if getattr(a, "ndim", 0) >= 1), default=0)
+    if rows:
+        threads = 32
+        kernel[(rows + threads - 1) // threads, threads, stream](*values)
+    for device, a in back:
+        if a.flags.writeable and a.flags.c_contiguous:
+            device.copy_to_host(a, stream=stream)
+    if back:
+        stream.synchronize()
 
 
 def note() -> str:

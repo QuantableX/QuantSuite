@@ -129,5 +129,13 @@ class VoteStore:
 
         return cached
 
+    def put_many(self, items) -> int:
+        """Keep ``(key, votes)`` pairs computed elsewhere (a votes-only run's batch memo)."""
+        if self.mode != "write":
+            return 0
+        rows = [(key, pickle.dumps(value, protocol=5)) for key, value in items]
+        self._con.executemany("INSERT OR IGNORE INTO votes(key, value) VALUES (?, ?)", rows)
+        return len(rows)
+
     def close(self) -> None:
         self._con.close()
