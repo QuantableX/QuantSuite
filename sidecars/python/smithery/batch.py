@@ -772,14 +772,22 @@ class _TorchOps:
         return self.asarray(NUMPY.ewm(self.to_numpy(a), how, spec, *args, **kwargs))
 
     def _ewm_mean(self, x, spec):
-        """pandas' ewma: as linear scans when the data allow (no bar loop), else pandas'
-        recursion bar by bar over all series at once."""
+        """pandas' ewma. With GPU kernels: pandas' recursion itself as a CUDA twin (one launch, one
+        thread per series, the CPU's arithmetic; the blocked scans cost a Python loop of launches per
+        call: ensemble 1d spent 15 s in them). Without: linear scans when the data allow."""
         t = self.torch
         alpha = _ewm_alpha(spec)
         adjust = bool(spec.get("adjust", True))
         ignore_na = bool(spec.get("ignore_na", False))
         minp = max(int(spec.get("min_periods", 0) or 0), 1)
         S, T = x.shape
+        from .jit import gpu_kernels
+        if T and gpu_kernels():
+            from .jit import launch
+            values = x.contiguous()
+            out = t.empty_like(values)
+            launch(_ewm_rows, values, float(alpha), adjust, ignore_na, int(minp), out)
+            return out
         if T:
             obs = ~t.isnan(x)
             idx = t.arange(T, device=x.device)
@@ -2303,10 +2311,17 @@ def linear_scan(ops, coef: float, u):
 
 
 def rma_gpu(ops, a, valid, n):
-    """Wilder's recurrence (research_common.rma) without a bar loop: seeded with the first finite
-    window mean, then y = y + (a - y) / n, NaN for good after a missing value."""
+    """Wilder's recurrence (research_common.rma) on the GPU: seeded with the first finite window
+    mean, then y = y + (a - y) / n, NaN for good after a missing value. With GPU kernels the CPU's
+    loop itself as a CUDA twin (one launch, the same arithmetic); without, a linear scan."""
     t = ops.torch
     S, T = a.shape
+    from .jit import gpu_kernels
+    if T and gpu_kernels():
+        from .jit import launch
+        out = t.full((S, T), float("nan"), dtype=ops.f64, device=a.device)
+        launch(_wilder_rows, a.to(ops.f64).contiguous(), valid.to(ops.f64).contiguous(), float(n), out)
+        return out
     idx = t.arange(T, device=a.device)
     fin = t.isfinite(valid)
     has = fin.any(dim=1)

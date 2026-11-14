@@ -82,6 +82,10 @@ def cuda_module():
                     mod, reason = None, "numba-cuda finds no CUDA GPU"
                 else:
                     _exact_multiply_add()
+                    import warnings
+                    from numba.core.errors import NumbaPerformanceWarning
+                    # small grids are the point for a few series; the warning would flood every log
+                    warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
             except Exception as exc:  # noqa: BLE001 — optional: the CPU loops still run
                 mod, reason = None, f"numba-cuda not installed ({type(exc).__name__})"
         _CUDA["mod"], _CUDA["reason"] = mod, reason
