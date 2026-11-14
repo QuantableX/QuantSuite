@@ -1820,13 +1820,26 @@ class _TorchNP:
         return self.t.full(shape, float(value), dtype=self.t.float64, device=self.ops.device)
 
     def zeros(self, shape, dtype=None):
+        if dtype in (int, np.int64, "int64"):
+            shape = shape if isinstance(shape, tuple) else (shape,)
+            return self.t.zeros(shape, dtype=self.t.int64, device=self.ops.device)
         return self.full(shape, 0.0, dtype)
+
+    def empty(self, shape, dtype=None):
+        return self.zeros(shape, dtype)
+
+    def ascontiguousarray(self, a, dtype=None):
+        """A contiguous float64 tensor on the device (what numpy's ascontiguousarray gives a kernel)."""
+        return self.ops._t(a).to(self.t.float64).contiguous()
 
     def ones(self, shape, dtype=None):
         return self.full(shape, 1.0, dtype)
 
     def zeros_like(self, a):
         return self.t.zeros_like(a)
+
+    def copy(self, a):
+        return self.ops._t(a).clone()
 
     def ones_like(self, a):
         return self.t.ones_like(a)
