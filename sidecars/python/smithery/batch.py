@@ -181,8 +181,51 @@ class _NumpyOps:
         if how in ("var", "std") and exact_moments():
             return self._exact_var(a, int(window), min_periods, how,
                                    int(kwargs.get("ddof", args[0] if args else 1)))
+        if how in ("skew", "kurt") and exact_moments():
+            return self._exact_shape(a, int(window), min_periods, how)
         roll = self._frame(a).rolling(window, min_periods=min_periods)
         return np.ascontiguousarray(getattr(roll, how)(*args, **kwargs).to_numpy().T)
+
+    def _exact_shape(self, a, n, min_periods, how):
+        """Rolling skew / kurt from each window's own central moments (the same reason as
+        ``_exact_var``: pandas' running sums drift on a price series, 3e-6 on a 20-bar kurt).
+        pandas' rules: fewer than 3 / 4 values give NaN, one repeated value gives 0 / -3,
+        a variance <= 1e-14 gives NaN. The GPU computes the same formulas."""
+        from numpy.lib.stride_tricks import sliding_window_view
+        x = np.asarray(a, dtype=float)
+        S, T = x.shape
+        mp = n if min_periods is None else int(min_periods)
+        valid = ~np.isnan(x)
+        c = np.cumsum(valid, axis=1, dtype=float)
+        cnt = c.copy()
+        if n < T:
+            cnt[:, n:] = c[:, n:] - c[:, :-n]
+        padded = np.concatenate([np.full((S, n - 1), np.nan), x], axis=1)
+        m2 = np.empty((S, T))
+        m3 = np.empty((S, T))
+        rows = _block_rows(T * n)
+        with np.errstate(all="ignore"):
+            for s0 in range(0, S, rows):
+                win = sliding_window_view(padded[s0:s0 + rows], n, axis=1)      # [s, T, n]
+                ok = ~np.isnan(win)
+                cw = np.maximum(ok.sum(axis=2, keepdims=True), 1).astype(float)
+                d = np.where(ok, win - np.where(ok, win, 0.0).sum(axis=2, keepdims=True) / cw, 0.0)
+                d2 = d * d
+                m2[s0:s0 + rows] = d2.sum(axis=2)
+                m3[s0:s0 + rows] = (d2 * d if how == "skew" else d2 * d2).sum(axis=2)
+            B = m2 / cnt
+            if how == "skew":
+                R = np.sqrt(B)
+                res = np.sqrt(cnt * (cnt - 1.)) * (m3 / cnt) / ((cnt - 2) * R * R * R)
+                least, flat = 3, 0.0
+            else:
+                K = (cnt * cnt - 1.) * (m3 / cnt) / (B * B) - 3 * ((cnt - 1.) ** 2)
+                res = K / ((cnt - 2.) * (cnt - 3.))
+                least, flat = 4, -3.0
+        res = np.where(B <= 1e-14, np.nan, res)
+        hi, lo = self.rolling(x, n, 1, "max"), self.rolling(x, n, 1, "min")
+        res = np.where((hi == lo) & (cnt > 0), flat, res)
+        return np.where(cnt >= max(mp, least), res, np.nan)
 
     def _exact_var(self, a, n, min_periods, how, ddof):
         """Rolling variance / std from each window itself: its mean, then its squared deviations.
@@ -485,8 +528,80 @@ class _TorchOps:
             return res
         if how in ("median", "quantile") and n <= 512 and kwargs.get("interpolation", "linear") == "linear":
             return self._order_stat(x, n, mp, how, float(args[0]) if args else None)
+        if how in ("skew", "kurt"):
+            return self._shape_moment(x, n, mp, how)
+        if how == "rank" and kwargs.get("method", "average") in ("average", "min", "max"):
+            return self._newest_rank(x, n, mp, kwargs.get("method", "average"),
+                                     bool(kwargs.get("ascending", True)), bool(kwargs.get("pct", False)))
         # rarer statistics: exact through pandas on the CPU, then back (see device_note in reports)
         return self.asarray(NUMPY.rolling(self.to_numpy(x), window, min_periods, how, *args, **kwargs))
+
+    def _windows(self, x, n):
+        """The trailing windows [s, T, n] of x in blocks of series (NaN before the first bar)."""
+        t = self.torch
+        S, T = x.shape
+        rows = _block_rows(T * n)
+        for s0 in range(0, S, rows):
+            xs = x[s0:s0 + rows]
+            padded = t.cat([t.full((xs.shape[0], n - 1), float("nan"), dtype=self.f64, device=self.device), xs], dim=1)
+            yield s0, xs, padded.unfold(1, n, 1)
+
+    def _shape_moment(self, x, n, mp, how):
+        """pandas' rolling skew / kurt with each window's own central moments (its mean first, then
+        the deviations: no running sums). pandas' rules: fewer than 3 (skew) / 4 (kurt) values give
+        NaN, a window of one repeated value gives 0 / -3, a variance <= 1e-14 gives NaN."""
+        t = self.torch
+        S, T = x.shape
+        zero = t.zeros((), dtype=self.f64, device=self.device)
+        m2 = t.empty((S, T), dtype=self.f64, device=self.device)
+        m3 = t.empty_like(m2)
+        for s0, xs, win in self._windows(x, n):
+            ok = ~t.isnan(win)
+            cw = ok.sum(dim=2, keepdim=True).clamp(min=1).to(self.f64)
+            d = t.where(ok, win - t.where(ok, win, zero).sum(dim=2, keepdim=True) / cw, zero)
+            d2 = d * d
+            m2[s0:s0 + xs.shape[0]] = d2.sum(dim=2)
+            m3[s0:s0 + xs.shape[0]] = (d2 * d if how == "skew" else d2 * d2).sum(dim=2)
+            del ok, cw, d, d2, win
+        cnt = self._counts(~t.isnan(x), n)
+        B = m2 / cnt
+        if how == "skew":
+            R = t.sqrt(B)
+            res = t.sqrt(cnt * (cnt - 1.)) * (m3 / cnt) / ((cnt - 2) * R * R * R)
+            least, flat = 3, 0.0
+        else:
+            K = (cnt * cnt - 1.) * (m3 / cnt) / (B * B) - 3 * ((cnt - 1.) ** 2)
+            res = K / ((cnt - 2.) * (cnt - 3.))
+            least, flat = 4, -3.0
+        nan = t.full_like(res, float("nan"))
+        res = t.where(B <= 1e-14, nan, res)
+        hi, lo = self._extreme(x, n, True, 1), self._extreme(x, n, False, 1)
+        res = t.where((hi == lo) & (cnt > 0), t.full_like(res, flat), res)
+        return t.where((cnt >= max(mp, least)), res, nan)
+
+    def _newest_rank(self, x, n, mp, method, ascending, pct):
+        """pandas' rolling rank: the rank of each window's newest value among the window's values
+        (ties: average / min / max), NaN when the newest value is NaN; pct divides by the count.
+        Integer counts, so the same numbers as pandas to the bit."""
+        t = self.torch
+        S, T = x.shape
+        below = t.empty((S, T), dtype=self.f64, device=self.device)
+        upto = t.empty_like(below)
+        for s0, xs, win in self._windows(x, n):
+            last = xs[..., None]
+            ok = ~t.isnan(win)
+            lt, le = (win < last, win <= last) if ascending else (win > last, win >= last)
+            below[s0:s0 + xs.shape[0]] = (ok & lt).sum(dim=2).to(self.f64)
+            upto[s0:s0 + xs.shape[0]] = (ok & le).sum(dim=2).to(self.f64)
+            del ok, lt, le, win
+        lowest = below + 1
+        rank = (lowest + upto) / 2 if method == "average" else lowest if method == "min" else upto
+        cnt = self._counts(~t.isnan(x), n)
+        if pct:
+            rank = rank / cnt
+        nan = t.full_like(rank, float("nan"))
+        rank = t.where(t.isnan(x), nan, rank)
+        return t.where(cnt >= mp, rank, nan)
 
     def _order_stat(self, x, n, mp, how, q):
         """pandas' rolling median / linear quantile on sorted windows (NaN sorts last):
@@ -2031,7 +2146,7 @@ WINDOW_BLOCK_CELLS = 32_000_000
 
 
 def exact_moments() -> bool:
-    """Rolling var/std from each window (exact; the default since 2026-11-12, user's decision).
+    """Rolling var/std (and skew/kurt) from each window (exact; the default since 2026-11-12, user's decision).
     SMITHERY_PANDAS_MOMENTS=1 gives pandas' running sums on the CPU (the old values, for parity
     checks against references made with the old code)."""
     return os.environ.get("SMITHERY_PANDAS_MOMENTS", "0").strip() != "1"
