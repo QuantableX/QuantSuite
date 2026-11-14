@@ -63,7 +63,7 @@ test('unknown and invalid values stay indeterminate, completion requires done', 
   const running = render({ followFraction: 1 })
   assert.match(running, />100%</)
   assert.match(running, /awaiting completion/)
-  assert.match(running, />Running</)
+  assert.match(running, />Reporting</)
   assert.doesNotMatch(running, /qpb-task is-done|>Completed</)
   const done = render({ state: 'done', finishedAt: NOW, note: '12 of 12 passed' })
   assert.match(done, />100%</)
@@ -72,11 +72,15 @@ test('unknown and invalid values stay indeterminate, completion requires done', 
   assert.doesNotMatch(done, /awaiting completion|No recent update/)
 })
 
-test('old task updates remain visibly stale even against an older server', () => {
+test('old task updates leave the main view even against an older server', () => {
   const html = render({ stale: false, updatedAt: NOW - 20 * MIN })
   assert.match(html, /qpb-task is-stale/)
   assert.match(html, /No update for 20m/)
-  assert.match(html, /1 awaiting update/)
+  assert.match(html, /No recent agent activity/)
+  assert.match(html, /Activity unconfirmed/)
+  assert.match(html, /<details class="qpb-history" data-qpb-key="history">/)
+  assert.ok(html.indexOf('Gauntlet LCES Top 6') > html.indexOf('Inactive and finished'))
+  assert.doesNotMatch(html, /reporting progress|Agent estimate|is-indeterminate|70m elapsed/)
   const following = render({ updatedAt: NOW - 20 * MIN, followChangedAt: NOW - MIN })
   assert.doesNotMatch(following, /is-stale/)
   assert.match(following, /Updated 1m ago/)
@@ -98,7 +102,7 @@ test('commands and raw logs are inside a closed technical disclosure', () => {
 
 test('shell-only sessions do not occupy task cards in the primary view', () => {
   const html = renderBoard({ now: NOW, lanes: [lane({ tasks: [], shells: [{ id: 'b', command: 'cargo test', startedAt: NOW }] })] })
-  assert.match(html, /No agent is reporting work right now/)
+  assert.match(html, /No recent agent activity/)
   assert.match(html, /<details class="qpb-background" data-qpb-key="background">/)
   assert.match(html, /1 session without a progress report/)
   assert.ok(html.indexOf('cargo test') > html.indexOf('Other activity'))
@@ -114,4 +118,34 @@ test('all user and agent strings, including disclosure keys, are escaped', () =>
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/)
   assert.match(html, /a&#39;b&amp;c/)
   assert.match(renderBoard(null, { empty: '<Nothing yet>' }), /&lt;Nothing yet&gt;/)
+})
+
+test('only fresh reports appear in the primary view of a mixed agent lane', () => {
+  const html = renderBoard({ now: NOW, lanes: [lane({ tasks: [
+    task({ id: 'old', title: 'Abandoned', updatedAt: NOW - 22 * 60 * MIN }),
+    task({ id: 'new', title: 'Current job' }),
+    task({ id: 'done', title: 'Finished job', state: 'done', finishedAt: NOW }),
+    task({ id: 'failed', title: 'Failed job', state: 'failed', finishedAt: NOW }),
+  ] })] })
+  const primary = html.slice(0, html.indexOf('<details class="qpb-history"'))
+  assert.match(primary, /1 task reporting progress/)
+  assert.match(primary, /Current job/)
+  assert.doesNotMatch(primary, /Abandoned|Finished job|Failed job/)
+  assert.match(html, /Inactive and finished<span>3 reports/)
+})
+
+test('the 15-minute cutoff and followed logs use task-specific activity', () => {
+  assert.match(render({ updatedAt: NOW - 15 * MIN }), /1 task reporting progress/)
+  assert.doesNotMatch(render({ updatedAt: NOW - 15 * MIN - 1 }), /reporting progress/)
+  assert.match(render({ updatedAt: NOW - 23 * 60 * MIN, followChangedAt: NOW - MIN }), /1 task reporting progress/)
+  assert.doesNotMatch(render({ updatedAt: NOW - 23 * 60 * MIN, followChangedAt: NOW - 20 * MIN }), /reporting progress/)
+})
+
+test('stale reports stop counting elapsed runtime and cannot look animated or complete', () => {
+  const value = task({ step: null, steps: null, updatedAt: NOW - 20 * MIN, estimateSecs: 60 })
+  assert.equal(timeLine(value, NOW), 'Last reported after 50m')
+  assert.equal(timeLine(value, NOW + 2 * 60 * MIN), 'Last reported after 50m')
+  const html = render(value)
+  assert.doesNotMatch(html, /is-indeterminate|Agent estimate|>Done<|>Running<|>Reporting</)
+  assert.match(html, /Activity unconfirmed/)
 })

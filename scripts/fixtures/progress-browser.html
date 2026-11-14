@@ -20,8 +20,10 @@ const lane=(id)=>({key:id,agent:`agent-${id}`,tasks:[task(`${id}-1`),task(`${id}
 let view, root=document.querySelector('#board'), drawer=document.querySelector('#drawer')
 async function reset(page=false){
   document.getSelection().removeAllRanges()
+  localStorage.clear()
   drawer.style.height=page?'auto':'400px';drawer.style.overflow=page?'visible':'auto'
-  root.replaceChildren(); view={now:NOW,lanes:[lane('a')]};updateBoard(root,view)
+  const next=document.createElement('div');next.id='board';root.replaceWith(next);root=next
+  view={now:NOW,lanes:[lane('a')]};updateBoard(root,view)
   root.querySelector('details').open=true;await frame()
   return page?document.scrollingElement:drawer
 }
@@ -89,16 +91,18 @@ await check('nested background disclosures stay open',async()=>{
   assert(outer.isConnected&&inner.isConnected&&outer.open&&inner.open,'nested disclosure replaced or closed')
 })
 await check('state changes update attributes and optional content in place',async()=>{
-  await reset();const element=root.querySelector('.qpb-task'),bar=element.querySelector('.qpb-bar')
+  await reset()
   Object.assign(view.lanes[0].tasks[0],{state:'done',finishedAt:NOW,note:'All checks passed'})
   updateBoard(root,view)
-  assert(root.querySelector('.qpb-task')===element,'state change replaced the task')
+  const element=root.querySelector('.qpb-history .qpb-task'),bar=element.querySelector('.qpb-bar')
+  assert(!root.querySelector('.qpb-history').open,'finished task remained in the main view')
   assert(element.classList.contains('is-done')&&bar.getAttribute('aria-valuenow')==='100.0','completion not updated')
   assert(element.querySelector('.qpb-note').textContent==='All checks passed','closing note missing')
   Object.assign(view.lanes[0].tasks[0],{state:'running',steps:null,step:null,stepFraction:null,note:null})
   updateBoard(root,view)
-  assert(!element.querySelector('.qpb-note')&&!element.querySelector('.qpb-step'),'obsolete content retained')
-  assert(!bar.hasAttribute('aria-valuenow')&&bar.classList.contains('is-indeterminate'),'unknown-progress attributes not updated')
+  const resumed=root.querySelector('[data-qpb-node="active"] [data-qpb-node="task:a-1"]'),resumedBar=resumed.querySelector('.qpb-bar')
+  assert(!resumed.querySelector('.qpb-note')&&!resumed.querySelector('.qpb-step'),'obsolete content retained')
+  assert(!resumedBar.hasAttribute('aria-valuenow')&&resumedBar.classList.contains('is-indeterminate'),'unknown-progress attributes not updated')
 })
 await check('empty and populated snapshots transition without stale entries',async()=>{
   await reset();view.lanes=[];updateBoard(root,view)
@@ -115,6 +119,48 @@ await check('removing an agent above the viewport preserves the visible content'
   view.lanes.shift();updateBoard(root,view);await frame()
   assert(target.isConnected,'visible task detached')
   assert(Math.abs(target.getBoundingClientRect().top-before)<1,'visible content jumped when an older agent left')
+})
+await check('the user screenshot of four abandoned reports becomes a compact empty view',async()=>{
+  await reset();view.lanes=[lane('a'),lane('b')]
+  for(const l of view.lanes)for(const t of l.tasks){t.updatedAt=NOW-20*60*60000;t.startedAt=NOW-24*60*60000;t.followChangedAt=NOW-20*60*60000}
+  updateBoard(root,view);await frame()
+  const active=root.querySelector('[data-qpb-node="active"]'),history=root.querySelector('.qpb-history')
+  assert(!active.querySelector('.qpb-task')&&active.textContent.includes('No recent agent activity'),'abandoned tasks remain in the main view')
+  assert(!history.open&&history.querySelectorAll('.qpb-task').length===4,'history not closed or reports lost')
+  assert(root.getBoundingClientRect().height<160,'inactive reports still occupy the viewport')
+  assert(!history.querySelector('.is-indeterminate')&&!history.querySelector('.qpb-estimate'),'inactive reports imply running work')
+})
+await check('hiding history survives polls and remounts without changing task state',async()=>{
+  await reset();view.now+=20*60000;updateBoard(root,view)
+  const before=JSON.stringify(view);root.querySelector('.qpb-history').open=true
+  root.querySelector('[data-qpb-action="hide-history"]').click();await frame()
+  assert(JSON.stringify(view)===before,'hide modified task/process data')
+  assert(!root.querySelector('.qpb-history')&&root.querySelector('.qpb-restore'),'hidden reports remain visible')
+  updateBoard(root,view);assert(!root.querySelector('.qpb-history'),'poll undid hiding')
+  const next=document.createElement('div');next.id='board';root.replaceWith(next);root=next;updateBoard(root,view)
+  assert(!root.querySelector('.qpb-history')&&root.querySelector('.qpb-restore'),'reload preference lost')
+  root.querySelector('.qpb-restore').click();await frame()
+  assert(root.querySelector('.qpb-history')&&!root.querySelector('.qpb-restore'),'restore lost reports')
+  assert(document.activeElement===root.querySelector('.qpb-history > summary'),'restore lost keyboard focus')
+})
+await check('fresh reports and followed log updates reactivate hidden tasks individually',async()=>{
+  await reset();view.now+=20*60000;updateBoard(root,view)
+  root.querySelector('[data-qpb-action="hide-history"]').click()
+  view.lanes[0].tasks[0].followChangedAt=view.now;updateBoard(root,view)
+  let active=root.querySelector('[data-qpb-node="active"]')
+  assert(active.querySelectorAll('.qpb-task').length===1,'live log failed to reactivate exactly one task')
+  assert(active.querySelector('.qpb-title').textContent.endsWith('a-1'),'unrelated task reactivated')
+  view.lanes[0].tasks[1].updatedAt=view.now;updateBoard(root,view)
+  active=root.querySelector('[data-qpb-node="active"]')
+  assert(active.querySelectorAll('.qpb-task').length===2&&!root.querySelector('.qpb-restore'),'fresh report remained hidden')
+  assert(!root.querySelector('.qpb-history'),'reactivated reports duplicated in history')
+})
+await check('history stays collapsed across polls while fresh task details stay open',async()=>{
+  await reset();view.lanes[0].tasks[0].updatedAt=NOW-20*60000;updateBoard(root,view)
+  const details=root.querySelector('[data-qpb-node="active"] .qpb-technical');details.open=true
+  for(let i=0;i<3;i++){view.now+=1000;updateBoard(root,view);await frame()}
+  assert(!root.querySelector('.qpb-history').open&&details.isConnected&&details.open,'poll reset independent disclosure states')
+  assert(root.querySelector('[data-qpb-node="active"]').querySelectorAll('.qpb-task').length===1,'stale sibling leaked into active lane')
 })
 await fetch('/result',{method:'POST',body:JSON.stringify({passed,failures,evidence})})
 </script>
