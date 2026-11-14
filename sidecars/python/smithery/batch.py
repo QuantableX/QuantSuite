@@ -1929,6 +1929,14 @@ class _TorchNP:
     def copy(self, a):
         return self.ops._t(a).clone()
 
+    def nan_to_num(self, a):
+        """numpy's defaults: NaN -> 0, +-inf -> the largest finite values."""
+        return self.t.nan_to_num(self._f(a))
+
+    def nansum(self, a, axis=None, keepdims=False):
+        a = self._f(a)
+        return self.t.nansum(a) if axis is None else self.t.nansum(a, dim=axis, keepdim=keepdims)
+
     def ones_like(self, a):
         return self.t.ones_like(a)
 
