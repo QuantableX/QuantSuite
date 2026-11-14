@@ -555,6 +555,18 @@ class _TorchOps:
     def ewm(self, a, how, spec, *args, **kwargs):
         if how == "mean" and not spec.get("times"):
             return self._ewm_mean(self._t(a).to(self.f64), spec)
+        if how in ("var", "std") and not spec.get("times") and not args and set(kwargs) <= {"bias"}:
+            from .jit import gpu_kernels
+            if gpu_kernels():
+                # pandas' ewmcov recursion (x = y) as a kernel, one thread per series.
+                t = self.torch
+                x = self._t(a).to(self.f64).contiguous()
+                out = t.empty_like(x)
+                if x.shape[1]:
+                    _EWM_VAR(x, out, _ewm_alpha(spec), bool(spec.get("adjust", True)),
+                             bool(spec.get("ignore_na", False)), max(int(spec.get("min_periods", 0) or 0), 1),
+                             bool(kwargs.get("bias", False)))
+                return t.sqrt(t.clamp(out, min=0.)) if how == "std" else out
         return self.asarray(NUMPY.ewm(self.to_numpy(a), how, spec, *args, **kwargs))
 
     def _ewm_mean(self, x, spec):
@@ -1068,7 +1080,60 @@ _FUNCTIONS = {"where": _np_where, "clip": _np_clip, "nan_to_num": _np_nan_to_num
 
 # --------------------------------------------------------------------------- per-bar loops
 
-from .jit import njit, prange  # noqa: E402
+from .jit import njit, per_series, prange  # noqa: E402
+
+
+def _ewm_var_row(s, x, out, alpha, adjust, ignore_na, minp, bias):
+    """pandas' ``ewm`` var (window/aggregations.pyx ewmcov with x = y), one series."""
+    old_wt_factor = 1.0 - alpha
+    new_wt = 1.0 if adjust else alpha
+    mean = x[s, 0]
+    nobs = 1 if mean == mean else 0
+    if nobs == 0:
+        mean = math.nan
+    old_wt = 1.0
+    sum_wt = 1.0
+    sum_wt2 = 1.0
+    cov = 0.0
+    for i in range(x.shape[1]):
+        if i > 0:
+            cur = x[s, i]
+            is_observation = cur == cur
+            if is_observation:
+                nobs += 1
+            if mean == mean:
+                if is_observation or not ignore_na:
+                    sum_wt *= old_wt_factor
+                    sum_wt2 *= old_wt_factor*old_wt_factor
+                    old_wt *= old_wt_factor
+                    if is_observation:
+                        old_mean = mean
+                        # avoid numerical errors on constant series
+                        if mean != cur:
+                            mean = ((old_wt*old_mean)+(new_wt*cur))/(old_wt+new_wt)
+                        cov = ((old_wt*(cov+((old_mean-mean)*(old_mean-mean))))
+                               + (new_wt*((cur-mean)*(cur-mean))))/(old_wt+new_wt)
+                        sum_wt += new_wt
+                        sum_wt2 += new_wt*new_wt
+                        old_wt += new_wt
+                        if not adjust:
+                            sum_wt /= old_wt
+                            sum_wt2 /= old_wt*old_wt
+                            old_wt = 1.0
+            elif is_observation:
+                mean = cur
+        if nobs >= minp:
+            if not bias:
+                numerator = sum_wt*sum_wt
+                denominator = numerator-sum_wt2
+                out[s, i] = (numerator/denominator)*cov if denominator > 0 else math.nan
+            else:
+                out[s, i] = cov
+        else:
+            out[s, i] = math.nan
+
+
+_EWM_VAR = per_series(_ewm_var_row)
 
 
 @njit
