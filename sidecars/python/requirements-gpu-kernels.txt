@@ -1,0 +1,9 @@
+# Optional, next to requirements-gpu.txt: GPU kernels for indicator loops that step bar by bar
+# (smithery.jit.per_series: one GPU thread per series). Without it those loops run on the CPU,
+# and the job's device line says so.
+#   python -m pip install -r sidecars/python/requirements-gpu-kernels.txt
+# The CUDA wheels must match torch's CUDA version (cu130 -> 13.0): torch loads its own
+# nvJitLink_130_0.dll first, and a newer NVVM fails to link against it (ERROR_OUTDATED_LIBRARY).
+numba-cuda>=0.30.4
+cuda-toolkit[cccl,cudart,nvrtc,nvvm,nvjitlink]==13.0.*
+nvidia-nvjitlink==13.0.*
