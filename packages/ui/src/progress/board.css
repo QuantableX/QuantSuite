@@ -165,12 +165,12 @@
 }
 
 .qpb-task.is-stale .qpb-status, .qpb-task.is-stale .qpb-freshness {
-  color: var(--qss-warning);
+  color: var(--qss-text-secondary);
 }
 
 .qpb-task.is-stale .qpb-bar > span {
-  background: var(--qss-warning);
-  opacity: .65;
+  background: var(--qss-text-secondary);
+  opacity: .4;
   animation: none;
 }
 
@@ -190,26 +190,71 @@
   border-top: 1px solid var(--qss-border);
 }
 
-.qpb-technical > summary, .qpb-background > summary {
+.qpb-technical > summary, .qpb-background > summary, .qpb-history > summary {
   padding: 10px 16px;
   cursor: pointer;
   color: var(--qss-text-secondary);
   font-size: 11.5px;
 }
 
-.qpb-technical > summary > span, .qpb-background > summary > span {
+.qpb-technical > summary > span, .qpb-background > summary > span, .qpb-history > summary > span {
   margin-left: 10px;
   opacity: .8;
 }
 
-.qpb-technical > summary:hover, .qpb-background > summary:hover {
+.qpb-technical > summary:hover, .qpb-background > summary:hover, .qpb-history > summary:hover {
   color: var(--qss-text);
 }
 
-.qpb-technical > summary:focus-visible, .qpb-background > summary:focus-visible {
+.qpb-technical > summary:focus-visible, .qpb-background > summary:focus-visible, .qpb-history > summary:focus-visible {
   outline: 2px solid var(--qss-accent);
   outline-offset: -3px;
   border-radius: 4px;
+}
+
+.qpb-history {
+  margin-top: 12px;
+  border-top: 1px solid var(--qss-border);
+}
+
+.qpb-history-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 16px 12px;
+  color: var(--qss-text-secondary);
+  font-size: 12px;
+}
+
+.qpb-history-actions p {
+  flex: 1 1 240px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.qpb-history-actions button, .qpb-restore {
+  border: 1px solid var(--qss-border);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font: inherit;
+  color: var(--qss-text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.qpb-restore {
+  margin: 10px 16px;
+  font-size: 11.5px;
+}
+
+.qpb-history-actions button:hover, .qpb-restore:hover {
+  color: var(--qss-text);
+}
+
+.qpb-history-actions button:focus-visible, .qpb-restore:focus-visible {
+  outline: 2px solid var(--qss-accent);
+  outline-offset: 2px;
 }
 
 .qpb-technical-body {

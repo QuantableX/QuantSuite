@@ -31,11 +31,20 @@ export function timeLine(task, now) {
   const elapsed = formatDuration((task.finishedAt ?? now) - task.startedAt)
   if (task.state === 'done') return `Done in ${elapsed}`
   if (task.state === 'failed') return `Failed after ${elapsed}`
+  if (isStale(task, now)) return `Last reported after ${formatDuration(lastActivity(task) - task.startedAt)}`
   return `${elapsed} elapsed`
+}
+/** @param {any} task */
+function lastActivity(task) {
+  return Math.max(task.updatedAt ?? 0, task.followChangedAt ?? 0)
 }
 /** @param {any} task @param {number} now */
 function isStale(task, now) {
-  return task.state === 'running' && (task.stale || now - Math.max(task.updatedAt ?? 0, task.followChangedAt ?? 0) > 15 * 60_000)
+  return task.state === 'running' && (task.stale || now - lastActivity(task) > 15 * 60_000)
+}
+/** @param {any} task @param {number} now */
+function isActive(task, now) {
+  return task.state === 'running' && !isStale(task, now)
 }
 
 /** Display work units, never turn equally weighted steps into a time estimate.
@@ -68,15 +77,15 @@ function progress(task) {
 function renderTask(task, now) {
   const stale = isStale(task, now)
   const state = stale ? 'stale' : task.state
-  const status = stale ? 'No recent update' : task.state === 'done' ? 'Done' : task.state === 'failed' ? 'Failed' : 'Running'
+  const status = stale ? 'Activity unconfirmed' : task.state === 'done' ? 'Done' : task.state === 'failed' ? 'Failed' : 'Reporting'
   const p = progress(task)
   const known = p.value != null
   const width = (p.value ?? 0) * 100
   const step = task.steps ? `Step ${task.step ?? 1} of ${task.steps}` : task.step ? `Step ${task.step}` : ''
   const description = [step, task.stepText].filter(Boolean).join(' · ')
-  const quietSince = Math.max(task.updatedAt ?? 0, task.followChangedAt ?? 0)
+  const quietSince = lastActivity(task)
   const freshness = task.state === 'running' ? `${stale ? 'No update for' : 'Updated'} ${formatDuration(now - quietSince)}${stale ? '' : ' ago'}` : ''
-  const estimate = typeof task.estimateSecs === 'number' && task.estimateSecs > 0 && task.state === 'running'
+  const estimate = typeof task.estimateSecs === 'number' && task.estimateSecs > 0 && isActive(task, now)
     ? `Agent estimate: ${formatDuration(task.estimateSecs * 1000)} total${now - task.startedAt > task.estimateSecs * 1000 ? ' · exceeded' : ''}` : ''
   const note = task.state !== 'running' && task.note ? `<p class="qpb-note">${esc(task.note)}</p>` : ''
   const aria = known ? ` aria-valuenow="${width.toFixed(1)}" aria-valuemin="0" aria-valuemax="100"` : ''
@@ -86,7 +95,7 @@ function renderTask(task, now) {
     `<div class="qpb-task-head"><h3 class="qpb-title">${esc(task.title)}</h3><span class="qpb-status">${status}</span></div>` +
     (description ? `<p class="qpb-step">${esc(description)}</p>` : '') +
     `<div class="qpb-progress-label"><span>${esc(p.caption)}</span><strong class="qpb-pct">${esc(p.label)}</strong></div>` +
-    `<div class="qpb-bar${!known && task.state === 'running' ? ' is-indeterminate' : ''}${segments}"${style} role="progressbar" aria-label="${esc(task.title)}" aria-valuetext="${esc(`${p.caption}: ${p.label}`)}"${aria}><span style="width:${width.toFixed(1)}%"></span></div>` +
+    `<div class="qpb-bar${!known && isActive(task, now) ? ' is-indeterminate' : ''}${segments}"${style} role="progressbar" aria-label="${esc(task.title)}" aria-valuetext="${esc(`${p.caption}: ${p.label}`)}"${aria}><span style="width:${width.toFixed(1)}%"></span></div>` +
     `<div class="qpb-meta"><span class="qpb-time">${esc(timeLine(task, now))}</span><span class="qpb-freshness">${esc(freshness)}</span></div>` +
     (estimate ? `<p class="qpb-estimate">${esc(estimate)}</p>` : '') + note + '</article>'
 }
@@ -116,20 +125,93 @@ function renderLane(lane, now) {
 
 /** @param {any} view @param {{ empty?: string }} [options] */
 export function renderBoard(view, options = {}) {
+  return renderView(view, options, new Set())
+}
+
+/** A hidden report is a specific snapshot, not a task or agent forever.
+ * @param {any} lane @param {any} task
+ */
+function reportStamp(lane, task) {
+  return JSON.stringify([lane.key, task.id, task.startedAt, task.updatedAt, task.followChangedAt, task.finishedAt, task.state])
+}
+
+/** @param {any} view @param {{ empty?: string }} options @param {Set<string>} hidden */
+function renderView(view, options, hidden) {
   const now = typeof view?.now === 'number' ? view.now : Date.now()
   const lanes = Array.isArray(view?.lanes) ? view.lanes : []
-  const reporting = lanes.filter((/** @type {any} */ l) => l.tasks?.length)
+  const reporting = []
+  const history = []
+  let hiddenCount = 0
+  for (const lane of lanes) {
+    const active = (lane.tasks ?? []).filter((/** @type {any} */ task) => isActive(task, now))
+    const inactive = (lane.tasks ?? []).filter((/** @type {any} */ task) => {
+      if (isActive(task, now)) return false
+      if (!hidden.has(reportStamp(lane, task))) return true
+      hiddenCount++
+      return false
+    })
+    if (active.length) reporting.push({ ...lane, tasks: active })
+    if (inactive.length) history.push({ ...lane, tasks: inactive, shells: [] })
+  }
   const background = lanes.filter((/** @type {any} */ l) => !l.tasks?.length && l.shells?.length)
   const tasks = reporting.flatMap((/** @type {any} */ l) => l.tasks)
-  const running = tasks.filter((/** @type {any} */ t) => t.state === 'running' && !isStale(t, now)).length
-  const stale = tasks.filter((/** @type {any} */ t) => isStale(t, now)).length
-  const failed = tasks.filter((/** @type {any} */ t) => t.state === 'failed').length
-  const done = tasks.filter((/** @type {any} */ t) => t.state === 'done').length
-  const summary = [running ? `${running} running` : '', stale ? `${stale} awaiting update` : '', failed ? `${failed} failed` : '', done ? `${done} completed` : ''].filter(Boolean).join(' · ')
-  const empty = options.empty ?? 'No agent is reporting work right now.'
+  const old = history.flatMap((/** @type {any} */ l) => l.tasks)
+  const summary = tasks.length ? `${tasks.length} task${tasks.length === 1 ? '' : 's'} reporting progress` : ''
+  const empty = options.empty ?? 'No recent agent activity.'
   return (summary ? `<p class="qpb-summary">${summary}</p>` : '') +
-    `<div class="qpb-board">${reporting.length ? reporting.map((/** @type {any} */ l) => renderLane(l, now)).join('') : `<p class="qpb-empty">${esc(empty)}</p>`}</div>` +
+    `<div class="qpb-board" data-qpb-node="active">${reporting.length ? reporting.map((/** @type {any} */ l) => renderLane(l, now)).join('') : `<p class="qpb-empty">${esc(empty)}</p>`}</div>` +
+    (old.length ? `<details class="qpb-history" data-qpb-key="history"><summary>Inactive and finished<span>${old.length} report${old.length === 1 ? '' : 's'}</span></summary>` +
+      '<div class="qpb-history-actions"><p>Reports without an update for 15 minutes leave the main view. Their execution status is unknown; new progress brings them back.</p><button type="button" data-qpb-action="hide-history">Hide these reports</button></div>' +
+      `<div class="qpb-board">${history.map(l => renderLane(l, now)).join('')}</div></details>` : '') +
+    (hiddenCount ? `<button type="button" class="qpb-restore" data-qpb-action="restore-history">Show ${hiddenCount} hidden report${hiddenCount === 1 ? '' : 's'}</button>` : '') +
     (background.length ? `<details class="qpb-background" data-qpb-key="background"><summary>Other activity<span>${background.length} session${background.length === 1 ? '' : 's'} without a progress report</span></summary><div class="qpb-board">${background.map((/** @type {any} */ l) => renderLane(l, now)).join('')}</div></details>` : '')
+}
+
+const HIDDEN_REPORTS_KEY = 'quantsuite.progress.hidden-reports.v1'
+/** @type {WeakMap<HTMLElement, { hidden: Set<string>, view: any, options: { empty?: string } }>} */
+const boardState = new WeakMap()
+
+/** Local display preferences only; hiding never edits task/process state.
+ * @param {HTMLElement} root @param {any} view @param {{ empty?: string }} options
+ */
+function stateFor(root, view, options) {
+  let state = boardState.get(root)
+  if (!state) {
+    /** @type {string[]} */
+    let saved = []
+    try {
+      const parsed = JSON.parse(root.ownerDocument.defaultView?.localStorage.getItem(HIDDEN_REPORTS_KEY) ?? '[]')
+      if (Array.isArray(parsed)) saved = parsed.filter(v => typeof v === 'string').slice(-500)
+    } catch { /* Storage can be disabled. Hiding still works for this view. */ }
+    state = { hidden: new Set(saved), view, options }
+    boardState.set(root, state)
+    root.addEventListener('click', event => {
+      const target = /** @type {Element | null} */ (event.target)
+      const button = target?.closest?.('button[data-qpb-action]')
+      const current = boardState.get(root)
+      if (!button || !root.contains(button) || !current) return
+      const action = button.getAttribute('data-qpb-action')
+      if (action === 'restore-history') current.hidden.clear()
+      else if (action === 'hide-history') {
+        const now = current.view?.now ?? Date.now()
+        for (const lane of current.view?.lanes ?? []) {
+          for (const task of lane.tasks ?? []) {
+            if (!isActive(task, now)) current.hidden.add(reportStamp(lane, task))
+          }
+        }
+      } else return
+      current.hidden = new Set(Array.from(current.hidden).slice(-500))
+      try { root.ownerDocument.defaultView?.localStorage.setItem(HIDDEN_REPORTS_KEY, JSON.stringify([...current.hidden])) } catch { /* Optional storage. */ }
+      updateBoard(root, current.view, current.options)
+      const focus = action === 'restore-history' ? '.qpb-history > summary' : '[data-qpb-action="restore-history"]'
+      const focusTarget = /** @type {HTMLElement | null} */ (root.querySelector(focus))
+      focusTarget?.scrollIntoView({ block: 'nearest' })
+      focusTarget?.focus({ preventScroll: true })
+    })
+  }
+  state.view = view
+  state.options = options
+  return state
 }
 
 /** Stable list IDs; structural elements use their tag and first (non-state) class.
@@ -193,7 +275,7 @@ function readingPositions(root) {
   return scrollers.filter(el => el.scrollTop > 0).map(scroller => {
     const top = scroller === root.ownerDocument.scrollingElement ? 0 : scroller.getBoundingClientRect().top + scroller.clientTop
     const inside = scroller.matches('.qpb-technical-body')
-    const candidates = inside ? scroller.querySelectorAll('.qpb-shell, .qpb-log') : root.querySelectorAll('.qpb-lane, .qpb-task, .qpb-technical, .qpb-background')
+    const candidates = inside ? scroller.querySelectorAll('.qpb-shell, .qpb-log') : root.querySelectorAll('.qpb-lane, .qpb-task, .qpb-technical, .qpb-background, .qpb-history')
     const anchors = Array.from(candidates).map(node => ({ node, rect: node.getBoundingClientRect() }))
       .filter(({ rect }) => rect.height > 0 && rect.bottom > top && rect.top < top + scroller.clientHeight)
       // Prefer the first visible block start; fall back to the block spanning the top.
@@ -208,8 +290,9 @@ function readingPositions(root) {
  * @param {HTMLElement} root @param {any} view @param {{ empty?: string }} [options]
  */
 export function updateBoard(root, view, options = {}) {
+  const state = stateFor(root, view, options)
   const next = root.ownerDocument.createElement('template')
-  next.innerHTML = renderBoard(view, options)
+  next.innerHTML = renderView(view, options, state.hidden)
   const positions = readingPositions(root)
   patchChildren(root, next.content)
   for (const { scroller, anchors } of positions) {

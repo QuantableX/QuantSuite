@@ -62,9 +62,20 @@ shell hooks ─/quantprogress/───┘
 - **Time** — elapsed duration and the explicitly labelled agent estimate.
   An exceeded estimate stays exceeded; no elapsed/fraction extrapolation.
   Finished tasks show actual duration.
-- **Stale** — a running task with no report or change in its own followed
-  file for 15 minutes turns amber. Another shell running in the same agent
-  lane cannot make an old task report current.
+- **Activity** — only running tasks with a report or change in their own
+  followed file within 15 minutes occupy the main view. The label is Reporting:
+  recent evidence does not prove that a process is still alive. Quiet tasks
+  move into the closed Inactive and finished section with Activity unconfirmed,
+  their last reported duration, no ticking runtime/ETA and no animation. Done
+  and failed tasks also move to that section immediately. Another task or shell
+  in the same lane cannot make an old report current. Fresh task evidence brings
+  it back automatically. With none, show No recent agent activity.
+- **Hide history** — Hide these reports hides the currently inactive snapshots
+  in this view, without editing reports, completing tasks or stopping processes.
+  The preference persists in local storage (separate app/browser origins), is
+  bounded to 500 snapshots, and can be reversed with Show hidden reports. A new
+  report or followed-file update is a new snapshot and is never suppressed.
+  Storage failure falls back to an in-memory preference for the current view.
 - **Presentation** — task cards and progress first. Commands and raw logs sit
   inside closed technical disclosures; sessions without task reports go under
   Other activity. Both hosts use `updateBoard` to patch existing keyed DOM nodes,
@@ -74,17 +85,23 @@ shell hooks ─/quantprogress/───┘
   cycle. Scroll is corrected only if a surviving visible entry moves (for example,
   after an older agent above it expires), not on ordinary polls. Poll requests do
   not overlap. A failed drawer refresh retains the last board and shows a
-  reconnecting message.
-- **Retention** — done bars stay grey 30 min, failed ones red 2 h; ended shells
+  reconnecting message. Both hosts keep aging cached reports during failed polls,
+  so a connection outage cannot freeze an old task in the active view forever.
+- **Retention** — history retains done bars for 30 min, failed ones 2 h; ended shells
   2 min; a foreground shell without an end 30 min; background shells until
   their agent has no running bar left (its last bar done or failed), Claude
-  Code's SessionEnd, or 12 h; anything untouched for 24 h goes.
+  Code's SessionEnd, or 12 h; reports untouched for 24 h go. Retention is not
+  active visibility. Hook SessionEnd clears its own shells; hook session IDs
+  are not MCP session IDs, and folder-based lane binding is not proof of task
+  ownership. Never complete every report in a shared lane on that signal.
 - **Followed files** — the last 64 KB, read on each poll. A folder means its
   `events.jsonl` (Smithery lab runs write
   `{"event":"progress","fraction":…,"message":…}`). Lines with
   `PROGRESS 12/48 text`, `PROGRESS 45% text`, and SystemGauntlet's native
   `[time] Variant runs: 17 of 30` give a fraction too. The newest readable
-  line appears in technical details.
+  line appears in technical details. Refresh follows before retention pruning:
+  a log may have kept changing while the app was closed, even when its saved
+  report timestamp is older than 24 h.
 
 ### Shell hooks
 

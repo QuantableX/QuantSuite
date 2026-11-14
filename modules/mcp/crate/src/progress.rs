@@ -50,8 +50,9 @@ const SECOND: i64 = 1000;
 const MINUTE: i64 = 60 * SECOND;
 const HOUR: i64 = 60 * MINUTE;
 
-/// A running bar with no sign of life for this long is marked stale: no
-/// report and no change in its followed file. Unrelated shells are not updates.
+/// A running bar with no sign of life for this long moves out of the active
+/// view: no report and no change in its followed file. This does not prove
+/// process completion. Unrelated shells are not updates.
 pub const STALE_AFTER: i64 = 15 * MINUTE;
 /// Finished bars stay (grey) this long, failed ones (red) longer.
 const KEEP_DONE: i64 = 30 * MINUTE;
@@ -64,7 +65,7 @@ const LOST_FOREGROUND: i64 = 30 * MINUTE;
 /// A background shell has no end event: it goes with its session (Claude
 /// Code's SessionEnd) or after this.
 const KEEP_BACKGROUND: i64 = 12 * HOUR;
-/// A running bar nobody touched for this long was abandoned.
+/// Retention for unconfirmed reports in collapsed history (not active work).
 const ABANDONED: i64 = 24 * HOUR;
 const MAX_TASKS: usize = 12;
 const MAX_SHELLS: usize = 12;
@@ -1166,6 +1167,9 @@ impl Store {
     pub fn report(&self, report: &Report, caller: &Caller) -> Result<Task, String> {
         let now = now_ms();
         let mut board = self.board.lock().map_err(|e| e.to_string())?;
+        // A job may have kept writing while the app was closed. Check its
+        // current file before expiring a persisted, old progress snapshot.
+        refresh_follows(&mut board);
         prune(&mut board, now);
         let task = apply_report(&mut board, report, caller, now)?;
         // The reply shows what the board will show: a newly followed file
@@ -1198,8 +1202,8 @@ impl Store {
         let Ok(mut board) = self.board.lock() else {
             return BoardView { now, lanes: Vec::new(), page_url };
         };
-        let changed = prune(&mut board, now) | bind_hooks(&mut board);
         refresh_follows(&mut board);
+        let changed = prune(&mut board, now) | bind_hooks(&mut board);
         let view = view(&board, now, page_url);
         drop(board);
         if changed {
@@ -1357,16 +1361,19 @@ const PAGE_HTML: &str = r#"<!doctype html>
   const board = document.getElementById('board')
   const conn = document.getElementById('conn')
   let pending = false
+  let last = null
   async function tick() {
     if (pending) return
     pending = true
     try {
       const response = await fetch('/progress/state', { cache: 'no-store' })
       if (!response.ok) throw new Error(String(response.status))
-      updateBoard(board, await response.json())
+      last = await response.json()
+      updateBoard(board, last)
       conn.textContent = 'Live'
       conn.className = ''
     } catch {
+      if (last) updateBoard(board, { ...last, now: Date.now() })
       conn.textContent = 'QuantSuite is not answering'
       conn.className = 'is-off'
     } finally {
@@ -1714,6 +1721,51 @@ mod tests {
         assert_eq!(titles, ["Failed", "Running"]);
         assert!(prune(&mut board, T0 + ABANDONED + 1));
         assert!(board.lanes.is_empty());
+    }
+
+    #[test]
+    fn fresh_follow_survives_pruning_after_restore_or_another_report() {
+        let dir = std::env::temp_dir().join(format!("qs-progress-restore-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("progress.log");
+        std::fs::write(&log, "PROGRESS 4/10 still computing\n").unwrap();
+        for through_report in [false, true] {
+            let mut board = Board::default();
+            let old = now_ms() - ABANDONED - HOUR;
+            apply_report(&mut board, &report(json!({ "title": "Long job", "follow": log.to_str().unwrap() })), &Caller::default(), old).unwrap();
+            // Exercise persisted data from before the app stopped polling.
+            let restored = serde_json::from_str(&serde_json::to_string(&board).unwrap()).unwrap();
+            let store = Store { board: Mutex::new(restored), dirty: Mutex::new(false), path: dir.join("board.json") };
+            if through_report {
+                store.report(&report(json!({ "title": "Another task" })), &Caller::default()).unwrap();
+            }
+            let view = store.view(None);
+            let task = view.lanes.iter().flat_map(|l| &l.tasks).find(|t| t.task.title == "Long job").expect("live followed task must survive old persisted timestamps");
+            assert!(!task.stale);
+            assert_eq!(task.task.follow_fraction, Some(0.4));
+            assert_eq!(task.task.state, TaskState::Running);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn restored_silent_reports_are_unconfirmed_until_their_own_update() {
+        let mut board = Board::default();
+        let caller = claude_session("C:/w", "mcp-session");
+        let args = report(json!({ "agent_id": "a", "title": "Quiet job" }));
+        apply_report(&mut board, &args, &caller, T0).unwrap();
+        let mut restored: Board = serde_json::from_str(&serde_json::to_string(&board).unwrap()).unwrap();
+        assert!(!view(&restored, T0 + STALE_AFTER, None).lanes[0].tasks[0].stale);
+        assert!(view(&restored, T0 + STALE_AFTER + 1, None).lanes[0].tasks[0].stale);
+        // A hook session's ID is not the MCP session ID. Ending an unrelated
+        // hook must not fabricate completion for reports sharing its folder.
+        apply_hook(&mut restored, "claude-code", HookEvent::SessionEnd, &json!({ "session_id": "hook-session", "cwd": "C:/w" }), T0 + STALE_AFTER + 2);
+        assert_eq!(restored.lanes[0].tasks[0].state, TaskState::Running);
+        let later = T0 + 20 * HOUR;
+        assert!(!prune(&mut restored, later));
+        assert!(view(&restored, later, None).lanes[0].tasks[0].stale);
+        apply_report(&mut restored, &args, &caller, later).unwrap();
+        assert!(!view(&restored, later, None).lanes[0].tasks[0].stale);
     }
 
     #[test]

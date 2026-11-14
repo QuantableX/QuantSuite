@@ -79,7 +79,7 @@ let boardPending = false
 let boardEpoch = 0
 
 const BOARD_EMPTY =
-  'No agent is reporting work right now.'
+  'No recent agent activity.'
 
 async function loadBoard() {
   if (boardPending) return
@@ -98,7 +98,11 @@ async function loadBoard() {
     await nextTick()
     if (epoch === boardEpoch && boardRoot.value) updateBoard(boardRoot.value, next, { empty: BOARD_EMPTY })
   } catch {
-    if (epoch === boardEpoch) boardLive.value = false
+    if (epoch === boardEpoch) {
+      boardLive.value = false
+      // Keep the snapshot, but do not freeze its activity clock during an outage.
+      if (board.value && boardRoot.value) updateBoard(boardRoot.value, { ...board.value, now: Date.now() }, { empty: BOARD_EMPTY })
+    }
   } finally {
     boardPending = false
   }
