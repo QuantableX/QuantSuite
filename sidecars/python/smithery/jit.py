@@ -430,6 +430,9 @@ def _cuda_pairwise_sum():
     return _DEVICE["pairwise"]
 
 
+cuda_pairwise_sum = _cuda_pairwise_sum   # for hand-written kernels: pairwise(a, start, n) on the device
+
+
 def launch(fn, *args):
     """Run a compiled per-series loop: ``fn(*args)`` on numpy arrays (unchanged), its CUDA twin when
     the arrays are CUDA tensors (one thread per series, torch's stream, written in place). Without
