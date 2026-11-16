@@ -127,8 +127,13 @@ def _window_key(kind: str, overrides: dict, window: pd.DataFrame) -> str:
     for column in window.columns:
         values = window[column].to_numpy()
         digest.update(str(values.dtype).encode())
-        # Object columns would hash their pointers, which differ between processes: they simply never hit.
-        digest.update(np.ascontiguousarray(values).tobytes())
+        if values.dtype.kind in "OT":
+            # Text (a coin's own candles carry their exchange's name): the values themselves. Their
+            # bytes would be pointers, which differ between processes, so such a window never hit
+            # outside the process that wrote it.
+            digest.update("\x1f".join(map(repr, values.tolist())).encode("utf-8", "backslashreplace"))
+        else:
+            digest.update(np.ascontiguousarray(values).tobytes())
     return digest.hexdigest()
 
 

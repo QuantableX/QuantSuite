@@ -101,6 +101,32 @@ class VoteStoreTests(unittest.TestCase):
         self.votes(frame())
         self.assertFalse((self.folder / "votes.sqlite").exists())
 
+    def test_a_text_column_is_keyed_by_its_values_not_by_where_they_live(self):
+        import pickle
+        df = frame().iloc[:300].copy()
+        # A coin's own candles (coin against USD) carry the exchange's name and a flag.
+        df["source"] = pd.array(["binance"] * 200 + ["okx"] * 100, dtype="str")
+        df["approx"] = False
+        base = vote_store.window_key("k", {}, df)
+        # Another process holds the same values at other addresses: a pickled copy stands in for it.
+        copy = pickle.loads(pickle.dumps(df))
+        self.assertNotEqual(df["source"].to_numpy().tobytes(), copy["source"].to_numpy().tobytes())   # other addresses indeed
+        self.assertEqual(base, vote_store.window_key("k", {}, copy))
+        other = df.copy()
+        other.loc[other.index[150], "source"] = "okx"
+        self.assertNotEqual(base, vote_store.window_key("k", {}, other))
+        flagged = df.copy()
+        flagged.loc[flagged.index[10], "approx"] = True
+        self.assertNotEqual(base, vote_store.window_key("k", {}, flagged))
+        # And such a window is read back like any other.
+        plain = self.votes(df)
+        self.votes(df, "write")
+        vote_store.close_all()
+        self.calls.clear()
+        read = self.votes(pickle.loads(pickle.dumps(df)), "read")
+        self.assertEqual(self.calls, [])
+        pd.testing.assert_series_equal(read, plain, check_exact=True)
+
     def test_a_store_that_fails_is_a_miss_and_the_votes_are_the_same(self):
         df = frame()
         plain = self.votes(df)
