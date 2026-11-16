@@ -382,6 +382,7 @@ class FastSystem:
                     keys = [self.groups[g].keys[i] for i in fast]
                     cfg = IndicatorConfig(trend="aggregate", aggregate=tuple(keys), params=params)
                     batch_votes.prefill([(a, b) for _, a, b, _ in pairs], cfg)
+                    batch_votes.keep()   # a vote store in write mode (a shared Gauntlet store): one transaction
                     for p, a, b, single in pairs:
                         store(_votes_task((g, p, keys, params, a, b, single)), fast)
                         done += 1
