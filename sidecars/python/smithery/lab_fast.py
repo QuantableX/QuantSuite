@@ -98,6 +98,8 @@ def _votes_task(task):
                 errors[key] = "unsupported: the signal is not +1/-1/0 on every bar"
                 continue
             values[i] = signal.astype(np.int8)
+    from rotation_lab.backtest import vote_store
+    vote_store.flush_all()   # with a vote store in write mode: this pair's votes in one transaction
     return group, pair, frame.index, values, errors
 
 

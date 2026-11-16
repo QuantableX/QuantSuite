@@ -44,6 +44,7 @@ def active():
         signals._BATCH_MEMO = None
         signals._FRAME_MEMO = signals._WINDOW_MEMO = vote_store._KEYS = None
         _IN_STORE.clear()
+        vote_store.flush_all()   # the run is over: what it computed outside the batch goes to the store
 
 
 VOTES_ONLY = "ROTATION_LAB_VOTES_ONLY"

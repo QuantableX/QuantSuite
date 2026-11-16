@@ -35,6 +35,12 @@ ENV_MODE = "ROTATION_LAB_VOTE_CACHE_MODE"
 ENV_SALT = "ROTATION_LAB_VOTE_SALT"
 _OPEN: dict[tuple[str, str, int], "VoteStore"] = {}
 _SALTS: dict[tuple[str, str], str] = {}
+# Votes this process computed for a store folder and has not written yet (key -> votes), shared by
+# every store object of the folder. One window at a time, each in a transaction of its own, lets
+# many processes on one store wait for each other: thirty of them left a single writer waiting for
+# minutes. So what ``wrap`` computes is written every FLUSH_ROWS rows and when a run ends.
+_PENDING: dict[str, dict] = {}
+FLUSH_ROWS = 512
 
 
 def salt(kind: str) -> str:
@@ -74,6 +80,12 @@ def active() -> "VoteStore | None":
     if key not in _OPEN:
         _OPEN[key] = VoteStore(Path(folder), mode)
     return _OPEN[key]
+
+
+def flush_all() -> None:
+    """Write what this process computed and still holds in memory (a run calls it when it ends)."""
+    for store in list(_OPEN.values()):
+        store.flush()
 
 
 def close_all() -> None:
@@ -155,6 +167,7 @@ class VoteStore:
         folder.mkdir(parents=True, exist_ok=True)
         self.mode = mode
         self.hits = self.misses = self.errors = 0
+        self._pending = _PENDING.setdefault(str(folder), {})
         self._con = sqlite3.connect(folder / "votes.sqlite", timeout=120, isolation_level=None)
         self._con.execute("PRAGMA journal_mode=WAL")
         # WAL with NORMAL never corrupts the file; a power cut can only lose the newest rows of a cache.
@@ -164,6 +177,9 @@ class VoteStore:
     def _read(self, key: str):
         """The stored votes or None. A store that cannot answer (locked by other runs for longer
         than the timeout, a damaged row) is a miss: the votes are then computed, the same ones."""
+        held = self._pending.get(key)
+        if held is not None:
+            return held
         try:
             row = self._con.execute("SELECT value FROM votes WHERE key=?", (key,)).fetchone()
             return None if row is None else _unpack(row[0])
@@ -180,6 +196,8 @@ class VoteStore:
 
     def has(self, key: str) -> bool:
         """Whether the store holds this window key (the votes stay where they are)."""
+        if key in self._pending:
+            return True
         try:
             return self._con.execute("SELECT 1 FROM votes WHERE key=?", (key,)).fetchone() is not None
         except sqlite3.Error:
@@ -198,10 +216,23 @@ class VoteStore:
             self.misses += 1
             out = compute(window)
             if self.mode == "write":
-                self._write([(key, out)])
+                self._pending[key] = out
+                if len(self._pending) >= FLUSH_ROWS:
+                    self.flush()
             return out
 
         return cached
+
+    def flush(self) -> int:
+        """Write the votes ``wrap`` computed since the last flush, in one transaction. A flush that
+        fails drops them: the store is a shortcut, the next run computes them again."""
+        if self.mode != "write" or not self._pending:
+            return 0
+        rows = list(self._pending.items())
+        written = self._write(rows)
+        for key, _ in rows:
+            self._pending.pop(key, None)
+        return written
 
     def _write(self, items) -> int:
         rows = [(key, _pack(value)) for key, value in items]
@@ -228,4 +259,5 @@ class VoteStore:
         return self._write(items)
 
     def close(self) -> None:
+        self.flush()
         self._con.close()

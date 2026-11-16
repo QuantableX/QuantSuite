@@ -141,7 +141,12 @@ def native_job(job):
     label, config, spec, keep = job[:4]
     try:
         with _votes(job[4] if len(job) > 4 else None):
-            result = _engine_for(spec).run(config)
+            try:
+                result = _engine_for(spec).run(config)
+            finally:
+                # Another process must find this run's votes when it has ended (the store writes in batches).
+                from rotation_lab.backtest import vote_store
+                vote_store.flush_all()
         equity = result.equity_strategy
         if equity is None or len(equity) < 2:
             raise ValueError("; ".join(result.notes[-2:]) or "no equity curve")

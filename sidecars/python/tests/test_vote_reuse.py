@@ -133,6 +133,7 @@ class VoteStoreTests(unittest.TestCase):
         self.votes(df, "write")
         with patch.dict(os.environ, {vote_store.ENV_FOLDER: str(self.folder), vote_store.ENV_MODE: "write"}):
             store = vote_store.active()
+            store.flush()        # nothing held in memory: every answer has to come from the file
             store._con.close()   # every read and write now raises inside the store
             self.calls.clear()
             out = signals.member_signal(df, "k")
@@ -140,6 +141,44 @@ class VoteStoreTests(unittest.TestCase):
         self.assertGreater(len(self.calls), 3)   # computed again, nothing raised
         pd.testing.assert_series_equal(out, plain, check_exact=True)
         vote_store._OPEN.clear()
+
+    def rows(self):
+        import sqlite3
+        from contextlib import closing
+        with closing(sqlite3.connect(self.folder / "votes.sqlite")) as con:
+            return con.execute("SELECT count(*) FROM votes").fetchone()[0]
+
+    def test_votes_are_written_in_batches_not_window_by_window(self):
+        df = frame()
+        plain = self.votes(df)
+        blocks = len(self.calls)
+        written = self.votes(df, "write")
+        self.assertEqual(self.rows(), 0)        # held in memory: no transaction per window
+        self.calls.clear()
+        again = self.votes(df, "read")          # the same process reads what it holds
+        self.assertEqual(self.calls, [])
+        vote_store.flush_all()
+        self.assertEqual(self.rows(), blocks)   # one transaction
+        for out in (written, again):
+            pd.testing.assert_series_equal(out, plain, check_exact=True)
+        # A full batch does not wait for the end of the run.
+        with patch.object(vote_store, "FLUSH_ROWS", 2):
+            self.votes(frame(seed=2), "write")
+            self.assertGreaterEqual(self.rows(), 2 * blocks - 1)
+
+    def test_a_run_s_votes_are_in_the_file_when_the_run_ends(self):
+        from rotation_lab.backtest import batch_votes
+        df = frame()
+        with patch.dict(os.environ, {vote_store.ENV_FOLDER: str(self.folder), vote_store.ENV_MODE: "write"}):
+            with batch_votes.active():          # what every engine run and the bulk evaluator's batch is wrapped in
+                signals.member_signal(df, "k")
+                self.assertEqual(self.rows(), 0)
+            self.assertGreater(self.rows(), 3)  # another process finds them now
+        # Closing a store writes what is left as well.
+        self.votes(frame(seed=3), "write")
+        before = self.rows()
+        vote_store.close_all()
+        self.assertGreater(self.rows(), before)
 
     def test_a_shared_store_gives_the_same_votes_and_never_reads_another_code_s(self):
         df = frame()
