@@ -2,9 +2,13 @@
 import datetime as dt
 import json
 import math
+import os
 import random
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -12,6 +16,7 @@ import pandas as pd
 from smithery import robust_policy as rp
 from smithery.prices import PricesVariant, shuffle_window
 from smithery import system_gauntlet as sg
+from rotation_lab.backtest import vote_store
 
 
 def frame(days=400, seed=1, start="2019-06-01"):
@@ -224,6 +229,167 @@ class Analyses(unittest.TestCase):
         # The draws for the members did not move, so saved verdicts stay reproducible.
         draw = random.Random(3)
         self.assertEqual(out.indicator.params["k_a"]["length"], int(round(min(max(20 * (1 + draw.uniform(-sg.JITTER, sg.JITTER)), 5), 50))))
+
+
+
+def _equity(collapse=False, days=1500, seed=3):
+    index = pd.date_range("2020-01-01", periods=days, freq="D")
+    steps = 0.002 + 0.01 * np.random.default_rng(seed).standard_normal(days)
+    if collapse:
+        steps[500:] -= 0.004   # two years and more of falling: the eras gate fails
+    return pd.Series(np.exp(np.cumsum(steps)), index=index)
+
+
+class Order(unittest.TestCase):
+    """The order of the checks: the usual run is one pool, stop_early runs the cheapest first and nothing after the
+    first failed gate. A check that runs gives the same numbers either way; a shared vote store changes none."""
+
+    def config(self):
+        from rotation_lab.rpc import _build_config
+        return _build_config({"mode": "rotation", "topN": 5, "startDate": "2020-01-01", "endDate": "2024-01-01",
+                              "includeUsd": True, "feeRate": 0.001, "marketFilter": True,
+                              "marketIndicator": {"trend": "total_breakout", "trendLength": 100, "entryLength": 5, "exitLength": 5},
+                              "indicator": {"trend": "ema_cross"}})
+
+    def gauntlet(self, cagr_of=lambda label: 0.17, equity=None, gpu=False, env=None, **kwargs):
+        """sg.run with the engine replaced: every variant's CAGR comes from ``cagr_of(label)``."""
+        seen = {"calls": [], "jobs": [], "parent": [], "bulk_env": None, "salt": None, "base": None}
+        base_equity = _equity() if equity is None else equity
+
+        def fake_run_native(jobs, workers=None, progress=None, stage=""):
+            if jobs[0][0] == "base":
+                seen["base"] = jobs[0]
+                return [{"label": "base", "multiple": 2.0, "years": 4.0, "cagr": 0.19, "max_drawdown_pct": 30.0, "equity": base_equity}]
+            seen["calls"].append([job[0] for job in jobs])
+            seen["jobs"].extend(jobs)
+            seen["salt"] = os.environ.get(vote_store.ENV_SALT)
+            return [{"label": job[0], "cagr": cagr_of(job[0])} for job in jobs]
+
+        def fake_bulk(config, members, rows, data_dir, cube_dir, counts, rng, say):
+            seen["calls"].append(["bulk"])
+            seen["bulk_env"] = (os.environ.get(vote_store.ENV_FOLDER), os.environ.get(vote_store.ENV_MODE))
+            seen["bulk_draw"] = rng.random()   # where the shared random stream stands when the bulk runs
+            return {"base_cagr": 0.19, "drop": [], "add": [], "drop_details": [], "add_details": [], "delay": {1: 0.18, 2: 0.17}}
+
+        def fake_parent_votes(jobs, store, progress=None, every=False):
+            seen["parent"].append(every)
+            return [(*job[:4], (store, "read")) for job in jobs], "parent"
+
+        with patch.object(sg, "run_native", side_effect=fake_run_native), patch.object(sg, "_bulk", side_effect=fake_bulk), \
+                patch.object(sg, "parent_votes", side_effect=fake_parent_votes), \
+                patch("smithery.batch.gpu_available", return_value=gpu), patch("smithery.batch.device_note", return_value="GPU (test)"), \
+                patch("smithery.registry.describe_all", return_value={"indicators": []}), patch.dict(os.environ, env or {}):
+            for name in ("SMITHERY_VOTE_SHARE", "SMITHERY_GAUNTLET_STOP_EARLY", vote_store.ENV_SALT):
+                if name not in (env or {}):
+                    os.environ.pop(name, None)
+            result = sg.run(self.config(), data_dir=Path(tempfile.gettempdir()), fast=True, venue_path=Path(__file__), **kwargs)
+            seen["salt_after"] = os.environ.get(vote_store.ENV_SALT)
+        return result, seen
+
+    @staticmethod
+    def numbers(result):
+        return {k: v for k, v in result.items() if k not in ("seconds", "vote_store", "stopped_early")}
+
+    def test_the_usual_run_is_one_pool_and_then_the_bulk(self):
+        result, seen = self.gauntlet()
+        self.assertEqual(len(seen["calls"]), 2)
+        self.assertEqual(seen["calls"][1], ["bulk"])
+        groups = [label.split("|")[0] for label in seen["calls"][0]]
+        self.assertEqual(list(dict.fromkeys(groups)), ["parameter_jitter", "system_settings", "start_shift", "price_noise",
+                                                       "venue", "universe", "fees", "permutation"])
+        self.assertEqual(list(result["groups"]), [g for g in sg.RESULT_ORDER if g in result["groups"]])
+        self.assertTrue(result["verdict"]["robust"])
+        self.assertNotIn("stopped_early", result)
+        self.assertNotIn("vote_store", result)
+
+    def test_stop_early_runs_the_cheapest_first_and_changes_no_number(self):
+        usual, seen_usual = self.gauntlet()
+        staged, seen = self.gauntlet(stop_early=True)
+        order = [sorted({label.split("|")[0] for label in call}) for call in seen["calls"]]
+        self.assertEqual(order, [["fees", "start_shift", "system_settings", "universe"], ["bulk"], ["price_noise", "venue"],
+                                 ["parameter_jitter"], ["permutation"]])
+        self.assertNotIn("stopped_early", staged)
+        self.assertEqual(json.dumps(self.numbers(staged), sort_keys=True), json.dumps(self.numbers(usual), sort_keys=True))
+        # The same variants, drawn in the same order: a jittered config does not depend on when it runs.
+        key = lambda job: job[0]  # noqa: E731
+        self.assertEqual([(j[0], j[1], j[2]) for j in sorted(seen["jobs"], key=key)],
+                         [(j[0], j[1], j[2]) for j in sorted(seen_usual["jobs"], key=key)])
+        self.assertEqual(seen["bulk_draw"], seen_usual["bulk_draw"])
+        # The switch in the environment is the same switch.
+        by_env, _ = self.gauntlet(env={"SMITHERY_GAUNTLET_STOP_EARLY": "1"})
+        self.assertEqual(json.dumps(self.numbers(by_env), sort_keys=True), json.dumps(self.numbers(usual), sort_keys=True))
+
+    def test_a_failed_base_check_stops_before_any_variant(self):
+        falling = _equity(collapse=True)
+        usual, _ = self.gauntlet(equity=falling)
+        staged, seen = self.gauntlet(equity=falling, stop_early=True)
+        self.assertEqual(seen["calls"], [])
+        self.assertEqual(staged["stopped_early"]["failed"], ["eras", "bootstrap"])   # both read the base run only
+        self.assertIn("permutation", staged["stopped_early"]["not_run"])
+        self.assertIn("bulk", staged["stopped_early"]["not_run"])
+        self.assertEqual(staged["stopped_early"]["variant_runs_not_run"], len(sum(self.gauntlet(equity=falling)[1]["calls"], [])) - 1)
+        for result in (usual, staged):
+            self.assertFalse(result["verdict"]["robust"])
+            self.assertEqual(result["verdict"]["status"], "not robust")
+        self.assertEqual(staged["verdict"]["failures"],
+                         [f for f in usual["verdict"]["failures"] if f.startswith(("eras", "bootstrap"))])
+        self.assertEqual(staged["groups"]["eras"], usual["groups"]["eras"])
+        self.assertEqual(staged["groups"]["bootstrap"], usual["groups"]["bootstrap"])
+
+    def test_a_failed_cheap_stage_stops_the_expensive_ones(self):
+        ruin = lambda label: 0.01 if label.startswith("fees|") else 0.17  # noqa: E731
+        usual, _ = self.gauntlet(cagr_of=ruin)
+        staged, seen = self.gauntlet(cagr_of=ruin, stop_early=True)
+        self.assertEqual(len(seen["calls"]), 1)   # the stage on the base run's votes; no bulk, no new votes
+        self.assertEqual(staged["stopped_early"]["failed"], ["fees"])
+        self.assertEqual(staged["stopped_early"]["not_run"], ["bulk", "price_noise", "venue", "parameter_jitter", "permutation"])
+        self.assertFalse(staged["verdict"]["robust"])
+        self.assertFalse(usual["verdict"]["robust"])
+        self.assertEqual(staged["verdict"]["status"], usual["verdict"]["status"])
+        self.assertEqual(staged["verdict"]["failures"], usual["verdict"]["failures"])
+        for group in ("fees", "start_shift", "system_settings", "universe", "eras", "bootstrap"):
+            self.assertEqual(staged["groups"][group], usual["groups"][group])
+
+    def test_a_shared_store_on_the_cpu_is_written_by_every_process(self):
+        with tempfile.TemporaryDirectory() as share:
+            usual, _ = self.gauntlet(workers=4)
+            shared, seen = self.gauntlet(workers=4, votes_dir=share)
+            folder = str(Path(share) / "cpu")
+            self.assertEqual(seen["base"][4], (folder, "write"))
+            self.assertTrue(all(job[4] == (folder, "write") for job in seen["jobs"]))
+            self.assertEqual(seen["bulk_env"], (folder, "write"))
+            self.assertEqual(seen["salt"], sg.vote_environment("cpu"))
+            self.assertIsNone(seen["salt_after"])
+            self.assertEqual(shared["vote_store"], {"shared": True, "device": "cpu"})
+            self.assertEqual(json.dumps(self.numbers(shared), sort_keys=True), json.dumps(self.numbers(usual), sort_keys=True))
+            by_env, seen_env = self.gauntlet(workers=4, env={"SMITHERY_VOTE_SHARE": share})
+            self.assertEqual(seen_env["base"][4], (folder, "write"))
+
+    def test_a_shared_store_with_gpu_parent_and_cpu_workers_is_written_by_the_parent_only(self):
+        with tempfile.TemporaryDirectory() as share:
+            _, seen = self.gauntlet(workers=4, votes_dir=share, gpu=True)
+            folder = str(Path(share) / "gpu")
+            self.assertEqual(seen["base"][4], (folder, "write"))
+            self.assertEqual(seen["parent"], [True])   # the parent computes every variant's votes
+            self.assertTrue(all(job[4] == (folder, "read") for job in seen["jobs"]))
+            self.assertEqual(seen["salt"], sg.vote_environment("GPU (test)"))
+            self.assertNotEqual(sg.vote_environment("GPU (test)"), sg.vote_environment("cpu"))
+            # One process on the GPU writes; a GPU base run with CPU votes in the workers is not one device: no sharing.
+            _, serial = self.gauntlet(workers=1, votes_dir=share, gpu=True)
+            self.assertTrue(all(job[4] == (folder, "write") for job in serial["jobs"]))
+            _, mixed = self.gauntlet(workers=4, votes_dir=share, gpu=True, env={"SMITHERY_PARENT_VOTES": "0"})
+            self.assertFalse(mixed["base"][4][0].startswith(share))
+            self.assertIsNone(mixed["salt"])
+
+    def test_the_environment_fingerprint_follows_the_switches_that_change_arithmetic(self):
+        sg._ENVIRONMENTS.clear()
+        base = sg.vote_environment("cpu")
+        self.assertEqual(base, sg.vote_environment("cpu"))
+        with patch.dict(os.environ, {"SMITHERY_PANDAS_MOMENTS": "1"}):
+            sg._ENVIRONMENTS.clear()
+            self.assertNotEqual(base, sg.vote_environment("cpu"))
+        sg._ENVIRONMENTS.clear()
+        self.assertEqual(base, sg.vote_environment("cpu"))
 
 
 if __name__ == "__main__":

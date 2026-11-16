@@ -101,6 +101,100 @@ class VoteStoreTests(unittest.TestCase):
         self.votes(frame())
         self.assertFalse((self.folder / "votes.sqlite").exists())
 
+    def test_a_store_that_fails_is_a_miss_and_the_votes_are_the_same(self):
+        df = frame()
+        plain = self.votes(df)
+        self.votes(df, "write")
+        with patch.dict(os.environ, {vote_store.ENV_FOLDER: str(self.folder), vote_store.ENV_MODE: "write"}):
+            store = vote_store.active()
+            store._con.close()   # every read and write now raises inside the store
+            self.calls.clear()
+            out = signals.member_signal(df, "k")
+            self.assertGreater(store.errors, 0)
+        self.assertGreater(len(self.calls), 3)   # computed again, nothing raised
+        pd.testing.assert_series_equal(out, plain, check_exact=True)
+        vote_store._OPEN.clear()
+
+    def test_a_shared_store_gives_the_same_votes_and_never_reads_another_code_s(self):
+        df = frame()
+        plain = self.votes(df)
+        with patch.dict(os.environ, {vote_store.ENV_SALT: "environment-a"}):
+            written = self.votes(df, "write")
+            self.calls.clear()
+            read = self.votes(df, "read")
+            self.assertEqual(self.calls, [])   # the same code and candles: all from the store
+        for out in (written, read):
+            pd.testing.assert_series_equal(out, plain, check_exact=True)
+        # Another environment (engine, libraries, device): nothing of the first one is read.
+        with patch.dict(os.environ, {vote_store.ENV_SALT: "environment-b"}):
+            self.calls.clear()
+            other = self.votes(df, "read")
+            self.assertGreater(len(self.calls), 3)
+        pd.testing.assert_series_equal(other, plain, check_exact=True)
+        # A store of one run keeps its keys as they were.
+        self.calls.clear()
+        self.votes(df, "read")
+        self.assertGreater(len(self.calls), 3)
+
+
+class SharedKeyTests(unittest.TestCase):
+    """A shared store's keys name the code: the script's signature, the indicator's own defaults, the environment."""
+
+    def setUp(self):
+        vote_store._SALTS.clear()
+        self.addCleanup(vote_store._SALTS.clear)
+        self.defaults = {"length": 20}
+        self.signature = "signature-1"
+        outer = self
+
+        class Indicator:
+            @classmethod
+            def default_params(cls):
+                return dict(outer.defaults)
+
+        for p in (patch.dict("rotation_lab.backtest.smithery.REGISTRY", {"k": Indicator}),
+                  patch("smithery.variants.source_signature", side_effect=lambda key: self.signature)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def key(self, environment="environment-a", kind="k"):
+        vote_store._SALTS.clear()
+        env = {vote_store.ENV_SALT: environment} if environment else {}
+        with patch.dict(os.environ, env):
+            if not environment:
+                os.environ.pop(vote_store.ENV_SALT, None)
+            return vote_store.window_key(kind, {}, frame().iloc[:200])
+
+    def test_one_run_s_store_has_no_salt(self):
+        with patch.dict(os.environ):
+            os.environ.pop(vote_store.ENV_SALT, None)
+            self.assertEqual(vote_store.salt("k"), "")
+        self.assertEqual(self.key(None), self.key(None))
+        self.assertNotEqual(self.key(None), self.key())
+
+    def test_the_same_code_gives_the_same_key_in_every_process(self):
+        self.assertEqual(self.key(), self.key())
+
+    def test_a_changed_script_version_or_environment_gives_another_key(self):
+        base = self.key()
+        self.signature = "signature-2"          # the script or one of its libraries changed
+        self.assertNotEqual(base, self.key())
+        self.signature = "signature-1"
+        self.defaults = {"length": 21}          # another version's parameters behind the same key
+        self.assertNotEqual(base, self.key())
+        self.defaults = {"length": 20}
+        self.assertNotEqual(base, self.key("environment-b"))   # engine, libraries or device
+        self.assertEqual(base, self.key())
+
+    def test_an_indicator_without_a_signature_is_never_shared(self):
+        self.signature = None
+        with patch.dict(os.environ, {vote_store.ENV_SALT: "environment-a"}):
+            vote_store._SALTS.clear()
+            mine = vote_store.salt("k")
+            with patch("os.getpid", return_value=os.getpid() + 1):
+                vote_store._SALTS.clear()
+                self.assertNotEqual(mine, vote_store.salt("k"))   # another process: another key
+
 
 class GauntletJobsTests(unittest.TestCase):
     def test_only_variants_on_the_base_run_s_candles_and_parameters_read_the_store(self):
@@ -118,7 +212,8 @@ class GauntletJobsTests(unittest.TestCase):
         def fake_run_native(jobs, workers=None, progress=None, stage=""):
             if not captured:
                 captured["base"] = jobs
-                return [{"label": "base", "multiple": 2.0, "years": 4.0, "cagr": 0.19, "max_drawdown_pct": 30.0}]
+                return [{"label": "base", "multiple": 2.0, "years": 4.0, "cagr": 0.19, "max_drawdown_pct": 30.0,
+                         "equity": frame()["close"] / 100}]
             captured["variants"] = jobs
             raise Stop()
 

@@ -111,10 +111,14 @@ def _votes_only():
             os.environ[batch_votes.VOTES_ONLY] = saved
 
 
-def parent_votes(jobs, store, progress=None) -> tuple[list, str]:
+def parent_votes(jobs, store, progress=None, every=False) -> tuple[list, str]:
     """The variants that bring their own candles or parameters compute their votes here, in the
     parent on the GPU (votes-only engine runs into the Gauntlet's vote store); the pool workers then
-    read them and only walk. Returns the jobs pointed at the store, and the device line."""
+    read them and only walk. Returns the jobs pointed at the store, and the device line.
+
+    ``every``: the parent computes the votes of all variants, also of those that read the base run's
+    (a neighbouring universe adds pairs the base run never compared). A store shared between runs
+    needs it: what a worker reads must not depend on which other run happened to fill the store."""
     from smithery import batch as B
     from rotation_lab.backtest import vote_store
     if store is None or os.environ.get("SMITHERY_WORKER_GPU", "0").strip() == "1":
@@ -123,7 +127,7 @@ def parent_votes(jobs, store, progress=None) -> tuple[list, str]:
         return jobs, "workers compute their own votes (SMITHERY_PARENT_VOTES=0)"
     if not B.gpu_available():
         return jobs, f"workers compute their own votes ({B.device_note()})"
-    own = [job for job in jobs if len(job) < 5 or job[4] is None]
+    own = list(jobs) if every else [job for job in jobs if len(job) < 5 or job[4] is None]
     with _votes((store, "write")), _votes_only():
         for k, job in enumerate(own, 1):
             native_job(job[:4])
@@ -363,9 +367,119 @@ def permutation(base_cagr: float, shuffled_cagrs: list[float]) -> dict:
 
 
 # ------------------------------------------------------------------------ run
+# The groups in the order a result lists them (an axis is the mean of its groups in this order).
+RESULT_ORDER = ("parameter_jitter", "system_settings", "start_shift", "price_noise", "venue", "universe", "fees",
+                "permutation", "eras", "bootstrap", "member_drop", "member_add", "delay")
+# stop_early runs the cheapest checks first and starts no later stage once a gate has failed. Variants on the
+# base run's votes cost a walk each; the bulk evaluator one cube; other prices and jittered parameters cost new
+# votes; the luck test is the largest stage and never fails a system by itself, so it comes last.
+STAGES = (("start_shift", "fees", "system_settings", "universe"), ("bulk",), ("price_noise", "venue"),
+          ("parameter_jitter",), ("permutation",))
+_ENVIRONMENTS: dict[str, str] = {}
+
+
+def vote_environment(device: str) -> str:
+    """Everything outside an indicator's own script that its votes depend on, as one fingerprint: the engine and
+    Smithery code, the numeric libraries, the switches that change arithmetic, and the device."""
+    if device not in _ENVIRONMENTS:
+        import hashlib
+        import sys
+        from importlib import metadata
+        root = Path(__file__).resolve().parents[1]
+        digest = hashlib.sha256(f"device:{device}|python:{sys.version_info[0]}.{sys.version_info[1]}".encode())
+        for package in ("numpy", "pandas", "numba", "numba-cuda", "torch"):
+            try:
+                version = metadata.version(package)
+            except metadata.PackageNotFoundError:
+                version = "none"
+            digest.update(f"|{package}:{version}".encode())
+        for name in ("SMITHERY_PANDAS_MOMENTS", "SMITHERY_JIT", "SMITHERY_BATCH"):
+            digest.update(f"|{name}:{os.environ.get(name, '')}".encode())
+        for folder in ("smithery", "rotation_lab"):
+            for path in sorted(p for p in (root / folder).rglob("*.py") if "__pycache__" not in p.parts):
+                digest.update(b"\0" + path.relative_to(root).as_posix().encode() + b"\0")
+                digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
+        _ENVIRONMENTS[device] = digest.hexdigest()
+    return _ENVIRONMENTS[device]
+
+
+def shared_votes(votes_dir, workers: int) -> dict | None:
+    """A vote store that Gauntlets share (``votes_dir``, or SMITHERY_VOTE_SHARE): candidates with common members,
+    and a fast check followed by the full one, compute each window's votes once. None: the usual store of one run.
+
+    A run must read only what it would compute itself, whatever other runs left in the store. So the store is
+    split by device, every key names the code (``vote_store.salt``), and who writes follows where votes are
+    computed:
+
+    * no GPU: every process computes on the CPU and writes;
+    * the GPU in every process (one worker, or SMITHERY_WORKER_GPU=1): every process writes;
+    * the GPU in the parent, CPU workers: the parent computes the votes of every variant and writes, the workers
+      only read (what has no GPU form is computed on the CPU by whoever needs it, the same everywhere);
+    * the GPU for the base run only (SMITHERY_PARENT_VOTES=0): not one device, so no shared store."""
+    root = votes_dir or os.environ.get("SMITHERY_VOTE_SHARE")
+    if not root or os.environ.get("SMITHERY_VOTE_REUSE", "1") == "0":
+        return None
+    from smithery import batch as B
+    if not B.gpu_available():
+        device, name, write = "cpu", "cpu", True
+    elif workers <= 1 or os.environ.get("SMITHERY_WORKER_GPU", "0").strip() == "1":
+        device, name, write = "gpu", B.device_note(), True
+    elif os.environ.get("SMITHERY_PARENT_VOTES", "1").strip() != "0":
+        device, name, write = "gpu", B.device_note(), False
+    else:
+        return None
+    return {"folder": str(Path(root) / device), "salt": vote_environment(name), "write": write, "device": device}
+
+
+@contextmanager
+def _vote_store(votes_dir, workers: int):
+    """The Gauntlet's vote store for one run: ``(folder or None, shared or None)``. A shared store stays; the
+    store of one run is a temporary folder and goes with the run."""
+    from rotation_lab.backtest import vote_store
+    shared = shared_votes(votes_dir, workers)
+    if shared is not None:
+        saved = os.environ.get(vote_store.ENV_SALT)
+        os.environ[vote_store.ENV_SALT] = shared["salt"]   # pool workers inherit it
+        try:
+            yield shared["folder"], shared
+        finally:
+            vote_store.close_all()
+            if saved is None:
+                os.environ.pop(vote_store.ENV_SALT, None)
+            else:
+                os.environ[vote_store.ENV_SALT] = saved
+        return
+    if os.environ.get("SMITHERY_VOTE_REUSE", "1") == "0":
+        yield None, None
+        return
+    # One vote store per Gauntlet: the base run writes it, the variants that keep its candles read it.
+    with tempfile.TemporaryDirectory(prefix="gauntlet-votes-", ignore_cleanup_errors=True) as folder:
+        try:
+            yield folder, None
+        finally:
+            vote_store.close_all()
+
+
+def _flag(value, name: str) -> bool:
+    return bool(value) if value is not None else os.environ.get(name, "0").strip() == "1"
+
+
 def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = False, seed: int = 42,
-        workers: int | None = None, progress=None, cube_dir: Path | None = None) -> dict:
-    """The full System Gauntlet for one RunConfig on the saved data (ROTATION_LAB_CACHE)."""
+        workers: int | None = None, progress=None, cube_dir: Path | None = None,
+        votes_dir: Path | None = None, stop_early: bool | None = None) -> dict:
+    """The full System Gauntlet for one RunConfig on the saved data (ROTATION_LAB_CACHE).
+
+    ``votes_dir`` (or SMITHERY_VOTE_SHARE) names a vote store shared with other Gauntlets (``shared_votes``).
+    ``stop_early`` (or SMITHERY_GAUNTLET_STOP_EARLY=1) runs the checks cheapest first (``STAGES``) and ends the
+    run at the first failed gate: the verdict is "not robust" either way, the later checks are simply not run
+    (``stopped_early`` in the result names them). Neither changes a number of a check that runs."""
+    with _vote_store(votes_dir, workers or default_workers()) as (store, shared):
+        return _run(config, data_dir=data_dir, venue_path=venue_path, fast=fast, seed=seed, workers=workers,
+                    progress=progress, cube_dir=cube_dir, store=store, shared=shared,
+                    stop_early=_flag(stop_early, "SMITHERY_GAUNTLET_STOP_EARLY"))
+
+
+def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_dir, store, shared, stop_early) -> dict:
     say = progress or (lambda message: None)
     counts = FAST if fast else FULL
     started = time.monotonic()
@@ -375,28 +489,27 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
     from .registry import describe_all
     rows = {r["key"]: r for r in describe_all()["indicators"]}
 
-    # One vote store per Gauntlet: the base run writes it, the variants that keep its candles read it.
     from rotation_lab.backtest import vote_store
-    store = tempfile.TemporaryDirectory(prefix="gauntlet-votes-", ignore_cleanup_errors=True) \
-        if os.environ.get("SMITHERY_VOTE_REUSE", "1") != "0" else None
+    if shared is not None:
+        say(f"Vote store shared with other runs: {shared['folder']} "
+            f"({'every process writes' if shared['write'] else 'the parent writes, the workers read'})")
     say("Base run")
-    base = run_native([("base", config, None, True, store and (store.name, "write"))], workers=1)[0]
+    base = run_native([("base", config, None, True, store and (store, "write"))], workers=1)[0]
     vote_store.close_all()
     if "error" in base:
         raise ValueError(f"The system does not run on the saved data: {base['error']}")
     base_cagr = base["cagr"]
-    groups: dict[str, dict] = {}
+    judged: dict[str, dict] = {}
     details: dict[str, list] = {}
     complete = True
 
-    # Native variants, all in one pool.
+    # Native variants. They are all drawn here, in one fixed order, before any of them runs: the order they run
+    # in (one pool, or stage by stage) never changes a variant.
     jobs: list[tuple] = []
-    plan: dict[str, list[str]] = {}
 
     def add(group, label, cfg, spec=None):
-        votes = (store.name, "read") if store is not None and group in REUSE_GROUPS and spec is None else None
+        votes = (store, "read") if store is not None and group in REUSE_GROUPS and spec is None else None
         jobs.append((f"{group}|{label}", cfg, spec, False, votes))
-        plan.setdefault(group, []).append(label)
 
     for i in range(counts["jitter"]):
         add("parameter_jitter", f"jitter {i + 1}", jittered(config, rows, rng))
@@ -422,52 +535,87 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
     for s in range(1, counts["permutation"] + 1):
         add("permutation", f"shuffle {s}", config, {"kind": "shuffle", "seed": s, **window})
 
-    say(f"{len(jobs)} variant runs")
-    if (workers or default_workers()) > 1 and len(jobs) > 1:
-        jobs, votes_device = parent_votes(jobs, store.name if store is not None else None, progress=say)
-        say(votes_device)
-    results = run_native(jobs, workers=workers, progress=say, stage="Variant runs")
-    vote_store.close_all()
-    if store is not None:
-        store.cleanup()
-    by_group: dict[str, list[dict]] = {}
-    for job, out in zip(jobs, results):
-        group = job[0].split("|", 1)[0]
-        by_group.setdefault(group, []).append(out)
-    for group, outs in by_group.items():
-        details[group] = [{k: v for k, v in o.items() if k not in ("equity", "held")} for o in outs]
-
-    def cagrs(group, labels=None):
-        return [o.get("cagr", float("nan")) for o in by_group.get(group, [])
-                if labels is None or o["label"].split("|", 1)[1] in labels]
-
+    group_of = lambda job: job[0].split("|", 1)[0]  # noqa: E731
     n_members = len(members)
-    for group in ("parameter_jitter", "system_settings", "start_shift", "price_noise", "venue", "universe"):
-        if by_group.get(group):
-            groups[group] = rp.judge(group, base_cagr, cagrs(group), members=n_members)
-    groups["fees"] = rp.judge("fees", base_cagr, cagrs("fees", {"2× fee"}), members=n_members)
-    groups["fees"]["also"] = {"3× fee": rp.retention(base_cagr, (cagrs("fees", {"3× fee"}) or [float("nan")])[0])}
-    groups["permutation"] = permutation(base_cagr, cagrs("permutation"))
-    groups["eras"] = eras(base["equity"])
-    groups["bootstrap"] = bootstrap(base["equity"], counts["bootstrap"], seed)
+    pool_size = workers or default_workers()
 
-    # Bulk runs: member drops and additions, delays (engine-identical, against their own base).
-    bulk = _bulk(config, members, rows, data_dir, cube_dir, counts, rng, say)
-    if bulk.get("error"):
-        complete = False
-        details["bulk"] = [{"error": bulk["error"]}]
-    else:
+    def native(selected, stage):
+        """Run these variants and judge their groups."""
+        if pool_size > 1 and len(selected) > 1:
+            if shared is not None and not shared["write"]:
+                selected, votes_device = parent_votes(selected, store, progress=say, every=True)
+            else:
+                selected, votes_device = parent_votes(selected, store, progress=say)
+            say(votes_device)
+        if shared is not None and shared["write"]:
+            selected = [(*job[:4], (store, "write")) for job in selected]
+        results = run_native(selected, workers=workers, progress=say, stage=stage)
+        vote_store.close_all()
+        by_group: dict[str, list[dict]] = {}
+        for job, out in zip(selected, results):
+            by_group.setdefault(group_of(job), []).append(out)
+        for group, outs in by_group.items():
+            details[group] = [{k: v for k, v in o.items() if k not in ("equity", "held")} for o in outs]
+
+        def cagrs(group, labels=None):
+            return [o.get("cagr", float("nan")) for o in by_group.get(group, [])
+                    if labels is None or o["label"].split("|", 1)[1] in labels]
+
+        for group in by_group:
+            if group == "fees":
+                judged["fees"] = rp.judge("fees", base_cagr, cagrs("fees", {"2× fee"}), members=n_members)
+                judged["fees"]["also"] = {"3× fee": rp.retention(base_cagr, (cagrs("fees", {"3× fee"}) or [float("nan")])[0])}
+            elif group == "permutation":
+                judged["permutation"] = permutation(base_cagr, cagrs("permutation"))
+            else:
+                judged[group] = rp.judge(group, base_cagr, cagrs(group), members=n_members)
+
+    def bulk_runs():
+        """Member drops and additions, delays (engine-identical, against their own base)."""
+        nonlocal complete
+        # A shared store also serves the bulk evaluator: the members' votes on the saved prices are the base run's.
+        with _votes((store, "write") if shared is not None else None):
+            bulk = _bulk(config, members, rows, data_dir, cube_dir, counts, rng, say)
+        vote_store.close_all()
+        if bulk.get("error"):
+            complete = False
+            details["bulk"] = [{"error": bulk["error"]}]
+            return
         fb = bulk["base_cagr"]
         if n_members > 1:
-            groups["member_drop"] = rp.judge("member_drop", fb, bulk["drop"], members=n_members)
+            judged["member_drop"] = rp.judge("member_drop", fb, bulk["drop"], members=n_members)
             details["member_drop"] = bulk["drop_details"]
             if bulk["add"]:
-                groups["member_add"] = rp.judge("member_add", fb, bulk["add"], members=n_members)
+                judged["member_add"] = rp.judge("member_add", fb, bulk["add"], members=n_members)
                 details["member_add"] = bulk["add_details"]
-        groups["delay"] = rp.judge("delay", fb, [bulk["delay"][1]], members=n_members)
-        groups["delay"]["also"] = {"2 days": rp.retention(fb, bulk["delay"][2])}
+        judged["delay"] = rp.judge("delay", fb, [bulk["delay"][1]], members=n_members)
+        judged["delay"]["also"] = {"2 days": rp.retention(fb, bulk["delay"][2])}
         details["delay"] = [{"label": f"{d} day{'s' if d > 1 else ''} later", "cagr": c} for d, c in bulk["delay"].items()]
 
+    # The base run's own checks cost seconds and can already decide.
+    judged["eras"] = eras(base["equity"])
+    judged["bootstrap"] = bootstrap(base["equity"], counts["bootstrap"], seed)
+    say(f"{len(jobs)} variant runs")
+    stopped = None
+    stages = STAGES if stop_early else ((*dict.fromkeys(group_of(job) for job in jobs), "bulk"),)
+    for k, stage in enumerate(stages):
+        failed = [g["group"] for g in judged.values() if g.get("failed")]
+        if stop_early and failed:
+            not_run = [name for later in stages[k:] for name in later
+                       if name == "bulk" or any(group_of(job) == name for job in jobs)]
+            stopped = {"failed": failed, "not_run": not_run,
+                       "variant_runs_not_run": sum(1 for job in jobs if group_of(job) in not_run)}
+            say(f"Stopped early: {', '.join(failed)} failed; not run: {', '.join(not_run)}")
+            break
+        selected = [job for job in jobs if group_of(job) in stage]
+        if selected:
+            native(selected, "Variant runs" if not stop_early else f"Variant runs ({', '.join(dict.fromkeys(map(group_of, selected)))})")
+        if "bulk" in stage:
+            bulk_runs()
+
+    groups = {name: judged[name] for name in RESULT_ORDER if name in judged}
+    if stopped is not None:
+        complete = False
     axes = {}
     for axis in rp.AXES:
         scores = [g["score"] for g in groups.values() if g.get("axis") == axis and g.get("score") == g.get("score")]
@@ -475,19 +623,24 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
         if not scores:
             complete = False
     failures = [f"{g['group']}: {r}" for g in groups.values() for r in g.get("reasons", []) if g.get("failed")]
-    perm_p = groups["permutation"].get("p")
+    perm_p = groups.get("permutation", {}).get("p")
     verdict = rp.verdict(axes, failures, perm_p, complete, base_cagr)
     equity = base["equity"]
     dates = [d.strftime("%Y-%m-%d") for d in equity.index]
-    return rp.jsonable({"kind": "robustness", "format": 1, "policy": rp.POLICY_VERSION, "seed": seed, "fast": bool(fast),
-            "members": list(members), "config_window": window,
-            "base": {"multiple": base["multiple"], "cagr": base_cagr, "years": base["years"],
-                     "max_drawdown_pct": base["max_drawdown_pct"]},
-            "axes": axes, "groups": groups, "details": details, "verdict": verdict,
-            "equity": {"dates": dates, "values": [float(v) for v in equity.to_numpy()]},
-            "groups_meta": {k: {"axis": v["axis"], "what": v["what"],
-                                "gate": None if v.get("gate") is None else vars(v["gate"])} for k, v in rp.GROUPS.items()},
-            "seconds": round(time.monotonic() - started)})
+    out = {"kind": "robustness", "format": 1, "policy": rp.POLICY_VERSION, "seed": seed, "fast": bool(fast),
+           "members": list(members), "config_window": window,
+           "base": {"multiple": base["multiple"], "cagr": base_cagr, "years": base["years"],
+                    "max_drawdown_pct": base["max_drawdown_pct"]},
+           "axes": axes, "groups": groups, "details": details, "verdict": verdict,
+           "equity": {"dates": dates, "values": [float(v) for v in equity.to_numpy()]},
+           "groups_meta": {k: {"axis": v["axis"], "what": v["what"],
+                               "gate": None if v.get("gate") is None else vars(v["gate"])} for k, v in rp.GROUPS.items()},
+           "seconds": round(time.monotonic() - started)}
+    if stopped is not None:
+        out["stopped_early"] = stopped
+    if shared is not None:
+        out["vote_store"] = {"shared": True, "device": shared["device"]}
+    return rp.jsonable(out)
 
 
 def _bulk(config, members, rows, data_dir, cube_dir, counts, rng, say) -> dict:

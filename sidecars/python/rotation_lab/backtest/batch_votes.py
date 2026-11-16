@@ -20,6 +20,9 @@ import pandas as pd
 from . import signals, vote_store
 
 _STATS: dict = {}
+# Keys of the current memo that the vote store already holds (read from it, or seen there by a
+# votes-only run): ``keep`` does not write them again.
+_IN_STORE: set = set()
 
 
 def enabled() -> bool:
@@ -34,11 +37,13 @@ def active():
         return
     signals._BATCH_MEMO = {}
     signals._FRAME_MEMO, signals._WINDOW_MEMO, vote_store._KEYS = {}, {}, {}
+    _IN_STORE.clear()
     try:
         yield signals._BATCH_MEMO
     finally:
         signals._BATCH_MEMO = None
         signals._FRAME_MEMO = signals._WINDOW_MEMO = vote_store._KEYS = None
+        _IN_STORE.clear()
 
 
 VOTES_ONLY = "ROTATION_LAB_VOTES_ONLY"
@@ -51,12 +56,17 @@ def votes_only() -> bool:
 
 
 def keep() -> int:
-    """Put this run's batch memo into the active vote store (write mode)."""
+    """Put this run's batch memo into the active vote store (write mode): what the store did
+    not hold yet, in one transaction."""
     store = vote_store.active()
     memo = signals._BATCH_MEMO
     if store is None or not memo:
         return 0
-    return store.put_many(memo.items())
+    fresh = [(key, value) for key, value in memo.items() if key not in _IN_STORE]
+    kept = store.put_many(fresh)
+    if kept:
+        _IN_STORE.update(key for key, _ in fresh)
+    return kept
 
 
 def stats() -> dict:
@@ -85,8 +95,9 @@ def prefill(pairs, cfg, device: str = "auto") -> int:
         except Exception:  # noqa: BLE001 — the engine reports it when it computes the pair
             continue
     added = 0
-    # A run with a vote store (the System Gauntlet's variants on the base run's candles) takes the
-    # windows the store already holds instead of computing them again.
+    # A run with a vote store (the System Gauntlet's variants on the base run's candles, or any
+    # run on a store that earlier runs filled) does not compute the windows the store already
+    # holds: the walk reads them from there (``member_signal`` asks the store first).
     store = vote_store.active()
     for kind in kinds:
         overrides = signals.indicator_overrides(kind, cfg.params.get(kind))
@@ -99,11 +110,10 @@ def prefill(pairs, cfg, device: str = "auto") -> int:
         for frame in frames:
             for _, window in signals.block_windows(frame, bars):
                 key = vote_store.window_key(kind, overrides, window)
-                if key in memo:
+                if key in memo or key in _IN_STORE:
                     continue
-                stored = store.get(key) if store is not None else None
-                if stored is not None:
-                    memo[key] = stored
+                if store is not None and store.has(key):
+                    _IN_STORE.add(key)
                     continue
                 keys.append(key)
                 windows.append(window)
