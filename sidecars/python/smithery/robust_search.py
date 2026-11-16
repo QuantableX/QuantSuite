@@ -210,11 +210,13 @@ def finalists(config, rows, top: int, data_dir: Path, venue_path, seed: int, pro
     computed once for all of them), and a finalist's Gauntlet ends at its first failed gate: it is not
     robust either way, and the later, more expensive checks are not run for it (docs/ROBUSTNESS.md, the
     order of the checks)."""
+    import shutil
     from dataclasses import replace
     from rotation_lab.config import IndicatorConfig
     from . import system_gauntlet as sg
     say = progress or (lambda m, f=None: None)
     out = []
+    votes = Path(data_dir) / "votes"
     for k, row in enumerate([r for r in rows if r["passed"]][:top], 1):
         members = tuple(row["members"])
         cfg = replace(config, indicator=IndicatorConfig(trend="aggregate", aggregate=members,
@@ -223,7 +225,7 @@ def finalists(config, rows, top: int, data_dir: Path, venue_path, seed: int, pro
         say(f"System Gauntlet on finalist {k} ({len(members)} members)")
         res = sg.run(cfg, data_dir=Path(data_dir) / f"finalist-{k}", venue_path=venue_path, fast=True, seed=seed,
                      progress=lambda m: say(f"Finalist {k}: {m}"), cube_dir=Path(data_dir) / f"finalist-{k}-cube",
-                     votes_dir=Path(data_dir) / "votes", stop_early=True)
+                     votes_dir=votes, stop_early=True)
         verdict = res["verdict"]
         stopped = res.get("stopped_early")
         if stopped:
@@ -233,4 +235,5 @@ def finalists(config, rows, top: int, data_dir: Path, venue_path, seed: int, pro
                     "groups": {g: {kk: v.get(kk) for kk in ("median", "min", "score", "failed", "reasons")}
                                for g, v in res["groups"].items()},
                     "base": res["base"], "walk_forward": row, "stopped_early": stopped})
+    shutil.rmtree(votes, ignore_errors=True)   # the store served these finalists; the run folder does not keep it
     return out
