@@ -118,15 +118,56 @@ A system that makes no money on its own history has nothing to protect and is no
 
    A fit to one exact history no longer wins.
 3. **Walk-forward:** the search sees only the bars before the cut, which by default is two years before the end (a third of a shorter history). The 50 best distinct leaders then run on the blind bars after it, against 300 random aggregates of the same size from the same pool. A leader passes when its worst-world CAGR in the blind window is positive and beats the random median.
-4. **System Gauntlet:** the best leaders that passed, three by default, go through the System Gauntlet in fast mode on the whole history. Only robust finalists are candidates for saved systems.
+4. **System Gauntlet:** the best leaders that passed, three by default, go through the System Gauntlet in fast mode on the whole history. Only robust finalists are candidates for saved systems. The finalists share one vote store, and a finalist's Gauntlet ends at its first failed gate (see "The order of the checks").
 5. **No seeding from the whole history:** a robust search never starts from the saved aggregates or earlier leaders, because they were found on the whole history.
 
 **Objective:** `objective: "capital"` (default) ranks by the worst world's final capital; `"calmar"` ranks by the worst world's CAGR per unit of max drawdown, for lower-drawdown systems. The walk-forward and the System Gauntlet judge both the same way.
 
 **Speed:** every world is an engine-identical bulk evaluator. When PyTorch with CUDA is importable (`smithery/lab_gpu.py`, checked bit-identical against the CPU evaluator), the GPU scores the worlds. `SMITHERY_GPU=0` turns it off.
 
+## The order of the checks
+
+Every path that takes a candidate from a search to a saved system runs its checks in one fixed order, the cheapest first. A candidate that fails a step starts no later step. The checks themselves, their thresholds and the policy version are unchanged by the order.
+
+| Step | Check | Cost | Where |
+|---|---|---|---|
+| 1 | Worst rolling two years of the candidate's own run (the Gauntlet's eras gate, known from one run) | seconds | search result, or the Gauntlet's base run |
+| 2 | Walk-forward on the blind window against random aggregates | part of the search | `robust_search.walk_forward` |
+| 3 | A research round's own checks (placebo, replay, native check), ordered by their measured cost per candidate; an input that costs hours to prepare is prepared only when a candidate is left that needs it | seconds to hours | the round's harness |
+| 4 | System Gauntlet, fast | minutes | `system_gauntlet.run(fast=True)` |
+| 5 | System Gauntlet, full, for finalists only | the most expensive step | `system_gauntlet.run` |
+
+Candidates that run only for information or as a yardstick get a full Gauntlet only when the user asks for it.
+
+**Inside the Gauntlet.** `stop_early` (argument, or `SMITHERY_GAUNTLET_STOP_EARLY=1`) applies the same rule to the Gauntlet's own groups. The base run's checks (eras, bootstrap) come first, then stage by stage:
+
+1. the variants that read the base run's votes (start shift, fees, system settings, universe);
+2. the bulk evaluator (member drop and add, delay);
+3. other prices (noise, another exchange);
+4. parameter jitter;
+5. the luck test (permutation), which is the largest stage and never fails a system by itself.
+
+At the first failed gate the run ends. The verdict is "not robust" either way; the result names the checks that were not run (`stopped_early`) and is marked incomplete. Every variant is drawn before any of them runs, in one fixed order, so a check that runs gives the same numbers as in the usual run. Without `stop_early` the Gauntlet runs everything in one pool, as before; the Robustness check in the app does that, so its report is always complete.
+
+**One vote store for many Gauntlets.** A member's votes on a price world do not depend on the system it sits in. With `votes_dir` (argument) or `SMITHERY_VOTE_SHARE=<folder>`, Gauntlets keep their votes in one store instead of one temporary store each:
+
+- candidates with common members compute each window's votes once (noise seeds, the other exchange and the shuffles are the same worlds for every candidate of a round);
+- a fast check followed by the full one computes nothing twice, because the fast variants are the first of the full ones;
+- an interrupted Gauntlet continues from what is stored.
+
+A run must read only what it would compute itself, whatever other runs left in the store. So:
+
+- a key is the window's candles, the indicator and its parameters, plus the code: the script's signature (its own tree and its libraries'), the version's default parameters, and a fingerprint of the engine, the numeric libraries and the switches that change arithmetic. A changed script, version or engine gives other keys;
+- the store is split by device (`cpu/`, `gpu/`). On the CPU every process writes. With the GPU in the parent and CPU workers, the parent computes the votes of every variant and the workers only read. A GPU base run with CPU votes in the workers (`SMITHERY_PARENT_VOTES=0`) is not one device and gets no shared store;
+- the store is only a shortcut. A read or write that fails counts as a miss and the votes are computed as usual.
+
+The store grows with every new world and member; the folder belongs to whoever named it and can be deleted between rounds. Without the variable nothing changes: one temporary store per Gauntlet.
+
+**Reproducible.** Every random draw of the checks comes from the run's seed (42 unless given): the jitter factors, the added members, the noise per coin and day, the shuffles, the bootstrap. Neither the order of the stages, the number of workers nor the content of a shared store changes a number. Two runs give the same result when engine, library, prices and seed are the same.
+
 ## Running it
 
 - From the app or MCP: research kind `robustness` with a saved system's name. The run freezes the engine, the library and the saved prices like every research run. Before freezing it loads candles from the other venue chain into its own cache (`~/.quantsuite/modules/systems/cache/venues/`); the saved systems cache is never written.
 - Full mode takes about 15–30 minutes for a 27-member system with 6 workers. Fast mode takes about 6–10 minutes.
 - `SMITHERY_ROBUST_WORKERS` sets the parallel engine runs. Each needs 2–3 GB of memory.
+- `SMITHERY_VOTE_SHARE` and `SMITHERY_GAUNTLET_STOP_EARLY` are described under "The order of the checks".
