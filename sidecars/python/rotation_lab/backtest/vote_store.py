@@ -24,6 +24,7 @@ import hashlib
 import os
 import pickle
 import sqlite3
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -131,6 +132,17 @@ def _window_key(kind: str, overrides: dict, window: pd.DataFrame) -> str:
     return digest.hexdigest()
 
 
+def _pack(votes) -> bytes:
+    """The votes as they are, pickled and compressed (a block's index and its three vote values
+    shrink to a fraction: a store shared by a round's Gauntlets holds millions of blocks)."""
+    return zlib.compress(pickle.dumps(votes, protocol=5), 1)
+
+
+def _unpack(data: bytes):
+    # A pickle starts with 0x80, a zlib stream with 0x78: rows written before the compression still read.
+    return pickle.loads(zlib.decompress(data) if data[:1] == b"\x78" else data)
+
+
 class VoteStore:
     def __init__(self, folder: Path, mode: str):
         if mode not in ("read", "write"):
@@ -149,8 +161,8 @@ class VoteStore:
         than the timeout, a damaged row) is a miss: the votes are then computed, the same ones."""
         try:
             row = self._con.execute("SELECT value FROM votes WHERE key=?", (key,)).fetchone()
-            return None if row is None else pickle.loads(row[0])
-        except (sqlite3.Error, pickle.UnpicklingError, EOFError, AttributeError, ImportError, IndexError):
+            return None if row is None else _unpack(row[0])
+        except (sqlite3.Error, pickle.UnpicklingError, zlib.error, EOFError, AttributeError, ImportError, IndexError):
             self.errors += 1
             return None
 
@@ -187,7 +199,7 @@ class VoteStore:
         return cached
 
     def _write(self, items) -> int:
-        rows = [(key, pickle.dumps(value, protocol=5)) for key, value in items]
+        rows = [(key, _pack(value)) for key, value in items]
         if not rows:
             return 0
         try:
