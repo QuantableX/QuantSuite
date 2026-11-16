@@ -53,7 +53,7 @@ const name=(D.system&&D.system.name)||(D.run&&D.run.title)||'System';
 $('headline').textContent=name+': '+(V.status==='robust'?'robust':V.status==='incomplete'?'incomplete':'not robust');
 $('lede').textContent=V.status==='robust'?'No gate failed and every axis was measured. Small realistic changes leave most of the yearly growth.'
  :V.status==='incomplete'?'Not every axis could be measured, so this is not a robust verdict. See the method section for what is missing.'
- :'At least one realistic change breaks it. Each failed gate is listed below.';
+ :'At least one realistic change breaks it. Each failed gate is listed below.'+(D.stopped_early?' The check ended at the first failed gate; the later, more expensive checks were not run.':'');
 $('chips').innerHTML=[`Policy ${esc(D.policy)}`,D.fast?'Fast mode':'Full mode',`Seed ${int(D.seed)}`,D.config_window?`${esc(D.config_window.start)} → ${esc(D.config_window.end)}`:''].filter(Boolean).map(c=>`<span class="chip">${c}</span>`).join('');
 $('hero').textContent=`${V.grade} · ${fin(V.score)?num(V.score,0):'—'}`;
 $('hero-sub').textContent=V.failures.length?`${V.failures.length} failed gate${V.failures.length>1?'s':''}`:(V.perm_p!=null&&V.perm_p>0.1?'Grade capped at B by the luck test':'No failed gate');
@@ -88,6 +88,6 @@ $('method-list').innerHTML=[
  'The policy is docs/ROBUSTNESS.md in the QuantSuite repository; smithery.robust_policy holds every group, gate and grade.',
  'Every variant runs the unchanged engine on the frozen copy of your saved prices, changed in one way at a time. Nothing in the app, its systems or its library is changed by this check.',
  'Robust means: no failed gate, grade B or better, and every axis measured. A system that makes no money on its own history has nothing to protect and is not robust.',
- V.complete?'Every axis was measured.':'Not measured: '+Object.entries(det).filter(([k,rows])=>(rows||[]).some(r=>r.error)).map(([k])=>LABEL[k]||k).join(', ')+'.',
+ V.complete?'Every axis was measured.':D.stopped_early?'Stopped at the first failed gate ('+(D.stopped_early.failed||[]).map(k=>LABEL[k]||k).join(', ')+'). Not run: '+(D.stopped_early.not_run||[]).map(k=>k==='bulk'?'member checks and trade delay':(LABEL[k]||k)).join(', ')+'. The scores cover only what ran.':'Not measured: '+Object.entries(det).filter(([k,rows])=>(rows||[]).some(r=>r.error)).map(([k])=>LABEL[k]||k).join(', ')+'.',
  `Run time: ${int(D.seconds)} s.`].map(t=>`<li>${esc(t)}</li>`).join('');
 '''

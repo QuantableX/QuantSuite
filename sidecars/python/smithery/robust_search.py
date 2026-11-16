@@ -204,12 +204,19 @@ def walk_forward(worlds: Worlds, leaders, pool, bases, cut: int, seed: int, prog
 
 
 def finalists(config, rows, top: int, data_dir: Path, venue_path, seed: int, progress=None) -> list[dict]:
-    """The System Gauntlet (fast) on the best leaders that passed the walk-forward."""
+    """The System Gauntlet (fast) on the best leaders that passed the walk-forward.
+
+    The finalists come from one pool, so they share one vote store (a member's votes on a price world are
+    computed once for all of them), and a finalist's Gauntlet ends at its first failed gate: it is not
+    robust either way, and the later, more expensive checks are not run for it (docs/ROBUSTNESS.md, the
+    order of the checks)."""
+    import shutil
     from dataclasses import replace
     from rotation_lab.config import IndicatorConfig
     from . import system_gauntlet as sg
     say = progress or (lambda m, f=None: None)
     out = []
+    votes = Path(data_dir) / "votes"
     for k, row in enumerate([r for r in rows if r["passed"]][:top], 1):
         members = tuple(row["members"])
         cfg = replace(config, indicator=IndicatorConfig(trend="aggregate", aggregate=members,
@@ -217,9 +224,16 @@ def finalists(config, rows, top: int, data_dir: Path, venue_path, seed: int, pro
                                                         ema_cross=config.indicator.ema_cross))
         say(f"System Gauntlet on finalist {k} ({len(members)} members)")
         res = sg.run(cfg, data_dir=Path(data_dir) / f"finalist-{k}", venue_path=venue_path, fast=True, seed=seed,
-                     progress=lambda m: say(f"Finalist {k}: {m}"), cube_dir=Path(data_dir) / f"finalist-{k}-cube")
-        out.append({"members": list(members), "verdict": res["verdict"], "axes": res["axes"],
+                     progress=lambda m: say(f"Finalist {k}: {m}"), cube_dir=Path(data_dir) / f"finalist-{k}-cube",
+                     votes_dir=votes, stop_early=True)
+        verdict = res["verdict"]
+        stopped = res.get("stopped_early")
+        if stopped:
+            verdict = {**verdict, "failures": [*verdict["failures"],
+                                               f"stopped at the first failed gate; not run: {', '.join(stopped['not_run'])}"]}
+        out.append({"members": list(members), "verdict": verdict, "axes": res["axes"],
                     "groups": {g: {kk: v.get(kk) for kk in ("median", "min", "score", "failed", "reasons")}
                                for g, v in res["groups"].items()},
-                    "base": res["base"], "walk_forward": row})
+                    "base": res["base"], "walk_forward": row, "stopped_early": stopped})
+    shutil.rmtree(votes, ignore_errors=True)   # the store served these finalists; the run folder does not keep it
     return out

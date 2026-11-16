@@ -1049,9 +1049,11 @@ class BacktestEngine:
             ordered = sorted(wanted, key=lambda pair: (pair[0], pair[1] or ""))
             _batch_votes.prefill([(frames[a], frames.get(b) if b else None) for a, b in ordered], config.indicator)
             prefilled[0] = True
+            # A vote store in write mode takes what was just computed in one transaction (nothing
+            # without one): the walk then reads it, and several runs can write one store side by side.
+            _batch_votes.keep()
             if _batch_votes.votes_only():
-                # The votes are what this run is for (System Gauntlet, parent): keep them, skip the walk.
-                _batch_votes.keep()
+                # The votes are what this run is for (System Gauntlet, parent): skip the walk.
                 return pd.Series(dtype=float), pd.Series(dtype=object), [], {}
 
         if config.portfolio is not None:
