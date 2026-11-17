@@ -202,13 +202,33 @@ class EvidenceTests(unittest.TestCase):
                 self.assertLess(len(generated) - len(evaluated), 2)
                 generated.append(i)
                 yield pd.DataFrame({'close': [i]})
-        def pmap(fn, tasks):
+        def pmap(fn, tasks, min_parallel=4):
             values = [int(task[1]['close'].iloc[0]) for task in tasks]
             evaluated.extend(values)
             return [(value, value + 1) for value in values]
         with patch.object(parallel, 'pmap', side_effect=pmap), patch.object(parallel, 'WORKERS', 8):
             result = parallel.simulated_results(None, frames(), 10, 250_000)
         self.assertEqual(result, [(i, i + 1) for i in range(9)])
+
+    def test_two_or_three_workers_run_the_simulations_in_the_pool(self):
+        # A batch holds WORKERS charts; pmap's default (four tasks) ran such a batch in the parent.
+        class Pool:
+            def __init__(self):
+                self.tasks = 0
+
+            def map(self, fn, tasks, chunksize=1):
+                tasks = list(tasks)
+                self.tasks += len(tasks)
+                return [(float(task[1]['close'].iloc[0]), 0.0) for task in tasks]
+
+        for workers, pooled in ((1, 0), (2, 8), (3, 8)):
+            executor = Pool()
+            serial = [(float(i), 0.0) for i in range(8)]
+            with patch.object(parallel, 'WORKERS', workers), patch.object(parallel, 'pool', return_value=executor), \
+                    patch.object(parallel, 'eval_total_sharpe', side_effect=lambda task: (float(task[1]['close'].iloc[0]), 0.0)):
+                result = parallel.simulated_results(None, (pd.DataFrame({'close': [i]}) for i in range(8)), 10, 500)
+            self.assertEqual(result, serial)
+            self.assertEqual(executor.tasks, pooled, workers)
 
 
 class SystemCadenceTests(unittest.TestCase):

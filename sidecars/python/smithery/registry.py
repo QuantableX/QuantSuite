@@ -50,7 +50,9 @@ def _current_runs(historical: bool = False) -> dict[str, dict[str, dict]]:
     found = {}
     if not OUTPUT_DIR.is_dir():
         return found
-    names = {cls.name: key for key, cls in REGISTRY.items()}
+    names: dict[str, list[str]] = {}
+    for key, cls in REGISTRY.items():
+        names.setdefault(cls.name, []).append(key)
     # A run is current when the evaluator and THIS indicator's script (with
     # its REQUIRES) are unchanged — edits elsewhere in the library do not
     # demote it (2026-09-23; before, one global code hash did).
@@ -62,10 +64,23 @@ def _current_runs(historical: bool = False) -> dict[str, dict[str, dict]]:
             fingerprints[key] = indicator_fingerprint(REGISTRY[key], evaluator)
         return fingerprints[key]
 
+    def owner(run: dict) -> str | None:
+        """The key a report belongs to. A report names its indicator by display name, and two
+        scripts can share one: then the key whose defaults and script the report was run with,
+        and none when that still leaves more than one (never one key's verdict on another)."""
+        keys = names.get(run.get("name")) or []
+        if len(keys) < 2:
+            return keys[0] if keys else None
+        params = json.dumps(run.get("params"), sort_keys=True)
+        keys = [k for k in keys if json.dumps(REGISTRY[k]().params, sort_keys=True) == params]
+        if len(keys) > 1:
+            keys = [k for k in keys if run.get("indicator_sha256") and fingerprint(k) == run["indicator_sha256"]]
+        return keys[0] if len(keys) == 1 else None
+
     for path in sorted(OUTPUT_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime_ns):
         try:
             run = json.loads(path.read_text(encoding="utf-8"))
-            key = names.get(run.get("name"))
+            key = owner(run)
             tf = run.get("timeframe")
             if (run.get("kind") != "gauntlet" or run.get("fast") or not key or tf not in TIMEFRAMES
                     or (not historical and (run.get("version") != EVALUATION_VERSION
