@@ -19,7 +19,12 @@ the 1h gauntlet has said it. There is no minute track (user, 2026-09-23).
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import os
+import tempfile
 import time
+from contextlib import contextmanager
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -599,11 +604,59 @@ class Gauntlet:
     def _append_ledger(self, today: str, total: float, g: str, fname: str, label: str | None = None) -> None:
         reg = DOCS_DIR / "04 Indicator Registry.md"
         try:
-            txt = reg.read_text(encoding="utf-8")
-            anchor = "| Date | Indicator | Score | Grade | Report |"
-            i = txt.index(anchor)
-            j = txt.index("\n", txt.index("\n", i) + 1)   # end of separator line
-            row = f"\n| {today} | {label or self.ind.name} | {total:.0f} | {g} | [[{fname[:-3]}]] |"
-            reg.write_text(txt[:j] + row + txt[j:], encoding="utf-8")
+            # Gauntlets that finish together take turns: each reads the ledger the one before
+            # wrote, and a reader never sees a half-written file (written aside, then swapped in).
+            with _ledger_lock(reg):
+                txt = reg.read_text(encoding="utf-8")
+                anchor = "| Date | Indicator | Score | Grade | Report |"
+                i = txt.index(anchor)
+                j = txt.index("\n", txt.index("\n", i) + 1)   # end of separator line
+                row = f"\n| {today} | {label or self.ind.name} | {total:.0f} | {g} | [[{fname[:-3]}]] |"
+                _replace_text(reg, txt[:j] + row + txt[j:])
         except Exception:  # noqa: BLE001 — ledger is cosmetic; never fail the run
             pass
+
+
+@contextmanager
+def _ledger_lock(path: Path, timeout: float = 120.0):
+    """One process at a time inside (an OS file lock, so a process that dies releases it)."""
+    name = hashlib.sha256(os.path.normcase(str(path.resolve())).encode()).hexdigest()[:16]
+    with open(Path(tempfile.gettempdir()) / f"smithery-ledger-{name}.lock", "a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+            take = lambda: msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)  # noqa: E731
+            give = lambda: msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # noqa: E731
+        else:
+            import fcntl
+            take = lambda: fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # noqa: E731
+            give = lambda: fcntl.flock(handle.fileno(), fcntl.LOCK_UN)  # noqa: E731
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                handle.seek(0)
+                take()
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"{path.name} stayed locked for {timeout:.0f} s") from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            give()
+
+
+def _replace_text(path: Path, text: str) -> None:
+    """Write ``path`` aside and swap it in. Windows refuses the swap while another program has the
+    file open for a moment, so it is tried again for a few seconds before writing in place."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    for _ in range(100):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(0.05)
+    tmp.unlink(missing_ok=True)
+    path.write_text(text, encoding="utf-8")
