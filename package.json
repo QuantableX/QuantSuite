@@ -3,6 +3,7 @@
   "version": "1.1.4",
   "private": true,
   "description": "One desktop application unifying the Quant modules",
+  "license": "MIT",
   "workspaces": [
     "apps/shell",
     "packages/*"
