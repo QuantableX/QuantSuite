@@ -165,6 +165,8 @@ def simulated_results(ind, frames, cost: float, bars: int) -> list[tuple[float, 
     histories keep the same calendar horizon without retaining hundreds
     of large charts simultaneously. On the GPU a batch holds up to
     ``GPU_FRAMES`` charts (one signal call), within the GPU's working set.
+    A batch is at most ``WORKERS`` charts, so with 2 or 3 workers it goes to the pool from two
+    charts on (the default of four ran every chart in the parent, one after another).
     """
     iterator = iter(frames)
     capacity = max(1, min(WORKERS, 500_000 // max(bars, 1)))
@@ -182,9 +184,10 @@ def simulated_results(ind, frames, cost: float, bars: int) -> list[tuple[float, 
             # the charts' backtests across the pool as before (in the parent they ran one by one:
             # for a cheap indicator the backtests are most of the work).
             sigs = signals_batch(ind, batch)
-            results.extend(pmap(eval_signal_total_sharpe, [(frame, sig, cost) for frame, sig in zip(batch, sigs)]))
+            results.extend(pmap(eval_signal_total_sharpe, [(frame, sig, cost) for frame, sig in zip(batch, sigs)],
+                                min_parallel=2))
         else:
-            results.extend(pmap(eval_total_sharpe, [(ind, frame, cost) for frame in batch]))
+            results.extend(pmap(eval_total_sharpe, [(ind, frame, cost) for frame in batch], min_parallel=2))
         del batch
 
 
