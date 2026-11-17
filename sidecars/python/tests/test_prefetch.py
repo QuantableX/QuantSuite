@@ -87,12 +87,25 @@ class PrefetchTests(unittest.TestCase):
                 ran, result = _requests("run", config)
                 with patch("rotation_lab.backtest.engine.BacktestEngine._rotations",
                            side_effect=AssertionError("prefetch computed a rotation")):
-                    fetched, nothing = _requests("prefetch", config)
-                self.assertIsNone(nothing)
+                    fetched, failed = _requests("prefetch", config)
+                self.assertEqual(failed, [])  # every coin loaded
                 self.assertFalse(result.equity_strategy.empty)
                 self.assertEqual(fetched, ran)
                 if config.exclude_top_n:
                     self.assertEqual(ran[-1][:2], ("series", "BTC"))  # the benchmark's own request
+
+
+    def test_a_coin_whose_loading_raises_is_named(self):
+        # A run skips such a coin; a preparation must know it did not finish (smithery.lab.finished).
+        original = _Recording.get_series
+
+        def flaky(source, ref, start, end, timeframe):
+            if ref.symbol == "BBB":
+                raise OSError("exchange timeout")
+            return original(source, ref, start, end, timeframe)
+        with patch.object(_Recording, "get_series", flaky):
+            _, failed = _requests("prefetch", self.config())
+        self.assertEqual(failed, ["BBB"])
 
 
 if __name__ == "__main__":

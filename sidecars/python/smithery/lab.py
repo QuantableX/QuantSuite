@@ -383,10 +383,11 @@ def update_saved_data(path, doc):
     The saved system loads its data once with the normal downloader, as running it in
     QuantSystems does (``BacktestEngine.prefetch``: the same requests as a run, no signal
     computed): missing days up to the comparison's end are added, each coin from its own
-    exchange, and saved days stay untouched. Offline, the comparison uses the data as saved."""
+    exchange, and saved days stay untouched. Offline, the comparison uses the data as saved.
+    Returns whether the loading finished."""
     cache_path = systems_cache()
     if not cache_path.is_file():
-        return
+        return False
     emit(path, "progress", message="Adding missing days to your saved price data")
     cache = None
     try:
@@ -398,13 +399,24 @@ def update_saved_data(path, doc):
         from rotation_lab.rpc import _build_config
         config = replace(_build_config(doc["config"]), compare_trends=())
         cache = Cache(cache_path)
-        BacktestEngine(registry=RankingRegistry(cache),
-                       ohlcv=OhlcvFetcher(cache, min_request_interval=config.min_request_interval)).prefetch(config)
+        failed = BacktestEngine(registry=RankingRegistry(cache),
+                                ohlcv=OhlcvFetcher(cache, min_request_interval=config.min_request_interval)).prefetch(config)
+        return finished(path, failed, "your saved price data")
     except Exception as exc:  # noqa: BLE001 - offline or a failing exchange leaves the data as saved
         emit(path, "progress", message=f"Could not add missing days ({exc}); the comparison uses the saved data as it is")
+        return False
     finally:
         if cache is not None and cache._con is not None:
             cache._con.close()  # Windows keeps an open database file locked
+
+
+def finished(path, failed, where):
+    """Whether a preparation step loaded every coin; coins whose loading raised are named."""
+    if not failed:
+        return True
+    names = ", ".join(failed[:8]) + (f" and {len(failed) - 8} more" if len(failed) > 8 else "")
+    emit(path, "progress", message=f"Could not load {names} into {where}; the next run of this system loads them again")
+    return False
 
 
 def digests(files):
@@ -483,6 +495,53 @@ def shared_inputs():
             _remove(stage)
 
 
+def utc_day() -> str:
+    return dt.datetime.now(dt.timezone.utc).date().isoformat()
+
+
+def preparation_key(doc, venues) -> str:
+    """Names what a system run's preparation loads: the system's settings, whether the other
+    exchanges' candles are loaded too, the downloader's code, the saved data it adds to and the
+    day (UTC). Runs with the same key are one round of the same system (``prepared``)."""
+    code = Path(__file__).resolve().parents[1]
+    files = [*(code / "rotation_lab").rglob("*.py"), code / "smithery/prices.py",
+             code / "smithery/lab_compare.py", Path(__file__).resolve()]
+    hashed = digests(files)
+    what = {"day": utc_day(), "config": doc.get("config"), "venues": list(doc.get("venues") or ()) if venues else None,
+            "cache": str(systems_cache().resolve()),
+            "code": {f.relative_to(code).as_posix(): hashed[f] for f in files}}
+    return hashlib.sha256(json.dumps(what, sort_keys=True, default=str).encode()).hexdigest()[:32]
+
+
+def prepared(key):
+    """The shared set an earlier run of the same round prepared and froze, checked file by file,
+    or None: then this run prepares (the first of a round, or the set is gone or changed)."""
+    try:
+        record = read(input_sets() / "prepared" / f"{key}.json")
+        final = input_sets() / record["set"]
+        files = read(final / "set.json")["files"]
+        if record.get("day") != utc_day() or digests([final / name for name in files]) != \
+                {final / name: hashed for name, hashed in files.items()}:
+            return None
+        return {"id": record["set"], "path": str(final), "files": files, "run": record.get("run")}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def record_prepared(key, shared, run_id):
+    """Remember that this round's data are prepared and frozen in ``shared``; records of earlier
+    days are dropped (a new day is prepared again)."""
+    records = input_sets() / "prepared"
+    today = utc_day()
+    for old in records.glob("*.json") if records.is_dir() else ():
+        try:
+            if read(old).get("day") != today:
+                old.unlink()
+        except (OSError, ValueError, AttributeError):
+            continue
+    save(records / f"{key}.json", {"key": key, "set": shared["id"], "run": run_id, "day": today, "at": now()})
+
+
 def frozen_cache(run_id) -> Path:
     """The saved price data a system run read: its shared set's (``shared_inputs``) or, for runs from
     before the sets, its own copy. Other-venue candles are in ``venues/`` next to it."""
@@ -491,11 +550,12 @@ def frozen_cache(run_id) -> Path:
     return Path(inputs["path"]) / "cache.sqlite" if inputs else path / "cache.sqlite"
 
 
-def freeze(path, kind="gauntlet"):
+def freeze(path, kind="gauntlet", shared=None):
     """Copy what the worker reads into the run (engine, price shelf) and record every input's sha256.
 
     A system run reads the saved price data and the other exchanges' candles from a shared set
-    (``shared_inputs``), which the run names; a Gauntlet reads the shelf only."""
+    (``shared_inputs``, or ``shared``: the set its round already prepared), which the run names;
+    a Gauntlet reads the shelf only."""
     from .data import PRICE_DIR
     engine = Path(__file__).resolve().parents[1]
     for name in ("smithery", "rotation_lab"):
@@ -506,7 +566,8 @@ def freeze(path, kind="gauntlet"):
     shutil.copytree(PRICE_DIR, path / "vault/Price History")
     (path / "vault/Output").mkdir()
     (path / "vault/Docs").mkdir()
-    shared = shared_inputs() if kind in SYSTEM_KINDS and systems_cache().is_file() else None
+    if shared is None and kind in SYSTEM_KINDS and systems_cache().is_file():
+        shared = shared_inputs()
     files = [f for directory in ("engine", "library", "vault/Price History")
              for f in (path / directory).rglob("*") if f.is_file()]
     # Names with "/" on every system: lab_install compares the engine/ and library/ entries again.
@@ -521,15 +582,19 @@ def prepare_venues(path, doc):
     """Load the other-venue candles the robustness check compares against (before freezing).
 
     Offline or a failing exchange leaves the venue check unmeasured: the verdict is then
-    'incomplete', never robust."""
+    'incomplete', never robust. Returns whether the loading finished."""
     from dataclasses import replace
     from rotation_lab.rpc import _build_config
     from .prices import prepare_venue
     try:
         config = replace(_build_config(doc["config"]), compare_trends=())
-        prepare_venue(config, tuple(doc.get("venues") or ()), progress=lambda m: emit(path, "progress", message=m))
+        failed = []
+        prepare_venue(config, tuple(doc.get("venues") or ()), progress=lambda m: emit(path, "progress", message=m),
+                      failed=failed)
+        return finished(path, failed, "the other exchanges' candles")
     except Exception as exc:  # noqa: BLE001
         emit(path, "progress", message=f"Could not load other-venue candles ({exc}); the venue check stays unmeasured")
+        return False
 
 
 def emit(path, event, **values):
@@ -552,13 +617,25 @@ def run(run_id):
         # at creation and the vault's reports; nothing to freeze or re-run.
         frozen = doc["kind"] != "gauntlet_overview"
         if frozen:
-            if doc["kind"] in SYSTEM_KINDS:
-                update_saved_data(path, doc)
-            if doc["kind"] == "robustness" or (doc["kind"] == "aggregates" and doc.get("robust")):
-                prepare_venues(path, doc)
+            venues = doc["kind"] == "robustness" or (doc["kind"] == "aggregates" and doc.get("robust"))
+            # One preparation per round: a later run of the same system on the same day reads the
+            # set the first one prepared and froze, so the round's runs read the same data.
+            key = preparation_key(doc, venues) if doc["kind"] in SYSTEM_KINDS and systems_cache().is_file() else None
+            reused = prepared(key) if key else None
+            complete = True
+            if reused:
+                emit(path, "progress", message=f"Price data already prepared for this system today (run {reused['run']}): "
+                                               f"this run reads the same set {reused['id']}")
+            else:
+                if doc["kind"] in SYSTEM_KINDS:
+                    complete = update_saved_data(path, doc)
+                if venues:
+                    complete = prepare_venues(path, doc) and complete
             emit(path, "progress", message="Freezing engine, private library and market inputs")
-            shared = freeze(path, doc["kind"])
+            shared = freeze(path, doc["kind"], reused)
             if shared:
+                if key and not reused and complete:  # a preparation that could not finish is tried again
+                    record_prepared(key, shared, run_id)
                 doc["inputs"] = {"id": shared["id"], "path": shared["path"]}
                 save(path / "run.json", doc)
                 emit(path, "progress", message=f"Market inputs: shared set {shared['id']}")

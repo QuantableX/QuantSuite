@@ -248,6 +248,7 @@ class _Loaded:
     all_frames: dict[str, pd.DataFrame]
     frames: dict[str, pd.DataFrame]
     coins_missing: bool = False
+    failed: list[str] = field(default_factory=list)  # coins whose loading raised (network, exchange)
 
 
 def _coin_key(symbol: str, cg_id: str | None) -> str:
@@ -556,7 +557,7 @@ class BacktestEngine:
 
         return self._rotations(config, kinds, market_start, universe, frames, total, notes, _tick, as_of)
 
-    def prefetch(self, config: RunConfig) -> None:
+    def prefetch(self, config: RunConfig) -> list[str]:
         """Load every ranking, candle and finer path a run of ``config`` reads, and compute no signal.
 
         The requests ``run`` makes before its first signal, in the same order, and the BTC
@@ -565,13 +566,14 @@ class BacktestEngine:
         needs nothing more (it only adds missing days to the saved data before freezing it).
         One difference: ``run`` asks for the benchmark only when a rotation produced a curve,
         this asks whenever a coin has candles; an extra BTC series in a cache is never read
-        by a run that did not ask for it."""
+        by a run that did not ask for it. Returns the coins whose loading raised (a run skips
+        them), so a caller knows the loading did not finish."""
         if config.mode == "single_asset":
             config = replace(config, cadence=config.bar_cadence)
             market = config.single_asset
             start = min(_fetch_start(config, kind) for kind in _trend_kinds(config))
             self.ohlcv.get_pair_series(market.exchange, market.pair, start, config.end_date, market.timeframe)
-            return
+            return []
         loaded = self._load(config, utc_now(), [], lambda *_: None)
         if loaded.frames and "BTC" not in loaded.frames:
             try:  # _btc_ema_benchmarks
@@ -579,6 +581,8 @@ class BacktestEngine:
                                       config.end_date, config.cadence.ccxt_timeframe)
             except Exception as exc:  # noqa: BLE001
                 log.warning("BTC benchmark unavailable: %s", exc)
+                loaded.failed.append("BTC")
+        return loaded.failed
 
     def _load(self, config: RunConfig, as_of, notes: list[str], _tick) -> "_Loaded":
         """The coin lists and every candle a run reads (``run`` and ``prefetch``)."""
@@ -664,12 +668,14 @@ class BacktestEngine:
         # so a coin-vs-coin candle has the ratio's real high and low on every cadence (smithery.ratio).
         paths = getattr(self.ohlcv, "get_path", None)
         all_frames: dict[str, pd.DataFrame] = {}
+        failed: list[str] = []
         for i, coin in enumerate(fetch_coins):
             ref = CoinRef(cg_id=coin.cg_id, symbol=coin.symbol)
             try:
                 series = self.ohlcv.get_series(ref, fetch_start, config.end_date, timeframe)
             except Exception as exc:  # noqa: BLE001
                 log.warning("OHLCV failed for %s: %s", coin.symbol, exc)
+                failed.append(coin.symbol)
                 continue
             frame = confirmed_frame(series.frame, timeframe, as_of)
             if frame.empty:
@@ -686,7 +692,7 @@ class BacktestEngine:
         frames = {sym: f for sym, f in all_frames.items() if sym in strategy_symbols}
         if callable(paths) and len(frames) > 1:
             notes.append(path_note(frames, config.start_date, timeframe))
-        return _Loaded(kinds, market_start, universe, market_universe, all_frames, frames)
+        return _Loaded(kinds, market_start, universe, market_universe, all_frames, frames, failed=failed)
 
     def _rotations(self, config: RunConfig, kinds, market_start, universe, frames, total, notes, _tick,
                    as_of) -> BacktestResult:
