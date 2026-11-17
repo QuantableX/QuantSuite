@@ -150,14 +150,14 @@ class ResearchTests(unittest.TestCase):
             raise RuntimeError("stop after the copy")
 
         run = lab.create({"kind": "profit", "title": "Update first", "config": config})
-        with patch("rotation_lab.backtest.engine.BacktestEngine.run", engine_run), patch.object(lab, "freeze", freeze):
+        with patch("rotation_lab.backtest.engine.BacktestEngine.prefetch", engine_run), patch.object(lab, "freeze", freeze):
             lab.run(run["id"])
         self.assertEqual(order, ["update", "freeze"])
         self.assertEqual(used, [(self.path / "cache.sqlite", "2021-06-30")])
         # Offline: a note, and the comparison goes on with the data as saved.
         order.clear()
         run = lab.create({"kind": "profit", "title": "Offline", "config": config})
-        with patch("rotation_lab.backtest.engine.BacktestEngine.run", side_effect=OSError("offline")), \
+        with patch("rotation_lab.backtest.engine.BacktestEngine.prefetch", side_effect=OSError("offline")), \
                 patch.object(lab, "freeze", freeze):
             lab.run(run["id"])
         self.assertEqual(order, ["freeze"])

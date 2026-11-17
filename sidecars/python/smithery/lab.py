@@ -376,10 +376,10 @@ def systems_cache():
 def update_saved_data(path, doc):
     """Add the days the system is missing to the saved price data before a comparison copies it.
 
-    The saved system runs once against the saved data with the normal downloader, as
-    running it in QuantSystems does: missing days up to the comparison's end are added,
-    each coin from its own exchange, and saved days stay untouched. Offline, the
-    comparison uses the data as saved."""
+    The saved system loads its data once with the normal downloader, as running it in
+    QuantSystems does (``BacktestEngine.prefetch``: the same requests as a run, no signal
+    computed): missing days up to the comparison's end are added, each coin from its own
+    exchange, and saved days stay untouched. Offline, the comparison uses the data as saved."""
     cache_path = systems_cache()
     if not cache_path.is_file():
         return
@@ -395,7 +395,7 @@ def update_saved_data(path, doc):
         config = replace(_build_config(doc["config"]), compare_trends=())
         cache = Cache(cache_path)
         BacktestEngine(registry=RankingRegistry(cache),
-                       ohlcv=OhlcvFetcher(cache, min_request_interval=config.min_request_interval)).run(config)
+                       ohlcv=OhlcvFetcher(cache, min_request_interval=config.min_request_interval)).prefetch(config)
     except Exception as exc:  # noqa: BLE001 - offline or a failing exchange leaves the data as saved
         emit(path, "progress", message=f"Could not add missing days ({exc}); the comparison uses the saved data as it is")
     finally:

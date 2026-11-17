@@ -214,9 +214,10 @@ NEVER_VENUES = {"binance", "gate", "gateio", "mexc"}
 def prepare_venue(config, chain: tuple[str, ...] = DEFAULT_VENUES, progress=None) -> Path:
     """Download the candles a system reads from another exchange chain into its own cache.
 
-    Runs the system once with the normal downloader pointed at that chain (the saved
-    rankings, the venue cache for candles); later runs add only missing days. The
-    saved systems cache is never written. Binance, Gate.io and MEXC are never used."""
+    Loads the system's data once with the normal downloader pointed at that chain (the
+    saved rankings, the venue cache for candles; ``BacktestEngine.prefetch``, no signal
+    computed); later runs add only missing days. The saved systems cache is never written.
+    Binance, Gate.io and MEXC are never used."""
     from rotation_lab.backtest.engine import BacktestEngine
     from rotation_lab.data.cache import Cache
     from rotation_lab.data.ohlcv import OhlcvFetcher
@@ -233,7 +234,7 @@ def prepare_venue(config, chain: tuple[str, ...] = DEFAULT_VENUES, progress=None
             progress(f"Loading candles from {', '.join(chain)} for the venue check")
         BacktestEngine(registry=saved_rankings(saved),
                        ohlcv=OhlcvFetcher(venue, ccxt_exchanges=chain,
-                                          min_request_interval=config.min_request_interval)).run(config)
+                                          min_request_interval=config.min_request_interval)).prefetch(config)
     finally:
         for cache in (saved, venue):
             con = getattr(cache, "_con", None)
