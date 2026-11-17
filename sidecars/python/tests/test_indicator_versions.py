@@ -238,6 +238,37 @@ class RoleVersionTests(unittest.TestCase):
         """)
         self.assertIsNone(got)
 
+    def test_two_scripts_with_one_display_name_each_keep_their_own_reports(self):
+        # Two different scripts, one display name: same defaults (only the script tells them
+        # apart) and, after an edit, other defaults too.
+        self.lib.script("delta.py", template("delta", "DeltaTrend", "Shared Pressure"))
+        epsilon = self.lib.script("epsilon.py", template("epsilon", "EpsilonTrend", "Shared Pressure"))
+        write_runs = """
+            import json
+            from smithery import data
+            from smithery.evidence import EVALUATION_VERSION, indicator_fingerprint, write_json
+            from smithery.indicators import REGISTRY
+            for i, (key, score) in enumerate((('delta', 81), ('epsilon', 52))):
+                cls = REGISTRY[key]
+                write_json(data.OUTPUT_DIR / f'2026-11-17 {key}.json', dict(
+                    kind='gauntlet', version=EVALUATION_VERSION, name=cls.name, params=cls().params,
+                    timeframe='1d', fast=False, score=score, grade='A' if score > 70 else 'C', perm_p=0.01,
+                    certified=score > 70, indicator_sha256=indicator_fingerprint(cls)))
+            print(json.dumps(True))
+        """
+        read = """
+            import json
+            from smithery.registry import verdict_for
+            print(json.dumps({k: (verdict_for(k, '1d') or {}).get('score') for k in ('delta', 'epsilon')}))
+        """
+        self.lib.run(write_runs)
+        self.assertEqual(self.lib.run(read), {"delta": 81, "epsilon": 52})
+        epsilon.write_text(epsilon.read_text(encoding="utf-8").replace('"slow": 100', '"slow": 120'), encoding="utf-8")
+        for report in (self.lib.root / "vault" / "Output").glob("*.json"):
+            report.unlink()
+        self.lib.run(write_runs)
+        self.assertEqual(self.lib.run(read), {"delta": 81, "epsilon": 52})
+
 
 class EvaluatorFingerprintTests(unittest.TestCase):
     def test_the_evaluator_is_the_gauntlets_own_import_closure(self):
