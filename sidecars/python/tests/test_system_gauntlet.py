@@ -391,6 +391,20 @@ class Order(unittest.TestCase):
         sg._ENVIRONMENTS.clear()
         self.assertEqual(base, sg.vote_environment("cpu"))
 
+    def test_the_environment_fingerprint_names_only_the_code_that_computes_votes(self):
+        # A merge elsewhere (a report, the lab, the walk, the data readers) keeps a shared store usable;
+        # the code a window's votes come from changes every key.
+        root = Path(sg.__file__).resolve().parents[1]
+        named = {p.relative_to(root).as_posix() for p in sg.vote_files()}
+        for path in ("smithery/batch.py", "smithery/contract.py", "smithery/jit.py", "smithery/ratio.py",
+                     "rotation_lab/backtest/signals.py", "rotation_lab/backtest/vote_store.py",
+                     "rotation_lab/backtest/batch_votes.py", "rotation_lab/backtest/smithery/__init__.py"):
+            self.assertIn(path, named)
+        for path in ("smithery/lab.py", "smithery/lab_report.py", "smithery/system_gauntlet.py", "smithery/prices.py",
+                     "rotation_lab/backtest/engine.py", "rotation_lab/data/cache.py", "rotation_lab/rpc.py"):
+            self.assertNotIn(path, named)
+        self.assertTrue(all(p.is_file() for p in sg.vote_files()))
+
 
 if __name__ == "__main__":
     unittest.main()

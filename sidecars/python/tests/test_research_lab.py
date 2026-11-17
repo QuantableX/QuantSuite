@@ -114,25 +114,62 @@ class ResearchTests(unittest.TestCase):
             self.assertEqual(lab.list_runs()[0]["status"], "interrupted")
         self.assertEqual(lab.read(lab.folder(run["id"]) / "run.json")["status"], "running")
 
-    def test_system_runs_freeze_the_systems_cache_and_a_gauntlet_does_not(self):
+    def test_system_runs_share_one_frozen_set_of_the_saved_data_and_a_gauntlet_reads_none(self):
         import sqlite3
         from contextlib import closing
+        from rotation_lab.data.cache import Cache
         shelf = self.path / "shelf"
         shelf.mkdir()
         (shelf / "BINANCE_BTCUSDT_1d.csv").write_text("time,open\n", encoding="utf-8")
-        with closing(sqlite3.connect(self.path / "cache.sqlite")) as db, db:
-            db.execute("create table candles (pair text)")
-            db.execute("insert into candles values ('BTCUSDT')")
-        for kind, frozen in (("profit", True), ("aggregates", True), ("gauntlet", False)):
-            path = self.path / "runs" / kind
+        Cache(self.path / "cache.sqlite")._con.close()  # the saved price data, a WAL database like the app's
+        (self.path / "venues").mkdir()
+        for name in ("cache.sqlite", "venues/okx-bybit.sqlite"):
+            with closing(sqlite3.connect(self.path / name)) as db, db:
+                db.execute("create table if not exists candles (pair text)")
+                db.execute("insert into candles values ('BTCUSDT')")
+
+        def freeze(kind):
+            path = self.path / "runs" / f"{kind}-{len(list((self.path / 'runs').glob('*'))) if (self.path / 'runs').is_dir() else 0}"
             (path / "library").mkdir(parents=True)
+            (path / "library" / "x.py").write_text("# script", encoding="utf-8")
             with patch("smithery.data.PRICE_DIR", shelf):
-                lab.freeze(path, kind)
-            self.assertEqual((path / "cache.sqlite").is_file(), frozen, kind)
-            self.assertEqual("cache.sqlite" in lab.read(path / "inputs.json"), frozen, kind)
-            if frozen:
-                with closing(sqlite3.connect(path / "cache.sqlite")) as db:
-                    self.assertEqual(db.execute("select pair from candles").fetchall(), [("BTCUSDT",)])
+                return path, lab.freeze(path, kind)
+
+        sets = {}
+        for kind in ("profit", "aggregates", "robustness"):
+            path, shared = freeze(kind)
+            sets[kind] = shared["id"]
+            inputs = lab.read(path / "inputs.json")
+            self.assertEqual(inputs[f"inputs/{shared['id']}/cache.sqlite"], shared["files"]["cache.sqlite"])
+            self.assertIn(f"inputs/{shared['id']}/venues/okx-bybit.sqlite", inputs)
+            self.assertIn("library/x.py", inputs)
+            self.assertFalse((path / "cache.sqlite").exists() or (path / "venues").exists(), kind)  # no copy per run
+            # The run's processes read the set.
+            self.assertEqual(lab.env_for(path, True, shared)["ROTATION_LAB_CACHE"], str(Path(shared["path"]) / "cache.sqlite"))
+        # An unchanged source: one set for the whole round, its files read-only and readable as a cache.
+        self.assertEqual(len(set(sets.values())), 1)
+        self.assertEqual([p.name for p in lab.input_sets().iterdir()], [sets["profit"]])
+        frozen = Path(shared["path"]) / "cache.sqlite"
+        self.assertFalse(os.access(frozen, os.W_OK))
+        reader = Cache(frozen)
+        try:
+            with reader._conn() as con:
+                self.assertEqual(con.execute("select pair from candles").fetchall(), [("BTCUSDT",)])
+                self.assertEqual(con.execute("pragma journal_mode").fetchone(), ("delete",))
+            with self.assertRaisesRegex(sqlite3.OperationalError, "readonly"):
+                reader.set_meta("written", "by a run")
+        finally:
+            reader._con.close()
+        # A day added to the saved data: the next run gets a set of its own, the first one is kept.
+        with closing(sqlite3.connect(self.path / "cache.sqlite")) as db, db:
+            db.execute("insert into candles values ('ETHUSDT')")
+        _, later = freeze("robustness")
+        self.assertNotEqual(later["id"], sets["profit"])
+        self.assertEqual(sorted(p.name for p in lab.input_sets().iterdir()), sorted([sets["profit"], later["id"]]))
+        # A Gauntlet reads the shelf only.
+        path, shared = freeze("gauntlet")
+        self.assertIsNone(shared)
+        self.assertFalse(any(k.startswith("inputs/") for k in lab.read(path / "inputs.json")))
 
     def test_system_comparisons_add_missing_days_before_copying_the_saved_data(self):
         from rotation_lab.data.cache import Cache

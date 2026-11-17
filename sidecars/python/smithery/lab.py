@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import uuid
@@ -197,14 +198,17 @@ def create(request):
         raise
 
 
-def env_for(path, frozen=False):
+def env_for(path, frozen=False, inputs=None):
+    """The environment of a run's processes. ``inputs``: the shared set the run reads its saved price
+    data and other-venue candles from (``shared_inputs``); runs from before kept their own copy."""
     from .threads import with_one
     # A run's worker and every process under it: one OpenBLAS thread each (threads.py).
     env = with_one({**os.environ, "QUANTSCRIPT_INDICATORS_DIR": str(path / "library"),
                     "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"})
     if frozen:
+        cache = Path(inputs["path"]) / "cache.sqlite" if inputs else path / "cache.sqlite"
         env.update(PYTHONPATH=str(path / "engine"), SMITHERY_VAULT=str(path / "vault"),
-                   ROTATION_LAB_CACHE=str(path / "cache.sqlite"), QUANTSUITE_HOME=str(path / "suite"))
+                   ROTATION_LAB_CACHE=str(cache), QUANTSUITE_HOME=str(path / "suite"))
     return env
 
 
@@ -403,7 +407,95 @@ def update_saved_data(path, doc):
             cache._con.close()  # Windows keeps an open database file locked
 
 
+def digests(files):
+    """sha256 of many files at once: a library is thousands of small files, and reading them one
+    after another waits on the disk (and the virus scanner) for each."""
+    from concurrent.futures import ThreadPoolExecutor
+    files = list(files)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return dict(zip(files, pool.map(digest, files)))
+
+
+def input_sets() -> Path:
+    """Where the frozen inputs that system runs share are kept (``shared_inputs``)."""
+    return root() / "inputs"
+
+
+def _remove(folder):
+    def writable(function, name, _):
+        os.chmod(name, stat.S_IWRITE)
+        function(name)
+    shutil.rmtree(folder, onexc=writable) if sys.version_info >= (3, 12) else shutil.rmtree(folder, onerror=writable)
+
+
+def shared_inputs():
+    """The saved price data and the other exchanges' candles, frozen once for every run that reads the same.
+
+    Each run snapshots both sources (a consistent copy, while other runs may still be adding days) and
+    names the snapshot by its content. A snapshot equal to an existing set is dropped and that set is
+    used: the runs of a round read one set and each names it, and a set takes its disk space once (two
+    snapshots of an unchanged source are byte-identical). A set's files are read-only, and the engine's
+    cache opens such a file read-only, so a run that tried to write would fail instead of changing what
+    other runs read. Returns {"id", "path", "files": {name: sha256}}."""
+    cache = systems_cache().resolve()
+    sources = {"cache.sqlite": cache}
+    venues = cache.parent / "venues"
+    if venues.is_dir():
+        sources.update({f"venues/{f.name}": f for f in sorted(venues.glob("*.sqlite"))})
+    sets = input_sets()
+    sets.mkdir(parents=True, exist_ok=True)
+    for stale in sets.glob(".stage-*"):  # a snapshot whose process died
+        if stale.stat().st_mtime < dt.datetime.now().timestamp() - 3600:
+            _remove(stale)
+    stage = sets / (".stage-" + uuid.uuid4().hex)
+    try:
+        for name, source in sources.items():
+            target = stage / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # closing(): a sqlite3 `with` only commits, and Windows keeps an open file locked.
+            with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src, \
+                    closing(sqlite3.connect(target)) as dst:
+                src.backup(dst)
+                dst.execute("PRAGMA journal_mode=DELETE")  # readers then need no write-ahead log next to it
+        hashed = digests(stage / name for name in sources)
+        files = {name: hashed[stage / name] for name in sources}
+        set_id = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()[:32]
+        final = sets / set_id
+
+        def complete():
+            try:
+                return read(final / "set.json")["files"] == files
+            except (OSError, ValueError, KeyError):
+                return False
+        if not complete():
+            for name in files:
+                os.chmod(stage / name, stat.S_IREAD)
+            save(stage / "set.json", {"id": set_id, "created_at": now(), "files": files,
+                                      "sources": {name: str(source) for name, source in sources.items()}})
+            try:
+                stage.rename(final)
+            except OSError:  # another run's equal snapshot got there first
+                if not complete():
+                    raise
+        return {"id": set_id, "path": str(final), "files": files}
+    finally:
+        if stage.exists():
+            _remove(stage)
+
+
+def frozen_cache(run_id) -> Path:
+    """The saved price data a system run read: its shared set's (``shared_inputs``) or, for runs from
+    before the sets, its own copy. Other-venue candles are in ``venues/`` next to it."""
+    path = folder(run_id)
+    inputs = read(path / "run.json").get("inputs")
+    return Path(inputs["path"]) / "cache.sqlite" if inputs else path / "cache.sqlite"
+
+
 def freeze(path, kind="gauntlet"):
+    """Copy what the worker reads into the run (engine, price shelf) and record every input's sha256.
+
+    A system run reads the saved price data and the other exchanges' candles from a shared set
+    (``shared_inputs``), which the run names; a Gauntlet reads the shelf only."""
     from .data import PRICE_DIR
     engine = Path(__file__).resolve().parents[1]
     for name in ("smithery", "rotation_lab"):
@@ -414,26 +506,15 @@ def freeze(path, kind="gauntlet"):
     shutil.copytree(PRICE_DIR, path / "vault/Price History")
     (path / "vault/Output").mkdir()
     (path / "vault/Docs").mkdir()
-    # Only system comparisons read the systems price cache (~200 MB); a Gauntlet uses the shelf.
-    cache = systems_cache()
-    if kind in SYSTEM_KINDS and cache.is_file():
-        # closing(): a sqlite3 `with` only commits, and Windows keeps an open file locked.
-        with closing(sqlite3.connect(cache.as_uri() + "?mode=ro", uri=True)) as src, \
-                closing(sqlite3.connect(path / "cache.sqlite")) as dst:
-            src.backup(dst)
-    # The robustness check's other-venue candles, next to the frozen cache like the saved ones.
-    venues = cache.parent / "venues"
-    if kind in ("robustness", "aggregates") and venues.is_dir():
-        for source in venues.glob("*.sqlite"):
-            (path / "venues").mkdir(exist_ok=True)
-            with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src, \
-                    closing(sqlite3.connect(path / "venues" / source.name)) as dst:
-                src.backup(dst)
-    files = [f for directory in ("engine", "library", "vault/Price History", "venues")
+    shared = shared_inputs() if kind in SYSTEM_KINDS and systems_cache().is_file() else None
+    files = [f for directory in ("engine", "library", "vault/Price History")
              for f in (path / directory).rglob("*") if f.is_file()]
-    if (path / "cache.sqlite").exists():
-        files.append(path / "cache.sqlite")
-    save(path / "inputs.json", {str(f.relative_to(path)): digest(f) for f in files})
+    # Names with "/" on every system: lab_install compares the engine/ and library/ entries again.
+    inputs = {f.relative_to(path).as_posix(): hashed for f, hashed in digests(files).items()}
+    if shared:
+        inputs.update({f"inputs/{shared['id']}/{name}": hashed for name, hashed in shared["files"].items()})
+    save(path / "inputs.json", inputs)
+    return shared
 
 
 def prepare_venues(path, doc):
@@ -476,12 +557,16 @@ def run(run_id):
             if doc["kind"] == "robustness" or (doc["kind"] == "aggregates" and doc.get("robust")):
                 prepare_venues(path, doc)
             emit(path, "progress", message="Freezing engine, private library and market inputs")
-            freeze(path, doc["kind"])
+            shared = freeze(path, doc["kind"])
+            if shared:
+                doc["inputs"] = {"id": shared["id"], "path": shared["path"]}
+                save(path / "run.json", doc)
+                emit(path, "progress", message=f"Market inputs: shared set {shared['id']}")
         command = [sys.executable, "-u", "-m", "smithery.lab", "worker", "--path", str(path)]
         # Parent stays in the Forge process tree, so native cancellation kills every child.
         with (path / "worker.stderr.log").open("w", encoding="utf-8") as errors:
             with subprocess.Popen(command, cwd=path / "engine" if frozen else Path(__file__).resolve().parents[1],
-                                  env=env_for(path, frozen),
+                                  env=env_for(path, frozen, doc.get("inputs")),
                                   stdout=subprocess.PIPE, stderr=errors, text=True, encoding="utf-8") as proc:
                 for line in proc.stdout:
                     print(line.rstrip(), flush=True)
@@ -495,6 +580,12 @@ def run(run_id):
         emit(path, "error", message=str(exc), run_id=run_id)
     save(path / "run.json", doc)
     if (path / "results.json").exists():
+        if doc.get("inputs"):
+            # Every result names the frozen inputs it read: runs of one round name the same set.
+            for name in ("results.json", "verdict.json"):
+                value = read(path / name) if (path / name).is_file() else None
+                if isinstance(value, dict):
+                    save(path / name, {**value, "inputs": doc["inputs"]["id"]})
         from .lab_report import render
         (path / "report.html").write_text(render(doc, read(path / "results.json")), encoding="utf-8")
         evidence = [path / "results.json", *(path / "vault/Output").glob("*"),
