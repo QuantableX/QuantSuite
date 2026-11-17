@@ -270,6 +270,85 @@ class RoleVersionTests(unittest.TestCase):
         self.assertEqual(self.lib.run(read), {"delta": 81, "epsilon": 52})
 
 
+class LegacyVersionTests(unittest.TestCase):
+    """library.json "legacy_variants": keys a base's own script registers (an earlier form of it)."""
+
+    def setUp(self):
+        self.lib = Library(self)
+        self.lib.script("theta.py", template("theta", "ThetaTrend", "Theta") + textwrap.dedent('''
+
+            class ThetaOriginal(ThetaTrend):
+                name = "Theta Original"
+
+                @classmethod
+                def default_params(cls):
+                    return {"fast": 10, "slow": 60, "band": 0.25, "vol_halflife": 20}
+
+            REGISTER = {"theta": ThetaTrend, "theta_original": ThetaOriginal}
+            WARMUP = {"theta": 400, "theta_original": 400}
+        '''))
+        (self.lib.folder / "library.json").write_text(json.dumps(
+            {"legacy_variants": {"theta_original": ["theta", "Original"]}}), encoding="utf-8")
+
+    def verdicts(self):
+        return self.lib.run("""
+            import json
+            from smithery.indicators import DISCOVERY_ERRORS
+            from smithery.registry import robust_on_track, verdict_for
+            v = verdict_for('theta_original', '1d') or {}
+            print(json.dumps(dict(score=v.get('score'), source=v.get('source'), robust=robust_on_track('theta_original', '1d'),
+                                  errors=DISCOVERY_ERRORS)))
+        """)
+
+    def test_a_legacy_variant_keeps_its_verdict_in_a_version_file(self):
+        self.assertEqual(self.verdicts()["source"], None)
+        doc = self.lib.run("""
+            import json
+            from smithery.evidence import EVALUATION_VERSION
+            from smithery.variants import update_evidence
+            verdict = dict(score=72.1, grade='A', perm_p=0.02, certified=True, report='2026-11-13 Theta Original Gauntlet',
+                           date='2026-11-13', evaluation_version=EVALUATION_VERSION)
+            print(json.dumps(update_evidence('theta_original', {'timeframes': {'1d': verdict}})))
+        """)
+        path = Path(doc["path"])
+        self.assertEqual(path, self.lib.folder / "versions" / "theta" / "legacy" / "theta_original.json")
+        self.assertEqual((doc["role"], doc["base_key"], doc["label"]), ("legacy", "theta", "Original"))
+        self.assertEqual(doc["params"]["fast"], 10)
+        # Read like every other version's evidence, without any report in the vault.
+        self.assertEqual(list((self.lib.root / "vault" / "Output").iterdir()), [])
+        got = self.verdicts()
+        self.assertEqual((got["score"], got["source"], got["robust"], got["errors"]), (72.1, "release", True, {}))
+        # Later evidence merges into the same file.
+        self.lib.run("""
+            import json
+            from smithery.variants import update_evidence
+            update_evidence('theta_original', {'timeframes': {'4h': {'score': 55.0, 'certified': False}}})
+            print(json.dumps(True))
+        """)
+        evidence = json.loads(path.read_text(encoding="utf-8"))["evidence"]["timeframes"]
+        self.assertEqual((evidence["1d"]["score"], evidence["4h"]["score"]), (72.1, 55.0))
+        # An engine from before reads only the files beside the role files.
+        self.assertEqual(list((self.lib.folder / "versions").glob("*/*.json")), [])
+        # The script changed: the old evidence no longer counts, and the file is named as unavailable.
+        script = self.lib.folder / "theta.py"
+        script.write_text(script.read_text(encoding="utf-8").replace('"slow": 60', '"slow": 70'), encoding="utf-8")
+        got = self.verdicts()
+        self.assertIsNone(got["score"])
+        self.assertIn("versions/theta/legacy/theta_original.json", got["errors"])
+
+    def test_only_a_listed_legacy_variant_gets_a_legacy_file(self):
+        (self.lib.folder / "library.json").write_text("{}", encoding="utf-8")
+        got = self.lib.run("""
+            import json
+            from smithery.variants import write_legacy_version
+            try:
+                write_legacy_version('theta_original', {})
+            except KeyError as exc:
+                print(json.dumps(str(exc)))
+        """)
+        self.assertIn("not a legacy variant", got)
+
+
 class EvaluatorFingerprintTests(unittest.TestCase):
     def test_the_evaluator_is_the_gauntlets_own_import_closure(self):
         from smithery import evidence

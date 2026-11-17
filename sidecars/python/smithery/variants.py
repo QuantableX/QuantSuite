@@ -60,6 +60,15 @@ VERSIONS: dict[str, dict[str, str]] = {}
 VERSION_DOCS: dict[str, dict] = {}
 
 LEGACY = library_metadata().get("legacy_variants", {})
+# A legacy variant (library.json "legacy_variants": key -> [base, label]) is a key its base's own
+# script registers: an earlier, frozen form of the indicator. Its evidence lives in a version file
+# like every other version's, versions/<base>/legacy/<key>.json (format 2, role "legacy"), in a
+# folder of its own because engines from before it read every file beside the role files.
+LEGACY_ROLE = "legacy"
+
+
+def legacy_path(key: str) -> Path:
+    return directory() / LEGACY[key][0] / LEGACY_ROLE / f"{key}.json"
 
 
 def version_key(base: str, role: str) -> str:
@@ -327,6 +336,31 @@ def write_version(base: str, role: str, params: dict, evidence: dict, *,
     return VERSION_DOCS[key]
 
 
+def write_legacy_version(key: str, evidence: dict) -> dict:
+    """Write (or replace) a legacy variant's version file: its params are its script's own defaults,
+    as a Standard's are, and its evidence is read like every other version's."""
+    from .indicators import REGISTRY
+    from .evidence import finite_json
+
+    if key not in LEGACY or key not in REGISTRY:
+        raise KeyError(f"'{key}' is not a legacy variant of this library")
+    base, label = LEGACY[key]
+    cls = REGISTRY[key]
+    signature = source_signature(key)
+    if signature is None:
+        raise ValueError(f"The script behind '{key}' cannot be read")
+    doc = finite_json(dict(
+        format=2, key=key, base_key=base, role=LEGACY_ROLE, label=label,
+        created_at=dt.datetime.now(dt.timezone.utc).isoformat(), params=cls().params,
+        status="released", source_sha256=signature, contract=CONTRACT_VERSION,
+        base_file=Path(inspect.getfile(cls)).name, evidence=evidence,
+    ))
+    target = legacy_path(key)
+    _write_atomic(target, doc, replace=True)
+    VERSION_DOCS[key] = {**doc, "path": str(target)}
+    return VERSION_DOCS[key]
+
+
 def _merge(into: dict, update: dict) -> dict:
     out = dict(into)
     for name, value in update.items():
@@ -336,18 +370,21 @@ def _merge(into: dict, update: dict) -> dict:
 
 def update_evidence(key: str, evidence: dict) -> dict:
     """Merge new evidence into a valid role version — its params never
-    change. A base without a standard file gets one."""
+    change. A base without a standard file gets one, and so does a legacy variant."""
     from .indicators import REGISTRY, VARIANTS
     from .evidence import finite_json
 
     doc = VERSION_DOCS.get(key)
     if doc is None:
+        if key in LEGACY and key in REGISTRY:
+            return write_legacy_version(key, evidence)
         if key in REGISTRY and key not in VARIANTS:
             return write_version(key, "standard", REGISTRY[key]().params, evidence)
         raise KeyError(f"no valid version file for '{key}'")
     path = Path(doc["path"])
     current = json.loads(path.read_text(encoding="utf-8"))
-    if current.get("source_sha256") != source_signature(current["base_key"]):
+    script = key if current.get("role") == LEGACY_ROLE else current["base_key"]
+    if current.get("source_sha256") != source_signature(script):
         raise ValueError(f"The script behind '{key}' changed; re-forge this version first")
     current["evidence"] = _merge(current.get("evidence") or {}, finite_json(evidence))
     current["evidence_updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -439,7 +476,38 @@ def _load_variants(registry: dict, warmup: dict, errors: dict) -> dict:
                 label=doc.get("label", path.stem) if isinstance(doc, dict) else path.stem,
                 role=doc.get("role") if isinstance(doc, dict) else None,
                 error=error, path=str(path)))
+    for path in sorted(directory().glob(f"*/{LEGACY_ROLE}/*.json")):
+        doc = {}
+        try:
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            _load_legacy(registry, path, doc)
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            errors[f"versions/{path.parent.parent.name}/{LEGACY_ROLE}/{path.name}"] = error
+            UNAVAILABLE.append(dict(key=path.stem, base_key=path.parent.parent.name,
+                label=doc.get("label", path.stem) if isinstance(doc, dict) else path.stem,
+                role=LEGACY_ROLE, error=error, path=str(path)))
     return metadata
+
+
+def _load_legacy(registry, path: Path, doc: dict) -> None:
+    """A legacy variant's version file: its evidence counts while its script and defaults are the ones
+    it was judged with (the key stays registered by its script either way)."""
+    key, base = doc["key"], doc["base_key"]
+    if doc.get("format") != 2 or doc.get("role") != LEGACY_ROLE:
+        raise ValueError("Not a legacy version file")
+    if key not in LEGACY or LEGACY[key][0] != base or key not in registry:
+        raise ValueError("Not a legacy variant of this library (library.json legacy_variants)")
+    if path.stem != key or path.parent.parent.name != base:
+        raise ValueError("Invalid version path")
+    if doc.get("contract", CONTRACT_VERSION) > CONTRACT_VERSION:
+        raise ValueError(f"Written for contract {doc.get('contract')}; this engine speaks {CONTRACT_VERSION}")
+    stem = stem_of(registry[key])
+    if doc.get("source_sha256") != (script_signature(stem) if stem else None):
+        raise ValueError("The script changed; re-run this legacy variant's verdicts")
+    if _normalize(doc.get("params")) != _normalize(registry[key]().params):
+        raise ValueError("The script's defaults changed; re-run this legacy variant's verdicts")
+    VERSION_DOCS[key] = {**doc, "path": str(path)}
 
 
 def _load_role(registry, warmup, metadata, path: Path, doc: dict, signature_of, key_pattern) -> None:
