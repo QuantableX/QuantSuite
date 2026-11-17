@@ -114,25 +114,140 @@ class ResearchTests(unittest.TestCase):
             self.assertEqual(lab.list_runs()[0]["status"], "interrupted")
         self.assertEqual(lab.read(lab.folder(run["id"]) / "run.json")["status"], "running")
 
-    def test_system_runs_freeze_the_systems_cache_and_a_gauntlet_does_not(self):
+    def test_system_runs_share_one_frozen_set_of_the_saved_data_and_a_gauntlet_reads_none(self):
         import sqlite3
         from contextlib import closing
+        from rotation_lab.data.cache import Cache
         shelf = self.path / "shelf"
         shelf.mkdir()
         (shelf / "BINANCE_BTCUSDT_1d.csv").write_text("time,open\n", encoding="utf-8")
-        with closing(sqlite3.connect(self.path / "cache.sqlite")) as db, db:
-            db.execute("create table candles (pair text)")
-            db.execute("insert into candles values ('BTCUSDT')")
-        for kind, frozen in (("profit", True), ("aggregates", True), ("gauntlet", False)):
-            path = self.path / "runs" / kind
+        Cache(self.path / "cache.sqlite")._con.close()  # the saved price data, a WAL database like the app's
+        (self.path / "venues").mkdir()
+        for name in ("cache.sqlite", "venues/okx-bybit.sqlite"):
+            with closing(sqlite3.connect(self.path / name)) as db, db:
+                db.execute("create table if not exists candles (pair text)")
+                db.execute("insert into candles values ('BTCUSDT')")
+
+        def freeze(kind):
+            path = self.path / "runs" / f"{kind}-{len(list((self.path / 'runs').glob('*'))) if (self.path / 'runs').is_dir() else 0}"
             (path / "library").mkdir(parents=True)
+            (path / "library" / "x.py").write_text("# script", encoding="utf-8")
             with patch("smithery.data.PRICE_DIR", shelf):
-                lab.freeze(path, kind)
-            self.assertEqual((path / "cache.sqlite").is_file(), frozen, kind)
-            self.assertEqual("cache.sqlite" in lab.read(path / "inputs.json"), frozen, kind)
-            if frozen:
-                with closing(sqlite3.connect(path / "cache.sqlite")) as db:
-                    self.assertEqual(db.execute("select pair from candles").fetchall(), [("BTCUSDT",)])
+                return path, lab.freeze(path, kind)
+
+        sets = {}
+        for kind in ("profit", "aggregates", "robustness"):
+            path, shared = freeze(kind)
+            sets[kind] = shared["id"]
+            inputs = lab.read(path / "inputs.json")
+            self.assertEqual(inputs[f"inputs/{shared['id']}/cache.sqlite"], shared["files"]["cache.sqlite"])
+            self.assertIn(f"inputs/{shared['id']}/venues/okx-bybit.sqlite", inputs)
+            self.assertIn("library/x.py", inputs)
+            self.assertFalse((path / "cache.sqlite").exists() or (path / "venues").exists(), kind)  # no copy per run
+            # The run's processes read the set.
+            self.assertEqual(lab.env_for(path, True, shared)["ROTATION_LAB_CACHE"], str(Path(shared["path"]) / "cache.sqlite"))
+        # An unchanged source: one set for the whole round, its files read-only and readable as a cache.
+        self.assertEqual(len(set(sets.values())), 1)
+        self.assertEqual([p.name for p in lab.input_sets().iterdir()], [sets["profit"]])
+        frozen = Path(shared["path"]) / "cache.sqlite"
+        self.assertFalse(os.access(frozen, os.W_OK))
+        reader = Cache(frozen)
+        try:
+            with reader._conn() as con:
+                self.assertEqual(con.execute("select pair from candles").fetchall(), [("BTCUSDT",)])
+                self.assertEqual(con.execute("pragma journal_mode").fetchone(), ("delete",))
+            with self.assertRaisesRegex(sqlite3.OperationalError, "readonly"):
+                reader.set_meta("written", "by a run")
+        finally:
+            reader._con.close()
+        # A day added to the saved data: the next run gets a set of its own, the first one is kept.
+        with closing(sqlite3.connect(self.path / "cache.sqlite")) as db, db:
+            db.execute("insert into candles values ('ETHUSDT')")
+        _, later = freeze("robustness")
+        self.assertNotEqual(later["id"], sets["profit"])
+        self.assertEqual(sorted(p.name for p in lab.input_sets().iterdir()), sorted([sets["profit"], later["id"]]))
+        # A Gauntlet reads the shelf only.
+        path, shared = freeze("gauntlet")
+        self.assertIsNone(shared)
+        self.assertFalse(any(k.startswith("inputs/") for k in lab.read(path / "inputs.json")))
+
+    def test_a_round_prepares_a_system_once_and_its_later_runs_read_the_same_set(self):
+        import sqlite3
+        from contextlib import closing
+        from rotation_lab.data.cache import Cache
+        shelf = self.path / "shelf"
+        shelf.mkdir()
+        (shelf / "BINANCE_BTCUSDT_1d.csv").write_text("time,open\n", encoding="utf-8")
+        Cache(self.path / "cache.sqlite")._con.close()
+        config = {"mode": "rotation", "topN": 3, "startDate": "2020-01-01", "endDate": "2021-06-30", "feeRate": 0.001,
+                  "slippageRate": 0.0, "indicator": {"trend": "ema_cross"}}
+        loads = []
+
+        def prefetch(engine, cfg, **_):
+            # Each preparation adds a row, as the live coin listing does between two runs.
+            loads.append(Path(engine.ohlcv.cache.path).name)
+            with closing(sqlite3.connect(engine.ohlcv.cache.path)) as db, db:
+                db.execute("create table if not exists added (n integer)")
+                db.execute("insert into added values (1)")
+
+        def start(kind="robustness", cfg=config, fail=False):
+            run = lab.create({"kind": kind, "title": "Round", "config": cfg})
+            loads.clear()
+            with patch("smithery.data.PRICE_DIR", shelf), \
+                    patch("rotation_lab.backtest.engine.BacktestEngine.prefetch",
+                          side_effect=OSError("offline") if fail else prefetch, autospec=True), \
+                    patch.object(lab.subprocess, "Popen", side_effect=RuntimeError("stop before the worker")):
+                lab.run(run["id"])
+            doc = lab.read(lab.folder(run["id"]) / "run.json")
+            messages = [e.get("message", "") for e in lab.details(run["id"], "events")["events"]]
+            return doc, list(loads), messages
+
+        first, loaded, _ = start()
+        self.assertEqual(loaded, ["cache.sqlite", "okx-bybit-kucoin-coinbase.sqlite"])  # saved data, then the venues
+        # A later run of the round loads nothing and reads the first run's set, though the source has changed since.
+        with closing(sqlite3.connect(self.path / "cache.sqlite")) as db, db:
+            db.execute("insert into added values (2)")
+        second, loaded, messages = start()
+        self.assertEqual(loaded, [])
+        self.assertEqual(second["inputs"], first["inputs"])
+        self.assertTrue(any(f"run {first['id']}" in m and first["inputs"]["id"] in m for m in messages), messages)
+        self.assertIn(f"inputs/{first['inputs']['id']}/cache.sqlite", lab.read(lab.folder(second["id"]) / "inputs.json"))
+        # Another system (other settings) or another kind of run is a preparation of its own.
+        other, loaded, _ = start(cfg={**config, "endDate": "2021-07-31"})
+        self.assertEqual(loaded, ["cache.sqlite", "okx-bybit-kucoin-coinbase.sqlite"])
+        self.assertNotEqual(other["inputs"]["id"], first["inputs"]["id"])
+        _, loaded, _ = start(kind="profit")
+        self.assertEqual(loaded, ["cache.sqlite"])
+        # The next day prepares again.
+        tomorrow = (lab.dt.date.fromisoformat(lab.utc_day()) + lab.dt.timedelta(days=1)).isoformat()
+        with patch.object(lab, "utc_day", return_value=tomorrow):
+            _, loaded, _ = start()
+        self.assertEqual(loaded, ["cache.sqlite", "okx-bybit-kucoin-coinbase.sqlite"])
+        # A preparation that could not finish is not reused: the next run tries again.
+        offline = {**config, "endDate": "2021-08-31"}
+        failed, _, messages = start(cfg=offline, fail=True)
+        self.assertTrue(any("Could not add missing days (offline)" in m for m in messages), messages)
+        _, loaded, _ = start(cfg=offline)
+        self.assertEqual(loaded, ["cache.sqlite", "okx-bybit-kucoin-coinbase.sqlite"])
+        # Nor is one where a coin could not be loaded on one exchange (the engine skips such a coin).
+        partial = {**config, "endDate": "2021-09-30"}
+        original = prefetch
+
+        def prefetch(engine, cfg, **_):
+            original(engine, cfg)
+            return ["XRP"] if "venues" in str(engine.ohlcv.cache.path) else []
+        _, _, messages = start(cfg=partial)
+        self.assertTrue(any("Could not load XRP into the other exchanges' candles" in m for m in messages), messages)
+        _, loaded, _ = start(cfg=partial)
+        self.assertEqual(loaded, ["cache.sqlite", "okx-bybit-kucoin-coinbase.sqlite"])
+        prefetch = original
+        # A set whose files changed is not reused either.
+        frozen = Path(first["inputs"]["path"]) / "cache.sqlite"
+        os.chmod(frozen, 0o666)
+        with frozen.open("ab") as handle:
+            handle.write(b"x")
+        _, loaded, _ = start()
+        self.assertEqual(loaded, ["cache.sqlite", "okx-bybit-kucoin-coinbase.sqlite"])
 
     def test_system_comparisons_add_missing_days_before_copying_the_saved_data(self):
         from rotation_lab.data.cache import Cache
@@ -145,19 +260,19 @@ class ResearchTests(unittest.TestCase):
             used.append((Path(engine.ohlcv.cache.path), cfg.end_date.isoformat()))
             order.append("update")
 
-        def freeze(path, kind):
+        def freeze(path, kind, *_):
             order.append("freeze")
             raise RuntimeError("stop after the copy")
 
         run = lab.create({"kind": "profit", "title": "Update first", "config": config})
-        with patch("rotation_lab.backtest.engine.BacktestEngine.run", engine_run), patch.object(lab, "freeze", freeze):
+        with patch("rotation_lab.backtest.engine.BacktestEngine.prefetch", engine_run), patch.object(lab, "freeze", freeze):
             lab.run(run["id"])
         self.assertEqual(order, ["update", "freeze"])
         self.assertEqual(used, [(self.path / "cache.sqlite", "2021-06-30")])
         # Offline: a note, and the comparison goes on with the data as saved.
         order.clear()
         run = lab.create({"kind": "profit", "title": "Offline", "config": config})
-        with patch("rotation_lab.backtest.engine.BacktestEngine.run", side_effect=OSError("offline")), \
+        with patch("rotation_lab.backtest.engine.BacktestEngine.prefetch", side_effect=OSError("offline")), \
                 patch.object(lab, "freeze", freeze):
             lab.run(run["id"])
         self.assertEqual(order, ["freeze"])

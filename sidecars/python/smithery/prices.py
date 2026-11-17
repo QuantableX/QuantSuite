@@ -211,12 +211,14 @@ DEFAULT_VENUES = ("okx", "bybit", "kucoin", "coinbase")
 NEVER_VENUES = {"binance", "gate", "gateio", "mexc"}
 
 
-def prepare_venue(config, chain: tuple[str, ...] = DEFAULT_VENUES, progress=None) -> Path:
+def prepare_venue(config, chain: tuple[str, ...] = DEFAULT_VENUES, progress=None, failed=None) -> Path:
     """Download the candles a system reads from another exchange chain into its own cache.
 
-    Runs the system once with the normal downloader pointed at that chain (the saved
-    rankings, the venue cache for candles); later runs add only missing days. The
-    saved systems cache is never written. Binance, Gate.io and MEXC are never used."""
+    Loads the system's data once with the normal downloader pointed at that chain (the
+    saved rankings, the venue cache for candles; ``BacktestEngine.prefetch``, no signal
+    computed); later runs add only missing days. The saved systems cache is never written.
+    Binance, Gate.io and MEXC are never used. ``failed``: a list that gets the coins whose
+    loading raised."""
     from rotation_lab.backtest.engine import BacktestEngine
     from rotation_lab.data.cache import Cache
     from rotation_lab.data.ohlcv import OhlcvFetcher
@@ -231,9 +233,11 @@ def prepare_venue(config, chain: tuple[str, ...] = DEFAULT_VENUES, progress=None
     try:
         if progress:
             progress(f"Loading candles from {', '.join(chain)} for the venue check")
-        BacktestEngine(registry=saved_rankings(saved),
-                       ohlcv=OhlcvFetcher(venue, ccxt_exchanges=chain,
-                                          min_request_interval=config.min_request_interval)).run(config)
+        missing = BacktestEngine(registry=saved_rankings(saved),
+                                 ohlcv=OhlcvFetcher(venue, ccxt_exchanges=chain,
+                                                    min_request_interval=config.min_request_interval)).prefetch(config)
+        if failed is not None:
+            failed.extend(missing or ())
     finally:
         for cache in (saved, venue):
             con = getattr(cache, "_con", None)

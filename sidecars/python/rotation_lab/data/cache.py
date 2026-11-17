@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import os
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -162,10 +163,15 @@ class Cache:
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        # A read-only file (the frozen inputs research runs share, smithery.lab.shared_inputs) is
+        # opened read-only: a write then fails loudly instead of changing what other runs read.
+        self.read_only = self.path.is_file() and not os.access(self.path, os.W_OK)
+        if not self.read_only:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._con: sqlite3.Connection | None = None
-        self._init_schema()
+        if not self.read_only:
+            self._init_schema()
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -179,7 +185,15 @@ class Cache:
 
         with self._lock:
             con = self._con
-            if con is None:
+            if con is None and self.read_only:
+                con = self._con = sqlite3.connect(
+                    self.path.resolve().as_uri() + "?mode=ro",
+                    uri=True,
+                    detect_types=sqlite3.PARSE_DECLTYPES,
+                    timeout=30.0,
+                    check_same_thread=False,
+                )
+            elif con is None:
                 con = sqlite3.connect(
                     self.path,
                     detect_types=sqlite3.PARSE_DECLTYPES,

@@ -238,6 +238,19 @@ class _AssetState:
     frame: pd.DataFrame  # OHLC indexed by date
 
 
+@dataclass
+class _Loaded:
+    """What ``BacktestEngine._load`` read: the coin lists and the candles (traded coins in ``frames``)."""
+    kinds: list
+    market_start: dt.date | None
+    universe: "UniverseTimeline"
+    market_universe: "UniverseTimeline"
+    all_frames: dict[str, pd.DataFrame]
+    frames: dict[str, pd.DataFrame]
+    coins_missing: bool = False
+    failed: list[str] = field(default_factory=list)  # coins whose loading raised (network, exchange)
+
+
 def _coin_key(symbol: str, cg_id: str | None) -> str:
     return f"{symbol}|{cg_id or ''}"
 
@@ -512,6 +525,67 @@ class BacktestEngine:
                 except Exception:  # noqa: BLE001
                     pass
 
+        loaded = self._load(config, as_of, notes, _tick)
+        universe = loaded.universe
+        if loaded.coins_missing:
+            return BacktestResult(
+                config=config, universe=universe,
+                equity_strategy=pd.Series(dtype=float),
+                held_asset=pd.Series(dtype=object),
+                notes=notes,
+            )
+        kinds, market_start = loaded.kinds, loaded.market_start
+        market_universe, all_frames, frames = loaded.market_universe, loaded.all_frames, loaded.frames
+
+        total: pd.DataFrame | None = None
+        if config.market_filter and all_frames:
+            _tick("Building TOTAL", 0.72)
+            market_symbols = {c.symbol for c in market_universe.unique_coins()}
+            total = market_index(
+                market_universe.snapshots,
+                {sym: f for sym, f in all_frames.items() if sym in market_symbols},
+            )
+
+        if not frames:
+            notes.append("Could not fetch OHLCV for any coin in the list.")
+            return BacktestResult(
+                config=config, universe=universe,
+                equity_strategy=pd.Series(dtype=float),
+                held_asset=pd.Series(dtype=object),
+                notes=notes,
+            )
+
+        return self._rotations(config, kinds, market_start, universe, frames, total, notes, _tick, as_of)
+
+    def prefetch(self, config: RunConfig) -> list[str]:
+        """Load every ranking, candle and finer path a run of ``config`` reads, and compute no signal.
+
+        The requests ``run`` makes before its first signal, in the same order, and the BTC
+        benchmark's candles after them: a source that keeps what it loads (the downloader's
+        cache) holds afterwards what a full run leaves in it. A research run's preparation
+        needs nothing more (it only adds missing days to the saved data before freezing it).
+        One difference: ``run`` asks for the benchmark only when a rotation produced a curve,
+        this asks whenever a coin has candles; an extra BTC series in a cache is never read
+        by a run that did not ask for it. Returns the coins whose loading raised (a run skips
+        them), so a caller knows the loading did not finish."""
+        if config.mode == "single_asset":
+            config = replace(config, cadence=config.bar_cadence)
+            market = config.single_asset
+            start = min(_fetch_start(config, kind) for kind in _trend_kinds(config))
+            self.ohlcv.get_pair_series(market.exchange, market.pair, start, config.end_date, market.timeframe)
+            return []
+        loaded = self._load(config, utc_now(), [], lambda *_: None)
+        if loaded.frames and "BTC" not in loaded.frames:
+            try:  # _btc_ema_benchmarks
+                self.ohlcv.get_series(CoinRef(cg_id="bitcoin", symbol="BTC"), _fetch_start(config),
+                                      config.end_date, config.cadence.ccxt_timeframe)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("BTC benchmark unavailable: %s", exc)
+                loaded.failed.append("BTC")
+        return loaded.failed
+
+    def _load(self, config: RunConfig, as_of, notes: list[str], _tick) -> "_Loaded":
+        """The coin lists and every candle a run reads (``run`` and ``prefetch``)."""
         # Every trend signal is resolved up front, so an unknown compared
         # indicator fails here and not after minutes of fetching.
         kinds = _trend_kinds(config)
@@ -543,12 +617,7 @@ class BacktestEngine:
         coins = universe.unique_coins()
         if not coins:
             notes.append("No coins resolved from any ranking provider; aborting.")
-            return BacktestResult(
-                config=config, universe=universe,
-                equity_strategy=pd.Series(dtype=float),
-                held_asset=pd.Series(dtype=object),
-                notes=notes,
-            )
+            return _Loaded(kinds, market_start, universe, universe, {}, {}, coins_missing=True)
 
         # TOTAL is the whole ranked top-N. SCES evaluates the ranks below an
         # excluded head, so its market list is resolved separately and the
@@ -599,12 +668,14 @@ class BacktestEngine:
         # so a coin-vs-coin candle has the ratio's real high and low on every cadence (smithery.ratio).
         paths = getattr(self.ohlcv, "get_path", None)
         all_frames: dict[str, pd.DataFrame] = {}
+        failed: list[str] = []
         for i, coin in enumerate(fetch_coins):
             ref = CoinRef(cg_id=coin.cg_id, symbol=coin.symbol)
             try:
                 series = self.ohlcv.get_series(ref, fetch_start, config.end_date, timeframe)
             except Exception as exc:  # noqa: BLE001
                 log.warning("OHLCV failed for %s: %s", coin.symbol, exc)
+                failed.append(coin.symbol)
                 continue
             frame = confirmed_frame(series.frame, timeframe, as_of)
             if frame.empty:
@@ -621,25 +692,11 @@ class BacktestEngine:
         frames = {sym: f for sym, f in all_frames.items() if sym in strategy_symbols}
         if callable(paths) and len(frames) > 1:
             notes.append(path_note(frames, config.start_date, timeframe))
+        return _Loaded(kinds, market_start, universe, market_universe, all_frames, frames, failed=failed)
 
-        total: pd.DataFrame | None = None
-        if config.market_filter and all_frames:
-            _tick("Building TOTAL", 0.72)
-            market_symbols = {c.symbol for c in market_universe.unique_coins()}
-            total = market_index(
-                market_universe.snapshots,
-                {sym: f for sym, f in all_frames.items() if sym in market_symbols},
-            )
-
-        if not frames:
-            notes.append("Could not fetch OHLCV for any coin in the list.")
-            return BacktestResult(
-                config=config, universe=universe,
-                equity_strategy=pd.Series(dtype=float),
-                held_asset=pd.Series(dtype=object),
-                notes=notes,
-            )
-
+    def _rotations(self, config: RunConfig, kinds, market_start, universe, frames, total, notes, _tick,
+                   as_of) -> BacktestResult:
+        """One rotation per trend signal on the loaded candles, with benchmarks and metrics (``run``)."""
         # One rotation per trend signal on the shared candles. Each signal
         # sees the history it would have fetched alone (warm-up differs per
         # indicator), so a compared run equals a solo run bit for bit. The

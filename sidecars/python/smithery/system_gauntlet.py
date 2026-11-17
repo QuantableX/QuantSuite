@@ -383,9 +383,33 @@ STAGES = (("start_shift", "fees", "system_settings", "universe"), ("bulk",), ("p
 _ENVIRONMENTS: dict[str, str] = {}
 
 
+# The engine code a stored window's votes depend on, besides Smithery's own (evidence.evaluator_files: the
+# contract, the batch and kernel code the scripts compute with): how a window is cut and turned into votes,
+# how a store keys and keeps them, and the shim that loads the library.
+VOTE_CODE = ("rotation_lab/backtest/signals.py", "rotation_lab/backtest/vote_store.py",
+             "rotation_lab/backtest/batch_votes.py", "rotation_lab/backtest/smithery")
+
+
+def vote_files() -> list[Path]:
+    """The code files whose change can change a window's votes (``vote_environment``): Smithery's evaluator
+    closure and VOTE_CODE. A report, the lab, the walk or the data readers are not among them; a window's
+    candles are in its key already."""
+    from .evidence import evaluator_files
+    root = Path(__file__).resolve().parents[1]
+    files = set(evaluator_files())
+    for name in VOTE_CODE:
+        path = root / name
+        if path.is_dir():
+            files.update(p for p in path.rglob("*.py") if "__pycache__" not in p.parts)
+        else:
+            files.add(path)
+    return sorted(files)
+
+
 def vote_environment(device: str) -> str:
-    """Everything outside an indicator's own script that its votes depend on, as one fingerprint: the engine and
-    Smithery code, the numeric libraries, the switches that change arithmetic, and the device."""
+    """Everything outside an indicator's own script that its votes depend on, as one fingerprint: the code that
+    computes and keys them (``vote_files``), the numeric libraries, the switches that change arithmetic, and
+    the device. A change anywhere else in the engine leaves a shared store usable."""
     if device not in _ENVIRONMENTS:
         import hashlib
         import sys
@@ -400,10 +424,9 @@ def vote_environment(device: str) -> str:
             digest.update(f"|{package}:{version}".encode())
         for name in ("SMITHERY_PANDAS_MOMENTS", "SMITHERY_JIT", "SMITHERY_BATCH"):
             digest.update(f"|{name}:{os.environ.get(name, '')}".encode())
-        for folder in ("smithery", "rotation_lab"):
-            for path in sorted(p for p in (root / folder).rglob("*.py") if "__pycache__" not in p.parts):
-                digest.update(b"\0" + path.relative_to(root).as_posix().encode() + b"\0")
-                digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
+        for path in vote_files():
+            digest.update(b"\0" + path.relative_to(root).as_posix().encode() + b"\0")
+            digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
         _ENVIRONMENTS[device] = digest.hexdigest()
     return _ENVIRONMENTS[device]
 
