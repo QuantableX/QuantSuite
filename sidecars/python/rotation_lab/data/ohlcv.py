@@ -21,6 +21,7 @@ Everything is cached by ``(coin_key, day)`` in SQLite.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -66,6 +67,14 @@ _CG_MAX_FREE_DAYS = 365
 # page (asked without `since`), not the listing (TON: 2026-01-09 instead of
 # 2022), so every coin checks its history once more and v1 is ignored.
 _HISTORY_FLOOR_KEY = "ohlcv_first_v2:{key}"
+# Meta key of the days a coin's exchanges were asked for and did not have: holes (BCH around its 2018 fork,
+# LUNA's 2022 collapse), a coin no venue lists, a delisted coin's tail. JSON [[first, last, asked_on], ...].
+# Inside them nothing is asked again for _ABSENT_DAYS days, which every run did before (300 + 662 requests
+# per research preparation on complete data, 2026-11-17). Days younger than _ABSENT_MIN_AGE days are never
+# noted (a venue may still add them), and nothing is noted when a request of that load failed.
+_ABSENT_KEY = "ohlcv_absent_v1:{key}"
+_ABSENT_DAYS = 30
+_ABSENT_MIN_AGE = 7
 _DAY_MS = 24 * 60 * 60 * 1000
 
 # The finer candles behind the coin-vs-coin candle (smithery.ratio): the days one venue pair has already
@@ -223,6 +232,7 @@ class CoinGeckoIdResolver:
         # unlisted coins does not re-query for each one.
         self._memo: dict[str, str | None] = {}
         self._listing_loaded = False
+        self.failed = False  # the listing could not be read (rate limit, network)
 
     def resolve(self, symbol: str | None) -> str | None:
         if not symbol:
@@ -267,11 +277,13 @@ class CoinGeckoIdResolver:
                 )
                 if r.status_code == 429:
                     log.warning("CoinGecko rate-limited the id listing (page %s)", page)
+                    self.failed = True
                     return
                 r.raise_for_status()
                 entries = r.json() or []
             except Exception as exc:  # noqa: BLE001
                 log.warning("CoinGecko id listing failed (page %s): %s", page, exc)
+                self.failed = True
                 return
             if not entries:
                 return
@@ -314,6 +326,10 @@ class OhlcvFetcher:
         self._exchange_name = self._exchange_names[0]
         self._exchanges: dict[str, object] = {}
         self._markets: dict[str, dict] = {}
+        # Requests that failed (network, rate limit, an exchange that did not load): a load with a failure
+        # notes no absent days, so the next run asks again.
+        self._fetch_errors = 0
+        self._markets_failed: set[str] = set()
         self._market_index_cache: dict[tuple[str, bool], dict[str, dict[str, str]]] = {}
         self._renames: dict[str, set[str]] | None = None
         self._session = requests.Session()
@@ -383,9 +399,14 @@ class OhlcvFetcher:
 
         expected_days = set(_business_days_between(start, end))
         missing = expected_days - settled_days
+        if missing:
+            missing -= self._absent_days(key)
         if missing and not self._skip_fetch(key, missing, settled_days, end):
+            errors = self._fetch_errors
             self._populate(ref, start, end)
             cached_rows = self.cache.get_ohlcv_range(key, start, end)
+            if self._fetch_errors == errors and not self._markets_failed and not self._id_resolver.failed:
+                self._note_absent(key, missing - {r.day for r in cached_rows})
 
         df = _rows_to_frame(cached_rows)
         return OhlcvSeries(coin_ref=ref, frame=df)
@@ -500,6 +521,52 @@ class OhlcvFetcher:
                 nothing = middle
         return some
 
+    def _absent_days(self, key: str) -> set[dt.date]:
+        """Days the coin's exchanges did not have when asked in the last ``_ABSENT_DAYS`` days."""
+        raw = self.cache.get_meta(_ABSENT_KEY.format(key=key))
+        if not raw:
+            return set()
+        fresh = utc_now().date() - dt.timedelta(days=_ABSENT_DAYS)
+        days: set[dt.date] = set()
+        try:
+            for first, last, asked in json.loads(raw):
+                if dt.date.fromisoformat(asked) >= fresh:
+                    days.update(_business_days_between(dt.date.fromisoformat(first), dt.date.fromisoformat(last)))
+        except (TypeError, ValueError):
+            return set()
+        return days
+
+    def _note_absent(self, key: str, days: set[dt.date]) -> None:
+        """Note ``days`` (asked for, not delivered, no request failed) as absent today; younger days never."""
+        today = utc_now().date()
+        newest = today - dt.timedelta(days=_ABSENT_MIN_AGE)
+        days = {d for d in days if d <= newest}
+        if not days:
+            return
+        meta_key = _ABSENT_KEY.format(key=key)
+        asked: dict[dt.date, dt.date] = {}
+        fresh = today - dt.timedelta(days=_ABSENT_DAYS)
+        try:
+            for first, last, on in json.loads(self.cache.get_meta(meta_key) or "[]"):
+                on = dt.date.fromisoformat(on)
+                if on >= fresh:
+                    for d in _business_days_between(dt.date.fromisoformat(first), dt.date.fromisoformat(last)):
+                        asked[d] = on
+        except (TypeError, ValueError):
+            asked = {}
+        asked.update({d: today for d in days})
+        ranges: list[list[str]] = []
+        for d in sorted(asked):
+            if ranges and ranges[-1][2] == asked[d].isoformat() \
+                    and dt.date.fromisoformat(ranges[-1][1]) + dt.timedelta(days=1) == d:
+                ranges[-1][1] = d.isoformat()
+            else:
+                ranges.append([d.isoformat(), d.isoformat(), asked[d].isoformat()])
+        try:
+            self.cache.set_meta(meta_key, json.dumps(ranges))
+        except Exception as exc:  # noqa: BLE001 - a read-only cache (a frozen research set) keeps no note
+            log.info("Absent days of %s not noted: %s", key, exc)
+
     def _skip_fetch(
         self,
         key: str,
@@ -577,6 +644,7 @@ class OhlcvFetcher:
                 chain = self._fetch_ccxt(ref, start, end)
             except Exception as exc:  # noqa: BLE001
                 log.info("CCXT fetch failed for %s: %s", ref.symbol, exc)
+                self._fetch_errors += 1
                 chain = []
             have = {r.day for r in rows}
             rows += [r for r in chain if r.day not in have]
@@ -598,6 +666,7 @@ class OhlcvFetcher:
                 try:
                     rows = self._fetch_coingecko(ref, start, end, cg_id)
                 except Exception as exc:  # noqa: BLE001
+                    self._fetch_errors += 1
                     log.warning(
                         "CoinGecko OHLCV fallback failed for %s (%s): %s",
                         ref.symbol, cg_id, exc
@@ -803,6 +872,7 @@ class OhlcvFetcher:
             except Exception as exc:  # noqa: BLE001
                 log.warning("CCXT load_markets failed for %s: %s", name, exc)
                 self._markets[name] = {}
+                self._markets_failed.add(name)
             self._exchanges[name] = ex
         return self._exchanges[name]
 
@@ -1025,6 +1095,7 @@ class OhlcvFetcher:
                 batch = ex.fetch_ohlcv(pair, timeframe="1d", since=cursor, limit=1000)
             except Exception as exc:  # noqa: BLE001
                 log.info("CCXT fetch_ohlcv error %s@%s %s: %s", pair, name, cursor, exc)
+                self._fetch_errors += 1
                 break
         return out
 
@@ -1047,6 +1118,7 @@ class OhlcvFetcher:
                 return ex.fetch_ohlcv(pair, timeframe="1d", limit=1000, **kwargs)
             except Exception as exc:  # noqa: BLE001
                 log.info("CCXT fetch_ohlcv error %s@%s %s: %s", pair, name, since, exc)
+                self._fetch_errors += 1
                 return None
 
         batch = fetch(since_ms)
@@ -1133,6 +1205,7 @@ class OhlcvFetcher:
                     "CoinGecko still rate-limited for %s; giving up this run",
                     ref.symbol,
                 )
+                self._fetch_errors += 1
                 time.sleep(wait)
                 return []
         assert r is not None
