@@ -1,3 +1,5 @@
+![QuantSuite: the trading terminal in the middle, the memory map and the budget flow beside it](docs/images/hero.png)
+
 # QuantSuite
 
 [![Build QuantSuite](https://github.com/QuantableX/QuantSuite/actions/workflows/build.yml/badge.svg)](https://github.com/QuantableX/QuantSuite/actions/workflows/build.yml)
@@ -87,3 +89,8 @@ See [architecture](docs/ARCHITECTURE.md), [design](docs/DESIGN.md),
 [AgentOS integration](docs/AGENTOS-IMPORT.md) and [releasing](docs/RELEASING.md).
 
 Public history starts at version 1.0.0.
+
+## License
+
+QuantSuite is released under the [MIT License](LICENSE). Third-party components
+keep their own licenses.
