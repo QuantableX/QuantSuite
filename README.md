@@ -1,4 +1,4 @@
-![QuantSuite: the trading terminal in the middle, the memory map and the budget flow beside it](docs/images/hero.png)
+![QuantSuite: QuantPilot with agents at work in the middle, the QuantMCP board and the QuantMemory map beside it](docs/images/hero.png)
 
 # QuantSuite
 
