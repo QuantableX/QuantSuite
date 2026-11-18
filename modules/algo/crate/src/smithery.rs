@@ -103,6 +103,125 @@ pub struct ForgeState {
     /// `python -m smithery.forge info`, cached until a job finishes or the
     /// page asks for a refresh.
     info: Mutex<Option<Value>>,
+    /// Robustness checks waiting for the forge, oldest first. In memory only:
+    /// a restart ends the running job and clears the queue alike.
+    queue: Mutex<Vec<QueuedCheck>>,
+    /// Held while the next queued check starts, so a finishing job and a new
+    /// entry never start the same check twice.
+    pump: Mutex<()>,
+}
+
+/// A robustness check waiting for the forge (`research_robustness` with
+/// `queue`). It starts by itself when the forge is free.
+#[derive(Debug, Clone, Serialize)]
+pub struct QueuedCheck {
+    pub id: String,
+    /// The saved system's name or id, as the caller gave it.
+    pub system: Option<String>,
+    pub fast: bool,
+    pub queued_at: String,
+    /// Why it could not start. It stays listed until removed, and the queue
+    /// goes on with the next check.
+    pub error: Option<String>,
+    /// The `research_robustness` arguments it starts with.
+    #[serde(skip)]
+    fields: Value,
+}
+
+/// Queue `check`. A system already waiting keeps its place (that entry is
+/// returned); an earlier failed entry of the same system gives way to it.
+/// Returns the entry and its 1-based place among the waiting checks.
+fn enqueue(queue: &mut Vec<QueuedCheck>, check: QueuedCheck) -> (QueuedCheck, usize) {
+    if let Some(system) = check.system.as_deref() {
+        if let Some(waiting) = queue.iter().find(|c| c.error.is_none() && c.system.as_deref() == Some(system)) {
+            let waiting = waiting.clone();
+            let place = waiting_place(queue, &waiting.id).unwrap_or(1);
+            return (waiting, place);
+        }
+        queue.retain(|c| c.system.as_deref() != Some(system));
+    }
+    queue.push(check.clone());
+    let place = waiting_place(queue, &check.id).unwrap_or(1);
+    (check, place)
+}
+
+/// The oldest check that has not failed to start.
+fn next_waiting(queue: &[QueuedCheck]) -> Option<QueuedCheck> {
+    queue.iter().find(|c| c.error.is_none()).cloned()
+}
+
+/// 1-based place of `id` among the waiting checks; None once started, failed or removed.
+fn waiting_place(queue: &[QueuedCheck], id: &str) -> Option<usize> {
+    queue.iter().filter(|c| c.error.is_none()).position(|c| c.id == id).map(|i| i + 1)
+}
+
+fn forge_busy(state: &AppState) -> bool {
+    state.smithery.running.lock().map(|r| r.is_some()).unwrap_or(true)
+}
+
+/// Start the oldest waiting robustness check when the forge is free. Runs
+/// after a check is queued and whenever a forge job ends. A check that cannot
+/// start keeps its error and the next one is tried.
+pub(crate) fn start_queued(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let Ok(_pump) = state.smithery.pump.lock() else {
+        return;
+    };
+    loop {
+        if forge_busy(&state) {
+            return;
+        }
+        let Some(next) = state.smithery.queue.lock().ok().and_then(|q| next_waiting(&q)) else {
+            return;
+        };
+        let result = create_and_start(app, "robustness", next.fields.clone());
+        // Another caller took the forge first: this check waits for that job.
+        let taken = result.is_err() && forge_busy(&state);
+        let Ok(mut queue) = state.smithery.queue.lock() else {
+            return;
+        };
+        match result {
+            Ok(_) => {
+                queue.retain(|c| c.id != next.id);
+                return;
+            }
+            Err(_) if taken => return,
+            Err(error) => {
+                if let Some(check) = queue.iter_mut().find(|c| c.id == next.id) {
+                    check.error = Some(error);
+                }
+            }
+        }
+    }
+}
+
+/// Queue a robustness check, or start it at once when the forge is free and
+/// nothing waits before it. A check that fails to start right away is an
+/// error, as without the queue.
+fn queue_robustness(app: &AppHandle, fields: Value) -> Result<Value, String> {
+    let state = app.state::<AppState>();
+    let check = QueuedCheck {
+        id: Uuid::new_v4().to_string(),
+        system: fields["system"].as_str().map(str::to_string),
+        fast: fields["fast"].as_bool().unwrap_or(false),
+        queued_at: Utc::now().to_rfc3339(),
+        error: None,
+        fields,
+    };
+    let (entry, _) = {
+        let mut queue = state.smithery.queue.lock().map_err(|e| format!("Lock: {e}"))?;
+        enqueue(&mut queue, check)
+    };
+    start_queued(app);
+    let mut queue = state.smithery.queue.lock().map_err(|e| format!("Lock: {e}"))?;
+    if let Some(place) = waiting_place(&queue, &entry.id) {
+        return Ok(serde_json::json!({ "queued": entry, "position": place }));
+    }
+    if let Some(i) = queue.iter().position(|c| c.id == entry.id) {
+        let failed = queue.remove(i);
+        return Err(failed.error.unwrap_or_else(|| "The check could not start".into()));
+    }
+    Ok(serde_json::json!({ "started": entry }))
 }
 
 // ---------------------------------------------------------------------------
@@ -372,8 +491,11 @@ fn kill_tree(child: &Arc<Mutex<Child>>, pid: u32) {
 }
 
 /// Stop a running job on Quit; the register is not updated — the app is
-/// going away.
+/// going away. The queue goes first, so the ending job starts nothing.
 pub(crate) fn kill_running(state: &AppState) {
+    if let Ok(mut queue) = state.smithery.queue.lock() {
+        queue.clear();
+    }
     if let Ok(mut running) = state.smithery.running.lock() {
         if let Some(job) = running.take() {
             job.cancelled.store(true, Ordering::SeqCst);
@@ -427,6 +549,8 @@ fn finish_job(app: &AppHandle, id: &str, code: Option<i32>, cancelled: bool) {
         }
         _ => qs_core::processes::mark_stopped(app, FORGE_PROCESS_ID),
     }
+    // The forge is free: the next queued robustness check starts.
+    start_queued(app);
 }
 
 fn start_job(app: &AppHandle, request: ForgeRequest) -> Result<ForgeJob, String> {
@@ -740,15 +864,41 @@ pub(crate) async fn research_robustness(
     fast: Option<bool>,
     venues: Option<Vec<String>>,
     seed: Option<u32>,
+    queue: Option<bool>,
     app_handle: AppHandle,
 ) -> Result<Value, String> {
     let fields = serde_json::json!({
         "title": title.unwrap_or_else(|| "Robustness check".into()), "system": system, "config": config,
         "start_date": start_date, "end_date": end_date, "fast": fast, "venues": venues, "seed": seed,
     });
-    tauri::async_runtime::spawn_blocking(move || create_and_start(&app_handle, "robustness", fields))
-        .await
-        .map_err(|e| e.to_string())?
+    // queue: wait for a busy forge instead of being refused.
+    tauri::async_runtime::spawn_blocking(move || {
+        if queue.unwrap_or(false) {
+            queue_robustness(&app_handle, fields)
+        } else {
+            create_and_start(&app_handle, "robustness", fields)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The robustness checks waiting for the forge, oldest first; failed starts
+/// carry their error.
+#[tauri::command]
+pub(crate) async fn robustness_queue(app_handle: AppHandle) -> Result<Vec<QueuedCheck>, String> {
+    let state = app_handle.state::<AppState>();
+    let queue = state.smithery.queue.lock().map_err(|e| format!("Lock: {e}"))?;
+    Ok(queue.clone())
+}
+
+/// Take one check off the queue; returns the queue as it is now.
+#[tauri::command]
+pub(crate) async fn robustness_unqueue(id: String, app_handle: AppHandle) -> Result<Vec<QueuedCheck>, String> {
+    let state = app_handle.state::<AppState>();
+    let mut queue = state.smithery.queue.lock().map_err(|e| format!("Lock: {e}"))?;
+    queue.retain(|c| c.id != id);
+    Ok(queue.clone())
 }
 
 /// Start a forge job — one at a time.
@@ -760,10 +910,14 @@ pub(crate) async fn smithery_run(request: ForgeRequest, app_handle: AppHandle) -
 }
 
 /// Stop the running job. The job finishes as `cancelled` once the child is
-/// gone; the page sees that on its next poll.
+/// gone; the page sees that on its next poll. A cancel frees the forge: the
+/// queued robustness checks are dropped first, so none starts in its place.
 #[tauri::command]
 pub(crate) async fn smithery_cancel(app_handle: AppHandle) -> Result<Option<ForgeJob>, String> {
     let state = app_handle.state::<AppState>();
+    if let Ok(mut queue) = state.smithery.queue.lock() {
+        queue.clear();
+    }
     let running = {
         let mut running = state.smithery.running.lock().map_err(|e| format!("Lock: {e}"))?;
         running.take()
@@ -834,6 +988,31 @@ pub(crate) async fn smithery_process_logs(limit: Option<usize>, app_handle: AppH
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn check(id: &str, system: &str) -> QueuedCheck {
+        QueuedCheck { id: id.into(), system: Some(system.into()), fast: true, queued_at: String::new(), error: None, fields: Value::Null }
+    }
+
+    #[test]
+    fn queue_keeps_order_and_one_entry_per_system() {
+        let mut queue = Vec::new();
+        assert_eq!(enqueue(&mut queue, check("a", "lces1")).1, 1);
+        assert_eq!(enqueue(&mut queue, check("b", "lces2")).1, 2);
+        // The same system again keeps its first entry and place.
+        let (kept, place) = enqueue(&mut queue, check("c", "lces1"));
+        assert_eq!((kept.id.as_str(), place), ("a", 1));
+        assert_eq!(queue.len(), 2);
+        assert_eq!(next_waiting(&queue).unwrap().id, "a");
+        // A failed start is skipped and does not count as a place.
+        queue[0].error = Some("no such system".into());
+        assert_eq!(next_waiting(&queue).unwrap().id, "b");
+        assert_eq!(waiting_place(&queue, "b"), Some(1));
+        assert_eq!(waiting_place(&queue, "a"), None);
+        // Queuing the failed system again replaces its failed entry.
+        let (again, place) = enqueue(&mut queue, check("d", "lces1"));
+        assert_eq!((again.id.as_str(), place), ("d", 2));
+        assert_eq!(queue.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), vec!["b", "d"]);
+    }
 
     #[test]
     fn research_args_take_only_a_run_id() {

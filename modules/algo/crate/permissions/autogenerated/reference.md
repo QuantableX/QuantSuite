@@ -20,6 +20,8 @@ Default permissions for the algo module.
 - `allow-research-run`
 - `allow-research-gauntlet-overview`
 - `allow-research-robustness`
+- `allow-robustness-queue`
+- `allow-robustness-unqueue`
 - `allow-research-profit-overview`
 - `allow-research-aggregate-comparison`
 - `allow-smithery-cancel`
@@ -1288,6 +1290,58 @@ Enables the research_run command without any pre-configured scope.
 <td>
 
 Denies the research_run command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-robustness-queue`
+
+</td>
+<td>
+
+Enables the robustness_queue command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-robustness-queue`
+
+</td>
+<td>
+
+Denies the robustness_queue command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:allow-robustness-unqueue`
+
+</td>
+<td>
+
+Enables the robustness_unqueue command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`algo:deny-robustness-unqueue`
+
+</td>
+<td>
+
+Denies the robustness_unqueue command without any pre-configured scope.
 
 </td>
 </tr>

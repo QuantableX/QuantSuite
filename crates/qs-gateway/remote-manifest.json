@@ -47,6 +47,8 @@
     "plugin:algo|research_profit_overview": "server:read",
     "plugin:algo|research_robustness": "server:read",
     "plugin:algo|research_run": "server:compute",
+    "plugin:algo|robustness_queue": "server:read",
+    "plugin:algo|robustness_unqueue": "server:write",
     "plugin:algo|run_backtest": "server:compute",
     "plugin:algo|save_backtest": "server:write",
     "plugin:algo|save_strategy": "server:write",
