@@ -60,21 +60,24 @@ def _init_worker():
 def _init_pool_worker():
     # A GPU process commits ~1.5 GB before it computes (torch, the CUDA context) and Windows counts
     # its GPU memory against the system's commit too: a pool of GPU workers took ~4 GB each. The
-    # variants run on the vectorised CPU batch (said in their device line); the parent keeps the
-    # GPU. SMITHERY_WORKER_GPU=1 gives the workers the GPU as well.
+    # variants run on the vectorised CPU batch (said in their device line), and so does the parent
+    # by default (pool_on_cpu). SMITHERY_WORKER_GPU=1 gives the workers the GPU as well.
     if os.environ.get("SMITHERY_WORKER_GPU", "0").strip() != "1":
         os.environ["SMITHERY_GPU"] = "0"
     _init_worker()
 
 
 def _engine_for(spec):
+    """The engine for one run on the saved data. A process keeps what it read (``lab_compare.Kept``: candles, the
+    coins' paths, the ranking lists) for its next run; SMITHERY_KEEP_SAVED_DATA=0 reads everything again."""
     from rotation_lab.backtest.engine import BacktestEngine
-    from .lab_compare import SavedPrices, saved_cache, saved_rankings
+    from .lab_compare import Kept, SavedPrices, saved_cache, saved_rankings
     from .prices import PricesVariant
     if "cache" not in _ENGINE:
         _ENGINE["cache"] = saved_cache()
-    cache = _ENGINE["cache"]
-    return BacktestEngine(registry=saved_rankings(cache), ohlcv=PricesVariant(SavedPrices(cache), spec))
+        _ENGINE["keep"] = None if os.environ.get("SMITHERY_KEEP_SAVED_DATA", "1").strip() == "0" else Kept()
+    cache, keep = _ENGINE["cache"], _ENGINE.get("keep")
+    return BacktestEngine(registry=saved_rankings(cache, keep), ohlcv=PricesVariant(SavedPrices(cache, keep), spec))
 
 
 @contextmanager
@@ -111,10 +114,46 @@ def _votes_only():
             os.environ[batch_votes.VOTES_ONLY] = saved
 
 
+def pool_on_cpu(workers: int) -> bool:
+    """Whether a Gauntlet with a worker pool runs its engine runs (the base run and every variant) on the CPU in
+    every process. The default (card 51184c1d, the user's choice on 2026-11-18): with an RTX 5090 and 8 workers the
+    variants' votes on the GPU in the parent, one variant after the other while the workers wait, took a full check
+    of Dynamic LCES #1 11.5 min and of Dynamic SCES #1 29.8 min; this way 3.4 and 6.8 min (Robust LCES #1 8.1 -> 3.4,
+    Robust SCES #1 56.8 -> 24.1), every row, group, axis and verdict identical. One device for the engine runs keeps a shared vote store usable. The bulk
+    evaluator, one large batch against its own base, keeps the GPU (``bulk_runs``).
+    SMITHERY_PARENT_VOTES=1: the GPU parent as before. SMITHERY_WORKER_GPU=1: every process on the GPU."""
+    if workers <= 1:
+        return False
+    return not any(os.environ.get(name, "0").strip() == "1" for name in ("SMITHERY_PARENT_VOTES", "SMITHERY_WORKER_GPU"))
+
+
+@contextmanager
+def _on_cpu(on: bool):
+    """The parent's own batches on the CPU for one run, the way a pool worker gets them (``_init_pool_worker``,
+    SMITHERY_GPU=0); afterwards the batch module finds its device as before."""
+    if not on:
+        yield
+        return
+    from smithery import batch as B
+    saved_env, saved_state = os.environ.get("SMITHERY_GPU"), dict(B._TORCH)
+    os.environ["SMITHERY_GPU"] = "0"
+    B._TORCH.clear()
+    try:
+        yield
+    finally:
+        if saved_env is None:
+            os.environ.pop("SMITHERY_GPU", None)
+        else:
+            os.environ["SMITHERY_GPU"] = saved_env
+        B._TORCH.clear()
+        B._TORCH.update(saved_state)
+
+
 def parent_votes(jobs, store, progress=None, every=False) -> tuple[list, str]:
-    """The variants that bring their own candles or parameters compute their votes here, in the
-    parent on the GPU (votes-only engine runs into the Gauntlet's vote store); the pool workers then
-    read them and only walk. Returns the jobs pointed at the store, and the device line.
+    """With SMITHERY_PARENT_VOTES=1, the variants that bring their own candles or parameters compute their votes
+    here, in the parent on the GPU (votes-only engine runs into the Gauntlet's vote store); the pool workers then
+    read them and only walk. Returns the jobs pointed at the store, and the device line. By default the workers
+    compute their own votes on the CPU (``pool_on_cpu``).
 
     ``every``: the parent computes the votes of all variants, also of those that read the base run's
     (a neighbouring universe adds pairs the base run never compared). A store shared between runs
@@ -123,8 +162,8 @@ def parent_votes(jobs, store, progress=None, every=False) -> tuple[list, str]:
     from rotation_lab.backtest import vote_store
     if store is None or os.environ.get("SMITHERY_WORKER_GPU", "0").strip() == "1":
         return jobs, "workers compute their own votes"
-    if os.environ.get("SMITHERY_PARENT_VOTES", "1").strip() == "0":
-        return jobs, "workers compute their own votes (SMITHERY_PARENT_VOTES=0)"
+    if os.environ.get("SMITHERY_PARENT_VOTES", "0").strip() != "1":
+        return jobs, "variant votes on the CPU in every worker (faster than on the GPU in the parent; SMITHERY_PARENT_VOTES=1 for that)"
     if not B.gpu_available():
         return jobs, f"workers compute their own votes ({B.device_note()})"
     own = list(jobs) if every else [job for job in jobs if len(job) < 5 or job[4] is None]
@@ -431,7 +470,7 @@ def vote_environment(device: str) -> str:
     return _ENVIRONMENTS[device]
 
 
-def shared_votes(votes_dir, workers: int) -> dict | None:
+def shared_votes(votes_dir, workers: int, cpu: bool = False) -> dict | None:
     """A vote store that Gauntlets share (``votes_dir``, or SMITHERY_VOTE_SHARE): candidates with common members,
     and a fast check followed by the full one, compute each window's votes once. None: the usual store of one run.
 
@@ -439,20 +478,21 @@ def shared_votes(votes_dir, workers: int) -> dict | None:
     split by device, every key names the code (``vote_store.salt``), and who writes follows where votes are
     computed:
 
-    * no GPU: every process computes on the CPU and writes;
+    * every process on the CPU (no GPU, or a pool by default, ``cpu``: ``pool_on_cpu``): every process writes;
     * the GPU in every process (one worker, or SMITHERY_WORKER_GPU=1): every process writes;
-    * the GPU in the parent, CPU workers: the parent computes the votes of every variant and writes, the workers
-      only read (what has no GPU form is computed on the CPU by whoever needs it, the same everywhere);
-    * the GPU for the base run only (SMITHERY_PARENT_VOTES=0): not one device, so no shared store."""
+    * the GPU in the parent, CPU workers (SMITHERY_PARENT_VOTES=1): the parent computes the votes of every variant
+      and writes, the workers only read (what has no GPU form is computed on the CPU by whoever needs it, the same
+      everywhere);
+    * anything else is not one device, so no shared store."""
     root = votes_dir or os.environ.get("SMITHERY_VOTE_SHARE")
     if not root or os.environ.get("SMITHERY_VOTE_REUSE", "1") == "0":
         return None
     from smithery import batch as B
-    if not B.gpu_available():
+    if cpu or not B.gpu_available():
         device, name, write = "cpu", "cpu", True
     elif workers <= 1 or os.environ.get("SMITHERY_WORKER_GPU", "0").strip() == "1":
         device, name, write = "gpu", B.device_note(), True
-    elif os.environ.get("SMITHERY_PARENT_VOTES", "1").strip() != "0":
+    elif os.environ.get("SMITHERY_PARENT_VOTES", "0").strip() == "1":
         device, name, write = "gpu", B.device_note(), False
     else:
         return None
@@ -460,11 +500,11 @@ def shared_votes(votes_dir, workers: int) -> dict | None:
 
 
 @contextmanager
-def _vote_store(votes_dir, workers: int):
+def _vote_store(votes_dir, workers: int, cpu: bool = False):
     """The Gauntlet's vote store for one run: ``(folder or None, shared or None)``. A shared store stays; the
     store of one run is a temporary folder and goes with the run."""
     from rotation_lab.backtest import vote_store
-    shared = shared_votes(votes_dir, workers)
+    shared = shared_votes(votes_dir, workers, cpu)
     if shared is not None:
         saved = os.environ.get(vote_store.ENV_SALT)
         os.environ[vote_store.ENV_SALT] = shared["salt"]   # pool workers inherit it
@@ -500,14 +540,24 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
     ``votes_dir`` (or SMITHERY_VOTE_SHARE) names a vote store shared with other Gauntlets (``shared_votes``).
     ``stop_early`` (or SMITHERY_GAUNTLET_STOP_EARLY=1) runs the checks cheapest first (``STAGES``) and ends the
     run at the first failed gate: the verdict is "not robust" either way, the later checks are simply not run
-    (``stopped_early`` in the result names them). Neither changes a number of a check that runs."""
-    with _vote_store(votes_dir, workers or default_workers()) as (store, shared):
+    (``stopped_early`` in the result names them). Neither changes a number of a check that runs.
+
+    With a worker pool the engine runs (base run and variants) compute on the CPU in every process
+    (``pool_on_cpu``); the bulk evaluator keeps the GPU."""
+    pool = workers or default_workers()
+    cpu = pool_on_cpu(pool)
+    if cpu and progress:
+        progress(f"Engine runs on the CPU in every process, the base run included ({pool} workers; faster than the "
+                 "variants' votes on the GPU in the parent; SMITHERY_PARENT_VOTES=1 for that); "
+                 "the bulk evaluator keeps the GPU when there is one")
+    with _vote_store(votes_dir, pool, cpu) as (store, shared):
         return _run(config, data_dir=data_dir, venue_path=venue_path, fast=fast, seed=seed, workers=workers,
                     progress=progress, cube_dir=cube_dir, store=store, shared=shared,
-                    stop_early=_flag(stop_early, "SMITHERY_GAUNTLET_STOP_EARLY"))
+                    stop_early=_flag(stop_early, "SMITHERY_GAUNTLET_STOP_EARLY"), cpu=cpu)
 
 
-def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_dir, store, shared, stop_early) -> dict:
+def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_dir, store, shared, stop_early,
+         cpu=False) -> dict:
     say = progress or (lambda message: None)
     counts = FAST if fast else FULL
     started = time.monotonic()
@@ -522,7 +572,8 @@ def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_di
         say(f"Vote store shared with other runs: {shared['folder']} "
             f"({'every process writes' if shared['write'] else 'the parent writes, the workers read'})")
     say("Base run")
-    base = run_native([("base", config, None, True, store and (store, "write"))], workers=1)[0]
+    with _on_cpu(cpu):
+        base = run_native([("base", config, None, True, store and (store, "write"))], workers=1)[0]
     vote_store.close_all()
     if "error" in base:
         raise ValueError(f"The system does not run on the saved data: {base['error']}")
@@ -577,7 +628,8 @@ def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_di
             say(votes_device)
         if shared is not None and shared["write"]:
             selected = [(*job[:4], (store, "write")) for job in selected]
-        results = run_native(selected, workers=workers, progress=say, stage=stage)
+        with _on_cpu(cpu):   # a stage of one variant runs in the parent
+            results = run_native(selected, workers=workers, progress=say, stage=stage)
         vote_store.close_all()
         by_group: dict[str, list[dict]] = {}
         for job, out in zip(selected, results):
@@ -601,8 +653,14 @@ def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_di
     def bulk_runs():
         """Member drops and additions, delays (engine-identical, against their own base)."""
         nonlocal complete
-        # A shared store also serves the bulk evaluator: the members' votes on the saved prices are the base run's.
-        with _votes((store, "write") if shared is not None else None):
+        # The bulk evaluator is one large batch (every member and added indicator over every pair at once): it keeps
+        # the parent's device, the GPU when there is one, also when the native runs are on the CPU (Dynamic SCES #1:
+        # 1.8 min against 4.0 on the CPU, every row identical). It judges against its own base, so no comparison
+        # mixes devices. A shared store also serves it, when it is on the store's device: the members' votes on the
+        # saved prices are the base run's.
+        from smithery import batch as B
+        device = "gpu" if B.gpu_available() else "cpu"
+        with _votes((store, "write") if shared is not None and shared["device"] == device else None):
             bulk = _bulk(config, members, rows, data_dir, cube_dir, counts, rng, say)
         vote_store.close_all()
         if bulk.get("error"):

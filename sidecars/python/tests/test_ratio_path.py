@@ -503,6 +503,51 @@ class ResearchSourceTests(unittest.TestCase):
         venue._con.commit()
         pd.testing.assert_frame_equal(world.get_path(ref, d[0], d[2]), SavedPrices(saved).get_path(ref, d[0], d[2]))
 
+    def test_a_process_keeps_what_it_read_and_hands_out_copies(self):
+        # A Gauntlet worker keeps the candles, paths and ranking lists for its next variant (card 51184c1d): the next
+        # read gives exactly what a fresh reader gives, and a caller that changes its frame changes nothing kept.
+        from rotation_lab.data.cache import RankingRow
+        from smithery.lab_compare import Kept, SavedPrices, saved_rankings
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        saved = Cache(Path(folder.name) / "cache.sqlite")
+        self.addCleanup(saved._con.close)
+        d = [dt.date(2024, 1, k) for k in range(1, 4)]
+        saved.upsert_ohlcv([day_row(day, "ccxt:binance:AAA/USDT") for day in d])
+        saved.upsert_ohlcv_intraday([bar for day in d for bar in hour_bars(market_key("binance", "AAA/USDT"), day, {h: 100.0 + h for h in range(24)})])
+        saved.upsert_ranking([RankingRow("cmc", d[0], r, f"c{r}", f"C{r}", f"Coin {r}", 1e9 / r, 1.0, dt.datetime(2024, 1, 2))
+                              for r in (1, 2, 3)])
+        ref = CoinRef(None, "AAA")
+        keep = Kept()
+        kept, fresh = SavedPrices(saved, keep), SavedPrices(saved)
+        for _ in range(2):
+            series, path = kept.get_series(ref, d[0], d[2]), kept.get_path(ref, d[0], d[2])
+            self.assertIs(series.coin_ref, ref)
+            pd.testing.assert_frame_equal(series.frame, fresh.get_series(ref, d[0], d[2]).frame, check_exact=True)
+            pd.testing.assert_frame_equal(path, fresh.get_path(ref, d[0], d[2]), check_exact=True)
+            series.frame["close"] = -1.0
+            path.iloc[:, :] = -1.0
+        self.assertEqual(len(keep.frames), 2)
+        kept.get_series(ref, d[1], d[2])   # another window is another entry
+        self.assertEqual(len(keep.frames), 3)
+        # Above the limit the least recently used frame goes.
+        tight = Kept(limit=max(size for _, size in keep.frames.values()))
+        reader = SavedPrices(saved, tight)
+        reader.get_series(ref, d[0], d[2])
+        reader.get_path(ref, d[0], d[2])
+        self.assertEqual([key[0] for key in tight.frames], ["path"])
+        self.assertLessEqual(tight.size, tight.limit)
+        # Ranking lists: the rows are frozen and shared, every caller gets its own list.
+        read = saved_rankings(saved).cmc._ensure_snapshot(d[0])
+        first = saved_rankings(saved, keep).cmc._ensure_snapshot(d[0])
+        self.assertEqual(first, read)
+        first.clear()
+        saved._con.execute("delete from rankings")
+        saved._con.commit()
+        self.assertEqual(saved_rankings(saved, keep).cmc._ensure_snapshot(d[0]), read)   # kept for the next run
+        with self.assertRaises(ValueError):
+            saved_rankings(saved).cmc._ensure_snapshot(d[0])
+
 
 if __name__ == "__main__":
     unittest.main()
