@@ -213,7 +213,7 @@ onDeactivated(() => { editing.value = false; endDrag() })
 </script>
 
 <template>
-  <QSidebar>
+  <QSidebar resizable storage-key="systems.left">
     <nav ref="rail" class="qs-rail" :class="{ 'qs-rail--dragging': draggedId }" aria-label="Strategies" @pointerdown="startDrag">
       <FundRail />
       <div class="qs-rail__heading">
@@ -221,7 +221,7 @@ onDeactivated(() => { editing.value = false; endDrag() })
       </div>
       <div class="qs-rail__actions">
         <button class="btn qs-rail__new" @click="router.push('/algo/manual/new')"><Plus :size="14" /> New strategy</button>
-        <button class="qs-rail__icon" title="Create group" aria-label="Create group" :disabled="!groups.loaded || groups.busy" @click="edit(null)"><FolderPlus :size="17" /></button>
+        <button class="btn qs-rail__add" title="Create group" aria-label="Create group" :disabled="!groups.loaded || groups.busy" @click="edit(null)"><FolderPlus :size="15" /></button>
       </div>
       <div v-if="groups.error && !editing" class="qs-rail__error" role="alert">
         {{ groups.error }}
@@ -257,7 +257,10 @@ onDeactivated(() => { editing.value = false; endDrag() })
 .qs-rail__heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--qs-text-muted); }
 .qs-rail__count { flex-shrink: 0; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--qs-text-muted); }
 .qs-rail__actions { display: flex; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--qs-border); }
-.qs-rail__new { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 11px; }
+.qs-rail__new { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; height: 32px; padding: 0 14px; font-size: 11px; }
+/* The same button as New strategy, square: one height, radius, fill and hover. */
+.qs-rail__add { flex-shrink: 0; width: 32px; height: 32px; padding: 0; color: var(--qs-text-secondary); }
+.qs-rail__add:hover { color: var(--qs-text); }
 .qs-rail__icon { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--qs-border); border-radius: 6px; background: transparent; color: var(--qs-text-secondary); cursor: pointer; }
 .qs-rail__icon:hover, .qs-rail__toggle:hover { color: var(--qs-text); background: var(--qs-bg-hover); }
 .qs-rail__icon:disabled, .qs-rail__toggle:disabled { cursor: wait; opacity: .6; }

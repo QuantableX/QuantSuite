@@ -300,7 +300,7 @@ onUnmounted(() => {
     </QModuleHeader>
 
     <div class="app-body">
-      <QSidebar>
+      <QSidebar resizable storage-key="mcp.left">
         <nav class="py-2">
           <QNavItem
             v-for="item in NAV_ITEMS"

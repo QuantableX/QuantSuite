@@ -62,7 +62,9 @@ const groups = computed(() => {
   }
   return rows
 })
-const open = reactive<Record<GroupKey, boolean>>({ trend: false, compare: false, market: false })
+const open = reactive<Record<GroupKey | 'notes', boolean>>({ trend: false, compare: false, market: false, notes: false })
+/** The saved settings once loaded: the robustness verdict is matched against them. */
+const loadedCfg = computed(() => config.configBySystem[systemId.value] ?? null)
 const engineRunning = computed(() => app.engineStatus.status === 'running')
 
 const liveState = computed(() => live.stateFor(systemId.value))
@@ -85,7 +87,7 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
       <span class="qs-context__desc">{{ cfg.mode === 'single_asset' ? 'Single Asset' : 'Evaluation Rotation System' }}</span>
     </section>
 
-    <RobustnessPanel v-if="systemId" :system-id="systemId" />
+    <RobustnessPanel v-if="systemId" :system-id="systemId" :config="loadedCfg" />
 
     <section class="qs-context__section">
       <span class="label">Engine</span>
@@ -140,9 +142,18 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
       <div class="qs-context__row"><span>End</span><span>Today (UTC)</span></div>
       <div class="qs-context__row"><span>{{ cfg.mode === 'single_asset' ? 'Timeframe' : 'Cadence' }}</span><span class="mono">{{ effectiveCadence(cfg) }}</span></div>
       <div class="qs-context__row"><span>Fee</span><span class="mono">{{ (cfg.feeRate * 100).toFixed(2) }}%</span></div>
-      <ul v-if="notes.length" class="qs-notes">
-        <li v-for="(note, i) in notes" :key="i">{{ note }}</li>
-      </ul>
+      <div v-if="notes.length" class="qs-context__group">
+        <button type="button" class="qs-context__row qs-context__toggle" :aria-expanded="open.notes" @click="open.notes = !open.notes">
+          <span class="qs-context__toggle-label">
+            Notes
+            <ChevronRight class="qs-context__chevron" :class="{ 'qs-context__chevron--open': open.notes }" :size="12" />
+          </span>
+          <span class="mono qs-context__value">{{ notes.length }}</span>
+        </button>
+        <ul v-if="open.notes" class="qs-notes">
+          <li v-for="(note, i) in notes" :key="i">{{ note }}</li>
+        </ul>
+      </div>
     </section>
 
     <!-- Backtest context -->
@@ -152,12 +163,18 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
       <div class="qs-context__row"><span>End</span><span class="mono">{{ cfg.endDate }}</span></div>
       <div class="qs-context__row"><span>{{ cfg.mode === 'single_asset' ? 'Timeframe' : 'Cadence' }}</span><span class="mono">{{ effectiveCadence(cfg) }}</span></div>
       <div class="qs-context__row"><span>Fee</span><span class="mono">{{ (cfg.feeRate * 100).toFixed(2) }}%</span></div>
-      <template v-if="notes.length">
-        <span class="label" style="margin-top: 14px">Notes</span>
-        <ul class="qs-notes">
+      <div v-if="notes.length" class="qs-context__group">
+        <button type="button" class="qs-context__row qs-context__toggle" :aria-expanded="open.notes" @click="open.notes = !open.notes">
+          <span class="qs-context__toggle-label">
+            Notes
+            <ChevronRight class="qs-context__chevron" :class="{ 'qs-context__chevron--open': open.notes }" :size="12" />
+          </span>
+          <span class="mono qs-context__value">{{ notes.length }}</span>
+        </button>
+        <ul v-if="open.notes" class="qs-notes">
           <li v-for="(n, i) in notes" :key="i">{{ n }}</li>
         </ul>
-      </template>
+      </div>
     </section>
   </div>
 </template>
