@@ -77,7 +77,7 @@ useShortcuts([
       <ScriptLayoutToolbar />
     </QModuleHeader>
     <div class="qsc-body">
-      <QSidebar :model-value="panelsVisible && wb.sidebarLeftOpen" :width="220" aria-label="Script files">
+      <QSidebar :model-value="panelsVisible && wb.sidebarLeftOpen" resizable storage-key="script.left" aria-label="Script files">
         <template #header>
           <ScriptLayoutSidebarHeader />
         </template>

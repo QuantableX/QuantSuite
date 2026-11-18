@@ -26,7 +26,7 @@ function isActive(to: string): boolean {
 </script>
 
 <template>
-  <QSidebar>
+  <QSidebar resizable storage-key="algo.left">
     <nav class="py-2">
       <QNavItem
         v-for="item in navItems"
