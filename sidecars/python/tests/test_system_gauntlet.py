@@ -368,15 +368,18 @@ class Order(unittest.TestCase):
             by_env, seen_env = self.gauntlet(workers=4, env={"SMITHERY_VOTE_SHARE": share})
             self.assertEqual(seen_env["base"][4], (folder, "write"))
 
-    def test_a_pool_computes_on_the_cpu_in_every_process_by_default(self):
-        # The parent too (base run, bulk evaluator): one device, so a shared store is the CPU one and every process
-        # writes it, exactly as on a machine without CUDA.
+    def test_a_pool_runs_the_engine_on_the_cpu_in_every_process_by_default(self):
+        # The parent's base run too: one device for the engine runs, so a shared store is the CPU one and every
+        # process writes it, exactly as on a machine without CUDA. The bulk evaluator keeps the parent's device and,
+        # on the GPU, its own votes (it judges against its own base).
         saved = os.environ.get("SMITHERY_GPU")
         with tempfile.TemporaryDirectory() as share:
             on_gpu, seen = self.gauntlet(workers=4, votes_dir=share, gpu=True)
-            no_gpu, _ = self.gauntlet(workers=4, votes_dir=share, gpu=False)
+            no_gpu, seen_cpu = self.gauntlet(workers=4, votes_dir=share, gpu=False)
             folder = str(Path(share) / "cpu")
-            self.assertEqual((seen["base_gpu"], seen["bulk_gpu"]), ("0", "0"))
+            self.assertEqual((seen["base_gpu"], seen["bulk_gpu"]), ("0", saved))
+            self.assertEqual(seen["bulk_env"], (None, None))
+            self.assertEqual(seen_cpu["bulk_env"], (folder, "write"))
             self.assertEqual(seen["base"][4], (folder, "write"))
             self.assertTrue(all(job[4] == (folder, "write") for job in seen["jobs"]))
             self.assertEqual(seen["salt"], sg.vote_environment("cpu"))

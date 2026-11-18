@@ -115,12 +115,12 @@ def _votes_only():
 
 
 def pool_on_cpu(workers: int) -> bool:
-    """Whether a Gauntlet with a worker pool computes on the CPU in every process, the parent's base run and bulk
-    evaluator included. The default (card 51184c1d, the user's choice on 2026-11-18): with an RTX 5090 and 8
-    workers the variants' votes on the GPU in the parent, one variant after the other while the workers wait, took
-    a full check of Dynamic LCES #1 to 11.6 min and of Dynamic SCES #1 to 29.8 min; with the workers computing their
-    own votes on the CPU, 4.2 and 7.5 min, every row identical. One device for the whole run also keeps a shared
-    vote store usable and gives the same numbers with and without CUDA.
+    """Whether a Gauntlet with a worker pool runs its engine runs (the base run and every variant) on the CPU in
+    every process. The default (card 51184c1d, the user's choice on 2026-11-18): with an RTX 5090 and 8 workers the
+    variants' votes on the GPU in the parent, one variant after the other while the workers wait, took a full check
+    of Dynamic LCES #1 11.5 min and of Dynamic SCES #1 29.8 min; on the CPU in every process 4.1 and 8.9 min, every
+    row identical (four systems checked). One device for the engine runs keeps a shared vote store usable. The bulk
+    evaluator, one large batch against its own base, keeps the GPU (``bulk_runs``).
     SMITHERY_PARENT_VOTES=1: the GPU parent as before. SMITHERY_WORKER_GPU=1: every process on the GPU."""
     if workers <= 1:
         return False
@@ -542,19 +542,22 @@ def run(config, *, data_dir: Path, venue_path: Path | None = None, fast: bool = 
     run at the first failed gate: the verdict is "not robust" either way, the later checks are simply not run
     (``stopped_early`` in the result names them). Neither changes a number of a check that runs.
 
-    With a worker pool every process computes on the CPU (``pool_on_cpu``)."""
+    With a worker pool the engine runs (base run and variants) compute on the CPU in every process
+    (``pool_on_cpu``); the bulk evaluator keeps the GPU."""
     pool = workers or default_workers()
     cpu = pool_on_cpu(pool)
     if cpu and progress:
-        progress(f"Indicator votes on the CPU in every process, the base run included ({pool} workers; "
-                 "faster than the GPU in the parent; SMITHERY_PARENT_VOTES=1 for that)")
-    with _on_cpu(cpu), _vote_store(votes_dir, pool, cpu) as (store, shared):
+        progress(f"Engine runs on the CPU in every process, the base run included ({pool} workers; faster than the "
+                 "variants' votes on the GPU in the parent; SMITHERY_PARENT_VOTES=1 for that); "
+                 "the bulk evaluator keeps the GPU when there is one")
+    with _vote_store(votes_dir, pool, cpu) as (store, shared):
         return _run(config, data_dir=data_dir, venue_path=venue_path, fast=fast, seed=seed, workers=workers,
                     progress=progress, cube_dir=cube_dir, store=store, shared=shared,
-                    stop_early=_flag(stop_early, "SMITHERY_GAUNTLET_STOP_EARLY"))
+                    stop_early=_flag(stop_early, "SMITHERY_GAUNTLET_STOP_EARLY"), cpu=cpu)
 
 
-def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_dir, store, shared, stop_early) -> dict:
+def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_dir, store, shared, stop_early,
+         cpu=False) -> dict:
     say = progress or (lambda message: None)
     counts = FAST if fast else FULL
     started = time.monotonic()
@@ -569,7 +572,8 @@ def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_di
         say(f"Vote store shared with other runs: {shared['folder']} "
             f"({'every process writes' if shared['write'] else 'the parent writes, the workers read'})")
     say("Base run")
-    base = run_native([("base", config, None, True, store and (store, "write"))], workers=1)[0]
+    with _on_cpu(cpu):
+        base = run_native([("base", config, None, True, store and (store, "write"))], workers=1)[0]
     vote_store.close_all()
     if "error" in base:
         raise ValueError(f"The system does not run on the saved data: {base['error']}")
@@ -624,7 +628,8 @@ def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_di
             say(votes_device)
         if shared is not None and shared["write"]:
             selected = [(*job[:4], (store, "write")) for job in selected]
-        results = run_native(selected, workers=workers, progress=say, stage=stage)
+        with _on_cpu(cpu):   # a stage of one variant runs in the parent
+            results = run_native(selected, workers=workers, progress=say, stage=stage)
         vote_store.close_all()
         by_group: dict[str, list[dict]] = {}
         for job, out in zip(selected, results):
@@ -648,8 +653,14 @@ def _run(config, *, data_dir, venue_path, fast, seed, workers, progress, cube_di
     def bulk_runs():
         """Member drops and additions, delays (engine-identical, against their own base)."""
         nonlocal complete
-        # A shared store also serves the bulk evaluator: the members' votes on the saved prices are the base run's.
-        with _votes((store, "write") if shared is not None else None):
+        # The bulk evaluator is one large batch (every member and added indicator over every pair at once): it keeps
+        # the parent's device, the GPU when there is one, also when the native runs are on the CPU (Dynamic SCES #1:
+        # 1.8 min against 4.0 on the CPU, every row identical). It judges against its own base, so no comparison
+        # mixes devices. A shared store also serves it, when it is on the store's device: the members' votes on the
+        # saved prices are the base run's.
+        from smithery import batch as B
+        device = "gpu" if B.gpu_available() else "cpu"
+        with _votes((store, "write") if shared is not None and shared["device"] == device else None):
             bulk = _bulk(config, members, rows, data_dir, cube_dir, counts, rng, say)
         vote_store.close_all()
         if bulk.get("error"):
