@@ -259,6 +259,7 @@ class Order(unittest.TestCase):
         def fake_run_native(jobs, workers=None, progress=None, stage=""):
             if jobs[0][0] == "base":
                 seen["base"] = jobs[0]
+                seen["base_gpu"] = os.environ.get("SMITHERY_GPU")
                 return [{"label": "base", "multiple": 2.0, "years": 4.0, "cagr": 0.19, "max_drawdown_pct": 30.0, "equity": base_equity}]
             seen["calls"].append([job[0] for job in jobs])
             seen["jobs"].extend(jobs)
@@ -269,6 +270,7 @@ class Order(unittest.TestCase):
             seen["calls"].append(["bulk"])
             seen["bulk_env"] = (os.environ.get(vote_store.ENV_FOLDER), os.environ.get(vote_store.ENV_MODE))
             seen["bulk_draw"] = rng.random()   # where the shared random stream stands when the bulk runs
+            seen["bulk_gpu"] = os.environ.get("SMITHERY_GPU")
             return {"base_cagr": 0.19, "drop": [], "add": [], "drop_details": [], "add_details": [], "delay": {1: 0.18, 2: 0.17}}
 
         def fake_parent_votes(jobs, store, progress=None, every=False):
@@ -279,7 +281,8 @@ class Order(unittest.TestCase):
                 patch.object(sg, "parent_votes", side_effect=fake_parent_votes), \
                 patch("smithery.batch.gpu_available", return_value=gpu), patch("smithery.batch.device_note", return_value="GPU (test)"), \
                 patch("smithery.registry.describe_all", return_value={"indicators": []}), patch.dict(os.environ, env or {}):
-            for name in ("SMITHERY_VOTE_SHARE", "SMITHERY_GAUNTLET_STOP_EARLY", vote_store.ENV_SALT):
+            for name in ("SMITHERY_VOTE_SHARE", "SMITHERY_GAUNTLET_STOP_EARLY", vote_store.ENV_SALT,
+                         "SMITHERY_PARENT_VOTES", "SMITHERY_WORKER_GPU"):
                 if name not in (env or {}):
                     os.environ.pop(name, None)
             result = sg.run(self.config(), data_dir=Path(tempfile.gettempdir()), fast=True, venue_path=Path(__file__), **kwargs)
@@ -365,9 +368,55 @@ class Order(unittest.TestCase):
             by_env, seen_env = self.gauntlet(workers=4, env={"SMITHERY_VOTE_SHARE": share})
             self.assertEqual(seen_env["base"][4], (folder, "write"))
 
+    def test_a_pool_computes_on_the_cpu_in_every_process_by_default(self):
+        # The parent too (base run, bulk evaluator): one device, so a shared store is the CPU one and every process
+        # writes it, exactly as on a machine without CUDA.
+        saved = os.environ.get("SMITHERY_GPU")
+        with tempfile.TemporaryDirectory() as share:
+            on_gpu, seen = self.gauntlet(workers=4, votes_dir=share, gpu=True)
+            no_gpu, _ = self.gauntlet(workers=4, votes_dir=share, gpu=False)
+            folder = str(Path(share) / "cpu")
+            self.assertEqual((seen["base_gpu"], seen["bulk_gpu"]), ("0", "0"))
+            self.assertEqual(seen["base"][4], (folder, "write"))
+            self.assertTrue(all(job[4] == (folder, "write") for job in seen["jobs"]))
+            self.assertEqual(seen["salt"], sg.vote_environment("cpu"))
+            self.assertEqual(on_gpu["vote_store"], {"shared": True, "device": "cpu"})
+            self.assertEqual(json.dumps(self.numbers(on_gpu), sort_keys=True), json.dumps(self.numbers(no_gpu), sort_keys=True))
+            self.assertEqual(os.environ.get("SMITHERY_GPU"), saved)
+            # One worker keeps the GPU in its one process.
+            _, serial = self.gauntlet(workers=1, votes_dir=share, gpu=True)
+            self.assertEqual(serial["base_gpu"], saved)
+            self.assertEqual(serial["base"][4], (str(Path(share) / "gpu"), "write"))
+
+    def test_the_switches_for_the_gpu(self):
+        for env, pool, cpu in (({}, 8, True), ({}, 1, False), ({"SMITHERY_PARENT_VOTES": "0"}, 8, True),
+                               ({"SMITHERY_PARENT_VOTES": "1"}, 8, False), ({"SMITHERY_WORKER_GPU": "1"}, 8, False)):
+            with patch.dict(os.environ, env):
+                for name in ("SMITHERY_PARENT_VOTES", "SMITHERY_WORKER_GPU"):
+                    if name not in env:
+                        os.environ.pop(name, None)
+                self.assertEqual(sg.pool_on_cpu(pool), cpu, (env, pool))
+
+    def test_the_parent_finds_its_device_again_after_a_run_on_the_cpu(self):
+        from smithery import batch as B
+        saved = dict(B._TORCH)
+        self.addCleanup(lambda: (B._TORCH.clear(), B._TORCH.update(saved)))
+        B._TORCH.clear()
+        B._TORCH["state"] = ("torch", "cuda")
+        with patch.dict(os.environ, {}):
+            os.environ.pop("SMITHERY_GPU", None)
+            with sg._on_cpu(True):
+                self.assertEqual(os.environ["SMITHERY_GPU"], "0")
+                self.assertFalse(B.gpu_available())
+                self.assertEqual(B.device_note(), "CPU: SMITHERY_GPU=0")
+            self.assertNotIn("SMITHERY_GPU", os.environ)
+            self.assertEqual(B._TORCH, {"state": ("torch", "cuda")})
+            with sg._on_cpu(False):
+                self.assertEqual(B._TORCH, {"state": ("torch", "cuda")})
+
     def test_a_shared_store_with_gpu_parent_and_cpu_workers_is_written_by_the_parent_only(self):
         with tempfile.TemporaryDirectory() as share:
-            _, seen = self.gauntlet(workers=4, votes_dir=share, gpu=True)
+            _, seen = self.gauntlet(workers=4, votes_dir=share, gpu=True, env={"SMITHERY_PARENT_VOTES": "1"})
             folder = str(Path(share) / "gpu")
             self.assertEqual(seen["base"][4], (folder, "write"))
             self.assertEqual(seen["parent"], [True])   # the parent computes every variant's votes
@@ -377,9 +426,11 @@ class Order(unittest.TestCase):
             # One process on the GPU writes; a GPU base run with CPU votes in the workers is not one device: no sharing.
             _, serial = self.gauntlet(workers=1, votes_dir=share, gpu=True)
             self.assertTrue(all(job[4] == (folder, "write") for job in serial["jobs"]))
-            _, mixed = self.gauntlet(workers=4, votes_dir=share, gpu=True, env={"SMITHERY_PARENT_VOTES": "0"})
-            self.assertFalse(mixed["base"][4][0].startswith(share))
-            self.assertIsNone(mixed["salt"])
+            # A GPU base run with CPU votes in the workers is not one device: no sharing (run() never asks for it).
+            with patch("smithery.batch.gpu_available", return_value=True), \
+                    patch.dict(os.environ, {"SMITHERY_PARENT_VOTES": "0", "SMITHERY_WORKER_GPU": "0"}):
+                self.assertIsNone(sg.shared_votes(share, 4))
+                self.assertEqual(sg.shared_votes(share, 4, cpu=True)["device"], "cpu")
 
     def test_the_environment_fingerprint_follows_the_switches_that_change_arithmetic(self):
         sg._ENVIRONMENTS.clear()

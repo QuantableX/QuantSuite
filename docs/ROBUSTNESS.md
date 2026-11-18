@@ -158,7 +158,7 @@ At the first failed gate the run ends. The verdict is "not robust" either way; t
 A run must read only what it would compute itself, whatever other runs left in the store. So:
 
 - a key is the window's candles, the indicator and its parameters, plus the code: the script's signature (its own tree and its libraries'), the version's default parameters, and a fingerprint of the engine, the numeric libraries and the switches that change arithmetic. A changed script, version or engine gives other keys;
-- the store is split by device (`cpu/`, `gpu/`). On the CPU every process writes. With the GPU in the parent and CPU workers, the parent computes the votes of every variant and the workers only read. A GPU base run with CPU votes in the workers (`SMITHERY_PARENT_VOTES=0`) is not one device and gets no shared store;
+- the store is split by device (`cpu/`, `gpu/`). On the CPU every process writes. With the GPU in the parent and CPU workers (`SMITHERY_PARENT_VOTES=1`), the parent computes the votes of every variant and the workers only read. A mix of devices in one run gets no shared store;
 - the store is only a shortcut. A read or write that fails counts as a miss and the votes are computed as usual.
 
 The store grows with every new world and member; the folder belongs to whoever named it and can be deleted between rounds. Without the variable nothing changes: one temporary store per Gauntlet.
@@ -170,4 +170,5 @@ The store grows with every new world and member; the folder belongs to whoever n
 - From the app or MCP: research kind `robustness` with a saved system's name. The run freezes the engine, the library and the saved prices like every research run. Before freezing it loads candles from the other venue chain into its own cache (`~/.quantsuite/modules/systems/cache/venues/`); the saved systems cache is never written.
 - Full mode takes about 15–30 minutes for a 27-member system with 6 workers. Fast mode takes about 6–10 minutes.
 - `SMITHERY_ROBUST_WORKERS` sets the parallel engine runs. Each needs 2–3 GB of memory.
+- With more than one worker every process computes the indicator votes on the CPU, the base run and the bulk evaluator included, also on a machine with CUDA. Measured on 2026-11-18 (RTX 5090, 8 workers, full mode): the variants' votes on the GPU in the parent, one variant after the other while the workers wait, took Dynamic LCES #1 to 11.6 minutes and Dynamic SCES #1 to 29.8; with the workers computing their own votes, 4.2 and 7.5 minutes, every row identical. `SMITHERY_PARENT_VOTES=1` brings back the GPU parent, `SMITHERY_WORKER_GPU=1` puts every process on the GPU. One worker keeps the GPU.
 - `SMITHERY_VOTE_SHARE` and `SMITHERY_GAUNTLET_STOP_EARLY` are described under "The order of the checks".

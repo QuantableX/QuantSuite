@@ -101,30 +101,70 @@ def bar_window(start, end, timeframe):
     return dt.datetime.combine(start, dt.time.min), last
 
 
-class SavedPrices:
-    """Candles from the saved data only; history before the first saved day is absent, as it is there."""
+class Kept:
+    """What one process read from the saved data, kept for its next run on the same data. A System Gauntlet's pool
+    worker runs about ten variants: card 51184c1d measured 2.9 of a variant's 10.5 s reading the same candles, paths
+    and ranking lists again. A kept frame is never handed out itself, every caller gets its own copy; the frames
+    keep at most ``limit`` bytes (the least recently used go first). Ranking rows are frozen and are shared."""
 
-    def __init__(self, cache):
+    def __init__(self, limit: int = 256 * 2**20):
+        from collections import OrderedDict
+        self.limit = limit
+        self.size = 0
+        self.frames: OrderedDict = OrderedDict()
+        self.rankings: dict = {}
+
+    def frame(self, key, make):
+        hit = self.frames.get(key)
+        if hit is not None:
+            self.frames.move_to_end(key)
+            return hit[0].copy()
+        frame = make()
+        size = int(frame.memory_usage(index=True, deep=True).sum())
+        if size <= self.limit:
+            self.frames[key] = (frame.copy(), size)
+            self.size += size
+            while self.size > self.limit:
+                _, (_, dropped) = self.frames.popitem(last=False)
+                self.size -= dropped
+        return frame
+
+
+class SavedPrices:
+    """Candles from the saved data only; history before the first saved day is absent, as it is there.
+    ``keep``: a ``Kept`` that holds what was read for the next run in this process."""
+
+    def __init__(self, cache, keep: Kept | None = None):
         self.cache = cache
+        self.keep = keep
+
+    def _frame(self, key, make):
+        return make() if self.keep is None else self.keep.frame(key, make)
 
     def get_series(self, ref, start, end, timeframe="1d"):
         from rotation_lab.data.ohlcv import OhlcvSeries, _bars_to_frame, _rows_to_frame, coin_key_for
         key = coin_key_for(ref)
         if timeframe == "1d":
-            return OhlcvSeries(coin_ref=ref, frame=_rows_to_frame(self.cache.get_ohlcv_range(key, start, end)))
-        bars = self.cache.get_ohlcv_intraday_range(key, timeframe, *bar_window(start, end, timeframe))
-        return OhlcvSeries(coin_ref=ref, frame=_bars_to_frame(bars))
+            frame = self._frame(("series", key, start, end, timeframe),
+                                lambda: _rows_to_frame(self.cache.get_ohlcv_range(key, start, end)))
+            return OhlcvSeries(coin_ref=ref, frame=frame)
+        frame = self._frame(("series", key, start, end, timeframe), lambda: _bars_to_frame(
+            self.cache.get_ohlcv_intraday_range(key, timeframe, *bar_window(start, end, timeframe))))
+        return OhlcvSeries(coin_ref=ref, frame=frame)
 
     def get_pair_series(self, exchange, pair, start, end, timeframe="1d"):
         from rotation_lab.data.ohlcv import CoinRef, OhlcvSeries, _bars_to_frame
         ref = CoinRef(None, pair, cache_key=f"market:{exchange}:{pair}")
-        bars = self.cache.get_ohlcv_intraday_range(ref.cache_key, timeframe, *bar_window(start, end, timeframe))
-        return OhlcvSeries(ref, _bars_to_frame(bars))
+        frame = self._frame(("series", ref.cache_key, start, end, timeframe), lambda: _bars_to_frame(
+            self.cache.get_ohlcv_intraday_range(ref.cache_key, timeframe, *bar_window(start, end, timeframe))))
+        return OhlcvSeries(ref, frame)
 
     def get_path(self, ref, start, end, timeframe="1d"):
         """The saved path of a coin's bars (for the coin-vs-coin candle); bars without one are absent."""
         from rotation_lab.data.ohlcv import coin_key_for, paths_from_bars, saved_bars
-        return paths_from_bars(self.cache, saved_bars(self.cache, coin_key_for(ref), start, end, timeframe), timeframe)
+        key = coin_key_for(ref)
+        return self._frame(("path", key, start, end, timeframe), lambda: paths_from_bars(
+            self.cache, saved_bars(self.cache, key, start, end, timeframe), timeframe))
 
 
 class NotSaved:
@@ -135,16 +175,22 @@ class NotSaved:
         raise ValueError(f"no saved ranking for {on_date}")
 
 
-def saved_rankings(cache):
-    """The ranking registry over the saved CoinMarketCap snapshots only."""
+def saved_rankings(cache, keep: Kept | None = None):
+    """The ranking registry over the saved CoinMarketCap snapshots only. ``keep``: a ``Kept`` that holds the
+    snapshots read for the next run in this process (their rows are frozen; every caller gets its own list)."""
     from rotation_lab.data.ranking.cmc_snapshot import CmcSnapshotProvider
     from rotation_lab.data.ranking.registry import RankingRegistry
 
     class SavedSnapshots(CmcSnapshotProvider):
         def _ensure_snapshot(self, snap, resolution=None):
+            kept = None if keep is None else keep.rankings.get((self.name, snap))
+            if kept is not None:
+                return list(kept)
             rows = self.cache.get_ranking(self.name, snap)
             if not rows:
                 raise ValueError(f"no saved ranking for {snap}")
+            if keep is not None:
+                keep.rankings[(self.name, snap)] = tuple(rows)
             return rows
 
     return RankingRegistry(cache, cmc=SavedSnapshots(cache), local=NotSaved())
