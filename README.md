@@ -9,7 +9,7 @@ one update channel. Built with Tauri 2, Rust, Nuxt and Vue.
 
 ## Download
 
-Get **QuantSuite 1.0.0** from [GitHub Releases](https://github.com/QuantableX/QuantSuite/releases/latest).
+Get the latest **QuantSuite** from [GitHub Releases](https://github.com/QuantableX/QuantSuite/releases/latest).
 
 | Platform | Download |
 | --- | --- |
