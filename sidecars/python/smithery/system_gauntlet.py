@@ -118,8 +118,8 @@ def pool_on_cpu(workers: int) -> bool:
     """Whether a Gauntlet with a worker pool runs its engine runs (the base run and every variant) on the CPU in
     every process. The default (card 51184c1d, the user's choice on 2026-11-18): with an RTX 5090 and 8 workers the
     variants' votes on the GPU in the parent, one variant after the other while the workers wait, took a full check
-    of Dynamic LCES #1 11.5 min and of Dynamic SCES #1 29.8 min; on the CPU in every process 4.1 and 8.9 min, every
-    row identical (four systems checked). One device for the engine runs keeps a shared vote store usable. The bulk
+    of Dynamic LCES #1 11.5 min and of Dynamic SCES #1 29.8 min; this way 3.4 and 6.8 min (Robust LCES #1 8.1 -> 3.4,
+    Robust SCES #1 56.8 -> 24.1), every row, group, axis and verdict identical. One device for the engine runs keeps a shared vote store usable. The bulk
     evaluator, one large batch against its own base, keeps the GPU (``bulk_runs``).
     SMITHERY_PARENT_VOTES=1: the GPU parent as before. SMITHERY_WORKER_GPU=1: every process on the GPU."""
     if workers <= 1:
