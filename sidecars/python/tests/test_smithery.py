@@ -224,11 +224,22 @@ class IntegrationTests(unittest.TestCase):
         from rotation_lab.config import IndicatorConfig
         df = frame(1100)
         candles = [{"time": str(index), **row.to_dict()} for index, row in df.iterrows()]
-        for key in ("ensemble_original", "council2_original", "scale_original", "robust"):
+        # QuantSystems computes votes on bounded history (yearly blocks, each seeing only the indicator's warm-up
+        # before it), the QuantAlgo bot on the full history. They agree wherever the warm-up reaches the state of the
+        # full history. Known limit, kept on purpose (user's decision 2026-11-18, card 42dbae59): these keys keep state
+        # longer than their warm-up, so on rare bars the bounded signal differs (here bar 1026 of 1,100). A key that
+        # starts to differ fails here; a listed key that agrees again fails too, so the list stays true.
+        longer_than_warmup = {"ensemble", "ensemble_original"}
+        for key in ("ensemble", "ensemble_original", "ensemble_wf", "council2_original", "scale_original", "robust"):
             with self.subTest(key=key):
                 expected = REGISTRY[key]().signal(df).to_numpy()
                 np.testing.assert_array_equal(regime_series(candles, key), expected)
-                np.testing.assert_array_equal(trend_signal(df, IndicatorConfig(trend=key)), expected > 0)
+                bounded = np.asarray(trend_signal(df, IndicatorConfig(trend=key)))
+                differs = np.flatnonzero(bounded != (expected > 0)).tolist()
+                if key in longer_than_warmup:
+                    self.assertTrue(0 < len(differs) <= 5, f"{key}: bounded differs at {differs}")
+                else:
+                    self.assertEqual(differs, [])
 
     def test_latest_matching_failed_run_replaces_pass_but_foreign_code_does_not(self):
         from smithery import registry, evidence, data
