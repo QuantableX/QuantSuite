@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight, NotebookPen } from 'lucide-vue-next'
 import { useAppStore } from '#systems/stores/app'
 import { useSystemsStore } from '#systems/stores/systems'
 import { useConfigStore } from '#systems/stores/config'
@@ -10,6 +10,8 @@ import { aggregateName, useIndicatorOptions } from '#systems/composables/useIndi
 import { sortByOptions } from '#systems/utils/indicatorOptions'
 import { effectiveCadence, matchesMarket } from '#systems/utils/systemMode'
 import RobustnessPanel from '#systems/components/Layout/RobustnessPanel.vue'
+import NotesDialog from '#systems/components/Layout/NotesDialog.vue'
+import { useStrategyNotesStore } from '#systems/stores/notes'
 
 const app = useAppStore()
 const systems = useSystemsStore()
@@ -62,7 +64,7 @@ const groups = computed(() => {
   }
   return rows
 })
-const open = reactive<Record<GroupKey | 'notes', boolean>>({ trend: false, compare: false, market: false, notes: false })
+const open = reactive<Record<GroupKey, boolean>>({ trend: false, compare: false, market: false })
 /** The saved settings once loaded: the robustness verdict is matched against them. */
 const loadedCfg = computed(() => config.configBySystem[systemId.value] ?? null)
 const engineRunning = computed(() => app.engineStatus.status === 'running')
@@ -73,6 +75,13 @@ const liveResult = computed(() => liveState.value.result && matchesMarket(liveSt
 // Keep actionable engine notes; the standard candle-close rule is already understood.
 const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking?.notes ?? [] : btState.value.notes)
   .filter(note => note !== 'Only confirmed candle closes are included in this backtest.'))
+const notesSource = computed(() => view.value === 'live' ? 'From the live evaluation' : 'From the last backtest')
+
+// The Notes button, pinned to the panel's bottom: the engine's notes and the user's own.
+const strategyNotes = useStrategyNotesStore()
+const notesOpen = ref(false)
+const ownNotes = computed(() => !!strategyNotes.text(systemId.value).trim())
+onMounted(() => strategyNotes.load())
 </script>
 
 <template>
@@ -142,18 +151,6 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
       <div class="qs-context__row"><span>End</span><span>Today (UTC)</span></div>
       <div class="qs-context__row"><span>{{ cfg.mode === 'single_asset' ? 'Timeframe' : 'Cadence' }}</span><span class="mono">{{ effectiveCadence(cfg) }}</span></div>
       <div class="qs-context__row"><span>Fee</span><span class="mono">{{ (cfg.feeRate * 100).toFixed(2) }}%</span></div>
-      <div v-if="notes.length" class="qs-context__group">
-        <button type="button" class="qs-context__row qs-context__toggle" :aria-expanded="open.notes" @click="open.notes = !open.notes">
-          <span class="qs-context__toggle-label">
-            Notes
-            <ChevronRight class="qs-context__chevron" :class="{ 'qs-context__chevron--open': open.notes }" :size="12" />
-          </span>
-          <span class="mono qs-context__value">{{ notes.length }}</span>
-        </button>
-        <ul v-if="open.notes" class="qs-notes">
-          <li v-for="(note, i) in notes" :key="i">{{ note }}</li>
-        </ul>
-      </div>
     </section>
 
     <!-- Backtest context -->
@@ -163,28 +160,60 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
       <div class="qs-context__row"><span>End</span><span class="mono">{{ cfg.endDate }}</span></div>
       <div class="qs-context__row"><span>{{ cfg.mode === 'single_asset' ? 'Timeframe' : 'Cadence' }}</span><span class="mono">{{ effectiveCadence(cfg) }}</span></div>
       <div class="qs-context__row"><span>Fee</span><span class="mono">{{ (cfg.feeRate * 100).toFixed(2) }}%</span></div>
-      <div v-if="notes.length" class="qs-context__group">
-        <button type="button" class="qs-context__row qs-context__toggle" :aria-expanded="open.notes" @click="open.notes = !open.notes">
-          <span class="qs-context__toggle-label">
-            Notes
-            <ChevronRight class="qs-context__chevron" :class="{ 'qs-context__chevron--open': open.notes }" :size="12" />
-          </span>
-          <span class="mono qs-context__value">{{ notes.length }}</span>
-        </button>
-        <ul v-if="open.notes" class="qs-notes">
-          <li v-for="(n, i) in notes" :key="i">{{ n }}</li>
-        </ul>
-      </div>
     </section>
+  </div>
+  <!-- A second root in the panel's scrolling body, pinned to its bottom. -->
+  <div v-if="systemId" class="qs-context__footer">
+    <button type="button" class="btn qs-context__notes" @click="notesOpen = true">
+      <NotebookPen :size="14" aria-hidden="true" />
+      <span>Notes</span>
+      <span v-if="ownNotes" class="qs-context__dot" title="You wrote notes for this strategy" />
+      <span v-if="notes.length" class="qs-context__count mono" :title="`${notes.length} from the engine`">{{ notes.length }}</span>
+    </button>
+    <NotesDialog v-if="notesOpen" :system-id="systemId" :name="system?.name ?? ''" :engine-notes="notes" :source="notesSource" @close="notesOpen = false" />
   </div>
 </template>
 
 <style scoped>
 .qs-context {
   display: flex;
+  flex: 1 0 auto;
   flex-direction: column;
   padding: 18px 16px;
   gap: 18px;
+}
+
+/* The panel body scrolls; the Notes button stays at its bottom edge. */
+.qs-context__footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--qss-border-subtle);
+  background: var(--qss-module-chrome, var(--qss-bg-raised));
+}
+
+.qs-context__notes {
+  width: 100%;
+  height: 32px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.qs-context__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--qs-accent);
+}
+
+.qs-context__count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--qs-text-muted);
 }
 
 .qs-context__section {
@@ -314,15 +343,5 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--qs-text);
-}
-
-.qs-notes {
-  margin: 0;
-  padding-left: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--qs-text-muted);
 }
 </style>
