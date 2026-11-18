@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-robustness-queue"
+description = "Enables the robustness_queue command without any pre-configured scope."
+commands.allow = ["robustness_queue"]
+
+[[permission]]
+identifier = "deny-robustness-queue"
+description = "Denies the robustness_queue command without any pre-configured scope."
+commands.deny = ["robustness_queue"]

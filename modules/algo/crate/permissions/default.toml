@@ -19,6 +19,8 @@ permissions = [
   "allow-research-run",
   "allow-research-gauntlet-overview",
   "allow-research-robustness",
+  "allow-robustness-queue",
+  "allow-robustness-unqueue",
   "allow-research-profit-overview",
   "allow-research-aggregate-comparison",
   "allow-smithery-cancel",

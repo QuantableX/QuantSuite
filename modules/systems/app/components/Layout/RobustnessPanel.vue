@@ -10,6 +10,9 @@
  * during research carry the research name). Settings that cannot change a result
  * (end date, compared indicators, live start, download pacing) are ignored. A
  * full check outranks a newer quick check.
+ *
+ * While the forge is busy a check waits in the algo module's robustness queue
+ * and starts by itself; the panel shows its place and can take it off again.
  */
 import { invoke } from '@tauri-apps/api/core'
 import { Info } from 'lucide-vue-next'
@@ -23,6 +26,8 @@ interface Run {
 }
 interface Job { id: string; kind: string; status: string; request?: { research_id?: string | null } }
 interface RunEvent { event: string; at: string; message?: string }
+/** A check waiting for the forge (the algo module's robustness queue). */
+interface Queued { id: string; system: string | null; fast: boolean; queued_at: string; error: string | null }
 
 const HINT = 'Parameters, time, exchange, assets, Monte Carlo and execution. A result is only trusted when it is robust.'
 /** Fields a check's result does not depend on. */
@@ -30,6 +35,7 @@ const IGNORED = new Set(['endDate', 'compareTrends', 'liveStartDate', 'minReques
 
 const runs = ref<Run[]>([])
 const job = ref<Job | null>(null)
+const queue = ref<Queued[]>([])
 const progress = ref('')
 const busy = ref(false)
 const error = ref('')
@@ -97,6 +103,11 @@ const elsewhere = computed(() => {
   if (run.kind === 'robustness') return ending ? `finishing the check of ${name}` : `checking ${name}`
   return ending ? `finishing ${run.title ?? 'a research run'}` : (run.title ?? 'a research run')
 })
+const waiting = computed(() => queue.value.filter(c => !c.error))
+/** This system's place in the queue, and a queued start that failed. */
+const queued = computed(() => waiting.value.find(c => c.system === props.systemId))
+const place = computed(() => queued.value ? waiting.value.indexOf(queued.value) + 1 : 0)
+const unstarted = computed(() => queue.value.find(c => c.system === props.systemId && c.error))
 
 const label = computed(() => {
   const v = latest.value?.verdict
@@ -111,9 +122,20 @@ const elapsed = computed(() => {
   const minutes = Math.max(0, Math.floor((now.value - Date.parse(start)) / 60000))
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`
 })
+const verdictText = computed(() => {
+  if (running.value) return `Checking · ${elapsed.value}`
+  if (queued.value) return `Queued · #${place.value}${queued.value.fast ? ' · quick' : ''}`
+  return label.value
+})
 const status = computed(() => {
   if (running.value) return progress.value || 'Starting…'
-  if (elsewhere.value) return `Forge busy: ${elsewhere.value}`
+  if (queued.value) {
+    const ahead = place.value - 1
+    const before = ahead ? ` and ${ahead} queued check${ahead > 1 ? 's' : ''}` : ''
+    return elsewhere.value ? `Starts after ${elsewhere.value}${before}.` : 'Starting…'
+  }
+  if (unstarted.value) return `Queued check could not start: ${unstarted.value.error}`
+  if (elsewhere.value) return `Forge busy: ${elsewhere.value}. A new check waits in the queue.`
   if (failed.value) return `Last check ${failed.value.status}${failed.value.error ? ': ' + failed.value.error : ''}`
   if (outdated.value) return `Settings changed since the ${day(outdated.value).replace(/-/g, '‑')} check.`
   return ''
@@ -125,13 +147,15 @@ function day(run: Run): string {
 
 async function refresh() {
   try {
-    const [list, jobs] = await Promise.all([
+    const [list, jobs, waitingChecks] = await Promise.all([
       invoke<Run[]>('plugin:script|research_list'),
       invoke<Job[]>('plugin:algo|smithery_jobs').catch(() => [] as Job[]),
+      invoke<Queued[]>('plugin:algo|robustness_queue').catch(() => [] as Queued[]),
     ])
     const before = running.value?.id
     runs.value = list
     job.value = jobs.find(j => j.status === 'running') ?? null
+    queue.value = waitingChecks
     now.value = Date.now()
     if (running.value?.id === before) await loadProgress() // a new running check: the watcher below loads it
   } catch (e) { error.value = String(e) }
@@ -151,9 +175,15 @@ async function check(fast: boolean) {
   busy.value = true
   error.value = ''
   try {
-    await invoke('plugin:algo|research_robustness', { system: props.systemId, fast, title: null })
+    // A busy forge queues the check; it starts by itself when the forge is free.
+    await invoke('plugin:algo|research_robustness', { system: props.systemId, fast, title: null, queue: true })
     await refresh()
   } catch (e) { error.value = String(e) } finally { busy.value = false }
+}
+
+async function unqueue(id: string) {
+  error.value = ''
+  try { queue.value = await invoke<Queued[]>('plugin:algo|robustness_unqueue', { id }) } catch (e) { error.value = String(e) }
 }
 
 async function openReport() {
@@ -164,9 +194,9 @@ async function openReport() {
   } catch (e) { error.value = String(e) }
 }
 
-// Poll while this system's check or any other forge job runs.
+// Poll while this system's check or any other forge job runs, or checks wait.
 let timer: ReturnType<typeof setInterval> | null = null
-watch(() => !!running.value || !!elsewhere.value, active => {
+watch(() => !!running.value || !!elsewhere.value || queue.value.length > 0, active => {
   if (active && !timer) timer = setInterval(refresh, 5000)
   if (!active && timer) { clearInterval(timer); timer = null }
 })
@@ -183,9 +213,9 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
     <span class="label qs-robust__label" :title="HINT">Robustness <Info :size="11" aria-hidden="true" /></span>
     <div class="qs-robust__row">
       <span>Verdict</span>
-      <span :class="running ? 'qs-muted' : tone">{{ running ? `Checking · ${elapsed}` : label }}</span>
+      <span :class="running || queued ? 'qs-muted' : tone">{{ verdictText }}</span>
     </div>
-    <div v-if="latest && !running" class="qs-robust__row">
+    <div v-if="latest && !running && !queued" class="qs-robust__row">
       <span>Checked</span>
       <span class="qs-robust__checked">
         <span class="mono">{{ day(latest) }}{{ latest.fast ? ' · quick' : '' }}</span>
@@ -193,15 +223,16 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       </span>
     </div>
     <p v-if="status" class="qs-robust__status" :title="status">{{ status }}</p>
-    <button v-if="latest?.verdict?.failures?.length && !running" type="button" class="qs-robust__link" @click="showGates = !showGates">
+    <button v-if="queued || unstarted" type="button" class="qs-robust__link" @click="unqueue((queued ?? unstarted)!.id)">Remove from queue</button>
+    <button v-if="latest?.verdict?.failures?.length && !running && !queued" type="button" class="qs-robust__link" @click="showGates = !showGates">
       {{ showGates ? 'Hide' : 'Show' }} {{ latest.verdict.failures.length }} failed gate{{ latest.verdict.failures.length > 1 ? 's' : '' }}
     </button>
-    <ul v-if="showGates && latest?.verdict && !running" class="qs-robust__gates">
+    <ul v-if="showGates && latest?.verdict && !running && !queued" class="qs-robust__gates">
       <li v-for="(f, i) in latest.verdict.failures" :key="i">{{ f }}</li>
     </ul>
     <div class="qs-robust__actions">
-      <button type="button" class="btn btn-ghost" :disabled="busy || !!running || !!elsewhere" @click="check(true)">Quick check</button>
-      <button type="button" class="btn btn-ghost" :disabled="busy || !!running || !!elsewhere" @click="check(false)">Full check</button>
+      <button type="button" class="btn btn-ghost" :disabled="busy || !!running || !!queued" @click="check(true)">Quick check</button>
+      <button type="button" class="btn btn-ghost" :disabled="busy || !!running || !!queued" @click="check(false)">Full check</button>
     </div>
     <p v-if="error" class="qs-robust__error">{{ error }}</p>
     <div v-if="report" class="qs-robust__sheet" role="dialog" aria-label="Robustness report">

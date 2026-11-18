@@ -48,6 +48,9 @@ const COMMANDS: &[&str] = &[
     "research_aggregate_comparison",
     // The System Gauntlet on a saved system (docs/ROBUSTNESS.md).
     "research_robustness",
+    // Robustness checks waiting for a busy forge: list, remove one.
+    "robustness_queue",
+    "robustness_unqueue",
     "smithery_cancel",
     "smithery_jobs",
     // `{ limit }` → lines, for the suite's process page.

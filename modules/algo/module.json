@@ -174,8 +174,28 @@
           "end_date": {"type": "string", "description": "YYYY-MM-DD before today; default yesterday."},
           "fast": {"type": "boolean", "description": "Quicker, coarser check (fewer variants)."},
           "venues": {"type": "array", "items": {"type": "string"}, "description": "Other-exchange chain (default okx, bybit, kucoin, coinbase; never binance, gate, mexc)."},
-          "seed": {"type": "integer", "description": "Seed (default 42)."}
+          "seed": {"type": "integer", "description": "Seed (default 42)."},
+          "queue": {"type": "boolean", "description": "true: when the forge is busy, the check waits in the robustness queue and starts by itself once the forge is free (returns {queued, position}); when it is free, the check starts at once (returns {started}). Default false: refused while a forge job runs."}
         }
+      }
+    },
+    {
+      "name": "robustness_queue",
+      "command": "plugin:algo|robustness_queue",
+      "description": "The robustness checks waiting for the forge, oldest first: id, system, fast, queued_at, and error for a check that could not start (the queue then goes on with the next). In memory: an app restart clears it, and cancelling the running forge job empties it.",
+      "sideEffects": "read"
+    },
+    {
+      "name": "robustness_unqueue",
+      "command": "plugin:algo|robustness_unqueue",
+      "description": "Take one check off the robustness queue by its id (from robustness_queue). Returns the queue as it is now.",
+      "sideEffects": "write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "description": "The queued check's id."}
+        },
+        "required": ["id"]
       }
     },
     {
@@ -193,7 +213,7 @@
     {
       "name": "forge_cancel",
       "command": "plugin:algo|smithery_cancel",
-      "description": "Cancel the running forge job and its worker processes. A cancelled research run stays visible as interrupted with its partial evidence.",
+      "description": "Cancel the running forge job and its worker processes. A cancelled research run stays visible as interrupted with its partial evidence. The robustness checks waiting in the queue are dropped too, so none starts in its place.",
       "sideEffects": "write"
     },
     {
@@ -376,6 +396,8 @@
       "research_profit_overview": "server:read",
       "research_aggregate_comparison": "server:read",
       "research_robustness": "server:read",
+      "robustness_queue": "server:read",
+      "robustness_unqueue": "server:write",
       "smithery_cancel": "server:write",
       "smithery_jobs": "server:read",
       "smithery_process_logs": "server:read",

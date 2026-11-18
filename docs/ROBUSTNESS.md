@@ -99,11 +99,11 @@ A system that makes no money on its own history has nothing to protect and is no
 |---|---|
 | Indicator Gauntlet | Certifies single indicators. Optimized versions are written only when they pass (card 2). |
 | Aggregate search | Takes only indicators that passed, scores each candidate in several price worlds, confirms picks walk-forward, and runs the System Gauntlet on the finalists (card 3). |
-| Research kind `robustness` | The System Gauntlet for any saved system: MCP tool `quantsuite.algo.research_robustness`, QuantScript → Forge → Research ("Robustness check"), and the Robustness panel in QuantSystems' right sidebar (verdict, failed gates, quick or full check, report). |
+| Research kind `robustness` | The System Gauntlet for any saved system: MCP tool `quantsuite.algo.research_robustness`, QuantScript → Forge → Research ("Robustness check"), and the Robustness panel in QuantSystems' right sidebar (verdict, failed gates, quick or full check, report). One forge job runs at a time: with `queue` (the panel always sets it) a check waits in the robustness queue while the forge is busy and starts by itself, one after another (`robustness_queue` lists it, `robustness_unqueue` removes one; in memory, so a restart or a forge cancel empties it). |
 | MCP research tools | `research_aggregate_comparison` is robust by default (`pool`, `blind_days`, `gauntlet_top`, `venues`). The profit overview tells agents to check any kept system with `research_robustness`. `research_list` carries each run's verdict. |
 | Installing a research indicator | `research_install` installs only an indicator certified on the target track. |
 | A fund (Manual) | A dynamic split method is itself an optimization. The result shows each member's verdict, the method against Equal at every lookback and in the rule's four windows, and a Monte Carlo of the fund's returns. A fund plans and evaluates; it places no orders. |
-| A saved system | QuantSystems shows its latest verdict: robust, not robust (with the failed gates) or not checked. A system that was never checked or failed stays visibly marked. |
+| A saved system | QuantSystems shows its latest verdict: robust, not robust (with the failed gates) or not checked. A system that was never checked or failed stays visibly marked. A verdict belongs to the settings it checked, not to a name: a Gauntlet run under a research name counts for the system saved with the same settings (end date, compared indicators, live start and download pacing aside); after a settings change the old verdict no longer counts. A full check outranks a newer quick check. |
 
 ## Aggregate search (combinations)
 
