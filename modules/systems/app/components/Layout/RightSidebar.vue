@@ -11,7 +11,6 @@ import { sortByOptions } from '#systems/utils/indicatorOptions'
 import { effectiveCadence, matchesMarket } from '#systems/utils/systemMode'
 import RobustnessPanel from '#systems/components/Layout/RobustnessPanel.vue'
 import NotesDialog from '#systems/components/Layout/NotesDialog.vue'
-import { useStrategyNotesStore } from '#systems/stores/notes'
 
 const app = useAppStore()
 const systems = useSystemsStore()
@@ -78,10 +77,7 @@ const notes = computed(() => (view.value === 'live' ? liveResult.value?.tracking
 const notesSource = computed(() => view.value === 'live' ? 'From the live evaluation' : 'From the last backtest')
 
 // The Notes button, pinned to the panel's bottom: the engine's notes and the user's own.
-const strategyNotes = useStrategyNotesStore()
 const notesOpen = ref(false)
-const ownNotes = computed(() => !!strategyNotes.text(systemId.value).trim())
-onMounted(() => strategyNotes.load())
 </script>
 
 <template>
@@ -168,7 +164,6 @@ onMounted(() => strategyNotes.load())
       <NotebookPen :size="14" aria-hidden="true" />
       <span>Notes</span>
       <span v-if="notes.length" class="qs-context__count" :aria-label="`${notes.length} from the engine`">{{ notes.length }}</span>
-      <span v-if="ownNotes" class="qs-context__dot" aria-label="You wrote notes for this strategy" />
     </button>
     <NotesDialog v-if="notesOpen" :system-id="systemId" :name="system?.name ?? ''" :engine-notes="notes" :source="notesSource" @close="notesOpen = false" />
   </div>
@@ -196,7 +191,6 @@ onMounted(() => strategyNotes.load())
 
 /* Centered like the rail's New strategy button. */
 .qs-context__notes {
-  position: relative;
   width: 100%;
   height: 32px;
   justify-content: center;
@@ -214,17 +208,6 @@ onMounted(() => strategyNotes.load())
   line-height: 16px;
   font-variant-numeric: tabular-nums;
   color: var(--qs-text-secondary);
-}
-
-/* In the corner, so it never moves the centered label. */
-.qs-context__dot {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--qs-accent);
 }
 
 .qs-context__section {
