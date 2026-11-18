@@ -105,7 +105,10 @@ These hold for QuantSystems backtests, live tracking and both system report tool
   blocks of a year (from 1970-01-01), each block seeing only the indicator's
   warm-up before it. A vote on a given day is the same in a backtest, a live
   replay and today's live signal, and no history older than the warm-up plus a
-  year decides it.
+  year decides it. Known limit: `ensemble` and `ensemble_original` keep state
+  longer than their warm-up, so on rare days their vote here differs from the
+  QuantAlgo bot's, which reads the full history (1 of 1,100 bars in the test).
+  Kept as is (user's decision 2026-11-18); `tests/test_smithery.py` names them.
 
 ## Evidence and comparisons
 
