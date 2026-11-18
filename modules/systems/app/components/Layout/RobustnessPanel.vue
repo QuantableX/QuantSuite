@@ -210,7 +210,12 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
 <template>
   <section class="qs-robust">
-    <span class="label qs-robust__label" :title="HINT">Robustness <Info :size="11" aria-hidden="true" /></span>
+    <!-- A CSS tooltip: the app's webview shows no native title tooltips. -->
+    <div class="qs-robust__head">
+      <span class="label">Robustness</span>
+      <button type="button" class="qs-robust__info" aria-label="What the check tests" aria-describedby="qs-robust-tip"><Info :size="12" aria-hidden="true" /></button>
+    </div>
+    <span id="qs-robust-tip" role="tooltip" class="qs-robust__tip">{{ HINT }}</span>
     <div class="qs-robust__row">
       <span>Verdict</span>
       <span :class="running || queued ? 'qs-muted' : tone">{{ verdictText }}</span>
@@ -247,7 +252,14 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
 <style scoped>
 .qs-robust { display: flex; flex-direction: column; gap: 8px; }
-.qs-robust__label { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; cursor: help; }
+.qs-robust { position: relative; }
+.qs-robust__head { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-bottom: 6px; cursor: help; }
+.qs-robust__head .label { margin: 0; }
+.qs-robust__info { display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--qs-text-muted); cursor: help; }
+.qs-robust__head:hover .qs-robust__info { color: var(--qs-text); }
+/* Shown at once while the label or the icon is hovered, or the icon has focus. */
+.qs-robust__tip { position: absolute; top: 22px; left: 0; right: 0; z-index: 10; padding: 8px 10px; border: 1px solid var(--qs-border); border-radius: 8px; background: var(--qs-bg-card); box-shadow: 0 8px 24px #0006; font-size: 11px; line-height: 1.5; color: var(--qs-text-secondary); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 120ms ease, visibility 120ms; }
+.qs-robust__head:hover + .qs-robust__tip, .qs-robust__head:focus-within + .qs-robust__tip { opacity: 1; visibility: visible; }
 .qs-robust__row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--qs-text-secondary); }
 .qs-robust__row > span:last-child { text-align: right; }
 .qs-robust__checked { display: inline-flex; align-items: baseline; gap: 8px; }
