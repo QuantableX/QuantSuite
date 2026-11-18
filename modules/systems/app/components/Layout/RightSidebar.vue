@@ -167,8 +167,8 @@ onMounted(() => strategyNotes.load())
     <button type="button" class="btn qs-context__notes" @click="notesOpen = true">
       <NotebookPen :size="14" aria-hidden="true" />
       <span>Notes</span>
-      <span v-if="ownNotes" class="qs-context__dot" title="You wrote notes for this strategy" />
-      <span v-if="notes.length" class="qs-context__count mono" :title="`${notes.length} from the engine`">{{ notes.length }}</span>
+      <span v-if="notes.length" class="qs-context__count" :aria-label="`${notes.length} from the engine`">{{ notes.length }}</span>
+      <span v-if="ownNotes" class="qs-context__dot" aria-label="You wrote notes for this strategy" />
     </button>
     <NotesDialog v-if="notesOpen" :system-id="systemId" :name="system?.name ?? ''" :engine-notes="notes" :source="notesSource" @close="notesOpen = false" />
   </div>
@@ -194,26 +194,37 @@ onMounted(() => strategyNotes.load())
   background: var(--qss-module-chrome, var(--qss-bg-raised));
 }
 
+/* Centered like the rail's New strategy button. */
 .qs-context__notes {
+  position: relative;
   width: 100%;
   height: 32px;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 0 12px;
-  font-size: 12px;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  font-size: 11px;
 }
 
+.qs-context__count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--qs-bg-hover);
+  font-size: 10px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--qs-text-secondary);
+}
+
+/* In the corner, so it never moves the centered label. */
 .qs-context__dot {
+  position: absolute;
+  top: 6px;
+  right: 8px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--qs-accent);
-}
-
-.qs-context__count {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--qs-text-muted);
 }
 
 .qs-context__section {
