@@ -57,11 +57,12 @@ export function formatDate(iso: string): string {
   })
 }
 
-/** Format an ISO date to date + time */
+/** Format an ISO date to date + time, with the year: trade lists (backtests, the journal) span years. */
 export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
