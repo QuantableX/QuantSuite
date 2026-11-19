@@ -196,7 +196,13 @@ command or click approval controls yourself. Do not change boards, modes or
 use standalone worktrees to bypass either gate.
 
 Let the claim/complete flow move repository cards through `work → review → done`;
-use `move_kanban_card` for planning only on those boards. General tasks without
+use `move_kanban_card` for planning only on those boards, with one exception:
+a repository card that closes **without code** (the user decided "nothing
+changes", the work is no longer needed, or another card already did it).
+Write the decision, its date and the reason into the description, then move it
+with `move_kanban_card(column="done")` in the same session; on `approval`
+boards move it to `review` and the user moves it to Done. Never leave a decided
+card in Plan. General tasks without
 repositories use `move_kanban_card` through their lifecycle as described above. Only the user changes the approval mode
 (`set_kanban_approval_mode`) — never switch a board to `auto_apply` to get your
 own work merged. Delete cards only when asked.
