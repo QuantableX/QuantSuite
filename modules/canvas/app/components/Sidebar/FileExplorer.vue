@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useWorkspacesStore } from '../../../stores/workspaces'
 import type { FileNode, GitFileStatus, SearchMatch } from '../../../shared/types'
 import { onClickOutside } from '@vueuse/core'
+import { fileDrag, isOverCanvas } from '../../utils/fileDrag'
 
 /**
  * This component is SHARED: QuantCanvas hosts it in its own sidebar,
@@ -638,7 +639,7 @@ let pointerStartX = 0
 let pointerStartY = 0
 let pointerDidMove = false
 let pointerMoveHandler: ((e: PointerEvent) => void) | null = null
-let pointerUpHandler: (() => void) | null = null
+let pointerUpHandler: ((e: PointerEvent) => void) | null = null
 
 function findDropFolderAtPoint(x: number, y: number, draggingPath: string): string | null {
   const el = document.elementFromPoint(x, y) as HTMLElement | null
@@ -683,6 +684,7 @@ function onRowPointerDown(e: PointerEvent) {
   if (!row) return
   const path = row.getAttribute('data-path')
   if (!path) return
+  const isFile = !row.hasAttribute('data-is-dir')
 
   e.preventDefault()
   pointerStartX = e.clientX
@@ -698,6 +700,14 @@ function onRowPointerDown(e: PointerEvent) {
     row.style.opacity = '0.35'
     document.body.classList.add('qc-file-dragging')
 
+    // A file over the canvas opens there on release (folders do not).
+    const overCanvas = isFile && isOverCanvas(me.clientX, me.clientY)
+    fileDrag.value = { path, overCanvas }
+    if (overCanvas) {
+      dropTargetPath.value = null
+      return
+    }
+
     const folder = findDropFolderAtPoint(me.clientX, me.clientY, path)
     if (folder) {
       const srcNorm = normalizePath(path)
@@ -712,13 +722,18 @@ function onRowPointerDown(e: PointerEvent) {
     }
   }
 
-  pointerUpHandler = async () => {
+  pointerUpHandler = async (ue: PointerEvent) => {
     document.removeEventListener('pointermove', pointerMoveHandler!, true)
     document.removeEventListener('pointerup', pointerUpHandler!, true)
     document.body.classList.remove('qc-file-dragging')
     row.style.opacity = ''
+    fileDrag.value = null
 
-    if (pointerDidMove && dragSourcePath.value && dropTargetPath.value) {
+    if (pointerDidMove && isFile && isOverCanvas(ue.clientX, ue.clientY)) {
+      window.dispatchEvent(new CustomEvent('qc-open-file-on-canvas', {
+        detail: { filePath: getFullPath({ path } as FileNode), x: ue.clientX, y: ue.clientY },
+      }))
+    } else if (pointerDidMove && dragSourcePath.value && dropTargetPath.value) {
       const srcNorm = normalizePath(dragSourcePath.value)
       const tgtNorm = normalizePath(dropTargetPath.value)
       const fileName = srcNorm.split('/').pop()
@@ -745,6 +760,7 @@ function resetDragState() {
   if (pointerMoveHandler) document.removeEventListener('pointermove', pointerMoveHandler, true)
   if (pointerUpHandler) document.removeEventListener('pointerup', pointerUpHandler, true)
   document.body.classList.remove('qc-file-dragging')
+  fileDrag.value = null
   dragSourcePath.value = null
   dropTargetPath.value = null
 }

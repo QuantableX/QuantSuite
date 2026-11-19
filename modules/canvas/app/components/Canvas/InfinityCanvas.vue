@@ -9,6 +9,7 @@ import { inActiveKeepAliveTree, useTauriEvent } from '@quantsuite/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { Globe, Images, LayoutDashboard, MessageSquare, PenTool, Terminal } from 'lucide-vue-next'
 import { terminalHasFocus } from '../../utils/terminalFocus'
+import { fileDrag } from '../../utils/fileDrag'
 import { useCanvasActions, useCanvasEdges } from '../../utils/canvasLinks'
 import type { KanbanCard } from '@quantsuite/core'
 
@@ -489,45 +490,24 @@ function createFileWindow(filePath: string, screenX: number, screenY: number) {
   canvasStore.addWindow(workspaceId.value, win)
 }
 
-// ---- Drag & drop from file explorer ----
+// ---- A file from the explorer ----
 
-const isDragOver = ref(false)
+// The explorer's row drag (pointer events, utils/fileDrag) is over the canvas.
+const isDragOver = computed(() => !!fileDrag.value?.overCanvas)
 
-function onDragOver(e: DragEvent) {
-  if (e.dataTransfer?.types.includes('application/x-quantcode-file')) {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-    isDragOver.value = true
-  }
-}
-
-function onDragLeave() {
-  isDragOver.value = false
-}
-
-function onDrop(e: DragEvent) {
-  isDragOver.value = false
-  if (!e.dataTransfer) return
-
-  const filePath = e.dataTransfer.getData('application/x-quantcode-file')
-  if (filePath) {
-    e.preventDefault()
-    createFileWindow(filePath, e.clientX, e.clientY)
-  }
-}
-
-// Listen for "Open on Canvas" events from the file explorer
+// "Open on canvas" from the explorer, or a file dropped on the canvas: a drop
+// carries its release point, the menu item opens it near the view's center.
 useEventListener(window, 'qc-open-file-on-canvas', ((e: CustomEvent) => {
   const filePath = e.detail?.filePath
   if (!filePath) return
 
-  // Place near center of the visible canvas area
+  if (typeof e.detail.x === 'number' && typeof e.detail.y === 'number') {
+    createFileWindow(filePath, e.detail.x, e.detail.y)
+    return
+  }
   const rect = canvasRef.value?.getBoundingClientRect()
   if (!rect) return
-  const centerX = rect.left + rect.width / 2
-  const centerY = rect.top + rect.height / 2
-
-  createFileWindow(filePath, centerX, centerY)
+  createFileWindow(filePath, rect.left + rect.width / 2, rect.top + rect.height / 2)
 }) as EventListener)
 
 // ---- Window copy/paste ----
@@ -640,6 +620,7 @@ useEventListener(window, 'click', () => {
 <template>
   <div
     ref="canvasRef"
+    data-qc-canvas
     class="w-full h-full relative overflow-hidden"
     :class="{ 'cursor-grab': spaceHeld && !isPanning, 'cursor-grabbing': isPanning }"
     :style="dotGridStyle"
@@ -649,12 +630,9 @@ useEventListener(window, 'click', () => {
     @mouseleave="onMouseUp"
     @wheel="onWheel"
     @contextmenu="onContextMenu"
-    @dragover="onDragOver"
-    @dragleave="onDragLeave"
-    @drop="onDrop"
   >
     <div v-if="!windows.length && workspaceId" class="canvas-start" @mousedown.stop @wheel.stop>
-      <QEmptyState title="Empty canvas" description="Add a window or drop a file here.">
+      <QEmptyState title="Empty canvas" description="Add a window or drag a file here from the explorer.">
         <button class="canvas-start-action" @click="createWindow('terminal', true)"><Terminal :size="14" /> Terminal</button>
         <button class="canvas-start-action" @click="createWindow('spec', true)"><LayoutDashboard :size="14" /> Kanban</button>
         <button class="canvas-start-action" @click="createWindow('browser', true)"><Globe :size="14" /> Browser</button>
@@ -664,15 +642,9 @@ useEventListener(window, 'click', () => {
       </QEmptyState>
     </div>
 
-    <!-- Drag-drop overlay -->
-    <div
-      v-if="isDragOver"
-      class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center"
-      :style="{ background: 'rgba(59, 130, 246, 0.08)', border: '2px dashed rgba(59, 130, 246, 0.4)' }"
-    >
-      <span class="text-blue-400 text-xs font-medium px-3 py-1.5 rounded" :style="{ background: 'var(--qc-bg-header)' }">
-        Drop file to open on canvas
-      </span>
+    <!-- A file from the explorer is over the canvas -->
+    <div v-if="isDragOver" class="canvas-drop">
+      <span class="canvas-drop-label">Drop file to open on canvas</span>
     </div>
 
     <!-- Zoom / tile count overlay -->
@@ -819,6 +791,9 @@ useEventListener(window, 'click', () => {
 .canvas-start-action:hover { background: var(--qss-bg-hover); }
 .canvas-link-error { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 10px; align-items: center; padding: 6px 12px; border: 1px solid #f87171; border-radius: 8px; background: var(--qc-bg-header); color: #f87171; font-size: 12px; }
 .canvas-link-error button { border: 1px solid var(--qc-border); border-radius: 6px; background: transparent; color: var(--qc-text); font-size: 11px; padding: 2px 8px; cursor: pointer; }
+/* Under the side panels (z 20), over the windows; the label sits below the status pill. */
+.canvas-drop { position: absolute; inset: 0; z-index: 15; pointer-events: none; background: color-mix(in srgb, var(--qc-accent) 6%, transparent); }
+.canvas-drop-label { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); padding: 6px 12px; border: 1px solid color-mix(in srgb, var(--qc-accent) 45%, transparent); border-radius: 8px; background: var(--qc-bg-header); color: var(--qc-accent); font-size: 11px; font-weight: 500; white-space: nowrap; }
 .canvas-status { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 10px; padding: 6px 12px; border: 1px solid var(--qc-border-subtle); border-radius: 8px; background: var(--qc-bg-header); color: var(--qc-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 </style>
 
